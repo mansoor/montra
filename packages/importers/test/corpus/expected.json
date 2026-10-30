@@ -1,0 +1,291 @@
+{
+  "chase-checking.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 6,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "BLUE BOTTLE"
+    },
+    "total": 220150,
+    "balance": "ok",
+    "key": "BLUE BOTTLE",
+    "sign": "normal"
+  },
+  "chase-credit.csv": {
+    "account": "liability",
+    "currency": "USD",
+    "rows": 4,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-27",
+      "amount": -1549,
+      "contains": "NETFLIX"
+    },
+    "total": 44940,
+    "balance": "n_a",
+    "sign": "normal"
+  },
+  "amex.csv": {
+    "account": "liability",
+    "currency": "USD",
+    "rows": 4,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -2345,
+      "contains": "UBER"
+    },
+    "total": 17905,
+    "balance": "n_a",
+    "sign": "inverted"
+  },
+  "bofa-checking.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-03",
+      "amount": -25075,
+      "contains": "COSTCO"
+    },
+    "total": 194925,
+    "balance": "ok",
+    "key": "COSTCO WHSE"
+  },
+  "capitalone.csv": {
+    "account": "liability",
+    "currency": "USD",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -575,
+      "contains": "STARBUCKS"
+    },
+    "total": 18005,
+    "balance": "n_a"
+  },
+  "wellsfargo.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -1299,
+      "contains": "SPOTIFY"
+    },
+    "total": 142561,
+    "balance": "n_a",
+    "key": "SPOTIFY"
+  },
+  "citi.csv": {
+    "account": "liability",
+    "currency": "USD",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -1425,
+      "contains": "CHIPOTLE"
+    },
+    "total": 7487,
+    "balance": "n_a"
+  },
+  "discover.csv": {
+    "account": "liability",
+    "currency": "USD",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-27",
+      "amount": -4567,
+      "contains": "COSTCO GAS"
+    },
+    "total": 5591,
+    "balance": "n_a",
+    "sign": "inverted"
+  },
+  "ally.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-31",
+      "amount": 412,
+      "contains": "Interest"
+    },
+    "total": 80412,
+    "balance": "n_a"
+  },
+  "sparkasse.csv": {
+    "account": "asset",
+    "currency": "EUR",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -3456,
+      "contains": "REWE"
+    },
+    "total": 312644,
+    "balance": "n_a",
+    "dayFirst": true
+  },
+  "barclays.csv": {
+    "account": "asset",
+    "currency": "GBP",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -420,
+      "contains": "PRET"
+    },
+    "total": 154580,
+    "balance": "n_a"
+  },
+  "revolut.csv": {
+    "account": "asset",
+    "currency": "GBP",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-01",
+      "amount": -1240,
+      "contains": "Tesco"
+    },
+    "total": 7250,
+    "balance": "ok"
+  },
+  "banque-fr.csv": {
+    "account": "asset",
+    "currency": "EUR",
+    "rows": 3,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-29",
+      "amount": -2340,
+      "contains": "CARREFOUR"
+    },
+    "total": 275948,
+    "balance": "n_a"
+  },
+  "ynab.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "coffee"
+    },
+    "total": 319350,
+    "balance": "n_a",
+    "template": "ynab",
+    "accountFilter": "Checking"
+  },
+  "mint.csv": {
+    "account": "liability",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "BLUE BOTTLE"
+    },
+    "total": 49350,
+    "balance": "n_a",
+    "template": "mint"
+  },
+  "monarch.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "BLUE BOTTLE"
+    },
+    "total": 319350,
+    "balance": "n_a",
+    "template": "monarch"
+  },
+  "quicken.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -14217,
+      "contains": "October bill"
+    },
+    "total": 305783,
+    "balance": "n_a",
+    "template": "quicken"
+  },
+  "stessa.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-01",
+      "amount": 180000,
+      "contains": "Tenant"
+    },
+    "total": 156000,
+    "balance": "n_a",
+    "template": "stessa"
+  },
+  "excel-unicode.txt": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -480,
+      "contains": "Café Ümlaut"
+    },
+    "total": 199520,
+    "balance": "n_a"
+  },
+  "footer-totals.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 1,
+    "first": {
+      "date": "2026-10-02",
+      "amount": -4500,
+      "contains": "TOTAL WINE"
+    },
+    "total": 95500,
+    "balance": "n_a",
+    "skipped": 2
+  },
+  "ambiguous-dates.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "rows": 2,
+    "errors": 0,
+    "first": {
+      "date": "2026-03-04",
+      "amount": -100,
+      "contains": "Alpha"
+    },
+    "total": -300,
+    "balance": "n_a",
+    "warning": "ambiguous_date_format"
+  }
+}

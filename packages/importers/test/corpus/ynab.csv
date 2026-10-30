@@ -1,0 +1,4 @@
+﻿"Account","Flag","Date","Payee","Category Group/Category","Category Group","Category","Memo","Outflow","Inflow","Cleared"
+"Checking","","10/28/2026","Blue Bottle","Daily: Dining","Daily","Dining","coffee","$6.50","$0.00","Cleared"
+"Checking","","10/25/2026","Acme","Inflow: Ready to Assign","Inflow","Ready to Assign","","$0.00","$3,200.00","Cleared"
+"Savings","","10/24/2026","Transfer : Checking","","","","","$0.00","$500.00","Cleared"

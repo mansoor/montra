@@ -1,0 +1,11 @@
+Description,,Summary Amt.
+Beginning balance as of 10/01/2026,,"1,000.00"
+Total credits,,"3,200.00"
+Total debits,,"-1,250.75"
+Ending balance as of 10/31/2026,,"2,949.25"
+
+Date,Description,Amount,Running Bal.
+10/01/2026,Beginning balance as of 10/01/2026,,"1,000.00"
+10/03/2026,"COSTCO WHSE #0423 SAN FRANCISCO CA","-250.75","749.25"
+10/15/2026,"ACME CORP DES:PAYROLL ID:XXXXX12345","3,200.00","3,949.25"
+10/28/2026,"Online Banking transfer to SAV 4567 Confirmation# 1234567890","-1,000.00","2,949.25"
