@@ -6,7 +6,7 @@ test('creates a rule with a live preview and applies it to existing transactions
   test.setTimeout(120_000);
   await onboardHousehold(page, `rules-${Date.now()}@example.com`, 'Everyday checking');
 
-  // Two uncategorized fuel purchases and one coffee.
+  // Two fuel purchases and one coffee (the pipeline may already have categorized them; the rule overrides).
   await nav(page, 'Transactions');
   for (const [payee, amount] of [
     ['Shell Oil', '40.00'],
@@ -23,11 +23,11 @@ test('creates a rule with a live preview and applies it to existing transactions
   await expect(page.getByRole('heading', { name: 'Rules', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: 'New rule' }).click();
   const form = page.getByRole('form', { name: 'Rule' });
-  await form.getByLabel('Name', { exact: true }).fill('Shell → Fuel');
+  await form.getByLabel('Name', { exact: true }).fill('Shell → Household');
   await form.getByLabel('Field for condition 1').selectOption('payee');
   await form.getByLabel('Operator for condition 1').selectOption('contains');
   await form.getByLabel('Value for condition 1').fill('shell');
-  await form.getByLabel('Category', { exact: true }).selectOption({ label: 'Fuel & transport' });
+  await form.getByLabel('Category', { exact: true }).selectOption({ label: 'Household' });
 
   // Live preview (debounced): both Shell rows match and would change.
   await expect(page.getByTestId('rule-preview-counts')).toContainText('Matches 2 existing transactions', {
@@ -37,7 +37,7 @@ test('creates a rule with a live preview and applies it to existing transactions
   await expect(page.getByTestId('rule-preview')).not.toContainText('Blue Bottle');
 
   await form.getByRole('button', { name: 'Create rule' }).click();
-  await expect(page.getByText('Rule “Shell → Fuel” saved.')).toBeVisible();
+  await expect(page.getByText('Rule “Shell → Household” saved.')).toBeVisible();
   const row = page.getByTestId('rule-row');
   await expect(row).toHaveCount(1);
   await expect(row).toContainText('Payee contains “shell”');
@@ -47,10 +47,9 @@ test('creates a rule with a live preview and applies it to existing transactions
   await expect(row.getByTestId('rule-apply-status')).toContainText('Applied: 2 changed', { timeout: 30_000 });
 
   await nav(page, 'Transactions');
-  await expect(page.getByTestId('txn-row').filter({ hasText: 'Shell Oil' })).toContainText(
-    'Fuel & transport',
-  );
-  await expect(page.getByTestId('txn-row').filter({ hasText: 'Blue Bottle' })).not.toContainText(
-    'Fuel & transport',
-  );
+  // The register shows the clean merchant name ("Shell") for known merchants (AI-07).
+  const shell = page.getByTestId('txn-row').filter({ hasText: /shell/i });
+  await expect(shell).toHaveCount(2);
+  for (const r of await shell.all()) await expect(r).toContainText('Household');
+  await expect(page.getByTestId('txn-row').filter({ hasText: 'Blue Bottle' })).not.toContainText('Household');
 });

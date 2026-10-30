@@ -503,14 +503,11 @@ export class ImportJobs {
     const parseRate = total ? candidate.parsed.rows.length / total : 0;
     if (candidate.parsed.rows.length === 0 || candidate.parsed.rows.length < current.parsed.rows.length)
       return current;
-    return {
-      ...candidate,
-      proposal: {
-        ...candidate.proposal,
-        source: 'ai',
-        confidence: Number((res.value.confidence * parseRate).toFixed(3)),
-      },
-    };
+    const confidence = Number((res.value.confidence * parseRate).toFixed(3));
+    // Only a mapping good enough to skip the mapping step replaces the heuristic proposal; otherwise the
+    // user sees the heuristic one with its warnings.
+    if (confidence < MAPPING_OK) return current;
+    return { ...candidate, proposal: { ...candidate.proposal, source: 'ai', confidence } };
   }
 
   /**
