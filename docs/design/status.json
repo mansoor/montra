@@ -219,5 +219,61 @@
   "AUTH-11": [
     "done",
     "codes to old and new address; identity updated via Kratos admin API"
+  ],
+  "IMP-01": [
+    "done",
+    "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF; mobile in P4"
+  ],
+  "IMP-03": [
+    "partial",
+    "heuristic inference + manual mapping UI; AI-assisted mapping in P3"
+  ],
+  "IMP-04": [
+    "done",
+    "profiles by fingerprint per account"
+  ],
+  "IMP-05": [
+    "partial",
+    "digital PDFs via pdfplumber with balance check; scanned PDFs (OCR) in P3"
+  ],
+  "IMP-06": [
+    "done",
+    "preview with statuses, decisions, suggestions, bulk skip"
+  ],
+  "IMP-07": [
+    "done",
+    "ordinal exact duplicates, covered-range probable duplicates, one-to-one matching"
+  ],
+  "IMP-08": [
+    "done",
+    "atomic commit, summary, statement balance check"
+  ],
+  "IMP-09": [
+    "done",
+    "30-day undo; partial undo reported"
+  ],
+  "IMP-10": [
+    "partial",
+    "rules + reference merchants; AI fallback in P3"
+  ],
+  "IMP-13": [
+    "done",
+    "YNAB, Mint, Monarch, Quicken, Stessa templates with account filter"
+  ],
+  "DE-08": [
+    "done",
+    "reconciliation UI + API; reconciled entries locked"
+  ],
+  "UP-01": [
+    "done",
+    "loss-proof import accounting, duplicate detection, balance reconciliation"
+  ],
+  "OPS-05": [
+    "partial",
+    "versioned reference data loader (merchants); admin editor in P11"
+  ],
+  "NFR-07": [
+    "partial",
+    "5k-row parse ~0.2 s; commit ~11 ms/row; dashboard target in P6"
   ]
 }

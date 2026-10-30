@@ -89,6 +89,19 @@ export const UpdateImportRowRequest = z
   .partial();
 export type UpdateImportRowRequest = z.output<typeof UpdateImportRowRequest>;
 
+export const BulkImportRowsRequest = z
+  .object({
+    rowIds: z.array(Id).max(5000).optional(),
+    /** Apply to every row with this classification, e.g. "skip all probable duplicates". */
+    status: z.enum(['new', 'duplicate', 'probable_duplicate', 'match', 'error']).optional(),
+    decision: z.enum(['import', 'skip', 'match']).nullable(),
+  })
+  .refine((r) => Boolean(r.rowIds?.length) !== Boolean(r.status), {
+    message: 'Give either rowIds or status',
+    path: ['rowIds'],
+  });
+export type BulkImportRowsRequest = z.output<typeof BulkImportRowsRequest>;
+
 export const ImportStatus = z.enum([
   'uploaded',
   'parsing',
@@ -117,7 +130,20 @@ export const ImportBatchDto = z.object({
       header: z.array(z.string()).nullable(),
       sample: z.array(z.array(z.string())),
       accounts: z.array(z.string()),
+      /** Column holding account names in multi-account app exports (for the account-filter picker). */
+      accountColumn: z.number().nullable(),
       templateId: z.string().nullable(),
+    })
+    .nullable(),
+  /** The batch's latest job: tells parse, commit and undo apart and carries their results (e.g. undo's kept rows). */
+  job: z
+    .object({
+      id: z.string(),
+      type: z.string(),
+      status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+      progress: z.number().nullable(),
+      result: z.record(z.string(), z.unknown()).nullable(),
+      error: z.string().nullable(),
     })
     .nullable(),
   counts: z.object({

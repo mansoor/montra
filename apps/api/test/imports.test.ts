@@ -344,3 +344,33 @@ describe('other file types and mapping', () => {
     expect(other.status).toBe(403);
   });
 });
+
+describe('contract additions for the import UI', () => {
+  it('bulk-skips rows, exposes the latest job, accountColumn, and lists reconciliations', async () => {
+    const w = await setup();
+    const acct = (await c.post(w.url('/accounts'), { name: 'Checking', kind: 'checking' })).body.id;
+    const up = await upload(w.ws.id, 'ynab.csv', corpus('ynab.csv'));
+    const batch = (await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId: acct })).body;
+    await worker.drain();
+    const preview = (await c.get(w.url(`/imports/${batch.id}`))).body;
+    expect(preview.analysis).toMatchObject({
+      templateId: 'ynab',
+      accounts: ['Checking', 'Savings'],
+      accountColumn: 0,
+    });
+    expect(preview.job).toMatchObject({ type: 'import.parse', status: 'succeeded' });
+
+    const bulk = await c.patch(w.url(`/imports/${batch.id}/rows`), { status: 'new', decision: 'skip' });
+    expect(bulk.body.updated).toBeGreaterThan(0);
+    const rows = (await c.get(w.url(`/imports/${batch.id}/rows`))).body.data;
+    expect(rows.every((r: any) => r.effective === 'skip')).toBe(true);
+    expect((await c.patch(w.url(`/imports/${batch.id}/rows`), { decision: 'skip' })).status).toBe(400);
+
+    await c.post(w.url(`/accounts/${acct}/reconciliations`), {
+      statementDate: '2026-10-31',
+      statementBalance: usd('0'),
+    });
+    const open = (await c.get(w.url(`/accounts/${acct}/reconciliations?status=in_progress`))).body.data;
+    expect(open).toHaveLength(1);
+  });
+});

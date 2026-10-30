@@ -104,7 +104,7 @@ const norm = (s: string) => s.trim().toLowerCase();
 export function matchTemplate(
   sheet: Sheet,
   accountFilter?: string,
-): (MappingProposal & { templateId: string; accounts: string[] }) | null {
+): (MappingProposal & { templateId: string; accounts: string[]; accountColumn: number | null }) | null {
   for (let h = 0; h < Math.min(sheet.rows.length, 5); h++) {
     const header = sheet.rows[h]!.map(norm);
     for (const t of APP_TEMPLATES) {
@@ -143,6 +143,7 @@ export function matchTemplate(
         header: sheet.rows[h]!,
         templateId: t.id,
         accounts,
+        accountColumn: accountColumn ?? null,
       };
     }
   }

@@ -3,6 +3,7 @@ import type { Selectable } from 'kysely';
 import { newId, type ImportBatchTable, type ImportRowTable, type Trx } from '@montra/db';
 import { asCurrencyCode, isBalanceSheet } from '@montra/domain';
 import type {
+  BulkImportRowsRequest,
   ColumnMappingDto,
   CreateImportRequest,
   ImportBatchDto,
@@ -124,20 +125,21 @@ export class ImportsService {
         .execute();
       // A failed extraction or parse job is reported on the batch (the doc worker can't update it itself).
       let { status, error } = batch;
-      if (batch.job_id && (status === 'parsing' || status === 'committing')) {
-        const job = await trx
-          .selectFrom('app.job')
-          .select(['status', 'error', 'type'])
-          .where('id', '=', batch.job_id)
-          .executeTakeFirst();
-        if (job?.status === 'failed') {
-          status = 'failed';
-          error = job.error;
-        }
+      const job = batch.job_id
+        ? await trx
+            .selectFrom('app.job')
+            .select(['id', 'type', 'status', 'progress', 'result', 'error'])
+            .where('id', '=', batch.job_id)
+            .executeTakeFirst()
+        : undefined;
+      if (job?.status === 'failed' && (status === 'parsing' || status === 'committing')) {
+        status = 'failed';
+        error = job.error;
       }
       return toBatchDto(
         { ...batch, status, error },
         Object.fromEntries(counts.map((c) => [c.status, Number(c.n)])),
+        job ? { ...job, result: (job.result as Record<string, unknown> | null) ?? null } : null,
       );
     });
   }
@@ -255,6 +257,25 @@ export class ImportsService {
     });
   }
 
+  /** Bulk decision for preview rows (IMP-06), e.g. skip every probable duplicate. */
+  async bulkRows(ctx: Ctx, id: string, req: BulkImportRowsRequest): Promise<{ updated: number }> {
+    return this.db.run(ctx, async (trx) => {
+      const batch = await this.load(trx, ctx, id);
+      if (batch.status !== 'preview' && batch.status !== 'needs_mapping') {
+        throw unprocessable('import.not_editable', `The import is ${batch.status}`);
+      }
+      const res = await trx
+        .updateTable('app.import_row')
+        .set({ decision: req.decision })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('import_batch_id', '=', id)
+        .$if(Boolean(req.rowIds?.length), (q) => q.where('id', 'in', req.rowIds!))
+        .$if(Boolean(req.status), (q) => q.where('status', '=', req.status!))
+        .executeTakeFirst();
+      return { updated: Number(res.numUpdatedRows) };
+    });
+  }
+
   /** Posts the preview (IMP-08). Runs in the worker as one atomic job; progress is visible on the job. */
   async commit(ctx: Ctx, id: string): Promise<ImportBatchDto> {
     await this.db.run(ctx, async (trx) => {
@@ -354,8 +375,9 @@ export function fileTypeOf(mime: string, fileName: string): ImportBatchTable['fi
   return null;
 }
 
-function toBatchDto(b: Batch, counts: Record<string, number>): ImportBatchDto {
+function toBatchDto(b: Batch, counts: Record<string, number>, job: ImportBatchDto['job']): ImportBatchDto {
   const analysis = b.analysis as {
+    accountColumn?: number | null;
     header?: string[] | null;
     sample?: string[][];
     accounts?: string[];
@@ -377,6 +399,7 @@ function toBatchDto(b: Batch, counts: Record<string, number>): ImportBatchDto {
           header: analysis.header ?? null,
           sample: analysis.sample ?? [],
           accounts: analysis.accounts ?? [],
+          accountColumn: analysis.accountColumn ?? null,
           templateId: analysis.templateId ?? null,
         }
       : null,
@@ -406,6 +429,7 @@ function toBatchDto(b: Batch, counts: Record<string, number>): ImportBatchDto {
     undoUntil: b.undo_until?.toISOString() ?? null,
     undoneAt: b.undone_at?.toISOString() ?? null,
     jobId: b.job_id,
+    job,
     createdAt: b.created_at.toISOString(),
   };
 }

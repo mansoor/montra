@@ -17,6 +17,7 @@ import type { FastifyRequest } from 'fastify';
 import { newId } from '@montra/db';
 import { detectFileType } from '@montra/importers';
 import {
+  BulkImportRowsRequest,
   CreateImportRequest,
   UpdateImportRowRequest,
   UpdateMappingRequest,
@@ -172,6 +173,15 @@ export class ImportsController {
     @Body() body: unknown,
   ): Promise<ImportBatchDto> {
     return this.imports.setMapping(dbCtx(ctx), parse(z.uuid(), id), parse(UpdateMappingRequest, body));
+  }
+
+  @Patch('imports/:id/rows')
+  bulkRows(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<{ updated: number }> {
+    return this.imports.bulkRows(dbCtx(ctx), parse(z.uuid(), id), parse(BulkImportRowsRequest, body));
   }
 
   @Patch('imports/:id/rows/:rowId')

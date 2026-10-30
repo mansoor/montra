@@ -37,7 +37,12 @@ export interface AnalyzeOptions {
 export interface Analysis {
   sheet: Sheet;
   fingerprint: string;
-  proposal: MappingProposal & { profileId?: string; templateId?: string; accounts?: string[] };
+  proposal: MappingProposal & {
+    profileId?: string;
+    templateId?: string;
+    accounts?: string[];
+    accountColumn?: number | null;
+  };
   parsed: ParseResult;
   balance: BalanceCheck;
 }

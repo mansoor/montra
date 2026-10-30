@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { sql } from 'kysely';
 import { newId, type Trx } from '@montra/db';
 import { asCurrencyCode, naturalBalance } from '@montra/domain';
@@ -66,6 +66,31 @@ export class ReconciliationController {
         .execute();
     });
     return this.get(ctx, id);
+  }
+
+  /** An account's reconciliations, newest first; `?status=in_progress` finds one to resume. */
+  @Get('accounts/:accountId/reconciliations')
+  async list(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Query('status') status?: string,
+  ) {
+    const c = dbCtx(ctx);
+    const st = status ? parse(z.enum(['in_progress', 'completed']), status) : undefined;
+    return this.db.run(c, async (trx) => {
+      const rows = await trx
+        .selectFrom('app.reconciliation')
+        .select('id')
+        .where('workspace_id', '=', c.workspaceId)
+        .where('ledger_account_id', '=', parse(z.uuid(), accountId))
+        .$if(Boolean(st), (q) => q.where('status', '=', st!))
+        .orderBy('created_at', 'desc')
+        .limit(24)
+        .execute();
+      const data: ReconciliationDto[] = [];
+      for (const r of rows) data.push(await this.load(trx, c, r.id));
+      return { data };
+    });
   }
 
   @Get('reconciliations/:id')

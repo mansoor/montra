@@ -248,6 +248,7 @@ export class ImportJobs {
             sample: sheet.rows.slice(0, SAMPLE_ROWS),
             accounts: proposal.accounts ?? [],
             templateId: proposal.templateId ?? null,
+            accountColumn: proposal.accountColumn ?? null,
             accountFilter: p.accountFilter ?? null,
             saveProfile: p.saveProfile ?? true,
             // Spreadsheet/PDF grids are kept so a mapping change doesn't need another extraction.
