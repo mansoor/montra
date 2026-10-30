@@ -1,6 +1,6 @@
 # ADR-0006: Ory Kratos for identity
 
-- Status: proposed (confirm in Phase 1 kickoff)
+- Status: accepted (confirmed 2026-10-30)
 - Date: 2026-10-30
 
 ## Context

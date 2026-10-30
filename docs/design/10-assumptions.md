@@ -1,8 +1,10 @@
 # 10 — Assumptions and Open Questions
 
-The requirements (§14.3) leave several questions open. The design proceeds on the working
-assumptions below. Each is chosen so it can be reversed cheaply. **Please confirm or
-correct them**; the items marked ⚑ affect Phase 1 work.
+The requirements (§14.3) leave several questions open. The design proceeds on the
+assumptions below, each chosen so it can be reversed cheaply.
+
+**Status: confirmed by the product owner on 2026-10-30.** These are now the R1 baseline;
+changing one is a scope change recorded in this file.
 
 | # | Open question | Working assumption | Why / cost to change |
 | --- | --- | --- | --- |
