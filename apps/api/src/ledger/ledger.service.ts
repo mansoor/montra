@@ -13,6 +13,20 @@ import {
 } from '@montra/domain';
 import { notFound } from '../common/errors.js';
 
+const systemKey = (entityId: string, role: string, cp?: string | null) => `${entityId}|${role}|${cp ?? ''}`;
+
+interface ResolverBase {
+  ws: { inter_entity_mode: 'equity' | 'due_to_from' };
+  entities: Map<string, EntityRef & { name: string }>;
+  system: Map<string, LedgerAccountRef>;
+}
+
+export interface UnitCache {
+  accounts: Map<string, LedgerAccountRef & { name: string }>;
+  locks: Map<string, string | null>;
+  base?: ResolverBase;
+}
+
 type CounterpartyRole = Extract<SystemRole, 'inter_entity_clearing' | 'due_to_entity' | 'due_from_entity'>;
 
 const COUNTERPARTY_ACCOUNT: Record<CounterpartyRole, { type: AccountType; label: string }> = {
@@ -27,11 +41,29 @@ const COUNTERPARTY_ACCOUNT: Record<CounterpartyRole, { type: AccountType; label:
  */
 @Injectable()
 export class LedgerService {
+  /**
+   * Opt-in per-transaction cache for bulk work (statement import commits post thousands of transactions in
+   * one unit of work). Accounts, entities and system accounts don't change mid-batch; inter-entity accounts
+   * created by `resolver` update the cached map in place.
+   */
+  private readonly caches = new WeakMap<Trx, UnitCache>();
+
+  enableCache(trx: Trx): void {
+    if (!this.caches.has(trx)) this.caches.set(trx, { accounts: new Map(), locks: new Map() });
+  }
+
+  cacheOf(trx: Trx): UnitCache | undefined {
+    return this.caches.get(trx);
+  }
+
   async accountRef(
     trx: Trx,
     workspaceId: string,
     accountId: string,
   ): Promise<LedgerAccountRef & { name: string }> {
+    const cache = this.caches.get(trx);
+    const hit = cache?.accounts.get(accountId);
+    if (hit) return hit;
     const row = await trx
       .selectFrom('app.ledger_account')
       .select(['id', 'entity_id', 'type', 'currency', 'system_role', 'name', 'archived_at'])
@@ -39,7 +71,7 @@ export class LedgerService {
       .where('id', '=', accountId)
       .executeTakeFirst();
     if (!row) throw notFound(`Account ${accountId}`);
-    return {
+    const ref = {
       id: row.id,
       entityId: row.entity_id,
       type: row.type,
@@ -47,6 +79,8 @@ export class LedgerService {
       systemRole: row.system_role as SystemRole | null,
       name: row.name,
     };
+    cache?.accounts.set(accountId, ref);
+    return ref;
   }
 
   /**
@@ -54,43 +88,12 @@ export class LedgerService {
    * caller is about to post between (DE-05, ledger_account.counterparty_entity_id).
    */
   async resolver(trx: Trx, workspaceId: string, pairs: [string, string][] = []): Promise<AccountResolver> {
-    const ws = await trx
-      .selectFrom('app.workspace')
-      .select('inter_entity_mode')
-      .where('id', '=', workspaceId)
-      .executeTakeFirstOrThrow();
-    const entities = new Map<string, EntityRef & { name: string }>();
-    for (const e of await trx
-      .selectFrom('app.entity')
-      .select(['id', 'type', 'name', 'functional_currency'])
-      .where('workspace_id', '=', workspaceId)
-      .execute()) {
-      entities.set(e.id, {
-        id: e.id,
-        type: e.type,
-        name: e.name,
-        functionalCurrency: asCurrencyCode(e.functional_currency),
-      });
-    }
-    const system = new Map<string, LedgerAccountRef>();
-    const key = (entityId: string, role: string, cp?: string | null) => `${entityId}|${role}|${cp ?? ''}`;
-    const loadSystem = async () => {
-      for (const a of await trx
-        .selectFrom('app.ledger_account')
-        .select(['id', 'entity_id', 'type', 'currency', 'system_role', 'counterparty_entity_id'])
-        .where('workspace_id', '=', workspaceId)
-        .where('system_role', 'is not', null)
-        .execute()) {
-        system.set(key(a.entity_id, a.system_role!, a.counterparty_entity_id), {
-          id: a.id,
-          entityId: a.entity_id,
-          type: a.type,
-          currency: asCurrencyCode(a.currency),
-          systemRole: a.system_role as SystemRole,
-        });
-      }
-    };
-    await loadSystem();
+    const cache = this.caches.get(trx);
+    const base = cache?.base ?? (await this.loadBase(trx, workspaceId));
+    if (cache) cache.base = base;
+    const { ws, entities, system } = base;
+    const key = systemKey;
+    const loadSystem = () => this.loadSystem(trx, workspaceId, system);
 
     const entity = (id: string) => {
       const e = entities.get(id);
@@ -174,12 +177,58 @@ export class LedgerService {
     };
   }
 
+  private async loadBase(trx: Trx, workspaceId: string): Promise<ResolverBase> {
+    const ws = await trx
+      .selectFrom('app.workspace')
+      .select('inter_entity_mode')
+      .where('id', '=', workspaceId)
+      .executeTakeFirstOrThrow();
+    const entities = new Map<string, EntityRef & { name: string }>();
+    for (const e of await trx
+      .selectFrom('app.entity')
+      .select(['id', 'type', 'name', 'functional_currency'])
+      .where('workspace_id', '=', workspaceId)
+      .execute()) {
+      entities.set(e.id, {
+        id: e.id,
+        type: e.type,
+        name: e.name,
+        functionalCurrency: asCurrencyCode(e.functional_currency),
+      });
+    }
+    const system = new Map<string, LedgerAccountRef>();
+    await this.loadSystem(trx, workspaceId, system);
+    return { ws, entities, system };
+  }
+
+  private async loadSystem(
+    trx: Trx,
+    workspaceId: string,
+    into: Map<string, LedgerAccountRef>,
+  ): Promise<void> {
+    for (const a of await trx
+      .selectFrom('app.ledger_account')
+      .select(['id', 'entity_id', 'type', 'currency', 'system_role', 'counterparty_entity_id'])
+      .where('workspace_id', '=', workspaceId)
+      .where('system_role', 'is not', null)
+      .execute()) {
+      into.set(systemKey(a.entity_id, a.system_role!, a.counterparty_entity_id), {
+        id: a.id,
+        entityId: a.entity_id,
+        type: a.type,
+        currency: asCurrencyCode(a.currency),
+        systemRole: a.system_role as SystemRole,
+      });
+    }
+  }
+
   /** Writes journal entries (and their postings) for a transaction. Balance is enforced again by the DB. */
   async post(
     trx: Trx,
     ctx: { workspaceId: string; userId: string },
     transactionId: string | null,
     drafts: readonly JournalEntryDraft[],
+    opts: { clearedAccountId?: string } = {},
   ): Promise<string[]> {
     const ids: string[] = [];
     for (const draft of drafts) {
@@ -215,6 +264,10 @@ export class LedgerService {
             property_id: p.propertyId ?? null,
             unit_id: p.unitId ?? null,
             memo: p.memo ?? null,
+            // Statement lines are cleared on arrival (DE-08).
+            ...(opts.clearedAccountId && p.accountId === opts.clearedAccountId
+              ? { cleared: 'cleared' as const }
+              : {}),
           })),
         )
         .execute();

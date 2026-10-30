@@ -428,6 +428,7 @@ export class ImportJobs {
           .executeTakeFirstOrThrow();
         if (batch.status !== 'committing')
           throw new PermanentJobError('import.not_committing', `Import is ${batch.status}`);
+        this.ledger.enableCache(trx);
         const rows = await trx
           .selectFrom('app.import_row')
           .selectAll()
@@ -446,6 +447,9 @@ export class ImportJobs {
         let matched = 0;
         let skipped = batch.rows_skipped;
         let failed = 0;
+        const sources: { transaction_id: string; import_row_id: string }[] = [];
+        const outcomes: { id: string; outcome: string; transaction_id: string | null }[] = [];
+        const payees = new Map<string, string>();
         for (const [i, row] of rows.entries()) {
           if (i % 200 === 0) await jc.progress((i / rows.length) * 100).catch(() => {});
           const decision = effectiveDecision(row);
@@ -468,7 +472,11 @@ export class ImportJobs {
             const name =
               (suggestion?.merchantId && merchants.get(suggestion.merchantId)) ||
               (row.payee_raw ?? (key ? displayName(key) : (row.description ?? '')));
-            const payeeId = key ? await this.payeeId(trx, ctx, key, name) : null;
+            let payeeId = key ? (payees.get(key) ?? null) : null;
+            if (key && !payeeId) {
+              payeeId = await this.payeeId(trx, ctx, key, name);
+              payees.set(key, payeeId);
+            }
             transactionId = await this.transactions.createInTrx(trx, ctx, {
               date: row.txn_date!,
               accountId: batch.ledger_account_id,
@@ -482,28 +490,36 @@ export class ImportJobs {
               dedupeKey: row.dedupe_key,
               statementDate: row.txn_date,
               rawDescription: row.description,
+              clearedAccountId: batch.ledger_account_id,
             });
-            await this.markCleared(trx, ctx, transactionId, batch.ledger_account_id);
-            await trx
-              .insertInto('app.transaction_source')
-              .values({
-                workspace_id: ctx.workspaceId,
-                transaction_id: transactionId,
-                import_row_id: row.id,
-                import_batch_id: batch.id,
-                ledger_account_id: batch.ledger_account_id,
-                role: 'created',
-              })
-              .execute();
+            sources.push({ transaction_id: transactionId, import_row_id: row.id });
             outcome = 'added';
             added++;
           }
+          outcomes.push({ id: row.id, outcome, transaction_id: transactionId });
+        }
+        // Row bookkeeping in bulk: one statement per 1,000 rows instead of two per row.
+        for (let k = 0; k < sources.length; k += 1000) {
           await trx
-            .updateTable('app.import_row')
-            .set({ outcome, transaction_id: transactionId })
-            .where('workspace_id', '=', ctx.workspaceId)
-            .where('id', '=', row.id)
+            .insertInto('app.transaction_source')
+            .values(
+              sources.slice(k, k + 1000).map((x) => ({
+                workspace_id: ctx.workspaceId,
+                ...x,
+                import_batch_id: batch.id,
+                ledger_account_id: batch.ledger_account_id,
+                role: 'created' as const,
+              })),
+            )
             .execute();
+        }
+        for (let k = 0; k < outcomes.length; k += 1000) {
+          const chunk = outcomes.slice(k, k + 1000);
+          await sql`
+            update app.import_row r set outcome = v.outcome, transaction_id = v.transaction_id::uuid
+              from (select * from unnest(${chunk.map((o) => o.id)}::uuid[], ${chunk.map((o) => o.outcome)}::text[],
+                                         ${chunk.map((o) => o.transaction_id)}::text[]) as t(id, outcome, transaction_id)) v
+             where r.workspace_id = ${ctx.workspaceId} and r.id = v.id`.execute(trx);
         }
         const now = new Date();
         await trx

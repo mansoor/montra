@@ -165,8 +165,15 @@ export class TransactionPoster {
   }
 
   /** Replaces a transaction's ledger impact with `next`, entity by entity, following the lock rules. */
-  async repost(trx: Trx, ctx: Ctx, transactionId: string, next: JournalEntryDraft[]): Promise<void> {
-    const bookings = await this.loadBookings(trx, ctx, transactionId);
+  async repost(
+    trx: Trx,
+    ctx: Ctx,
+    transactionId: string,
+    next: JournalEntryDraft[],
+    opts: { fresh?: boolean; clearedAccountId?: string } = {},
+  ): Promise<void> {
+    // A brand-new transaction has nothing booked yet; skip the lookup (bulk imports post thousands).
+    const bookings = opts.fresh ? [] : await this.loadBookings(trx, ctx, transactionId);
     const entities = new Set([...bookings.map((b) => b.entityId), ...next.map((d) => d.entityId)]);
     const writes: JournalEntryDraft[] = [];
     for (const entityId of entities) {
@@ -221,7 +228,7 @@ export class TransactionPoster {
         : null;
       if (adjustment) writes.push(adjustment);
     }
-    await this.ledger.post(trx, ctx, transactionId, writes);
+    await this.ledger.post(trx, ctx, transactionId, writes, { clearedAccountId: opts.clearedAccountId });
   }
 
   /** Removes or reverses all entries (void, DE-10). Reconciled entries in open periods block the void. */
@@ -266,6 +273,8 @@ export class TransactionPoster {
   }
 
   private async functionalCurrency(trx: Trx, entityId: string): Promise<string> {
+    const cached = this.ledger.cacheOf(trx)?.base?.entities.get(entityId);
+    if (cached) return cached.functionalCurrency;
     const e = await trx
       .selectFrom('app.entity')
       .select('functional_currency')
@@ -275,10 +284,17 @@ export class TransactionPoster {
   }
 
   private async lockedThrough(trx: Trx, ctx: Ctx, entityId: string): Promise<CalendarDate | null> {
+    const cache = this.ledger.cacheOf(trx);
+    if (cache?.locks.has(entityId)) {
+      const hit = cache.locks.get(entityId)!;
+      return hit ? calendarDate(hit) : null;
+    }
     const { rows } = await sql<{
       d: string | null;
     }>`select app.locked_through(${ctx.workspaceId}, ${entityId}) as d`.execute(trx);
-    return rows[0]?.d ? calendarDate(rows[0].d) : null;
+    const value = rows[0]?.d ?? null;
+    cache?.locks.set(entityId, value);
+    return value ? calendarDate(value) : null;
   }
 
   private async deleteEntries(trx: Trx, ctx: Ctx, ids: string[]): Promise<void> {

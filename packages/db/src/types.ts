@@ -286,7 +286,9 @@ export interface AuditLogTable {
 
 export interface ChangeLogTable {
   workspace_id: string;
+  /** Shared by all changes of one transaction (migration 0009); `sub` orders them. */
   seq: bigint;
+  sub: number;
   table_name: string;
   row_id: string;
   op: 'insert' | 'update' | 'delete';

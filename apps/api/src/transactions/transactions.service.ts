@@ -75,6 +75,8 @@ export class TransactionsService {
       dedupeKey?: string | null;
       statementDate?: string | null;
       rawDescription?: string | null;
+      /** Mark this account's postings cleared on insert (imported statement lines). */
+      clearedAccountId?: string;
     },
   ): Promise<string> {
     const id = newId();
@@ -110,7 +112,10 @@ export class TransactionsService {
         created_by: ctx.userId,
       })
       .execute();
-    await this.poster.repost(trx, ctx, id, built.drafts);
+    await this.poster.repost(trx, ctx, id, built.drafts, {
+      fresh: true,
+      clearedAccountId: input.clearedAccountId,
+    });
     if (input.tags?.length) await this.setTags(trx, ctx, id, input.tags);
     return id;
   }

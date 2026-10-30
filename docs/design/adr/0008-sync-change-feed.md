@@ -22,3 +22,10 @@ hot spot only within one workspace (acceptable at household scale).
 
 ## Alternatives considered
 WatermelonDB sync protocol (similar, more coupling), PowerSync/ElectricSQL (extra infra), CRDTs (overkill for ledger data that needs server validation).
+
+## Amendment (2026-10-30, migration 0009)
+Bulk imports write thousands of changes in one transaction, and bumping the counter row for every change
+made Postgres build long version chains (quadratic cost). The counter is now bumped **once per
+transaction**: all changes of the transaction share `seq`, and a `sub` index orders them. The order across
+transactions is unchanged, and `/sync/changes` never ends a page inside a transaction.
+

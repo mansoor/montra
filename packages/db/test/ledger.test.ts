@@ -207,7 +207,7 @@ describe('locks (DE-08..10)', () => {
 });
 
 describe('change feed and audit (ADR-0008, NFR-03)', () => {
-  it('assigns a gapless per-workspace sequence and records audited diffs', async () => {
+  it('assigns a gapless per-transaction sequence and records audited diffs', async () => {
     const { transactionId } = await withContext(db, ctx(), (trx) =>
       postEntry(trx, f, f.personalId, '2026-10-12', [
         { account: f.accounts.checking, amount: 300000n },
@@ -222,7 +222,12 @@ describe('change feed and audit (ADR-0008, NFR-03)', () => {
         .execute(),
     );
     const { seqs, audit } = await withContext(db, ctx(), async (trx) => ({
-      seqs: (await trx.selectFrom('app.change_log').select('seq').orderBy('seq').execute()).map((r) => r.seq),
+      seqs: await trx
+        .selectFrom('app.change_log')
+        .select(['seq', 'sub'])
+        .orderBy('seq')
+        .orderBy('sub')
+        .execute(),
       audit: await trx
         .selectFrom('app.audit_log')
         .selectAll()
@@ -230,7 +235,13 @@ describe('change feed and audit (ADR-0008, NFR-03)', () => {
         .where('action', '=', 'transaction.update')
         .execute(),
     }));
-    seqs.forEach((s, i) => expect(s).toBe(BigInt(i + 1)));
+    // One sequence value per transaction, gapless across transactions; a sub-index orders changes inside one.
+    const distinct = [...new Set(seqs.map((r) => r.seq))];
+    distinct.forEach((v, i) => expect(v).toBe(BigInt(i + 1)));
+    for (const v of distinct) {
+      const subs = seqs.filter((r) => r.seq === v).map((r) => r.sub);
+      subs.forEach((x, i) => expect(x).toBe(i));
+    }
     expect(audit).toHaveLength(1);
     expect(audit[0]!.diff).toEqual({ description: ['', 'October salary'] });
     expect(audit[0]!.actor_user_id).toBe(f.ownerId);
