@@ -16,7 +16,14 @@ import { sql } from 'kysely';
 import { newId } from '@montra/db';
 import { CreateInviteRequest, SetGrantsRequest, UpdateMemberRequest, type MemberDto } from '@montra/schemas';
 import { z } from 'zod';
-import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import {
+  AuthGuard,
+  Ctx,
+  dbCtx,
+  requireRecentAuth,
+  WorkspaceGuard,
+  type RequestContext,
+} from '../auth/auth.js';
 import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { requireRole } from '../common/roles.js';
@@ -43,6 +50,8 @@ export class SharingController {
   async invite(@Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireRole(ctx, 'owner');
     const req = parse(CreateInviteRequest, body);
+    // AUTH-09: inviting an accountant is a sensitive action.
+    if (req.role === 'accountant') requireRecentAuth(ctx);
     const token = randomBytes(32).toString('base64url');
     const id = newId();
     const invite = await this.db.run(dbCtx(ctx), async (trx) => {

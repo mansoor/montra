@@ -14,7 +14,14 @@ import {
 import { asCurrencyCode, validateEntry, type JournalEntryDraft } from '@montra/domain';
 import { AuditedNoteRequest, ManualJournalRequest, PeriodLockRequest } from '@montra/schemas';
 import { z } from 'zod';
-import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import {
+  AuthGuard,
+  Ctx,
+  dbCtx,
+  requireRecentAuth,
+  WorkspaceGuard,
+  type RequestContext,
+} from '../auth/auth.js';
 import { Db } from '../db/database.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { notFound, unprocessable } from '../common/errors.js';
@@ -182,10 +189,11 @@ export class JournalsController {
     return { entityId: id, lockedThrough: req.lockedThrough };
   }
 
-  /** Re-open the books (owner only; recorded with a note). Re-authentication is enforced in Phase 1b. */
+  /** Re-open the books (owner only, recent re-authentication, recorded with a note). */
   @Delete('entities/:entityId/period-lock')
   async unlock(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Body() body: unknown) {
     requireRole(ctx, 'owner');
+    requireRecentAuth(ctx);
     const { note } = parse(AuditedNoteRequest, body);
     const id = parse(z.uuid(), entityId);
     await this.db.run(dbCtx(ctx), async (trx) => {
@@ -235,6 +243,7 @@ export class JournalsController {
   @Post('journal-entries/:entryId/unlock')
   async unlockEntry(@Ctx() ctx: RequestContext, @Param('entryId') entryId: string, @Body() body: unknown) {
     requireRole(ctx, 'owner');
+    requireRecentAuth(ctx);
     const { note } = parse(AuditedNoteRequest, body);
     const id = parse(z.uuid(), entryId);
     await this.db.run({ ...dbCtx(ctx), allowLockedEdit: true }, async (trx) => {

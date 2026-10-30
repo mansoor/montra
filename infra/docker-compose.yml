@@ -27,6 +27,28 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     ports: ['1025:1025', '8025:8025']
+  # Identity (ADR-0006). `docker compose --profile auth up -d` to run it locally.
+  kratos-migrate:
+    image: oryd/kratos:v1.3.1
+    profiles: [auth]
+    environment:
+      DSN: postgres://postgres:postgres@postgres:5432/kratos?sslmode=disable
+    command: migrate sql -e --yes
+    volumes:
+      - ./kratos:/etc/config/kratos:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+  kratos:
+    image: oryd/kratos:v1.3.1
+    profiles: [auth]
+    environment:
+      DSN: postgres://postgres:postgres@postgres:5432/kratos?sslmode=disable
+    command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    ports: ['4433:4433', '4434:4434']
+    volumes:
+      - ./kratos:/etc/config/kratos:ro
+    depends_on:
+      kratos-migrate: { condition: service_completed_successfully }
 volumes:
   pgdata:
   miniodata:

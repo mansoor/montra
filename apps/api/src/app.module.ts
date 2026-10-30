@@ -3,6 +3,8 @@ import { APP_FILTER } from '@nestjs/core';
 import { CONFIG, loadConfig, type AppConfig } from './config.js';
 import { Db } from './db/database.js';
 import { AUTH_PORT, AuthGuard, DevAuthAdapter, WorkspaceGuard } from './auth/auth.js';
+import { KratosAuthAdapter } from './auth/kratos.adapter.js';
+import { SessionsController } from './auth/sessions.controller.js';
 import { ProblemFilter } from './common/problem.filter.js';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
 import { LedgerService } from './ledger/ledger.service.js';
@@ -30,6 +32,7 @@ export class AppModule {
       controllers: [
         HealthController,
         MeController,
+        SessionsController,
         WorkspacesController,
         EntitiesController,
         FamilyMembersController,
@@ -44,8 +47,7 @@ export class AppModule {
       providers: [
         { provide: CONFIG, useValue: config },
         { provide: APP_FILTER, useClass: ProblemFilter },
-        // Phase 1 replaces this with the Ory Kratos adapter when AUTH_MODE=kratos.
-        { provide: AUTH_PORT, useClass: DevAuthAdapter },
+        { provide: AUTH_PORT, useClass: config.AUTH_MODE === 'kratos' ? KratosAuthAdapter : DevAuthAdapter },
         Db,
         AuthGuard,
         WorkspaceGuard,

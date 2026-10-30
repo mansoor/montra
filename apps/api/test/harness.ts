@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createApp } from '../src/bootstrap.js';
+import { loadConfig } from '../src/config.js';
 import { APP_URL } from './env.js';
 
 export interface Harness {
@@ -23,8 +24,10 @@ export interface Client {
   delete<T = any>(url: string, body?: unknown, headers?: Record<string, string>): Promise<Response<T>>;
 }
 
-export async function startHarness(): Promise<Harness> {
-  const app = await createApp({ NODE_ENV: 'test', PORT: 0, DATABASE_URL: APP_URL, AUTH_MODE: 'dev' });
+export async function startHarness(env: Record<string, string> = {}): Promise<Harness> {
+  const app = await createApp(
+    loadConfig({ NODE_ENV: 'test', PORT: '0', DATABASE_URL: APP_URL, AUTH_MODE: 'dev', ...env }),
+  );
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   const call = async (
