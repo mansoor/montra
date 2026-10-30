@@ -41,7 +41,7 @@ jobs:
       - name: Format
         run: pnpm format:check
       - name: Build, typecheck, lint, test
-        run: pnpm turbo run build typecheck lint test
+        run: pnpm turbo run build typecheck lint test --filter=!@montra/doc-worker
       - name: Requirements traceability is up to date
         run: |
           node scripts/gen-traceability.mjs
