@@ -27,29 +27,40 @@ import { RecurringController } from './recurring/recurring.controller.js';
 import { SyncController } from './sync/sync.controller.js';
 import { RealtimeService } from './realtime/realtime.service.js';
 import { mailProvider } from './mail/mail.service.js';
+import { storageProvider } from './storage/storage.js';
+import { JobQueue, Worker } from './jobs/queue.js';
+import { ImportsService } from './imports/imports.service.js';
+import { ImportJobs } from './imports/import-jobs.js';
+import { ImportsController, UploadsController } from './imports/imports.controller.js';
+import { ReconciliationController } from './reconciliation/reconciliation.controller.js';
 
 @Module({})
 export class AppModule {
-  static forRoot(config: AppConfig = loadConfig()): DynamicModule {
+  /** `worker: true` builds the job-runner context (ADR-0002): same services, no HTTP controllers or sockets. */
+  static forRoot(config: AppConfig = loadConfig(), opts: { worker?: boolean } = {}): DynamicModule {
+    const controllers = [
+      HealthController,
+      MeController,
+      SessionsController,
+      KratosHooksController,
+      AccountSecurityController,
+      WorkspacesController,
+      EntitiesController,
+      FamilyMembersController,
+      AccountsController,
+      TransactionsController,
+      JournalsController,
+      SharingController,
+      InviteAcceptController,
+      RecurringController,
+      SyncController,
+      UploadsController,
+      ImportsController,
+      ReconciliationController,
+    ];
     return {
       module: AppModule,
-      controllers: [
-        HealthController,
-        MeController,
-        SessionsController,
-        KratosHooksController,
-        AccountSecurityController,
-        WorkspacesController,
-        EntitiesController,
-        FamilyMembersController,
-        AccountsController,
-        TransactionsController,
-        JournalsController,
-        SharingController,
-        InviteAcceptController,
-        RecurringController,
-        SyncController,
-      ],
+      controllers: opts.worker ? [] : controllers,
       providers: [
         { provide: CONFIG, useValue: config },
         { provide: APP_FILTER, useClass: ProblemFilter },
@@ -67,8 +78,13 @@ export class AppModule {
         // Production binds the AWS KMS adapter here.
         { provide: KMS_PORT, useClass: LocalKms },
         FieldCrypto,
-        RealtimeService,
+        ...(opts.worker ? [] : [RealtimeService]),
         mailProvider(config),
+        storageProvider(config),
+        JobQueue,
+        Worker,
+        ImportsService,
+        ImportJobs,
       ],
     };
   }

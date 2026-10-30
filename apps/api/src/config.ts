@@ -23,6 +23,20 @@ const Env = z.object({
   MAIL_MODE: z.enum(['log', 'memory', 'smtp']).default('log'),
   MAIL_URL: z.string().optional(),
   MAIL_FROM: z.string().default('Montra <no-reply@montra.local>'),
+  /** File storage (design 02 §8): 'local' directory for development/tests, 's3' for MinIO or AWS S3. */
+  STORAGE_MODE: z.enum(['local', 's3']).default('local'),
+  STORAGE_DIR: z.string().default('.data/storage'),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_ACCESS_KEY: z.string().optional(),
+  S3_SECRET_KEY: z.string().optional(),
+  /** Maximum upload size in bytes (IMP-01: statements and receipts). */
+  MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(25 * 1024 * 1024),
   /** Public web origin used in links inside emails. */
   WEB_URL: z.string().url().default('http://localhost:3000'),
   /** Base64 32-byte master key for the local KMS adapter (development); production uses AWS KMS. */
@@ -39,6 +53,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (config.AUTH_MODE === 'kratos' && !config.KRATOS_PUBLIC_URL) {
     throw new Error('KRATOS_PUBLIC_URL is required when AUTH_MODE=kratos');
   }
+  if (config.STORAGE_MODE === 's3' && !config.S3_BUCKET)
+    throw new Error('S3_BUCKET is required when STORAGE_MODE=s3');
   if (config.MAIL_MODE === 'smtp' && !config.MAIL_URL)
     throw new Error('MAIL_URL is required when MAIL_MODE=smtp');
   if (config.NODE_ENV === 'production' && !config.MASTER_KEY) {

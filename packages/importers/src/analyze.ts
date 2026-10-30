@@ -2,7 +2,7 @@
  * Entry point used by the import worker: choose a mapping (saved profile → app template → heuristics),
  * parse, and check balances (design 04 §3 steps 2–6).
  */
-import type { CurrencyCode } from '@montra/domain';
+import type { CalendarDate, CurrencyCode } from '@montra/domain';
 import type { FileType } from './decode.js';
 import { fingerprint } from './fingerprint.js';
 import type { Sheet } from './grid.js';
@@ -26,7 +26,12 @@ export interface AnalyzeOptions {
   /** Account value to keep in multi-account app exports. */
   accountFilter?: string;
   /** Statement balances from the document itself (PDF statements), overriding what the grid shows. */
-  statement?: { opening?: bigint | null; closing?: bigint | null };
+  statement?: {
+    opening?: bigint | null;
+    closing?: bigint | null;
+    periodStart?: CalendarDate | null;
+    periodEnd?: CalendarDate | null;
+  };
 }
 
 export interface Analysis {
@@ -76,7 +81,13 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
         }
       : template
         ? template
-        : inferMapping(sheet, opts);
+        : inferMapping(sheet, {
+            ...opts,
+            period:
+              opts.statement?.periodStart && opts.statement.periodEnd
+                ? { start: opts.statement.periodStart, end: opts.statement.periodEnd }
+                : null,
+          });
   }
   const parsed =
     proposal.confidence > 0

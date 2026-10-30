@@ -244,6 +244,17 @@ export class TransactionPoster {
     return outcome;
   }
 
+  /** How a transaction's entries are protected: decides whether undo can remove them (IMP-09, DE-10). */
+  async protection(trx: Trx, ctx: Ctx, transactionId: string): Promise<'none' | 'reconciled' | 'closed'> {
+    let result: 'none' | 'reconciled' | 'closed' = 'none';
+    for (const b of await this.loadBookings(trx, ctx, transactionId)) {
+      const lockDate = await this.lockedThrough(trx, ctx, b.entityId);
+      if (lockDate !== null && compareDates(b.earliestDate, lockDate) <= 0) result = 'closed';
+      else if (b.locked && result === 'none') result = 'reconciled';
+    }
+    return result;
+  }
+
   async hasEntries(trx: Trx, ctx: Ctx, transactionId: string): Promise<boolean> {
     const row = await trx
       .selectFrom('app.journal_entry')

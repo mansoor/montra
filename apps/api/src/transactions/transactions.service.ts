@@ -33,38 +33,104 @@ export class TransactionsService {
 
   /** Income, expense or split transaction (TXN-01..03, DE-05). Uncategorized items go to the review queue. */
   async create(ctx: Ctx, req: CreateTransactionRequest): Promise<TransactionDto> {
-    const id = newId();
-    await this.db.run(ctx, async (trx) => {
-      const spec = await this.standardSpec(trx, ctx, {
+    const id = await this.db.run(ctx, (trx) =>
+      this.createInTrx(trx, ctx, {
+        date: req.date,
         accountId: req.accountId,
         amount: req.amount,
-        description: req.description ?? req.payee ?? '',
+        payee: req.payee ?? null,
+        description: req.description ?? '',
         categoryId: req.categoryId,
         splits: req.splits,
         memberId: req.memberId,
-      });
-      const built = await this.poster.build(trx, ctx, spec, req.date);
-      await trx
-        .insertInto('app.transaction')
-        .values({
-          workspace_id: ctx.workspaceId,
-          id,
-          primary_entity_id: built.primaryEntityId,
-          txn_date: req.date,
-          payee_raw: req.payee ?? null,
-          description: req.description ?? '',
-          memo_enc: await this.crypto.encrypt(trx, ctx.workspaceId, 'transaction.memo', req.memo),
-          review_state: spec.type === 'standard' && spec.uncategorized ? 'needs_review' : 'reviewed',
-          source: 'manual',
-          spec: JSON.stringify(spec),
-          posted_at: new Date(),
-          created_by: ctx.userId,
-        })
-        .execute();
-      await this.poster.repost(trx, ctx, id, built.drafts);
-      if (req.tags?.length) await this.setTags(trx, ctx, id, req.tags);
-    });
+        memo: req.memo,
+        tags: req.tags,
+        source: 'manual',
+      }),
+    );
     return this.getOrThrow(ctx, id);
+  }
+
+  /**
+   * Creates and posts a standard transaction inside the caller's transaction. Used by manual entry and by
+   * statement imports, which commit a whole batch atomically.
+   */
+  async createInTrx(
+    trx: Trx,
+    ctx: Ctx,
+    input: {
+      date: string;
+      accountId: string;
+      amount: { amount: string; currency: string };
+      payee: string | null;
+      description: string;
+      categoryId?: string;
+      splits?: CreateTransactionRequest['splits'];
+      memberId?: string | null;
+      memo?: string;
+      tags?: string[];
+      source: 'manual' | 'import';
+      reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
+      payeeId?: string | null;
+      dedupeKey?: string | null;
+      statementDate?: string | null;
+      rawDescription?: string | null;
+    },
+  ): Promise<string> {
+    const id = newId();
+    const date = calendarDate(input.date);
+    const spec = await this.standardSpec(trx, ctx, {
+      accountId: input.accountId,
+      amount: input.amount,
+      description: input.description || input.payee || '',
+      categoryId: input.categoryId,
+      splits: input.splits,
+      memberId: input.memberId,
+    });
+    const built = await this.poster.build(trx, ctx, spec, date);
+    const uncategorized = spec.type === 'standard' && spec.uncategorized;
+    await trx
+      .insertInto('app.transaction')
+      .values({
+        workspace_id: ctx.workspaceId,
+        id,
+        primary_entity_id: built.primaryEntityId,
+        txn_date: date,
+        payee_raw: input.payee,
+        payee_id: input.payeeId ?? null,
+        description: input.description,
+        memo_enc: await this.crypto.encrypt(trx, ctx.workspaceId, 'transaction.memo', input.memo),
+        review_state: uncategorized ? 'needs_review' : (input.reviewState ?? 'reviewed'),
+        source: input.source,
+        dedupe_key: input.dedupeKey ?? null,
+        statement_date: input.statementDate ?? null,
+        raw_description: input.rawDescription ?? null,
+        spec: JSON.stringify(spec),
+        posted_at: new Date(),
+        created_by: ctx.userId,
+      })
+      .execute();
+    await this.poster.repost(trx, ctx, id, built.drafts);
+    if (input.tags?.length) await this.setTags(trx, ctx, id, input.tags);
+    return id;
+  }
+
+  /** Confirms a scheduled occurrence inside the caller's transaction (import matching uses this). */
+  async confirmInTrx(trx: Trx, ctx: Ctx, id: string, req: ConfirmOccurrenceRequest): Promise<void> {
+    const row = await this.lockRow(trx, ctx, id);
+    if (row.status !== 'scheduled')
+      throw unprocessable('transaction.not_scheduled', 'Only scheduled transactions can be confirmed');
+    let spec = row.spec as TransactionSpec;
+    if (req.amount) spec = await this.mergeSpec(trx, ctx, spec, { amount: req.amount });
+    const date = req.date ?? calendarDate(row.txn_date);
+    const built = await this.poster.build(trx, ctx, spec, date);
+    await this.poster.repost(trx, ctx, id, built.drafts);
+    await trx
+      .updateTable('app.transaction')
+      .set({ status: 'posted', txn_date: date, spec: JSON.stringify(spec), posted_at: new Date() })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
   }
 
   /** Transfer between accounts: one entry per entity, never income or expense (TXN-04, DE-03). */
@@ -213,22 +279,7 @@ export class TransactionsService {
 
   /** Confirms a scheduled occurrence (TXN-05): posts it, optionally with the actual amount or date. */
   async confirm(ctx: Ctx, id: string, req: ConfirmOccurrenceRequest): Promise<TransactionDto> {
-    await this.db.run(ctx, async (trx) => {
-      const row = await this.lockRow(trx, ctx, id);
-      if (row.status !== 'scheduled')
-        throw unprocessable('transaction.not_scheduled', 'Only scheduled transactions can be confirmed');
-      let spec = row.spec as TransactionSpec;
-      if (req.amount) spec = await this.mergeSpec(trx, ctx, spec, { amount: req.amount });
-      const date = req.date ?? calendarDate(row.txn_date);
-      const built = await this.poster.build(trx, ctx, spec, date);
-      await this.poster.repost(trx, ctx, id, built.drafts);
-      await trx
-        .updateTable('app.transaction')
-        .set({ status: 'posted', txn_date: date, spec: JSON.stringify(spec), posted_at: new Date() })
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', id)
-        .execute();
-    });
+    await this.db.run(ctx, (trx) => this.confirmInTrx(trx, ctx, id, req));
     return this.getOrThrow(ctx, id);
   }
 

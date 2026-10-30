@@ -286,3 +286,25 @@ describe('XLSX and fingerprints (IMP-01, IMP-04)', () => {
     expect(o.parsed.rows.map((r) => r.amount)).toEqual([100n, 200n]);
   });
 });
+
+describe('statement period settles ambiguous dates', () => {
+  it('picks the day/month order whose dates fall inside the PDF statement period', () => {
+    const sheet = {
+      name: 'Page 1',
+      rows: [
+        ['Date', 'Description', 'Amount'],
+        ['03/10/2026', 'A STORE', '-1.00'],
+        ['05/10/2026', 'B CAFE', '-2.00'],
+      ],
+    };
+    const opts = { fileType: 'pdf' as const, currency: 'USD' as const, accountType: 'asset' as const };
+    expect(analyze([sheet], opts).proposal.warnings).toContain('ambiguous_date_format');
+    const a = analyze([sheet], {
+      ...opts,
+      statement: { periodStart: calendarDate('2026-10-01'), periodEnd: calendarDate('2026-10-31') },
+    });
+    expect(a.proposal.mapping.dateFormat).toBe('DD/MM/YYYY');
+    expect(a.proposal.warnings).not.toContain('ambiguous_date_format');
+    expect(a.parsed.rows.map((r) => r.date)).toEqual(['2026-10-03', '2026-10-05']);
+  });
+});

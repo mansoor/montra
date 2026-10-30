@@ -2,7 +2,7 @@
  * Heuristic column inference (design 04 §3.3): header-row detection, per-column value profiles, header
  * keyword hints, debit/credit pair detection, running-balance verification and sign inference.
  */
-import type { CurrencyCode } from '@montra/domain';
+import type { CalendarDate, CurrencyCode } from '@montra/domain';
 import { amountRate, detectDecimalSeparator, parseAmount, type DecimalSeparator } from './amounts.js';
 import { detectDateFormat, parseDate, type DateFormatId } from './dates.js';
 import type { ColumnMapping, MappingProposal } from './mapping.js';
@@ -57,6 +57,8 @@ export interface InferOptions {
   accountType: 'asset' | 'liability';
   /** Day-first default when dates are ambiguous (e.g. en-GB, de-DE). */
   preferDayFirst?: boolean;
+  /** Statement period from the document; decides an ambiguous day/month order when known. */
+  period?: { start: CalendarDate; end: CalendarDate } | null;
 }
 
 const nonEmptyCells = (row: string[]) => row.filter((c) => c.trim()).length;
@@ -146,6 +148,21 @@ export function inferMapping(sheet: Sheet, opts: InferOptions): MappingProposal 
       Number(!/post|valuta|completed/i.test(b.header)) - Number(!/post|valuta|completed/i.test(a.header)) ||
       a.index - b.index,
   )[0]!;
+  if (date.date!.ambiguous && opts.period) {
+    // The statement period settles day/month order: every date must fall inside it.
+    const values = date.values.filter(Boolean);
+    const fits = (f: DateFormatId) =>
+      values.every((v) => {
+        const d = parseDate(v, f);
+        return d !== null && d >= opts.period!.start && d <= opts.period!.end;
+      });
+    const current = date.date!.format;
+    const alternative = SWAPS[current];
+    if (fits(current) && !(alternative && fits(alternative))) date.date = { ...date.date!, ambiguous: false };
+    else if (alternative && fits(alternative) && !fits(current)) {
+      date.date = { ...date.date!, format: alternative, ambiguous: false };
+    }
+  }
   if (date.date!.ambiguous) {
     warnings.push('ambiguous_date_format');
     confidence -= 0.2;
@@ -202,7 +219,7 @@ export function inferMapping(sheet: Sheet, opts: InferOptions): MappingProposal 
   if (!balance) {
     balance = moneyish
       .filter((p) => p !== amount && p !== debit && p !== credit)
-      .find((p) => runningBalanceFit(data, p.index, signedOf, decimal, opts.currency) >= 0.9);
+      .find((p) => (runningBalanceFit(data, p.index, signedOf, decimal, opts.currency) || 0) >= 0.9);
   }
 
   // Direction column (unsigned amounts plus a debit/credit word), e.g. Mint "Transaction Type".
@@ -228,11 +245,13 @@ export function inferMapping(sheet: Sheet, opts: InferOptions): MappingProposal 
     .sort(
       (a, b) => Number(hint(b, 'description')) - Number(hint(a, 'description')) || b.avgLength - a.avgLength,
     );
-  const description = (
-    descriptionCols.length
-      ? descriptionCols
-      : [...texts].sort((a, b) => b.avgLength * b.distinct - a.avgLength * a.distinct)
-  ).slice(0, 2);
+  const ranked = descriptionCols.length
+    ? descriptionCols
+    : [...texts].sort((a, b) => b.avgLength * b.distinct - a.avgLength * a.distinct);
+  // A second column (e.g. Buchungstext next to Verwendungszweck) only when it carries real text, not a type code.
+  const description = ranked
+    .slice(0, 2)
+    .filter((p, i) => i === 0 || (p.avgLength >= 10 && p.distinct >= 0.6));
   if (description.length === 0) {
     warnings.push('no_description_column');
     confidence -= 0.3;
@@ -254,7 +273,8 @@ export function inferMapping(sheet: Sheet, opts: InferOptions): MappingProposal 
       opts.currency,
     );
     sign = inverted > normal ? 'inverted' : 'normal';
-    if (Math.max(normal, inverted) < 0.9) {
+    // With fewer than three rows the check can't tell anything either way (NaN): no penalty.
+    if (!Number.isNaN(normal) && Math.max(normal, inverted) < 0.9) {
       warnings.push('balance_column_does_not_reconcile');
       confidence -= 0.1;
     }
@@ -288,6 +308,15 @@ export function inferMapping(sheet: Sheet, opts: InferOptions): MappingProposal 
   return { mapping, confidence: Math.max(0, Math.min(1, confidence)), source: 'heuristic', warnings, header };
 }
 
+const SWAPS: Partial<Record<DateFormatId, DateFormatId>> = {
+  'MM/DD/YYYY': 'DD/MM/YYYY',
+  'DD/MM/YYYY': 'MM/DD/YYYY',
+  'MM-DD-YYYY': 'DD-MM-YYYY',
+  'DD-MM-YYYY': 'MM-DD-YYYY',
+  'MM/DD/YY': 'DD/MM/YY',
+  'DD/MM/YY': 'MM/DD/YY',
+};
+
 const sheetName = (s: Sheet) => (s.name && s.name !== 'CSV' ? s.name : undefined);
 const negate = (n: bigint | null) => (n === null ? null : -n);
 
@@ -317,7 +346,7 @@ export function runningBalanceFit(
   const pairs = rows
     .map((r) => ({ bal: parseAmount(r[balanceCol] ?? '', currency, decimal), amt: amountOf(r) }))
     .filter((x): x is { bal: bigint; amt: bigint } => x.bal !== null && x.amt !== null);
-  if (pairs.length < 3) return 0;
+  if (pairs.length < 3) return Number.NaN;
   let forward = 0;
   let backward = 0;
   for (let i = 1; i < pairs.length; i++) {
