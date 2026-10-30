@@ -4,6 +4,7 @@ import pg from 'pg';
 import { addDays, todayIn } from '@montra/domain';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
+import { MAIL_PORT, type MemoryMail } from '../src/mail/mail.service.js';
 
 let h: Harness;
 let admin: pg.Client;
@@ -335,6 +336,11 @@ describe('sharing (UP-04, AUTH-10, BIZ-13)', () => {
     });
     expect(invite.status).toBe(201);
     expect(invite.body.email).toBe('partner-share@example.com');
+    const mail = (h.app.get(MAIL_PORT) as MemoryMail).outbox.find(
+      (m) => m.to === 'partner-share@example.com',
+    );
+    expect(mail).toMatchObject({ category: 'sharing', subject: expect.stringContaining('invited you') });
+    expect(mail!.text).toContain(`/invite/${invite.body.token}`);
 
     const stranger = h.as('stranger@example.com');
     const wrong = await stranger.post(`/v1/invites/${invite.body.token}/accept`);

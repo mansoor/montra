@@ -162,15 +162,15 @@
   ],
   "AUTH-08": [
     "partial",
-    "Kratos rate limits; new-device alerts and CAPTCHA pending"
+    "Kratos rate limits; new-device email alerts; CAPTCHA (Turnstile) at the edge in P11"
   ],
   "AUTH-09": [
     "done",
     "10-minute privileged window"
   ],
   "AUTH-10": [
-    "partial",
-    "invites with roles and entity grants, 7-day expiry; email delivery pending"
+    "done",
+    "invites by email with roles and entity grants, 7-day expiry, hashed tokens"
   ],
   "NFR-01": [
     "partial",

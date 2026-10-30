@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { resolveAppUser, type AuthPort, type AuthUser, type SessionInfo } from './auth.js';
 
 /** The subset of Kratos' session object Montra relies on. */
@@ -40,6 +41,7 @@ export class KratosAuthAdapter implements AuthPort {
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(Db) private readonly db: Db,
+    @Inject(MAIL_PORT) private readonly mail: MailPort,
   ) {
     this.baseUrl = config.KRATOS_PUBLIC_URL!.replace(/\/$/, '');
   }
@@ -78,6 +80,7 @@ export class KratosAuthAdapter implements AuthPort {
       authenticatedAt: new Date(session.authenticated_at),
       sessionId: session.id,
     };
+    await this.recordDevice(req, user);
     if (this.config.SESSION_CACHE_SECONDS > 0) {
       this.cache.set(creds.cacheKey, {
         user,
@@ -86,6 +89,54 @@ export class KratosAuthAdapter implements AuthPort {
       });
     }
     return user;
+  }
+
+  /**
+   * Remembers each Kratos session the user signs in with and emails an alert the first time a new one shows
+   * up, unless it is the account's very first session (AUTH-08).
+   */
+  private async recordDevice(req: FastifyRequest, user: AuthUser): Promise<void> {
+    if (!user.sessionId) return;
+    const userAgent = (req.headers['user-agent'] ?? null)?.slice(0, 300) ?? null;
+    const ip = req.ip && /^[0-9a-f.:]+$/i.test(req.ip) ? req.ip : null;
+    const { isNew, hadOthers } = await this.db.run({ userId: user.id }, async (trx) => {
+      const inserted = await trx
+        .insertInto('app.session_device')
+        .values({
+          user_id: user.id,
+          kratos_session_id: user.sessionId!,
+          user_agent: userAgent,
+          ip_address: ip,
+        })
+        .onConflict((oc) =>
+          oc.columns(['user_id', 'kratos_session_id']).doUpdateSet({ last_seen_at: new Date() }),
+        )
+        .returning(['first_seen_at', 'last_seen_at'])
+        .executeTakeFirstOrThrow();
+      const fresh = inserted.first_seen_at.getTime() === inserted.last_seen_at.getTime();
+      const others = fresh
+        ? await trx
+            .selectFrom('app.session_device')
+            .select('kratos_session_id')
+            .where('user_id', '=', user.id)
+            .where('kratos_session_id', '<>', user.sessionId!)
+            .executeTakeFirst()
+        : undefined;
+      return { isNew: fresh, hadOthers: Boolean(others) };
+    });
+    if (isNew && hadOthers) {
+      await this.mail
+        .send(
+          templates.newDevice({
+            to: user.email,
+            userAgent,
+            ip,
+            at: new Date(),
+            url: `${this.config.WEB_URL}/settings/security`,
+          }),
+        )
+        .catch((err: Error) => this.logger.warn(`new-device alert failed: ${err.message}`));
+    }
   }
 
   async listSessions(req: FastifyRequest): Promise<SessionInfo[]> {

@@ -26,7 +26,14 @@ export interface Client {
 
 export async function startHarness(env: Record<string, string> = {}): Promise<Harness> {
   const app = await createApp(
-    loadConfig({ NODE_ENV: 'test', PORT: '0', DATABASE_URL: APP_URL, AUTH_MODE: 'dev', ...env }),
+    loadConfig({
+      NODE_ENV: 'test',
+      PORT: '0',
+      DATABASE_URL: APP_URL,
+      AUTH_MODE: 'dev',
+      MAIL_MODE: 'memory',
+      ...env,
+    }),
   );
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

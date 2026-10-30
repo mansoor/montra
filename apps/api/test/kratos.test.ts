@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startHarness, type Harness } from './harness.js';
+import { MAIL_PORT, type MemoryMail } from '../src/mail/mail.service.js';
 
 /** A minimal stand-in for the Kratos public API (whoami and session management). */
 interface FakeSession {
@@ -221,5 +222,22 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     });
     expect(JSON.parse(hook.body)).toEqual({ evicted: 1 });
     expect((await call('GET', '/v1/me', 'reset')).status).toBe(401);
+  });
+
+  it('emails an alert when a second device signs in (AUTH-08)', async () => {
+    const outbox = (h.app.get(MAIL_PORT) as MemoryMail).outbox;
+    add('first-device', { identityId: 'id-alert', email: 'alert@example.com' });
+    expect((await call('GET', '/v1/me', 'first-device')).status).toBe(200);
+    expect(outbox.filter((m) => m.to === 'alert@example.com')).toHaveLength(0);
+    add('second-device', { identityId: 'id-alert', email: 'alert@example.com' });
+    await h.app.inject({
+      method: 'GET',
+      url: '/v1/me',
+      headers: { authorization: 'Bearer second-device', 'user-agent': 'Safari on iPhone' },
+    });
+    const alerts = outbox.filter((m) => m.to === 'alert@example.com');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({ category: 'security', subject: 'New sign-in to your Montra account' });
+    expect(alerts[0]!.text).toContain('Safari on iPhone');
   });
 });

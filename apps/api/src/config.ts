@@ -17,6 +17,12 @@ const Env = z.object({
   KRATOS_WEBHOOK_SECRET: z.string().min(32).optional(),
   /** How long a validated session is cached; revocation clears it immediately (AUTH-05/07). */
   SESSION_CACHE_SECONDS: z.coerce.number().int().min(0).max(300).default(15),
+  /** Outgoing email: 'log' (development), 'memory' (tests), 'smtp' (Mailpit locally, SES/Postmark in production). */
+  MAIL_MODE: z.enum(['log', 'memory', 'smtp']).default('log'),
+  MAIL_URL: z.string().optional(),
+  MAIL_FROM: z.string().default('Montra <no-reply@montra.local>'),
+  /** Public web origin used in links inside emails. */
+  WEB_URL: z.string().url().default('http://localhost:3000'),
   /** Base64 32-byte master key for the local KMS adapter (development); production uses AWS KMS. */
   MASTER_KEY: z.string().optional(),
 });
@@ -31,6 +37,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (config.AUTH_MODE === 'kratos' && !config.KRATOS_PUBLIC_URL) {
     throw new Error('KRATOS_PUBLIC_URL is required when AUTH_MODE=kratos');
   }
+  if (config.MAIL_MODE === 'smtp' && !config.MAIL_URL)
+    throw new Error('MAIL_URL is required when MAIL_MODE=smtp');
   if (config.NODE_ENV === 'production' && !config.MASTER_KEY) {
     throw new Error('MASTER_KEY (or the AWS KMS adapter) is required in production');
   }

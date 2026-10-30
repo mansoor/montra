@@ -25,6 +25,7 @@ import { RecurringService } from './recurring/recurring.service.js';
 import { RecurringController } from './recurring/recurring.controller.js';
 import { SyncController } from './sync/sync.controller.js';
 import { RealtimeService } from './realtime/realtime.service.js';
+import { mailProvider } from './mail/mail.service.js';
 
 @Module({})
 export class AppModule {
@@ -65,6 +66,7 @@ export class AppModule {
         { provide: KMS_PORT, useClass: LocalKms },
         FieldCrypto,
         RealtimeService,
+        mailProvider(config),
       ],
     };
   }

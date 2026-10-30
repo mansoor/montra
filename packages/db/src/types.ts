@@ -351,6 +351,15 @@ export interface AccountVisibilityTable {
   hidden: Generated<boolean>;
 }
 
+export interface SessionDeviceTable {
+  user_id: string;
+  kratos_session_id: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  first_seen_at: Generated<Date>;
+  last_seen_at: Generated<Date>;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -376,6 +385,7 @@ export interface Database {
   'app.recurring_item': RecurringItemTable;
   'app.workspace_key': WorkspaceKeyTable;
   'app.account_visibility': AccountVisibilityTable;
+  'app.session_device': SessionDeviceTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;

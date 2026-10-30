@@ -25,6 +25,8 @@ import {
   type RequestContext,
 } from '../auth/auth.js';
 import { Db } from '../db/database.js';
+import { CONFIG, type AppConfig } from '../config.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { requireRole } from '../common/roles.js';
 import { parse } from '../common/zod.js';
@@ -35,7 +37,11 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 @Controller('v1/workspaces/:workspaceId/sharing')
 @UseGuards(AuthGuard, WorkspaceGuard)
 export class SharingController {
-  constructor(@Inject(Db) private readonly db: Db) {}
+  constructor(
+    @Inject(Db) private readonly db: Db,
+    @Inject(MAIL_PORT) private readonly mail: MailPort,
+    @Inject(CONFIG) private readonly config: AppConfig,
+  ) {}
 
   @Get('members')
   async members(@Ctx() ctx: RequestContext): Promise<{ data: MemberDto[] }> {
@@ -43,8 +49,8 @@ export class SharingController {
   }
 
   /**
-   * Invites by email with a role and entity grants; the link expires in 7 days. Email delivery arrives with
-   * the notification service; until then the accept token is returned to the owner once.
+   * Invites by email with a role and entity grants; the emailed link expires in 7 days (AUTH-10). Only a hash
+   * of the token is stored.
    */
   @Post('invites')
   async invite(@Ctx() ctx: RequestContext, @Body() body: unknown) {
@@ -77,7 +83,30 @@ export class SharingController {
         .returning(['id', 'email', 'role', 'expires_at'])
         .executeTakeFirstOrThrow();
     });
-    return { id: invite.id, email: invite.email, role: invite.role, expiresAt: invite.expires_at, token };
+    const ws = await this.db.run(dbCtx(ctx), (trx) =>
+      trx
+        .selectFrom('app.workspace')
+        .select('name')
+        .where('id', '=', ctx.workspaceId!)
+        .executeTakeFirstOrThrow(),
+    );
+    await this.mail.send(
+      templates.invite({
+        to: invite.email,
+        inviter: ctx.user.email,
+        workspace: ws.name,
+        role: invite.role,
+        url: `${this.config.WEB_URL}/invite/${token}`,
+      }),
+    );
+    // The token travels by email; outside production it is also returned to ease local testing.
+    return {
+      id: invite.id,
+      email: invite.email,
+      role: invite.role,
+      expiresAt: invite.expires_at,
+      ...(this.config.NODE_ENV === 'production' ? {} : { token }),
+    };
   }
 
   @Get('invites')
