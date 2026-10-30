@@ -153,8 +153,8 @@
     "30-minute code recovery, session revocation + cache eviction; email templates pending"
   ],
   "AUTH-06": [
-    "partial",
-    "recovery codes; 72-hour identity-check process pending"
+    "done",
+    "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11)"
   ],
   "AUTH-07": [
     "done",
@@ -215,5 +215,9 @@
   "PLT-11": [
     "partial",
     "@montra/i18n catalogs + formatters; web adoption in progress"
+  ],
+  "AUTH-11": [
+    "done",
+    "codes to old and new address; identity updated via Kratos admin API"
   ]
 }

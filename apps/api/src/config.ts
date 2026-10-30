@@ -13,6 +13,8 @@ const Env = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /** Ory Kratos admin API (private network only), e.g. http://kratos:4434. Needed for AUTH-06/11. */
+  KRATOS_ADMIN_URL: z.string().url().optional(),
   /** Shared secret Kratos sends in `x-montra-hook-secret` when calling /internal/kratos/hooks. */
   KRATOS_WEBHOOK_SECRET: z.string().min(32).optional(),
   /** How long a validated session is cached; revocation clears it immediately (AUTH-05/07). */

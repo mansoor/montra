@@ -14,6 +14,8 @@ import { AppError, forbidden } from '../common/errors.js';
 
 export interface AuthUser {
   id: string;
+  /** The identity provider's id for this user. */
+  identityId: string;
   email: string;
   /** Authenticator assurance level: aal2 = signed in with a second factor (AUTH-04). */
   aal: 'aal1' | 'aal2';
@@ -39,6 +41,10 @@ export interface AuthPort {
   revokeSession(req: FastifyRequest, sessionId: string): Promise<void>;
   /** Revokes all of the caller's sessions except the current one. */
   revokeOtherSessions(req: FastifyRequest): Promise<number>;
+  /** Sets a new, already-confirmed login email on the identity (AUTH-11). */
+  changeEmail(identityId: string, newEmail: string): Promise<void>;
+  /** Removes TOTP, passkey/WebAuthn and recovery-code credentials and signs out everywhere (AUTH-06). */
+  removeSecondFactors(identityId: string): Promise<void>;
 }
 export const AUTH_PORT = Symbol('AUTH_PORT');
 
@@ -82,7 +88,15 @@ export class DevAuthAdapter implements AuthPort {
     if (!m) return null;
     const email = m[1]!.toLowerCase();
     const id = await resolveAppUser(this.db, `dev|${email}`, email, email, true);
-    return { id, email, aal: 'aal2', emailVerified: true, authenticatedAt: new Date(), sessionId: null };
+    return {
+      id,
+      identityId: `dev|${email}`,
+      email,
+      aal: 'aal2',
+      emailVerified: true,
+      authenticatedAt: new Date(),
+      sessionId: null,
+    };
   }
 
   async listSessions(): Promise<SessionInfo[]> {
@@ -94,6 +108,10 @@ export class DevAuthAdapter implements AuthPort {
   async revokeOtherSessions(): Promise<number> {
     return 0;
   }
+
+  async changeEmail(): Promise<void> {}
+
+  async removeSecondFactors(): Promise<void> {}
 }
 
 export interface RequestContext {

@@ -71,6 +71,7 @@ export class KratosAuthAdapter implements AuthPort {
     const id = await resolveAppUser(this.db, session.identity.id, email, displayName, verified);
     const user: AuthUser = {
       id,
+      identityId: session.identity.id,
       email,
       aal:
         session.authenticator_assurance_level === 'aal2' || session.authenticator_assurance_level === 'aal3'
@@ -177,6 +178,53 @@ export class KratosAuthAdapter implements AuthPort {
     this.evictIdentityOf(creds.cacheKey);
     const body = (await res.json().catch(() => ({}))) as { count?: number };
     return body.count ?? 0;
+  }
+
+  async changeEmail(identityId: string, newEmail: string): Promise<void> {
+    const path = `/admin/identities/${encodeURIComponent(identityId)}`;
+    // Both addresses were confirmed by code, so the new address is stored as verified.
+    await this.admin('PATCH', path, [{ op: 'replace', path: '/traits/email', value: newEmail }]);
+    await this.admin('PATCH', path, [
+      { op: 'replace', path: '/verifiable_addresses/0/value', value: newEmail },
+      { op: 'replace', path: '/verifiable_addresses/0/verified', value: true },
+      { op: 'replace', path: '/verifiable_addresses/0/status', value: 'completed' },
+    ]);
+    this.evictIdentity(identityId);
+  }
+
+  async removeSecondFactors(identityId: string): Promise<void> {
+    const base = `/admin/identities/${encodeURIComponent(identityId)}`;
+    for (const type of ['totp', 'webauthn', 'lookup_secret']) {
+      await this.admin('DELETE', `${base}/credentials/${type}`, undefined, [404]);
+    }
+    await this.admin('DELETE', `${base}/sessions`, undefined, [404]);
+    this.evictIdentity(identityId);
+  }
+
+  private async admin(
+    method: 'PATCH' | 'DELETE',
+    path: string,
+    body?: unknown,
+    okStatuses: number[] = [],
+  ): Promise<void> {
+    const base = this.config.KRATOS_ADMIN_URL?.replace(/\/$/, '');
+    if (!base) throw new AppError(503, 'auth.admin_unavailable', 'Account administration is not configured');
+    let res: Response;
+    try {
+      res = await fetch(`${base}${path}`, {
+        method,
+        headers: { accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (err) {
+      this.logger.warn(`Kratos admin ${method} ${path} failed: ${(err as Error).message}`);
+      throw new AppError(503, 'auth.unavailable', 'Sign-in service is unavailable, try again shortly');
+    }
+    if (!res.ok && !okStatuses.includes(res.status)) {
+      if (res.status === 409) throw new AppError(409, 'email.in_use', 'That email address is already in use');
+      throw new AppError(502, 'auth.admin_failed', `Account update failed (${res.status})`);
+    }
   }
 
   /** Drops every cached session of an identity (Kratos webhook after recovery or credential changes). */

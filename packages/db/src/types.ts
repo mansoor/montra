@@ -360,6 +360,30 @@ export interface SessionDeviceTable {
   last_seen_at: Generated<Date>;
 }
 
+export interface EmailChangeRequestTable {
+  id: Generated<string>;
+  user_id: string;
+  new_email: string;
+  old_code_hash: string;
+  new_code_hash: string;
+  old_confirmed_at: Date | null;
+  new_confirmed_at: Date | null;
+  attempts: Generated<number>;
+  expires_at: Generated<Date>;
+  completed_at: Date | null;
+  cancelled_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface MfaResetRequestTable {
+  id: Generated<string>;
+  user_id: string;
+  requested_at: Generated<Date>;
+  eligible_at: Generated<Date>;
+  status: Generated<'pending' | 'cancelled' | 'completed'>;
+  closed_at: Date | null;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -386,6 +410,8 @@ export interface Database {
   'app.workspace_key': WorkspaceKeyTable;
   'app.account_visibility': AccountVisibilityTable;
   'app.session_device': SessionDeviceTable;
+  'app.email_change_request': EmailChangeRequestTable;
+  'app.mfa_reset_request': MfaResetRequestTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;

@@ -3,7 +3,9 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startHarness, type Harness } from './harness.js';
+import pg from 'pg';
 import { MAIL_PORT, type MemoryMail } from '../src/mail/mail.service.js';
+import { ADMIN_URL } from './env.js';
 
 /** A minimal stand-in for the Kratos public API (whoami and session management). */
 interface FakeSession {
@@ -20,6 +22,7 @@ let kratos: Server;
 let h: Harness;
 const sessions = new Map<string, FakeSession>();
 let whoamiCalls = 0;
+const adminCalls: string[] = [];
 const HOOK_SECRET = 'test-hook-secret-0123456789abcdef0123';
 
 const sessionJson = (s: FakeSession, id = `sess-${s.token}`) => ({
@@ -58,6 +61,30 @@ beforeAll(async () => {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(body === undefined ? '' : JSON.stringify(body));
     };
+    const admin = /^\/admin\/identities\/([^/]+)(\/.*)?$/.exec(req.url ?? '');
+    if (admin) {
+      const identityId = decodeURIComponent(admin[1]!);
+      const rest = admin[2] ?? '';
+      adminCalls.push(`${req.method} ${rest || '/'} ${identityId}`);
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        const owned = [...sessions.values()].filter((o) => o.identityId === identityId);
+        if (req.method === 'PATCH' && !rest) {
+          for (const op of JSON.parse(raw) as { path: string; value: unknown }[]) {
+            if (op.path === '/traits/email') owned.forEach((o) => (o.email = String(op.value)));
+          }
+          return send(200, { id: identityId });
+        }
+        if (req.method === 'DELETE' && rest === '/sessions') {
+          owned.forEach((o) => (o.active = false));
+          return send(204);
+        }
+        if (req.method === 'DELETE' && rest.startsWith('/credentials/')) return send(204);
+        send(404, {});
+      });
+      return;
+    }
     if (!s || !s.active) return send(401, { error: { code: 401 } });
     if (req.method === 'GET' && req.url === '/sessions/whoami') {
       whoamiCalls++;
@@ -91,6 +118,7 @@ beforeAll(async () => {
     KRATOS_PUBLIC_URL: `http://127.0.0.1:${port}`,
     SESSION_CACHE_SECONDS: '60',
     KRATOS_WEBHOOK_SECRET: HOOK_SECRET,
+    KRATOS_ADMIN_URL: `http://127.0.0.1:${port}`,
   });
 });
 
@@ -239,5 +267,81 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatchObject({ category: 'security', subject: 'New sign-in to your Montra account' });
     expect(alerts[0]!.text).toContain('Safari on iPhone');
+  });
+
+  it('changes the email only after both addresses confirm (AUTH-11)', async () => {
+    const outbox = (h.app.get(MAIL_PORT) as MemoryMail).outbox;
+    add('mover', { identityId: 'id-mover', email: 'mover@example.com' });
+    const before = await call('GET', '/v1/me', 'mover');
+    const started = await call('POST', '/v1/me/email-change', 'mover', { newEmail: 'Moved@Example.com' });
+    expect(started.status).toBe(201);
+    const codeFor = (to: string) => /\b(\d{6})\b/.exec(outbox.filter((m) => m.to === to).at(-1)!.text)![1]!;
+    const oldCode = codeFor('mover@example.com');
+    const newCode = codeFor('moved@example.com');
+
+    expect(
+      (
+        await call('POST', '/v1/me/email-change/confirm', 'mover', {
+          code: '000000' === oldCode ? '111111' : '000000',
+        })
+      ).body.code,
+    ).toBe('email_change.wrong_code');
+    expect(
+      (await call('POST', '/v1/me/email-change/confirm', 'mover', { code: oldCode })).body,
+    ).toMatchObject({ completed: false });
+    const done = await call('POST', '/v1/me/email-change/confirm', 'mover', { code: newCode });
+    expect(done.body).toMatchObject({ completed: true, newEmail: 'moved@example.com' });
+    expect(adminCalls).toContain('PATCH / id-mover');
+    const after = await call('GET', '/v1/me', 'mover');
+    expect(after.body).toMatchObject({ id: before.body.id, email: 'moved@example.com' });
+    expect(outbox.at(-1)).toMatchObject({
+      to: 'mover@example.com',
+      subject: 'Your Montra sign-in email was changed',
+    });
+
+    add('stale-mover', { authenticatedAt: new Date(Date.now() - 3_600_000) });
+    expect(
+      (await call('POST', '/v1/me/email-change', 'stale-mover', { newEmail: 'x@example.com' })).body.code,
+    ).toBe('reauth.required');
+  });
+
+  it('removes a lost second factor only after a 72-hour hold (AUTH-06)', async () => {
+    const outbox = (h.app.get(MAIL_PORT) as MemoryMail).outbox;
+    add('lostphone', { identityId: 'id-lost', email: 'lost@example.com', aal: 'aal1' });
+    const req = await call('POST', '/v1/me/mfa-reset', 'lostphone');
+    expect(req.body.status).toBe('pending');
+    expect(new Date(req.body.eligibleAt).getTime() - Date.now()).toBeGreaterThan(71 * 3_600_000);
+    expect(outbox.at(-1)).toMatchObject({ to: 'lost@example.com', category: 'security' });
+    expect((await call('POST', '/v1/me/mfa-reset/complete', 'lostphone')).body.code).toBe(
+      'mfa_reset.waiting',
+    );
+
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    await admin.query(
+      `update app.mfa_reset_request set eligible_at = now() - interval '1 minute' where status = 'pending'`,
+    );
+    await admin.end();
+
+    expect((await call('POST', '/v1/me/mfa-reset/complete', 'lostphone')).body).toEqual({
+      status: 'completed',
+    });
+    expect(adminCalls).toEqual(
+      expect.arrayContaining([
+        'DELETE /credentials/totp id-lost',
+        'DELETE /credentials/webauthn id-lost',
+        'DELETE /credentials/lookup_secret id-lost',
+        'DELETE /sessions id-lost',
+      ]),
+    );
+    // Every session was signed out, and the cache was cleared.
+    expect((await call('GET', '/v1/me', 'lostphone')).status).toBe(401);
+
+    add('cancel-me', { identityId: 'id-cancel', email: 'cancel@example.com' });
+    await call('POST', '/v1/me/mfa-reset', 'cancel-me');
+    expect((await call('POST', '/v1/me/mfa-reset/cancel', 'cancel-me')).body).toEqual({
+      status: 'cancelled',
+    });
+    expect((await call('GET', '/v1/me/mfa-reset', 'cancel-me')).body).toEqual({ status: 'none' });
   });
 });
