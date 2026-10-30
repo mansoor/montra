@@ -16,6 +16,7 @@ design refers to them by ID (e.g. `DE-01`, `IMP-07`).
 | 08 | [Web and mobile clients](08-clients.md) | App structure, navigation, offline, camera, accessibility, i18n |
 | 09 | [Quality and delivery](09-quality-delivery.md) | Test strategy, CI/CD, environments, release mechanics |
 | 10 | [Assumptions and open questions](10-assumptions.md) | Working answers to the open questions in requirements §14.3 |
+| 11 | [Design review record](11-design-review.md) | Findings of the independent review and how each was resolved |
 | — | [Requirements traceability](traceability.md) | Every requirement ID mapped to a phase (generated) |
 | — | [Architecture decision records](adr/) | One file per significant decision |
 

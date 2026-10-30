@@ -115,7 +115,8 @@ downward in this list.
    through the Next.js backend-for-frontend; mobile uses a token held in the Keychain or
    Keystore).
 2. `AuthGuard` validates the session with Kratos and caches the result in Redis for 60 s,
-   then resolves the `user`.
+   then resolves the `user`. Revoking a session (sign-out, remote sign-out, password
+   reset) deletes the cache entry right away, so AUTH-05/07 take effect immediately.
 3. `WorkspaceGuard` reads `:workspaceId` from the route, loads the membership and role,
    and checks entity-level access when the route targets an entity.
 4. `UnitOfWork` opens a database transaction and runs
@@ -157,7 +158,7 @@ Long jobs report progress in a `jobs` table. The client polls `GET /jobs/{id}` o
 | Audit | Append-only `audit_log` rows written in the same transaction: actor, action, entity, before/after diff (sensitive fields redacted). |
 | Observability | OpenTelemetry traces and metrics (HTTP, SQL, queue, AI calls), pino JSON logs with correlation ids, Sentry for errors. Dashboards for import failures by bank format and AI accuracy (NFR-13). |
 | Config and flags | Zod-validated environment config. Feature flags through Unleash (or a DB-backed flags table in dev) for plan gating and staged rollouts. |
-| Reference data | Versioned JSON in `packages/reference-data`, loaded into `ref_*` tables by migration and updatable at runtime from the admin console (OPS-05). |
+| Reference data | Versioned JSON in `packages/reference-data`, loaded into `ref.*` tables by migration and updatable at runtime from the admin console (OPS-05). |
 
 ## 8. Deployment (production)
 
@@ -179,12 +180,12 @@ worker, doc-worker, Postgres, MinIO, Kratos and optional Ollama.
 ## 9. Scalability targets (NFR-07, NFR-12)
 
 - 100k users × 50k transactions at the high end ≈ 5×10⁸ postings worst case; realistic
-  median ≈ 3k transactions per user. Postings are indexed on
-  `(workspace_id, ledger_account_id, entry_date)` and
-  `(workspace_id, entry_date)`. Hash partitioning by `workspace_id` is planned once
+  median ≈ 3k transactions per user. Postings carry a denormalized `entry_date` and
+  `entity_id` and are indexed on `(workspace_id, ledger_account_id, entry_date)` and
+  `(workspace_id, entity_id, entry_date)`. Hash partitioning by `workspace_id` is planned once
   postings pass about 200M rows; the schema already allows it, because every key includes
   `workspace_id`.
-- The dashboard reads from `account_balances_daily` and `category_activity_monthly`
+- The dashboard reads from `account_balance_daily` and `category_activity_monthly`
   summary tables. Workers maintain them incrementally from the change feed, so
   dashboard p95 stays under 2 s at 50k transactions.
 - Import parsing is streaming (Papa Parse step mode; SheetJS for XLSX). 5k rows parse in

@@ -100,7 +100,9 @@ subset (AUTH-12) and owners see the full log.
 - Staff **cannot** read financial tables. The admin API runs under a database role that
   has no grants on the `app.*` financial tables. Support access requires a
   `support_grant` created by the user (72 h default, read-only default, logged, revocable)
-  and a support session that sets `app.workspace_id` (OPS-02).
+  and a support session that sets `app.workspace_id` (OPS-02). Read-only grants are
+  enforced in the database: support sessions connect as `montra_support_ro` (SELECT
+  only) inside `SET TRANSACTION READ ONLY`.
 - Security patching: Renovate + `pnpm audit` + GitHub Dependabot alerts + Trivy image
   scanning. SLA: critical within 72 h, others monthly (OPS-06).
 - Incident response and disaster recovery runbooks in `docs/runbooks/` (OPS-12),

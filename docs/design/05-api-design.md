@@ -35,7 +35,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET /v1/me/security-activity` | Security log | AUTH-12 |
 | `POST /v1/workspaces`, `GET /v1/workspaces` | Create (with an onboarding template: household/freelancer/landlord) and list | UP-03 |
 | `GET/PATCH /` | Workspace settings (base currency, time zone, AI mode, priorities, thresholds) | OPS-13 |
-| `GET/POST /members`, `PATCH/DELETE /members/{userId}`, `POST /invites`, `POST /v1/invites/{token}/accept` | Sharing and roles | UP-04, AUTH-10 |
+| `GET /sharing/members`, `PATCH/DELETE /sharing/members/{userId}`, `POST /sharing/invites`, `POST /v1/invites/{token}/accept` | Sharing and roles (app users) | UP-04, AUTH-10 |
 | `GET/POST /entities`, `PATCH /entities/{id}` | Entities | ACC-01, BIZ-01 |
 
 ### Ledger and accounts
@@ -67,7 +67,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET/POST /rules`, `PATCH/DELETE /rules/{id}`, `POST /rules/{id}/apply-existing` (202) | Rules | UP-02, AI-05 |
 | `GET /rule-suggestions`, `POST /rule-suggestions/{id}/accept` | Rules suggested from corrections | AI-05 |
 | `GET/POST /payees`, `PATCH /payees/{id}`, `POST /payees/{id}/merge` | Payee directory (customers/vendors) | IMP-10, BIZ-04 |
-| `GET/POST /members` (family), `PATCH /family-members/{id}` | Family members | FAM-01..11 |
+| `GET/POST /family-members`, `PATCH /family-members/{id}` | Family members (profiles, not logins) | FAM-01..11 |
 
 ### Files, imports, receipts
 
@@ -137,14 +137,22 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 - **Pull**: `GET /sync/changes?since={seq}&limit=500` returns
   `{ changes: [{ seq, table, id, op, row? }], latestSeq }`. Web uses it only to
   invalidate TanStack Query keys. Mobile applies the rows to its local SQLite store for
-  the tables it keeps offline (accounts, categories, members, payees, recent
+  the tables it keeps offline. The feed applies the same entity grants and payslip
+  restriction as RLS (through `change_log.entity_id/restricted`), so a partner never
+  receives rows of an entity they can't see. Rows are re-read under RLS before they are
+  returned (accounts, categories, members, payees, recent
   transactions with splits, budgets for the current and previous period, rules).
-- **Offline writes** (mobile): an outbox of mutations, each with a client-generated id
-  and `Idempotency-Key`. On replay, `PATCH` requests carry `baseVersion` and
-  `changedFields`. The server applies **field-level last-write-wins**: fields not
-  changed on the server since `baseVersion` are applied; conflicting fields are applied
-  if the client's `changedAt` is newer, and the response lists the
-  `conflicts[]` the client shows in a notice.
+- **Offline writes** (mobile): an outbox of mutations. Creates use the client-generated
+  UUID as the resource id, so a replay days later is still idempotent
+  (`ON CONFLICT (workspace_id, id) DO NOTHING` and return the existing row). On replay,
+  `PATCH` requests carry `baseVersion` and `changedFields`. The server applies
+  **field-level last-write-wins** over *field groups*: `{amount, currency, account,
+  splits}` is one atomic group (so the result always balances), and payee, date, memo,
+  tags and review state are separate groups. Groups not changed on the server since
+  `baseVersion` are applied; conflicting groups are applied if the client's `changedAt`
+  is newer, and the response lists the `conflicts[]` the client shows in a notice. A
+  merged result that fails validation (for example, a period locked since) is rejected
+  with a problem response, and the outbox item is kept as a draft for the user.
 
 ## 4. Schema-first contract
 

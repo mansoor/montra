@@ -32,7 +32,7 @@ template text for summaries (graceful degradation, §8).
 | --- | --- | --- |
 | `builtin` (default) | `AnthropicAdapter` (official `@anthropic-ai/sdk`) using Montra's account, in the workspace's region | Data processing agreement in place. Inputs are not used for training. A second-provider failover route can be configured (OPS-07). |
 | `byok` | `AnthropicAdapter`, `OpenAiAdapter`, `GeminiAdapter`, `AzureOpenAiAdapter` with the **user's key** (KMS-encrypted, never logged) | A disclosure is shown per provider (UP-06). |
-| `local` | `OpenAiCompatibleAdapter` → Ollama / LM Studio / vLLM URL; on-device (mobile) later | The URL is reached from the user's own network: for the hosted service, local mode is available to the self-hosted edition and to clients that call the endpoint directly. See [10](10-assumptions.md). |
+| `local` | `OpenAiCompatibleAdapter` → Ollama / LM Studio / vLLM URL; on-device (mobile) later | The URL is reached from the user's own network. Self-hosted edition: the worker calls it directly. Hosted service: the gateway can't reach the endpoint, so AI work for **async jobs** (import categorization, receipt extraction) is parked as `pending_local` tasks. The next open web or desktop client on the user's network claims them, runs them against the local endpoint and posts the validated results back. Until then, rows go through rules and history, and the rest to the review queue. See [10](10-assumptions.md). |
 | `off` | `NullAdapter` | Every task returns `{ ok:false, reason:'off' }`. |
 
 ## 3. Per-task routing (AIA-02)
@@ -72,9 +72,12 @@ A `Minimizer` runs before every provider call:
   phone numbers and street numbers. Family member and tenant names are replaced with
   stable pseudonyms (`MEMBER_1`, `TENANT_3`) and mapped back on the way in.
 - Never sends credentials, full account numbers or other workspaces' data.
-- Images: receipts are sent as images (necessary). Payslip images are only sent in
-  `builtin`/`byok` with an explicit per-workspace opt-in (PAY-09); otherwise local OCR is
-  used.
+- Images: receipts are sent as images (necessary). Payslip images **and statement
+  PDFs/scans** are only sent to an LLM in `builtin`/`byok` with an explicit
+  per-workspace opt-in (PAY-09, UP-06). The default for statements is: text layer
+  (pdfplumber) or OCR in our own infrastructure (Textract under a DPA, or local
+  Tesseract/PaddleOCR), then the **redacted text table** (account numbers, names and
+  addresses masked) goes to `extract_statement_table`.
 
 ## 5. Caching and cost (AIA-07, AIA-08)
 

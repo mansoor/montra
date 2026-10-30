@@ -42,6 +42,8 @@ credit = −**.
 | Uncategorized import of −42.10 | `uncategorized_expense` +42.10; Account −42.10, plus a review-queue flag |
 | Opening balance 1,000 | Account +1,000; `opening_balance_equity` −1,000 (`kind=opening_balance`) |
 | Security deposit received 1,500 (RNT-10) | Checking +1,500; `security_deposits_held` (liability) −1,500 |
+| Deposit returned 1,200, 300 forfeited for damage (RNT-10) | `security_deposits_held` +1,500; Checking −1,200; Rental income: forfeited deposits (or Repairs reimbursement) −300 |
+| Transfer to savings tracked by a budget category (BUD-04, BUD-08) | Same postings as a transfer; the savings account is linked to a *tracking category*, so budget activity counts the transfer (see §8) |
 
 ### 2.1 Splits across entities (DE-05, ACC-03, UP-08)
 
@@ -59,6 +61,14 @@ consolidated views, `inter_entity_clearing`, `due_to/from`, `owner_contribution`
 `owner_draw` between entities of the same workspace show as transfers, not spending
 (FLOW-06).
 
+**Account types and counterparties**: inter-entity accounts exist **per counterparty
+entity** (`ledger_account.counterparty_entity_id`), so a workspace with two businesses
+has separate balances that eliminate pairwise. Types: `inter_entity_clearing` is
+**equity** ("Transfers to/from ⟨entity⟩", net investment in that entity from the
+personal books); `owner_contribution` and `owner_draw` are **equity** in the business;
+`due_from_entity` is an **asset**; `due_to_entity` is a **liability**. When neither side
+is the personal entity (business A pays for business B), only `due_to_from` is allowed.
+
 ### 2.2 Multi-currency (CUR-03, CUR-07)
 
 - Every posting keeps `amount_minor` in its account's currency and
@@ -72,21 +82,56 @@ consolidated views, `inter_entity_clearing`, `due_to/from`, `owner_contribution`
   EUR, `functional_amount_minor` = EUR × rate, rounded half-even. If the rounded
   functional amounts don't sum to zero, the difference (at most a few minor units) posts
   to `fx_rounding`.
-- A transfer between currencies (CUR-08) stores both amounts. The implied rate is
-  compared with the market rate for that day, and the difference is reported as FX cost.
-- Revaluation for net worth (CUR-06) is computed in reports, not posted: foreign
-  balances × latest rate, with unrealized gain or loss shown separately. An optional
-  `fx_revaluation` entry can be posted at period close.
+- A transfer between currencies (CUR-08) stores both amounts. Each leg's functional
+  amount uses that leg's rate (the receiving leg at the rate actually achieved). The
+  difference between the two functional amounts posts to `fx_gain_loss`, so the entry
+  balances. The UI shows this amount, compared with the market rate for that day, as FX
+  cost.
+- **Carrying value and realized FX** ([ADR-0010](adr/0010-fx-accounting-policy.md)): a
+  foreign-currency account carries its functional value at the historical rates of its
+  postings. When foreign money leaves the account (a spend or a transfer out), the
+  functional amount is the *carrying* value (average rate), and any gap to the
+  transaction's rate is **realized** FX gain or loss. So an account at €0 always has a
+  functional balance of 0.
+- Unrealized revaluation for net worth (CUR-06) is computed in reports, not posted:
+  foreign balances × latest rate − carrying value. An optional `fx_revaluation` entry
+  can be posted at period close.
+- **Functional vs home currency**: entries balance in the *entity's* functional currency
+  (CUR-01 allows a business in CAD). Consolidated and workspace-level reports translate
+  each entity to the workspace home currency: balance-sheet items at the closing rate,
+  income and expense at the transaction-date rate, with the difference shown as a
+  translation adjustment line. For the common case (every entity uses the home
+  currency), functional = home and CUR-07 holds literally.
 
-### 2.3 Edits, locks and reversals (DE-08..10)
+### 2.3 Edits, locks, voids and reversals (DE-08..10, IMP-09, BAK-06)
+
+An entry is **protected** when `journal_entry.locked` is true (set when a
+reconciliation that includes any of its postings is completed, DE-08) or when its
+`entry_date ≤ period_lock.locked_through` for its entity (DE-09).
 
 ```
 edit(txn):
-  if any entry is locked/reconciled or entry_date ≤ period_lock.locked_through:
-     post reversal(entry) dated today (or first open date) + new entry  → audit "reversed"
-  else:
-     replace postings in place (same entry id)                            → audit diff
+  for each entry of txn:
+    if not protected(entry):
+       replace postings in place (same entry id)                          → audit diff
+    elif entry.entry_date is in an open period (protected only by reconciliation):
+       keep the reconciled cash leg; re-post only the non-cash legs on the ORIGINAL date
+       (reverse old category lines + add new ones in one adjustment entry)  → audit "reclassified"
+    else (closed period):
+       reversal(entry) + new entry, both dated the first open date         → audit "reversed"
 ```
+
+- **Void** = mark `transaction.status = void` and remove its postings if no entry is
+  protected. Otherwise post reversals as above. **Delete to trash** = void + `deleted_at`
+  (restore re-posts from the stored snapshot). Import **undo** voids the batch's
+  transactions with the same rules. Protected rows can't be undone silently: the undo
+  result lists them as `kept` with the reason, and the summary reports a *partial undo*.
+- Status-only changes (`cleared`, `reconciliation_id`, memo-free metadata such as tags)
+  are allowed on protected postings. Amount, account, date and dimension changes are not.
+- The database blocks **INSERT** of entries or postings dated inside a locked period,
+  and any change to amounts or accounts on protected rows. The only bypass is the audited
+  unlock path, which sets `app.allow_locked_edit` for one transaction and requires an
+  audit note.
 
 ## 3. Import pipeline (IMP-01..11, UP-01)
 
@@ -123,17 +168,27 @@ dedupe/match ──▶ categorize (pipeline §5) ──▶ PREVIEW ──(user c
    exact alias → workspace payee by `normalized_key` → reference merchant list
    (`ref.merchant`, trigram ≥ 0.6) → AI `normalize_payee` (batched, cached) → new payee.
    The raw text is always kept.
-5. **Dedupe and match** (IMP-07): candidates come from the same ledger account with
-   `|date − d| ≤ 3 days` and equal amount. Score
-   `= 0.5·[amount equal] + 0.3·sim(normalized_desc) + 0.2·(1 − |Δdays|/4)`, plus
-   bonuses for the same external ref or balance.
-   - score ≥ 0.85 against an **imported** txn → `duplicate` (skipped by default)
-   - score ≥ 0.70 against a **manual / camera / scheduled** txn → `match`: the imported
-     row *confirms* the existing transaction (fills the statement date and raw
-     description, marks it cleared) instead of creating a new one
-   - Rows inside the same file are never deduped against each other unless they are
-     byte-identical *and* the file has no running balance (two identical coffees on one
-     day are real). The UI shows ambiguous cases.
+5. **Dedupe and match** (IMP-07). Silently dropping a real transaction is the worst
+   failure, so the rules are conservative:
+   - **Duplicates are only searched where an overlap is possible**: among earlier
+     *imported* transactions on the same account whose import batch covered that date
+     (batch `[min_date, max_date]` range). A row outside every earlier batch's range is
+     never a duplicate.
+   - **Exact duplicate** (auto-skip): same account, same date, same amount, same
+     normalized description, and the same *ordinal* (the n-th identical row of that day
+     in each file). This makes two real identical coffees on one day two rows in both
+     files, and re-importing the same file adds 0 rows.
+   - **Probable duplicate** (flagged, *not* skipped): same amount, |Δdays| ≤ 3,
+     description similarity ≥ 0.6, inside an earlier batch's range. Shown in the preview
+     for one-click "skip" or "keep".
+   - **Match to manual/camera/scheduled entries**: same account (or account unknown for
+     camera captures), same amount (± tip tolerance for receipts), |Δdays| ≤ 3, and
+     description/payee similarity ≥ 0.5 *or* an exact payee link. Candidates are
+     assigned **one-to-one** (Hungarian assignment on score), so one manual entry can't
+     absorb two imported rows. A match *confirms* the existing transaction instead of
+     creating a new one (statement date and raw description recorded, marked cleared).
+     The before-image is stored in `transaction_source` so undo can restore it.
+   - Rows inside the same file are **never** deduped against each other.
    - `dedupe_key = hash(account, date, amount, normalized_desc, ordinal)` is stored to
      make re-imports cheap.
 6. **Balance check** (UP-01, IMP-05, IMP-08): when the file (or PDF statement) has an
@@ -142,9 +197,19 @@ dedupe/match ──▶ categorize (pipeline §5) ──▶ PREVIEW ──(user c
 7. **Commit**: in one database transaction, post every accepted row (through §2), link
    matches, set `import_batch.status = committed` and `undo_until = now + 30 days`. Post
    one change-feed event batch.
-8. **Undo** (IMP-09): void every transaction created by the batch that is not
-   reconciled or locked, and unlink matches. Edited rows are listed for confirmation
-   first.
+8. **Undo** (IMP-09): void every transaction the batch created (rules in §2.3), and
+   restore the before-image of every transaction it *matched* from
+   `transaction_source`. Rows edited since the import are listed for confirmation
+   first. Protected rows are kept and reported, so a partial undo is always explicit.
+
+**Two imported legs of one transfer** (TXN-04): when the checking file shows "AMEX
+PAYMENT −1,200" and the card file later shows "PAYMENT THANK YOU +1,200", step 3 of the
+pipeline pairs them (keyword + amount ⇒ 0.95). The second leg does not create a
+transaction. It attaches to the first through a second `transaction_source` row, and
+the transaction is re-posted as one transfer entry. `transaction_source(transaction_id,
+import_row_id, ledger_account_id, before_image)` holds one row per contributing import
+row, so undoing either batch detaches only its leg (the transaction goes back to an
+uncategorized single-leg entry).
 
 **Loss-proof guarantees**: every parsed row ends in exactly one terminal state (`added`,
 `matched`, `duplicate-skipped`, `user-skipped`, `failed` with reason). The summary
@@ -167,7 +232,7 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
 | --- | --- | --- | --- |
 | 1 Receipt lines | if a receipt is attached: §7 | per line | "From receipt: 3 lines → Groceries, Electronics, Clothing" |
 | 2 User rules | ordered by priority; first match wins per action field | 1.00 | "Matched rule 'Shell → Fuel'" |
-| 3 Transfer / match | opposite-sign, equal-amount pair across the workspace's accounts within ±3 days (payment-type keywords raise the score); expected items (§9) | 0.95 for keyword + amount, 0.85 for amount only | "Looks like the payment to Amex ••1005" |
+| 3 Transfer / match | opposite-sign, equal-amount pair across the workspace's accounts within ±3 days; expected items (§9) | 0.95 when a payment/transfer keyword or the counterparty's last-4 appears **and** the amounts match; amount-only pairs are capped at **0.60** (always reviewed) | "Looks like the payment to Amex ••1005" |
 | 4 Personal history | `payee_history` for the payee with the same amount band (bands: log-scale buckets); choose the majority category if its share ≥ 0.8 and count ≥ 2 | `share × min(1, count/5)` capped at 0.97 | "Similar to 6 past transactions" |
 | 5 AI model | `categorize` task (06) with the user's category list; returns category, entity, property, member and tags | model confidence, calibrated per provider | "AI: 'Blue Bottle' is a coffee shop → Dining out" |
 | 6 Review queue | anything < threshold (default 0.80, per workspace) | — | "Needs review" |
@@ -232,7 +297,12 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
    Best score ≥ 0.8 links automatically; lower scores show candidates. With no match,
    the receipt waits in the **receipt inbox** and is re-tried on every import.
 7. **Apply**: the transaction's splits are replaced by the receipt groups (receipt
-   lines take priority over merchant categorization, pipeline step 1).
+   lines take priority over merchant categorization, pipeline step 1). The splits must
+   sum to the *transaction* amount, not the receipt total. A tip added after the
+   receipt was printed goes to the split of the tipped category (dining) or is allocated
+   proportionally. For an FX receipt, the receipt amounts are converted at the actual
+   implied rate (`charged ÷ receipt total`) and allocated with `allocate(…, 'largest')`.
+   A remaining gap larger than the tolerance sends the receipt to review.
 8. **Flags**: RCP-11 "receipt recommended" for multi-department merchants above $50
    without a receipt; BIZ-12/UP-09 "missing receipt" for deductible expenses above
    $75.
@@ -243,13 +313,19 @@ For a budget period *p* and category *c*:
 
 ```
 activity(c,p)   = Σ functional postings to c in p (expense positive; refunds reduce it)
+                  + for a tracking category: Σ inflows to its linked asset/liability accounts
+                    (savings contributions, loan/mortgage principal), so the Savings and
+                    Debt groups show real activity
 available(c,p)  = carried_in(c,p) + assigned(c,p) − activity(c,p) ± moves(c,p)
 carried_in(c,p) = rollover_mode(c) = carry_surplus → max(available(c,p−1), 0)
+                                   = carry_deficit → min(available(c,p−1), 0)
                                    = carry_both    → available(c,p−1)
                                    = reset         → 0
-income(p)       = Σ actual income postings in p (for zero-based: income received + left_over(p−1))
-left_to_assign(p) = expected_income(p) + carried_unassigned(p−1) − Σ_c assigned(c,p)
+left_to_assign(p) = budgeted_income(p) + carried_unassigned(p−1) − Σ_c assigned(c,p)
                     (< 0 ⇒ "over-assigned", which triggers REC-01)
+budgeted_income(p) = expected **take-home** income: net pay per payslip pattern (PAY-07),
+                    rent roll, business forecast. Once income arrives, the actual net
+                    deposit replaces the expectation for that item.
 ```
 
 - **Light mode** (UP-11, BUD-01): two lines: "pay yourself first" savings target and
@@ -266,6 +342,10 @@ left_to_assign(p) = expected_income(p) + carried_unassigned(p−1) − Σ_c assi
   period_days` (or weighted by historical day-of-month spend for categories with a
   pattern); the category is "on pace to overspend" when `activity / expected_by_today
   ≥ 1.10` and the projected end ≥ 1.10 × assigned (REC-02).
+- **Gross vs net**: household budgets work on take-home (net) pay. Payslip taxes and
+  deductions are real postings (PAY-05) but sit in system categories that are excluded
+  from budget activity by default. Gross-to-net detail shows in member and payslip
+  reports.
 - **Member budgets** (FAM-06): a member budget is a filter (`member_id = m`) over the
   same activity; spending counts against both the member budget and the household
   category.
@@ -278,6 +358,7 @@ similarity and reference numbers.
 
 | Expected kind | Window | Amount rule | On match |
 | --- | --- | --- | --- |
+| `security_deposit` (RNT-10) | due −10 / +30 days | exact | posts to `security_deposits_held` (liability), never to income; matched **before** rent charges, so a deposit equal to one month's rent isn't taken as rent |
 | `rent_charge` (RNT-04) | due −5 / +30 days | exact or partial; several payments allowed | `paid_minor += amount`; status `partial`/`paid`; arrears = open charges past grace (RNT-05) |
 | `invoice` (BIZ-05) | issue date … +90 days | exact or partial | invoice `paid`/`partial` |
 | `bill` (BIZ-06) | due −10 / +10 | exact | `paid` |
@@ -360,7 +441,7 @@ Salary income (gross)                     −5,000.00   (credit)
 Checking (net)                            +3,412.50
 Federal income tax (expense:taxes)          +620.00
 State income tax                            +210.00
-Social Security / Medicare                  +382.50
+Social Security and Medicare (social_security, medicare) +382.50
 401(k) (asset: retirement)                  +300.00
 Health insurance (expense)                   +75.00
                                     Σ = 0

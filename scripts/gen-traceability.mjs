@@ -41,6 +41,10 @@ const overrides = {
 // Some requirements are delivered across phases; note where they start and finish.
 const notes = {
   'NFR-01': 'TLS/at-rest from P0 infra; field encryption P1; verified P11',
+  'IMP-05': 'Digital PDFs P2; scanned PDFs (OCR + AI) P3',
+  'TXN-01': 'Rules/history suggestion P1; AI suggestion P3',
+  'BIZ-12': 'Receipt vault foundation P5; business missing-receipt list P8',
+  'PAY-07': 'Budget expected income from entered salaries P6; payslip patterns P7',
   'NFR-07': 'Budgets tracked from P2 (import) and P6 (dashboard); signed off P11',
   'NFR-10': 'Built into every phase; audited P11',
   'NFR-13': 'Logging/tracing from P0; dashboards P11',

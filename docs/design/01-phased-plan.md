@@ -80,7 +80,10 @@ Scope: ACC-01..06; TXN-01..05, TXN-10; DE-01..07, DE-09, DE-10; FAM-01..04 (fiel
 defaults), FAM-11; CUR-01, CUR-02, CUR-10; TZ-01, TZ-02, TZ-05, TZ-06; AUTH-01..11 (Ory
 Kratos integration: sign-up, verification, MFA, recovery, sessions, invites);
 NFR-02/03 (RBAC + audit); PLT-01 (web shell), PLT-06 (WebSocket change events), PLT-11;
-UP-03 onboarding templates (without AI proposals); UP-04 sharing and roles.
+UP-03 onboarding templates (without AI proposals); UP-04 sharing and roles; UP-08
+one-tap entity tagging and cross-entity splits; NFR-01 field-level encryption for
+`_enc` columns. TXN-01's "AI-suggested category" is served by rules and payee history
+in Phase 1; the AI step joins in Phase 3.
 
 Deliverables: the web app (Next.js) with onboarding, accounts, register (ledger/simple),
 transaction list and editor with splits, quick-add bar, bulk edit, journal view, manual
@@ -94,13 +97,16 @@ invite a partner with restricted entity access. Playwright happy-path suite gree
 
 ## Phase 2 — Import pipeline (4 weeks)
 
-Scope: IMP-01, IMP-03..10, IMP-13 (YNAB/Mint/Monarch/Quicken/Stessa templates); DE-08
+Scope: IMP-01, IMP-03..10 (IMP-05 for **digital** PDFs via pdfplumber; scanned PDFs
+need OCR + AI table extraction and complete in Phase 3), IMP-13
+(YNAB/Mint/Monarch/Quicken/Stessa templates); DE-08
 reconciliation; UP-01 loss-proof import; OPS-05 reference-data loader (import profiles,
 merchant aliases).
 
 Deliverables: `apps/worker` (BullMQ), `packages/importers` (CSV/XLS/XLSX parsing,
 header and column detection, fingerprints and profiles), `apps/doc-worker` (Python,
-pdfplumber for digital PDFs; scanned PDFs through OCR), payee normalization,
+pdfplumber for digital PDFs), heuristic payee normalization (rules + reference
+merchant list; the AI fallback arrives in Phase 3),
 dedupe/match engine, preview UI, summary with balance check, undo within 30 days,
 reconciliation UI, golden-file import corpus (≥ 50 files).
 
@@ -110,7 +116,7 @@ rows and matches manual entries; summary counts always reconcile; 5k-row CSV par
 
 ## Phase 3 — AI gateway and categorization (4 weeks)
 
-Scope: AIA-01..07, AIA-09, AIA-10, AIA-12; AI-01..06, AI-08, AI-09, AI-11; AI-07
+Scope: AIA-01..10, AIA-12; IMP-05 for scanned PDFs (OCR + `extract_statement_table`); AI-01..06, AI-08, AI-09, AI-11; AI-07
 (merchant enrichment, S); TXN-06 natural-language quick add; FAM-05 member prediction;
 UP-02 rules + "apply to existing"; UP-13 provider choice; UP-03 AI category proposals
 from the first import; PLT-10 keyboard shortcuts; OPS-07 provider failover; NFR-14
@@ -140,7 +146,8 @@ flows. From here on, every later phase delivers its mobile screens in the same p
 ## Phase 5 — Receipts and multi-currency (4 weeks)
 
 Scope: TXN-08, TXN-09; IMP-11; RCP-01..08, RCP-10, RCP-11, RCP-12; ACC-04;
-CUR-03..09; TZ-03; BIZ-12 receipt vault and missing-receipt list; UP-09.
+CUR-03..09; TZ-03; UP-09; the receipt vault foundation for BIZ-12 (the business
+missing-receipt list itself ships in Phase 8).
 
 Deliverables: receipt capture (mobile camera with edge/blur/glare, multi-shot) and
 upload (web/mobile); `extract_receipt` task + local OCR path; line-item categorization
@@ -154,8 +161,8 @@ foreign receipt matches its home-currency statement line within ±3%.
 
 ## Phase 6 — Budgeting, money flow and recommendations (5 weeks)
 
-Scope: BUD-01..10; FLOW-01..07; REC-01..08; FAM-06, FAM-07; PAY-07 hook (expected
-income); UP-11 light mode; UP-14 upcoming bills and price-change alerts; TZ-04
+Scope: BUD-01..10; FLOW-01..07; REC-01..08; FAM-06, FAM-07; expected income from
+entered salaries and the rent roll (payslip-driven expectations follow in Phase 7); UP-11 light mode; UP-14 upcoming bills and price-change alerts; TZ-04
 scheduling in user time zone.
 
 Deliverables: budget engine (zero-based, category limits with rollover, 50/30/20),
@@ -171,7 +178,8 @@ consistent with lines; dashboard p95 < 2 s on the 50k seed.
 ## Phase 7 — Family members and payslips (3 weeks)
 
 Scope: FAM-08, FAM-09 (reports and filters), FAM-10 (C, if time permits);
-PAY-01..06, PAY-08, PAY-09; RPT-01 "by member" reports.
+PAY-01..09 (PAY-07 feeds payslip patterns into budget expected income); RPT-01 "by
+member" reports.
 
 Deliverables: employers, payslip capture (PDF/photo → `extract_payslip`), payslip
 journal posting, net-pay-to-deposit matching, per-member reports, payslip privacy
@@ -179,7 +187,7 @@ controls.
 
 ## Phase 8 — Small business (3 weeks)
 
-Scope: BIZ-01..07, BIZ-09..11, BIZ-13; REC-09; AI-10 tax hints; BIZ-03 business/personal
+Scope: BIZ-01..07, BIZ-09..13; REC-09; AI-10 tax hints; BIZ-03 business/personal
 separation flags.
 
 Deliverables: business setup with Schedule C chart, customers/vendors, invoices (PDF +
