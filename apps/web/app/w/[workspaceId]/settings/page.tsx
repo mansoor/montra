@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
+import { getI18n } from '@/lib/i18n-server';
 import { ProfileSettings } from '@/components/settings/profile-settings';
 import { EntitySettings } from '@/components/settings/entity-settings';
 import { FamilySettings } from '@/components/settings/family-settings';
@@ -13,11 +14,11 @@ export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
 
 const TABS = {
-  profile: 'Profile',
-  entities: 'Entities',
-  family: 'Family members',
-  accounts: 'Accounts',
-  sharing: 'Sharing',
+  profile: 'settings.tab.profile',
+  entities: 'settings.tab.entities',
+  family: 'settings.tab.family',
+  accounts: 'settings.tab.accounts',
+  sharing: 'settings.tab.sharing',
 } as const;
 type Tab = keyof typeof TABS;
 
@@ -34,6 +35,7 @@ export default async function SettingsPage({
   const workspace = await load((api) => api.getWorkspace(workspaceId));
   const base = `/w/${workspaceId}/settings`;
   const isOwner = workspace.role === 'owner';
+  const { t } = await getI18n();
 
   let body: ReactNode;
   if (tab === 'profile') {
@@ -75,8 +77,8 @@ export default async function SettingsPage({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Settings</h1>
-      <nav aria-label="Settings sections">
+      <h1 className="text-xl font-semibold">{t('nav.settings')}</h1>
+      <nav aria-label={t('settings.sections')}>
         <ul className="flex flex-wrap gap-1 border-b border-line pb-2">
           {(Object.keys(TABS) as Tab[]).map((k) => (
             <li key={k}>
@@ -85,7 +87,7 @@ export default async function SettingsPage({
                 aria-current={tab === k ? 'page' : undefined}
                 className={`rounded-md px-3 py-1.5 text-sm ${tab === k ? 'bg-brand-600 text-white' : 'hover:bg-brand-50'}`}
               >
-                {TABS[k]}
+                {t(TABS[k])}
               </Link>
             </li>
           ))}

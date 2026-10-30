@@ -2,8 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { evaluateSplits, type SplitLine } from '@/lib/splits';
-import { formatMinor } from '@/lib/money';
 import type { CategoryGroup } from '@/lib/view-models';
+import { useI18n } from './i18n';
 
 let counter = 0;
 const newLine = (accountId = '', amount = ''): SplitLine => ({ key: `line-${++counter}`, accountId, amount });
@@ -30,6 +30,7 @@ export function SplitEditor({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const { t, money, locale } = useI18n();
   const titleId = useId();
   const [lines, setLines] = useState<SplitLine[]>(() => (initial.length ? initial : [newLine(), newLine()]));
 
@@ -43,7 +44,7 @@ export function SplitEditor({
     // Re-seed only when the dialog opens, not on every parent render.
   }, [open]); // intentionally omits initial/total
 
-  const state = evaluateSplits(total, lines, currency);
+  const state = evaluateSplits(total, lines, currency, locale, t);
   const update = (key: string, patch: Partial<SplitLine>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
@@ -63,18 +64,17 @@ export function SplitEditor({
         }}
       >
         <h2 id={titleId} className="text-lg font-semibold">
-          Split transaction
+          {t('split.title')}
         </h2>
         <p className="text-sm text-muted">
-          Total {state.total === null ? '—' : formatMinor(state.total, currency)}. Lines can belong to
-          different books (Personal, Business, Rental).
+          {t('split.intro', { total: state.total === null ? '—' : money(state.total, currency) })}
         </p>
         <ul className="space-y-3">
           {lines.map((l, i) => (
             <li key={l.key} className="grid grid-cols-[1fr_8rem_auto] items-start gap-2">
               <div>
                 <label htmlFor={`${l.key}-cat`} className="sr-only">
-                  Category for line {i + 1}
+                  {t('split.category_for_line', { n: i + 1 })}
                 </label>
                 <select
                   id={`${l.key}-cat`}
@@ -83,7 +83,7 @@ export function SplitEditor({
                   onChange={(e) => update(l.key, { accountId: e.target.value })}
                   aria-invalid={l.amount && !l.accountId ? 'true' : undefined}
                 >
-                  <option value="">Choose category…</option>
+                  <option value="">{t('split.choose_category')}</option>
                   {groups.map((g) => (
                     <optgroup key={g.label} label={g.label}>
                       {g.categories.map((c) => (
@@ -97,7 +97,7 @@ export function SplitEditor({
               </div>
               <div>
                 <label htmlFor={`${l.key}-amt`} className="sr-only">
-                  Amount for line {i + 1}
+                  {t('split.amount_for_line', { n: i + 1 })}
                 </label>
                 <input
                   id={`${l.key}-amt`}
@@ -120,7 +120,7 @@ export function SplitEditor({
               <button
                 type="button"
                 className="btn-secondary"
-                aria-label={`Remove line ${i + 1}`}
+                aria-label={t('split.remove_line', { n: i + 1 })}
                 disabled={lines.length <= 1}
                 onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))}
               >
@@ -130,23 +130,23 @@ export function SplitEditor({
           ))}
         </ul>
         <button type="button" className="btn-secondary" onClick={() => setLines((ls) => [...ls, newLine()])}>
-          Add line
+          {t('split.add_line')}
         </button>
         <p className="text-sm" aria-live="polite" data-testid="split-remaining">
           {state.remaining === null
-            ? 'Enter the transaction amount first.'
+            ? t('split.enter_total')
             : state.remaining === 0n
-              ? 'Fully allocated.'
+              ? t('split.fully_allocated')
               : state.remaining > 0n
-                ? `${formatMinor(state.remaining, currency)} left to allocate`
-                : `${formatMinor(-state.remaining, currency)} over the total`}
+                ? t('transactions.split_remaining', { amount: money(state.remaining, currency) })
+                : t('split.over_total', { amount: money(-state.remaining, currency) })}
         </p>
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-secondary" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button type="submit" className="btn-primary" disabled={!state.balanced}>
-            Save split
+            {t('split.save')}
           </button>
         </div>
       </form>

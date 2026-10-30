@@ -6,6 +6,9 @@ import type { TransactionDto, UpdateTransactionInput } from '@montra/api-client'
 import { minorToInput, parseAmountInput } from './money';
 import { toSplitPayload, type Direction, type SplitLine } from './splits';
 import { bankPosting } from './view-models';
+import { staticT } from './i18n-static';
+
+type T = (key: string, values?: Record<string, string | number>) => string;
 
 export interface EditState {
   date: string;
@@ -28,34 +31,48 @@ export interface EditState {
 
 const abs = (n: bigint) => (n < 0n ? -n : n);
 
+/**
+ * Uses the transaction's stored input (`accountId`, `splits`) so scheduled occurrences, which have no
+ * postings yet, edit the same way as posted ones; falls back to the postings for older rows.
+ */
 export function toEditState(t: TransactionDto, accountIds: ReadonlySet<string>): EditState {
   const bank = bankPosting(t, accountIds);
   const amount = t.amount ? BigInt(t.amount.amount) : 0n;
   const currency = t.amount?.currency ?? bank?.currency ?? 'USD';
-  const categoryPostings = t.entries.flatMap((e) => e.postings).filter((p) => p.isCategory);
   const isTransfer = t.entries[0]?.kind === 'transfer';
-  const scheduled = t.status === 'scheduled';
-  const splits: SplitLine[] = categoryPostings.map((p, i) => ({
-    key: `p${i}`,
-    accountId: p.accountId,
-    amount: minorToInput(abs(BigInt(p.debit ?? '0') - BigInt(p.credit ?? '0')), currency),
-    memo: p.memo ?? undefined,
+  const lines =
+    t.splits ??
+    t.entries
+      .flatMap((e) => e.postings)
+      .filter((p) => p.isCategory)
+      .map((p) => ({
+        accountId: p.accountId,
+        amount: (BigInt(p.credit ?? '0') - BigInt(p.debit ?? '0')).toString(),
+        memberId: p.memberId,
+        memo: p.memo,
+      }));
+  const splits: SplitLine[] = lines.map((l, i) => ({
+    key: `s${i}`,
+    accountId: l.accountId,
+    amount: minorToInput(abs(BigInt(l.amount)), currency),
+    memo: l.memo ?? undefined,
   }));
+  const accountId = t.accountId ?? bank?.accountId ?? '';
   return {
     date: t.date,
-    accountId: bank?.accountId ?? '',
+    accountId,
     direction: amount < 0n ? 'expense' : 'income',
     amount: t.amount ? minorToInput(abs(amount), currency) : '',
     currency,
     payee: t.payee ?? '',
     description: t.description,
-    memberId: categoryPostings[0]?.memberId ?? bank?.memberId ?? '',
+    memberId: lines[0]?.memberId ?? bank?.memberId ?? '',
     memo: t.memo ?? '',
     tags: t.tags.join(', '),
-    mode: categoryPostings.length > 1 ? 'splits' : 'category',
-    categoryId: categoryPostings.length === 1 ? categoryPostings[0]!.accountId : '',
-    splits: categoryPostings.length > 1 ? splits : [],
-    ledgerEditable: !isTransfer && t.amount !== null && (Boolean(bank) || scheduled),
+    mode: lines.length > 1 ? 'splits' : 'category',
+    categoryId: lines.length === 1 ? lines[0]!.accountId : '',
+    splits: lines.length > 1 ? splits : [],
+    ledgerEditable: !isTransfer && t.amount !== null && Boolean(accountId),
   };
 }
 
@@ -82,7 +99,7 @@ export type PatchResult =
   { ok: true; patch: UpdateTransactionInput } | { ok: false; field: string; error: string };
 
 /** Builds a PATCH containing only what changed. Amount changes in split mode always resend the splits. */
-export function buildPatch(initial: EditState, current: EditState): PatchResult {
+export function buildPatch(initial: EditState, current: EditState, t: T = staticT): PatchResult {
   const patch: UpdateTransactionInput = {};
   if (current.date !== initial.date) patch.date = current.date as UpdateTransactionInput['date'];
   if (current.payee.trim() !== initial.payee) patch.payee = current.payee.trim() || null;
@@ -95,9 +112,9 @@ export function buildPatch(initial: EditState, current: EditState): PatchResult 
   if (initial.ledgerEditable) {
     const amountChanged = current.amount !== initial.amount || current.direction !== initial.direction;
     if (amountChanged) {
-      const parsed = parseAmountInput(current.amount, current.currency);
+      const parsed = parseAmountInput(current.amount, current.currency, 'en-US', t);
       if (!parsed.ok) return { ok: false, field: 'amount', error: parsed.error };
-      if (parsed.minor === 0n) return { ok: false, field: 'amount', error: 'Amount must not be zero' };
+      if (parsed.minor === 0n) return { ok: false, field: 'amount', error: t('money.not_zero') };
       const signed = current.direction === 'expense' ? -abs(parsed.minor) : abs(parsed.minor);
       patch.amount = { amount: signed.toString(), currency: current.currency };
     }

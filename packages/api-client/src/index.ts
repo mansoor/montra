@@ -21,6 +21,7 @@ import type {
   CreateWorkspaceRequest,
   EntityGrant,
   FamilyMemberDto,
+  LedgerAccountDto,
   ManualJournalRequest,
   MeDto,
   MemberDto,
@@ -81,6 +82,37 @@ export interface EntityDetailDto {
   businessType: string | null;
   fiscalYearStartMonth: number;
   archived: boolean;
+  /** Books are closed through this date (DE-09); null when open. */
+  lockedThrough: string | null;
+}
+
+/** Row of the journal list (DE-07); `total` is the sum of debits in minor units. */
+export interface JournalListItemDto {
+  id: string;
+  entityId: string;
+  transactionId: string | null;
+  date: string;
+  kind: string;
+  description: string;
+  locked: boolean;
+  total: string;
+}
+
+export interface JournalListOptions {
+  entityId?: string;
+  from?: string;
+  to?: string;
+  kind?: string;
+  limit?: number;
+}
+
+/** Signed-in session on a device (AUTH-07). */
+export interface SessionInfoDto {
+  id: string;
+  current: boolean;
+  authenticatedAt: string;
+  expiresAt: string | null;
+  devices: { userAgent: string | null; ipAddress: string | null; location: string | null }[];
 }
 
 export interface JournalPostingDto {
@@ -146,6 +178,8 @@ export interface TransactionListOptions {
   status?: 'scheduled' | 'pending' | 'posted' | 'void';
   reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
   accountId?: string;
+  /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
+  trash?: boolean;
 }
 
 export interface FieldError {
@@ -261,6 +295,17 @@ export class ApiClient {
     return this.request<MeDto>('PATCH', '/v1/me', input);
   }
 
+  // ----- Sessions and devices (AUTH-07) --------------------------------------------------------------------
+  listSessions() {
+    return this.request<{ data: SessionInfoDto[] }>('GET', '/v1/me/sessions').then((r) => r.data);
+  }
+  revokeSession(sessionId: string) {
+    return this.request<{ revoked: true }>('DELETE', `/v1/me/sessions/${enc(sessionId)}`);
+  }
+  revokeOtherSessions() {
+    return this.request<{ revoked: number }>('DELETE', '/v1/me/sessions');
+  }
+
   // ----- Workspaces and entities ---------------------------------------------------------------------------
   listWorkspaces() {
     return this.request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces').then((r) => r.data);
@@ -360,7 +405,7 @@ export class ApiClient {
   listTransactions(workspaceId: string, opts: TransactionListOptions = {}) {
     return this.request<{ data: TransactionDto[] }>(
       'GET',
-      this.ws(workspaceId, `/transactions${query({ ...opts })}`),
+      this.ws(workspaceId, `/transactions${query({ ...opts, trash: opts.trash ? 'true' : undefined })}`),
     ).then((r) => r.data);
   }
   getTransaction(workspaceId: string, id: string) {
@@ -402,6 +447,19 @@ export class ApiClient {
   }
 
   // ----- Journals (DE-07) ----------------------------------------------------------------------------------
+  listJournalEntries(workspaceId: string, opts: JournalListOptions = {}) {
+    return this.request<{ data: JournalListItemDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/journal-entries${query({ ...opts })}`),
+    ).then((r) => r.data);
+  }
+  /** Full chart of accounts, including system accounts (DE-02). */
+  listLedgerAccounts(workspaceId: string, entityId?: string) {
+    return this.request<{ data: LedgerAccountDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/ledger-accounts${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
   getJournalEntry(workspaceId: string, entryId: string) {
     return this.request<JournalEntryDetailDto>(
       'GET',
@@ -466,6 +524,12 @@ export class ApiClient {
   }
 
   // ----- Sync (PLT-06) -------------------------------------------------------------------------------------
+  /** Current position of the change feed, without the changes themselves. */
+  syncHead(workspaceId: string) {
+    return this.request<ChangesResponse>('GET', this.ws(workspaceId, '/sync/changes?head=true')).then(
+      (r) => r.latestSeq,
+    );
+  }
   syncChanges(workspaceId: string, since: string, limit?: number) {
     return this.request<ChangesResponse>(
       'GET',
@@ -506,6 +570,7 @@ function toApiError(status: number, body: unknown): ApiError {
 }
 
 export type {
+  LedgerAccountDto,
   AccountDto,
   BulkEditResult,
   CategoryDto,

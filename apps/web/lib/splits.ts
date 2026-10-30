@@ -3,6 +3,9 @@
  * (expense = money out, income = money in) applies to the whole transaction.
  */
 import { parseAmountInput } from './money';
+import { staticT } from './i18n-static';
+
+type T = (key: string, values?: Record<string, string | number>) => string;
 
 export type Direction = 'expense' | 'income';
 
@@ -22,20 +25,26 @@ export interface SplitState {
 }
 
 /** Computes allocated/remaining and per-line errors. Balanced = every line valid and remaining = 0. */
-export function evaluateSplits(totalInput: string, lines: SplitLine[], currency: string): SplitState {
-  const totalParsed = parseAmountInput(totalInput, currency);
+export function evaluateSplits(
+  totalInput: string,
+  lines: SplitLine[],
+  currency: string,
+  locale = 'en-US',
+  t: T = staticT,
+): SplitState {
+  const totalParsed = parseAmountInput(totalInput, currency, locale, t);
   const total = totalParsed.ok ? abs(totalParsed.minor) : null;
   const lineErrors: Record<string, string> = {};
   let allocated = 0n;
   for (const line of lines) {
-    if (!line.accountId) lineErrors[line.key] = 'Choose a category';
-    const p = parseAmountInput(line.amount, currency);
+    if (!line.accountId) lineErrors[line.key] = t('bulk.choose_category');
+    const p = parseAmountInput(line.amount, currency, locale, t);
     if (!p.ok) {
       lineErrors[line.key] ??= p.error;
       continue;
     }
     if (p.minor <= 0n) {
-      lineErrors[line.key] ??= 'Amount must be greater than zero';
+      lineErrors[line.key] ??= t('money.positive');
       continue;
     }
     allocated += p.minor;

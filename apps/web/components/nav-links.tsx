@@ -3,10 +3,16 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-export function NavLinks({ links }: { links: { href: string; label: string; exact?: boolean }[] }) {
+export function NavLinks({
+  links,
+  label,
+}: {
+  links: { href: string; label: string; exact?: boolean }[];
+  label: string;
+}) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Main">
+    <nav aria-label={label}>
       <ul className="flex flex-wrap gap-1">
         {links.map((l) => {
           const active = l.exact ? pathname === l.href : pathname.startsWith(l.href);

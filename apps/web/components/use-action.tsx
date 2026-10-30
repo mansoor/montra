@@ -2,23 +2,26 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { friendlyMessage } from '@/lib/errors';
+import { errorAction, friendlyMessage, type ErrorAction } from '@/lib/errors';
+import { useI18n } from './i18n';
 
 export interface ActionMessage {
   tone: 'good' | 'bad';
   text: string;
+  action?: ErrorAction;
 }
 
 /** Runs a mutation, shows a status line, and re-renders server data on success. */
 export function useAction() {
   const router = useRouter();
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<ActionMessage | null>(null);
 
-  async function run<T>(
-    fn: () => Promise<T>,
-    success?: string | ((result: T) => string),
-  ): Promise<T | undefined> {
+  async function run<R>(
+    fn: () => Promise<R>,
+    success?: string | ((result: R) => string),
+  ): Promise<R | undefined> {
     setBusy(true);
     setMessage(null);
     try {
@@ -28,14 +31,14 @@ export function useAction() {
       router.refresh();
       return result;
     } catch (err) {
-      setMessage({ tone: 'bad', text: friendlyMessage(err) });
+      setMessage({ tone: 'bad', text: friendlyMessage(err, t), action: errorAction(err, t) });
       return undefined;
     } finally {
       setBusy(false);
     }
   }
 
-  return { busy, message, setMessage, run };
+  return { busy, message, setMessage, run, t };
 }
 
 export function StatusLine({ message }: { message: ActionMessage | null }) {
@@ -46,6 +49,14 @@ export function StatusLine({ message }: { message: ActionMessage | null }) {
       className={`text-sm ${message.tone === 'good' ? 'text-good' : 'text-bad'}`}
     >
       {message.text}
+      {message.action && (
+        <>
+          {' '}
+          <a href={message.action.href} className="font-medium underline">
+            {message.action.label}
+          </a>
+        </>
+      )}
     </p>
   );
 }

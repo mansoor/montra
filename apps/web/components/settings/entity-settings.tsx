@@ -3,14 +3,8 @@
 import { useState, type FormEvent } from 'react';
 import type { EntityDetailDto, PeriodLockEventDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
-import { currentLock } from '@/lib/settings';
 import { StatusLine, useAction } from '../use-action';
-
-const TYPE_LABEL: Record<string, string> = {
-  personal: 'Personal',
-  business: 'Business',
-  rental: 'Rental portfolio',
-};
+import { useI18n } from '../i18n';
 
 /** Entities (ACC-01, BIZ-01) and period close (DE-09). */
 export function EntitySettings({
@@ -26,7 +20,7 @@ export function EntitySettings({
   isOwner: boolean;
   today: string;
 }) {
-  const { busy, message, run } = useAction();
+  const { busy, message, run, t } = useAction();
   const [type, setType] = useState<'business' | 'rental'>('business');
 
   async function onAdd(e: FormEvent<HTMLFormElement>) {
@@ -35,7 +29,7 @@ export function EntitySettings({
     const name = String(new FormData(form).get('name') ?? '').trim();
     const created = await run(
       () => browserApi.createEntity(workspaceId, { type, name }),
-      (r) => `Added ${r.name}.`,
+      (r) => t('entities.added', { name: r.name }),
     );
     if (created) form.reset();
   }
@@ -53,10 +47,14 @@ export function EntitySettings({
         />
       ))}
       {isOwner && (
-        <form onSubmit={onAdd} className="card flex flex-wrap items-end gap-3" aria-label="Add books">
+        <form
+          onSubmit={onAdd}
+          className="card flex flex-wrap items-end gap-3"
+          aria-label={t('entities.add_books')}
+        >
           <div>
             <label htmlFor="ent-type" className="field-label">
-              Add
+              {t('entities.add')}
             </label>
             <select
               id="ent-type"
@@ -64,18 +62,18 @@ export function EntitySettings({
               value={type}
               onChange={(e) => setType(e.target.value as 'business' | 'rental')}
             >
-              <option value="business">Business</option>
-              <option value="rental">Rental portfolio</option>
+              <option value="business">{t('entity.type.business')}</option>
+              <option value="rental">{t('entity.type.rental')}</option>
             </select>
           </div>
           <div className="min-w-48 flex-1">
             <label htmlFor="ent-name" className="field-label">
-              Name
+              {t('fields.name')}
             </label>
             <input id="ent-name" name="name" className="input" required maxLength={200} />
           </div>
           <button type="submit" className="btn-primary" disabled={busy}>
-            Add books
+            {t('entities.add_books')}
           </button>
           <div className="w-full">
             <StatusLine message={message} />
@@ -99,12 +97,13 @@ function EntityCard({
   isOwner: boolean;
   today: string;
 }) {
-  const { busy, message, run } = useAction();
+  const { busy, message, run, t } = useAction();
+  const { date } = useI18n();
   const [name, setName] = useState(entity.name);
   const [lockDate, setLockDate] = useState(today);
   const [lockNote, setLockNote] = useState('');
   const [reopenNote, setReopenNote] = useState('');
-  const locked = currentLock(history);
+  const locked = entity.lockedThrough;
   const id = entity.id;
 
   return (
@@ -114,11 +113,11 @@ function EntityCard({
           {entity.name}
         </h2>
         <span className="text-sm text-muted">
-          {TYPE_LABEL[entity.type]} · {entity.functionalCurrency}
-          {entity.archived && ' · archived'}
+          {t(`entity.type.${entity.type}`)} · {entity.functionalCurrency}
+          {entity.archived && ` · ${t('common.archived')}`}
         </span>
         <span className="ml-auto text-sm" data-testid={`lock-${id}`}>
-          {locked ? `Books closed through ${locked}` : 'Books open'}
+          {locked ? t('entities.closed_through', { date: date(locked) }) : t('entities.open')}
         </span>
       </div>
 
@@ -126,7 +125,7 @@ function EntityCard({
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-48 flex-1">
             <label htmlFor={`name-${id}`} className="field-label">
-              Name
+              {t('fields.name')}
             </label>
             <input
               id={`name-${id}`}
@@ -140,10 +139,10 @@ function EntityCard({
             className="btn-secondary"
             disabled={busy || name.trim() === entity.name || !name.trim()}
             onClick={() =>
-              run(() => browserApi.updateEntity(workspaceId, id, { name: name.trim() }), 'Renamed.')
+              run(() => browserApi.updateEntity(workspaceId, id, { name: name.trim() }), t('common.renamed'))
             }
           >
-            Rename
+            {t('common.rename')}
           </button>
           {entity.type !== 'personal' && (
             <button
@@ -153,11 +152,11 @@ function EntityCard({
               onClick={() =>
                 run(
                   () => browserApi.updateEntity(workspaceId, id, { archived: !entity.archived }),
-                  entity.archived ? 'Unarchived.' : 'Archived. History is kept.',
+                  entity.archived ? t('common.unarchived') : t('common.archived_kept'),
                 )
               }
             >
-              {entity.archived ? 'Unarchive' : 'Archive'}
+              {entity.archived ? t('common.unarchive') : t('common.archive')}
             </button>
           )}
         </div>
@@ -165,11 +164,11 @@ function EntityCard({
 
       <div className="grid gap-4 md:grid-cols-2">
         <fieldset className="space-y-2 rounded-md border border-line p-3">
-          <legend className="px-1 text-sm font-medium">Close the books</legend>
+          <legend className="px-1 text-sm font-medium">{t('entities.close_title')}</legend>
           <div className="flex flex-wrap items-end gap-2">
             <div>
               <label htmlFor={`lock-date-${id}`} className="field-label">
-                Through
+                {t('entities.through')}
               </label>
               <input
                 id={`lock-date-${id}`}
@@ -181,7 +180,7 @@ function EntityCard({
             </div>
             <div className="min-w-40 flex-1">
               <label htmlFor={`lock-note-${id}`} className="field-label">
-                Note (optional)
+                {t('entities.note_optional')}
               </label>
               <input
                 id={`lock-note-${id}`}
@@ -201,21 +200,21 @@ function EntityCard({
                       lockedThrough: lockDate,
                       note: lockNote || undefined,
                     }),
-                  `Closed through ${lockDate}.`,
+                  t('entities.closed_message', { date: date(lockDate) }),
                 )
               }
             >
-              Close books
+              {t('entities.close')}
             </button>
           </div>
         </fieldset>
         {locked && isOwner && (
           <fieldset className="space-y-2 rounded-md border border-line p-3">
-            <legend className="px-1 text-sm font-medium">Reopen</legend>
+            <legend className="px-1 text-sm font-medium">{t('entities.reopen_title')}</legend>
             <div className="flex flex-wrap items-end gap-2">
               <div className="min-w-40 flex-1">
                 <label htmlFor={`reopen-${id}`} className="field-label">
-                  Reason (required, audited)
+                  {t('entities.reopen_reason')}
                 </label>
                 <input
                   id={`reopen-${id}`}
@@ -229,10 +228,13 @@ function EntityCard({
                 className="btn-secondary"
                 disabled={busy || reopenNote.trim().length < 3}
                 onClick={() =>
-                  run(() => browserApi.unlockPeriod(workspaceId, id, reopenNote.trim()), 'Reopened.')
+                  run(
+                    () => browserApi.unlockPeriod(workspaceId, id, reopenNote.trim()),
+                    t('entities.reopened'),
+                  )
                 }
               >
-                Reopen books
+                {t('entities.reopen')}
               </button>
             </div>
           </fieldset>
@@ -241,12 +243,15 @@ function EntityCard({
 
       {history.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-sm text-muted">Close history ({history.length})</summary>
+          <summary className="cursor-pointer text-sm text-muted">
+            {t('entities.history', { count: history.length })}
+          </summary>
           <ul className="mt-2 space-y-1 text-sm">
             {history.map((h, i) => (
               <li key={i}>
-                <time dateTime={h.at}>{new Date(h.at).toLocaleString()}</time> · {h.action}
-                {h.lockedThrough && ` through ${h.lockedThrough}`}
+                <time dateTime={h.at}>{new Date(h.at).toLocaleString()}</time> ·{' '}
+                {t(`entities.action.${h.action}`)}
+                {h.lockedThrough && ` ${t('entities.through_date', { date: date(h.lockedThrough) })}`}
                 {h.note && ` — ${h.note}`}
               </li>
             ))}

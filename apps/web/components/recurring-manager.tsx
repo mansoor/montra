@@ -10,6 +10,7 @@ import { signedTotal, type Direction } from '@/lib/splits';
 import { groupCategories } from '@/lib/view-models';
 import { Field, FormError } from './field';
 import { Money } from './money';
+import { useI18n } from './i18n';
 
 const CADENCES = [
   ['weekly', 'Weekly'],
@@ -37,6 +38,7 @@ export function RecurringManager({
   today: string;
 }) {
   const router = useRouter();
+  const { date } = useI18n();
   const [direction, setDirection] = useState<Direction>('expense');
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
   const [errors, setErrors] = useState<FormErrors>({ fields: {} });
@@ -68,7 +70,7 @@ export function RecurringManager({
         endDate: get('endDate') || undefined,
         autoCreate: get('autoCreate') === 'posted' ? 'posted' : 'scheduled',
       });
-      setMessage(`Created ${created.name}. Next on ${created.nextDate}.`);
+      setMessage(`Created ${created.name}. Next on ${date(created.nextDate)}.`);
       form.reset();
       router.refresh();
     } catch (err) {
@@ -103,7 +105,7 @@ export function RecurringManager({
                   {r.status !== 'active' && <span className="ml-2 text-xs text-muted">({r.status})</span>}
                 </p>
                 <p className="text-xs text-muted">
-                  {CADENCE_LABEL[r.cadence] ?? r.cadence} · next {r.nextDate} ·{' '}
+                  {CADENCE_LABEL[r.cadence] ?? r.cadence} · next {date(r.nextDate)} ·{' '}
                   {accountName.get(r.accountId) ?? ''} ·{' '}
                   {r.autoCreate === 'posted' ? 'posts automatically' : 'asks to confirm'}
                 </p>

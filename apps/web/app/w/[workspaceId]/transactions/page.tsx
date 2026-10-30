@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { todayIn } from '@montra/domain';
 import type { TransactionListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
+import { getI18n } from '@/lib/i18n-server';
 import { accountMap, toTransactionRow } from '@/lib/view-models';
 import { QuickAdd } from '@/components/quick-add';
 import { TransferForm } from '@/components/transfer-form';
@@ -12,10 +13,10 @@ export const metadata: Metadata = { title: 'Transactions' };
 export const dynamic = 'force-dynamic';
 
 const FILTERS = {
-  all: { label: 'All', query: {} },
-  review: { label: 'Needs review', query: { reviewState: 'needs_review' } },
-  scheduled: { label: 'Scheduled', query: { status: 'scheduled' } },
-  trash: { label: 'Trash', query: { status: 'void' } },
+  all: { label: 'transactions.filter.all', query: {} },
+  review: { label: 'transactions.filter.review', query: { reviewState: 'needs_review' } },
+  scheduled: { label: 'transactions.filter.scheduled', query: { status: 'scheduled' } },
+  trash: { label: 'transactions.filter.trash', query: { trash: true } },
 } satisfies Record<string, { label: string; query: TransactionListOptions }>;
 type FilterKey = keyof typeof FILTERS;
 
@@ -39,6 +40,7 @@ export default async function TransactionsPage({
     ]),
   );
   const open = accounts.filter((a) => !a.archived);
+  const { t } = await getI18n();
   const today = todayIn(workspace.timeZone);
   const names = accountMap(accounts);
   const base = `/w/${workspace.id}`;
@@ -46,9 +48,9 @@ export default async function TransactionsPage({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Transactions</h1>
+        <h1 className="text-xl font-semibold">{t('nav.transactions')}</h1>
         <Link href={`${base}/journal/new`} className="text-sm font-medium text-brand-600 underline">
-          New journal entry
+          {t('journal.new')}
         </Link>
       </div>
       <QuickAdd workspace={workspace} accounts={open} categories={categories} today={today} />
@@ -56,9 +58,9 @@ export default async function TransactionsPage({
       <section aria-labelledby="list-heading" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="list-heading" className="text-lg font-semibold">
-            {FILTERS[filter].label}
+            {t(FILTERS[filter].label)}
           </h2>
-          <nav aria-label="Filter transactions">
+          <nav aria-label={t('transactions.filter.label')}>
             <ul className="flex flex-wrap gap-1">
               {(Object.keys(FILTERS) as FilterKey[]).map((k) => (
                 <li key={k}>
@@ -67,7 +69,7 @@ export default async function TransactionsPage({
                     aria-current={filter === k ? 'page' : undefined}
                     className={`rounded-md px-2 py-1 text-sm ${filter === k ? 'bg-brand-600 text-white' : 'border border-line bg-surface hover:bg-brand-50'}`}
                   >
-                    {FILTERS[k].label}
+                    {t(FILTERS[k].label)}
                   </Link>
                 </li>
               ))}

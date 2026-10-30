@@ -1,11 +1,5 @@
 /** Pure helpers for the settings pages. */
-import type { EntityGrantInput, PeriodLockEventDto, WorkspaceDto } from '@montra/api-client';
-
-/** Current close date: the latest event (history is newest first), unless it was an unlock. */
-export function currentLock(history: PeriodLockEventDto[]): string | null {
-  const last = history[0];
-  return last && last.action !== 'unlock' ? last.lockedThrough : null;
-}
+import type { EntityGrantInput, WorkspaceDto } from '@montra/api-client';
 
 /** Shareable accept link; email delivery isn't wired yet (AUTH-10). */
 export function inviteLink(origin: string, token: string): string {
