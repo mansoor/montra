@@ -11,18 +11,6 @@ export function middleware(req: NextRequest) {
     headers.set('x-montra-path', req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.next({ request: { headers } });
   }
-  if (req.nextUrl.pathname.startsWith('/api/')) {
-    return NextResponse.json(
-      {
-        type: 'about:blank',
-        title: 'Unauthorized',
-        status: 401,
-        code: 'unauthenticated',
-        detail: 'Sign in required',
-      },
-      { status: 401, headers: { 'content-type': 'application/problem+json' } },
-    );
-  }
   const url = req.nextUrl.clone();
   url.pathname = '/sign-in';
   url.search = req.nextUrl.pathname === '/' ? '' : `?next=${encodeURIComponent(req.nextUrl.pathname)}`;
@@ -30,6 +18,7 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Sign-in, sign-up and the Kratos self-service pages work without a session.
-  matcher: ['/((?!sign-in|sign-up|auth/|_next/static|_next/image|favicon.ico).*)'],
+  // Sign-in, sign-up and the Kratos self-service pages work without a session. The /api proxy checks the
+  // session itself: middleware buffers request bodies (10 MB cap), which would truncate statement uploads.
+  matcher: ['/((?!api/|sign-in|sign-up|auth/|_next/static|_next/image|favicon.ico).*)'],
 };

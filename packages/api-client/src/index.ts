@@ -5,6 +5,17 @@
 import type { z } from 'zod';
 import type {
   AccountDto,
+  ColumnMappingDto,
+  CreateImportRequest,
+  ImportBatchDto,
+  ImportRowDto,
+  JobDto,
+  ReconciliationDto,
+  StartReconciliationRequest,
+  UndoResultDto,
+  UpdateImportRowRequest,
+  UpdateMappingRequest,
+  UploadDto,
   BalanceAdjustmentRequest,
   BulkEditRequest,
   BulkEditResult,
@@ -61,6 +72,19 @@ export type UpdateMemberInput = z.input<typeof UpdateMemberRequest>;
 export type EntityGrantInput = z.input<typeof EntityGrant>;
 export type CreateRecurringInput = z.input<typeof CreateRecurringRequest>;
 export type UpdateRecurringInput = z.input<typeof UpdateRecurringRequest>;
+
+export type CreateImportInput = z.input<typeof CreateImportRequest>;
+export type UpdateMappingInput = z.input<typeof UpdateMappingRequest>;
+export type UpdateImportRowInput = z.input<typeof UpdateImportRowRequest>;
+export type StartReconciliationInput = z.input<typeof StartReconciliationRequest>;
+export type ColumnMapping = ColumnMappingDto;
+export type ImportRowStatus = ImportRowDto['status'];
+
+export interface ImportRowsOptions {
+  status?: ImportRowStatus;
+  cursor?: string | number;
+  limit?: number;
+}
 
 export type RegisterView = 'ledger' | 'simple';
 
@@ -264,14 +288,16 @@ export class ApiClient {
       ...(await this.extraHeaders?.()),
       ...headers,
     };
-    if (body !== undefined) h['content-type'] = 'application/json';
+    const multipart = typeof FormData !== 'undefined' && body instanceof FormData;
+    // FormData sets its own multipart content type (with the boundary).
+    if (body !== undefined && !multipart) h['content-type'] = 'application/json';
     if (method === 'POST' && !h['idempotency-key']) h['idempotency-key'] = this.newKey();
     let res: Response;
     try {
       res = await this.fetchImpl(this.baseUrl + path, {
         method,
         headers: h,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : multipart ? (body as FormData) : JSON.stringify(body),
         cache: 'no-store',
       });
     } catch (err) {
@@ -523,6 +549,79 @@ export class ApiClient {
     );
   }
 
+  // ----- Statement import (IMP-01..09) --------------------------------------------------------------------
+  /** Uploads one statement file as multipart/form-data (field `file`); the API detects the type. */
+  uploadFile(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<UploadDto>('POST', this.ws(workspaceId, '/uploads'), form);
+  }
+  /** Starts parsing an uploaded file into an import batch (202, status `parsing`). */
+  createImport(workspaceId: string, input: CreateImportInput) {
+    return this.request<ImportBatchDto>('POST', this.ws(workspaceId, '/imports'), input);
+  }
+  listImports(workspaceId: string, accountId?: string) {
+    return this.request<{ data: ImportBatchDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/imports${query({ accountId })}`),
+    ).then((r) => r.data);
+  }
+  getImport(workspaceId: string, id: string) {
+    return this.request<ImportBatchDto>('GET', this.ws(workspaceId, `/imports/${enc(id)}`));
+  }
+  listImportRows(workspaceId: string, id: string, opts: ImportRowsOptions = {}) {
+    return this.request<{ data: ImportRowDto[]; nextCursor: string | null }>(
+      'GET',
+      this.ws(workspaceId, `/imports/${enc(id)}/rows${query({ ...opts })}`),
+    );
+  }
+  /** Confirms or corrects the column mapping and re-parses (202). */
+  setImportMapping(workspaceId: string, id: string, input: UpdateMappingInput) {
+    return this.request<ImportBatchDto>('PUT', this.ws(workspaceId, `/imports/${enc(id)}/mapping`), input);
+  }
+  updateImportRow(workspaceId: string, id: string, rowId: string, input: UpdateImportRowInput) {
+    return this.request<ImportRowDto>(
+      'PATCH',
+      this.ws(workspaceId, `/imports/${enc(id)}/rows/${enc(rowId)}`),
+      input,
+    );
+  }
+  commitImport(workspaceId: string, id: string) {
+    return this.request<ImportBatchDto>('POST', this.ws(workspaceId, `/imports/${enc(id)}/commit`));
+  }
+  /** Undoes a committed import within 30 days (202); the job result is an UndoResultDto. */
+  undoImport(workspaceId: string, id: string) {
+    return this.request<ImportBatchDto>('POST', this.ws(workspaceId, `/imports/${enc(id)}/undo`));
+  }
+  getJob(workspaceId: string, jobId: string) {
+    return this.request<JobDto>('GET', this.ws(workspaceId, `/jobs/${enc(jobId)}`));
+  }
+
+  // ----- Reconciliation (DE-08) ----------------------------------------------------------------------------
+  startReconciliation(workspaceId: string, accountId: string, input: StartReconciliationInput) {
+    return this.request<ReconciliationDto>(
+      'POST',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/reconciliations`),
+      input,
+    );
+  }
+  getReconciliation(workspaceId: string, id: string) {
+    return this.request<ReconciliationDto>('GET', this.ws(workspaceId, `/reconciliations/${enc(id)}`));
+  }
+  setCleared(workspaceId: string, id: string, input: { clear?: string[]; unclear?: string[] }) {
+    return this.request<ReconciliationDto>(
+      'POST',
+      this.ws(workspaceId, `/reconciliations/${enc(id)}/cleared`),
+      input,
+    );
+  }
+  completeReconciliation(workspaceId: string, id: string) {
+    return this.request<ReconciliationDto>(
+      'POST',
+      this.ws(workspaceId, `/reconciliations/${enc(id)}/complete`),
+    );
+  }
+
   // ----- Sync (PLT-06) -------------------------------------------------------------------------------------
   /** Current position of the change feed, without the changes themselves. */
   syncHead(workspaceId: string) {
@@ -570,6 +669,12 @@ function toApiError(status: number, body: unknown): ApiError {
 }
 
 export type {
+  ImportBatchDto,
+  ImportRowDto,
+  JobDto,
+  ReconciliationDto,
+  UndoResultDto,
+  UploadDto,
   LedgerAccountDto,
   AccountDto,
   BulkEditResult,

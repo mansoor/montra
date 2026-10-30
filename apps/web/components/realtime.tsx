@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { browserApi } from '@/lib/browser-api';
 import {
+  announceChanges,
   isFatalSocketError,
   maxSeq,
   needsRefresh,
@@ -75,6 +76,7 @@ export function Realtime({ workspaceId, wsUrl }: { workspaceId: string; wsUrl: s
           for (let page = 0; page < 20; page++) {
             const res = await browserApi.syncChanges(workspaceId, since, 1000);
             changed ||= needsRefresh(res.changes);
+            if (res.changes.length) announceChanges(res.changes);
             since = maxSeq(since, res.latestSeq);
             if (!res.hasMore) break;
           }

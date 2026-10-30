@@ -19,6 +19,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     return NextResponse.json({ status: 404, code: 'not_found', title: 'Not found' }, { status: 404 });
   }
   const session = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!session) return problem(401, 'Unauthorized', 'unauthenticated', 'Sign in required');
   const headers: Record<string, string> = { ...authHeaders(session) };
   for (const h of FORWARDED_REQUEST_HEADERS) {
     const v = req.headers.get(h);
@@ -30,21 +31,14 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     upstream = await fetch(target, {
       method: req.method,
       headers,
-      body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.text(),
+      // Streamed through unchanged (multipart uploads are binary; nothing here parses bodies).
+      body: req.method === 'GET' || req.method === 'HEAD' ? undefined : req.body,
       cache: 'no-store',
       redirect: 'manual',
-    });
+      duplex: 'half',
+    } as RequestInit);
   } catch {
-    return NextResponse.json(
-      {
-        type: 'about:blank',
-        title: 'Bad gateway',
-        status: 502,
-        code: 'api_unreachable',
-        detail: 'The API is unreachable',
-      },
-      { status: 502, headers: { 'content-type': 'application/problem+json' } },
-    );
+    return problem(502, 'Bad gateway', 'api_unreachable', 'The API is unreachable');
   }
   const out = new Headers();
   for (const h of FORWARDED_RESPONSE_HEADERS) {
@@ -55,6 +49,13 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     status: upstream.status,
     headers: out,
   });
+}
+
+function problem(status: number, title: string, code: string, detail: string) {
+  return NextResponse.json(
+    { type: 'about:blank', title, status, code, detail },
+    { status, headers: { 'content-type': 'application/problem+json' } },
+  );
 }
 
 export { proxy as GET, proxy as POST, proxy as PATCH, proxy as PUT, proxy as DELETE };
