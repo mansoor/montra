@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.2.0-dev.1 — Phase 1: core ledger and manual capture (in progress)
+
+### API
+
+- Transactions keep their input spec. Edits re-run the posting builder and follow the
+  DE-10 lock rules:
+  - unprotected entries are rewritten in place;
+  - reconciled entries in an open period get a reclassification adjustment on the original date;
+  - entries in a closed period are reversed into the first open period.
+- Void to trash and restore; bulk edit, including the one-tap entity move; `If-Match`/ETag
+  concurrency.
+- Recurring templates with scheduled occurrences, confirmation and auto-posting (TXN-05).
+- Manual journals, period lock and unlock with history, audited entry unlock, audit log view.
+- Entities, family members with default members per account, profile settings, and account
+  update, archive and hide, plus audited balance adjustments.
+- Sharing: invites with roles and per-entity grants, accepted through a reviewed definer
+  function; member role changes and grants.
+- Field-level AES-256-GCM encryption of memos with KMS-wrapped per-workspace keys (NFR-01).
+- Ory Kratos adapter:
+  - session token or cookie;
+  - verified email required for writes;
+  - AAL2 for owners and accountants;
+  - 10-minute re-auth window for sensitive actions;
+  - device list and remote sign-out;
+  - webhook eviction after recovery.
+
+  Kratos config and a docker compose `auth` profile are included.
+
+- Real-time push over WebSocket using Postgres LISTEN/NOTIFY, plus the `/sync/changes` pull
+  feed (PLT-06).
+- `@montra/i18n`: message catalogs with plurals and time-zone-safe date formatting
+  (TZ-06, PLT-11).
+
+### Web
+
+- Next.js app shell (dev sign-in BFF):
+  - onboarding, home, accounts and the register;
+  - transactions with quick add, the split editor and transfers.
+- Typed `@montra/api-client`.
+
 ## v0.1.0-dev.1 — Phase 0: foundations (unreleased, on feature branch)
 
 ### Design
