@@ -1,0 +1,36 @@
+{
+  "name": "@montra/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PostgreSQL schema (SQL-first migrations), Kysely types, migration runner and chart-of-accounts templates.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@montra/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "migrate": "tsx --conditions=@montra/source src/cli.ts migrate",
+    "db:reset": "tsx --conditions=@montra/source src/cli.ts reset"
+  },
+  "dependencies": {
+    "@montra/domain": "workspace:*",
+    "kysely": "^0.28.18",
+    "pg": "^8.23.1",
+    "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.6",
+    "tsx": "^4.23.15"
+  }
+}

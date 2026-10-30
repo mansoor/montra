@@ -1,0 +1,202 @@
+#!/usr/bin/env node
+// Generates docs/design/traceability.md from the requirements document.
+// Every requirement ID must resolve to a phase; the script fails if one does not.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const reqPath = join(root, 'docs/requirements/R1-requirements.md');
+const outPath = join(root, 'docs/design/traceability.md');
+const status = JSON.parse(readFileSync(join(root, 'docs/design/status.json'), 'utf8'));
+
+// Default phase by ID prefix; overrides below win.
+const byPrefix = {
+  ACC: 1,
+  TXN: 1,
+  IMP: 2,
+  AI: 3,
+  RCP: 5,
+  DE: 1,
+  FAM: 1,
+  PAY: 7,
+  BUD: 6,
+  FLOW: 6,
+  REC: 6,
+  BIZ: 8,
+  RNT: 9,
+  RPT: 10,
+  NOT: 10,
+  AIA: 3,
+  PLT: 4,
+  NFR: 11,
+  AUTH: 1,
+  BAK: 10,
+  CUR: 5,
+  TZ: 1,
+  OPS: 11,
+  UP: null,
+};
+const later = 'Later';
+const overrides = {
+  'ACC-04': 5,
+  'TXN-06': 3,
+  'TXN-07': later,
+  'TXN-08': 5,
+  'TXN-09': 5,
+  'IMP-02': 4,
+  'IMP-11': 5,
+  'IMP-12': later,
+  'IMP-14': later,
+  'AI-10': 8,
+  'RCP-09': 10,
+  'DE-08': 2,
+  'FAM-05': 3,
+  'FAM-06': 6,
+  'FAM-07': 6,
+  'FAM-08': 7,
+  'FAM-09': 7,
+  'FAM-10': 7,
+  'REC-09': 8,
+  'BIZ-08': later,
+  'BIZ-14': later,
+  'BIZ-15': later,
+  'RNT-15': later,
+  'RNT-16': later,
+  'AIA-11': later,
+  'PLT-01': 1,
+  'PLT-06': 1,
+  'PLT-08': 11,
+  'PLT-09': later,
+  'PLT-10': 3,
+  'PLT-11': 1,
+  'NFR-02': 1,
+  'NFR-03': 1,
+  'NFR-05': 10,
+  'NFR-06': 10,
+  'NFR-09': 0,
+  'NFR-12': 0,
+  'NFR-14': 3,
+  'AUTH-12': 10,
+  'AUTH-13': later,
+  'BAK-01': 11,
+  'BAK-02': 11,
+  'BAK-03': 11,
+  'BAK-07': 11,
+  'BAK-10': 4,
+  'CUR-01': 1,
+  'CUR-02': 1,
+  'CUR-10': 1,
+  'TZ-03': 5,
+  'TZ-04': 6,
+  'OPS-05': 2,
+  'OPS-07': 3,
+  'OPS-10': 10,
+  'OPS-13': 10,
+  'UP-01': 2,
+  'UP-02': 3,
+  'UP-03': 1,
+  'UP-04': 1,
+  'UP-05': 10,
+  'UP-06': 3,
+  'UP-07': 4,
+  'UP-08': 1,
+  'UP-09': 5,
+  'UP-10': 9,
+  'UP-11': 6,
+  'UP-12': 11,
+  'UP-13': 3,
+  'UP-14': 6,
+};
+// Some requirements are delivered across phases; note where they start and finish.
+const notes = {
+  'NFR-01': 'TLS/at-rest from P0 infra; field encryption P1; verified P11',
+  'IMP-05': 'Digital PDFs P2; scanned PDFs (OCR + AI) P3',
+  'TXN-01': 'Rules/history suggestion P1; AI suggestion P3',
+  'BIZ-12': 'Receipt vault foundation P5; business missing-receipt list P8',
+  'PAY-07': 'Budget expected income from entered salaries P6; payslip patterns P7',
+  'NFR-07': 'Budgets tracked from P2 (import) and P6 (dashboard); signed off P11',
+  'NFR-10': 'Built into every phase; audited P11',
+  'NFR-13': 'Logging/tracing from P0; dashboards P11',
+  'PLT-03': 'Each phase from P4 onward ships its mobile screens',
+  'UP-03': 'Templates P1; AI category proposals P3',
+  'IMP-03': 'Heuristics P2; AI-assisted mapping P3',
+  'RPT-01': 'P&L P8, Schedule E P9, by-member P7; full catalogue P10',
+  'OPS-06': 'Renovate/scanning from P0',
+  'TZ-02': 'Schema in P0',
+  'UP-12': 'Entitlements P1; billing P11',
+};
+
+const phaseName = {
+  0: 'P0 Foundations',
+  1: 'P1 Core ledger',
+  2: 'P2 Import',
+  3: 'P3 AI',
+  4: 'P4 Mobile',
+  5: 'P5 Receipts & FX',
+  6: 'P6 Budget & flow',
+  7: 'P7 Members & payslips',
+  8: 'P8 Business',
+  9: 'P9 Rental',
+  10: 'P10 Reports & data',
+  11: 'P11 Hardening',
+  [later]: 'Later (R2+)',
+};
+
+const rows = [];
+for (const line of readFileSync(reqPath, 'utf8').split('\n')) {
+  const m = line.match(/^\|\s*([A-Z]+)-(\d{2})\s*\|(.*)\|\s*$/);
+  if (!m) continue;
+  const [, prefix, num, rest] = m;
+  const id = `${prefix}-${num}`;
+  const cells = rest.split('|').map((c) => c.trim());
+  const last = cells.at(-1) ?? '';
+  const pm = last.match(/^(M|S|C)\b/);
+  const priority = pm ? pm[1] : prefix === 'UP' ? '—' : 'M';
+  const textCells = pm ? cells.slice(0, -1) : cells;
+  // NFR rows: | ID | Area | Requirement |; REC rows: | ID | Trigger | Recommendation | P |
+  let text = prefix === 'NFR' ? `${textCells[0]}: ${textCells[1]}` : textCells.at(-1);
+  text = text.replace(/\*\*/g, '').replace(/\|/g, '/');
+  if (text.length > 110) text = text.slice(0, 107).trimEnd() + '…';
+  const phase = id in overrides ? overrides[id] : byPrefix[prefix];
+  if (phase === undefined || phase === null) throw new Error(`No phase for ${id}`);
+  const [state, statusNote] = status[id] ?? ['', ''];
+  rows.push({ id, priority, text, phase, note: [notes[id], statusNote].filter(Boolean).join('; '), state });
+}
+
+const order = (p) => (p === later ? 99 : p);
+const counts = {};
+for (const r of rows) {
+  const k = phaseName[r.phase];
+  counts[k] ??= { M: 0, S: 0, C: 0, '—': 0 };
+  counts[k][r.priority]++;
+}
+const mLater = rows.filter((r) => r.phase === later && r.priority === 'M');
+if (mLater.length) throw new Error(`M requirements scheduled Later: ${mLater.map((r) => r.id)}`);
+const unknown = Object.keys(status).filter((k) => !k.startsWith('_') && !rows.some((r) => r.id === k));
+if (unknown.length) throw new Error(`status.json lists unknown IDs: ${unknown}`);
+
+let out = `# Requirements Traceability (R1)\n\n`;
+out += `_Generated by \`node scripts/gen-traceability.mjs\` from \`docs/requirements/R1-requirements.md\`. Do not edit by hand._\n\n`;
+out += `${rows.length} requirement IDs. Every **M** item is scheduled in a phase of R1 (the generator fails otherwise).\n\n`;
+out += `## Summary by phase\n\n| Phase | M | S | C | Forum (UP) |\n| --- | --- | --- | --- | --- |\n`;
+for (const k of Object.values(phaseName)) {
+  const c = counts[k];
+  if (c) out += `| ${k} | ${c.M} | ${c.S} | ${c.C} | ${c['—']} |\n`;
+}
+const icon = { done: '✅ done', partial: '🟡 partial', '': '' };
+const doneCount = rows.filter((r) => r.state === 'done').length;
+const partialCount = rows.filter((r) => r.state === 'partial').length;
+out += `\n**Implementation status:** ${doneCount} done, ${partialCount} partial, ${rows.length - doneCount - partialCount} not started (from \`docs/design/status.json\`).\n`;
+out += `\n## All requirements\n\n| ID | Pri | Requirement | Phase | Status | Notes |\n| --- | --- | --- | --- | --- | --- |\n`;
+for (const r of rows)
+  out += `| ${r.id} | ${r.priority} | ${r.text} | ${phaseName[r.phase]} | ${icon[r.state]} | ${r.note} |\n`;
+out += `\n## By phase\n\n`;
+for (const p of [...new Set(rows.map((r) => r.phase))].sort((a, b) => order(a) - order(b))) {
+  out += `- **${phaseName[p]}**: ${rows
+    .filter((r) => r.phase === p)
+    .map((r) => r.id)
+    .join(', ')}\n`;
+}
+writeFileSync(outPath, out);
+console.log(`Wrote ${rows.length} requirements to ${outPath}`);

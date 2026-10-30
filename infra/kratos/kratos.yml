@@ -1,0 +1,134 @@
+# Ory Kratos configuration for Montra (ADR-0006). Local/dev values; production overrides URLs, secrets,
+# SMTP and OIDC client credentials through environment variables (e.g. SECRETS_COOKIE, COURIER_SMTP_CONNECTION_URI).
+version: v1.3.0
+
+dsn: memory # overridden by DSN env (Postgres database `kratos`, separate from the ledger)
+
+serve:
+  public:
+    base_url: http://localhost:4433/
+    cors:
+      enabled: true
+      allowed_origins: [http://localhost:3000]
+      allow_credentials: true
+  admin:
+    base_url: http://kratos:4434/
+
+selfservice:
+  default_browser_return_url: http://localhost:3000/
+  allowed_return_urls: [http://localhost:3000]
+
+  methods:
+    password:
+      enabled: true
+      config:
+        # AUTH-02: NIST SP 800-63B — length over complexity, breached-password check, no forced resets.
+        min_password_length: 12
+        haveibeenpwned_enabled: true
+        max_breaches: 0
+        identifier_similarity_check_enabled: true
+    passkey:
+      enabled: true
+      config:
+        rp: { display_name: Montra, id: localhost, origins: [http://localhost:3000] }
+    webauthn:
+      enabled: true
+      config:
+        passwordless: false
+        rp: { display_name: Montra, id: localhost, origins: [http://localhost:3000] }
+    totp:
+      enabled: true
+      config: { issuer: Montra }
+    lookup_secret:
+      enabled: true # AUTH-04/06: single-use recovery codes
+    code:
+      enabled: true # email codes for verification and recovery
+    oidc:
+      enabled: true
+      config:
+        providers: [] # Sign in with Apple / Google configured per environment (AUTH-01)
+
+  flows:
+    error: { ui_url: http://localhost:3000/auth/error }
+    settings:
+      ui_url: http://localhost:3000/settings/security
+      privileged_session_max_age: 10m # AUTH-09
+      required_aal: highest_available
+    recovery:
+      enabled: true
+      ui_url: http://localhost:3000/auth/recovery
+      use: code
+      lifespan: 30m # AUTH-05
+      notify_unknown_recipients: false # same response whether or not the email exists
+      after:
+        hooks:
+          - hook: revoke_active_sessions # AUTH-05: sign out everywhere after a reset
+          - hook: web_hook # tell the API to drop cached sessions immediately
+            config:
+              url: http://api:4000/internal/kratos/hooks
+              method: POST
+              body: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncmVjb3ZlcnknLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+              auth:
+                type: api_key
+                config:
+                  { name: x-montra-hook-secret, value: CHANGE-ME-hook-secret-at-least-32-chars, in: header }
+    verification:
+      enabled: true # AUTH-03
+      ui_url: http://localhost:3000/auth/verification
+      use: code
+      lifespan: 24h
+      after:
+        default_browser_return_url: http://localhost:3000/welcome
+    login:
+      ui_url: http://localhost:3000/sign-in
+      lifespan: 10m
+    registration:
+      ui_url: http://localhost:3000/sign-up
+      lifespan: 10m
+      after:
+        password:
+          hooks:
+            - hook: session
+            - hook: show_verification_ui
+
+session:
+  lifespan: 720h
+  earliest_possible_extend: 24h
+  cookie:
+    name: ory_kratos_session
+    same_site: Lax
+    persistent: true
+  whoami:
+    required_aal: aal1 # the API applies AAL2 per role (owners, accountants), see WorkspaceGuard
+
+hashers:
+  algorithm: argon2 # AUTH-02: Argon2id
+  argon2:
+    memory: 128MB
+    iterations: 3
+    parallelism: 2
+    salt_length: 16
+    key_length: 32
+
+identity:
+  default_schema_id: montra
+  schemas:
+    - id: montra
+      url: file:///etc/config/kratos/identity.schema.json
+
+courier:
+  smtp:
+    connection_uri: smtp://mailpit:1025/?disable_starttls=true
+    from_address: no-reply@montra.local
+    from_name: Montra
+
+secrets:
+  cookie: [CHANGE-ME-local-cookie-secret-32chars-min]
+  cipher: [CHANGE-ME-32-character-cipher-key]
+
+ciphers:
+  algorithm: xchacha20-poly1305
+
+log:
+  level: info
+  leak_sensitive_values: false

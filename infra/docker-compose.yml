@@ -1,0 +1,54 @@
+# Local development dependencies: `docker compose -f infra/docker-compose.yml up -d`
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports: ['5432:5432']
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db:/bootstrap:ro
+      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-montra.sh:ro
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres']
+      interval: 5s
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: montra
+      MINIO_ROOT_PASSWORD: montra-dev-secret
+    ports: ['9000:9000', '9001:9001']
+    volumes:
+      - miniodata:/data
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ['1025:1025', '8025:8025']
+  # Identity (ADR-0006). `docker compose --profile auth up -d` to run it locally.
+  kratos-migrate:
+    image: oryd/kratos:v1.3.1
+    profiles: [auth]
+    environment:
+      DSN: postgres://postgres:postgres@postgres:5432/kratos?sslmode=disable
+    command: migrate sql -e --yes
+    volumes:
+      - ./kratos:/etc/config/kratos:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+  kratos:
+    image: oryd/kratos:v1.3.1
+    profiles: [auth]
+    environment:
+      DSN: postgres://postgres:postgres@postgres:5432/kratos?sslmode=disable
+    command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    ports: ['4433:4433', '4434:4434']
+    volumes:
+      - ./kratos:/etc/config/kratos:ro
+    depends_on:
+      kratos-migrate: { condition: service_completed_successfully }
+volumes:
+  pgdata:
+  miniodata:

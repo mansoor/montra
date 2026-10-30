@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+docs/
+dist/
+coverage/
+.claude/
+.next/
+next-env.d.ts
+playwright-report/
+test-results/

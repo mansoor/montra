@@ -1,0 +1,36 @@
+{
+  "name": "@montra/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "dev": "tsx watch --conditions=@montra/source src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@montra/db": "workspace:*",
+    "@montra/domain": "workspace:*",
+    "@montra/schemas": "workspace:*",
+    "@nestjs/common": "^11.2.8",
+    "@nestjs/core": "^11.2.8",
+    "@nestjs/platform-fastify": "^11.2.8",
+    "fastify": "^5.12.7",
+    "kysely": "^0.28.18",
+    "nodemailer": "^8.0.11",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.15.6",
+    "@types/ws": "^8.18.2",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.15"
+  }
+}

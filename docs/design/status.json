@@ -1,0 +1,223 @@
+{
+  "_comment": "Implementation status per requirement ID (done | partial). Missing = not started. Read by scripts/gen-traceability.mjs.",
+  "NFR-09": [
+    "done",
+    "bigint minor units end to end; lint bans Math.round"
+  ],
+  "NFR-12": [
+    "partial",
+    "multi-tenant RLS and partition-ready keys; load test in P11"
+  ],
+  "ACC-01": [
+    "done",
+    ""
+  ],
+  "ACC-02": [
+    "done",
+    ""
+  ],
+  "ACC-03": [
+    "done",
+    "default entity per account; splits across entities"
+  ],
+  "ACC-05": [
+    "done",
+    "opening balance + audited balance adjustments"
+  ],
+  "ACC-06": [
+    "done",
+    "archive keeps history; per-user hide"
+  ],
+  "TXN-01": [
+    "partial",
+    "web quick-add; AI suggestion arrives in P3"
+  ],
+  "TXN-02": [
+    "done",
+    "property/unit fields wired in P9"
+  ],
+  "TXN-03": [
+    "done",
+    ""
+  ],
+  "TXN-04": [
+    "done",
+    ""
+  ],
+  "TXN-05": [
+    "done",
+    "templates, scheduled occurrences, confirm, auto-post"
+  ],
+  "TXN-10": [
+    "done",
+    ""
+  ],
+  "DE-01": [
+    "done",
+    "deferred DB trigger + domain validation"
+  ],
+  "DE-02": [
+    "done",
+    ""
+  ],
+  "DE-03": [
+    "done",
+    ""
+  ],
+  "DE-04": [
+    "done",
+    "split to principal/interest/escrow; amortization schedules in P9"
+  ],
+  "DE-05": [
+    "done",
+    "equity or due-to/due-from per counterparty entity"
+  ],
+  "DE-06": [
+    "done",
+    ""
+  ],
+  "DE-07": [
+    "done",
+    ""
+  ],
+  "DE-09": [
+    "done",
+    "period lock with history"
+  ],
+  "DE-10": [
+    "done",
+    "in-place / reclassification / reversal rules"
+  ],
+  "FAM-01": [
+    "done",
+    ""
+  ],
+  "FAM-02": [
+    "done",
+    ""
+  ],
+  "FAM-03": [
+    "done",
+    ""
+  ],
+  "FAM-04": [
+    "done",
+    ""
+  ],
+  "FAM-11": [
+    "done",
+    ""
+  ],
+  "CUR-01": [
+    "done",
+    "entity functional currency"
+  ],
+  "CUR-02": [
+    "done",
+    ""
+  ],
+  "CUR-10": [
+    "done",
+    "user locale + date format settings; accounting negatives in ledger views"
+  ],
+  "TZ-01": [
+    "done",
+    ""
+  ],
+  "TZ-02": [
+    "done",
+    ""
+  ],
+  "TZ-05": [
+    "done",
+    ""
+  ],
+  "AUTH-01": [
+    "partial",
+    "Kratos password/passkey/OIDC + web sign-in/sign-up flows; not yet run against a live Kratos"
+  ],
+  "AUTH-02": [
+    "done",
+    "Kratos: 12+ chars, HIBP, Argon2id"
+  ],
+  "AUTH-03": [
+    "done",
+    ""
+  ],
+  "AUTH-04": [
+    "done",
+    "AAL2 for owners/accountants; TOTP, passkeys, recovery codes"
+  ],
+  "AUTH-05": [
+    "partial",
+    "30-minute code recovery, session revocation + cache eviction; email templates pending"
+  ],
+  "AUTH-06": [
+    "done",
+    "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11)"
+  ],
+  "AUTH-07": [
+    "done",
+    "device list, remote sign-out"
+  ],
+  "AUTH-08": [
+    "partial",
+    "Kratos rate limits; new-device email alerts; CAPTCHA (Turnstile) at the edge in P11"
+  ],
+  "AUTH-09": [
+    "done",
+    "10-minute privileged window"
+  ],
+  "AUTH-10": [
+    "done",
+    "invites by email with roles and entity grants, 7-day expiry, hashed tokens"
+  ],
+  "NFR-01": [
+    "partial",
+    "field encryption (AES-256-GCM, KMS port); AWS KMS adapter and TLS in P11"
+  ],
+  "NFR-02": [
+    "partial",
+    "TOTP, passkeys, lookup codes, device list and remote sign-out; live Kratos validation pending"
+  ],
+  "NFR-03": [
+    "done",
+    "RLS per entity, roles, trigger-based audit log"
+  ],
+  "PLT-01": [
+    "partial",
+    "responsive web app for all Phase 1 flows; WCAG audit in P11"
+  ],
+  "PLT-06": [
+    "done",
+    "LISTEN/NOTIFY + WebSocket push, change feed"
+  ],
+  "UP-03": [
+    "partial",
+    "onboarding templates; AI category proposals in P3"
+  ],
+  "UP-04": [
+    "done",
+    ""
+  ],
+  "UP-08": [
+    "done",
+    ""
+  ],
+  "OPS-06": [
+    "partial",
+    "Renovate configured"
+  ],
+  "TZ-06": [
+    "done",
+    "366 catalog keys; key-coverage test"
+  ],
+  "PLT-11": [
+    "done",
+    "locale-aware money/dates, user date format, translatable strings"
+  ],
+  "AUTH-11": [
+    "done",
+    "codes to old and new address; identity updated via Kratos admin API"
+  ]
+}
