@@ -192,6 +192,8 @@ export interface TransactionTable {
   /** The user-level input the entries were built from (TransactionSpec in the API). */
   spec: Json<Record<string, unknown>> | null;
   posted_at: Date | null;
+  statement_date: CalendarDateCol | null;
+  raw_description: string | null;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;
@@ -284,7 +286,9 @@ export interface AuditLogTable {
 
 export interface ChangeLogTable {
   workspace_id: string;
+  /** Shared by all changes of one transaction (migration 0009); `sub` orders them. */
   seq: bigint;
+  sub: number;
   table_name: string;
   row_id: string;
   op: 'insert' | 'update' | 'delete';
@@ -384,6 +388,184 @@ export interface MfaResetRequestTable {
   closed_at: Date | null;
 }
 
+export interface FileTable {
+  workspace_id: string;
+  id: string;
+  kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other';
+  storage_key: string;
+  file_name: string;
+  mime: string;
+  bytes: Int8;
+  sha256: string;
+  uploaded_by: string | null;
+  created_at: Generated<Date>;
+  deleted_at: Date | null;
+}
+
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface JobTable {
+  id: Generated<string>;
+  workspace_id: string | null;
+  queue: 'import' | 'doc' | 'schedule' | 'ai' | 'report' | 'notify';
+  type: string;
+  payload: Json<Record<string, unknown>>;
+  status: Generated<JobStatus>;
+  priority: Generated<number>;
+  run_after: Generated<Date>;
+  attempts: Generated<number>;
+  max_attempts: Generated<number>;
+  locked_by: string | null;
+  locked_at: Date | null;
+  progress: number | null;
+  result: Json<Record<string, unknown>> | null;
+  error: string | null;
+  then_job: Json<{ queue: string; type: string; payload: Record<string, unknown> }> | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+  finished_at: Date | null;
+}
+
+export interface ImportProfileTable {
+  workspace_id: string;
+  id: string;
+  name: string;
+  institution: string | null;
+  fingerprint: string;
+  mapping: Json<Record<string, unknown>>;
+  ledger_account_id: string | null;
+  use_count: Generated<number>;
+  last_used_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type ImportBatchStatus =
+  'uploaded' | 'parsing' | 'needs_mapping' | 'preview' | 'committing' | 'committed' | 'failed' | 'undone';
+
+export interface ImportBatchTable {
+  workspace_id: string;
+  id: string;
+  entity_id: string;
+  ledger_account_id: string;
+  file_id: string;
+  file_name: string;
+  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf';
+  profile_id: string | null;
+  fingerprint: string | null;
+  mapping: Json<Record<string, unknown>> | null;
+  mapping_source: 'profile' | 'reference' | 'heuristic' | 'user' | null;
+  mapping_confidence: string | null;
+  status: Generated<ImportBatchStatus>;
+  currency: string;
+  rows_read: Generated<number>;
+  rows_added: Generated<number>;
+  rows_matched: Generated<number>;
+  rows_skipped: Generated<number>;
+  rows_failed: Generated<number>;
+  min_date: CalendarDateCol | null;
+  max_date: CalendarDateCol | null;
+  statement_opening_minor: Int8 | null;
+  statement_closing_minor: Int8 | null;
+  balance_check: Generated<'ok' | 'mismatch' | 'n_a'>;
+  balance_gap_minor: Int8 | null;
+  warnings: Json<string[]>;
+  analysis: Json<Record<string, unknown>> | null;
+  job_id: string | null;
+  error: string | null;
+  committed_at: Date | null;
+  undo_until: Date | null;
+  undone_at: Date | null;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type ImportRowStatus = 'new' | 'duplicate' | 'probable_duplicate' | 'match' | 'error';
+
+export interface ImportRowTable {
+  workspace_id: string;
+  id: string;
+  import_batch_id: string;
+  row_no: number;
+  raw: Json<string[]>;
+  txn_date: CalendarDateCol | null;
+  amount_minor: Int8 | null;
+  description: string | null;
+  payee_raw: string | null;
+  normalized_desc: string | null;
+  balance_minor: Int8 | null;
+  ordinal: Generated<number>;
+  dedupe_key: string | null;
+  status: ImportRowStatus;
+  decision: 'import' | 'skip' | 'match' | null;
+  match_transaction_id: string | null;
+  duplicate_of_transaction_id: string | null;
+  score: string | null;
+  suggestion: Json<Record<string, unknown>> | null;
+  category_id: string | null;
+  error: string | null;
+  outcome: 'added' | 'matched' | 'skipped' | 'failed' | null;
+  transaction_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface TransactionSourceTable {
+  workspace_id: string;
+  transaction_id: string;
+  import_row_id: string;
+  import_batch_id: string;
+  ledger_account_id: string;
+  role: 'created' | 'matched' | 'second_leg';
+  before_image: Json<Record<string, unknown>> | null;
+  created_at: Generated<Date>;
+}
+
+export interface PayeeAliasTable {
+  workspace_id: string;
+  pattern: string;
+  payee_id: string;
+  created_at: Generated<Date>;
+}
+
+export interface ReconciliationTable {
+  workspace_id: string;
+  id: string;
+  entity_id: string;
+  ledger_account_id: string;
+  statement_date: CalendarDateCol;
+  statement_balance_minor: Int8;
+  status: Generated<'in_progress' | 'completed'>;
+  completed_at: Date | null;
+  completed_by: string | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface RefImportProfileTable {
+  id: string;
+  name: string;
+  institution: string | null;
+  source: 'bank' | 'app_template';
+  fingerprint: string;
+  mapping: Json<Record<string, unknown>>;
+  version: Generated<number>;
+  updated_at: Generated<Date>;
+}
+
+export interface RefMerchantTable {
+  id: string;
+  display_name: string;
+  match_key: string;
+  mcc: string | null;
+  category_hint: string | null;
+  version: Generated<number>;
+  updated_at: Generated<Date>;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -412,6 +594,16 @@ export interface Database {
   'app.session_device': SessionDeviceTable;
   'app.email_change_request': EmailChangeRequestTable;
   'app.mfa_reset_request': MfaResetRequestTable;
+  'app.file': FileTable;
+  'app.job': JobTable;
+  'app.import_profile': ImportProfileTable;
+  'app.import_batch': ImportBatchTable;
+  'app.import_row': ImportRowTable;
+  'app.transaction_source': TransactionSourceTable;
+  'app.payee_alias': PayeeAliasTable;
+  'app.reconciliation': ReconciliationTable;
+  'ref.import_profile': RefImportProfileTable;
+  'ref.merchant': RefMerchantTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;

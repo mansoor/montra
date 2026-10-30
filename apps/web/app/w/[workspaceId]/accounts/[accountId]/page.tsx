@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
 import { DateText } from '@/components/i18n';
+import { getI18n } from '@/lib/i18n-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +16,10 @@ export default async function RegisterPage({
 }) {
   const { workspaceId, accountId } = await params;
   const view = (await searchParams).view === 'simple' ? 'simple' : 'ledger';
-  const [accounts, register] = await load((api) =>
-    Promise.all([api.listAccounts(workspaceId), api.register(workspaceId, accountId, view)]),
-  );
+  const [[accounts, register], { t }] = await Promise.all([
+    load((api) => Promise.all([api.listAccounts(workspaceId), api.register(workspaceId, accountId, view)])),
+    getI18n(),
+  ]);
   const account = accounts.find((a) => a.id === accountId);
   if (!account) notFound();
   const base = `/w/${workspaceId}/accounts/${accountId}`;
@@ -30,7 +32,7 @@ export default async function RegisterPage({
         <div>
           <h1 className="text-xl font-semibold">{account.name}</h1>
           <p className="text-sm text-muted">
-            {account.type === 'liability' ? 'Owed' : 'Balance'}:{' '}
+            {account.type === 'liability' ? t('register.owed') : t('register.balance')}:{' '}
             <Money
               amount={account.balance.amount}
               currency={account.currency}
@@ -38,9 +40,20 @@ export default async function RegisterPage({
             />
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/w/${workspaceId}/import?account=${accountId}`} className="btn-primary">
+            {t('register.import')}
+          </Link>
+          <Link href={`${base}/reconcile`} className="btn-secondary">
+            {t('register.reconcile')}
+          </Link>
+          <Link href={`/w/${workspaceId}/imports?account=${accountId}`} className="btn-secondary">
+            {t('register.imports')}
+          </Link>
+        </div>
         <div
           role="group"
-          aria-label="Register view"
+          aria-label={t('register.view')}
           className="inline-flex overflow-hidden rounded-md border border-line"
         >
           {(['ledger', 'simple'] as const).map((v) => (
@@ -50,44 +63,46 @@ export default async function RegisterPage({
               aria-current={view === v ? 'true' : undefined}
               className={`px-3 py-1.5 text-sm ${view === v ? 'bg-brand-600 text-white' : 'bg-surface hover:bg-brand-50'}`}
             >
-              {v === 'ledger' ? 'Debit / credit' : '+ / −'}
+              {v === 'ledger' ? t('register.view_ledger') : t('register.view_simple')}
             </Link>
           ))}
         </div>
       </div>
 
       {lines.length === 0 ? (
-        <p className="card text-sm text-muted">No activity yet.</p>
+        <p className="card text-sm text-muted">{t('register.empty')}</p>
       ) : (
         <div className="card overflow-x-auto p-0">
           <table className="w-full min-w-[36rem] text-sm">
             <caption className="sr-only">
-              {account.name} register, {view === 'ledger' ? 'debit and credit' : 'signed amount'} view
+              {t(view === 'ledger' ? 'register.caption_ledger' : 'register.caption_simple', {
+                account: account.name,
+              })}
             </caption>
             <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="px-4 py-2">
-                  Date
+                  {t('fields.date')}
                 </th>
                 <th scope="col" className="px-4 py-2">
-                  Description
+                  {t('fields.description')}
                 </th>
                 {view === 'ledger' ? (
                   <>
                     <th scope="col" className="px-4 py-2 text-right">
-                      Debit
+                      {t('register.debit')}
                     </th>
                     <th scope="col" className="px-4 py-2 text-right">
-                      Credit
+                      {t('register.credit')}
                     </th>
                   </>
                 ) : (
                   <th scope="col" className="px-4 py-2 text-right">
-                    Amount
+                    {t('fields.amount')}
                   </th>
                 )}
                 <th scope="col" className="px-4 py-2 text-right">
-                  Balance
+                  {t('register.balance')}
                 </th>
               </tr>
             </thead>
@@ -97,7 +112,20 @@ export default async function RegisterPage({
                   <td className="whitespace-nowrap px-4 py-2">
                     <DateText date={l.date} />
                   </td>
-                  <td className="px-4 py-2">{l.description || '—'}</td>
+                  <td className="px-4 py-2">
+                    {l.description || '—'}
+                    {l.cleared === 'reconciled' && (
+                      <span
+                        role="img"
+                        className="ml-2"
+                        aria-label={t('register.reconciled')}
+                        title={t('register.reconciled')}
+                        data-testid="reconciled-lock"
+                      >
+                        🔒
+                      </span>
+                    )}
+                  </td>
                   {view === 'ledger' ? (
                     <>
                       <td className="px-4 py-2 text-right">

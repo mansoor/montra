@@ -1,0 +1,32 @@
+{
+  "name": "@montra/importers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Statement import: decoding, CSV/XLSX grids, column inference, parsing, sign and balance checks, payee normalization and dedupe (IMP-03..10).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@montra/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@montra/domain": "workspace:*",
+    "exceljs": "^4.4.0",
+    "papaparse": "^5.7.0"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.3.16",
+    "fast-check": "^4.10.2"
+  }
+}

@@ -50,7 +50,7 @@ same import pipeline as one more `source` (see §14.1 of the requirements).
 | Worker | Node 22, BullMQ | Every slow or retryable task (imports, AI, OCR, reports, schedules) | Per-queue concurrency, horizontal |
 | Doc worker | Python 3.12, pdfplumber, optional PaddleOCR | PDF table extraction, local OCR | Horizontal; separate queue |
 | PostgreSQL | 16+, `pg_trgm`, `citext`, `pgcrypto` | Ledger, all relational state, full-text search | Vertical + read replica for reports |
-| Redis | 7 | Queues, rate limits, AI result cache, pub/sub fan-out for live sync | Managed (ElastiCache) |
+| Redis | 7 (optional) | Rate limits and caches when needed; queues and fan-out run on Postgres (ADR-0008, ADR-0011) | Managed (ElastiCache) |
 | Object storage | S3 (prod), MinIO (dev/self-host) | Receipts, statements, payslips, exports, backups | Managed |
 | Identity | Ory Kratos (self-hosted or Ory Network) | Sign-up, password, passkeys, TOTP, recovery, social login | Managed / horizontal |
 
@@ -134,6 +134,8 @@ post. Updates use optimistic concurrency: `If-Match: <version>`.
 
 ## 6. Asynchronous work
 
+Jobs run on a Postgres queue (`app.job`, ADR-0011); the table below lists the queues.
+
 | Queue | Producer → consumer | Examples | Retry |
 | --- | --- | --- | --- |
 | `import` | API → worker | parse file, detect columns, dedupe, stage rows | 3× exponential, then marked `failed` with reason |
@@ -189,7 +191,7 @@ worker, doc-worker, Postgres, MinIO, Kratos and optional Ollama.
 - The dashboard reads from `account_balance_daily` and `category_activity_monthly`
   summary tables. Workers maintain them incrementally from the change feed, so
   dashboard p95 stays under 2 s at 50k transactions.
-- Import parsing is streaming (Papa Parse step mode; SheetJS for XLSX). 5k rows parse in
+- Import parsing is streaming (Papa Parse for CSV, exceljs for XLSX, xlrd and pdfplumber in the Python doc worker). 5k rows parse in
   under 10 s before AI.
 - AI categorization is batched (up to 100 rows per call), runs in parallel across
   calls, and skips rows already answered by rules, history or cache, so a 1,000-row

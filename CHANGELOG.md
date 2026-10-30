@@ -1,6 +1,35 @@
 # Changelog
 
-## v0.2.0-dev.1 — Phase 1: core ledger and manual capture (in progress)
+## v0.3.0-dev.1 — Phase 2: statement import and reconciliation (on feature branch)
+
+- **`@montra/importers`:**
+  - Reading files: encoding sniffing, CSV/TSV/XLSX grids, header and column inference with
+    running-balance verification, and sign and date-format detection (statement periods settle
+    ambiguous dates).
+  - Formats: app templates (YNAB, Mint, Monarch, Quicken, Stessa), saved profiles by fingerprint, and a
+    golden corpus of 21 real layouts.
+  - Cleaning and dedupe: payee normalization with 87 reference merchants, and conservative dedupe and
+    matching.
+- **Python doc worker:** XLS (`xlrd`) and digital PDF statements (`pdfplumber`) with opening and closing
+  balances and the statement period.
+- **Postgres job queue** (ADR-0011) and a Node worker that shares the API code.
+- **Import API:**
+  - upload, parse, preview, mapping, row decisions (single and bulk), atomic commit, and 30-day undo
+    with partial-undo reporting;
+  - storage on the local filesystem or S3;
+  - reconciliation that locks the entries it covers.
+- **Web:** upload wizard, mapping editor with a live preview, preview grid, summary and undo, import
+  history, and the reconciliation checklist.
+- **Performance:**
+  - migrations 0008 and 0009: one balance check per entry, a change-feed counter updated once per
+    transaction, and cached RLS helpers;
+  - a per-transaction ledger cache.
+
+  Import commits are 5× faster.
+
+- **Sync:** `/sync/changes` pages end on transaction boundaries.
+
+## v0.2.0-dev.1 — Phase 1: core ledger and manual capture (released to develop 2026-10-30)
 
 ### API
 
@@ -56,7 +85,7 @@
 - Email change confirmed from both addresses (AUTH-11).
 - Lost-second-factor reset with a 72-hour hold and alerts (AUTH-06).
 
-## v0.1.0-dev.1 — Phase 0: foundations (unreleased, on feature branch)
+## v0.1.0-dev.1 — Phase 0: foundations (released to develop 2026-10-30)
 
 ### Design
 

@@ -430,9 +430,15 @@ describe('recurring templates and sync (TXN-05, PLT-06)', () => {
     );
     expect(posted.map((t: any) => t.date)).toEqual([today, addDays(today, -14)]);
 
+    // Pages end on transaction boundaries, so resuming from latestSeq never skips part of a transaction.
     const changes = await c.get(w.url('/sync/changes?since=0&limit=5'));
-    expect(changes.body.changes).toHaveLength(5);
+    expect(changes.body.changes.length).toBeGreaterThanOrEqual(1);
     expect(changes.body.hasMore).toBe(true);
+    const all = await c.get(w.url('/sync/changes?since=0&limit=1000'));
+    const firstPageSeqs = new Set(changes.body.changes.map((x: any) => x.seq));
+    expect(all.body.changes.filter((x: any) => firstPageSeqs.has(x.seq)).length).toBe(
+      changes.body.changes.length,
+    );
     const next = await c.get(w.url(`/sync/changes?since=${changes.body.latestSeq}&limit=1000`));
     expect(BigInt(next.body.changes[0].seq)).toBe(BigInt(changes.body.latestSeq) + 1n);
   });
@@ -465,7 +471,7 @@ describe('contract additions for the web client', () => {
 
     const head = (await c.get(w.url('/sync/changes?head=true'))).body;
     expect(head.changes).toEqual([]);
-    expect(Number(head.latestSeq)).toBeGreaterThan(10);
+    expect(Number(head.latestSeq)).toBeGreaterThan(3); // one sequence value per committed transaction
 
     await c.put(w.url(`/entities/${w.businessId}/period-lock`), { lockedThrough: '2026-06-30' });
     const ws = (await c.get(`/v1/workspaces/${w.id}`)).body;

@@ -48,7 +48,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET/POST /categories`, `PATCH /categories/{id}`, `GET/POST /category-groups` | Category ledger accounts and groups | DE-02, BUD-04 |
 | `GET /ledger-accounts` | Full chart of accounts | DE-02 |
 | `GET /journal-entries/{id}`, `POST /journal-entries` | Journal view; manual journals (accountant/advanced) | DE-07 |
-| `POST /accounts/{id}/reconciliations`, `PATCH /reconciliations/{id}`, `POST /reconciliations/{id}/complete` | Statement reconciliation | DE-08 |
+| `POST /accounts/{id}/reconciliations`, `GET /reconciliations/{id}`, `POST /reconciliations/{id}/cleared` `{clear[], unclear[]}`, `POST /reconciliations/{id}/complete` | Statement reconciliation; completion requires a zero difference, then marks the lines reconciled and locks their entries | DE-08 |
 | `POST /entities/{id}/period-locks`, `POST /locked-entries/{id}/unlock` (re-auth + note) | Period close and audited unlock | DE-09/10 |
 | `GET /trial-balance?entityId&asOf` | Trial balance | RPT-01 |
 
@@ -73,13 +73,14 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `POST /uploads` → `{ uploadId, url, fields }` | Presigned upload (max 25 MB per file; receipts are compressed on device) | IMP-01/02 |
-| `POST /imports` `{ uploadIds[], accountId? }` (202) | Start import batches | IMP-01 |
+| `POST /uploads` (multipart, field `file`) → `{ fileId, fileType, sha256, duplicateOf }` | Upload of up to 25 MB, type checked by magic bytes and content-hashed; `duplicateOf` flags a re-upload. Presigned direct-to-S3 uploads are added for mobile (Phase 4) | IMP-01/02 |
+| `POST /imports` `{ fileId, accountId, accountFilter? }` (202), `GET /imports?accountId` | Start an import batch (parsing runs in the worker; XLS and PDF go through the doc worker first); history | IMP-01, IMP-13 |
 | `GET /imports/{id}` | Status, counts, balance check | IMP-08 |
 | `GET /imports/{id}/rows?status=` | Preview rows with suggestions | IMP-06 |
 | `PUT /imports/{id}/mapping` | Confirm or edit the column mapping (saves the profile) | IMP-03/04 |
 | `PATCH /imports/{id}/rows/{rowId}` | Change one preview row (category, skip, not-duplicate) | IMP-06 |
-| `POST /imports/{id}/commit`, `POST /imports/{id}/undo` | Commit, undo (within 30 days) | IMP-08/09 |
+| `POST /imports/{id}/commit`, `POST /imports/{id}/undo` (202) | Commit atomically, undo within 30 days (the result lists kept rows) | IMP-08/09 |
+| `GET /jobs/{id}` | Job status, progress and result (commit/undo summaries) | — |
 | `POST /receipts` `{ uploadIds[] }` (202), `GET /receipts?status=inbox`, `GET /receipts/{id}`, `PATCH /receipts/{id}` (lines), `POST /receipts/{id}/match` | Receipt pipeline and inbox | TXN-08, IMP-11, RCP |
 | `GET /attachments/{id}/url` | Short-lived presigned GET | RCP-10 |
 

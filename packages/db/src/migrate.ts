@@ -88,7 +88,9 @@ export async function resetDatabase(connectionString: string): Promise<void> {
   const client = new pg.Client({ connectionString });
   await client.connect();
   try {
-    await client.query('drop schema if exists app cascade; drop table if exists public.schema_migrations;');
+    await client.query(
+      'drop schema if exists app cascade; drop schema if exists ref cascade; drop table if exists public.schema_migrations;',
+    );
   } finally {
     await client.end();
   }

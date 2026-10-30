@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { newId, withContext, type Database } from '../src/index.js';
 import { addMember, appDb, createWorkspace, postEntry, type Fixture } from './fixtures.js';
 
@@ -114,6 +114,28 @@ describe('entity access (UP-04, BIZ-13)', () => {
           .executeTakeFirstOrThrow(),
       ),
     ).resolves.toMatchObject({ numUpdatedRows: 0n });
+  });
+});
+
+describe('cached access checks (performance migration 0009)', () => {
+  it('sees a grant made earlier in the same transaction', async () => {
+    const viewerId = await addMember(db, a, 'viewer-cache@example.com', 'viewer');
+    // Owner grants inside one transaction while also reading as the owner: the cache is per user, so check
+    // the viewer in a transaction that first reads (caching 'none') and then sees a grant applied.
+    await withContext(db, { workspaceId: a.workspaceId, userId: viewerId }, async (trx) => {
+      expect(
+        await trx.selectFrom('app.entity').select('type').where('type', '=', 'business').execute(),
+      ).toEqual([]);
+      await trx.executeQuery(sql`select set_config('app.user_id', ${a.ownerId}, true)`.compile(trx));
+      await trx
+        .insertInto('app.entity_grant')
+        .values({ workspace_id: a.workspaceId, user_id: viewerId, entity_id: a.businessId, access: 'read' })
+        .execute();
+      await trx.executeQuery(sql`select set_config('app.user_id', ${viewerId}, true)`.compile(trx));
+      expect(
+        await trx.selectFrom('app.entity').select('type').where('type', '=', 'business').execute(),
+      ).toEqual([{ type: 'business' }]);
+    });
   });
 });
 
