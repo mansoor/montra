@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CategoryDto, ImportBatchDto, JobDto, UndoResultDto } from '@montra/api-client';
+import type { CategoryDto, ImportBatchDto, UndoResultDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import { canUndo, importErrorKey, isBusy, warningKey } from '@/lib/imports';
@@ -12,6 +13,7 @@ import { Money } from '../money';
 import { MappingEditor } from './mapping-editor';
 import { PreviewTable } from './preview-table';
 import { UndoButton } from './undo-button';
+import { CategoryProposals } from './category-proposals';
 
 const POLL_MS = 1000;
 
@@ -29,9 +31,11 @@ export function ImportWizard({
   initial: ImportBatchDto;
   categories: CategoryDto[];
 }) {
+  const router = useRouter();
   const { t, locale } = useI18n();
   const [batch, setBatch] = useState(initial);
-  const [job, setJob] = useState<JobDto | null>(null);
+  // The batch's latest job tells parse, commit and undo apart and carries undo's result.
+  const job = batch.job;
   const [editing, setEditing] = useState(false);
   // Bumped whenever the rows behind the preview change (re-parse, bulk edits), so the table reloads.
   const [rowsVersion, setRowsVersion] = useState(0);
@@ -42,10 +46,7 @@ export function ImportWizard({
 
   const refresh = useCallback(async () => {
     try {
-      const next = await browserApi.getImport(workspaceId, initial.id);
-      if (next.jobId && (isBusy(next.status) || next.status === 'undone'))
-        setJob(await browserApi.getJob(workspaceId, next.jobId));
-      setBatch(next);
+      setBatch(await browserApi.getImport(workspaceId, initial.id));
     } catch {
       // Offline for a moment; the next poll retries.
     }
@@ -68,12 +69,6 @@ export function ImportWizard({
       }),
     [initial.id, refresh],
   );
-
-  // The undo result lives on the undo job.
-  useEffect(() => {
-    if (batch.status === 'undone' && batch.jobId && job?.id !== batch.jobId)
-      void browserApi.getJob(workspaceId, batch.jobId).then(setJob, () => undefined);
-  }, [batch.status, batch.jobId, job?.id, workspaceId]);
 
   async function act(fn: () => Promise<ImportBatchDto>) {
     setBusy(true);
@@ -146,7 +141,10 @@ export function ImportWizard({
   }
 
   if (batch.status === 'committed' || batch.status === 'undone') {
-    const undo = batch.status === 'undone' && job?.result ? (job.result as unknown as UndoResultDto) : null;
+    const undo =
+      batch.status === 'undone' && job?.type === 'import.undo' && job.result
+        ? (job.result as unknown as UndoResultDto)
+        : null;
     return (
       <section className="space-y-4">
         <div className="card space-y-3" data-testid="import-summary">
@@ -248,6 +246,15 @@ export function ImportWizard({
       )}
       <Warnings warnings={batch.warnings} />
       <BalanceBanner batch={batch} />
+      <CategoryProposals
+        workspaceId={workspaceId}
+        batchId={batch.id}
+        onAccepted={() => {
+          // New categories: reload the page's category list and the re-suggested rows.
+          router.refresh();
+          setRowsVersion((v) => v + 1);
+        }}
+      />
       <PreviewTable
         key={rowsVersion}
         workspaceId={workspaceId}

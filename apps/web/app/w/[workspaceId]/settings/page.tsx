@@ -9,6 +9,8 @@ import { EntitySettings } from '@/components/settings/entity-settings';
 import { FamilySettings } from '@/components/settings/family-settings';
 import { AccountSettings } from '@/components/settings/account-settings';
 import { SharingSettings } from '@/components/settings/sharing-settings';
+import { AiSettings } from '@/components/ai/ai-settings';
+import { AiActivity } from '@/components/ai/ai-activity';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -19,6 +21,8 @@ const TABS = {
   family: 'settings.tab.family',
   accounts: 'settings.tab.accounts',
   sharing: 'settings.tab.sharing',
+  ai: 'settings.tab.ai',
+  'ai-activity': 'settings.tab.ai_activity',
 } as const;
 type Tab = keyof typeof TABS;
 
@@ -65,6 +69,11 @@ export default async function SettingsPage({
   } else if (tab === 'accounts') {
     const accounts = await load((api) => api.listAccounts(workspaceId, { include: 'all' }));
     body = <AccountSettings workspace={workspace} accounts={accounts} today={todayIn(workspace.timeZone)} />;
+  } else if (tab === 'ai') {
+    const settings = await load((api) => api.getAiSettings(workspaceId));
+    body = <AiSettings workspaceId={workspaceId} initial={settings} isOwner={isOwner} />;
+  } else if (tab === 'ai-activity') {
+    body = <AiActivity workspaceId={workspaceId} />;
   } else {
     const [members, invites] = await load((api) =>
       Promise.all([

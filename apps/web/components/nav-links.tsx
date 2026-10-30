@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
 
 export function NavLinks({
   links,
   label,
 }: {
-  links: { href: string; label: string; exact?: boolean }[];
+  links: { href: string; label: string; exact?: boolean; badge?: ReactNode }[];
   label: string;
 }) {
   const pathname = usePathname();
@@ -24,6 +25,7 @@ export function NavLinks({
                 className={`rounded-md px-2 py-1 text-sm ${active ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted hover:text-ink'}`}
               >
                 {l.label}
+                {l.badge}
               </Link>
             </li>
           );

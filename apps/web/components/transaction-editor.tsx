@@ -12,9 +12,13 @@ import type {
 import { browserApi } from '@/lib/browser-api';
 import { errorAction, friendlyMessage, toFormErrors, type FormErrors } from '@/lib/errors';
 import { buildPatch, isEmptyPatch, toEditState, type EditState } from '@/lib/transaction-edit';
+import { parseAmountInput } from '@/lib/money';
+import { signedTotal } from '@/lib/splits';
 import { groupCategories } from '@/lib/view-models';
 import { Field, FormError } from './field';
 import { SplitEditor } from './split-editor';
+import { CategorySuggestion } from './category-suggestion';
+import { Explanation } from './ai/shared';
 import { useI18n } from './i18n';
 
 /**
@@ -35,7 +39,7 @@ export function TransactionEditor({
   members: FamilyMemberDto[];
 }) {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const accountIds = useMemo(() => new Set(accounts.map((a) => a.id)), [accounts]);
   const initial = useMemo(() => toEditState(transaction, accountIds), [transaction, accountIds]);
   const [state, setState] = useState<EditState>(initial);
@@ -125,6 +129,8 @@ export function TransactionEditor({
     );
   }
 
+  const parsedAmount = parseAmountInput(state.amount, state.currency, locale, t);
+  const suggestionAmount = parsedAmount.ok ? signedTotal(parsedAmount.minor, state.direction) : null;
   const currencyAccounts = accounts.filter((a) => a.currency === state.currency && !a.archived);
 
   return (
@@ -133,6 +139,12 @@ export function TransactionEditor({
         <FormError message={errors.form} action={errors.action} />
         {transaction.reviewState === 'needs_review' && (
           <p className="text-sm text-muted">{t('editor.needs_review_hint')}</p>
+        )}
+        {transaction.categorization && (
+          <p className="text-sm" data-testid="editor-categorization">
+            <span className="text-muted">{t('editor.categorized_by')}</span>{' '}
+            <Explanation categorization={transaction.categorization} />
+          </p>
         )}
         {!initial.ledgerEditable && <p className="text-sm text-muted">{t('editor.transfer_hint')}</p>}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -252,6 +264,26 @@ export function TransactionEditor({
               )
             }
           </Field>
+          {state.mode === 'category' && !state.categoryId && initial.ledgerEditable && (
+            <div className="sm:col-span-2 lg:col-span-4">
+              <CategorySuggestion
+                workspaceId={workspace.id}
+                payee={state.payee}
+                amountMinor={suggestionAmount}
+                currency={state.currency}
+                accountId={state.accountId}
+                date={state.date}
+                categoryName={(id) => categories.find((c) => c.id === id)?.name ?? null}
+                onApply={(sg) =>
+                  setState((st) => ({
+                    ...st,
+                    categoryId: sg.categoryId ?? st.categoryId,
+                    ...(sg.memberId && !st.memberId ? { memberId: sg.memberId } : {}),
+                  }))
+                }
+              />
+            </div>
+          )}
           <Field id="ed-member" label={t('fields.member')} error={errors.fields.memberId}>
             {(p) => (
               <select

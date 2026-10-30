@@ -8,7 +8,6 @@ import {
   DATE_FORMATS,
   draftFromMapping,
   draftToMapping,
-  findAccountColumn,
   mappingErrors,
   previewMapping,
   type MappingDraft,
@@ -40,7 +39,7 @@ export function MappingEditor({
   const columns = Math.max(1, ...sample.map((r) => r.length));
   const [draft, setDraft] = useState<MappingDraft>(() => draftFromMapping(batch.mapping, columns));
   const [saveProfile, setSaveProfile] = useState(true);
-  const accountColumn = findAccountColumn(sample, analysis.accounts, batch.mapping?.filter?.column);
+  const accountColumn = analysis.accountColumn ?? batch.mapping?.filter?.column;
   const [account, setAccount] = useState(batch.mapping?.filter?.values[0] ?? '');
 
   const errors = mappingErrors(draft);

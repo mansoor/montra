@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { AccountDto, ReconciliationDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage, toFormErrors, type FormErrors } from '@/lib/errors';
@@ -10,17 +10,6 @@ import { parseAmountInput } from '@/lib/money';
 import { Field, FormError } from './field';
 import { DateText, useI18n } from './i18n';
 import { Money } from './money';
-
-// The API has no "open reconciliation for this account" lookup, so the browser remembers the one it started.
-const storageKey = (accountId: string) => `montra.reconcile.${accountId}`;
-const remember = (accountId: string, id: string | null) => {
-  try {
-    if (id) localStorage.setItem(storageKey(accountId), id);
-    else localStorage.removeItem(storageKey(accountId));
-  } catch {
-    // storage unavailable (private mode): resuming then needs the ?r= link
-  }
-};
 
 /**
  * Statement reconciliation (DE-08): enter the statement's date and ending balance, tick the lines that appear
@@ -45,27 +34,6 @@ export function Reconciler({
   const [error, setError] = useState<string | null>(null);
   const base = `/w/${workspaceId}/accounts/${account.id}/reconcile`;
 
-  // Resume the reconciliation this browser started for the account.
-  useEffect(() => {
-    if (initial) return;
-    let id: string | null = null;
-    try {
-      id = localStorage.getItem(storageKey(account.id));
-    } catch {
-      return;
-    }
-    if (!id) return;
-    browserApi.getReconciliation(workspaceId, id).then(
-      (r) => {
-        if (r.status === 'in_progress' && r.accountId === account.id) {
-          setRec(r);
-          router.replace(`${base}?r=${r.id}`);
-        } else remember(account.id, null);
-      },
-      () => remember(account.id, null),
-    );
-  }, [initial, account.id, workspaceId, base, router]);
-
   async function start(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -78,7 +46,6 @@ export function Reconciler({
         statementDate: String(f.get('statementDate') || today),
         statementBalance: { amount: parsed.minor.toString(), currency: account.currency },
       });
-      remember(account.id, r.id);
       setRec(r);
       router.replace(`${base}?r=${r.id}`);
     } catch (err) {
@@ -95,10 +62,7 @@ export function Reconciler({
     try {
       const r = await fn();
       setRec(r);
-      if (r.status === 'completed') {
-        remember(account.id, null);
-        router.refresh();
-      }
+      if (r.status === 'completed') router.refresh();
     } catch (err) {
       setRec(before);
       setError(friendlyMessage(err, t));

@@ -1,8 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useRef, useState, type FormEvent } from 'react';
-import type { AccountDto, CategoryDto, WorkspaceDto } from '@montra/api-client';
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import type { AccountDto, CategoryDto, FamilyMemberDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { toFormErrors, type FormErrors } from '@/lib/errors';
 import { parseAmountInput } from '@/lib/money';
@@ -10,22 +10,83 @@ import { signedTotal, toSplitPayload, type Direction, type SplitLine } from '@/l
 import { groupCategories } from '@/lib/view-models';
 import { Field, FormError } from './field';
 import { SplitEditor } from './split-editor';
+import { QuickAddSentence } from './quick-add-sentence';
 import { useI18n } from './i18n';
 
 /**
  * Quick-add bar (TXN-01): amount, payee, category, account and date in one row; Enter submits. An empty
- * category posts as "Uncategorized" and lands in the review queue.
+ * category posts as "Uncategorized" and lands in the review queue. "Type a sentence" switches to natural
+ * language entry (TXN-06).
  */
 export function QuickAdd({
   workspace,
   accounts,
   categories,
+  members = [],
   today,
 }: {
   workspace: WorkspaceDto;
   accounts: AccountDto[];
   categories: CategoryDto[];
+  members?: FamilyMemberDto[];
   today: string;
+}) {
+  const { t } = useI18n();
+  const [mode, setMode] = useState<'form' | 'sentence'>('form');
+  if (accounts.length === 0) {
+    return <p className="card text-sm">{t('quick_add.no_accounts')}</p>;
+  }
+  const toggle = (
+    <button
+      type="button"
+      className="text-sm font-medium text-brand-600 underline"
+      aria-pressed={mode === 'sentence'}
+      onClick={() => setMode(mode === 'form' ? 'sentence' : 'form')}
+    >
+      {mode === 'form' ? t('quick_add.nl.switch_on') : t('quick_add.nl.switch_off')}
+    </button>
+  );
+  if (mode === 'sentence')
+    return (
+      <section className="card space-y-3" aria-labelledby="quick-add-title">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="quick-add-title" className="text-base font-semibold">
+            {t('quick_add.title')}
+          </h2>
+          {toggle}
+        </div>
+        <QuickAddSentence
+          workspace={workspace}
+          accounts={accounts}
+          categories={categories}
+          members={members}
+          today={today}
+        />
+      </section>
+    );
+  return (
+    <QuickAddForm
+      workspace={workspace}
+      accounts={accounts}
+      categories={categories}
+      today={today}
+      toggle={toggle}
+    />
+  );
+}
+
+function QuickAddForm({
+  workspace,
+  accounts,
+  categories,
+  today,
+  toggle,
+}: {
+  workspace: WorkspaceDto;
+  accounts: AccountDto[];
+  categories: CategoryDto[];
+  today: string;
+  toggle: ReactNode;
 }) {
   const router = useRouter();
   const { t, locale } = useI18n();
@@ -95,10 +156,6 @@ export function QuickAdd({
     }
   }
 
-  if (accounts.length === 0) {
-    return <p className="card text-sm">{t('quick_add.no_accounts')}</p>;
-  }
-
   return (
     <>
       <form onSubmit={onSubmit} className="card space-y-3" aria-labelledby="quick-add-title" noValidate>
@@ -106,6 +163,7 @@ export function QuickAdd({
           <h2 id="quick-add-title" className="text-base font-semibold">
             {t('quick_add.title')}
           </h2>
+          {toggle}
           <div
             role="radiogroup"
             aria-label={t('quick_add.type')}

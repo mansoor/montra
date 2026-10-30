@@ -6,6 +6,8 @@ import { API_URL } from '@/lib/session';
 import { NavLinks } from '@/components/nav-links';
 import { Realtime } from '@/components/realtime';
 import { I18nProvider } from '@/components/i18n';
+import { GlobalShortcuts, ReviewCountBadge } from '@/components/review/review-badge';
+import { LocalAiRunner } from '@/components/ai/local-ai-runner';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,10 +40,17 @@ export default async function WorkspaceLayout({
               links={[
                 { href: base, label: t('nav.home'), exact: true },
                 { href: `${base}/transactions`, label: t('nav.transactions') },
+                {
+                  href: `${base}/review`,
+                  label: t('nav.review'),
+                  badge: <ReviewCountBadge workspaceId={workspace.id} />,
+                },
                 { href: `${base}/upcoming`, label: t('nav.upcoming') },
                 { href: `${base}/recurring`, label: t('nav.recurring') },
                 { href: `${base}/journal`, label: t('nav.journal') },
                 { href: `${base}/imports`, label: t('nav.imports') },
+                { href: `${base}/rules`, label: t('nav.rules') },
+                { href: `${base}/insights`, label: t('nav.insights') },
                 { href: `${base}/accounts/new`, label: t('nav.add_account') },
                 { href: `${base}/settings`, label: t('nav.settings') },
               ]}
@@ -56,6 +65,8 @@ export default async function WorkspaceLayout({
             </div>
           </div>
         </header>
+        <GlobalShortcuts workspaceId={workspace.id} />
+        <LocalAiRunner workspaceId={workspace.id} />
         <main id="main" className="mx-auto max-w-5xl px-4 py-6">
           {children}
         </main>

@@ -8,6 +8,7 @@ import { friendlyMessage } from '@/lib/errors';
 import { rowDisplay } from '@/lib/imports';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
+import { ConfidenceChip } from '../ai/shared';
 
 const ROW_HEIGHT = 64;
 const VIEWPORT = 448;
@@ -37,12 +38,15 @@ export function PreviewTable({
   categories,
   onBulkDone,
   onEditMapping,
+  threshold = 0.8,
 }: {
   workspaceId: string;
   batch: ImportBatchDto;
   categories: CategoryDto[];
   onBulkDone: () => void;
   onEditMapping?: () => void;
+  /** Review threshold, to color suggestion confidence. */
+  threshold?: number;
 }) {
   const { t } = useI18n();
   const [filter, setFilter] = useState<ImportRowStatus | null>(null);
@@ -93,18 +97,10 @@ export function PreviewTable({
     setBulkBusy(true);
     setError(null);
     try {
-      let after: string | null = null;
-      do {
-        const page = await browserApi.listImportRows(workspaceId, batch.id, {
-          status: 'probable_duplicate',
-          cursor: after ?? undefined,
-          limit: PAGE,
-        });
-        for (const r of page.data)
-          if (r.effective !== 'skip')
-            await browserApi.updateImportRow(workspaceId, batch.id, r.id, { decision: 'skip' });
-        after = page.nextCursor;
-      } while (after);
+      await browserApi.bulkImportRows(workspaceId, batch.id, {
+        status: 'probable_duplicate',
+        decision: 'skip',
+      });
       onBulkDone();
     } catch (err) {
       setError(friendlyMessage(err, t));
@@ -262,14 +258,18 @@ export function PreviewTable({
                           </optgroup>
                         ))}
                       </select>
-                      {row.suggestion && !row.categoryId && row.suggestion.categoryId && (
-                        <span
-                          className="block truncate text-xs text-muted"
-                          title={row.suggestion.explanation}
-                        >
-                          {row.suggestion.explanation}
-                        </span>
-                      )}
+                      {row.suggestion &&
+                        row.suggestion.categoryId &&
+                        categoryValue === row.suggestion.categoryId && (
+                          <span
+                            className="flex min-w-0 items-center gap-1 text-xs text-muted"
+                            title={row.suggestion.explanation}
+                            data-testid="row-suggestion"
+                          >
+                            <ConfidenceChip confidence={row.suggestion.confidence} threshold={threshold} />
+                            <span className="truncate">{row.suggestion.explanation}</span>
+                          </span>
+                        )}
                     </>
                   )}
                 </span>

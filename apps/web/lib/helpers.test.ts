@@ -153,6 +153,8 @@ describe('view models', () => {
       description: '',
       status: 'posted',
       reviewState: 'reviewed',
+      categorization: null,
+      merchant: null,
       source: 'manual',
       memo: null,
       tags: ['bulk'],
