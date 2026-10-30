@@ -1,0 +1,11 @@
+{
+  "name": "@montra/doc-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Python document worker (XLS, digital PDF statements). Scripts run the Python toolchain so Turbo includes it.",
+  "scripts": {
+    "test": "node scripts/py.mjs -m pytest -q",
+    "lint": "node scripts/py.mjs -m ruff check src tests",
+    "typecheck": "node scripts/py.mjs -m mypy"
+  }
+}
