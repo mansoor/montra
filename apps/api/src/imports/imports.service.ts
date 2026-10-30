@@ -126,11 +126,15 @@ export class ImportsService {
         .execute();
       // A failed extraction or parse job is reported on the batch (the doc worker can't update it itself).
       let { status, error } = batch;
+      // The latest job for the batch: a chained parse job (after the doc worker) replaces the doc job.
       const job = batch.job_id
         ? await trx
             .selectFrom('app.job')
             .select(['id', 'type', 'status', 'progress', 'result', 'error'])
-            .where('id', '=', batch.job_id)
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where((eb) => eb.or([eb('id', '=', batch.job_id!), eb(sql`payload->>'batchId'`, '=', batch.id)]))
+            .orderBy('created_at', 'desc')
+            .limit(1)
             .executeTakeFirst()
         : undefined;
       if (job?.status === 'failed' && (status === 'parsing' || status === 'committing')) {

@@ -166,7 +166,12 @@ export class Categorizer {
         .execute();
       for (const r of rows) {
         const list = out.get(r.payee_key) ?? [];
-        list.push({ amountBand: r.amount_band, categoryId: r.category_id, memberId: r.member_id, count: r.count });
+        list.push({
+          amountBand: r.amount_band,
+          categoryId: r.category_id,
+          memberId: r.member_id,
+          count: r.count,
+        });
         out.set(r.payee_key, list);
       }
     }
@@ -335,14 +340,16 @@ export class Categorizer {
   stored(d: Decision): StoredCategorization {
     return {
       step: d.step,
-      confidence: Math.round(d.confidence * 1000) / 1000,
+      confidence: Number(d.confidence.toFixed(3)),
       explanation: d.explanation,
       ruleId: d.ruleId,
       suggested:
         d.categoryId || d.memberId
           ? { categoryId: d.categoryId, entityId: d.entityId, memberId: d.memberId }
           : null,
-      transfer: d.transfer ? { accountId: d.transfer.accountId, transactionId: d.transfer.transactionId } : null,
+      transfer: d.transfer
+        ? { accountId: d.transfer.accountId, transactionId: d.transfer.transactionId }
+        : null,
     };
   }
 
@@ -551,5 +558,5 @@ export function ruleRecord(r: {
 }
 
 function daysBetween(a: CalendarDate, b: CalendarDate): number {
-  return Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000);
+  return Math.trunc((Date.parse(a) - Date.parse(b)) / 86_400_000);
 }

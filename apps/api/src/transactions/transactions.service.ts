@@ -72,7 +72,13 @@ export class TransactionsService {
           }
         }
       } else {
-        categorization = { step: 'user', confidence: 1, explanation: 'Chosen by you', ruleId: null, suggested: null };
+        categorization = {
+          step: 'user',
+          confidence: 1,
+          explanation: 'Chosen by you',
+          ruleId: null,
+          suggested: null,
+        };
       }
       const id = await this.createInTrx(trx, ctx, {
         date: req.date,
@@ -855,5 +861,8 @@ function specAmount(spec: TransactionSpec | null): TransactionDto['amount'] {
 function singleCategory(spec: TransactionSpec): { categoryId: string | null; memberId: string | null } {
   if (spec.type !== 'standard' || spec.splits.length !== 1) return { categoryId: null, memberId: null };
   const split = spec.splits[0]!;
-  return { categoryId: spec.uncategorized ? null : split.accountId, memberId: split.memberId ?? spec.memberId };
+  return {
+    categoryId: spec.uncategorized ? null : split.accountId,
+    memberId: split.memberId ?? spec.memberId,
+  };
 }

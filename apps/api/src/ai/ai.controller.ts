@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   AiTaskResultRequest,
   UpdateAiSettingsRequest,
@@ -47,7 +59,9 @@ export class AiController {
   @HttpCode(200)
   async test(@Ctx() ctx: RequestContext): Promise<TestAiProviderResponse> {
     const c = dbCtx(ctx);
-    const runtime = await this.db.run(c, (trx) => this.ai.runtime(trx, c, { type: 'settings', id: c.workspaceId }));
+    const runtime = await this.db.run(c, (trx) =>
+      this.ai.runtime(trx, c, { type: 'settings', id: c.workspaceId }),
+    );
     if (!runtime.available)
       return {
         ok: false,
@@ -59,7 +73,13 @@ export class AiController {
     const started = Date.now();
     const res = await this.ai.gateway.ping({ ...runtime.ctx, parkLocal: false });
     return res.ok
-      ? { ok: true, provider: res.meta.provider, model: res.value.model, latencyMs: Date.now() - started, error: null }
+      ? {
+          ok: true,
+          provider: res.meta.provider,
+          model: res.value.model,
+          latencyMs: Date.now() - started,
+          error: null,
+        }
       : {
           ok: false,
           provider: runtime.ctx.provider.id,
@@ -93,28 +113,26 @@ export class AiController {
       const page = rows.slice(0, PAGE);
       const last = page.at(-1);
       return {
-        items: page.map(
-          (e): AiEventDto => ({
-            id: e.id,
-            task: e.task,
-            provider: e.provider,
-            model: e.model,
-            promptVersion: e.prompt_version,
-            inputHash: e.input_hash,
-            outcome: e.outcome,
-            output: e.output,
-            confidence: e.confidence === null ? null : Number(e.confidence),
-            items: e.items,
-            latencyMs: e.latency_ms,
-            tokensIn: e.tokens_in,
-            tokensOut: e.tokens_out,
-            costUsd: Number(e.cost_micro_usd) / 1e6,
-            userAction: e.user_action,
-            subjectType: e.subject_type,
-            subjectId: e.subject_id,
-            createdAt: e.created_at.toISOString(),
-          }),
-        ),
+        items: page.map((e): AiEventDto => ({
+          id: e.id,
+          task: e.task,
+          provider: e.provider,
+          model: e.model,
+          promptVersion: e.prompt_version,
+          inputHash: e.input_hash,
+          outcome: e.outcome,
+          output: e.output,
+          confidence: e.confidence === null ? null : Number(e.confidence),
+          items: e.items,
+          latencyMs: e.latency_ms,
+          tokensIn: e.tokens_in,
+          tokensOut: e.tokens_out,
+          costUsd: Number(e.cost_micro_usd) / 1e6,
+          userAction: e.user_action,
+          subjectType: e.subject_type,
+          subjectId: e.subject_id,
+          createdAt: e.created_at.toISOString(),
+        })),
         nextCursor:
           rows.length > PAGE && last
             ? Buffer.from(`${last.created_at.toISOString()}|${last.id}`).toString('base64url')
@@ -188,7 +206,11 @@ export class AiController {
 
   @Post('tasks/:id/result')
   @HttpCode(204)
-  async taskResult(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown): Promise<void> {
+  async taskResult(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<void> {
     const req = parse(AiTaskResultRequest, body);
     const c = dbCtx(ctx);
     const res = await this.db.run(c, (trx) =>

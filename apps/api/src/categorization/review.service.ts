@@ -24,7 +24,6 @@ import { Categorizer, toDto, type StoredCategorization } from './categorizer.ser
 import { MerchantDirectory } from './merchants.js';
 
 type Ctx = { workspaceId: string; userId: string };
-type StandardSpec = Extract<TransactionSpec, { type: 'standard' }>;
 
 const PAGE = 100;
 
@@ -60,11 +59,17 @@ export class ReviewService {
         .where('t.deleted_at', 'is', null);
       if (q.entityId) b = b.where('t.primary_entity_id', '=', q.entityId);
       if (q.minConfidence !== undefined)
-        b = b.where(sql<boolean>`coalesce((t.categorization->>'confidence')::numeric, 0) >= ${q.minConfidence}`);
+        b = b.where(
+          sql<boolean>`coalesce((t.categorization->>'confidence')::numeric, 0) >= ${q.minConfidence}`,
+        );
       return b;
     };
     const total = Number(
-      (await base().select((eb) => eb.fn.countAll<string>().as('n')).executeTakeFirstOrThrow()).n,
+      (
+        await base()
+          .select((eb) => eb.fn.countAll<string>().as('n'))
+          .executeTakeFirstOrThrow()
+      ).n,
     );
     let page = base()
       .select([
@@ -128,7 +133,9 @@ export class ReviewService {
     if (req.transactionIds?.length) q = q.where('id', 'in', req.transactionIds);
     if (req.entityId) q = q.where('primary_entity_id', '=', req.entityId);
     if (req.minConfidence !== undefined)
-      q = q.where(sql<boolean>`coalesce((categorization->>'confidence')::numeric, 0) >= ${req.minConfidence}`);
+      q = q.where(
+        sql<boolean>`coalesce((categorization->>'confidence')::numeric, 0) >= ${req.minConfidence}`,
+      );
     const rows = await q.limit(5000).execute();
     let accepted = 0;
     let skipped = 0;
@@ -232,7 +239,8 @@ export class ReviewService {
       categories: prepared.categories.map((c) => ({ id: c.id, name: c.name })),
       members: prepared.members.map((m) => ({ id: m.id, name: m.name })),
     });
-    const currencyOf = (id: string | null) => accounts.find((a) => a.id === id)?.currency ?? accounts[0]?.currency;
+    const currencyOf = (id: string | null) =>
+      accounts.find((a) => a.id === id)?.currency ?? accounts[0]?.currency;
     let draft = { ...h, source: 'heuristic' as 'ai' | 'heuristic' };
     const runtime = await this.ai.runtime(trx, ctx, { type: 'quick_add', id: ctx.userId });
     if (runtime.available && h.confidence < 0.9) {
@@ -268,7 +276,9 @@ export class ReviewService {
     const currency = currencyOf(draft.accountId) ?? 'USD';
     return {
       date: draft.date,
-      amount: draft.amount ? { amount: toMinor(draft.amount, currency), currency: asCurrencyCode(currency) } : null,
+      amount: draft.amount
+        ? { amount: toMinor(draft.amount, currency), currency: asCurrencyCode(currency) }
+        : null,
       direction: draft.direction,
       payee: draft.payee,
       accountId: draft.accountId,
@@ -376,7 +386,12 @@ export class ReviewService {
   }
 
   /** Creates the chosen categories in the account's entity and points the matching preview rows at them. */
-  async acceptProposals(trx: Trx, ctx: Ctx, batchId: string, names: string[]): Promise<{ created: number; rows: number }> {
+  async acceptProposals(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+    names: string[],
+  ): Promise<{ created: number; rows: number }> {
     const batch = await this.batch(trx, ctx, batchId);
     if (batch.status !== 'preview' && batch.status !== 'needs_mapping')
       throw unprocessable('import.not_editable', `The import is ${batch.status}`);
@@ -481,10 +496,16 @@ export class ReviewService {
   }
 }
 
-function present(s: StoredProposals, existing: Map<string, { id: string; name: string }>): CategoryProposalsResponse {
+function present(
+  s: StoredProposals,
+  existing: Map<string, { id: string; name: string }>,
+): CategoryProposalsResponse {
   return {
     source: s.source,
-    proposals: s.proposals.map(({ payeeKeys: _k, ...p }) => ({ ...p, exists: existing.has(p.name.toLowerCase()) })),
+    proposals: s.proposals.map(({ payeeKeys: _k, ...p }) => ({
+      ...p,
+      exists: existing.has(p.name.toLowerCase()),
+    })),
   };
 }
 

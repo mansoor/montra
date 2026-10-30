@@ -63,7 +63,11 @@ export const AiSettingsDto = z.object({
   /** OpenAI-compatible base URL for local mode (Ollama, LM Studio, vLLM), e.g. http://localhost:11434/v1. */
   endpoint: z.string().nullable(),
   /** Optional model override per task group. */
-  models: z.object({ small: z.string().nullable(), vision: z.string().nullable(), large: z.string().nullable() }),
+  models: z.object({
+    small: z.string().nullable(),
+    vision: z.string().nullable(),
+    large: z.string().nullable(),
+  }),
   hasKey: z.boolean(),
   keyLast4: z.string().nullable(),
   /** Review-queue threshold on calibrated confidence (default 0.80). */

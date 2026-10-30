@@ -19,7 +19,14 @@ import { TransactionsService } from '../transactions/transactions.service.js';
 import { Categorizer, ruleRecord } from './categorizer.service.js';
 
 type Ctx = { workspaceId: string; userId: string };
-type RuleActions = { categoryId?: string | null; memberId?: string | null; entityId?: string | null; tags?: string[]; renamePayee?: string | null; markReviewed?: boolean };
+type RuleActions = {
+  categoryId?: string | null;
+  memberId?: string | null;
+  entityId?: string | null;
+  tags?: string[];
+  renamePayee?: string | null;
+  markReviewed?: boolean;
+};
 
 const SCAN_CHUNK = 2000;
 const APPLY_CHUNK = 200;
@@ -112,7 +119,11 @@ export class RulesService {
       .executeTakeFirst();
     if (!cur) throw notFound('Rule');
     if (ifMatch !== undefined && ifMatch.replace(/^W\//, '').replace(/"/g, '') !== `v${cur.version}`)
-      throw new AppError(412, 'version.mismatch', 'The rule changed since you loaded it. Reload and try again.');
+      throw new AppError(
+        412,
+        'version.mismatch',
+        'The rule changed since you loaded it. Reload and try again.',
+      );
     const conditions = (req.conditions ?? cur.conditions) as RuleConditions;
     const actions = (req.actions ?? cur.actions) as RuleActions;
     await this.check(trx, ctx, conditions, actions);
@@ -178,7 +189,13 @@ export class RulesService {
   ): Promise<RulePreviewDto> {
     const errors = validateRule(conditions as never, actions ?? { markReviewed: true });
     if (errors.length) throw unprocessable('rule.invalid', errors.join('; '));
-    const rule = this.compile({ id: 'preview', name: 'preview', conditions, actions: actions ?? {}, entityId });
+    const rule = this.compile({
+      id: 'preview',
+      name: 'preview',
+      conditions,
+      actions: actions ?? {},
+      entityId,
+    });
     const out: RulePreviewDto = { matches: 0, changes: 0, skippedLocked: 0, sample: [] };
     for await (const chunk of this.scan(trx, ctx, entityId ?? null)) {
       for (const c of chunk) {
@@ -252,7 +269,9 @@ export class RulesService {
             c.id,
             {
               ...(actions.categoryId ? { categoryId: actions.categoryId } : {}),
-              ...(actions.memberId !== undefined && actions.memberId !== null ? { memberId: actions.memberId } : {}),
+              ...(actions.memberId !== undefined && actions.memberId !== null
+                ? { memberId: actions.memberId }
+                : {}),
               ...(actions.renamePayee ? { payee: actions.renamePayee } : {}),
               ...(tags ? { tags } : {}),
               ...(actions.markReviewed ? { reviewState: 'reviewed' as const } : {}),
@@ -349,7 +368,10 @@ export class RulesService {
       if (after) {
         const a = after;
         q = q.where((eb) =>
-          eb.or([eb('t.txn_date', '<', a.date), eb.and([eb('t.txn_date', '=', a.date), eb('t.id', '<', a.id)])]),
+          eb.or([
+            eb('t.txn_date', '<', a.date),
+            eb.and([eb('t.txn_date', '=', a.date), eb('t.id', '<', a.id)]),
+          ]),
         );
       }
       const rows = await q.execute();
@@ -465,9 +487,9 @@ export class RulesService {
 function wouldChange(c: Candidate, a: RuleActions): boolean {
   return Boolean(
     (a.categoryId && a.categoryId !== c.categoryId) ||
-      (a.memberId && a.memberId !== c.memberId) ||
-      (a.renamePayee && a.renamePayee !== c.payee) ||
-      a.tags?.length,
+    (a.memberId && a.memberId !== c.memberId) ||
+    (a.renamePayee && a.renamePayee !== c.payee) ||
+    a.tags?.length,
   );
 }
 

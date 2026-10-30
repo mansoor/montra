@@ -156,7 +156,8 @@ export class CategorizationController {
     return this.db.run(c, (trx) =>
       this.review.list(trx, c, {
         entityId: entityId ? uuid(entityId) : undefined,
-        minConfidence: minConfidence !== undefined ? parse(z.coerce.number().min(0).max(1), minConfidence) : undefined,
+        minConfidence:
+          minConfidence !== undefined ? parse(z.coerce.number().min(0).max(1), minConfidence) : undefined,
         cursor,
       }),
     );
@@ -250,7 +251,12 @@ export class CategorizationController {
 
   private async job(c: { workspaceId: string; userId: string }, id: string) {
     const j = await this.db.run(c, (trx) =>
-      trx.selectFrom('app.job').selectAll().where('workspace_id', '=', c.workspaceId).where('id', '=', id).executeTakeFirstOrThrow(),
+      trx
+        .selectFrom('app.job')
+        .selectAll()
+        .where('workspace_id', '=', c.workspaceId)
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow(),
     );
     return {
       id: j.id,

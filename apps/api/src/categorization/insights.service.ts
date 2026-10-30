@@ -68,7 +68,12 @@ export class InsightsService {
         categoryId: r.category_id,
         txns: [],
       };
-      s.txns.push({ id: r.id, date: calendarDate(r.txn_date), amountMinor: BigInt(r.amount), accountId: r.account_id });
+      s.txns.push({
+        id: r.id,
+        date: calendarDate(r.txn_date),
+        amountMinor: BigInt(r.amount),
+        accountId: r.account_id,
+      });
       if (r.category_id) s.categoryId = r.category_id;
       series.set(k, s);
     }

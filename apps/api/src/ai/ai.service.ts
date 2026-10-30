@@ -222,7 +222,7 @@ export class AiService {
             })
             .onConflict((oc) =>
               oc.columns(['workspace_id', 'task', 'key_hash']).doUpdateSet({
-                output: (eb) => eb.ref('excluded.output'),
+                output: sql`excluded.output`,
                 model: (eb) => eb.ref('excluded.model'),
                 expires_at: (eb) => eb.ref('excluded.expires_at'),
               }),
@@ -311,7 +311,11 @@ export class AiService {
       mode: ws.ai_mode,
       provider,
       endpoint: s.endpoint ?? null,
-      models: { small: s.models?.small ?? null, vision: s.models?.vision ?? null, large: s.models?.large ?? null },
+      models: {
+        small: s.models?.small ?? null,
+        vision: s.models?.vision ?? null,
+        large: s.models?.large ?? null,
+      },
       hasKey: Boolean(cred),
       keyLast4: cred?.last4 ?? null,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
@@ -321,7 +325,7 @@ export class AiService {
       usage: {
         month: monthStart().slice(0, 7),
         calls: usage?.calls ?? 0,
-        spentUsd: Math.round(spentUsd * 10_000) / 10_000,
+        spentUsd: Number(spentUsd.toFixed(4)),
         state: ratio >= 1 ? 'exhausted' : ratio >= 0.8 ? 'downgraded' : 'ok',
       },
       disclosures: AI_DISCLOSURES,

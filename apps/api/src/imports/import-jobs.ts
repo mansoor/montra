@@ -19,13 +19,11 @@ import {
   decodeText,
   detectDecimalSeparator,
   displayName,
-  matchMerchant,
   normalizeDescription,
   parseAmount,
   parseDelimited,
   readXlsx,
   type ColumnMapping,
-  type MerchantRef,
   type Sheet,
 } from '@montra/importers';
 import { Db } from '../db/database.js';
@@ -127,7 +125,8 @@ export class ImportJobs {
       const account = await this.ledger.accountRef(trx, ctx.workspaceId, batch.ledger_account_id);
       const currency = asCurrencyCode(batch.currency);
 
-      const ocr = p.previousResult?.kind === 'ocr_text' ? await this.ocrTable(trx, ctx, batch.id, currency, p) : null;
+      const ocr =
+        p.previousResult?.kind === 'ocr_text' ? await this.ocrTable(trx, ctx, batch.id, currency, p) : null;
       const sheets = ocr ? ocr.sheets : await this.sheets(batch.file_type, file.storage_key, p);
       const statement = ocr ? ocr.statement : (p.previousResult?.statement ?? null);
       const decimal = detectDecimalSeparator(
@@ -675,7 +674,12 @@ export class ImportJobs {
         await this.saveProfile(trx, ctx, batch);
         // AI-08/09: refresh recurring proposals and anomaly flags with the new rows.
         if (added > 0)
-          await this.queue.enqueue(trx, { ...ctx, queue: 'ai', type: 'insights.detect', payload: { batchId } });
+          await this.queue.enqueue(trx, {
+            ...ctx,
+            queue: 'ai',
+            type: 'insights.detect',
+            payload: { batchId },
+          });
         return { added, matched, skipped, failed };
       });
     } catch (err) {

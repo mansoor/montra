@@ -692,7 +692,8 @@ export interface AiTaskTable {
   expires_at: Generated<Date>;
 }
 
-export type InsightKind = 'recurring' | 'unusual_amount' | 'duplicate_charge' | 'new_subscription' | 'price_increase';
+export type InsightKind =
+  'recurring' | 'unusual_amount' | 'duplicate_charge' | 'new_subscription' | 'price_increase';
 
 export interface InsightTable {
   workspace_id: string;
