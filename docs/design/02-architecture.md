@@ -124,9 +124,10 @@ downward in this list.
    inside it, so RLS applies even if a query forgets a `workspace_id` filter.
 5. The handler validates input with Zod, calls domain services, writes audit rows and
    change-feed rows in the same transaction, and commits.
-6. After commit, the API publishes `workspace:{id}` change events to Redis. The WebSocket
-   gateway fans them out to connected clients, which invalidate their caches or pull
-   `/sync/changes` (target: under 5 s end to end, PLT-06).
+6. At commit, Postgres delivers a `montra_changes` notification (sent by the change-feed
+   trigger). Every API instance listens and pushes it to subscribed WebSocket clients, which
+   invalidate their caches or pull `/sync/changes` (target: under 5 s end to end, PLT-06;
+   ADR-0008).
 
 Writes accept an `Idempotency-Key` header, stored for 24 h, so mobile retries never double
 post. Updates use optimistic concurrency: `If-Match: <version>`.

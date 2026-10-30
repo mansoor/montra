@@ -23,6 +23,7 @@ import { InviteAcceptController, SharingController } from './sharing/sharing.con
 import { RecurringService } from './recurring/recurring.service.js';
 import { RecurringController } from './recurring/recurring.controller.js';
 import { SyncController } from './sync/sync.controller.js';
+import { RealtimeService } from './realtime/realtime.service.js';
 
 @Module({})
 export class AppModule {
@@ -61,6 +62,7 @@ export class AppModule {
         // Production binds the AWS KMS adapter here.
         { provide: KMS_PORT, useClass: LocalKms },
         FieldCrypto,
+        RealtimeService,
       ],
     };
   }

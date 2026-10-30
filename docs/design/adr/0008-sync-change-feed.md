@@ -9,8 +9,11 @@ mobile offline with field-level last-write-wins and conflict notices.
 
 ## Decision
 Every synced table writes `change_log(workspace_id, seq, table, row_id, op)` in the same
-transaction (per-workspace gapless sequence). After commit the API publishes a Redis
-message; the WebSocket gateway notifies subscribers. Clients pull `/sync/changes?since`.
+transaction (per-workspace gapless sequence). The same trigger calls `pg_notify('montra_changes',
+workspace_id)`, which Postgres delivers only at commit and collapses per transaction. Each API instance
+holds one `LISTEN` connection and pushes `{type:"changes", workspaceId}` to subscribed WebSocket clients
+(`/v1/ws`), which then pull `/sync/changes?since` (RLS-filtered). No Redis is needed for fan-out; Redis
+pub/sub remains an option if notification volume ever outgrows LISTEN/NOTIFY.
 Mobile replays an outbox with `baseVersion` + `changedFields`; the server merges per field.
 
 ## Consequences
