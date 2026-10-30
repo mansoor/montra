@@ -191,7 +191,7 @@ worker, doc-worker, Postgres, MinIO, Kratos and optional Ollama.
 - The dashboard reads from `account_balance_daily` and `category_activity_monthly`
   summary tables. Workers maintain them incrementally from the change feed, so
   dashboard p95 stays under 2 s at 50k transactions.
-- Import parsing is streaming (Papa Parse step mode; SheetJS for XLSX). 5k rows parse in
+- Import parsing is streaming (Papa Parse for CSV, exceljs for XLSX, xlrd and pdfplumber in the Python doc worker). 5k rows parse in
   under 10 s before AI.
 - AI categorization is batched (up to 100 rows per call), runs in parallel across
   calls, and skips rows already answered by rules, history or cache, so a 1,000-row
