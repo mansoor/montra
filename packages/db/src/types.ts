@@ -189,6 +189,9 @@ export interface TransactionTable {
   original_currency: string | null;
   fx_rate: string | null;
   recurring_item_id: string | null;
+  /** The user-level input the entries were built from (TransactionSpec in the API). */
+  spec: Json<Record<string, unknown>> | null;
+  posted_at: Date | null;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;
@@ -300,6 +303,54 @@ export interface IdempotencyKeyTable {
   expires_at: Timestamp;
 }
 
+export interface WorkspaceInviteTable {
+  workspace_id: string;
+  id: string;
+  email: string;
+  role: 'partner' | 'viewer' | 'accountant';
+  entity_grants: Json<{ entityId: string; access: 'none' | 'read' | 'write' }[]>;
+  token_hash: string;
+  invited_by: string | null;
+  expires_at: Timestamp;
+  accepted_at: Date | null;
+  accepted_by: string | null;
+  revoked_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface RecurringItemTable {
+  workspace_id: string;
+  id: string;
+  primary_entity_id: string;
+  name: string;
+  spec: Json<Record<string, unknown>>;
+  cadence: 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'quarterly' | 'yearly';
+  start_date: CalendarDateCol;
+  end_date: CalendarDateCol | null;
+  next_date: CalendarDateCol;
+  auto_create: Generated<'scheduled' | 'posted'>;
+  status: Generated<'active' | 'paused' | 'ended'>;
+  detected: Generated<boolean>;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface WorkspaceKeyTable {
+  workspace_id: string;
+  key_version: Generated<number>;
+  wrapped_key: Buffer;
+  created_at: Generated<Date>;
+}
+
+export interface AccountVisibilityTable {
+  workspace_id: string;
+  user_id: string;
+  ledger_account_id: string;
+  hidden: Generated<boolean>;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -321,6 +372,10 @@ export interface Database {
   'app.audit_log': AuditLogTable;
   'app.change_log': ChangeLogTable;
   'app.idempotency_key': IdempotencyKeyTable;
+  'app.workspace_invite': WorkspaceInviteTable;
+  'app.recurring_item': RecurringItemTable;
+  'app.workspace_key': WorkspaceKeyTable;
+  'app.account_visibility': AccountVisibilityTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;

@@ -23,6 +23,7 @@ export const CreateTransactionRequest = z
     categoryId: Id.optional(),
     splits: z.array(SplitInput).min(1).max(250).optional(),
     memberId: Id.nullable().optional(),
+    memo: z.string().max(2000).optional(),
     tags: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
   })
   .refine((t) => !(t.categoryId && t.splits), {
@@ -73,6 +74,10 @@ export const TransactionDto = z.object({
   reviewState: z.string(),
   source: z.string(),
   version: z.string(),
+  memo: z.string().nullable(),
+  tags: z.array(z.string()),
+  recurringItemId: z.string().nullable(),
+  /** Scheduled occurrences have no entries until confirmed. */
   entries: z.array(JournalEntryDto),
 });
 export type TransactionDto = z.infer<typeof TransactionDto>;

@@ -391,3 +391,34 @@ describe('opening balances and reversals', () => {
     );
   });
 });
+
+describe('buildAdjustment (DE-10 reclassification)', () => {
+  it('moves a reconciled expense to another category without touching the cash line', async () => {
+    const { buildAdjustment } = await import('../src/index.js');
+    const dining = acct('dining', 'P', 'expense');
+    const [before] = buildTransactionEntries(
+      {
+        date: D,
+        description: 'Lunch',
+        account: card,
+        amount: -1850n,
+        splits: [{ account: groceries, amount: -1850n }],
+      },
+      resolver,
+    );
+    const [after] = buildTransactionEntries(
+      {
+        date: D,
+        description: 'Lunch',
+        account: card,
+        amount: -1850n,
+        splits: [{ account: dining, amount: -1850n }],
+      },
+      resolver,
+    );
+    const adj = buildAdjustment(before!, after!, D, 'Reclassify');
+    expect(adj!.kind).toBe('adjustment');
+    expect(lines(adj!)).toEqual({ groceries: -1850n, dining: 1850n });
+    expect(buildAdjustment(before!, before!, D, 'none')).toBeNull();
+  });
+});

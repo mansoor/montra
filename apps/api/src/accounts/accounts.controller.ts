@@ -1,5 +1,12 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { CreateAccountRequest, RegisterView, type AccountDto, type CategoryDto } from '@montra/schemas';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BalanceAdjustmentRequest,
+  CreateAccountRequest,
+  RegisterView,
+  UpdateAccountRequest,
+  type AccountDto,
+  type CategoryDto,
+} from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { parse } from '../common/zod.js';
@@ -16,8 +23,30 @@ export class AccountsController {
   }
 
   @Get('accounts')
-  async list(@Ctx() ctx: RequestContext): Promise<{ data: AccountDto[] }> {
-    return { data: await this.accounts.list(dbCtx(ctx)) };
+  async list(
+    @Ctx() ctx: RequestContext,
+    @Query('include') include?: string,
+  ): Promise<{ data: AccountDto[] }> {
+    const all = include === 'all';
+    return { data: await this.accounts.list(dbCtx(ctx), { includeHidden: all, includeArchived: all }) };
+  }
+
+  @Patch('accounts/:accountId')
+  update(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Body() body: unknown,
+  ): Promise<AccountDto> {
+    return this.accounts.update(dbCtx(ctx), parse(z.uuid(), accountId), parse(UpdateAccountRequest, body));
+  }
+
+  @Post('accounts/:accountId/balance-adjustments')
+  adjust(@Ctx() ctx: RequestContext, @Param('accountId') accountId: string, @Body() body: unknown) {
+    return this.accounts.adjustBalance(
+      dbCtx(ctx),
+      parse(z.uuid(), accountId),
+      parse(BalanceAdjustmentRequest, body),
+    );
   }
 
   @Get('accounts/:accountId/register')

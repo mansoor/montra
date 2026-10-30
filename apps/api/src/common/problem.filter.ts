@@ -63,8 +63,9 @@ export class ProblemFilter implements ExceptionFilter {
     }
     const pg = error as { code?: string; hint?: string; message?: string };
     if (typeof pg.code === 'string' && /^[0-9A-Z]{5}$/.test(pg.code)) {
+      // Our triggers and functions raise with a stable problem code in HINT (e.g. ledger.unbalanced).
       if (pg.hint === 'period.locked') return problem(409, 'period.locked', pg.message);
-      if (pg.hint?.startsWith('ledger.')) return problem(422, pg.hint, pg.message);
+      if (pg.hint && /^[a-z_]+\.[a-z_]+$/.test(pg.hint)) return problem(422, pg.hint, pg.message);
       if (pg.code === '42501') return problem(403, 'forbidden', 'You do not have access to this resource');
       if (pg.code === '23503') return problem(422, 'reference.invalid', 'A referenced record does not exist');
       if (pg.code === '23505') return problem(409, 'conflict', 'A record with these values already exists');

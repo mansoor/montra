@@ -45,6 +45,9 @@ export const AccountDto = z.object({
   /** Natural balance (held for assets, owed for liabilities). */
   balance: MoneyDto,
   archived: z.boolean(),
+  /** Hidden from the current user's lists (preference, UP-04). */
+  hidden: z.boolean(),
+  defaultMemberId: z.string().nullable(),
 });
 export type AccountDto = z.infer<typeof AccountDto>;
 

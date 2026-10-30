@@ -1,13 +1,22 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { newId } from '@montra/db';
+import { sql } from 'kysely';
 import {
   asCurrencyCode,
   buildOpeningBalanceEntry,
   naturalBalance,
   todayIn,
   type CalendarDate,
+  type JournalEntryDraft,
 } from '@montra/domain';
-import type { AccountDto, BankAccountKind, CategoryDto, CreateAccountRequest } from '@montra/schemas';
+import type {
+  AccountDto,
+  BalanceAdjustmentRequest,
+  BankAccountKind,
+  CategoryDto,
+  CreateAccountRequest,
+  UpdateAccountRequest,
+} from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { notFound, unprocessable } from '../common/errors.js';
@@ -101,12 +110,18 @@ export class AccountsService {
     return (await this.list(ctx)).find((a) => a.id === id)!;
   }
 
-  async list(ctx: Ctx): Promise<AccountDto[]> {
+  async list(
+    ctx: Ctx,
+    opts: { includeHidden?: boolean; includeArchived?: boolean } = {},
+  ): Promise<AccountDto[]> {
     return this.db.run(ctx, async (trx) => {
       const rows = await trx
         .selectFrom('app.bank_account as b')
         .innerJoin('app.ledger_account as a', (j) =>
           j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+        )
+        .leftJoin('app.account_visibility as v', (j) =>
+          j.onRef('v.ledger_account_id', '=', 'a.id').on('v.user_id', '=', ctx.userId),
         )
         .select([
           'a.id',
@@ -118,8 +133,14 @@ export class AccountsService {
           'b.kind',
           'b.institution',
           'b.last4',
+          'b.default_member_id',
+          'v.hidden',
         ])
         .where('b.workspace_id', '=', ctx.workspaceId)
+        .$if(!opts.includeHidden, (q) =>
+          q.where((eb) => eb.or([eb('v.hidden', 'is', null), eb('v.hidden', '=', false)])),
+        )
+        .$if(!opts.includeArchived && !opts.includeHidden, (q) => q.where('a.archived_at', 'is', null))
         .orderBy('a.created_at')
         .execute();
       const balances = await this.ledger.balances(
@@ -141,6 +162,8 @@ export class AccountsService {
           currency: asCurrencyCode(r.currency),
         },
         archived: r.archived_at !== null,
+        hidden: r.hidden ?? false,
+        defaultMemberId: r.default_member_id,
       }));
     });
   }
@@ -170,5 +193,115 @@ export class AccountsService {
 
   register(ctx: Ctx, accountId: string) {
     return this.db.run(ctx, (trx) => this.ledger.register(trx, ctx.workspaceId, accountId));
+  }
+
+  /** Rename, re-default, archive (ACC-06, history kept) or hide (per-user preference) an account. */
+  async update(ctx: Ctx, accountId: string, req: UpdateAccountRequest): Promise<AccountDto> {
+    await this.db.run(ctx, async (trx) => {
+      await this.ledger.accountRef(trx, ctx.workspaceId, accountId);
+      if (req.name !== undefined || req.archived !== undefined) {
+        await trx
+          .updateTable('app.ledger_account')
+          .set({
+            ...(req.name !== undefined ? { name: req.name } : {}),
+            ...(req.archived !== undefined ? { archived_at: req.archived ? new Date() : null } : {}),
+          })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', accountId)
+          .execute();
+      }
+      if (req.institution !== undefined || req.last4 !== undefined || req.defaultMemberId !== undefined) {
+        await trx
+          .updateTable('app.bank_account')
+          .set({
+            ...(req.institution !== undefined ? { institution: req.institution } : {}),
+            ...(req.last4 !== undefined ? { last4: req.last4 } : {}),
+            ...(req.defaultMemberId !== undefined ? { default_member_id: req.defaultMemberId } : {}),
+          })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('ledger_account_id', '=', accountId)
+          .execute();
+      }
+      if (req.hidden !== undefined) {
+        await trx
+          .insertInto('app.account_visibility')
+          .values({
+            workspace_id: ctx.workspaceId,
+            user_id: ctx.userId,
+            ledger_account_id: accountId,
+            hidden: req.hidden,
+          })
+          .onConflict((oc) =>
+            oc.columns(['workspace_id', 'user_id', 'ledger_account_id']).doUpdateSet({ hidden: req.hidden! }),
+          )
+          .execute();
+      }
+    });
+    const account = (await this.list(ctx, { includeHidden: true })).find((a) => a.id === accountId);
+    if (!account) throw notFound('Account');
+    return account;
+  }
+
+  /**
+   * Sets the account's natural balance on `date` to the given amount by posting the difference against
+   * opening-balance equity (ACC-05). The audit trail records the entry and the note.
+   */
+  async adjustBalance(
+    ctx: Ctx,
+    accountId: string,
+    req: BalanceAdjustmentRequest,
+  ): Promise<{ adjustment: string; entryId: string | null }> {
+    return this.db.run(ctx, async (trx) => {
+      const account = await this.ledger.accountRef(trx, ctx.workspaceId, accountId);
+      if (account.type !== 'asset' && account.type !== 'liability') {
+        throw unprocessable(
+          'account.not_a_bank_account',
+          'Only bank, card, loan and asset accounts have balances to adjust',
+        );
+      }
+      if (req.balance.currency !== account.currency)
+        throw unprocessable('currency.mismatch', `Balance must be in ${account.currency}`);
+      const { rows } = await sql<{ total: bigint | null }>`
+        select sum(amount_minor)::bigint as total from app.posting
+         where workspace_id = ${ctx.workspaceId} and ledger_account_id = ${accountId} and entry_date <= ${req.date}`.execute(
+        trx,
+      );
+      const current = naturalBalance(account.type, BigInt(rows[0]?.total ?? 0n));
+      const deltaNatural = BigInt(req.balance.amount) - current;
+      if (deltaNatural === 0n) return { adjustment: '0', entryId: null };
+      const debit = account.type === 'asset' ? deltaNatural : -deltaNatural;
+      const resolver = await this.ledger.resolver(trx, ctx.workspaceId);
+      const equity = resolver.systemAccount(account.entityId, 'opening_balance_equity');
+      const entity = resolver.entity(account.entityId);
+      const draft: JournalEntryDraft = {
+        entityId: account.entityId,
+        functionalCurrency: entity.functionalCurrency,
+        entryDate: req.date,
+        kind: 'adjustment',
+        description: `Balance adjustment: ${req.note}`,
+        postings: [
+          {
+            lineNo: 1,
+            accountId,
+            accountEntityId: account.entityId,
+            currency: account.currency,
+            amount: debit,
+            functionalAmount: debit,
+            fxRate: null,
+          },
+          {
+            lineNo: 2,
+            accountId: equity.id,
+            accountEntityId: account.entityId,
+            currency: equity.currency,
+            amount: -debit,
+            functionalAmount: -debit,
+            fxRate: null,
+          },
+        ],
+      };
+      const [entryId] = await this.ledger.post(trx, ctx, null, [draft]);
+      return { adjustment: deltaNatural.toString(), entryId: entryId ?? null };
+    });
   }
 }

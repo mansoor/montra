@@ -346,3 +346,48 @@ export function buildReversal(
   validateEntry(reversed);
   return reversed;
 }
+
+/**
+ * The adjustment that turns `before` into `after` for one entity (DE-10 reclassification): `after − before`,
+ * merged by account and dimensions. Returns null when nothing changes. Used when an entry is reconciled but its
+ * period is open: the reconciled cash lines cancel out and only the reclassified lines are posted, on the
+ * original date.
+ */
+export function buildAdjustment(
+  before: JournalEntryDraft,
+  after: JournalEntryDraft,
+  date: CalendarDate,
+  description: string,
+): JournalEntryDraft | null {
+  if (before.entityId !== after.entityId) {
+    throw new LedgerError('ledger.cross_entity_posting', 'An adjustment compares entries of one entity');
+  }
+  const key = (p: PostingDraft) => [p.accountId, p.memberId, p.propertyId, p.unitId, p.currency].join('|');
+  const lines = new Map<string, PostingDraft>();
+  const addLine = (p: PostingDraft, sign: 1n | -1n) => {
+    const k = key(p);
+    const prev = lines.get(k);
+    lines.set(k, {
+      ...p,
+      memo: prev?.memo ?? p.memo ?? null,
+      amount: (prev?.amount ?? 0n) + sign * p.amount,
+      functionalAmount: (prev?.functionalAmount ?? 0n) + sign * p.functionalAmount,
+    });
+  };
+  before.postings.forEach((p) => addLine(p, -1n));
+  after.postings.forEach((p) => addLine(p, 1n));
+  const postings = [...lines.values()]
+    .filter((p) => p.amount !== 0n || p.functionalAmount !== 0n)
+    .map((p, i) => ({ ...p, lineNo: i + 1 }));
+  if (postings.length === 0) return null;
+  const entry: JournalEntryDraft = {
+    entityId: after.entityId,
+    functionalCurrency: after.functionalCurrency,
+    entryDate: date,
+    kind: 'adjustment',
+    description,
+    postings,
+  };
+  validateEntry(entry);
+  return entry;
+}

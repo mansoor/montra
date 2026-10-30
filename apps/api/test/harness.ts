@@ -18,13 +18,22 @@ export interface Response<T = any> {
 export interface Client {
   get<T = any>(url: string): Promise<Response<T>>;
   post<T = any>(url: string, body?: unknown, headers?: Record<string, string>): Promise<Response<T>>;
+  patch<T = any>(url: string, body?: unknown, headers?: Record<string, string>): Promise<Response<T>>;
+  put<T = any>(url: string, body?: unknown, headers?: Record<string, string>): Promise<Response<T>>;
+  delete<T = any>(url: string, body?: unknown, headers?: Record<string, string>): Promise<Response<T>>;
 }
 
 export async function startHarness(): Promise<Harness> {
   const app = await createApp({ NODE_ENV: 'test', PORT: 0, DATABASE_URL: APP_URL, AUTH_MODE: 'dev' });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  const call = async (method: 'GET' | 'POST', url: string, email: string, body?: unknown, headers = {}) => {
+  const call = async (
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    url: string,
+    email: string,
+    body?: unknown,
+    headers = {},
+  ) => {
     const res = await app.inject({
       method,
       url,
@@ -42,6 +51,9 @@ export async function startHarness(): Promise<Harness> {
     as: (email) => ({
       get: (url) => call('GET', url, email),
       post: (url, body, headers) => call('POST', url, email, body, headers),
+      patch: (url, body, headers) => call('PATCH', url, email, body, headers),
+      put: (url, body, headers) => call('PUT', url, email, body, headers),
+      delete: (url, body, headers) => call('DELETE', url, email, body, headers),
     }),
     close: () => app.close(),
   };

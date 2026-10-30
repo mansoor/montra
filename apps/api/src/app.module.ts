@@ -13,13 +13,34 @@ import { AccountsController } from './accounts/accounts.controller.js';
 import { TransactionsService } from './transactions/transactions.service.js';
 import { TransactionsController } from './transactions/transactions.controller.js';
 import { HealthController } from './health/health.controller.js';
+import { FieldCrypto, KMS_PORT, LocalKms } from './crypto/crypto.service.js';
+import { TransactionPoster } from './transactions/poster.js';
+import { EntitiesController, FamilyMembersController, MeController } from './settings/settings.controller.js';
+import { JournalsController } from './journals/journals.controller.js';
+import { InviteAcceptController, SharingController } from './sharing/sharing.controller.js';
+import { RecurringService } from './recurring/recurring.service.js';
+import { RecurringController } from './recurring/recurring.controller.js';
+import { SyncController } from './sync/sync.controller.js';
 
 @Module({})
 export class AppModule {
   static forRoot(config: AppConfig = loadConfig()): DynamicModule {
     return {
       module: AppModule,
-      controllers: [HealthController, WorkspacesController, AccountsController, TransactionsController],
+      controllers: [
+        HealthController,
+        MeController,
+        WorkspacesController,
+        EntitiesController,
+        FamilyMembersController,
+        AccountsController,
+        TransactionsController,
+        JournalsController,
+        SharingController,
+        InviteAcceptController,
+        RecurringController,
+        SyncController,
+      ],
       providers: [
         { provide: CONFIG, useValue: config },
         { provide: APP_FILTER, useClass: ProblemFilter },
@@ -33,6 +54,11 @@ export class AppModule {
         WorkspacesService,
         AccountsService,
         TransactionsService,
+        TransactionPoster,
+        RecurringService,
+        // Production binds the AWS KMS adapter here.
+        { provide: KMS_PORT, useClass: LocalKms },
+        FieldCrypto,
       ],
     };
   }
