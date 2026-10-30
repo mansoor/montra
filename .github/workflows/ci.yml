@@ -84,3 +84,39 @@ jobs:
           name: playwright-report
           path: apps/web/playwright-report
           retention-days: 7
+
+  doc-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      # The tests apply packages/db/migrations to this empty database themselves (tests/conftest.py).
+      DATABASE_URL: postgres://montra_app:montra_app@localhost:5432/montra_test_docworker
+      DATABASE_ADMIN_URL: postgres://montra_owner:montra_owner@localhost:5432/montra_test_docworker
+    defaults:
+      run:
+        working-directory: apps/doc-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/doc-worker/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: Bootstrap database roles and the doc-worker test database
+        run: psql -v db=montra_test_docworker -f ../../infra/db/bootstrap.sql
+      - run: python -m ruff check src tests
+      - run: python -m ruff format --check src tests
+      - run: python -m mypy
+      - run: python -m pytest -q

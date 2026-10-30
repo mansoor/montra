@@ -1,0 +1,57 @@
+[project]
+name = "montra-doc-worker"
+version = "0.1.0"
+description = "Montra document worker: XLS and digital PDF statement extraction from the Postgres job queue (ADR-0011)."
+requires-python = ">=3.12"
+dependencies = [
+  "psycopg[binary]==3.2.13",
+  "pdfplumber==0.11.10",
+  "xlrd==2.0.2",
+  "boto3==1.43.123",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.2.0",
+  "ruff==0.17.3",
+  "mypy==2.4.1",
+  "reportlab==5.1.0",
+  "xlwt==1.3.0",
+]
+
+[project.scripts]
+montra-doc-worker = "montra_doc_worker.main:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+# Statements print Unicode minus signs and dashes; the parser matches them on purpose.
+ignore = ["RUF001"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["montra_doc_worker"]
+
+[[tool.mypy.overrides]]
+module = ["pdfplumber.*", "xlrd.*", "boto3.*", "botocore.*", "xlwt.*", "reportlab.*"]
+ignore_missing_imports = true
