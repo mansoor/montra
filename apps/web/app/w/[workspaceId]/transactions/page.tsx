@@ -53,7 +53,13 @@ export default async function TransactionsPage({
           {t('journal.new')}
         </Link>
       </div>
-      <QuickAdd workspace={workspace} accounts={open} categories={categories} today={today} />
+      <QuickAdd
+        workspace={workspace}
+        accounts={open}
+        categories={categories}
+        members={members}
+        today={today}
+      />
       <TransferForm workspace={workspace} accounts={open} today={today} />
       <section aria-labelledby="list-heading" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

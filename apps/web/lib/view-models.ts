@@ -45,6 +45,10 @@ export interface TransactionRow {
   needsReview: boolean;
   status: string;
   tags: string[];
+  /** How the category was chosen (AI-06), e.g. "Matched rule 'Shell → Fuel'". */
+  explanation: string | null;
+  /** Clean merchant name from enrichment (AI-07). */
+  merchant: { name: string; logoUrl: string | null } | null;
 }
 
 /** The bank/card posting of a transaction (first non-category, non-system line on a known account). */
@@ -82,6 +86,8 @@ export function toTransactionRow(
     needsReview: t.reviewState === 'needs_review',
     status: t.status,
     tags: t.tags,
+    explanation: t.categorization?.explanation || null,
+    merchant: t.merchant ? { name: t.merchant.name, logoUrl: t.merchant.logoUrl } : null,
   };
 }
 

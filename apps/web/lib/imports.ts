@@ -169,23 +169,6 @@ export function draftToMapping(draft: MappingDraft): ColumnMapping {
   };
 }
 
-/** Column holding account names in a multi-account export: the one whose cells match the most names. */
-export function findAccountColumn(
-  sample: string[][],
-  accounts: string[],
-  fallback?: number,
-): number | undefined {
-  if (accounts.length === 0) return fallback;
-  const names = new Set(accounts.map((a) => a.trim().toLowerCase()));
-  const width = Math.max(0, ...sample.map((r) => r.length));
-  let best: { col: number; hits: number } | undefined;
-  for (let col = 0; col < width; col++) {
-    const hits = sample.filter((r) => names.has((r[col] ?? '').trim().toLowerCase())).length;
-    if (hits > 0 && (!best || hits > best.hits)) best = { col, hits };
-  }
-  return best?.col ?? fallback;
-}
-
 // ----- Live preview (mirrors @montra/importers parse rules) ------------------------------------------------
 
 const MONTHS: Record<string, number> = {

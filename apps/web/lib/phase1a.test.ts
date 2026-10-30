@@ -33,6 +33,8 @@ const txn = (postings: ReturnType<typeof posting>[], over: Partial<TransactionDt
   description: '',
   status: 'posted',
   reviewState: 'needs_review',
+  categorization: null,
+  merchant: null,
   source: 'manual',
   version: '4',
   memo: 'weekly shop',

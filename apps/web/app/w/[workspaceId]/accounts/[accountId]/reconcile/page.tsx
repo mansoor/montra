@@ -23,7 +23,10 @@ export default async function ReconcilePage({
       Promise.all([
         api.getWorkspace(workspaceId),
         api.listAccounts(workspaceId),
-        reconciliationId ? api.getReconciliation(workspaceId, reconciliationId) : Promise.resolve(null),
+        // Without ?r=, resume the account's unfinished reconciliation, if any.
+        reconciliationId
+          ? api.getReconciliation(workspaceId, reconciliationId)
+          : api.listReconciliations(workspaceId, accountId, 'in_progress').then((list) => list[0] ?? null),
       ]),
     ),
     getI18n(),

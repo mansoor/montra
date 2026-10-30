@@ -8,7 +8,6 @@ import {
   draftFromMapping,
   draftToMapping,
   fileProblem,
-  findAccountColumn,
   IMPORT_ERROR_KEYS,
   importErrorKey,
   mappingErrors,
@@ -99,17 +98,6 @@ describe('mapping editor model', () => {
       'imports.mapping.data_before_header',
     ])
       expect(en[key], key).toBeTruthy();
-  });
-
-  it('finds the account column of a multi-account export', () => {
-    const sample = [
-      ['Account', 'Date', 'Payee', 'Outflow', 'Inflow'],
-      ['Checking', '2026-10-01', 'Rent', '1200', ''],
-      ['Visa', '2026-10-02', 'Coffee', '4', ''],
-      ['Checking', '2026-10-03', 'Visa', '', '50'],
-    ];
-    expect(findAccountColumn(sample, ['Checking', 'Visa'])).toBe(0);
-    expect(findAccountColumn(sample, [], 3)).toBe(3);
   });
 });
 
