@@ -9,14 +9,7 @@ export type Step = 'receipt' | 'rule' | 'transfer' | 'history' | 'file' | 'merch
 // ----- Rules (04 §6) — same shapes as @montra/schemas RuleConditions / RuleActions ------------------------
 
 export type RuleField =
-  | 'payee'
-  | 'description'
-  | 'raw_description'
-  | 'amount'
-  | 'account'
-  | 'entity'
-  | 'date_dow'
-  | 'item_text';
+  'payee' | 'description' | 'raw_description' | 'amount' | 'account' | 'entity' | 'date_dow' | 'item_text';
 export type RuleOp = 'equals' | 'contains' | 'starts_with' | 'regex' | 'between' | 'gt' | 'lt' | 'in';
 export interface RuleCondition {
   field: RuleField;
