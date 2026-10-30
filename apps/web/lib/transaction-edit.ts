@@ -70,10 +70,17 @@ export function toEditState(t: TransactionDto, accountIds: ReadonlySet<string>):
     memo: t.memo ?? '',
     tags: t.tags.join(', '),
     mode: lines.length > 1 ? 'splits' : 'category',
-    categoryId: lines.length === 1 ? lines[0]!.accountId : '',
+    // The uncategorized system account is "no category yet" in the editor (the review queue's state).
+    categoryId: lines.length === 1 && !isUncategorized(t, lines[0]!.accountId) ? lines[0]!.accountId : '',
     splits: lines.length > 1 ? splits : [],
     ledgerEditable: !isTransfer && t.amount !== null && Boolean(accountId),
   };
+}
+
+function isUncategorized(t: TransactionDto, accountId: string): boolean {
+  return t.entries.some((e) =>
+    e.postings.some((p) => p.accountId === accountId && (p.systemRole ?? '').startsWith('uncategorized')),
+  );
 }
 
 export function parseTags(input: string): string[] {
