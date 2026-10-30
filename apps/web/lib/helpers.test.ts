@@ -90,6 +90,8 @@ describe('view models', () => {
     last4: null,
     balance: { amount, currency: currency as AccountDto['balance']['currency'] },
     archived: false,
+    hidden: false,
+    defaultMemberId: null,
   });
 
   it('computes net position per currency (assets minus liabilities)', () => {
@@ -148,6 +150,10 @@ describe('view models', () => {
       status: 'posted',
       reviewState: 'reviewed',
       source: 'manual',
+      memo: null,
+      tags: [],
+      recurringItemId: null,
+      amount: null,
       version: '1',
       entries: [{ id: 'e', entityId: 'P', date: '2026-10-05', kind, description: '', postings }],
     });
@@ -160,6 +166,8 @@ describe('view models', () => {
       currency: 'USD',
       memberId: null,
       memo: null,
+      isCategory: !ids.has(accountId),
+      systemRole: null,
     });
     const ids = new Set(['visa', 'chk', 'sav']);
     expect(

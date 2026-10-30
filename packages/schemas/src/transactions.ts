@@ -54,6 +54,9 @@ export const PostingDto = z.object({
   currency: z.string(),
   memberId: z.string().nullable(),
   memo: z.string().nullable(),
+  /** True for income/expense categories; false for bank, card, transfer and owner-equity lines. */
+  isCategory: z.boolean(),
+  systemRole: z.string().nullable(),
 });
 
 export const JournalEntryDto = z.object({
@@ -77,6 +80,8 @@ export const TransactionDto = z.object({
   memo: z.string().nullable(),
   tags: z.array(z.string()),
   recurringItemId: z.string().nullable(),
+  /** Signed amount from the paying account's view (negative = money out); null for manual journals. */
+  amount: MoneyDto.nullable(),
   /** Scheduled occurrences have no entries until confirmed. */
   entries: z.array(JournalEntryDto),
 });

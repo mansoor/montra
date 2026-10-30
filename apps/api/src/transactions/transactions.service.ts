@@ -560,6 +560,8 @@ export class TransactionsService {
           .selectFrom('app.posting as p')
           .innerJoin('app.ledger_account as a', 'a.id', 'p.ledger_account_id')
           .select([
+            'a.is_category',
+            'a.system_role',
             'p.journal_entry_id',
             'p.line_no',
             'p.ledger_account_id',
@@ -601,6 +603,7 @@ export class TransactionsService {
         memo: await this.crypto.decrypt(trx, ctx.workspaceId, 'transaction.memo', t.memo_enc),
         tags: tags.filter((x) => x.transaction_id === t.id).map((x) => x.name),
         recurringItemId: t.recurring_item_id,
+        amount: specAmount(t.spec as TransactionSpec | null),
         entries: entries
           .filter((e) => e.transaction_id === t.id)
           .map((e) => ({
@@ -620,10 +623,19 @@ export class TransactionsService {
                 currency: p.currency,
                 memberId: p.member_id,
                 memo: p.memo,
+                isCategory: p.is_category,
+                systemRole: p.system_role,
               })),
           })),
       });
     }
     return result;
   }
+}
+
+/** Signed amount from the paying account's view: transfers show the amount leaving the source account. */
+function specAmount(spec: TransactionSpec | null): TransactionDto['amount'] {
+  if (!spec) return null;
+  const amount = spec.type === 'transfer' ? (-BigInt(spec.amount)).toString() : spec.amount;
+  return { amount, currency: spec.currency as NonNullable<TransactionDto['amount']>['currency'] };
 }
