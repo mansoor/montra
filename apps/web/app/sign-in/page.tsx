@@ -1,23 +1,29 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { isValidEmail, SESSION_COOKIE } from '@/lib/session';
+import { AUTH_MODE, DEV_COOKIE, isValidEmail } from '@/lib/session';
+import { fetchFlow, flowInitUrl, KRATOS_ORIGIN, safeReturnTo } from '@/lib/kratos';
+import { toRenderModel } from '@/lib/kratos-ui';
+import { staticT as t } from '@/lib/i18n-static';
+import { AuthShell } from '@/components/kratos/auth-shell';
+import { FlowForm } from '@/components/kratos/flow-form';
 
 export const metadata: Metadata = { title: 'Sign in' };
+export const dynamic = 'force-dynamic';
 
 /** Keeps post-sign-in redirects on this site. */
 const safeNext = (next: unknown): string =>
   typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/';
 
-async function signIn(formData: FormData) {
+async function devSignIn(formData: FormData) {
   'use server';
   const email = String(formData.get('email') ?? '')
     .trim()
     .toLowerCase();
   const next = safeNext(formData.get('next'));
   if (!isValidEmail(email)) redirect(`/sign-in?error=email&next=${encodeURIComponent(next)}`);
-  // Phase 1b: Kratos session — replace with the Kratos login flow.
-  (await cookies()).set(SESSION_COOKIE, email, {
+  (await cookies()).set(DEV_COOKIE, email, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -27,23 +33,55 @@ async function signIn(formData: FormData) {
   redirect(next);
 }
 
-export default async function SignInPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | undefined>>;
-}) {
-  const { error, next } = await searchParams;
+type Params = Record<string, string | undefined>;
+
+export default async function SignInPage({ searchParams }: { searchParams: Promise<Params> }) {
+  const params = await searchParams;
+  return AUTH_MODE === 'kratos' ? <KratosSignIn params={params} /> : <DevSignIn params={params} />;
+}
+
+/** Kratos login flow (AUTH-01, AUTH-04): password, passkeys, social sign-in, and AAL2 step-up. */
+async function KratosSignIn({ params }: { params: Params }) {
+  const returnTo = safeReturnTo(params.return_to ?? (params.next ? safeNext(params.next) : undefined));
+  const init = { aal: params.aal, refresh: params.refresh, return_to: returnTo };
+  if (!params.flow) redirect(flowInitUrl('login', init));
+  const flow = await fetchFlow('login', params.flow, init);
+  const stepUp = flow.requested_aal === 'aal2';
   return (
-    <main id="main" className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
-      <h1 className="mb-1 text-2xl font-semibold">Sign in to Montra</h1>
-      <p className="mb-6 text-sm text-muted">
-        Development sign-in: enter any email. Production uses passwords, passkeys and MFA.
-      </p>
-      <form action={signIn} className="card space-y-4" noValidate>
+    <AuthShell
+      title={
+        stepUp ? t('auth.step_up_title') : flow.refresh ? t('auth.reauth_title') : t('auth.sign_in_title')
+      }
+      intro={stepUp ? t('auth.step_up_intro') : flow.refresh ? t('auth.reauth_intro') : undefined}
+    >
+      <FlowForm
+        model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })}
+        label={t('auth.sign_in_title')}
+      />
+      {!stepUp && !flow.refresh && (
+        <p className="flex justify-between text-sm">
+          <Link href="/sign-up" className="text-brand-600 underline">
+            {t('auth.create_account')}
+          </Link>
+          <Link href="/auth/recovery" className="text-brand-600 underline">
+            {t('auth.forgot_password')}
+          </Link>
+        </p>
+      )}
+    </AuthShell>
+  );
+}
+
+/** Development sign-in: any email, no password (refused in production by the API). */
+function DevSignIn({ params }: { params: Params }) {
+  const { error, next } = params;
+  return (
+    <AuthShell title={t('auth.sign_in_title')} intro={t('auth.dev_intro')}>
+      <form action={devSignIn} className="space-y-4" noValidate>
         <input type="hidden" name="next" value={safeNext(next)} />
         <div>
           <label htmlFor="email" className="field-label">
-            Email
+            {t('auth.email')}
           </label>
           <input
             id="email"
@@ -57,14 +95,14 @@ export default async function SignInPage({
           />
           {error === 'email' && (
             <p id="email-error" className="field-error">
-              Enter a valid email address.
+              {t('auth.email_invalid')}
             </p>
           )}
         </div>
         <button type="submit" className="btn-primary w-full">
-          Continue
+          {t('auth.continue')}
         </button>
       </form>
-    </main>
+    </AuthShell>
   );
 }

@@ -55,6 +55,18 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
   await expect(page.getByTestId('journal-entry')).toContainText('Groceries');
   await expect(page.getByTestId('journal-entry')).not.toContainText('Dining out');
 
+  // Delete to trash, then restore it from the Trash filter (BAK-06).
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByText('Moved to trash.')).toBeVisible();
+  await nav(page, 'Transactions');
+  await page.getByRole('link', { name: 'Trash', exact: true }).click();
+  const trashed = page.getByTestId('txn-row').filter({ hasText: 'Blue Bottle Coffee' });
+  await expect(trashed).toBeVisible();
+  await trashed.getByRole('button', { name: 'Restore' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Restored.' })).toBeVisible();
+  await expect(page.getByText('Trash is empty.')).toBeVisible();
+
   // Bulk-mark reviewed from the Needs review filter (TXN-10).
   await nav(page, 'Transactions');
   await page.getByRole('link', { name: 'Needs review', exact: true }).click();
@@ -109,9 +121,20 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
   await expect(p2.getByLabel('Workspace')).toHaveText('Phase 1a household');
   // A partner sees the Personal books only by default.
   await expect(p2.getByRole('link', { name: /Joint checking/ })).toBeVisible();
-  await partnerContext.close();
 
   await page.reload();
   await expect(page.getByRole('list', { name: 'Members' })).toContainText(partner);
-  await expect(page.getByRole('list', { name: 'Members' })).toContainText('partner');
+  await expect(page.getByRole('list', { name: 'Members' })).toContainText('Partner');
+
+  // Real-time (PLT-06): the partner's open page updates when the owner records a transaction, no reload.
+  await expect(p2.getByTestId('realtime-status')).toHaveAttribute('data-status', 'live');
+  await nav(page, 'Transactions');
+  await page.getByLabel('Amount').first().fill('4.75');
+  await page.getByLabel('Payee').fill('Realtime Bakery');
+  await page.getByLabel('Payee').press('Enter');
+  await expect(page.getByText('Saved Realtime Bakery')).toBeVisible();
+  await expect(p2.getByRole('list', { name: 'Transactions' })).toContainText('Realtime Bakery', {
+    timeout: 10_000,
+  });
+  await partnerContext.close();
 });

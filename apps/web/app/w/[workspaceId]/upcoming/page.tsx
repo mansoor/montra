@@ -27,7 +27,7 @@ export default async function UpcomingPage({ params }: { params: Promise<{ works
         date: t.date,
         title: t.payee || template?.name || t.description || 'Scheduled',
         templateName: template?.name ?? null,
-        accountName: template ? (accountName.get(template.accountId) ?? '') : '',
+        accountName: accountName.get(t.accountId ?? template?.accountId ?? '') ?? '',
         amount: t.amount ?? template?.amount ?? null,
       };
     });

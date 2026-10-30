@@ -10,6 +10,7 @@ import { signedTotal, toSplitPayload, type Direction, type SplitLine } from '@/l
 import { groupCategories } from '@/lib/view-models';
 import { Field, FormError } from './field';
 import { SplitEditor } from './split-editor';
+import { useI18n } from './i18n';
 
 /**
  * Quick-add bar (TXN-01): amount, payee, category, account and date in one row; Enter submits. An empty
@@ -27,6 +28,7 @@ export function QuickAdd({
   today: string;
 }) {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const amountRef = useRef<HTMLInputElement>(null);
   const [direction, setDirection] = useState<Direction>('expense');
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
@@ -57,10 +59,10 @@ export function QuickAdd({
     const form = e.currentTarget;
     const f = new FormData(form);
     const get = (k: string) => String(f.get(k) ?? '').trim();
-    const parsed = parseAmountInput(amount, currency);
-    if (!account) return setErrors({ fields: { accountId: 'Add an account first' } });
+    const parsed = parseAmountInput(amount, currency, locale, t);
+    if (!account) return setErrors({ fields: { accountId: t('quick_add.add_account_first') } });
     if (!parsed.ok) return setErrors({ fields: { amount: parsed.error } });
-    if (parsed.minor === 0n) return setErrors({ fields: { amount: 'Amount must not be zero' } });
+    if (parsed.minor === 0n) return setErrors({ fields: { amount: t('money.not_zero') } });
     const signed = signedTotal(parsed.minor, direction);
     setBusy(true);
     setErrors({ fields: {} });
@@ -76,7 +78,7 @@ export function QuickAdd({
             ? { categoryId: get('categoryId') }
             : {}),
       });
-      setSaved(`Saved ${get('payee') || 'transaction'}`);
+      setSaved(t('quick_add.saved', { name: get('payee') || t('quick_add.transaction') }));
       setAmount('');
       setSplits([]);
       // Keep account, date and type for the next entry; clear what describes this one.
@@ -87,14 +89,14 @@ export function QuickAdd({
       router.refresh();
       amountRef.current?.focus();
     } catch (err) {
-      setErrors(toFormErrors(err, { 'amount.amount': 'amount', splits: 'amount' }));
+      setErrors(toFormErrors(err, { 'amount.amount': 'amount', splits: 'amount' }, t));
     } finally {
       setBusy(false);
     }
   }
 
   if (accounts.length === 0) {
-    return <p className="card text-sm">Add an account before recording transactions.</p>;
+    return <p className="card text-sm">{t('quick_add.no_accounts')}</p>;
   }
 
   return (
@@ -102,11 +104,11 @@ export function QuickAdd({
       <form onSubmit={onSubmit} className="card space-y-3" aria-labelledby="quick-add-title" noValidate>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="quick-add-title" className="text-base font-semibold">
-            Quick add
+            {t('quick_add.title')}
           </h2>
           <div
             role="radiogroup"
-            aria-label="Type"
+            aria-label={t('quick_add.type')}
             className="inline-flex overflow-hidden rounded-md border border-line"
           >
             {(['expense', 'income'] as const).map((d) => (
@@ -121,14 +123,14 @@ export function QuickAdd({
                 }}
                 className={`px-3 py-1.5 text-sm ${direction === d ? 'bg-brand-600 text-white' : 'bg-surface hover:bg-brand-50'}`}
               >
-                {d === 'expense' ? 'Expense' : 'Income'}
+                {t(d === 'expense' ? 'quick_add.expense' : 'quick_add.income')}
               </button>
             ))}
           </div>
         </div>
-        <FormError message={errors.form} />
+        <FormError message={errors.form} action={errors.action} />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[8rem_1fr_1fr_1fr_9rem_auto]">
-          <Field id="qa-amount" label="Amount" error={errors.fields.amount}>
+          <Field id="qa-amount" label={t('fields.amount')} error={errors.fields.amount}>
             {(p) => (
               <input
                 {...p}
@@ -143,24 +145,32 @@ export function QuickAdd({
               />
             )}
           </Field>
-          <Field id="qa-payee" label="Payee" error={errors.fields.payee}>
-            {(p) => <input {...p} name="payee" className="input" maxLength={200} placeholder="Who was it?" />}
+          <Field id="qa-payee" label={t('fields.payee')} error={errors.fields.payee}>
+            {(p) => (
+              <input
+                {...p}
+                name="payee"
+                className="input"
+                maxLength={200}
+                placeholder={t('quick_add.payee_placeholder')}
+              />
+            )}
           </Field>
-          <Field id="qa-category" label="Category" error={errors.fields.categoryId}>
+          <Field id="qa-category" label={t('fields.category')} error={errors.fields.categoryId}>
             {(p) =>
               splits.length ? (
                 <button
                   {...p}
                   type="button"
                   className="input text-left"
-                  aria-label={`Category: split into ${splits.length} lines. Edit split`}
+                  aria-label={t('split.button_label', { count: splits.length })}
                   onClick={() => setSplitOpen(true)}
                 >
-                  Split into {splits.length} lines
+                  {t('split.summary', { count: splits.length })}
                 </button>
               ) : (
                 <select {...p} name="categoryId" className="input" defaultValue="">
-                  <option value="">Uncategorized (review later)</option>
+                  <option value="">{t('quick_add.uncategorized')}</option>
                   {pickerGroups.map((g) => (
                     <optgroup key={g.label} label={g.label}>
                       {g.categories.map((c) => (
@@ -174,7 +184,7 @@ export function QuickAdd({
               )
             }
           </Field>
-          <Field id="qa-account" label="Account" error={errors.fields.accountId}>
+          <Field id="qa-account" label={t('fields.account')} error={errors.fields.accountId}>
             {(p) => (
               <select
                 {...p}
@@ -191,15 +201,15 @@ export function QuickAdd({
               </select>
             )}
           </Field>
-          <Field id="qa-date" label="Date" error={errors.fields.date}>
+          <Field id="qa-date" label={t('fields.date')} error={errors.fields.date}>
             {(p) => <input {...p} name="date" type="date" className="input" defaultValue={today} />}
           </Field>
           <div className="flex items-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setSplitOpen(true)}>
-              Split
+              {t('split.open')}
             </button>
             <button type="submit" className="btn-primary" disabled={busy}>
-              {busy ? 'Saving…' : 'Add'}
+              {busy ? t('common.saving') : t('quick_add.add')}
             </button>
           </div>
         </div>

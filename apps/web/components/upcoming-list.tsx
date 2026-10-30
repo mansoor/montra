@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
-import { formatMinor, minorToInput, parseAmountInput } from '@/lib/money';
+import { minorToInput, parseAmountInput } from '@/lib/money';
+import { DateText, useI18n } from './i18n';
 
 export interface UpcomingItem {
   id: string;
@@ -20,6 +21,7 @@ const abs = (n: bigint) => (n < 0n ? -n : n);
 /** Scheduled occurrences with Confirm and an optional actual-amount override. */
 export function UpcomingList({ workspaceId, items }: { workspaceId: string; items: UpcomingItem[] }) {
   const router = useRouter();
+  const { money } = useI18n();
   const [busy, setBusy] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -84,9 +86,9 @@ export function UpcomingList({ workspaceId, items }: { workspaceId: string; item
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{item.title}</p>
                 <p className="text-xs text-muted">
-                  <time dateTime={item.date}>{item.date}</time>
+                  <DateText date={item.date} />
                   {item.accountName && ` · ${item.accountName}`}
-                  {item.amount && ` · expected ${formatMinor(item.amount.amount, item.amount.currency)}`}
+                  {item.amount && ` · expected ${money(item.amount.amount, item.amount.currency)}`}
                 </p>
               </div>
               {item.amount && (

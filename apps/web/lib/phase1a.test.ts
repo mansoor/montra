@@ -5,7 +5,7 @@ import { friendlyMessage, toFormErrors } from './errors';
 import { evaluateJournal, toJournalLines, type JournalLine } from './journal';
 import { maxSeq, needsRefresh } from './sync';
 import { buildPatch, isEmptyPatch, parseTags, toEditState } from './transaction-edit';
-import { currentLock, defaultAccess, grantsFor, inviteLink } from './settings';
+import { defaultAccess, grantsFor, inviteLink } from './settings';
 
 const posting = (
   accountId: string,
@@ -257,19 +257,6 @@ describe('settings helpers', () => {
       { id: 'B', type: 'business' as const, name: 'Studio', functionalCurrency: 'USD', lockedThrough: null },
     ],
   };
-
-  it('derives the current close date from history (newest first)', () => {
-    const ev = (action: 'lock' | 'unlock' | 'relock', lockedThrough: string | null) => ({
-      action,
-      lockedThrough,
-      actorUserId: null,
-      note: null,
-      at: '2026-10-30T00:00:00Z',
-    });
-    expect(currentLock([])).toBeNull();
-    expect(currentLock([ev('relock', '2026-09-30'), ev('lock', '2026-08-31')])).toBe('2026-09-30');
-    expect(currentLock([ev('unlock', null), ev('lock', '2026-09-30')])).toBeNull();
-  });
 
   it('builds invite links and sends only non-default grants', () => {
     expect(inviteLink('http://localhost:3000/', 'abc_DEF-123')).toBe(

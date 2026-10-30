@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
+import { DateText } from '@/components/i18n';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,7 +95,7 @@ export default async function RegisterPage({
               {lines.map((l, i) => (
                 <tr key={`${l.entryId}-${i}`} data-testid="register-row">
                   <td className="whitespace-nowrap px-4 py-2">
-                    <time dateTime={l.date}>{l.date}</time>
+                    <DateText date={l.date} />
                   </td>
                   <td className="px-4 py-2">{l.description || '—'}</td>
                   {view === 'ledger' ? (

@@ -127,6 +127,23 @@ describe('ApiClient', () => {
     expect(f.calls[5]!.url).toBe('/api/v1/invites/tok_en-123/accept');
   });
 
+  it('covers trash, journal list, chart of accounts, sync head and sessions', async () => {
+    const f = fakeFetch(200, { data: [], latestSeq: '77', changes: [], hasMore: false });
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl });
+    await client.listTransactions('w', { trash: true, limit: 10 });
+    expect(f.calls[0]!.url).toBe('/api/v1/workspaces/w/transactions?trash=true&limit=10');
+    await client.listTransactions('w', { trash: false });
+    expect(f.calls[1]!.url).toBe('/api/v1/workspaces/w/transactions');
+    await client.listJournalEntries('w', { entityId: 'e1', kind: 'manual' });
+    expect(f.calls[2]!.url).toBe('/api/v1/workspaces/w/journal-entries?entityId=e1&kind=manual');
+    await client.listLedgerAccounts('w', 'e1');
+    expect(f.calls[3]!.url).toBe('/api/v1/workspaces/w/ledger-accounts?entityId=e1');
+    await expect(client.syncHead('w')).resolves.toBe('77');
+    expect(f.calls[4]!.url).toBe('/api/v1/workspaces/w/sync/changes?head=true');
+    await client.revokeSession('s 1');
+    expect(f.calls[5]!).toMatchObject({ url: '/api/v1/me/sessions/s%201', init: { method: 'DELETE' } });
+  });
+
   it('reports non-problem failures and network errors', async () => {
     const f = fakeFetch(502, undefined, 'text/plain');
     const e1 = await new ApiClient({ baseUrl: '/api', fetch: f.impl })

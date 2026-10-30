@@ -1,6 +1,8 @@
-import { formatMinor } from '@/lib/money';
+'use client';
 
-/** Displays minor units with locale formatting; negatives in the "bad" color. */
+import { useI18n } from './i18n';
+
+/** Displays minor units in the user's locale (CUR-10); negatives in the "bad" color when `signed`. */
 export function Money({
   amount,
   currency,
@@ -15,11 +17,12 @@ export function Money({
   signed?: boolean;
   className?: string;
 }) {
+  const { money } = useI18n();
   const value = typeof amount === 'string' ? BigInt(amount) : amount;
   const color = signed ? (value < 0n ? 'text-bad' : value > 0n ? 'text-good' : '') : '';
   return (
     <span className={`num whitespace-nowrap ${color} ${className}`}>
-      {formatMinor(value, currency, { accounting })}
+      {money(value, currency, { accounting })}
     </span>
   );
 }

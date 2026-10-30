@@ -8,7 +8,8 @@ import { browserApi } from '@/lib/browser-api';
 import { summarizeBulk, toBulkSet, toggleSelection, type BulkAction } from '@/lib/bulk';
 import { friendlyMessage } from '@/lib/errors';
 import { groupCategories, type TransactionRow } from '@/lib/view-models';
-import { ReviewBadge, RowAmount } from './transaction-list';
+import { ReviewBadge, RowAmount, RowTitle } from './transaction-list';
+import { DateText, useI18n } from './i18n';
 
 type BulkKind = BulkAction['kind'];
 
@@ -30,6 +31,7 @@ export function TransactionsTable({
   trash: boolean;
 }) {
   const router = useRouter();
+  const { t } = useI18n();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [kind, setKind] = useState<BulkKind>('reviewed');
   const [value, setValue] = useState('');
@@ -50,18 +52,18 @@ export function TransactionsTable({
             : kind === 'addTags' || kind === 'removeTags'
               ? { kind, tags: value }
               : { kind: 'reviewed' };
-    const set = toBulkSet(action);
+    const set = toBulkSet(action, t);
     if ('error' in set) return setMessage({ tone: 'bad', text: set.error as string });
     setBusy(true);
     setMessage(null);
     try {
       const result = await browserApi.bulkEdit(workspace.id, { ids: [...selected], set });
-      setMessage({ tone: result.skipped.length ? 'bad' : 'good', text: summarizeBulk(result) });
+      setMessage({ tone: result.skipped.length ? 'bad' : 'good', text: summarizeBulk(result, t) });
       setSelected(new Set());
       setValue('');
       router.refresh();
     } catch (err) {
-      setMessage({ tone: 'bad', text: friendlyMessage(err) });
+      setMessage({ tone: 'bad', text: friendlyMessage(err, t) });
     } finally {
       setBusy(false);
     }
@@ -71,10 +73,10 @@ export function TransactionsTable({
     setBusy(true);
     try {
       await browserApi.restoreTransaction(workspace.id, id);
-      setMessage({ tone: 'good', text: 'Restored.' });
+      setMessage({ tone: 'good', text: t('transactions.restored') });
       router.refresh();
     } catch (err) {
-      setMessage({ tone: 'bad', text: friendlyMessage(err) });
+      setMessage({ tone: 'bad', text: friendlyMessage(err, t) });
     } finally {
       setBusy(false);
     }
@@ -88,7 +90,9 @@ export function TransactionsTable({
             {message.text}
           </p>
         )}
-        <p className="card text-sm text-muted">{trash ? 'Trash is empty.' : 'No transactions here.'}</p>
+        <p className="card text-sm text-muted">
+          {trash ? t('transactions.trash_empty') : t('transactions.none_here')}
+        </p>
       </div>
     );
   }
@@ -98,7 +102,7 @@ export function TransactionsTable({
       {!trash && (
         <div
           role="region"
-          aria-label="Bulk edit"
+          aria-label={t('bulk.label')}
           className="card flex flex-wrap items-end gap-2"
           data-testid="bulk-bar"
         >
@@ -107,13 +111,13 @@ export function TransactionsTable({
               type="checkbox"
               checked={selected.size > 0 && selected.size === visible.length}
               onChange={() => setSelected(toggleSelection(selected, 'all', visible))}
-              aria-label="Select all"
+              aria-label={t('bulk.select_all')}
             />
-            <span aria-live="polite">{selected.size} selected</span>
+            <span aria-live="polite">{t('bulk.selected', { count: selected.size })}</span>
           </label>
           <div>
             <label htmlFor="bulk-kind" className="field-label">
-              Action
+              {t('bulk.action')}
             </label>
             <select
               id="bulk-kind"
@@ -124,19 +128,19 @@ export function TransactionsTable({
                 setValue('');
               }}
             >
-              <option value="reviewed">Mark reviewed</option>
-              <option value="category">Set category</option>
-              <option value="entity">Move to books</option>
-              <option value="member">Set family member</option>
-              <option value="addTags">Add tags</option>
-              <option value="removeTags">Remove tags</option>
+              <option value="reviewed">{t('bulk.mark_reviewed')}</option>
+              <option value="category">{t('bulk.set_category')}</option>
+              <option value="entity">{t('bulk.move_books')}</option>
+              <option value="member">{t('bulk.set_member')}</option>
+              <option value="addTags">{t('bulk.add_tags')}</option>
+              <option value="removeTags">{t('bulk.remove_tags')}</option>
             </select>
           </div>
           {kind === 'category' && (
-            <BulkField label="Category">
+            <BulkField label={t('fields.category')} id="bulk-category">
               {(id) => (
                 <select id={id} className="input" value={value} onChange={(e) => setValue(e.target.value)}>
-                  <option value="">Choose…</option>
+                  <option value="">{t('common.choose')}</option>
                   {groups.map((g) => (
                     <optgroup key={g.label} label={g.label}>
                       {g.categories.map((c) => (
@@ -151,10 +155,10 @@ export function TransactionsTable({
             </BulkField>
           )}
           {kind === 'entity' && (
-            <BulkField label="Books">
+            <BulkField label={t('bulk.books')} id="bulk-books">
               {(id) => (
                 <select id={id} className="input" value={value} onChange={(e) => setValue(e.target.value)}>
-                  <option value="">Choose…</option>
+                  <option value="">{t('common.choose')}</option>
                   {workspace.entities.map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.name}
@@ -165,10 +169,10 @@ export function TransactionsTable({
             </BulkField>
           )}
           {kind === 'member' && (
-            <BulkField label="Member">
+            <BulkField label={t('fields.member')} id="bulk-member">
               {(id) => (
                 <select id={id} className="input" value={value} onChange={(e) => setValue(e.target.value)}>
-                  <option value="">Household</option>
+                  <option value="">{t('members.household')}</option>
                   {members
                     .filter((m) => m.status === 'active')
                     .map((m) => (
@@ -181,7 +185,7 @@ export function TransactionsTable({
             </BulkField>
           )}
           {(kind === 'addTags' || kind === 'removeTags') && (
-            <BulkField label="Tags (comma separated)">
+            <BulkField label={t('bulk.tags')} id="bulk-tags">
               {(id) => (
                 <input id={id} className="input" value={value} onChange={(e) => setValue(e.target.value)} />
               )}
@@ -193,7 +197,7 @@ export function TransactionsTable({
             disabled={busy || selected.size === 0}
             onClick={applyBulk}
           >
-            Apply to {selected.size}
+            {t('bulk.apply', { count: selected.size })}
           </button>
         </div>
       )}
@@ -211,21 +215,23 @@ export function TransactionsTable({
                 className="mt-1"
                 checked={selected.has(r.id)}
                 onChange={() => setSelected(toggleSelection(selected, r.id, visible))}
-                aria-label={`Select ${r.title} on ${r.date}`}
+                aria-label={t('bulk.select_row', { title: r.title, date: r.date })}
               />
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">
                 <Link href={`${base}/${r.id}`} className="hover:underline">
-                  {r.title}
+                  <RowTitle row={r} />
                 </Link>
                 {r.needsReview && <ReviewBadge />}
                 {r.status === 'scheduled' && (
-                  <span className="ml-2 rounded bg-canvas px-1.5 py-0.5 text-xs text-muted">Scheduled</span>
+                  <span className="ml-2 rounded bg-canvas px-1.5 py-0.5 text-xs text-muted">
+                    {t('transactions.scheduled')}
+                  </span>
                 )}
               </p>
               <p className="truncate text-xs text-muted">
-                <time dateTime={r.date}>{r.date}</time> · {r.accountName}
+                <DateText date={r.date} /> · {r.accountName}
                 {r.categories.length > 0 && ` · ${r.categories.join(', ')}`}
                 {r.tags.length > 0 && ` · #${r.tags.join(' #')}`}
               </p>
@@ -233,7 +239,7 @@ export function TransactionsTable({
             <RowAmount row={r} />
             {trash && (
               <button type="button" className="btn-secondary" disabled={busy} onClick={() => restore(r.id)}>
-                Restore
+                {t('common.restore')}
               </button>
             )}
           </li>
@@ -243,8 +249,15 @@ export function TransactionsTable({
   );
 }
 
-function BulkField({ label, children }: { label: string; children: (id: string) => ReactNode }) {
-  const id = `bulk-${label.replace(/\W+/g, '-').toLowerCase()}`;
+function BulkField({
+  label,
+  id,
+  children,
+}: {
+  label: string;
+  id: string;
+  children: (id: string) => ReactNode;
+}) {
   return (
     <div>
       <label htmlFor={id} className="field-label">

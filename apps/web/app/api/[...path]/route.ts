@@ -1,6 +1,7 @@
 /**
  * Backend-for-frontend proxy (docs/design/08 §2): the browser calls /api/v1/…, and this handler forwards to
- * the API with the session's credentials. The session cookie never reaches the API or browser scripts.
+ * the API with the session's credentials: the dev bearer, or only the `ory_kratos_session` cookie in kratos
+ * mode (never the browser's other cookies). Session values are never readable by browser scripts.
  */
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -17,9 +18,8 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   if (path[0] !== 'v1' || path.some((s) => s === '..' || s === '.')) {
     return NextResponse.json({ status: 404, code: 'not_found', title: 'Not found' }, { status: 404 });
   }
-  // Phase 1b: Kratos session — forward the Kratos session token here instead of the dev bearer.
-  const email = (await cookies()).get(SESSION_COOKIE)?.value;
-  const headers: Record<string, string> = { ...authHeaders(email) };
+  const session = (await cookies()).get(SESSION_COOKIE)?.value;
+  const headers: Record<string, string> = { ...authHeaders(session) };
   for (const h of FORWARDED_REQUEST_HEADERS) {
     const v = req.headers.get(h);
     if (v) headers[h] = v;

@@ -73,7 +73,7 @@ export function toTransactionRow(
   return {
     id: t.id,
     date: t.date,
-    title: t.payee || t.description || (isTransfer ? 'Transfer' : '(no payee)'),
+    title: t.payee || t.description, // empty → translated placeholder in the UI
     accountName: bank?.accountName ?? '',
     amount: t.amount ? BigInt(t.amount.amount) : null,
     currency: t.amount?.currency ?? bank?.currency ?? 'USD',

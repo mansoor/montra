@@ -15,6 +15,7 @@
   "dependencies": {
     "@montra/api-client": "workspace:*",
     "@montra/domain": "workspace:*",
+    "@montra/i18n": "workspace:*",
     "@montra/schemas": "workspace:*",
     "next": "15.5.28",
     "react": "^19.1.10",

@@ -1,9 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SESSION_COOKIE } from './lib/session';
 
-/** Sends signed-out visitors to /sign-in. Phase 1b: Kratos session — check the Kratos cookie instead. */
+/**
+ * Sends signed-out visitors to /sign-in (dev cookie, or the Kratos session cookie in kratos mode) and passes
+ * the current path to server components so they can build step-up links (AUTH-04, AUTH-09).
+ */
 export function middleware(req: NextRequest) {
-  if (req.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
+  if (req.cookies.get(SESSION_COOKIE)?.value) {
+    const headers = new Headers(req.headers);
+    headers.set('x-montra-path', req.nextUrl.pathname + req.nextUrl.search);
+    return NextResponse.next({ request: { headers } });
+  }
   if (req.nextUrl.pathname.startsWith('/api/')) {
     return NextResponse.json(
       {
@@ -23,5 +30,6 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!sign-in|_next/static|_next/image|favicon.ico).*)'],
+  // Sign-in, sign-up and the Kratos self-service pages work without a session.
+  matcher: ['/((?!sign-in|sign-up|auth/|_next/static|_next/image|favicon.ico).*)'],
 };

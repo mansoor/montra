@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/server-api';
+import { getI18n } from '@/lib/i18n-server';
 import { TransactionEditor } from '@/components/transaction-editor';
 import { JournalView } from '@/components/journal-view';
 
@@ -26,15 +27,16 @@ export default async function TransactionPage({
   const entries = await load((api) =>
     Promise.all(transaction.entries.map((e) => api.getJournalEntry(workspaceId, e.id))),
   );
+  const { t } = await getI18n();
   const entityName = new Map(workspace.entities.map((e) => [e.id, e.name]));
 
   return (
     <div className="space-y-6">
       <Link href={`/w/${workspaceId}/transactions`} className="text-sm text-brand-600 underline">
-        ← Transactions
+        ← {t('nav.transactions')}
       </Link>
       <h1 className="text-xl font-semibold">
-        {transaction.payee || transaction.description || 'Transaction'}
+        {transaction.payee || transaction.description || t('editor.untitled')}
       </h1>
       <TransactionEditor
         workspace={workspace}
@@ -45,13 +47,11 @@ export default async function TransactionPage({
       />
       <section aria-labelledby="journal-heading" className="space-y-3">
         <h2 id="journal-heading" className="text-lg font-semibold">
-          Journal
+          {t('journal.title')}
         </h2>
         {entries.length === 0 ? (
           <p className="card text-sm text-muted">
-            {transaction.status === 'scheduled'
-              ? 'Scheduled: nothing is posted until you confirm it.'
-              : 'No journal entries (deleted).'}
+            {transaction.status === 'scheduled' ? t('editor.scheduled_no_entries') : t('editor.no_entries')}
           </p>
         ) : (
           entries.map((e) => (

@@ -5,7 +5,7 @@ const nextConfig = {
   // Lint runs as its own Turbo task with the repo's flat config.
   eslint: { ignoreDuringBuilds: true },
   // Workspace packages ship ESM in dist/ (built first by Turbo's ^build).
-  transpilePackages: ['@montra/api-client', '@montra/domain', '@montra/schemas'],
+  transpilePackages: ['@montra/api-client', '@montra/domain', '@montra/i18n', '@montra/schemas'],
 };
 
 export default nextConfig;

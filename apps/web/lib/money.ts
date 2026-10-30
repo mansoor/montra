@@ -3,14 +3,26 @@
  * the UI never does float math on money.
  */
 import { asCurrencyCode, formatMoney, isCurrencyCode, minorUnits, parseMoney } from '@montra/domain';
+import { staticT } from './i18n-static';
 
 export type ParseResult = { ok: true; minor: bigint } | { ok: false; error: string };
 
-/** Parses what a user typed in a major-unit field ("12.50", "1,234", "(5.00)") into minor units. */
-export function parseAmountInput(input: string, currency: string, locale = 'en-US'): ParseResult {
+type T = (key: string, values?: Record<string, string | number>) => string;
+
+/**
+ * Parses what a user typed in a major-unit field ("12.50", "1,234", "(5.00)") into minor units. Error text
+ * comes from the message catalog (`t` defaults to English).
+ */
+export function parseAmountInput(
+  input: string,
+  currency: string,
+  locale = 'en-US',
+  t: T = staticT,
+): ParseResult {
   const trimmed = input.trim();
-  if (!trimmed) return { ok: false, error: 'Enter an amount' };
-  if (!isCurrencyCode(currency.toUpperCase())) return { ok: false, error: `Unknown currency ${currency}` };
+  if (!trimmed) return { ok: false, error: t('money.enter_amount') };
+  if (!isCurrencyCode(currency.toUpperCase()))
+    return { ok: false, error: t('money.unknown_currency', { currency }) };
   const decimal = decimalSeparator(locale);
   try {
     const m = parseMoney(trimmed, currency, decimal === ',' ? { decimal: ',' } : undefined);
@@ -20,10 +32,10 @@ export function parseAmountInput(input: string, currency: string, locale = 'en-U
       const places = minorUnits(asCurrencyCode(currency));
       return {
         ok: false,
-        error: places === 0 ? `${currency} has no decimal places` : `Use at most ${places} decimal places`,
+        error: places === 0 ? t('money.no_decimals', { currency }) : t('money.max_decimals', { places }),
       };
     }
-    return { ok: false, error: 'Enter a number, e.g. 12.50' };
+    return { ok: false, error: t('money.invalid') };
   }
 }
 
