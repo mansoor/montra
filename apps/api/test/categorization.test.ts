@@ -285,7 +285,7 @@ describe('AI settings and audit log (UP-13, AIA-08, AIA-10)', () => {
       amount: usd('-1299'),
       payee: 'Netflix streaming',
     });
-    const events = (await c.get(w.url('/ai/events'))).body.items;
+    const events = (await c.get(w.url('/ai/events'))).body.data;
     expect(events.length).toBeGreaterThanOrEqual(1);
     const e = events.find((x: any) => x.task === 'categorize');
     expect(e.inputHash).toMatch(/^[0-9a-f]{16,}$/);
@@ -293,7 +293,7 @@ describe('AI settings and audit log (UP-13, AIA-08, AIA-10)', () => {
     expect((await c.delete(w.url(`/ai/events/${e.id}`))).status).toBe(204);
     const all = await c.delete(w.url('/ai/events'));
     expect(all.status).toBe(200);
-    expect((await c.get(w.url('/ai/events'))).body.items).toHaveLength(0);
+    expect((await c.get(w.url('/ai/events'))).body.data).toHaveLength(0);
     // Spend is kept apart from the deletable log (AIA-08).
     expect((await c.get(w.url('/ai/settings'))).body.usage.calls).toBeGreaterThanOrEqual(1);
   });

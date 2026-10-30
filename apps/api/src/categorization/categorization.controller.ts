@@ -151,6 +151,7 @@ export class CategorizationController {
     @Query('entityId') entityId?: string,
     @Query('minConfidence') minConfidence?: string,
     @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
   ) {
     const c = dbCtx(ctx);
     return this.db.run(c, (trx) =>
@@ -159,6 +160,7 @@ export class CategorizationController {
         minConfidence:
           minConfidence !== undefined ? parse(z.coerce.number().min(0).max(1), minConfidence) : undefined,
         cursor,
+        limit: limit ? parse(z.coerce.number().int().min(1).max(500), limit) : undefined,
       }),
     );
   }

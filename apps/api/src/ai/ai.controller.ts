@@ -27,7 +27,7 @@ import { parse } from '../common/zod.js';
 import { requireRole } from '../common/roles.js';
 import { AiService } from './ai.service.js';
 
-const PAGE = 50;
+const DEFAULT_PAGE = 50;
 
 /** AI settings (UP-13), the audit log (AIA-10) and local-mode tasks (06 §2). */
 @Controller('v1/workspaces/:workspaceId/ai')
@@ -92,8 +92,9 @@ export class AiController {
   // ----- Audit log (AIA-10) -------------------------------------------------------------------------------
 
   @Get('events')
-  async events(@Ctx() ctx: RequestContext, @Query('cursor') cursor?: string) {
+  async events(@Ctx() ctx: RequestContext, @Query('cursor') cursor?: string, @Query('limit') limit?: string) {
     const c = dbCtx(ctx);
+    const PAGE = limit ? parse(z.coerce.number().int().min(1).max(200), limit) : DEFAULT_PAGE;
     return this.db.run(c, async (trx) => {
       let q = trx
         .selectFrom('app.ai_event')
@@ -113,7 +114,7 @@ export class AiController {
       const page = rows.slice(0, PAGE);
       const last = page.at(-1);
       return {
-        items: page.map((e): AiEventDto => ({
+        data: page.map((e): AiEventDto => ({
           id: e.id,
           task: e.task,
           provider: e.provider,
@@ -169,7 +170,7 @@ export class AiController {
 
   /** Pending work for a client on the user's network; listing claims it for 5 minutes. */
   @Get('tasks')
-  async tasks(@Ctx() ctx: RequestContext): Promise<{ items: AiTaskDto[] }> {
+  async tasks(@Ctx() ctx: RequestContext): Promise<{ data: AiTaskDto[] }> {
     const c = dbCtx(ctx);
     return this.db.run(c, async (trx) => {
       const rows = await trx
@@ -194,7 +195,7 @@ export class AiController {
         .returning(['id', 'task', 'input', 'created_at'])
         .execute();
       return {
-        items: rows.map((r) => ({
+        data: rows.map((r) => ({
           id: r.id,
           task: r.task,
           input: r.input,

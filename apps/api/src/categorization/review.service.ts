@@ -25,7 +25,7 @@ import { MerchantDirectory } from './merchants.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
-const PAGE = 100;
+const DEFAULT_PAGE = 100;
 
 interface StoredProposals {
   source: 'ai' | 'reference';
@@ -48,8 +48,9 @@ export class ReviewService {
   async list(
     trx: Trx,
     ctx: Ctx,
-    q: { entityId?: string; minConfidence?: number; cursor?: string },
+    q: { entityId?: string; minConfidence?: number; cursor?: string; limit?: number },
   ): Promise<ReviewListResponse> {
+    const PAGE = q.limit ?? DEFAULT_PAGE;
     const base = () => {
       let b = trx
         .selectFrom('app.transaction as t')
