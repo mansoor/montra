@@ -35,10 +35,26 @@
 
 ### Web
 
-- Next.js app shell (dev sign-in BFF):
-  - onboarding, home, accounts and the register;
-  - transactions with quick add, the split editor and transfers.
+- Next.js app with a backend-for-frontend:
+  - **Sign-in:** dev mode, plus Ory Kratos browser flows covering sign-in with AAL2 step-up and re-auth, sign-up, recovery, verification and security settings (TOTP, passkeys, recovery codes, devices). Kratos responses are rendered through a hardened text-only node renderer.
+  - **Accounts:** onboarding, home, accounts with their register, and a journal list.
+  - **Transactions:** quick add, the split editor, transfers, the detail and edit view with journal entries, bulk edit, a needs-review filter, and trash with restore.
+  - **Upcoming and recurring:** upcoming bills with confirmation, and recurring templates.
+  - **Settings:** profile, entities with period close, family members, accounts, and sharing with invite links. Manual journals.
+  - **Live updates:** over WebSocket, with a polling fallback.
+  - **Translation:** every string comes from `@montra/i18n`, and dates and money follow the user's locale and format.
 - Typed `@montra/api-client`.
+- Playwright end-to-end tests run in CI:
+  - onboarding and quick add;
+  - edit, bulk review, recurring and invites;
+  - trash;
+  - live updates between two browsers.
+
+### Security and email
+
+- Invite emails; new-device sign-in alerts (AUTH-08).
+- Email change confirmed from both addresses (AUTH-11).
+- Lost-second-factor reset with a 72-hour hold and alerts (AUTH-06).
 
 ## v0.1.0-dev.1 — Phase 0: foundations (unreleased, on feature branch)
 
