@@ -50,7 +50,7 @@ same import pipeline as one more `source` (see §14.1 of the requirements).
 | Worker | Node 22, BullMQ | Every slow or retryable task (imports, AI, OCR, reports, schedules) | Per-queue concurrency, horizontal |
 | Doc worker | Python 3.12, pdfplumber, optional PaddleOCR | PDF table extraction, local OCR | Horizontal; separate queue |
 | PostgreSQL | 16+, `pg_trgm`, `citext`, `pgcrypto` | Ledger, all relational state, full-text search | Vertical + read replica for reports |
-| Redis | 7 | Queues, rate limits, AI result cache, pub/sub fan-out for live sync | Managed (ElastiCache) |
+| Redis | 7 (optional) | Rate limits and caches when needed; queues and fan-out run on Postgres (ADR-0008, ADR-0011) | Managed (ElastiCache) |
 | Object storage | S3 (prod), MinIO (dev/self-host) | Receipts, statements, payslips, exports, backups | Managed |
 | Identity | Ory Kratos (self-hosted or Ory Network) | Sign-up, password, passkeys, TOTP, recovery, social login | Managed / horizontal |
 
@@ -133,6 +133,8 @@ Writes accept an `Idempotency-Key` header, stored for 24 h, so mobile retries ne
 post. Updates use optimistic concurrency: `If-Match: <version>`.
 
 ## 6. Asynchronous work
+
+Jobs run on a Postgres queue (`app.job`, ADR-0011); the table below lists the queues.
 
 | Queue | Producer → consumer | Examples | Retry |
 | --- | --- | --- | --- |

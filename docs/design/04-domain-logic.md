@@ -140,9 +140,12 @@ upload ──▶ store file (S3, sha256) ──▶ detect type ──▶ parse �
 dedupe/match ──▶ categorize (pipeline §5) ──▶ PREVIEW ──(user commits)──▶ post ──▶ summary
 ```
 
-1. **Detect**: by magic bytes and extension: CSV/TSV (encoding sniffed: UTF-8,
-   UTF-16, Windows-1252), XLS/XLSX (SheetJS), PDF (digital text layer → pdfplumber;
-   scanned → OCR → table extraction), images (receipts, §7). A file with the same sha256
+1. **Detect**: by magic bytes and extension:
+   - CSV/TSV: encoding sniffed (UTF-8, UTF-16, Windows-1252); parsed in the Node worker.
+   - XLSX: `exceljs` in the Node worker.
+   - Legacy XLS: `xlrd` in the Python doc worker.
+   - PDF: digital text layer → pdfplumber in the doc worker; scanned → OCR → table extraction (Phase 3).
+   - Images: receipts, §7. A file with the same sha256
    as an earlier import triggers a warning.
 2. **Parse to a grid**: header-row detection scores the first 30 rows for "header-ness"
    (mostly text, the next rows typed); preamble and footer rows are skipped.
