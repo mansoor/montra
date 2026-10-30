@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CalendarDateDto, Id, MoneyDto } from './common.js';
+import { CategorizationDto, MerchantDto } from './ai.js';
 
 export const SplitInput = z.object({
   /** A category, or any ledger account (e.g. mortgage principal, escrow) for advanced splits. */
@@ -75,6 +76,10 @@ export const TransactionDto = z.object({
   description: z.string(),
   status: z.string(),
   reviewState: z.string(),
+  /** How the category was chosen (AI-06); null for entries made before Phase 3 or with no category step. */
+  categorization: CategorizationDto.nullable(),
+  /** Merchant enrichment (AI-07) when the payee is a known merchant. */
+  merchant: MerchantDto.nullable(),
   source: z.string(),
   version: z.string(),
   memo: z.string().nullable(),

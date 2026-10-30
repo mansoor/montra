@@ -1,0 +1,29 @@
+{
+  "name": "@montra/ai-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI gateway: task functions over pluggable providers with routing, minimization, caching, budgets, calibration and failover (AIA-01..12).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@montra/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@montra/domain": "workspace:*",
+    "@montra/importers": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}
