@@ -194,6 +194,9 @@ export interface TransactionTable {
   posted_at: Date | null;
   statement_date: CalendarDateCol | null;
   raw_description: string | null;
+  payee_key: string | null;
+  /** How the category was chosen: { step, confidence, explanation, ruleId, suggested } (AI-06). */
+  categorization: Json<Record<string, unknown>> | null;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;
@@ -506,6 +509,8 @@ export interface ImportRowTable {
   score: string | null;
   suggestion: Json<Record<string, unknown>> | null;
   category_id: string | null;
+  member_id: string | null;
+  entity_id: string | null;
   error: string | null;
   outcome: 'added' | 'matched' | 'skipped' | 'failed' | null;
   transaction_id: string | null;
@@ -562,7 +567,144 @@ export interface RefMerchantTable {
   match_key: string;
   mcc: string | null;
   category_hint: string | null;
+  domain: string | null;
+  logo_url: string | null;
   version: Generated<number>;
+  updated_at: Generated<Date>;
+}
+
+export interface RuleTable {
+  workspace_id: string;
+  id: string;
+  entity_id: string | null;
+  name: string;
+  scope: Generated<'transaction' | 'receipt_line'>;
+  priority: Generated<number>;
+  conditions: Json<Record<string, unknown>>;
+  actions: Json<Record<string, unknown>>;
+  origin: Generated<'user' | 'ai_suggested' | 'correction'>;
+  enabled: Generated<boolean>;
+  hit_count: Generated<number>;
+  last_hit_at: Date | null;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface PayeeHistoryTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payee_key: string;
+  amount_band: number;
+  category_id: string;
+  member_id: string | null;
+  count: Generated<number>;
+  last_used_at: Generated<Date>;
+}
+
+export interface CorrectionTable {
+  workspace_id: string;
+  id: Generated<string>;
+  transaction_id: string;
+  payee_key: string;
+  field: 'category' | 'member' | 'entity';
+  from_value: string | null;
+  to_value: string | null;
+  from_step: string | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface RuleSuggestionTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payee_key: string;
+  name: string;
+  conditions: Json<Record<string, unknown>>;
+  actions: Json<Record<string, unknown>>;
+  evidence: number;
+  status: Generated<'pending' | 'accepted' | 'dismissed'>;
+  rule_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface AiCacheTable {
+  workspace_id: string;
+  task: string;
+  key_hash: string;
+  output: Json<unknown>;
+  model: string;
+  created_at: Generated<Date>;
+  expires_at: Timestamp;
+}
+
+export interface AiEventTable {
+  workspace_id: string;
+  id: Generated<string>;
+  task: string;
+  provider: string;
+  model: string;
+  prompt_version: string;
+  input_hash: string;
+  outcome: 'ok' | 'cached' | 'off' | 'budget' | 'invalid_output' | 'provider_error' | 'refused';
+  output: Json<unknown> | null;
+  confidence: string | null;
+  items: Generated<number>;
+  latency_ms: number | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  cost_micro_usd: Int8Default;
+  user_action: 'pending' | 'accepted' | 'edited' | 'rejected' | null;
+  subject_type: string | null;
+  subject_id: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface AiUsageTable {
+  workspace_id: string;
+  month: CalendarDateCol;
+  calls: Generated<number>;
+  cost_micro_usd: Int8Default;
+}
+
+export interface AiCredentialTable {
+  workspace_id: string;
+  provider: 'anthropic' | 'openai_compatible';
+  key_enc: Buffer;
+  last4: string;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface AiTaskTable {
+  workspace_id: string;
+  id: Generated<string>;
+  task: string;
+  input: Json<unknown>;
+  status: Generated<'pending' | 'claimed' | 'done' | 'expired'>;
+  subject_type: string;
+  subject_id: string;
+  claimed_at: Date | null;
+  result: Json<unknown> | null;
+  created_at: Generated<Date>;
+  expires_at: Generated<Date>;
+}
+
+export type InsightKind = 'recurring' | 'unusual_amount' | 'duplicate_charge' | 'new_subscription' | 'price_increase';
+
+export interface InsightTable {
+  workspace_id: string;
+  id: Generated<string>;
+  kind: InsightKind;
+  entity_id: string;
+  transaction_id: string | null;
+  payee_key: string | null;
+  dedupe_key: string;
+  data: Json<Record<string, unknown>>;
+  status: Generated<'open' | 'dismissed' | 'accepted'>;
+  created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
 
@@ -604,6 +746,16 @@ export interface Database {
   'app.reconciliation': ReconciliationTable;
   'ref.import_profile': RefImportProfileTable;
   'ref.merchant': RefMerchantTable;
+  'app.rule': RuleTable;
+  'app.payee_history': PayeeHistoryTable;
+  'app.correction': CorrectionTable;
+  'app.rule_suggestion': RuleSuggestionTable;
+  'app.ai_cache': AiCacheTable;
+  'app.ai_event': AiEventTable;
+  'app.ai_usage': AiUsageTable;
+  'app.ai_credential': AiCredentialTable;
+  'app.ai_task': AiTaskTable;
+  'app.insight': InsightTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;

@@ -33,6 +33,14 @@ import { ImportsService } from './imports/imports.service.js';
 import { ImportJobs } from './imports/import-jobs.js';
 import { ImportsController, UploadsController } from './imports/imports.controller.js';
 import { ReconciliationController } from './reconciliation/reconciliation.controller.js';
+import { AiService } from './ai/ai.service.js';
+import { AiController } from './ai/ai.controller.js';
+import { Categorizer } from './categorization/categorizer.service.js';
+import { MerchantDirectory } from './categorization/merchants.js';
+import { RulesService } from './categorization/rules.service.js';
+import { ReviewService } from './categorization/review.service.js';
+import { InsightsService } from './categorization/insights.service.js';
+import { CategorizationController } from './categorization/categorization.controller.js';
 
 @Module({})
 export class AppModule {
@@ -57,6 +65,8 @@ export class AppModule {
       UploadsController,
       ImportsController,
       ReconciliationController,
+      AiController,
+      CategorizationController,
     ];
     return {
       module: AppModule,
@@ -85,6 +95,12 @@ export class AppModule {
         Worker,
         ImportsService,
         ImportJobs,
+        AiService,
+        Categorizer,
+        MerchantDirectory,
+        RulesService,
+        ReviewService,
+        InsightsService,
       ],
     };
   }

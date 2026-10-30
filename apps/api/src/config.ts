@@ -41,6 +41,27 @@ const Env = z.object({
   WEB_URL: z.string().url().default('http://localhost:3000'),
   /** Base64 32-byte master key for the local KMS adapter (development); production uses AWS KMS. */
   MASTER_KEY: z.string().optional(),
+
+  /**
+   * AI gateway (06, ADR-0012). The built-in mode uses `AI_PROVIDER` with Montra's key; `fake` is the
+   * deterministic keyword provider for tests and e2e. Without a key the built-in mode degrades to rules
+   * and history.
+   */
+  AI_PROVIDER: z.enum(['anthropic', 'fake', 'openai_compatible', 'null']).default('anthropic'),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  /** Optional OpenAI-compatible base URL for the built-in provider (AI_PROVIDER=openai_compatible). */
+  AI_BASE_URL: z.string().url().optional(),
+  /** OPS-07: a second provider tried when the first fails ('fake' only makes sense in tests). */
+  AI_FAILOVER_PROVIDER: z.enum(['anthropic', 'fake', 'openai_compatible']).optional(),
+  AI_FAILOVER_BASE_URL: z.string().url().optional(),
+  /**
+   * Local mode: true when this server can reach the user's endpoint (self-hosted edition). False on the
+   * hosted service: async AI work is parked for a client on the user's network.
+   */
+  AI_LOCAL_DIRECT: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 export type AppConfig = z.infer<typeof Env>;

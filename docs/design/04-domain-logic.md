@@ -241,6 +241,13 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
 | 6 Review queue | anything < threshold (default 0.80, per workspace) | — | "Needs review" |
 
 - With AI mode `off`, step 5 is skipped (graceful degradation).
+- Rules and confident transfers close an item. History, the file's own category column (app exports,
+  0.90) and known-merchant hints (0.80) close it only at or above the threshold. Below it, they are kept
+  as a fallback while the item still goes to the AI step, and the more confident of the two wins
+  (ADR-0012).
+- Payee history learns only from user choices: categories picked in the import preview, accepted or
+  corrected in the review queue, or set in the editor. Auto-applied results are not fed back, so the app
+  can't reinforce its own mistakes.
 - **Entity, member and property** are predicted by the same steps (AI-02, FAM-05). The
   account's `default_member_id` and default entity seed the prior (FAM-04, ACC-03).
 - **Learning** (AI-05): every user correction writes `payee_history` and a

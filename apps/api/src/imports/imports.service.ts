@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Selectable } from 'kysely';
 import { newId, type ImportBatchTable, type ImportRowTable, type Trx } from '@montra/db';
@@ -245,7 +246,13 @@ export class ImportsService {
         .updateTable('app.import_row')
         .set({
           ...(req.decision !== undefined ? { decision: req.decision } : {}),
-          ...(req.categoryId !== undefined ? { category_id: req.categoryId } : {}),
+          ...(req.categoryId !== undefined
+            ? {
+                category_id: req.categoryId,
+                // The user's own pick: committed as reviewed and learned from (ADR-0012 §7).
+                suggestion: sql<string>`jsonb_set(coalesce(suggestion, '{}'::jsonb), '{userSet}', ${JSON.stringify(req.categoryId !== null)}::jsonb)`,
+              }
+            : {}),
         })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('import_batch_id', '=', id)

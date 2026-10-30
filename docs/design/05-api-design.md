@@ -62,10 +62,14 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `PATCH /transactions/{id}`, `DELETE /transactions/{id}` | Edit (with automatic reversal when locked), delete to trash | DE-10, BAK-06 |
 | `POST /transactions/bulk` | Bulk edit category, entity, tags, member | TXN-10 |
 | `POST /transactions/parse` | Natural-language quick add → prefilled draft | TXN-06 |
-| `GET /review-queue`, `POST /review-queue/accept` (`{ ids }` or `{ minConfidence }`) | Review queue | AI-03/04 |
+| `GET /review`, `POST /review/accept` (`{ transactionIds }` or `{ minConfidence }`), `POST /review/{transactionId}/resolve` | Review queue; resolve = a correction (returns any rule offered) | AI-03/04/05 |
 | `GET/POST /recurring`, `PATCH /recurring/{id}`, `POST /recurring/{id}/confirm-occurrence` | Recurring templates and detection proposals | TXN-05, AI-08 |
-| `GET/POST /rules`, `PATCH/DELETE /rules/{id}`, `POST /rules/{id}/apply-existing` (202) | Rules | UP-02, AI-05 |
-| `GET /rule-suggestions`, `POST /rule-suggestions/{id}/accept` | Rules suggested from corrections | AI-05 |
+| `GET/POST /rules`, `PATCH/DELETE /rules/{id}`, `POST /rules/preview`, `POST /rules/{id}/preview`, `POST /rules/{id}/apply` (202, job) | Rules with live preview and apply to existing | UP-02, AI-05 |
+| `GET /rule-suggestions`, `POST /rule-suggestions/{id}/accept` (`{ applyToExisting }`), `POST /rule-suggestions/{id}/dismiss` | Rules suggested from corrections | AI-05 |
+| `GET/PATCH /ai/settings`, `POST /ai/settings/test`, `GET /ai/events`, `DELETE /ai/events[/{id}]`, `GET /ai/tasks`, `POST /ai/tasks/{id}/result` | AI mode, provider, key, threshold, budget; audit log; local-mode tasks | UP-13, AIA-08/10 |
+| `POST /categorize/suggest`, `POST /transactions/parse` | Editor suggestion; natural-language quick add | AI-01, TXN-06 |
+| `GET /imports/{id}/category-proposals`, `POST /imports/{id}/category-proposals/accept` | Categories proposed from the first import | UP-03 |
+| `GET /insights?status=`, `POST /insights/{id}/accept`, `POST /insights/{id}/dismiss`, `POST /insights/detect` | Recurring proposals and anomaly flags | AI-08/09 |
 | `GET/POST /payees`, `PATCH /payees/{id}`, `POST /payees/{id}/merge` | Payee directory (customers/vendors) | IMP-10, BIZ-04 |
 | `GET/POST /family-members`, `PATCH /family-members/{id}` | Family members (profiles, not logins) | FAM-01..11 |
 
