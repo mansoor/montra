@@ -17,10 +17,11 @@ export type TaskName =
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
 export type ModelGroup = 'small' | 'vision' | 'large';
 export type Effort = 'low' | 'medium' | 'high';
-export type FailureReason = 'off' | 'budget' | 'invalid_output' | 'provider_error' | 'refused' | 'pending_local';
+export type FailureReason =
+  'off' | 'budget' | 'invalid_output' | 'provider_error' | 'refused' | 'pending_local';
 
 export interface AiMeta {
-  task: TaskName;
+  task: TaskName | 'ping';
   provider: ProviderId;
   model: string;
   promptVersion: string;
@@ -36,8 +37,7 @@ export interface AiMeta {
 }
 
 export type TaskResult<T> =
-  | { ok: true; value: T; meta: AiMeta }
-  | { ok: false; reason: FailureReason; detail?: string; meta?: AiMeta };
+  { ok: true; value: T; meta: AiMeta } | { ok: false; reason: FailureReason; detail?: string; meta?: AiMeta };
 
 // ----- Providers ------------------------------------------------------------------------------------------
 
@@ -52,6 +52,8 @@ export interface ProviderConfig {
 }
 
 export interface CompletionRequest {
+  /** Which task this is for (lets the fake adapter answer deterministically). */
+  task: TaskName | 'ping';
   model: string;
   effort: Effort;
   /** Stable instructions — first in the prompt, cached (06 §3). */
@@ -251,7 +253,10 @@ export interface AiGateway {
   mapColumns(sample: GridSample, ctx: AiContext): Promise<TaskResult<ColumnMappingProposal>>;
   parseQuickAdd(text: string, qctx: QuickAddContext, ctx: AiContext): Promise<TaskResult<TransactionDraft>>;
   extractStatementTable(doc: StatementText, ctx: AiContext): Promise<TaskResult<StatementTable>>;
-  proposeCategories(input: CategoryProposalInput, ctx: AiContext): Promise<TaskResult<CategoryProposalOutput>>;
+  proposeCategories(
+    input: CategoryProposalInput,
+    ctx: AiContext,
+  ): Promise<TaskResult<CategoryProposalOutput>>;
   /** Cheap round-trip for the settings page "Test connection" button. */
   ping(ctx: AiContext): Promise<TaskResult<{ model: string }>>;
 }
