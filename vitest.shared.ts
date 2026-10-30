@@ -7,5 +7,6 @@ export const sourceAliases = {
   '@montra/domain': pkg('domain'),
   '@montra/db': pkg('db'),
   '@montra/schemas': pkg('schemas'),
+  '@montra/i18n': pkg('i18n'),
   '@montra/api-client': pkg('api-client'),
 };

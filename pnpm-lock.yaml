@@ -162,6 +162,12 @@ importers:
         specifier: ^4.10.2
         version: 4.10.2
 
+  packages/i18n:
+    dependencies:
+      '@montra/domain':
+        specifier: workspace:*
+        version: link:../domain
+
   packages/schemas:
     dependencies:
       '@montra/domain':

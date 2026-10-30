@@ -1,0 +1,27 @@
+{
+  "name": "@montra/i18n",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Message catalogs and locale formatting shared by web and mobile (TZ-06, PLT-11, CUR-10).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@montra/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "messages"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@montra/domain": "workspace:*"
+  }
+}

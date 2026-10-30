@@ -1,0 +1,19 @@
+{
+  "common.save": "Save",
+  "common.cancel": "Cancel",
+  "common.delete": "Delete",
+  "common.restore": "Restore",
+  "common.loading": "Loading…",
+  "errors.generic": "Something went wrong. Please try again.",
+  "errors.period_locked": "The books are closed for this date. Choose a later date or reopen the period.",
+  "errors.transaction_reconciled": "This transaction is reconciled. Un-reconcile it before changing its amount, account or date.",
+  "errors.version_mismatch": "This transaction changed since you opened it. Reload and try again.",
+  "errors.mfa_required": "Sign in with your second factor to open this workspace.",
+  "errors.reauth_required": "Confirm it's you to continue.",
+  "errors.email_unverified": "Verify your email address before adding financial data.",
+  "transactions.review_count": "{count, plural, =0 {Nothing to review} one {# transaction to review} other {# transactions to review}}",
+  "transactions.split_remaining": "{amount} left to allocate",
+  "budget.left_to_assign": "{amount} left to assign",
+  "budget.over_assigned": "{amount} over-assigned",
+  "sharing.invite_sent": "Invite for {email} is ready. It expires in 7 days."
+}
