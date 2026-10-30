@@ -12,7 +12,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { asCurrencyCode, validateEntry, type JournalEntryDraft } from '@montra/domain';
-import { AuditedNoteRequest, ManualJournalRequest, PeriodLockRequest } from '@montra/schemas';
+import {
+  AuditedNoteRequest,
+  CalendarDateDto,
+  ManualJournalRequest,
+  PeriodLockRequest,
+} from '@montra/schemas';
 import { z } from 'zod';
 import {
   AuthGuard,
@@ -37,6 +42,90 @@ export class JournalsController {
     @Inject(Db) private readonly db: Db,
     @Inject(LedgerService) private readonly ledger: LedgerService,
   ) {}
+
+  /** Journal list (DE-07), newest first; filters by entity, date range and kind. */
+  @Get('journal-entries')
+  async list(@Ctx() ctx: RequestContext, @Query() query: unknown) {
+    const q = parse(
+      z.object({
+        entityId: z.uuid().optional(),
+        from: CalendarDateDto.optional(),
+        to: CalendarDateDto.optional(),
+        kind: z
+          .enum([
+            'standard',
+            'transfer',
+            'opening_balance',
+            'adjustment',
+            'reversal',
+            'depreciation',
+            'fx_revaluation',
+            'closing',
+            'manual',
+          ])
+          .optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+      }),
+      query,
+    );
+    const rows = await this.db.run(dbCtx(ctx), (trx) =>
+      trx
+        .selectFrom('app.journal_entry as je')
+        .leftJoin('app.posting as p', (j) =>
+          j.onRef('p.workspace_id', '=', 'je.workspace_id').onRef('p.journal_entry_id', '=', 'je.id'),
+        )
+        .select((eb) => [
+          'je.id',
+          'je.entity_id',
+          'je.transaction_id',
+          'je.entry_date',
+          'je.kind',
+          'je.description',
+          'je.locked',
+          eb.fn
+            .sum<string>(
+              eb
+                .case()
+                .when('p.functional_amount_minor', '>', 0n)
+                .then(eb.ref('p.functional_amount_minor'))
+                .else(0n)
+                .end(),
+            )
+            .as('total'),
+        ])
+        .where('je.workspace_id', '=', ctx.workspaceId!)
+        .$if(Boolean(q.entityId), (b) => b.where('je.entity_id', '=', q.entityId!))
+        .$if(Boolean(q.from), (b) => b.where('je.entry_date', '>=', q.from!))
+        .$if(Boolean(q.to), (b) => b.where('je.entry_date', '<=', q.to!))
+        .$if(Boolean(q.kind), (b) => b.where('je.kind', '=', q.kind!))
+        .groupBy([
+          'je.id',
+          'je.entity_id',
+          'je.transaction_id',
+          'je.entry_date',
+          'je.kind',
+          'je.description',
+          'je.locked',
+          'je.posted_at',
+        ])
+        .orderBy('je.entry_date', 'desc')
+        .orderBy('je.posted_at', 'desc')
+        .limit(q.limit)
+        .execute(),
+    );
+    return {
+      data: rows.map((r) => ({
+        id: r.id,
+        entityId: r.entity_id,
+        transactionId: r.transaction_id,
+        date: r.entry_date,
+        kind: r.kind,
+        description: r.description,
+        locked: r.locked,
+        total: String(r.total ?? '0'),
+      })),
+    };
+  }
 
   /** Journal view of any entry (DE-07). */
   @Get('journal-entries/:entryId')

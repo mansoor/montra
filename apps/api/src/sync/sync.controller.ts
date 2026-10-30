@@ -8,6 +8,11 @@ import { parse } from '../common/zod.js';
 const Query_ = z.object({
   since: z.coerce.bigint().min(0n).default(0n),
   limit: z.coerce.number().int().min(1).max(1000).default(500),
+  /** Return only the current position (no changes): lets a new client start from "now". */
+  head: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
 });
 
 /**
@@ -24,8 +29,16 @@ export class SyncController {
     @Ctx() ctx: RequestContext,
     @Query() query: unknown,
   ): Promise<{ changes: ChangeDto[]; latestSeq: string; hasMore: boolean }> {
-    const { since, limit } = parse(Query_, query);
+    const { since, limit, head } = parse(Query_, query);
     return this.db.run(dbCtx(ctx), async (trx) => {
+      if (head) {
+        const top = await trx
+          .selectFrom('app.change_log')
+          .select((eb) => eb.fn.max('seq').as('seq'))
+          .where('workspace_id', '=', ctx.workspaceId!)
+          .executeTakeFirst();
+        return { changes: [], latestSeq: String(top?.seq ?? 0), hasMore: false };
+      }
       const rows = await trx
         .selectFrom('app.change_log')
         .select(['seq', 'table_name', 'row_id', 'op', 'restricted'])

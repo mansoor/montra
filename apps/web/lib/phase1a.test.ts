@@ -38,6 +38,8 @@ const txn = (postings: ReturnType<typeof posting>[], over: Partial<TransactionDt
   memo: 'weekly shop',
   tags: ['food'],
   recurringItemId: null,
+  accountId: null,
+  splits: null,
   amount: { amount: '-12000', currency: 'USD' },
   entries: [{ id: 'e', entityId: 'P', date: '2026-10-05', kind: 'standard', description: '', postings }],
   ...over,
@@ -245,8 +247,14 @@ describe('settings helpers', () => {
     timeZone: 'UTC',
     role: 'owner' as const,
     entities: [
-      { id: 'P', type: 'personal' as const, name: 'Personal', functionalCurrency: 'USD' },
-      { id: 'B', type: 'business' as const, name: 'Studio', functionalCurrency: 'USD' },
+      {
+        id: 'P',
+        type: 'personal' as const,
+        name: 'Personal',
+        functionalCurrency: 'USD',
+        lockedThrough: null,
+      },
+      { id: 'B', type: 'business' as const, name: 'Studio', functionalCurrency: 'USD', lockedThrough: null },
     ],
   };
 

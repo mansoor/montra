@@ -80,6 +80,19 @@ export const TransactionDto = z.object({
   memo: z.string().nullable(),
   tags: z.array(z.string()),
   recurringItemId: z.string().nullable(),
+  /** Paying account (standard) or source account (transfer), from the stored input; null for journals. */
+  accountId: z.string().nullable(),
+  /** The categorization as entered (also present on scheduled occurrences that have no entries yet). */
+  splits: z
+    .array(
+      z.object({
+        accountId: z.string(),
+        amount: z.string(),
+        memberId: z.string().nullable(),
+        memo: z.string().nullable(),
+      }),
+    )
+    .nullable(),
   /** Signed amount from the paying account's view (negative = money out); null for manual journals. */
   amount: MoneyDto.nullable(),
   /** Scheduled occurrences have no entries until confirmed. */

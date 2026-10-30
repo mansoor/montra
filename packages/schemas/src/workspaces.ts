@@ -19,6 +19,8 @@ export const EntityDto = z.object({
   type: z.enum(['personal', 'business', 'rental']),
   name: z.string(),
   functionalCurrency: z.string(),
+  /** Books are closed through this date (DE-09); null when open. */
+  lockedThrough: z.string().nullable(),
 });
 
 export const WorkspaceDto = z.object({

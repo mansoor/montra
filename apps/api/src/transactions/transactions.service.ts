@@ -241,6 +241,7 @@ export class TransactionsService {
       status?: string;
       reviewState?: string;
       accountId?: string;
+      trash?: boolean;
     },
   ): Promise<TransactionDto[]> {
     return this.db.run(ctx, async (trx) => {
@@ -248,7 +249,7 @@ export class TransactionsService {
         .selectFrom('app.transaction as t')
         .select('t.id')
         .where('t.workspace_id', '=', ctx.workspaceId)
-        .where('t.deleted_at', 'is', null)
+        .where('t.deleted_at', opts.trash ? 'is not' : 'is', null)
         .orderBy('t.txn_date', 'desc')
         .orderBy('t.id', 'desc')
         .limit(opts.limit);
@@ -604,6 +605,8 @@ export class TransactionsService {
         tags: tags.filter((x) => x.transaction_id === t.id).map((x) => x.name),
         recurringItemId: t.recurring_item_id,
         amount: specAmount(t.spec as TransactionSpec | null),
+        accountId: specAccount(t.spec as TransactionSpec | null),
+        splits: specSplits(t.spec as TransactionSpec | null),
         entries: entries
           .filter((e) => e.transaction_id === t.id)
           .map((e) => ({
@@ -631,6 +634,21 @@ export class TransactionsService {
     }
     return result;
   }
+}
+
+function specAccount(spec: TransactionSpec | null): string | null {
+  if (!spec) return null;
+  return spec.type === 'transfer' ? spec.fromAccountId : spec.accountId;
+}
+
+function specSplits(spec: TransactionSpec | null): TransactionDto['splits'] {
+  if (!spec || spec.type !== 'standard') return null;
+  return spec.splits.map((s) => ({
+    accountId: s.accountId,
+    amount: s.amount,
+    memberId: s.memberId,
+    memo: s.memo ?? null,
+  }));
 }
 
 /** Signed amount from the paying account's view: transfers show the amount leaving the source account. */

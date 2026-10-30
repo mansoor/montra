@@ -38,6 +38,11 @@ const ListQuery = z.object({
   status: z.enum(['scheduled', 'pending', 'posted', 'void']).optional(),
   reviewState: z.enum(['auto_applied', 'needs_review', 'reviewed']).optional(),
   accountId: z.uuid().optional(),
+  /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
+  trash: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
 });
 
 const etag = (t: TransactionDto) => `"v${t.version}"`;

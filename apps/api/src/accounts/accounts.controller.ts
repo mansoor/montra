@@ -6,6 +6,7 @@ import {
   UpdateAccountRequest,
   type AccountDto,
   type CategoryDto,
+  type LedgerAccountDto,
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
@@ -64,6 +65,17 @@ export class AccountsController {
         v === 'ledger'
           ? lines.map(({ amount: _amount, ...l }) => l)
           : lines.map(({ debit: _d, credit: _c, ...l }) => l),
+    };
+  }
+
+  /** Full chart of accounts including system accounts (DE-02), e.g. for manual journals. */
+  @Get('ledger-accounts')
+  async ledgerAccounts(
+    @Ctx() ctx: RequestContext,
+    @Query('entityId') entityId?: string,
+  ): Promise<{ data: LedgerAccountDto[] }> {
+    return {
+      data: await this.accounts.ledgerAccounts(dbCtx(ctx), entityId ? parse(z.uuid(), entityId) : undefined),
     };
   }
 

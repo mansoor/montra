@@ -15,6 +15,7 @@ import type {
   BankAccountKind,
   CategoryDto,
   CreateAccountRequest,
+  LedgerAccountDto,
   UpdateAccountRequest,
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
@@ -302,6 +303,34 @@ export class AccountsService {
       };
       const [entryId] = await this.ledger.post(trx, ctx, null, [draft]);
       return { adjustment: deltaNatural.toString(), entryId: entryId ?? null };
+    });
+  }
+
+  async ledgerAccounts(ctx: Ctx, entityId?: string): Promise<LedgerAccountDto[]> {
+    return this.db.run(ctx, async (trx) => {
+      const rows = await trx
+        .selectFrom('app.ledger_account')
+        .selectAll()
+        .where('workspace_id', '=', ctx.workspaceId)
+        .$if(Boolean(entityId), (q) => q.where('entity_id', '=', entityId!))
+        .orderBy('entity_id')
+        .orderBy('type')
+        .orderBy('sort_order')
+        .orderBy('name')
+        .execute();
+      return rows.map((r) => ({
+        id: r.id,
+        entityId: r.entity_id,
+        type: r.type,
+        subtype: r.subtype,
+        name: r.name,
+        currency: r.currency,
+        isCategory: r.is_category,
+        systemRole: r.system_role,
+        counterpartyEntityId: r.counterparty_entity_id,
+        taxLineCode: r.tax_line_code,
+        archived: r.archived_at !== null,
+      }));
     });
   }
 }

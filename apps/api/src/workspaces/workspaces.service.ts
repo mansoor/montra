@@ -137,11 +137,14 @@ export class WorkspacesService {
         .executeTakeFirst();
       if (!ws) return null;
       const entities = await trx
-        .selectFrom('app.entity')
-        .select(['id', 'type', 'name', 'functional_currency'])
-        .where('workspace_id', '=', workspaceId)
-        .where('archived_at', 'is', null)
-        .orderBy('created_at')
+        .selectFrom('app.entity as e')
+        .leftJoin('app.period_lock as pl', (j) =>
+          j.onRef('pl.workspace_id', '=', 'e.workspace_id').onRef('pl.entity_id', '=', 'e.id'),
+        )
+        .select(['e.id', 'e.type', 'e.name', 'e.functional_currency', 'pl.locked_through'])
+        .where('e.workspace_id', '=', workspaceId)
+        .where('e.archived_at', 'is', null)
+        .orderBy('e.created_at')
         .execute();
       return {
         id: ws.id,
@@ -154,6 +157,7 @@ export class WorkspacesService {
           type: e.type,
           name: e.name,
           functionalCurrency: e.functional_currency,
+          lockedThrough: e.locked_through,
         })),
       };
     });

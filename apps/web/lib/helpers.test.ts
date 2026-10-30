@@ -69,8 +69,8 @@ describe('view models', () => {
     timeZone: 'UTC',
     role: 'owner',
     entities: [
-      { id: 'P', type: 'personal', name: 'Personal', functionalCurrency: 'USD' },
-      { id: 'B', type: 'business', name: 'Studio', functionalCurrency: 'USD' },
+      { id: 'P', type: 'personal', name: 'Personal', functionalCurrency: 'USD', lockedThrough: null },
+      { id: 'B', type: 'business', name: 'Studio', functionalCurrency: 'USD', lockedThrough: null },
     ],
   };
   const acct = (
@@ -157,6 +157,8 @@ describe('view models', () => {
       memo: null,
       tags: ['bulk'],
       recurringItemId: null,
+      accountId: null,
+      splits: null,
       amount: amount === null ? null : { amount, currency: 'USD' },
       version: '1',
       entries: [{ id: 'e', entityId: 'P', date: '2026-10-05', kind, description: '', postings }],

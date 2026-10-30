@@ -431,3 +431,39 @@ describe('recurring templates and sync (TXN-05, PLT-06)', () => {
     expect(BigInt(next.body.changes[0].seq)).toBe(BigInt(changes.body.latestSeq) + 1n);
   });
 });
+
+describe('contract additions for the web client', () => {
+  it('lists the trash, journals, the full chart, the sync head and entity lock dates', async () => {
+    const c = h.as('contract@example.com');
+    const w = await setup(c);
+    const t = (await expense(w, c, '2026-10-06', '-300', w.cat(w.personalId, 'Groceries'))).body;
+    expect(t.accountId).toBe(w.card);
+    expect(t.splits).toEqual([
+      { accountId: w.cat(w.personalId, 'Groceries'), amount: '-300', memberId: null, memo: null },
+    ]);
+    await c.delete(w.url(`/transactions/${t.id}`));
+    expect((await c.get(w.url('/transactions'))).body.data.map((x: any) => x.id)).not.toContain(t.id);
+    expect((await c.get(w.url('/transactions?trash=true'))).body.data.map((x: any) => x.id)).toEqual([t.id]);
+
+    const journals = (await c.get(w.url(`/journal-entries?entityId=${w.personalId}&kind=opening_balance`)))
+      .body.data;
+    expect(journals).toEqual([
+      expect.objectContaining({ kind: 'opening_balance', total: '100000', date: '2026-08-01' }),
+    ]);
+
+    const chart = (await c.get(w.url(`/ledger-accounts?entityId=${w.personalId}`))).body.data;
+    expect(chart.find((a: any) => a.systemRole === 'opening_balance_equity')).toMatchObject({
+      type: 'equity',
+      isCategory: false,
+    });
+
+    const head = (await c.get(w.url('/sync/changes?head=true'))).body;
+    expect(head.changes).toEqual([]);
+    expect(Number(head.latestSeq)).toBeGreaterThan(10);
+
+    await c.put(w.url(`/entities/${w.businessId}/period-lock`), { lockedThrough: '2026-06-30' });
+    const ws = (await c.get(`/v1/workspaces/${w.id}`)).body;
+    expect(ws.entities.map((e: any) => e.lockedThrough)).toEqual([null, '2026-06-30']);
+    expect((await c.get(w.url('/entities'))).body.data[1].lockedThrough).toBe('2026-06-30');
+  });
+});

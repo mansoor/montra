@@ -131,10 +131,14 @@ export class EntitiesController {
   async list(@Ctx() ctx: RequestContext) {
     const rows = await this.db.run(dbCtx(ctx), (trx) =>
       trx
-        .selectFrom('app.entity')
-        .selectAll()
-        .where('workspace_id', '=', ctx.workspaceId!)
-        .orderBy('created_at')
+        .selectFrom('app.entity as e')
+        .leftJoin('app.period_lock as pl', (j) =>
+          j.onRef('pl.workspace_id', '=', 'e.workspace_id').onRef('pl.entity_id', '=', 'e.id'),
+        )
+        .selectAll('e')
+        .select('pl.locked_through')
+        .where('e.workspace_id', '=', ctx.workspaceId!)
+        .orderBy('e.created_at')
         .execute(),
     );
     return { data: rows.map(toEntityDto) };
@@ -142,7 +146,15 @@ export class EntitiesController {
 
   private async get(ctx: RequestContext, id: string) {
     const row = await this.db.run(dbCtx(ctx), (trx) =>
-      trx.selectFrom('app.entity').selectAll().where('id', '=', id).executeTakeFirst(),
+      trx
+        .selectFrom('app.entity as e')
+        .leftJoin('app.period_lock as pl', (j) =>
+          j.onRef('pl.workspace_id', '=', 'e.workspace_id').onRef('pl.entity_id', '=', 'e.id'),
+        )
+        .selectAll('e')
+        .select('pl.locked_through')
+        .where('e.id', '=', id)
+        .executeTakeFirst(),
     );
     if (!row) throw notFound('Entity');
     return toEntityDto(row);
@@ -157,6 +169,7 @@ const toEntityDto = (e: {
   business_type: string | null;
   fiscal_year_start_month: number;
   archived_at: Date | null;
+  locked_through: string | null;
 }) => ({
   id: e.id,
   type: e.type,
@@ -165,6 +178,7 @@ const toEntityDto = (e: {
   businessType: e.business_type,
   fiscalYearStartMonth: e.fiscal_year_start_month,
   archived: e.archived_at !== null,
+  lockedThrough: e.locked_through,
 });
 
 /** Family members are profiles, not logins (FAM-01, FAM-02, FAM-11). */

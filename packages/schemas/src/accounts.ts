@@ -77,3 +77,18 @@ export const RegisterLineDto = z.object({
   cleared: z.enum(['uncleared', 'cleared', 'reconciled']),
 });
 export type RegisterLineDto = z.infer<typeof RegisterLineDto>;
+
+export const LedgerAccountDto = z.object({
+  id: z.string(),
+  entityId: z.string(),
+  type: z.enum(['asset', 'liability', 'equity', 'income', 'expense']),
+  subtype: z.string(),
+  name: z.string(),
+  currency: z.string(),
+  isCategory: z.boolean(),
+  systemRole: z.string().nullable(),
+  counterpartyEntityId: z.string().nullable(),
+  taxLineCode: z.string().nullable(),
+  archived: z.boolean(),
+});
+export type LedgerAccountDto = z.infer<typeof LedgerAccountDto>;
