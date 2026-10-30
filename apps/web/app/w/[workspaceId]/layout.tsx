@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { load } from '@/lib/server-api';
 import { NavLinks } from '@/components/nav-links';
+import { SyncPoller } from '@/components/sync-poller';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,9 +30,13 @@ export default async function WorkspaceLayout({
             links={[
               { href: base, label: 'Home', exact: true },
               { href: `${base}/transactions`, label: 'Transactions' },
+              { href: `${base}/upcoming`, label: 'Upcoming' },
+              { href: `${base}/recurring`, label: 'Recurring' },
               { href: `${base}/accounts/new`, label: 'Add account' },
+              { href: `${base}/settings`, label: 'Settings' },
             ]}
           />
+          <SyncPoller workspaceId={workspace.id} />
           <form action="/sign-out" method="post" className="ml-auto">
             <button type="submit" className="btn-secondary">
               Sign out

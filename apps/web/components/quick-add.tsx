@@ -79,8 +79,11 @@ export function QuickAdd({
       setSaved(`Saved ${get('payee') || 'transaction'}`);
       setAmount('');
       setSplits([]);
+      // Keep account, date and type for the next entry; clear what describes this one.
       const payee = form.elements.namedItem('payee');
       if (payee instanceof HTMLInputElement) payee.value = '';
+      const category = form.elements.namedItem('categoryId');
+      if (category instanceof HTMLSelectElement) category.value = '';
       router.refresh();
       amountRef.current?.focus();
     } catch (err) {

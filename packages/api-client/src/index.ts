@@ -5,21 +5,61 @@
 import type { z } from 'zod';
 import type {
   AccountDto,
+  BalanceAdjustmentRequest,
+  BulkEditRequest,
+  BulkEditResult,
   CategoryDto,
+  ChangeDto,
+  ConfirmOccurrenceRequest,
   CreateAccountRequest,
+  CreateEntityRequest,
+  CreateFamilyMemberRequest,
+  CreateInviteRequest,
+  CreateRecurringRequest,
   CreateTransactionRequest,
   CreateTransferRequest,
   CreateWorkspaceRequest,
+  EntityGrant,
+  FamilyMemberDto,
+  ManualJournalRequest,
+  MeDto,
+  MemberDto,
+  PeriodLockRequest,
   ProblemDto,
+  RecurringDto,
   RegisterLineDto,
   TransactionDto,
+  UpdateAccountRequest,
+  UpdateEntityRequest,
+  UpdateFamilyMemberRequest,
+  UpdateMeRequest,
+  UpdateMemberRequest,
+  UpdateRecurringRequest,
+  UpdateTransactionRequest,
   WorkspaceDto,
 } from '@montra/schemas';
 
 export type CreateWorkspaceInput = z.input<typeof CreateWorkspaceRequest>;
 export type CreateAccountInput = z.input<typeof CreateAccountRequest>;
+export type UpdateAccountInput = z.input<typeof UpdateAccountRequest>;
+export type BalanceAdjustmentInput = z.input<typeof BalanceAdjustmentRequest>;
 export type CreateTransactionInput = z.input<typeof CreateTransactionRequest>;
+export type UpdateTransactionInput = z.input<typeof UpdateTransactionRequest>;
+export type BulkEditInput = z.input<typeof BulkEditRequest>;
 export type CreateTransferInput = z.input<typeof CreateTransferRequest>;
+export type ConfirmOccurrenceInput = z.input<typeof ConfirmOccurrenceRequest>;
+export type CreateEntityInput = z.input<typeof CreateEntityRequest>;
+export type UpdateEntityInput = z.input<typeof UpdateEntityRequest>;
+export type CreateFamilyMemberInput = z.input<typeof CreateFamilyMemberRequest>;
+export type UpdateFamilyMemberInput = z.input<typeof UpdateFamilyMemberRequest>;
+export type UpdateMeInput = z.input<typeof UpdateMeRequest>;
+export type ManualJournalInput = z.input<typeof ManualJournalRequest>;
+export type PeriodLockInput = z.input<typeof PeriodLockRequest>;
+export type CreateInviteInput = z.input<typeof CreateInviteRequest>;
+export type UpdateMemberInput = z.input<typeof UpdateMemberRequest>;
+export type EntityGrantInput = z.input<typeof EntityGrant>;
+export type CreateRecurringInput = z.input<typeof CreateRecurringRequest>;
+export type UpdateRecurringInput = z.input<typeof UpdateRecurringRequest>;
 
 export type RegisterView = 'ledger' | 'simple';
 
@@ -30,6 +70,82 @@ export type RegisterLine = Omit<RegisterLineDto, 'debit' | 'credit' | 'amount'> 
 export interface RegisterResponse {
   view: RegisterView;
   data: RegisterLine[];
+}
+
+/** Entity as returned by /entities (includes archived ones). */
+export interface EntityDetailDto {
+  id: string;
+  type: 'personal' | 'business' | 'rental';
+  name: string;
+  functionalCurrency: string;
+  businessType: string | null;
+  fiscalYearStartMonth: number;
+  archived: boolean;
+}
+
+export interface JournalPostingDto {
+  lineNo: number;
+  accountId: string;
+  accountName: string;
+  accountType: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+  debit: string | null;
+  credit: string | null;
+  currency: string;
+  memberId: string | null;
+  memo: string | null;
+  cleared: 'uncleared' | 'cleared' | 'reconciled';
+}
+
+export interface JournalEntryDetailDto {
+  id: string;
+  entityId: string;
+  transactionId: string | null;
+  date: string;
+  kind: string;
+  description: string;
+  locked: boolean;
+  reversesEntryId: string | null;
+  postings: JournalPostingDto[];
+}
+
+export interface PeriodLockEventDto {
+  action: 'lock' | 'unlock' | 'relock';
+  lockedThrough: string | null;
+  actorUserId: string | null;
+  note: string | null;
+  at: string;
+}
+
+export interface InviteDto {
+  id: string;
+  email: string;
+  role: 'partner' | 'viewer' | 'accountant';
+  expiresAt: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+}
+
+/** The token is returned once, to the owner, until email delivery is wired up. */
+export interface CreatedInviteDto {
+  id: string;
+  email: string;
+  role: InviteDto['role'];
+  expiresAt: string;
+  token: string;
+}
+
+export interface ChangesResponse {
+  changes: ChangeDto[];
+  latestSeq: string;
+  hasMore: boolean;
+}
+
+export interface TransactionListOptions {
+  from?: string;
+  to?: string;
+  limit?: number;
+  status?: 'scheduled' | 'pending' | 'posted' | 'void';
+  reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
+  accountId?: string;
 }
 
 export interface FieldError {
@@ -77,13 +193,18 @@ export interface ApiClientOptions {
   idempotencyKey?: () => string;
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 const query = (params: Record<string, string | number | undefined>): string => {
-  const entries = Object.entries(params).filter((e): e is [string, string | number] => e[1] !== undefined);
+  const entries = Object.entries(params).filter(
+    (e): e is [string, string | number] => e[1] !== undefined && e[1] !== '',
+  );
   if (entries.length === 0) return '';
   return '?' + new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString();
 };
+
+/** ETag value for optimistic concurrency on a transaction (docs/design/05 §1). */
+export const versionTag = (version: string | number | bigint): string => `"v${version}"`;
 
 export class ApiClient {
   private readonly baseUrl: string;
@@ -128,7 +249,19 @@ export class ApiClient {
     return json as T;
   }
 
-  // Workspaces
+  private ws(workspaceId: string, path = ''): string {
+    return `/v1/workspaces/${enc(workspaceId)}${path}`;
+  }
+
+  // ----- Me ------------------------------------------------------------------------------------------------
+  getMe() {
+    return this.request<MeDto>('GET', '/v1/me');
+  }
+  updateMe(input: UpdateMeInput) {
+    return this.request<MeDto>('PATCH', '/v1/me', input);
+  }
+
+  // ----- Workspaces and entities ---------------------------------------------------------------------------
   listWorkspaces() {
     return this.request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces').then((r) => r.data);
   }
@@ -136,49 +269,207 @@ export class ApiClient {
     return this.request<WorkspaceDto>('POST', '/v1/workspaces', input);
   }
   getWorkspace(workspaceId: string) {
-    return this.request<WorkspaceDto>('GET', `/v1/workspaces/${enc(workspaceId)}`);
+    return this.request<WorkspaceDto>('GET', this.ws(workspaceId));
   }
-
-  // Accounts and categories
-  listAccounts(workspaceId: string) {
-    return this.request<{ data: AccountDto[] }>('GET', `/v1/workspaces/${enc(workspaceId)}/accounts`).then(
+  listEntities(workspaceId: string) {
+    return this.request<{ data: EntityDetailDto[] }>('GET', this.ws(workspaceId, '/entities')).then(
       (r) => r.data,
     );
   }
+  createEntity(workspaceId: string, input: CreateEntityInput) {
+    return this.request<EntityDetailDto>('POST', this.ws(workspaceId, '/entities'), input);
+  }
+  updateEntity(workspaceId: string, entityId: string, input: UpdateEntityInput) {
+    return this.request<EntityDetailDto>('PATCH', this.ws(workspaceId, `/entities/${enc(entityId)}`), input);
+  }
+
+  // ----- Period close (DE-09) ------------------------------------------------------------------------------
+  lockPeriod(workspaceId: string, entityId: string, input: PeriodLockInput) {
+    return this.request<{ entityId: string; lockedThrough: string }>(
+      'PUT',
+      this.ws(workspaceId, `/entities/${enc(entityId)}/period-lock`),
+      input,
+    );
+  }
+  unlockPeriod(workspaceId: string, entityId: string, note: string) {
+    return this.request<{ entityId: string; lockedThrough: null }>(
+      'DELETE',
+      this.ws(workspaceId, `/entities/${enc(entityId)}/period-lock`),
+      { note },
+    );
+  }
+  periodLockHistory(workspaceId: string, entityId: string) {
+    return this.request<{ data: PeriodLockEventDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/entities/${enc(entityId)}/period-lock/history`),
+    ).then((r) => r.data);
+  }
+
+  // ----- Family members (FAM) ------------------------------------------------------------------------------
+  listFamilyMembers(workspaceId: string) {
+    return this.request<{ data: FamilyMemberDto[] }>('GET', this.ws(workspaceId, '/family-members')).then(
+      (r) => r.data,
+    );
+  }
+  createFamilyMember(workspaceId: string, input: CreateFamilyMemberInput) {
+    return this.request<FamilyMemberDto>('POST', this.ws(workspaceId, '/family-members'), input);
+  }
+  updateFamilyMember(workspaceId: string, memberId: string, input: UpdateFamilyMemberInput) {
+    return this.request<FamilyMemberDto>(
+      'PATCH',
+      this.ws(workspaceId, `/family-members/${enc(memberId)}`),
+      input,
+    );
+  }
+
+  // ----- Accounts and categories ---------------------------------------------------------------------------
+  /** `include: 'all'` also returns archived and hidden accounts (settings). */
+  listAccounts(workspaceId: string, opts: { include?: 'all' } = {}) {
+    return this.request<{ data: AccountDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/accounts${query({ include: opts.include })}`),
+    ).then((r) => r.data);
+  }
   createAccount(workspaceId: string, input: CreateAccountInput) {
-    return this.request<AccountDto>('POST', `/v1/workspaces/${enc(workspaceId)}/accounts`, input);
+    return this.request<AccountDto>('POST', this.ws(workspaceId, '/accounts'), input);
+  }
+  updateAccount(workspaceId: string, accountId: string, input: UpdateAccountInput) {
+    return this.request<AccountDto>('PATCH', this.ws(workspaceId, `/accounts/${enc(accountId)}`), input);
+  }
+  adjustBalance(workspaceId: string, accountId: string, input: BalanceAdjustmentInput) {
+    return this.request<unknown>(
+      'POST',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/balance-adjustments`),
+      input,
+    );
   }
   listCategories(workspaceId: string, entityId?: string) {
     return this.request<{ data: CategoryDto[] }>(
       'GET',
-      `/v1/workspaces/${enc(workspaceId)}/categories${query({ entityId })}`,
+      this.ws(workspaceId, `/categories${query({ entityId })}`),
     ).then((r) => r.data);
   }
   register(workspaceId: string, accountId: string, view: RegisterView = 'ledger') {
     return this.request<RegisterResponse>(
       'GET',
-      `/v1/workspaces/${enc(workspaceId)}/accounts/${enc(accountId)}/register${query({ view })}`,
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/register${query({ view })}`),
     );
   }
 
-  // Transactions
-  listTransactions(workspaceId: string, opts: { from?: string; to?: string; limit?: number } = {}) {
+  // ----- Transactions --------------------------------------------------------------------------------------
+  listTransactions(workspaceId: string, opts: TransactionListOptions = {}) {
     return this.request<{ data: TransactionDto[] }>(
       'GET',
-      `/v1/workspaces/${enc(workspaceId)}/transactions${query(opts)}`,
+      this.ws(workspaceId, `/transactions${query({ ...opts })}`),
     ).then((r) => r.data);
   }
   getTransaction(workspaceId: string, id: string) {
-    return this.request<TransactionDto>('GET', `/v1/workspaces/${enc(workspaceId)}/transactions/${enc(id)}`);
+    return this.request<TransactionDto>('GET', this.ws(workspaceId, `/transactions/${enc(id)}`));
   }
   createTransaction(workspaceId: string, input: CreateTransactionInput) {
-    return this.request<TransactionDto>('POST', `/v1/workspaces/${enc(workspaceId)}/transactions`, input);
+    return this.request<TransactionDto>('POST', this.ws(workspaceId, '/transactions'), input);
   }
   createTransfer(workspaceId: string, input: CreateTransferInput) {
+    return this.request<TransactionDto>('POST', this.ws(workspaceId, '/transactions/transfer'), input);
+  }
+  /** Edits with optimistic concurrency; a stale `version` fails with ApiError code `version.mismatch` (412). */
+  updateTransaction(workspaceId: string, id: string, version: string, input: UpdateTransactionInput) {
+    return this.request<TransactionDto>('PATCH', this.ws(workspaceId, `/transactions/${enc(id)}`), input, {
+      'if-match': versionTag(version),
+    });
+  }
+  /** Voids and moves to trash; entries in a closed period are reversed instead of removed. */
+  deleteTransaction(workspaceId: string, id: string, version?: string) {
+    return this.request<{ outcome: 'removed' | 'reversed' }>(
+      'DELETE',
+      this.ws(workspaceId, `/transactions/${enc(id)}`),
+      undefined,
+      version ? { 'if-match': versionTag(version) } : {},
+    );
+  }
+  restoreTransaction(workspaceId: string, id: string) {
+    return this.request<TransactionDto>('POST', this.ws(workspaceId, `/transactions/${enc(id)}/restore`));
+  }
+  confirmOccurrence(workspaceId: string, id: string, input: ConfirmOccurrenceInput = {}) {
     return this.request<TransactionDto>(
       'POST',
-      `/v1/workspaces/${enc(workspaceId)}/transactions/transfer`,
+      this.ws(workspaceId, `/transactions/${enc(id)}/confirm`),
       input,
+    );
+  }
+  bulkEdit(workspaceId: string, input: BulkEditInput) {
+    return this.request<BulkEditResult>('POST', this.ws(workspaceId, '/transactions/bulk'), input);
+  }
+
+  // ----- Journals (DE-07) ----------------------------------------------------------------------------------
+  getJournalEntry(workspaceId: string, entryId: string) {
+    return this.request<JournalEntryDetailDto>(
+      'GET',
+      this.ws(workspaceId, `/journal-entries/${enc(entryId)}`),
+    );
+  }
+  createJournalEntry(workspaceId: string, input: ManualJournalInput) {
+    return this.request<JournalEntryDetailDto>('POST', this.ws(workspaceId, '/journal-entries'), input);
+  }
+
+  // ----- Sharing (UP-04, AUTH-10) --------------------------------------------------------------------------
+  listMembers(workspaceId: string) {
+    return this.request<{ data: MemberDto[] }>('GET', this.ws(workspaceId, '/sharing/members')).then(
+      (r) => r.data,
+    );
+  }
+  updateMember(workspaceId: string, userId: string, input: UpdateMemberInput) {
+    return this.request<MemberDto>('PATCH', this.ws(workspaceId, `/sharing/members/${enc(userId)}`), input);
+  }
+  setGrants(workspaceId: string, userId: string, grants: EntityGrantInput[]) {
+    return this.request<MemberDto>('PUT', this.ws(workspaceId, `/sharing/members/${enc(userId)}/grants`), {
+      grants,
+    });
+  }
+  listInvites(workspaceId: string) {
+    return this.request<{ data: InviteDto[] }>('GET', this.ws(workspaceId, '/sharing/invites')).then(
+      (r) => r.data,
+    );
+  }
+  createInvite(workspaceId: string, input: CreateInviteInput) {
+    return this.request<CreatedInviteDto>('POST', this.ws(workspaceId, '/sharing/invites'), input);
+  }
+  revokeInvite(workspaceId: string, inviteId: string) {
+    return this.request<{ revoked: true }>(
+      'DELETE',
+      this.ws(workspaceId, `/sharing/invites/${enc(inviteId)}`),
+    );
+  }
+  acceptInvite(token: string) {
+    return this.request<{ workspaceId: string }>('POST', `/v1/invites/${enc(token)}/accept`);
+  }
+
+  // ----- Recurring (TXN-05) --------------------------------------------------------------------------------
+  listRecurring(workspaceId: string) {
+    return this.request<{ data: RecurringDto[] }>('GET', this.ws(workspaceId, '/recurring')).then(
+      (r) => r.data,
+    );
+  }
+  createRecurring(workspaceId: string, input: CreateRecurringInput) {
+    return this.request<RecurringDto>('POST', this.ws(workspaceId, '/recurring'), input);
+  }
+  updateRecurring(workspaceId: string, id: string, input: UpdateRecurringInput) {
+    return this.request<RecurringDto>('PATCH', this.ws(workspaceId, `/recurring/${enc(id)}`), input);
+  }
+  /** Creates due occurrences now (the nightly job does the same). */
+  materializeRecurring(workspaceId: string, through?: string) {
+    return this.request<{ created: number; posted: number }>(
+      'POST',
+      this.ws(workspaceId, '/recurring/materialize'),
+      through ? { through } : {},
+    );
+  }
+
+  // ----- Sync (PLT-06) -------------------------------------------------------------------------------------
+  syncChanges(workspaceId: string, since: string, limit?: number) {
+    return this.request<ChangesResponse>(
+      'GET',
+      this.ws(workspaceId, `/sync/changes${query({ since, limit })}`),
     );
   }
 }
@@ -204,7 +495,25 @@ function toApiError(status: number, body: unknown): ApiError {
       p as ProblemDto,
     );
   }
+  if (status === 412) {
+    return new ApiError(
+      412,
+      'version.mismatch',
+      'This item changed since you loaded it. Reload and try again.',
+    );
+  }
   return new ApiError(status, `http_${status}`, `Request failed (${status})`);
 }
 
-export type { AccountDto, CategoryDto, TransactionDto, WorkspaceDto };
+export type {
+  AccountDto,
+  BulkEditResult,
+  CategoryDto,
+  ChangeDto,
+  FamilyMemberDto,
+  MeDto,
+  MemberDto,
+  RecurringDto,
+  TransactionDto,
+  WorkspaceDto,
+};
