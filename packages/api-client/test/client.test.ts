@@ -1,0 +1,101 @@
+import { describe, expect, it } from 'vitest';
+import { ApiClient, ApiError } from '../src/index.js';
+
+interface Call {
+  url: string;
+  init: RequestInit;
+}
+
+function fakeFetch(status: number, body: unknown, contentType = 'application/json') {
+  const calls: Call[] = [];
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    return new Response(body === undefined ? '' : JSON.stringify(body), {
+      status,
+      headers: { 'content-type': contentType },
+    });
+  }) as typeof fetch;
+  return { impl, calls };
+}
+
+const header = (c: Call, name: string) => (c.init.headers as Record<string, string>)[name];
+
+describe('ApiClient', () => {
+  it('builds URLs, unwraps list envelopes and adds headers', async () => {
+    const f = fakeFetch(200, { data: [{ id: 'w1' }] });
+    const client = new ApiClient({
+      baseUrl: 'http://api/',
+      fetch: f.impl,
+      headers: () => ({ authorization: 'Bearer dev:a@b.co' }),
+    });
+    await expect(client.listWorkspaces()).resolves.toEqual([{ id: 'w1' }]);
+    expect(f.calls[0]!.url).toBe('http://api/v1/workspaces');
+    expect(header(f.calls[0]!, 'authorization')).toBe('Bearer dev:a@b.co');
+    expect(header(f.calls[0]!, 'idempotency-key')).toBeUndefined();
+  });
+
+  it('encodes query parameters and path segments', async () => {
+    const f = fakeFetch(200, { view: 'simple', data: [] });
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl });
+    await client.register('w 1', 'a/2', 'simple');
+    expect(f.calls[0]!.url).toBe('/api/v1/workspaces/w%201/accounts/a%2F2/register?view=simple');
+    const g = fakeFetch(200, { data: [] });
+    await new ApiClient({ baseUrl: '/api', fetch: g.impl }).listTransactions('w', {
+      from: '2026-10-01',
+      limit: 5,
+    });
+    expect(g.calls[0]!.url).toBe('/api/v1/workspaces/w/transactions?from=2026-10-01&limit=5');
+  });
+
+  it('sends JSON bodies with an idempotency key on POST', async () => {
+    const f = fakeFetch(201, { id: 't1' });
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl, idempotencyKey: () => 'key-12345678' });
+    await client.createTransaction('w', {
+      date: '2026-10-29',
+      accountId: '00000000-0000-7000-8000-000000000001',
+      amount: { amount: '-500', currency: 'USD' },
+    });
+    const call = f.calls[0]!;
+    expect(call.init.method).toBe('POST');
+    expect(header(call, 'idempotency-key')).toBe('key-12345678');
+    expect(header(call, 'content-type')).toBe('application/json');
+    expect(JSON.parse(call.init.body as string)).toMatchObject({ amount: { amount: '-500' } });
+  });
+
+  it('turns problem+json into ApiError with field errors', async () => {
+    const f = fakeFetch(
+      400,
+      {
+        type: 'x',
+        title: 'Bad request',
+        status: 400,
+        code: 'validation_failed',
+        detail: 'The request is invalid',
+        errors: [{ path: 'amount.amount', message: 'Amount must be an integer number of minor units' }],
+      },
+      'application/problem+json',
+    );
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl });
+    const err = await client.createAccount('w', { name: 'x', kind: 'checking' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    const e = err as ApiError;
+    expect(e.status).toBe(400);
+    expect(e.code).toBe('validation_failed');
+    expect(e.fieldErrors()).toEqual({ 'amount.amount': 'Amount must be an integer number of minor units' });
+  });
+
+  it('reports non-problem failures and network errors', async () => {
+    const f = fakeFetch(502, undefined, 'text/plain');
+    const e1 = await new ApiClient({ baseUrl: '/api', fetch: f.impl })
+      .listWorkspaces()
+      .catch((e: ApiError) => e);
+    expect(e1).toMatchObject({ status: 502, code: 'http_502' });
+    const broken = (async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    const e2 = await new ApiClient({ baseUrl: '/api', fetch: broken })
+      .listWorkspaces()
+      .catch((e: ApiError) => e);
+    expect(e2).toMatchObject({ status: 0, code: 'network_error' });
+  });
+});
