@@ -117,8 +117,8 @@
     ""
   ],
   "CUR-10": [
-    "partial",
-    "formatter supports locale + accounting style; user override UI pending"
+    "done",
+    "user locale + date format settings; accounting negatives in ledger views"
   ],
   "TZ-01": [
     "done",
@@ -134,7 +134,7 @@
   ],
   "AUTH-01": [
     "partial",
-    "Kratos password/passkey/OIDC configured; web sign-in UI uses dev auth"
+    "Kratos password/passkey/OIDC + web sign-in/sign-up flows; not yet run against a live Kratos"
   ],
   "AUTH-02": [
     "done",
@@ -178,7 +178,7 @@
   ],
   "NFR-02": [
     "partial",
-    "MFA + session management via Kratos; UI pending"
+    "TOTP, passkeys, lookup codes, device list and remote sign-out; live Kratos validation pending"
   ],
   "NFR-03": [
     "done",
@@ -186,7 +186,7 @@
   ],
   "PLT-01": [
     "partial",
-    "responsive web shell"
+    "responsive web app for all Phase 1 flows; WCAG audit in P11"
   ],
   "PLT-06": [
     "done",
@@ -209,12 +209,12 @@
     "Renovate configured"
   ],
   "TZ-06": [
-    "partial",
-    "@montra/i18n catalogs + formatters; web adoption in progress"
+    "done",
+    "366 catalog keys; key-coverage test"
   ],
   "PLT-11": [
-    "partial",
-    "@montra/i18n catalogs + formatters; web adoption in progress"
+    "done",
+    "locale-aware money/dates, user date format, translatable strings"
   ],
   "AUTH-11": [
     "done",
