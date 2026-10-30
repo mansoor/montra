@@ -34,8 +34,10 @@ docker compose -f infra/docker-compose.yml up -d
 pnpm db:migrate                 # apply migrations to the dev database
 pnpm --filter @montra/api dev   # API on http://localhost:4000
 
-# Everything CI runs
-pnpm format:check && pnpm turbo run build typecheck lint test
+# Everything CI's verify job runs (format, build, typecheck, lint, tests, traceability)
+pnpm verify
+# Browser end-to-end tests (needs a migrated dev database)
+pnpm --filter @montra/web test:e2e
 ```
 
 In development, the API accepts `Authorization: Bearer dev:<email>` (production uses Ory Kratos, Phase 1):

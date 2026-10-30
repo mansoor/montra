@@ -14,7 +14,8 @@
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @montra/db migrate",
     "db:seed": "pnpm --filter @montra/db seed",
-    "docs:trace": "node scripts/gen-traceability.mjs"
+    "docs:trace": "node scripts/gen-traceability.mjs",
+    "verify": "pnpm format:check && turbo run build typecheck lint test && node scripts/gen-traceability.mjs && git diff --exit-code docs/design/traceability.md"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
