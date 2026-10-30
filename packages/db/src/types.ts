@@ -458,7 +458,7 @@ export interface ImportBatchTable {
   profile_id: string | null;
   fingerprint: string | null;
   mapping: Json<Record<string, unknown>> | null;
-  mapping_source: 'profile' | 'reference' | 'heuristic' | 'user' | null;
+  mapping_source: 'profile' | 'reference' | 'heuristic' | 'ai' | 'user' | null;
   mapping_confidence: string | null;
   status: Generated<ImportBatchStatus>;
   currency: string;

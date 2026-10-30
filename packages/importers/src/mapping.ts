@@ -37,7 +37,7 @@ export interface ColumnMapping {
   decimal: DecimalSeparator;
 }
 
-export type MappingSource = 'profile' | 'reference' | 'heuristic' | 'user';
+export type MappingSource = 'profile' | 'reference' | 'heuristic' | 'ai' | 'user';
 
 export interface MappingProposal {
   mapping: ColumnMapping;

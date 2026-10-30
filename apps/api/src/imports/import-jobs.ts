@@ -71,6 +71,8 @@ interface ParsePayload {
 }
 
 const UNDO_DAYS = 30;
+/** Mapping confidence at or above which the preview opens without the mapping step. */
+const MAPPING_OK = 0.75;
 const SAMPLE_ROWS = 25;
 const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
 
@@ -163,23 +165,33 @@ export class ImportJobs {
         .select('locale')
         .where('id', '=', ctx.userId)
         .executeTakeFirst();
-      const analysis = analyze(
-        sheets,
-        {
-          fileType: batch.file_type,
-          currency,
-          accountType: account.type === 'liability' ? 'liability' : 'asset',
-          preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
-          profiles: ordered.map((x) => ({
-            id: x.id,
-            fingerprint: x.fingerprint,
-            mapping: x.mapping as unknown as ColumnMapping,
-          })),
-          accountFilter: p.accountFilter ?? undefined,
-          statement: statementBalances,
-        },
-        p.override,
-      );
+      const analyzeOpts: Parameters<typeof analyze>[1] = {
+        fileType: batch.file_type,
+        currency,
+        accountType: account.type === 'liability' ? 'liability' : 'asset',
+        preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
+        profiles: ordered.map((x) => ({
+          id: x.id,
+          fingerprint: x.fingerprint,
+          mapping: x.mapping as unknown as ColumnMapping,
+        })),
+        accountFilter: p.accountFilter ?? undefined,
+        statement: statementBalances,
+      };
+      let analysis = analyze(sheets, analyzeOpts, p.override);
+      // IMP-03: when the heuristics aren't sure, ask the AI column mapper and keep its mapping if it parses
+      // the file better. The user can still correct it in the mapping step.
+      if (!p.override && analysis.proposal.confidence < MAPPING_OK)
+        analysis = await this.aiMapping(
+          trx,
+          ctx,
+          batch.id,
+          batch.file_type,
+          sheets,
+          analysis,
+          analyzeOpts,
+          account.type,
+        );
       const { parsed, proposal } = analysis;
 
       // Candidates for dedupe and matching on this account, around the file's date range.
@@ -243,7 +255,7 @@ export class ImportJobs {
           .execute();
       }
 
-      const needsMapping = proposal.confidence < 0.75 || parsed.rows.length === 0;
+      const needsMapping = proposal.confidence < MAPPING_OK || parsed.rows.length === 0;
       const sheet = analysis.sheet;
       await trx
         .updateTable('app.import_batch')
@@ -452,6 +464,53 @@ export class ImportJobs {
       });
     }
     return out;
+  }
+
+  private async aiMapping(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf',
+    sheets: Sheet[],
+    current: ReturnType<typeof analyze>,
+    opts: Parameters<typeof analyze>[1],
+    accountType: string,
+  ): Promise<ReturnType<typeof analyze>> {
+    const runtime = await this.ai.runtime(trx, ctx, { type: 'import_batch', id: batchId });
+    if (!runtime.available) return current;
+    const user = await trx
+      .selectFrom('app.app_user')
+      .select('locale')
+      .where('id', '=', ctx.userId)
+      .executeTakeFirst();
+    const res = await this.ai.gateway.mapColumns(
+      {
+        fileType,
+        rows: current.sheet.rows.slice(0, 30).map((r) => r.map((cell) => String(cell ?? ''))),
+        locale: user?.locale ?? 'en-US',
+        accountType: accountType === 'liability' ? 'liability' : 'asset',
+      },
+      { ...runtime.ctx, parkLocal: false },
+    );
+    if (!res.ok) return current;
+    let candidate: ReturnType<typeof analyze>;
+    try {
+      candidate = analyze(sheets, opts, { ...res.value.mapping, sheet: current.sheet.name });
+    } catch {
+      return current;
+    }
+    const total = candidate.parsed.rows.length + candidate.parsed.errors.length;
+    const parseRate = total ? candidate.parsed.rows.length / total : 0;
+    if (candidate.parsed.rows.length === 0 || candidate.parsed.rows.length < current.parsed.rows.length)
+      return current;
+    return {
+      ...candidate,
+      proposal: {
+        ...candidate.proposal,
+        source: 'ai',
+        confidence: Number((res.value.confidence * parseRate).toFixed(3)),
+      },
+    };
   }
 
   /**

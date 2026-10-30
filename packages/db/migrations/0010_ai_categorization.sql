@@ -10,6 +10,10 @@ alter table app.transaction add column categorization jsonb;
 create index transaction_payee_key on app.transaction (workspace_id, payee_key) where payee_key is not null and deleted_at is null;
 
 alter table app.import_row add column member_id uuid;
+-- IMP-03: the AI column mapper is a mapping source of its own.
+alter table app.import_batch drop constraint import_batch_mapping_source_check;
+alter table app.import_batch add constraint import_batch_mapping_source_check
+  check (mapping_source in ('profile', 'reference', 'heuristic', 'ai', 'user'));
 alter table app.import_row add column entity_id uuid;
 
 -- Merchant enrichment (AI-07): reference merchants carry an optional logo and website.

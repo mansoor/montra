@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.4.0-dev.1 — Phase 3: AI gateway and categorization (on feature branch)
+
+- **`@montra/ai-gateway`** (ADR-0007, ADR-0012):
+  - Task functions: categorize, map columns, normalize payees, natural-language quick add, statement table
+    extraction and category proposals.
+  - Adapters: Anthropic (structured outputs, effort, prompt caching, refusal handling), OpenAI-compatible
+    (Ollama, LM Studio, vLLM), Null, and a deterministic Fake provider for tests.
+  - Per-task routing, a minimizer (masking and pseudonyms), a per-item cache, calibration, a monthly budget
+    with downgrade, and provider failover.
+  - Evaluation harness and benchmark v1 (5,280 labelled transactions).
+- **`@montra/categorize`:** rules engine (RE2-safe regex), amount bands, payee history, transfer detection,
+  the six-step pipeline, rule proposals from corrections, recurring detection, anomaly flags and a
+  heuristic quick-add parser.
+- **API:**
+  - The pipeline runs on every import row and manual entry. Confident results are auto-applied; the rest
+    go to the review queue with their suggestion and a one-line explanation.
+  - Learning from your choices: payee history, corrections, and a rule offered after two identical
+    corrections, which can be applied to existing transactions.
+  - Endpoints: rules with live preview and apply-to-existing, review queue (accept, accept all ≥ X%,
+    resolve), editor suggestions, quick add, category proposals from an import, insights (recurring,
+    unusual amounts, duplicate charges, new subscriptions, price increases).
+  - AI settings: built-in, your own key (stored encrypted, never returned), local endpoint or off, with a
+    privacy disclosure per mode, threshold, budget and usage. The AI audit log can be viewed and deleted.
+  - AI column mapping when the heuristics aren't sure, and scanned PDFs read from OCR text.
+- **Doc worker:** Tesseract OCR for scanned PDF statements, with account numbers, names, addresses,
+  emails and phone numbers redacted before anything leaves the worker.
+- **Web:** AI settings and activity log, rules, keyboard-first review queue, natural-language quick add,
+  insights, and suggested categories in the import wizard.
+
 ## v0.3.0-dev.1 — Phase 2: statement import and reconciliation (on feature branch)
 
 - **`@montra/importers`:**
