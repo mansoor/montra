@@ -46,3 +46,41 @@ jobs:
         run: |
           node scripts/gen-traceability.mjs
           git diff --exit-code docs/design/traceability.md
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: verify
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: psql -v db=montra -f infra/db/bootstrap.sql
+      - run: pnpm turbo run build --filter=@montra/api --filter=@montra/web
+      - run: pnpm db:migrate
+      - run: pnpm --filter @montra/web exec playwright install --with-deps chromium
+      - name: Playwright (web + API, dev auth)
+        run: pnpm --filter @montra/web test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
