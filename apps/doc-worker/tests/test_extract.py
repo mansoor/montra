@@ -91,12 +91,6 @@ def test_debit_credit_pdf_with_balance_lines() -> None:
     assert (st["periodStart"], st["periodEnd"], st["accountLast4"]) == ("2026-09-01", "2026-09-30", "4321")
 
 
-def test_scanned_pdf_is_refused() -> None:
-    with pytest.raises(PermanentJobError) as err:
-        extract_pdf(fixtures.make_scanned_like_pdf())
-    assert err.value.code == "pdf.no_text_layer"
-
-
 def test_corrupt_inputs_fail_permanently() -> None:
     with pytest.raises(PermanentJobError) as err:
         extract_pdf(b"%PDF-1.7\nthis is not really a pdf")

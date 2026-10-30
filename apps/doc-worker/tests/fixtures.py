@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import io
 
+import pdfplumber
 import xlwt
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -170,3 +171,41 @@ def make_scanned_like_pdf() -> bytes:
     c.showPage()
     c.save()
     return buf.getvalue()
+
+
+SCANNED_STATEMENT_LINES = [
+    "First Example Bank",
+    "JANE Q DOE",
+    "123 Elm Street",
+    "Springfield, IL 62704",
+    "Checking account ending in 6789",
+    "Account number 000123456789",
+    "Customer service 1-800-555-0199 or help@examplebank.com",
+    "Statement period: 10/01/2026 to 10/31/2026",
+    "Beginning balance $1,000.00",
+    "Ending balance $1,234.56",
+    "",
+    "Date        Description            Amount      Balance",
+    "10/02/2026  COFFEE SHOP             -4.50       995.50",
+    "10/05/2026  PAYROLL DEPOSIT      2,000.00     2,995.50",
+    "10/09/2026  ELECTRIC COMPANY      -120.25     2,875.25",
+    "10/15/2026  GROCERY MART        -1,640.69     1,234.56",
+]
+
+
+def make_scanned_statement_pdf(dpi: int = 200) -> bytes:
+    """A statement rendered to an image and wrapped in a PDF: no text layer, like a scan."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setFont("Courier", 11)
+    y = 740.0
+    for line in SCANNED_STATEMENT_LINES:
+        c.drawString(50, y, line)
+        y -= 18
+    c.showPage()
+    c.save()
+    with pdfplumber.open(io.BytesIO(buf.getvalue())) as pdf:
+        image = pdf.pages[0].to_image(resolution=dpi).original.convert("L")
+    out = io.BytesIO()
+    image.save(out, "PDF", resolution=float(dpi))
+    return out.getvalue()

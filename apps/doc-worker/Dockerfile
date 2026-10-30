@@ -1,4 +1,4 @@
-# Montra doc worker (XLS and digital PDF statement extraction). Build from the repository root:
+# Montra doc worker (XLS, digital PDF and scanned PDF statement extraction). Build from the repository root:
 #   docker build -f apps/doc-worker/Dockerfile -t montra/doc-worker .
 FROM python:3.12-slim AS base
 
@@ -6,6 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Tesseract reads scanned statements (ADR-0012 §9).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY apps/doc-worker/pyproject.toml apps/doc-worker/README.md ./

@@ -1,13 +1,15 @@
 [project]
 name = "montra-doc-worker"
 version = "0.1.0"
-description = "Montra document worker: XLS and digital PDF statement extraction from the Postgres job queue (ADR-0011)."
+description = "Montra document worker: XLS, digital PDF and scanned PDF (OCR) statement extraction from the Postgres job queue (ADR-0011, ADR-0012)."
 requires-python = ">=3.12"
 dependencies = [
   "psycopg[binary]==3.2.13",
   "pdfplumber==0.11.10",
   "xlrd==2.0.2",
   "boto3==1.43.123",
+  # OCR for scanned PDFs; needs the `tesseract` binary on PATH (apt: tesseract-ocr). Pillow comes with pdfplumber.
+  "pytesseract==0.3.13",
 ]
 
 [project.optional-dependencies]
@@ -53,5 +55,5 @@ mypy_path = "src"
 packages = ["montra_doc_worker"]
 
 [[tool.mypy.overrides]]
-module = ["pdfplumber.*", "xlrd.*", "boto3.*", "botocore.*", "xlwt.*", "reportlab.*"]
+module = ["pdfplumber.*", "xlrd.*", "boto3.*", "botocore.*", "xlwt.*", "reportlab.*", "pytesseract.*"]
 ignore_missing_imports = true

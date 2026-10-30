@@ -1,13 +1,20 @@
 # Montra doc worker
 
-Python worker that turns uploaded statements into grids for the import pipeline (Phase 2, IMP-05). It
+Python worker that turns uploaded statements into grids for the import pipeline (IMP-05). It
 consumes `doc.extract` jobs from the Postgres job queue (ADR-0011):
 
 - **XLS**: legacy Excel workbooks, read with `xlrd`.
 - **PDF**: digital PDF statements, read with `pdfplumber`.
+- **Scanned PDF** (no text layer): OCR with Tesseract (`--psm 6`, 300 dpi, up to 50 pages). The result is
+  `{kind: "ocr_text", pages, pageCount, textLayer: false, ocrEngine: "tesseract", statement}`: one text per
+  page, **redacted** before it leaves the worker (account and card numbers, emails, phone numbers, and the
+  holder's name and address in the page header). The Node import job extracts the table from that text with
+  the AI gateway (ADR-0012 §9). Without the `tesseract` binary the job fails with `pdf.ocr_unavailable`.
 
-CSV and XLSX are parsed by the Node worker. Scanned PDFs (no text layer) are refused with
-`pdf.no_text_layer`; OCR arrives in Phase 3.
+CSV and XLSX are parsed by the Node worker.
+
+OCR needs the Tesseract binary: `apt-get install tesseract-ocr` (Debian/Ubuntu) or `brew install tesseract`.
+The OCR tests skip when it is missing, except in CI (`REQUIRE_TESSERACT=1`), where a missing binary fails.
 
 ## Run
 

@@ -1,7 +1,7 @@
 """Digital PDF bank/card statements → one grid of transaction rows plus statement facts (IMP-05).
 
 Strategy:
-1. Refuse scanned PDFs (no text layer); OCR arrives in Phase 3.
+1. Scanned PDFs (no text layer) go to OCR (`ocr.py`), which returns redacted text instead of a grid.
 2. Ruled tables: pdfplumber's line-based `extract_tables` on every page.
 3. Otherwise rebuild the table from word positions: find the header line (Date / Description / Amount …),
    use its words as column anchors, assign each word on later lines to the nearest column.
@@ -24,7 +24,8 @@ from typing import Any
 import pdfplumber
 
 from .errors import PermanentJobError
-from .result import GridResult, Statement
+from .ocr import ocr_pdf
+from .result import GridResult, OcrTextResult, Statement
 
 MIN_CHARS_PER_PAGE = 20
 _MAX_PAGES = 500
@@ -70,7 +71,7 @@ class Line:
         return " ".join(w["text"] for w in self.words)
 
 
-def extract_pdf(data: bytes) -> GridResult:
+def extract_pdf(data: bytes) -> GridResult | OcrTextResult:
     try:
         pdf = pdfplumber.open(io.BytesIO(data))
     except Exception as exc:
@@ -85,12 +86,10 @@ def extract_pdf(data: bytes) -> GridResult:
             raise PermanentJobError("doc.corrupt", f"unreadable PDF content: {exc}") from exc
         chars = sum(len(re.sub(r"\s", "", t)) for t in texts)
         if not pages or chars < MIN_CHARS_PER_PAGE * len(pages):
-            raise PermanentJobError(
-                "pdf.no_text_layer", "this PDF looks scanned; OCR import arrives in Phase 3"
-            )
+            return ocr_pdf(pages)
         full_text = "\n".join(texts)
         rows = _ruled_tables(pages) or _positional_table(pages)
-    statement = _statement_facts(full_text)
+    statement = statement_facts(full_text)
     return {
         "kind": "grid",
         "sheets": [{"name": "Statement", "rows": rows}],
@@ -310,7 +309,7 @@ def _norm(text: str) -> str:
 # ----------------------------------------------------------------------------------------------------------
 
 
-def _statement_facts(text: str) -> Statement:
+def statement_facts(text: str) -> Statement:
     opening = closing = None
     for line in text.splitlines():
         if opening is None and OPENING_RE.search(line):
