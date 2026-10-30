@@ -41,6 +41,7 @@ export default async function WorkspaceLayout({
                 { href: `${base}/upcoming`, label: t('nav.upcoming') },
                 { href: `${base}/recurring`, label: t('nav.recurring') },
                 { href: `${base}/journal`, label: t('nav.journal') },
+                { href: `${base}/imports`, label: t('nav.imports') },
                 { href: `${base}/accounts/new`, label: t('nav.add_account') },
                 { href: `${base}/settings`, label: t('nav.settings') },
               ]}

@@ -30,6 +30,17 @@ const CODE_KEYS: Record<string, string> = {
   'mfa.required': 'errors.mfa_required',
   'reauth.required': 'errors.reauth_required',
   'email.unverified': 'errors.email_unverified',
+  'import.not_ready': 'errors.import_not_ready',
+  'import.not_editable': 'errors.import_not_editable',
+  'import.not_committed': 'errors.import_not_committed',
+  'import.undo_expired': 'errors.import_undo_expired',
+  'upload.too_large': 'imports.error.doc_too_large',
+  'upload.unsupported_type': 'imports.error.unsupported_type',
+  'upload.empty': 'imports.error.empty',
+  'reconciliation.in_progress': 'errors.reconciliation_in_progress',
+  'reconciliation.completed': 'errors.reconciliation_completed',
+  'reconciliation.difference': 'errors.reconciliation_difference',
+  'account.not_a_bank_account': 'errors.not_a_bank_account',
 };
 
 const ACTION_KEYS: Record<string, string> = {

@@ -158,4 +158,46 @@ describe('ApiClient', () => {
       .catch((e: ApiError) => e);
     expect(e2).toMatchObject({ status: 0, code: 'network_error' });
   });
+
+  it('sends uploads as multipart FormData without a JSON content type', async () => {
+    const f = fakeFetch(201, { fileId: 'f1' });
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl });
+    await client.uploadFile('w1', new Blob(['a,b\n1,2\n'], { type: 'text/csv' }), 'stmt.csv');
+    const call = f.calls[0]!;
+    expect(call.url).toBe('/api/v1/workspaces/w1/uploads');
+    expect(call.init.body).toBeInstanceOf(FormData);
+    expect((call.init.body as FormData).get('file')).toBeInstanceOf(Blob);
+    expect(((call.init.body as FormData).get('file') as File).name).toBe('stmt.csv');
+    expect(header(call, 'content-type')).toBeUndefined();
+    expect(header(call, 'idempotency-key')).toBeDefined();
+  });
+
+  it('pages import rows and drives commit, undo and reconciliation', async () => {
+    const f = fakeFetch(200, { data: [], nextCursor: null });
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl });
+    await client.listImportRows('w1', 'b1', { status: 'probable_duplicate', cursor: 200, limit: 100 });
+    await client.commitImport('w1', 'b1');
+    await client.setImportMapping('w1', 'b1', {
+      mapping: {
+        headerRow: 0,
+        dataStart: 1,
+        date: 0,
+        dateFormat: 'MM/DD/YYYY',
+        description: [1],
+        amount: 2,
+        sign: 'normal',
+        decimal: '.',
+      },
+      saveProfile: false,
+    });
+    await client.setCleared('w1', 'r1', { clear: ['p1'] });
+    expect(f.calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
+      'GET /api/v1/workspaces/w1/imports/b1/rows?status=probable_duplicate&cursor=200&limit=100',
+      'POST /api/v1/workspaces/w1/imports/b1/commit',
+      'PUT /api/v1/workspaces/w1/imports/b1/mapping',
+      'POST /api/v1/workspaces/w1/reconciliations/r1/cleared',
+    ]);
+    expect(header(f.calls[2]!, 'content-type')).toBe('application/json');
+    expect(JSON.parse(f.calls[2]!.init.body as string).saveProfile).toBe(false);
+  });
 });

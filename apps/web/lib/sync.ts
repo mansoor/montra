@@ -21,7 +21,23 @@ const VISIBLE_TABLES = new Set([
   'period_lock',
   'tag',
   'payee',
+  'import_batch',
+  'reconciliation',
 ]);
+
+/** Window event carrying each pulled batch of changes, for client components that hold their own state. */
+export const CHANGES_EVENT = 'montra:changes';
+
+export function announceChanges(changes: ChangeDto[]): void {
+  window.dispatchEvent(new CustomEvent<ChangeDto[]>(CHANGES_EVENT, { detail: changes }));
+}
+
+/** Subscribes to pulled changes; returns the unsubscribe function. */
+export function onChanges(listener: (changes: ChangeDto[]) => void): () => void {
+  const handler = (e: Event) => listener((e as CustomEvent<ChangeDto[]>).detail);
+  window.addEventListener(CHANGES_EVENT, handler);
+  return () => window.removeEventListener(CHANGES_EVENT, handler);
+}
 
 export function needsRefresh(changes: ChangeDto[]): boolean {
   return changes.some((c) => VISIBLE_TABLES.has(c.table));
