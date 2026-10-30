@@ -1,39 +1,86 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { todayIn } from '@montra/domain';
+import type { TransactionListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
-import { toTransactionRow } from '@/lib/view-models';
+import { accountMap, toTransactionRow } from '@/lib/view-models';
 import { QuickAdd } from '@/components/quick-add';
 import { TransferForm } from '@/components/transfer-form';
-import { TransactionList } from '@/components/transaction-list';
+import { TransactionsTable } from '@/components/transactions-table';
 
 export const metadata: Metadata = { title: 'Transactions' };
 export const dynamic = 'force-dynamic';
 
-export default async function TransactionsPage({ params }: { params: Promise<{ workspaceId: string }> }) {
+const FILTERS = {
+  all: { label: 'All', query: {} },
+  review: { label: 'Needs review', query: { reviewState: 'needs_review' } },
+  scheduled: { label: 'Scheduled', query: { status: 'scheduled' } },
+  trash: { label: 'Trash', query: { status: 'void' } },
+} satisfies Record<string, { label: string; query: TransactionListOptions }>;
+type FilterKey = keyof typeof FILTERS;
+
+export default async function TransactionsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ workspaceId: string }>;
+  searchParams: Promise<{ filter?: string }>;
+}) {
   const { workspaceId } = await params;
-  const [workspace, accounts, categories, transactions] = await load((api) =>
+  const raw = (await searchParams).filter;
+  const filter: FilterKey = raw && raw in FILTERS ? (raw as FilterKey) : 'all';
+  const [workspace, accounts, categories, members, transactions] = await load((api) =>
     Promise.all([
       api.getWorkspace(workspaceId),
       api.listAccounts(workspaceId),
       api.listCategories(workspaceId),
-      api.listTransactions(workspaceId, { limit: 100 }),
+      api.listFamilyMembers(workspaceId),
+      api.listTransactions(workspaceId, { limit: 200, ...FILTERS[filter].query }),
     ]),
   );
   const open = accounts.filter((a) => !a.archived);
   const today = todayIn(workspace.timeZone);
-  const accountIds = new Set(accounts.map((a) => a.id));
-  const categoryIds = new Set(categories.map((c) => c.id));
+  const names = accountMap(accounts);
+  const base = `/w/${workspace.id}`;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Transactions</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold">Transactions</h1>
+        <Link href={`${base}/journal/new`} className="text-sm font-medium text-brand-600 underline">
+          New journal entry
+        </Link>
+      </div>
       <QuickAdd workspace={workspace} accounts={open} categories={categories} today={today} />
       <TransferForm workspace={workspace} accounts={open} today={today} />
       <section aria-labelledby="list-heading" className="space-y-3">
-        <h2 id="list-heading" className="text-lg font-semibold">
-          Latest
-        </h2>
-        <TransactionList rows={transactions.map((t) => toTransactionRow(t, accountIds, categoryIds))} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="list-heading" className="text-lg font-semibold">
+            {FILTERS[filter].label}
+          </h2>
+          <nav aria-label="Filter transactions">
+            <ul className="flex flex-wrap gap-1">
+              {(Object.keys(FILTERS) as FilterKey[]).map((k) => (
+                <li key={k}>
+                  <Link
+                    href={k === 'all' ? `${base}/transactions` : `${base}/transactions?filter=${k}`}
+                    aria-current={filter === k ? 'page' : undefined}
+                    className={`rounded-md px-2 py-1 text-sm ${filter === k ? 'bg-brand-600 text-white' : 'border border-line bg-surface hover:bg-brand-50'}`}
+                  >
+                    {FILTERS[k].label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </div>
+        <TransactionsTable
+          workspace={workspace}
+          rows={transactions.map((t) => toTransactionRow(t, names))}
+          categories={categories}
+          members={members}
+          trash={filter === 'trash'}
+        />
       </section>
     </div>
   );

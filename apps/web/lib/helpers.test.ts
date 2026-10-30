@@ -141,8 +141,12 @@ describe('view models', () => {
     expect(cats.map((c) => c.label)).toEqual(['Personal · Daily living', 'Studio · Business expenses']);
   });
 
-  it('summarizes transactions from the bank-side posting', () => {
-    const t = (kind: string, postings: TransactionDto['entries'][number]['postings']): TransactionDto => ({
+  it('summarizes transactions with the API amount and isCategory flags', () => {
+    const t = (
+      kind: string,
+      amount: string | null,
+      postings: TransactionDto['entries'][number]['postings'],
+    ): TransactionDto => ({
       id: 't',
       date: '2026-10-05',
       payee: 'Costco',
@@ -151,13 +155,19 @@ describe('view models', () => {
       reviewState: 'reviewed',
       source: 'manual',
       memo: null,
-      tags: [],
+      tags: ['bulk'],
       recurringItemId: null,
-      amount: null,
+      amount: amount === null ? null : { amount, currency: 'USD' },
       version: '1',
       entries: [{ id: 'e', entityId: 'P', date: '2026-10-05', kind, description: '', postings }],
     });
-    const p = (accountId: string, accountName: string, debit: string | null, credit: string | null) => ({
+    const p = (
+      accountId: string,
+      accountName: string,
+      debit: string | null,
+      credit: string | null,
+      extra: { isCategory?: boolean; systemRole?: string | null } = {},
+    ) => ({
       lineNo: 1,
       accountId,
       accountName,
@@ -166,32 +176,43 @@ describe('view models', () => {
       currency: 'USD',
       memberId: null,
       memo: null,
-      isCategory: !ids.has(accountId),
-      systemRole: null,
+      isCategory: extra.isCategory ?? !accounts.has(accountId),
+      systemRole: extra.systemRole ?? null,
     });
-    const ids = new Set(['visa', 'chk', 'sav']);
-    expect(
-      toTransactionRow(
-        t('standard', [p('visa', 'Visa', null, '8400'), p('g', 'Groceries', '8400', null)]),
-        ids,
-      ),
-    ).toMatchObject({
+    const accounts = new Map(['visa', 'chk', 'sav'].map((id) => [id, { name: id }]));
+    const split = t('standard', '-12000', [
+      p('visa', 'Visa', null, '12000'),
+      p('g', 'Groceries', '8000', null),
+      p('clr', 'Transfers with Studio', '4000', null, {
+        isCategory: false,
+        systemRole: 'inter_entity_clearing',
+      }),
+    ]);
+    split.entries.push({
+      id: 'e2',
+      entityId: 'B',
+      date: '2026-10-05',
+      kind: 'standard',
+      description: '',
+      postings: [
+        p('o', 'Office expense', '4000', null),
+        p('oc', 'Owner contribution', null, '4000', { isCategory: false, systemRole: 'owner_contribution' }),
+      ],
+    });
+    expect(toTransactionRow(split, accounts)).toMatchObject({
       title: 'Costco',
       accountName: 'Visa',
-      amount: -8400n,
-      categories: ['Groceries'],
+      amount: -12000n,
+      categories: ['Groceries', 'Office expense'],
       isTransfer: false,
+      tags: ['bulk'],
     });
     expect(
       toTransactionRow(
-        t('transfer', [p('sav', 'Savings', '5000', null), p('chk', 'Checking', null, '5000')]),
-        ids,
+        t('transfer', '-5000', [p('sav', 'Savings', '5000', null), p('chk', 'Checking', null, '5000')]),
+        accounts,
       ),
-    ).toMatchObject({
-      accountName: 'Checking',
-      amount: -5000n,
-      categories: ['→ Savings'],
-      isTransfer: true,
-    });
+    ).toMatchObject({ accountName: 'Checking', amount: -5000n, categories: ['→ Savings'], isTransfer: true });
+    expect(toTransactionRow(t('manual', null, []), accounts).amount).toBeNull();
   });
 });

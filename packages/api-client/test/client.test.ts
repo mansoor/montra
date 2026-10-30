@@ -84,6 +84,49 @@ describe('ApiClient', () => {
     expect(e.fieldErrors()).toEqual({ 'amount.amount': 'Amount must be an integer number of minor units' });
   });
 
+  it('sends If-Match on transaction edits and maps 412 to version.mismatch', async () => {
+    const f = fakeFetch(200, { id: 't1', version: '3' });
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl });
+    await client.updateTransaction('w', 't1', '2', { payee: 'Shell' });
+    expect(f.calls[0]!.init.method).toBe('PATCH');
+    expect(header(f.calls[0]!, 'if-match')).toBe('"v2"');
+    expect(header(f.calls[0]!, 'idempotency-key')).toBeUndefined();
+
+    const problem = fakeFetch(
+      412,
+      { type: 'x', title: 'Precondition failed', status: 412, code: 'version.mismatch', detail: 'changed' },
+      'application/problem+json',
+    );
+    const e1 = await new ApiClient({ baseUrl: '/api', fetch: problem.impl })
+      .updateTransaction('w', 't1', '1', {})
+      .catch((e: ApiError) => e);
+    expect(e1).toMatchObject({ status: 412, code: 'version.mismatch' });
+    const bare = fakeFetch(412, undefined, 'text/plain');
+    const e2 = await new ApiClient({ baseUrl: '/api', fetch: bare.impl })
+      .deleteTransaction('w', 't1', '1')
+      .catch((e: ApiError) => e);
+    expect(e2).toMatchObject({ status: 412, code: 'version.mismatch' });
+  });
+
+  it('passes list filters and DELETE bodies', async () => {
+    const f = fakeFetch(200, { data: [] });
+    const client = new ApiClient({ baseUrl: '/api', fetch: f.impl });
+    await client.listTransactions('w', { status: 'scheduled', reviewState: undefined, accountId: 'a1' });
+    expect(f.calls[0]!.url).toBe('/api/v1/workspaces/w/transactions?status=scheduled&accountId=a1');
+    await client.listAccounts('w', { include: 'all' });
+    expect(f.calls[1]!.url).toBe('/api/v1/workspaces/w/accounts?include=all');
+    await client.unlockPeriod('w', 'e1', 'Fixing a misposted bill');
+    expect(f.calls[2]!.init.method).toBe('DELETE');
+    expect(JSON.parse(f.calls[2]!.init.body as string)).toEqual({ note: 'Fixing a misposted bill' });
+    await client.setGrants('w', 'u1', [{ entityId: 'e1', access: 'read' }]);
+    expect(f.calls[3]!.init.method).toBe('PUT');
+    expect(f.calls[3]!.url).toBe('/api/v1/workspaces/w/sharing/members/u1/grants');
+    await client.syncChanges('w', '42');
+    expect(f.calls[4]!.url).toBe('/api/v1/workspaces/w/sync/changes?since=42');
+    await client.acceptInvite('tok_en-123');
+    expect(f.calls[5]!.url).toBe('/api/v1/invites/tok_en-123/accept');
+  });
+
   it('reports non-problem failures and network errors', async () => {
     const f = fakeFetch(502, undefined, 'text/plain');
     const e1 = await new ApiClient({ baseUrl: '/api', fetch: f.impl })

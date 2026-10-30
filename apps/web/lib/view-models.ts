@@ -37,48 +37,56 @@ export interface TransactionRow {
   date: string;
   title: string;
   accountName: string;
-  /** Signed change from the paying account's view (negative = money out). */
-  amount: bigint;
+  /** Signed change from the paying account's view (negative = money out); null for manual journals. */
+  amount: bigint | null;
   currency: string;
   categories: string[];
   isTransfer: boolean;
   needsReview: boolean;
+  status: string;
+  tags: string[];
 }
 
-/**
- * Summarizes a transaction for lists, using the bank-side posting of its first entry. When `categoryIds` is
- * given, only real categories are listed (inter-entity clearing and owner-equity lines are hidden).
- */
+/** The bank/card posting of a transaction (first non-category, non-system line on a known account). */
+export function bankPosting(t: TransactionDto, accountIds: ReadonlySet<string>) {
+  const postings = t.entries[0]?.postings ?? [];
+  const isTransfer = t.entries[0]?.kind === 'transfer';
+  const banks = postings.filter((p) => !p.isCategory && p.systemRole === null && accountIds.has(p.accountId));
+  // For transfers, the leg money leaves from.
+  return (isTransfer ? banks.find((p) => p.credit !== null) : banks[0]) ?? banks[0] ?? null;
+}
+
+/** Summarizes a transaction for lists using the API's signed `amount` and `isCategory` flags. */
 export function toTransactionRow(
   t: TransactionDto,
-  accountIds: ReadonlySet<string>,
-  categoryIds?: ReadonlySet<string>,
+  accounts: ReadonlyMap<string, { name: string }>,
 ): TransactionRow {
-  const entry = t.entries[0];
-  const postings = entry?.postings ?? [];
-  const bankPostings = postings.filter((p) => accountIds.has(p.accountId));
-  const isTransfer = entry?.kind === 'transfer';
-  // For transfers, show the leg money leaves from; otherwise the single bank-side posting.
-  const bank = (isTransfer ? bankPostings.find((p) => p.credit !== null) : bankPostings[0]) ?? postings[0];
-  const amount = bank ? BigInt(bank.debit ?? '0') - BigInt(bank.credit ?? '0') : 0n;
-  const categories = t.entries
-    .flatMap((e) => e.postings)
-    .filter((p) => !accountIds.has(p.accountId) && (!categoryIds || categoryIds.has(p.accountId)))
-    .map((p) => p.accountName);
+  const isTransfer = t.entries[0]?.kind === 'transfer';
+  const accountIds = new Set(accounts.keys());
+  const bank = bankPosting(t, accountIds);
+  const postings = t.entries.flatMap((e) => e.postings);
+  const categories = isTransfer
+    ? postings
+        .filter((p) => !p.isCategory && p.systemRole === null && accountIds.has(p.accountId) && p !== bank)
+        .map((p) => `→ ${p.accountName}`)
+    : unique(postings.filter((p) => p.isCategory).map((p) => p.accountName));
   return {
     id: t.id,
     date: t.date,
     title: t.payee || t.description || (isTransfer ? 'Transfer' : '(no payee)'),
     accountName: bank?.accountName ?? '',
-    amount: isTransfer ? -abs(amount) : amount,
-    currency: bank?.currency ?? 'USD',
-    categories: isTransfer
-      ? bankPostings.filter((p) => p !== bank).map((p) => `→ ${p.accountName}`)
-      : unique(categories),
+    amount: t.amount ? BigInt(t.amount.amount) : null,
+    currency: t.amount?.currency ?? bank?.currency ?? 'USD',
+    categories,
     isTransfer,
     needsReview: t.reviewState === 'needs_review',
+    status: t.status,
+    tags: t.tags,
   };
 }
+
+export const accountMap = (accounts: { id: string; name: string }[]) =>
+  new Map(accounts.map((a) => [a.id, a]));
 
 export interface CategoryGroup {
   label: string;
@@ -104,5 +112,4 @@ export function groupCategories(
   return groups;
 }
 
-const abs = (n: bigint) => (n < 0n ? -n : n);
 const unique = <T>(xs: T[]) => [...new Set(xs)];

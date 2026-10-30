@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { load } from '@/lib/server-api';
-import { groupAccountsByEntity, netPosition, toTransactionRow } from '@/lib/view-models';
+import { accountMap, groupAccountsByEntity, netPosition, toTransactionRow } from '@/lib/view-models';
 import { Money } from '@/components/money';
 import { TransactionList } from '@/components/transaction-list';
 
@@ -21,18 +21,16 @@ const KIND_LABEL: Record<string, string> = {
 
 export default async function HomePage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
-  const [workspace, accounts, categories, transactions] = await load((api) =>
+  const [workspace, accounts, transactions] = await load((api) =>
     Promise.all([
       api.getWorkspace(workspaceId),
       api.listAccounts(workspaceId),
-      api.listCategories(workspaceId),
       api.listTransactions(workspaceId, { limit: 10 }),
     ]),
   );
   const groups = groupAccountsByEntity(workspace, accounts);
   const net = netPosition(accounts);
-  const accountIds = new Set(accounts.map((a) => a.id));
-  const categoryIds = new Set(categories.map((c) => c.id));
+  const names = accountMap(accounts);
   const base = `/w/${workspace.id}`;
 
   return (
@@ -117,7 +115,7 @@ export default async function HomePage({ params }: { params: Promise<{ workspace
             All transactions
           </Link>
         </div>
-        <TransactionList rows={transactions.map((t) => toTransactionRow(t, accountIds, categoryIds))} />
+        <TransactionList rows={transactions.map((t) => toTransactionRow(t, names))} />
       </section>
     </div>
   );
