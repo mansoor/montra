@@ -31,7 +31,12 @@ describe('balance invariant (DE-01)', () => {
       ]),
     );
     const rows = await withContext(db, ctx(), (trx) =>
-      trx.selectFrom('app.posting').selectAll().where('journal_entry_id', '=', entryId).orderBy('line_no').execute(),
+      trx
+        .selectFrom('app.posting')
+        .selectAll()
+        .where('journal_entry_id', '=', entryId)
+        .orderBy('line_no')
+        .execute(),
     );
     expect(rows.map((r) => r.amount_minor)).toEqual([5000n, -5000n]);
     expect(rows[0]!.entry_date).toBe('2026-10-01');
@@ -51,9 +56,9 @@ describe('balance invariant (DE-01)', () => {
   });
 
   it('rejects an entry with fewer than two postings', async () => {
-    expect(await errorHint(withContext(db, ctx(), (trx) => postEntry(trx, f, f.personalId, '2026-10-02', [])))).toBe(
-      'ledger.too_few_postings',
-    );
+    expect(
+      await errorHint(withContext(db, ctx(), (trx) => postEntry(trx, f, f.personalId, '2026-10-02', []))),
+    ).toBe('ledger.too_few_postings');
   });
 
   it('rejects unbalancing an existing entry later', async () => {
@@ -120,7 +125,11 @@ describe('locks (DE-08..10)', () => {
     expect(
       await errorHint(
         withContext(db, ctx(), (trx) =>
-          trx.updateTable('app.posting').set({ memo: 'edited' }).where('journal_entry_id', '=', entryId).execute(),
+          trx
+            .updateTable('app.posting')
+            .set({ memo: 'edited' })
+            .where('journal_entry_id', '=', entryId)
+            .execute(),
         ),
       ),
     ).toBe('period.locked');
@@ -128,18 +137,28 @@ describe('locks (DE-08..10)', () => {
     // Deleting the entry.
     expect(
       await errorHint(
-        withContext(db, ctx(), (trx) => trx.deleteFrom('app.journal_entry').where('id', '=', entryId).execute()),
+        withContext(db, ctx(), (trx) =>
+          trx.deleteFrom('app.journal_entry').where('id', '=', entryId).execute(),
+        ),
       ),
     ).toBe('period.locked');
 
     // Clearing status is allowed.
     await withContext(db, ctx(), (trx) =>
-      trx.updateTable('app.posting').set({ cleared: 'cleared' }).where('journal_entry_id', '=', entryId).execute(),
+      trx
+        .updateTable('app.posting')
+        .set({ cleared: 'cleared' })
+        .where('journal_entry_id', '=', entryId)
+        .execute(),
     );
 
     // The audited unlock path can edit.
     await withContext(db, { ...ctx(), allowLockedEdit: true }, (trx) =>
-      trx.updateTable('app.posting').set({ memo: 'corrected' }).where('journal_entry_id', '=', entryId).execute(),
+      trx
+        .updateTable('app.posting')
+        .set({ memo: 'corrected' })
+        .where('journal_entry_id', '=', entryId)
+        .execute(),
     );
 
     // Entries after the lock date are unaffected.
@@ -159,7 +178,11 @@ describe('locks (DE-08..10)', () => {
       ]),
     );
     await withContext(db, ctx(), async (trx) => {
-      await trx.updateTable('app.posting').set({ cleared: 'reconciled' }).where('journal_entry_id', '=', entryId).execute();
+      await trx
+        .updateTable('app.posting')
+        .set({ cleared: 'reconciled' })
+        .where('journal_entry_id', '=', entryId)
+        .execute();
       await trx.updateTable('app.journal_entry').set({ locked: true }).where('id', '=', entryId).execute();
     });
     expect(
@@ -172,7 +195,11 @@ describe('locks (DE-08..10)', () => {
     expect(
       await errorHint(
         withContext(db, ctx(), (trx) =>
-          trx.updateTable('app.posting').set({ cleared: 'cleared' }).where('journal_entry_id', '=', entryId).execute(),
+          trx
+            .updateTable('app.posting')
+            .set({ cleared: 'cleared' })
+            .where('journal_entry_id', '=', entryId)
+            .execute(),
         ),
       ),
     ).toBe('period.locked');
@@ -188,7 +215,11 @@ describe('change feed and audit (ADR-0008, NFR-03)', () => {
       ]),
     );
     await withContext(db, ctx(), (trx) =>
-      trx.updateTable('app.transaction').set({ description: 'October salary' }).where('id', '=', transactionId).execute(),
+      trx
+        .updateTable('app.transaction')
+        .set({ description: 'October salary' })
+        .where('id', '=', transactionId)
+        .execute(),
     );
     const { seqs, audit } = await withContext(db, ctx(), async (trx) => ({
       seqs: (await trx.selectFrom('app.change_log').select('seq').orderBy('seq').execute()).map((r) => r.seq),
@@ -206,9 +237,7 @@ describe('change feed and audit (ADR-0008, NFR-03)', () => {
   });
 
   it('keeps the audit log append-only for the app role', async () => {
-    const msg = await errorHint(
-      withContext(db, ctx(), (trx) => sql`delete from app.audit_log`.execute(trx)),
-    );
+    const msg = await errorHint(withContext(db, ctx(), (trx) => sql`delete from app.audit_log`.execute(trx)));
     expect(msg).toMatch(/permission denied/);
   });
 });

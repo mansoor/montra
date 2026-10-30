@@ -26,7 +26,12 @@ const personal: EntityRef = { id: 'P', type: 'personal', functionalCurrency: 'US
 const business: EntityRef = { id: 'B', type: 'business', functionalCurrency: 'USD' };
 const entities = new Map([personal, business].map((e) => [e.id, e]));
 
-const acct = (id: string, entityId: string, type: AccountType, currency: CurrencyCode = 'USD'): LedgerAccountRef => ({
+const acct = (
+  id: string,
+  entityId: string,
+  type: AccountType,
+  currency: CurrencyCode = 'USD',
+): LedgerAccountRef => ({
   id,
   entityId,
   type,
@@ -65,7 +70,13 @@ const lines = (e: JournalEntryDraft) => Object.fromEntries(e.postings.map((p) =>
 describe('buildTransactionEntries (design 04 §2)', () => {
   it('posts an expense paid from checking', () => {
     const [e] = buildTransactionEntries(
-      { date: D, description: 'Groceries', account: checking, amount: -5000n, splits: [{ account: groceries, amount: -5000n }] },
+      {
+        date: D,
+        description: 'Groceries',
+        account: checking,
+        amount: -5000n,
+        splits: [{ account: groceries, amount: -5000n }],
+      },
       resolver,
     );
     expect(lines(e!)).toEqual({ checking: -5000n, groceries: 5000n });
@@ -74,7 +85,13 @@ describe('buildTransactionEntries (design 04 §2)', () => {
 
   it('posts a card purchase as a liability credit', () => {
     const [e] = buildTransactionEntries(
-      { date: D, description: 'Shop', account: card, amount: -5000n, splits: [{ account: groceries, amount: -5000n }] },
+      {
+        date: D,
+        description: 'Shop',
+        account: card,
+        amount: -5000n,
+        splits: [{ account: groceries, amount: -5000n }],
+      },
       resolver,
     );
     expect(lines(e!)).toEqual({ card: -5000n, groceries: 5000n });
@@ -83,7 +100,13 @@ describe('buildTransactionEntries (design 04 §2)', () => {
 
   it('posts income', () => {
     const [e] = buildTransactionEntries(
-      { date: D, description: 'Pay', account: checking, amount: 180000n, splits: [{ account: salary, amount: 180000n }] },
+      {
+        date: D,
+        description: 'Pay',
+        account: checking,
+        amount: 180000n,
+        splits: [{ account: salary, amount: 180000n }],
+      },
       resolver,
     );
     expect(lines(e!)).toEqual({ checking: 180000n, salary: -180000n });
@@ -146,7 +169,13 @@ describe('buildTransactionEntries (design 04 §2)', () => {
   it('rejects splits that do not sum to the amount', () => {
     expect(() =>
       buildTransactionEntries(
-        { date: D, description: 'x', account: checking, amount: -100n, splits: [{ account: groceries, amount: -99n }] },
+        {
+          date: D,
+          description: 'x',
+          account: checking,
+          amount: -100n,
+          splits: [{ account: groceries, amount: -99n }],
+        },
         resolver,
       ),
     ).toThrow(expect.objectContaining({ code: 'ledger.splits_mismatch' }));
@@ -190,7 +219,10 @@ describe('buildTransactionEntries (design 04 §2)', () => {
         (splits, account) => {
           const amount = splits.reduce((a, s) => a + s.amount, 0n);
           if (amount === 0n) return;
-          const entries = buildTransactionEntries({ date: D, description: 't', account, amount, splits }, resolver);
+          const entries = buildTransactionEntries(
+            { date: D, description: 't', account, amount, splits },
+            resolver,
+          );
           for (const e of entries) {
             expect(e.postings.reduce((a, p) => a + p.functionalAmount, 0n)).toBe(0n);
             expect(e.postings.every((p) => p.accountEntityId === e.entityId)).toBe(true);
@@ -250,13 +282,19 @@ describe('tiny conversions', () => {
 
 describe('buildTransferEntries (DE-03, TXN-04)', () => {
   it('moves money between accounts in one entry', () => {
-    const [e] = buildTransferEntries({ date: D, description: 'Save', from: checking, to: savings, amountOut: 50000n }, resolver);
+    const [e] = buildTransferEntries(
+      { date: D, description: 'Save', from: checking, to: savings, amountOut: 50000n },
+      resolver,
+    );
     expect(e!.kind).toBe('transfer');
     expect(lines(e!)).toEqual({ savings: 50000n, checking: -50000n });
   });
 
   it('pays a credit card', () => {
-    const [e] = buildTransferEntries({ date: D, description: 'Pay card', from: checking, to: card, amountOut: 120000n }, resolver);
+    const [e] = buildTransferEntries(
+      { date: D, description: 'Pay card', from: checking, to: card, amountOut: 120000n },
+      resolver,
+    );
     expect(lines(e!)).toEqual({ card: 120000n, checking: -120000n });
   });
 
@@ -274,7 +312,10 @@ describe('buildTransferEntries (DE-03, TXN-04)', () => {
       },
       resolver,
     );
-    expect(e!.postings.find((p) => p.accountId === 'eur')).toMatchObject({ amount: 100000n, functionalAmount: 108000n });
+    expect(e!.postings.find((p) => p.accountId === 'eur')).toMatchObject({
+      amount: 100000n,
+      functionalAmount: 108000n,
+    });
     expect(e!.postings.find((p) => p.accountId === 'P:fx_gain_loss')!.functionalAmount).toBe(2000n);
   });
 
@@ -288,9 +329,12 @@ describe('buildTransferEntries (DE-03, TXN-04)', () => {
   });
 
   it('requires both amounts across currencies', () => {
-    expect(() => buildTransferEntries({ date: D, description: 'x', from: checking, to: eurAccount, amountOut: 1n }, resolver)).toThrow(
-      LedgerError,
-    );
+    expect(() =>
+      buildTransferEntries(
+        { date: D, description: 'x', from: checking, to: eurAccount, amountOut: 1n },
+        resolver,
+      ),
+    ).toThrow(LedgerError);
   });
 });
 
@@ -308,7 +352,13 @@ describe('opening balances and reversals', () => {
 
   it('reverses an entry line by line (DE-10)', () => {
     const [e] = buildTransactionEntries(
-      { date: D, description: 'Groceries', account: checking, amount: -5000n, splits: [{ account: groceries, amount: -5000n }] },
+      {
+        date: D,
+        description: 'Groceries',
+        account: checking,
+        amount: -5000n,
+        splits: [{ account: groceries, amount: -5000n }],
+      },
       resolver,
     );
     const r = buildReversal(e!, calendarDate('2026-11-01'));
@@ -317,7 +367,13 @@ describe('opening balances and reversals', () => {
   });
 
   it('validateEntry rejects unbalanced and one-legged entries', () => {
-    const base = { entityId: 'P', functionalCurrency: 'USD' as const, entryDate: D, kind: 'manual' as const, description: 'x' };
+    const base = {
+      entityId: 'P',
+      functionalCurrency: 'USD' as const,
+      entryDate: D,
+      kind: 'manual' as const,
+      description: 'x',
+    };
     const post = (accountId: string, amount: bigint, lineNo: number) => ({
       lineNo,
       accountId,

@@ -15,7 +15,11 @@ export type Trx = Transaction<Database>;
  * Runs `fn` in one database transaction with the RLS context set via SET LOCAL (design 02 §5). Every
  * query in a request or job goes through here, so tenant isolation holds even if a query forgets a filter.
  */
-export async function withContext<T>(db: Kysely<Database>, ctx: DbContext, fn: (trx: Trx) => Promise<T>): Promise<T> {
+export async function withContext<T>(
+  db: Kysely<Database>,
+  ctx: DbContext,
+  fn: (trx: Trx) => Promise<T>,
+): Promise<T> {
   return db.transaction().execute(async (trx) => {
     await setContext(trx, ctx);
     return fn(trx);

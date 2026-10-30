@@ -94,7 +94,12 @@ describe('entity access (UP-04, BIZ-13)', () => {
     await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, (trx) =>
       trx
         .insertInto('app.entity_grant')
-        .values({ workspace_id: a.workspaceId, user_id: accountantId, entity_id: a.businessId, access: 'read' })
+        .values({
+          workspace_id: a.workspaceId,
+          user_id: accountantId,
+          entity_id: a.businessId,
+          access: 'read',
+        })
         .execute(),
     );
     const acct = await visible(a.workspaceId, accountantId);
@@ -102,7 +107,11 @@ describe('entity access (UP-04, BIZ-13)', () => {
     expect(acct.postings).toHaveLength(2);
     await expect(
       withContext(db, { workspaceId: a.workspaceId, userId: accountantId }, (trx) =>
-        trx.updateTable('app.posting').set({ memo: 'x' }).where('entity_id', '=', a.businessId).executeTakeFirstOrThrow(),
+        trx
+          .updateTable('app.posting')
+          .set({ memo: 'x' })
+          .where('entity_id', '=', a.businessId)
+          .executeTakeFirstOrThrow(),
       ),
     ).resolves.toMatchObject({ numUpdatedRows: 0n });
   });
@@ -114,7 +123,13 @@ describe('restricted payslip entries (PAY-09)', () => {
     await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, async (trx) => {
       await trx
         .insertInto('app.family_member')
-        .values({ workspace_id: a.workspaceId, id: memberId, name: 'Sam', relationship: 'spouse_partner', linked_user_id: null })
+        .values({
+          workspace_id: a.workspaceId,
+          id: memberId,
+          name: 'Sam',
+          relationship: 'spouse_partner',
+          linked_user_id: null,
+        })
         .execute();
       await postEntry(
         trx,
@@ -135,8 +150,14 @@ describe('restricted payslip entries (PAY-09)', () => {
 
     // Linking the member to the partner's login makes their own payslip visible to them.
     await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, (trx) =>
-      trx.updateTable('app.family_member').set({ linked_user_id: partnerId }).where('id', '=', memberId).execute(),
+      trx
+        .updateTable('app.family_member')
+        .set({ linked_user_id: partnerId })
+        .where('id', '=', memberId)
+        .execute(),
     );
-    expect((await visible(a.workspaceId, partnerId)).postings.some((p) => p.amount_minor === 341250n)).toBe(true);
+    expect((await visible(a.workspaceId, partnerId)).postings.some((p) => p.amount_minor === 341250n)).toBe(
+      true,
+    );
   });
 });

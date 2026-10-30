@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Bootstrap database roles and test databases
+        run: |
+          for db in montra montra_test montra_test_api; do
+            psql -v db=$db -f infra/db/bootstrap.sql
+          done
+      - name: Format
+        run: pnpm format:check
+      - name: Build, typecheck, lint, test
+        run: pnpm turbo run build typecheck lint test
+      - name: Requirements traceability is up to date
+        run: |
+          node scripts/gen-traceability.mjs
+          git diff --exit-code docs/design/traceability.md

@@ -27,7 +27,11 @@ const expense = (name: string, taxLine?: string): CategoryTemplate => ({ name, t
 const income = (name: string, taxLine?: string): CategoryTemplate => ({ name, type: 'income', taxLine });
 
 const PERSONAL: GroupTemplate[] = [
-  { name: 'Income', kind: 'income', categories: [income('Salary'), income('Interest income'), income('Other income')] },
+  {
+    name: 'Income',
+    kind: 'income',
+    categories: [income('Salary'), income('Interest income'), income('Other income')],
+  },
   {
     name: 'Fixed bills',
     kind: 'fixed',
@@ -59,7 +63,12 @@ const PERSONAL: GroupTemplate[] = [
   {
     name: 'Fun',
     kind: 'fun',
-    categories: [expense('Entertainment'), expense('Travel'), expense('Gifts & donations'), expense('Hobbies')],
+    categories: [
+      expense('Entertainment'),
+      expense('Travel'),
+      expense('Gifts & donations'),
+      expense('Hobbies'),
+    ],
   },
   { name: 'Debt', kind: 'debt', categories: [expense('Interest & finance charges')] },
 ];
@@ -145,6 +154,7 @@ export function systemAccountTemplates(type: EntityType): SystemAccountTemplate[
           { role: 'owner_contribution', name: 'Owner contribution', type: 'equity' },
           { role: 'owner_draw', name: 'Owner draw', type: 'equity' },
         ];
-  if (type === 'rental') extra.push({ role: 'security_deposits_held', name: 'Security deposits held', type: 'liability' });
+  if (type === 'rental')
+    extra.push({ role: 'security_deposits_held', name: 'Security deposits held', type: 'liability' });
   return [...COMMON_SYSTEM, ...extra];
 }

@@ -1,0 +1,26 @@
+{
+  "name": "@montra/schemas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zod schemas for the Montra API contract, shared by the API, web and mobile clients.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@montra/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@montra/domain": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

@@ -50,10 +50,14 @@ describe('parseMoney', () => {
 
   it('round-trips through toDecimalString', () => {
     fc.assert(
-      fc.property(fc.bigInt({ min: -(10n ** 15n), max: 10n ** 15n }), fc.constantFrom('USD', 'JPY', 'KWD'), (n, c) => {
-        const m = money(n, c);
-        expect(parseMoney(toDecimalString(m), c)).toEqual(m);
-      }),
+      fc.property(
+        fc.bigInt({ min: -(10n ** 15n), max: 10n ** 15n }),
+        fc.constantFrom('USD', 'JPY', 'KWD'),
+        (n, c) => {
+          const m = money(n, c);
+          expect(parseMoney(toDecimalString(m), c)).toEqual(m);
+        },
+      ),
     );
   });
 });

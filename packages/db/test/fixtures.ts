@@ -8,7 +8,9 @@ export function appDb(): Kysely<Database> {
 
 export async function createUser(db: Kysely<Database>, email: string): Promise<string> {
   return withContext(db, {}, async (trx) => {
-    const { rows } = await sql<{ id: string }>`select app.resolve_user(${'dev|' + email}, ${email}, ${email}) as id`.execute(trx);
+    const { rows } = await sql<{
+      id: string;
+    }>`select app.resolve_user(${'dev|' + email}, ${email}, ${email}) as id`.execute(trx);
     return rows[0]!.id;
   });
 }
@@ -18,7 +20,10 @@ export interface Fixture {
   ownerId: string;
   personalId: string;
   businessId: string;
-  accounts: Record<'checking' | 'card' | 'groceries' | 'salary' | 'bizChecking' | 'office' | 'equity', string>;
+  accounts: Record<
+    'checking' | 'card' | 'groceries' | 'salary' | 'bizChecking' | 'office' | 'equity',
+    string
+  >;
 }
 
 export async function createWorkspace(db: Kysely<Database>, ownerEmail: string): Promise<Fixture> {
@@ -36,16 +41,39 @@ export async function createWorkspace(db: Kysely<Database>, ownerEmail: string):
     equity: newId(),
   };
   await withContext(db, { workspaceId, userId: ownerId }, async (trx) => {
-    await trx.insertInto('app.workspace').values({ id: workspaceId, name: 'Home', base_currency: 'USD' }).execute();
-    await trx.insertInto('app.workspace_member').values({ workspace_id: workspaceId, user_id: ownerId, role: 'owner' }).execute();
+    await trx
+      .insertInto('app.workspace')
+      .values({ id: workspaceId, name: 'Home', base_currency: 'USD' })
+      .execute();
+    await trx
+      .insertInto('app.workspace_member')
+      .values({ workspace_id: workspaceId, user_id: ownerId, role: 'owner' })
+      .execute();
     await trx
       .insertInto('app.entity')
       .values([
-        { workspace_id: workspaceId, id: personalId, type: 'personal', name: 'Personal', functional_currency: 'USD' },
-        { workspace_id: workspaceId, id: businessId, type: 'business', name: 'Studio LLC', functional_currency: 'USD' },
+        {
+          workspace_id: workspaceId,
+          id: personalId,
+          type: 'personal',
+          name: 'Personal',
+          functional_currency: 'USD',
+        },
+        {
+          workspace_id: workspaceId,
+          id: businessId,
+          type: 'business',
+          name: 'Studio LLC',
+          functional_currency: 'USD',
+        },
       ])
       .execute();
-    const acct = (id: string, entity_id: string, type: 'asset' | 'liability' | 'equity' | 'income' | 'expense', name: string) => ({
+    const acct = (
+      id: string,
+      entity_id: string,
+      type: 'asset' | 'liability' | 'equity' | 'income' | 'expense',
+      name: string,
+    ) => ({
       workspace_id: workspaceId,
       id,
       entity_id,
@@ -70,10 +98,18 @@ export async function createWorkspace(db: Kysely<Database>, ownerEmail: string):
   return { workspaceId, ownerId, personalId, businessId, accounts: ids };
 }
 
-export async function addMember(db: Kysely<Database>, f: Fixture, email: string, role: MemberRole): Promise<string> {
+export async function addMember(
+  db: Kysely<Database>,
+  f: Fixture,
+  email: string,
+  role: MemberRole,
+): Promise<string> {
   const userId = await createUser(db, email);
   await withContext(db, { workspaceId: f.workspaceId, userId: f.ownerId }, (trx) =>
-    trx.insertInto('app.workspace_member').values({ workspace_id: f.workspaceId, user_id: userId, role }).execute(),
+    trx
+      .insertInto('app.workspace_member')
+      .values({ workspace_id: f.workspaceId, user_id: userId, role })
+      .execute(),
   );
   return userId;
 }

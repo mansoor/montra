@@ -30,8 +30,14 @@ function same(a: Money, b: Money): void {
   if (a.currency !== b.currency) throw new CurrencyMismatchError(a.currency, b.currency);
 }
 
-export const add = (a: Money, b: Money): Money => (same(a, b), { amount: a.amount + b.amount, currency: a.currency });
-export const sub = (a: Money, b: Money): Money => (same(a, b), { amount: a.amount - b.amount, currency: a.currency });
+export const add = (a: Money, b: Money): Money => (
+  same(a, b),
+  { amount: a.amount + b.amount, currency: a.currency }
+);
+export const sub = (a: Money, b: Money): Money => (
+  same(a, b),
+  { amount: a.amount - b.amount, currency: a.currency }
+);
 export const negate = (a: Money): Money => ({ amount: -a.amount, currency: a.currency });
 export const isZero = (a: Money): boolean => a.amount === 0n;
 export const isNegative = (a: Money): boolean => a.amount < 0n;

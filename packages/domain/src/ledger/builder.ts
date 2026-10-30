@@ -32,7 +32,11 @@ export interface AccountResolver {
    * `flow` is 'out' when `local` pays on behalf of `remote`, 'in' when `local` receives money that
    * belongs to `remote`. Returns the account to post in each entity.
    */
-  interEntity(localEntityId: string, remoteEntityId: string, flow: 'out' | 'in'): {
+  interEntity(
+    localEntityId: string,
+    remoteEntityId: string,
+    flow: 'out' | 'in',
+  ): {
     local: LedgerAccountRef;
     remote: LedgerAccountRef;
   };
@@ -60,9 +64,18 @@ class EntryWriter {
   private readonly postings: PostingDraft[] = [];
   constructor(readonly entity: EntityRef) {}
 
-  add(account: LedgerAccountRef, amount: bigint, functionalAmount: bigint, tags: PostingTags = {}, fxRate?: Decimal) {
+  add(
+    account: LedgerAccountRef,
+    amount: bigint,
+    functionalAmount: bigint,
+    tags: PostingTags = {},
+    fxRate?: Decimal,
+  ) {
     if (account.entityId !== this.entity.id) {
-      throw new LedgerError('ledger.cross_entity_posting', `Account ${account.id} is not in entity ${this.entity.id}`);
+      throw new LedgerError(
+        'ledger.cross_entity_posting',
+        `Account ${account.id} is not in entity ${this.entity.id}`,
+      );
     }
     this.postings.push({
       lineNo: this.postings.length + 1,
@@ -92,7 +105,11 @@ class EntryWriter {
       merged.set(
         key,
         prev
-          ? { ...prev, amount: prev.amount + p.amount, functionalAmount: prev.functionalAmount + p.functionalAmount }
+          ? {
+              ...prev,
+              amount: prev.amount + p.amount,
+              functionalAmount: prev.functionalAmount + p.functionalAmount,
+            }
           : p,
       );
     }
@@ -114,7 +131,8 @@ class EntryWriter {
 
 function toFunctional(amount: bigint, from: CurrencyCode, functional: CurrencyCode, rate?: Decimal): bigint {
   if (from === functional) return amount;
-  if (!rate) throw new LedgerError('ledger.fx_rate_required', `An exchange rate ${from}→${functional} is required`);
+  if (!rate)
+    throw new LedgerError('ledger.fx_rate_required', `An exchange rate ${from}→${functional} is required`);
   return convert({ amount, currency: from }, functional, rate).amount;
 }
 
@@ -130,8 +148,12 @@ function settleResidual(writer: EntryWriter, resolver: AccountResolver, role: Sy
  * Builds the journal entries for an expense, income or split transaction, including splits that belong to
  * other entities (one entry per entity, ADR-0005). Returns entries in a stable order: paying entity first.
  */
-export function buildTransactionEntries(input: TransactionInput, resolver: AccountResolver): JournalEntryDraft[] {
-  if (input.splits.length === 0) throw new LedgerError('ledger.splits_mismatch', 'At least one split is required');
+export function buildTransactionEntries(
+  input: TransactionInput,
+  resolver: AccountResolver,
+): JournalEntryDraft[] {
+  if (input.splits.length === 0)
+    throw new LedgerError('ledger.splits_mismatch', 'At least one split is required');
   const splitTotal = input.splits.reduce((a, s) => a + s.amount, 0n);
   if (splitTotal !== input.amount) {
     throw new LedgerError(
@@ -228,10 +250,14 @@ export interface TransferInput {
  */
 export function buildTransferEntries(input: TransferInput, resolver: AccountResolver): JournalEntryDraft[] {
   if (input.amountOut <= 0n) throw new LedgerError('ledger.zero_posting', 'Transfer amount must be positive');
-  if (input.from.id === input.to.id) throw new LedgerError('ledger.unsupported', 'Cannot transfer to the same account');
+  if (input.from.id === input.to.id)
+    throw new LedgerError('ledger.unsupported', 'Cannot transfer to the same account');
   const amountIn = input.amountIn ?? input.amountOut;
   if (input.amountIn === undefined && input.from.currency !== input.to.currency) {
-    throw new LedgerError('ledger.fx_rate_required', 'amountIn is required for a transfer between currencies');
+    throw new LedgerError(
+      'ledger.fx_rate_required',
+      'amountIn is required for a transfer between currencies',
+    );
   }
   const tags: PostingTags = { memberId: input.memberId ?? null };
   const fromEntity = resolver.entity(input.from.entityId);
@@ -239,7 +265,13 @@ export function buildTransferEntries(input: TransferInput, resolver: AccountReso
   if (input.from.entityId === input.to.entityId) {
     const w = new EntryWriter(fromEntity);
     const f = fromEntity.functionalCurrency;
-    w.add(input.to, amountIn, toFunctional(amountIn, input.to.currency, f, input.fxRateTo), tags, input.fxRateTo);
+    w.add(
+      input.to,
+      amountIn,
+      toFunctional(amountIn, input.to.currency, f, input.fxRateTo),
+      tags,
+      input.fxRateTo,
+    );
     w.add(
       input.from,
       -input.amountOut,
@@ -258,7 +290,10 @@ export function buildTransferEntries(input: TransferInput, resolver: AccountReso
     toEntity.functionalCurrency !== fromEntity.functionalCurrency ||
     amountIn !== input.amountOut
   ) {
-    throw new LedgerError('ledger.unsupported', 'Transfers across entities currently require one shared currency');
+    throw new LedgerError(
+      'ledger.unsupported',
+      'Transfers across entities currently require one shared currency',
+    );
   }
   const { local, remote } = resolver.interEntity(fromEntity.id, toEntity.id, 'out');
   const a = new EntryWriter(fromEntity);
@@ -267,7 +302,10 @@ export function buildTransferEntries(input: TransferInput, resolver: AccountReso
   const b = new EntryWriter(toEntity);
   b.add(input.to, input.amountOut, input.amountOut, tags);
   b.add(remote, -input.amountOut, -input.amountOut, tags);
-  return [a.build(input.date, 'transfer', input.description), b.build(input.date, 'transfer', input.description)];
+  return [
+    a.build(input.date, 'transfer', input.description),
+    b.build(input.date, 'transfer', input.description),
+  ];
 }
 
 /**
@@ -281,7 +319,8 @@ export function buildOpeningBalanceEntry(
   resolver: AccountResolver,
   fxRate?: Decimal,
 ): JournalEntryDraft {
-  if (balance === 0n) throw new LedgerError('ledger.zero_posting', 'Opening balance is zero; nothing to post');
+  if (balance === 0n)
+    throw new LedgerError('ledger.zero_posting', 'Opening balance is zero; nothing to post');
   const entity = resolver.entity(account.entityId);
   const w = new EntryWriter(entity);
   const functional = toFunctional(balance, account.currency, entity.functionalCurrency, fxRate);
@@ -292,7 +331,11 @@ export function buildOpeningBalanceEntry(
 }
 
 /** Reverses an entry (DE-10): same lines with opposite signs, dated `date`. */
-export function buildReversal(entry: JournalEntryDraft, date: CalendarDate, description?: string): JournalEntryDraft {
+export function buildReversal(
+  entry: JournalEntryDraft,
+  date: CalendarDate,
+  description?: string,
+): JournalEntryDraft {
   const reversed: JournalEntryDraft = {
     ...entry,
     entryDate: date,

@@ -34,7 +34,10 @@ export function validateEntry(entry: JournalEntryDraft): void {
       throw new LedgerError('ledger.zero_posting', `Posting ${p.lineNo} has a zero amount`);
     }
     if (p.accountEntityId !== entry.entityId) {
-      throw new LedgerError('ledger.cross_entity_posting', `Posting ${p.lineNo} targets another entity's account`);
+      throw new LedgerError(
+        'ledger.cross_entity_posting',
+        `Posting ${p.lineNo} targets another entity's account`,
+      );
     }
     if (p.currency === entry.functionalCurrency && p.amount !== p.functionalAmount) {
       throw new LedgerError(

@@ -10,7 +10,11 @@ import { abs, divRound } from './rounding.js';
 
 export type AllocationPolicy = 'largest' | 'largest_remainder';
 
-export function allocate(total: bigint, weights: readonly bigint[], policy: AllocationPolicy = 'largest'): bigint[] {
+export function allocate(
+  total: bigint,
+  weights: readonly bigint[],
+  policy: AllocationPolicy = 'largest',
+): bigint[] {
   if (weights.length === 0) throw new RangeError('allocate needs at least one weight');
   if (weights.some((w) => w < 0n)) throw new RangeError('allocate weights must be non-negative');
   const weightSum = weights.reduce((a, b) => a + b, 0n);

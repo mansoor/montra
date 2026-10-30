@@ -37,7 +37,10 @@ export interface MigrateResult {
   skipped: string[];
 }
 
-export async function migrate(connectionString: string, log: (msg: string) => void = () => {}): Promise<MigrateResult> {
+export async function migrate(
+  connectionString: string,
+  log: (msg: string) => void = () => {},
+): Promise<MigrateResult> {
   const client = new pg.Client({ connectionString });
   await client.connect();
   try {
@@ -62,11 +65,10 @@ export async function migrate(connectionString: string, log: (msg: string) => vo
       await client.query('begin');
       try {
         await client.query(m.sql);
-        await client.query('insert into public.schema_migrations (version, name, checksum) values ($1, $2, $3)', [
-          m.version,
-          m.name,
-          m.checksum,
-        ]);
+        await client.query(
+          'insert into public.schema_migrations (version, name, checksum) values ($1, $2, $3)',
+          [m.version, m.name, m.checksum],
+        );
         await client.query('commit');
       } catch (err) {
         await client.query('rollback');
