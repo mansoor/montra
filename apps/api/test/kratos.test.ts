@@ -19,6 +19,7 @@ let kratos: Server;
 let h: Harness;
 const sessions = new Map<string, FakeSession>();
 let whoamiCalls = 0;
+const HOOK_SECRET = 'test-hook-secret-0123456789abcdef0123';
 
 const sessionJson = (s: FakeSession, id = `sess-${s.token}`) => ({
   id,
@@ -88,6 +89,7 @@ beforeAll(async () => {
     AUTH_MODE: 'kratos',
     KRATOS_PUBLIC_URL: `http://127.0.0.1:${port}`,
     SESSION_CACHE_SECONDS: '60',
+    KRATOS_WEBHOOK_SECRET: HOOK_SECRET,
   });
 });
 
@@ -197,5 +199,27 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     // The phone's session was cached; revocation evicted it.
     expect((await call('GET', '/v1/me', 'phone')).status).toBe(401);
     expect((await call('GET', '/v1/me', 'laptop')).status).toBe(200);
+  });
+
+  it('evicts cached sessions when Kratos reports a recovery (AUTH-05)', async () => {
+    add('reset', { identityId: 'id-reset', email: 'reset@example.com' });
+    expect((await call('GET', '/v1/me', 'reset')).status).toBe(200);
+    sessions.get('reset')!.active = false; // Kratos revoked it during recovery
+    expect((await call('GET', '/v1/me', 'reset')).status).toBe(200); // still cached
+    const bad = await h.app.inject({
+      method: 'POST',
+      url: '/internal/kratos/hooks',
+      headers: { 'x-montra-hook-secret': 'wrong-secret-wrong-secret-wrong-secret' },
+      payload: { event: 'recovery', identity_id: 'id-reset' },
+    });
+    expect(bad.statusCode).toBe(401);
+    const hook = await h.app.inject({
+      method: 'POST',
+      url: '/internal/kratos/hooks',
+      headers: { 'x-montra-hook-secret': HOOK_SECRET },
+      payload: { event: 'recovery', identity_id: 'id-reset' },
+    });
+    expect(JSON.parse(hook.body)).toEqual({ evicted: 1 });
+    expect((await call('GET', '/v1/me', 'reset')).status).toBe(401);
   });
 });

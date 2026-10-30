@@ -128,6 +128,18 @@ export class KratosAuthAdapter implements AuthPort {
     return body.count ?? 0;
   }
 
+  /** Drops every cached session of an identity (Kratos webhook after recovery or credential changes). */
+  evictIdentity(identityId: string): number {
+    let n = 0;
+    for (const [key, entry] of this.cache) {
+      if (entry.identityId === identityId) {
+        this.cache.delete(key);
+        n++;
+      }
+    }
+    return n;
+  }
+
   /** Drops every cached session of the identity behind `cacheKey` except that key itself. */
   private evictIdentityOf(cacheKey: string): void {
     const identityId = this.cache.get(cacheKey)?.identityId;

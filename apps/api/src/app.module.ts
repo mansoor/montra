@@ -5,6 +5,7 @@ import { Db } from './db/database.js';
 import { AUTH_PORT, AuthGuard, DevAuthAdapter, WorkspaceGuard } from './auth/auth.js';
 import { KratosAuthAdapter } from './auth/kratos.adapter.js';
 import { SessionsController } from './auth/sessions.controller.js';
+import { KratosHooksController } from './auth/kratos-hooks.controller.js';
 import { ProblemFilter } from './common/problem.filter.js';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
 import { LedgerService } from './ledger/ledger.service.js';
@@ -34,6 +35,7 @@ export class AppModule {
         HealthController,
         MeController,
         SessionsController,
+        KratosHooksController,
         WorkspacesController,
         EntitiesController,
         FamilyMembersController,

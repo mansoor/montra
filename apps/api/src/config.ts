@@ -13,6 +13,8 @@ const Env = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /** Shared secret Kratos sends in `x-montra-hook-secret` when calling /internal/kratos/hooks. */
+  KRATOS_WEBHOOK_SECRET: z.string().min(32).optional(),
   /** How long a validated session is cached; revocation clears it immediately (AUTH-05/07). */
   SESSION_CACHE_SECONDS: z.coerce.number().int().min(0).max(300).default(15),
   /** Base64 32-byte master key for the local KMS adapter (development); production uses AWS KMS. */
