@@ -161,7 +161,7 @@ export class EntitiesController {
   }
 }
 
-const toEntityDto = (e: {
+export const toEntityDto = (e: {
   id: string;
   type: string;
   name: string;
@@ -264,7 +264,7 @@ export class FamilyMembersController {
   }
 }
 
-const toMemberDto = (m: {
+export const toMemberDto = (m: {
   id: string;
   name: string;
   relationship: FamilyMemberDto['relationship'];

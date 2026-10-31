@@ -197,6 +197,8 @@ export interface TransactionTable {
   payee_key: string | null;
   /** How the category was chosen: { step, confidence, explanation, ruleId, suggested } (AI-06). */
   categorization: Json<Record<string, unknown>> | null;
+  /** Field-group clocks for offline LWW: { group: { v, at } } (ADR-0013). */
+  field_clock: Generated<Json<Record<string, { v: number; at: string }>>>;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;
@@ -709,6 +711,26 @@ export interface InsightTable {
   updated_at: Generated<Date>;
 }
 
+export interface SyncOpTable {
+  workspace_id: string;
+  op_id: string;
+  user_id: string;
+  kind: string;
+  result: Json<Record<string, unknown>>;
+  created_at: Generated<Date>;
+}
+
+export interface PushDeviceTable {
+  id: Generated<string>;
+  user_id: string;
+  token: string;
+  platform: 'ios' | 'android';
+  device_name: string | null;
+  app_version: string | null;
+  created_at: Generated<Date>;
+  last_seen_at: Generated<Date>;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -757,6 +779,8 @@ export interface Database {
   'app.ai_credential': AiCredentialTable;
   'app.ai_task': AiTaskTable;
   'app.insight': InsightTable;
+  'app.sync_op': SyncOpTable;
+  'app.push_device': PushDeviceTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
