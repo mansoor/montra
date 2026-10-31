@@ -333,8 +333,8 @@
     "threshold on calibrated confidence; auto-apply vs review queue"
   ],
   "AI-04": [
-    "partial",
-    "web review queue with keyboard shortcuts and accept-all ≥ X%; mobile swipe in P4"
+    "done",
+    "web keyboard review queue and mobile swipe stack"
   ],
   "AI-05": [
     "done",
@@ -391,5 +391,37 @@
   "NFR-14": [
     "partial",
     "disclaimer mechanism; tax helpers later"
+  ],
+  "PLT-02": [
+    "partial",
+    "Expo SDK 58 app for iOS 17+/Android 11+; JS bundles build for both; device runs and the camera spike pending"
+  ],
+  "PLT-03": [
+    "partial",
+    "mobile parity for phases 1–3 daily tasks (transactions, quick add, review, accounts, import); budgets etc. arrive with their phases"
+  ],
+  "PLT-04": [
+    "partial",
+    "document picker and share-sheet import into the import flow; untested on devices"
+  ],
+  "PLT-05": [
+    "done",
+    "encrypted offline store, outbox with idempotent replay, field-group LWW with conflict notices (ADR-0013); engine tested against the API"
+  ],
+  "PLT-07": [
+    "partial",
+    "biometric unlock, lock timeout and app-switcher blur implemented; needs device verification"
+  ],
+  "IMP-02": [
+    "partial",
+    "Files and share sheet, camera pages → PDF → server OCR; photo library/email attachments via share sheet; untested on devices"
+  ],
+  "BAK-10": [
+    "partial",
+    "SQLCipher store keyed from Keychain/Keystore, wiped on sign-out; needs device verification"
+  ],
+  "UP-07": [
+    "partial",
+    "mobile parity for the daily tasks of phases 1–3"
   ]
 }

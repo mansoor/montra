@@ -1,0 +1,28 @@
+{
+  "name": "@montra/sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline sync engine for clients: local store contract, pull/apply, outbox with idempotent replay and field-group LWW conflict notices (PLT-05, ADR-0013).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@montra/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@montra/domain": "workspace:*",
+    "@montra/schemas": "workspace:*"
+  },
+  "devDependencies": {}
+}

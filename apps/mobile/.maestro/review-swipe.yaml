@@ -1,0 +1,16 @@
+appId: app.montra.mobile
+name: Swipe right to accept a suggestion (AI-04)
+---
+- runFlow: sign-in-dev.yaml
+- tapOn: Review
+- runFlow:
+    when:
+      visible: 'All caught up.*'
+    commands:
+      - stopApp
+- assertVisible: { id: review-card }
+- swipe:
+    from: { id: review-card }
+    direction: RIGHT
+    duration: 300
+- assertVisible: Accepted
