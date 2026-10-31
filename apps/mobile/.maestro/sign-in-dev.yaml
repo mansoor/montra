@@ -1,0 +1,17 @@
+appId: app.montra.mobile
+name: Sign in with dev auth
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: email
+- inputText: ${EMAIL || 'maestro@example.com'}
+- tapOn:
+    id: sign-in-submit
+- runFlow:
+    when:
+      visible: Unlock
+    commands:
+      - tapOn: Unlock
+- assertVisible:
+    id: home

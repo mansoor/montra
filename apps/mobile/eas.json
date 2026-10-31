@@ -1,0 +1,22 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "remote" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "env": { "MONTRA_AUTH_MODE": "dev", "MONTRA_API_URL": "http://localhost:4000" }
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": { "MONTRA_AUTH_MODE": "kratos" }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "env": { "MONTRA_AUTH_MODE": "kratos" }
+    }
+  },
+  "submit": { "production": {} }
+}
