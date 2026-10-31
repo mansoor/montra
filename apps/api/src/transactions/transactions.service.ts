@@ -371,18 +371,25 @@ export class TransactionsService {
 
   /** Void and move to trash (BAK-06). Entries are removed, or reversed when their period is closed. */
   async remove(ctx: Ctx, id: string, ifMatch?: string): Promise<{ outcome: 'removed' | 'reversed' }> {
-    return this.db.run(ctx, async (trx) => {
-      const row = await this.lockRow(trx, ctx, id, ifMatch);
-      if (row.status === 'void') return { outcome: 'removed' as const };
-      const outcome = await this.poster.unpost(trx, ctx, id);
-      await trx
-        .updateTable('app.transaction')
-        .set({ status: 'void', deleted_at: new Date() })
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', id)
-        .execute();
-      return { outcome };
-    });
+    return this.db.run(ctx, (trx) => this.removeInTrx(trx, ctx, id, ifMatch));
+  }
+
+  async removeInTrx(
+    trx: Trx,
+    ctx: Ctx,
+    id: string,
+    ifMatch?: string,
+  ): Promise<{ outcome: 'removed' | 'reversed' }> {
+    const row = await this.lockRow(trx, ctx, id, ifMatch);
+    if (row.status === 'void') return { outcome: 'removed' as const };
+    const outcome = await this.poster.unpost(trx, ctx, id);
+    await trx
+      .updateTable('app.transaction')
+      .set({ status: 'void', deleted_at: new Date() })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
+    return { outcome };
   }
 
   /** Restores a trashed transaction by re-posting its spec, if its entries were removed (not reversed). */

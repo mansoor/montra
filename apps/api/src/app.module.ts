@@ -24,7 +24,8 @@ import { JournalsController } from './journals/journals.controller.js';
 import { InviteAcceptController, SharingController } from './sharing/sharing.controller.js';
 import { RecurringService } from './recurring/recurring.service.js';
 import { RecurringController } from './recurring/recurring.controller.js';
-import { SyncController } from './sync/sync.controller.js';
+import { PushDevicesController, SyncController } from './sync/sync.controller.js';
+import { SyncService } from './sync/sync.service.js';
 import { RealtimeService } from './realtime/realtime.service.js';
 import { mailProvider } from './mail/mail.service.js';
 import { storageProvider } from './storage/storage.js';
@@ -62,6 +63,7 @@ export class AppModule {
       InviteAcceptController,
       RecurringController,
       SyncController,
+      PushDevicesController,
       UploadsController,
       ImportsController,
       ReconciliationController,
@@ -101,6 +103,7 @@ export class AppModule {
         RulesService,
         ReviewService,
         InsightsService,
+        SyncService,
       ],
     };
   }

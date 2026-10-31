@@ -1,5 +1,26 @@
-import { Controller, Get, Inject, Query, UseGuards } from '@nestjs/common';
-import type { ChangeDto } from '@montra/schemas';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  RegisterPushDeviceRequest,
+  SyncPullQuery,
+  SyncPushRequest,
+  type ChangeDto,
+  type PushDeviceDto,
+  type SyncPullResponse,
+  type SyncPushResponse,
+} from '@montra/schemas';
+import { sql } from 'kysely';
+import { SyncService } from './sync.service.js';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { Db } from '../db/database.js';
@@ -22,7 +43,23 @@ const Query_ = z.object({
 @Controller('v1/workspaces/:workspaceId/sync')
 @UseGuards(AuthGuard, WorkspaceGuard)
 export class SyncController {
-  constructor(@Inject(Db) private readonly db: Db) {}
+  constructor(
+    @Inject(Db) private readonly db: Db,
+    @Inject(SyncService) private readonly sync: SyncService,
+  ) {}
+
+  /** Resolved rows for the offline store (ADR-0013); `since=0` bootstraps. */
+  @Get('pull')
+  pull(@Ctx() ctx: RequestContext, @Query() query: unknown): Promise<SyncPullResponse> {
+    return this.sync.pull(dbCtx(ctx), parse(SyncPullQuery, query));
+  }
+
+  /** The device outbox: idempotent ops with field-group last-write-wins (ADR-0013). */
+  @Post('push')
+  @HttpCode(200)
+  push(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<SyncPushResponse> {
+    return this.sync.push(dbCtx(ctx), parse(SyncPushRequest, body).ops);
+  }
 
   @Get('changes')
   async changes(
@@ -94,5 +131,49 @@ export class SyncController {
         hasMore: more,
       };
     });
+  }
+}
+
+/** Push-notification devices of the signed-in user (registered by the mobile app, removed on sign-out). */
+@Controller('v1/me/push-devices')
+@UseGuards(AuthGuard)
+export class PushDevicesController {
+  constructor(@Inject(Db) private readonly db: Db) {}
+
+  @Get()
+  async list(@Ctx() ctx: RequestContext): Promise<{ data: PushDeviceDto[] }> {
+    const rows = await this.db.run({ userId: ctx.user.id }, (trx) =>
+      trx.selectFrom('app.push_device').selectAll().orderBy('last_seen_at', 'desc').execute(),
+    );
+    return {
+      data: rows.map((r) => ({
+        id: r.id,
+        platform: r.platform,
+        deviceName: r.device_name,
+        appVersion: r.app_version,
+        createdAt: r.created_at.toISOString(),
+        lastSeenAt: r.last_seen_at.toISOString(),
+      })),
+    };
+  }
+
+  @Post()
+  async register(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<{ id: string }> {
+    const req = parse(RegisterPushDeviceRequest, body);
+    const { rows } = await this.db.run({ userId: ctx.user.id }, (trx) =>
+      sql<{
+        id: string;
+      }>`select app.register_push_device(${req.token}, ${req.platform}, ${req.deviceName ?? null},
+                                                        ${req.appVersion ?? null}) as id`.execute(trx),
+    );
+    return { id: rows[0]!.id };
+  }
+
+  @Delete(':token')
+  @HttpCode(204)
+  async remove(@Ctx() ctx: RequestContext, @Param('token') token: string): Promise<void> {
+    await this.db.run({ userId: ctx.user.id }, (trx) =>
+      trx.deleteFrom('app.push_device').where('token', '=', token).execute(),
+    );
   }
 }

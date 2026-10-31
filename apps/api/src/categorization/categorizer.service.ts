@@ -19,6 +19,7 @@ import {
 import type { CategoryOption, MemberOption } from '@montra/ai-gateway';
 import type { CategorizationDto, RuleSuggestionDto } from '@montra/schemas';
 import { AiService } from '../ai/ai.service.js';
+import { unprocessable } from '../common/errors.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -95,7 +96,8 @@ export class Categorizer {
       ])
       .where('la.workspace_id', '=', ctx.workspaceId)
       .where('la.id', '=', accountId)
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
+    if (!a) throw unprocessable('account.not_found', 'The account does not exist or is not visible to you');
     return {
       id: a.id,
       entityId: a.entity_id,
