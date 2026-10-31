@@ -110,7 +110,8 @@ export interface SyncStore {
 
   enqueue(item: OutboxItem): Promise<void>;
   outbox(): Promise<OutboxItem[]>;
-  updateOutbox(opId: string, patch: Partial<Omit<OutboxItem, 'op'>>): Promise<void>;
+  /** Patch an outbox item; `op` may be replaced (coalescing, draft retry) but its `opId` never changes. */
+  updateOutbox(opId: string, patch: Partial<OutboxItem>): Promise<void>;
   removeOutbox(opIds: string[]): Promise<void>;
 
   addConflict(n: ConflictNotice): Promise<void>;
