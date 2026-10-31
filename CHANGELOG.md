@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.0-dev.1 — Phase 4: mobile foundation and offline sync (on feature branch)
+
+- **Offline sync** (ADR-0013):
+  - `GET /sync/pull`: a bootstrap and incremental pulls of resolved rows, re-read under RLS, with removals.
+  - `POST /sync/push`: an idempotent outbox. Creates keep their client ids.
+  - Field-group last-write-wins: the ledger group is atomic, and payee, date, memo, tags and review are
+    independent. Conflict notices go back to the device, and rejected ops become drafts.
+  - Migration 0011 adds the field-group clocks, the op replay log and push devices.
+- **`@montra/sync`:** a platform-neutral engine (bootstrap, pull, optimistic outbox with coalescing and
+  backoff, conflicts, drafts, wipe), plus `MemoryStore` and `FetchTransport`. It is tested against a fake
+  server and, in a two-device test, against the real API.
+- **`apps/mobile`** (Expo SDK 58):
+  - Dev and Kratos sign-in; biometric app lock with a timeout and an app-switcher blur.
+  - A SQLCipher-encrypted store with its key in the Keychain/Keystore, wiped on sign-out.
+  - Screens: home, transactions with swipe actions, a 3-tap quick add, a swipe review stack, accounts and
+    registers.
+  - Import from Files, the share sheet or camera pages, with a guided column mapping.
+  - Push-token registration, a sync activity screen, the camera spike harness, EAS profiles, a mobile CI
+    workflow and Maestro flows.
+- **Push devices:** `POST/GET/DELETE /v1/me/push-devices`.
+
 ## v0.4.0-dev.1 — Phase 3: AI gateway and categorization (on feature branch)
 
 - **`@montra/ai-gateway`** (ADR-0007, ADR-0012):
