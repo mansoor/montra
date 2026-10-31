@@ -1,0 +1,15 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "lib": ["DOM", "ESNext"],
+    "customConditions": ["@montra/source", "react-native"],
+    "allowJs": false,
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "expo-env.d.ts", "app.config.ts"],
+  "exclude": ["node_modules", "dist", "android", "ios", ".expo"]
+}
