@@ -1,0 +1,226 @@
+[
+  {
+    "id": "groceries",
+    "name": "Groceries",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "dining-out",
+    "name": "Dining out",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "fuel",
+    "name": "Fuel",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "rideshare-transit",
+    "name": "Rideshare & transit",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "streaming-subscriptions",
+    "name": "Streaming & subscriptions",
+    "group": "Fixed",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "rent",
+    "name": "Rent",
+    "group": "Fixed",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "utilities",
+    "name": "Utilities",
+    "group": "Fixed",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "internet-phone",
+    "name": "Internet & phone",
+    "group": "Fixed",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "shopping",
+    "name": "Shopping",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "health-pharmacy",
+    "name": "Health & pharmacy",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "fitness",
+    "name": "Fitness",
+    "group": "Fun",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "travel",
+    "name": "Travel",
+    "group": "Fun",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "insurance",
+    "name": "Insurance",
+    "group": "Fixed",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "education",
+    "name": "Education",
+    "group": "Fixed",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "entertainment",
+    "name": "Entertainment",
+    "group": "Fun",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "personal-care",
+    "name": "Personal care",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "pets",
+    "name": "Pets",
+    "group": "Daily",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "bank-fees",
+    "name": "Bank fees",
+    "group": "Fixed",
+    "kind": "expense",
+    "entityType": "personal"
+  },
+  {
+    "id": "salary",
+    "name": "Salary",
+    "group": "Income",
+    "kind": "income",
+    "entityType": "personal"
+  },
+  {
+    "id": "interest-income",
+    "name": "Interest income",
+    "group": "Income",
+    "kind": "income",
+    "entityType": "personal"
+  },
+  {
+    "id": "software-saas",
+    "name": "Software & SaaS",
+    "group": "Business",
+    "kind": "expense",
+    "entityType": "business"
+  },
+  {
+    "id": "office-supplies",
+    "name": "Office supplies",
+    "group": "Business",
+    "kind": "expense",
+    "entityType": "business"
+  },
+  {
+    "id": "advertising",
+    "name": "Advertising",
+    "group": "Business",
+    "kind": "expense",
+    "entityType": "business"
+  },
+  {
+    "id": "business-meals",
+    "name": "Business meals",
+    "group": "Business",
+    "kind": "expense",
+    "entityType": "business"
+  },
+  {
+    "id": "contractors",
+    "name": "Contractors",
+    "group": "Business",
+    "kind": "expense",
+    "entityType": "business"
+  },
+  {
+    "id": "client-revenue",
+    "name": "Client revenue",
+    "group": "Income",
+    "kind": "income",
+    "entityType": "business"
+  },
+  {
+    "id": "rental-income",
+    "name": "Rental income",
+    "group": "Rental",
+    "kind": "income",
+    "entityType": "rental"
+  },
+  {
+    "id": "repairs-maintenance",
+    "name": "Repairs & maintenance",
+    "group": "Rental",
+    "kind": "expense",
+    "entityType": "rental"
+  },
+  {
+    "id": "property-management",
+    "name": "Property management",
+    "group": "Rental",
+    "kind": "expense",
+    "entityType": "rental"
+  },
+  {
+    "id": "mortgage-interest",
+    "name": "Mortgage interest",
+    "group": "Rental",
+    "kind": "expense",
+    "entityType": "rental"
+  },
+  {
+    "id": "property-tax",
+    "name": "Property tax",
+    "group": "Rental",
+    "kind": "expense",
+    "entityType": "rental"
+  },
+  {
+    "id": "hoa-fees",
+    "name": "HOA fees",
+    "group": "Rental",
+    "kind": "expense",
+    "entityType": "rental"
+  }
+]

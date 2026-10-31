@@ -19,7 +19,7 @@ from psycopg.rows import dict_row
 from .errors import PermanentJobError, TransientJobError
 from .extract_pdf import extract_pdf
 from .extract_xls import extract_xls
-from .result import GridResult, check_magic
+from .result import GridResult, OcrTextResult, check_magic
 from .storage import Storage
 
 log = logging.getLogger("montra.doc_worker")
@@ -29,10 +29,10 @@ CHANNEL = "montra_jobs"
 POLL_SECONDS = 5.0
 REQUEUE_EVERY_SECONDS = 60.0
 
-Handler = Callable[[dict[str, Any], Storage], GridResult]
+Handler = Callable[[dict[str, Any], Storage], GridResult | OcrTextResult]
 
 
-def handle_doc_extract(payload: dict[str, Any], storage: Storage) -> GridResult:
+def handle_doc_extract(payload: dict[str, Any], storage: Storage) -> GridResult | OcrTextResult:
     key = payload.get("storageKey")
     file_type = payload.get("fileType")
     if not isinstance(key, str) or not isinstance(file_type, str):

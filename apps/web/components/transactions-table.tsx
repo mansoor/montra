@@ -8,7 +8,8 @@ import { browserApi } from '@/lib/browser-api';
 import { summarizeBulk, toBulkSet, toggleSelection, type BulkAction } from '@/lib/bulk';
 import { friendlyMessage } from '@/lib/errors';
 import { groupCategories, type TransactionRow } from '@/lib/view-models';
-import { ReviewBadge, RowAmount, RowTitle } from './transaction-list';
+import { ReviewBadge, RowAmount, RowCategories, RowTitle } from './transaction-list';
+import { MerchantMark } from './ai/shared';
 import { DateText, useI18n } from './i18n';
 
 type BulkKind = BulkAction['kind'];
@@ -218,6 +219,7 @@ export function TransactionsTable({
                 aria-label={t('bulk.select_row', { title: r.title, date: r.date })}
               />
             )}
+            <MerchantMark merchant={r.merchant ? { ...r.merchant, mcc: null } : null} fallback={r.title} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">
                 <Link href={`${base}/${r.id}`} className="hover:underline">
@@ -232,9 +234,12 @@ export function TransactionsTable({
               </p>
               <p className="truncate text-xs text-muted">
                 <DateText date={r.date} /> · {r.accountName}
-                {r.categories.length > 0 && ` · ${r.categories.join(', ')}`}
+                {r.categories.length > 0 && <RowCategories row={r} />}
                 {r.tags.length > 0 && ` · #${r.tags.join(' #')}`}
               </p>
+              {r.needsReview && r.explanation && (
+                <p className="truncate text-xs text-muted">{r.explanation}</p>
+              )}
             </div>
             <RowAmount row={r} />
             {trash && (

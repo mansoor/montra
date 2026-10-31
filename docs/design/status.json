@@ -193,8 +193,8 @@
     "LISTEN/NOTIFY + WebSocket push, change feed"
   ],
   "UP-03": [
-    "partial",
-    "onboarding templates; AI category proposals in P3"
+    "done",
+    "templates at onboarding; categories proposed from the first import"
   ],
   "UP-04": [
     "done",
@@ -225,16 +225,16 @@
     "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF; mobile in P4"
   ],
   "IMP-03": [
-    "partial",
-    "heuristic inference + manual mapping UI; AI-assisted mapping in P3"
+    "done",
+    "heuristic + profile + template mapping, AI column mapper fallback"
   ],
   "IMP-04": [
     "done",
     "profiles by fingerprint per account"
   ],
   "IMP-05": [
-    "partial",
-    "digital PDFs via pdfplumber with balance check; scanned PDFs (OCR) in P3"
+    "done",
+    "digital PDFs via text layer; scanned via OCR + extract_statement_table, balance-checked"
   ],
   "IMP-06": [
     "done",
@@ -275,5 +275,121 @@
   "NFR-07": [
     "partial",
     "5k-row parse ~0.2 s; commit ~11 ms/row; dashboard target in P6"
+  ],
+  "AIA-01": [
+    "partial",
+    "categorize, map columns, normalize payees, quick add, statement table, category proposals; summaries/recommendations/Q&A arrive with their features"
+  ],
+  "AIA-02": [
+    "done",
+    "routing table per task group (small/vision/large), env and workspace overrides"
+  ],
+  "AIA-03": [
+    "done",
+    "minimizer masks digits, emails, phones, street numbers; member pseudonyms; amount bands; OCR redaction in doc-worker"
+  ],
+  "AIA-04": [
+    "done",
+    "JSON-schema structured outputs, Zod re-validation; invalid output degrades to review"
+  ],
+  "AIA-05": [
+    "done",
+    "numbers in insights and anomalies computed in code"
+  ],
+  "AIA-06": [
+    "done",
+    "payee_history, corrections, rule suggestions — viewable and deletable data"
+  ],
+  "AIA-07": [
+    "done",
+    "per-item cache by normalized payee + amount band + category list hash, 90-day TTL"
+  ],
+  "AIA-08": [
+    "done",
+    "monthly budget, downgrade at 80%, stop at 100%; spend counter separate from the audit log"
+  ],
+  "AIA-09": [
+    "partial",
+    "benchmark v1 (5,280 labelled rows) and eval harness; real-provider accuracy run needs an API key (nightly)"
+  ],
+  "AIA-10": [
+    "done",
+    "ai_event log with input hash only; list and delete"
+  ],
+  "AIA-12": [
+    "partial",
+    "disclaimer component and strings; attached to tax outputs when those ship"
+  ],
+  "AI-01": [
+    "done",
+    "pipeline on every import row and manual entry"
+  ],
+  "AI-02": [
+    "partial",
+    "category, entity (via category) and member; property/unit with rentals (P6)"
+  ],
+  "AI-03": [
+    "done",
+    "threshold on calibrated confidence; auto-apply vs review queue"
+  ],
+  "AI-04": [
+    "partial",
+    "web review queue with keyboard shortcuts and accept-all ≥ X%; mobile swipe in P4"
+  ],
+  "AI-05": [
+    "done",
+    "rule offered after 2 identical corrections; accept with apply-to-existing"
+  ],
+  "AI-06": [
+    "done",
+    "one-line explanation stored per decision"
+  ],
+  "AI-07": [
+    "partial",
+    "clean merchant name and MCC from reference merchants and AI; logos only where reference data has them"
+  ],
+  "AI-08": [
+    "done",
+    "recurring detection → insight → recurring template"
+  ],
+  "AI-09": [
+    "done",
+    "unusual amount, duplicate charge, new subscription, price increase"
+  ],
+  "AI-11": [
+    "partial",
+    "1,000-row import categorized well under 60 s with the fake provider; real-provider timing unmeasured"
+  ],
+  "TXN-06": [
+    "done",
+    "heuristic parser + AI quick add"
+  ],
+  "FAM-05": [
+    "partial",
+    "member from rules, history, AI and account default; receipt items in P4/P5"
+  ],
+  "UP-02": [
+    "done",
+    "rules engine (RE2), preview, apply to existing"
+  ],
+  "UP-06": [
+    "partial",
+    "per-mode AI disclosure; full data-use page with the privacy center"
+  ],
+  "UP-13": [
+    "done",
+    "built-in, BYOK, local (OpenAI-compatible) and off"
+  ],
+  "PLT-10": [
+    "done",
+    "review and categorization shortcuts on web"
+  ],
+  "OPS-07": [
+    "partial",
+    "provider failover in the gateway; alerting/monitoring in P11"
+  ],
+  "NFR-14": [
+    "partial",
+    "disclaimer mechanism; tax helpers later"
   ]
 }

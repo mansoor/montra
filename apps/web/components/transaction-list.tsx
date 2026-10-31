@@ -25,7 +25,7 @@ export function TransactionList({ rows, hrefBase }: { rows: TransactionRow[]; hr
             </p>
             <p className="truncate text-xs text-muted">
               <DateText date={r.date} /> · {r.accountName}
-              {r.categories.length > 0 && ` · ${r.categories.join(', ')}`}
+              {r.categories.length > 0 && <RowCategories row={r} />}
             </p>
           </div>
           <RowAmount row={r} />
@@ -35,10 +35,32 @@ export function TransactionList({ rows, hrefBase }: { rows: TransactionRow[]; hr
   );
 }
 
-/** Payee or description; untitled rows get a translated placeholder. */
+/** Payee or description (or the enriched merchant name); untitled rows get a translated placeholder. */
 export function RowTitle({ row }: { row: TransactionRow }) {
   const { t } = useI18n();
-  return <>{row.title || (row.isTransfer ? t('transactions.transfer') : t('transactions.no_payee'))}</>;
+  return (
+    <>
+      {row.merchant?.name ||
+        row.title ||
+        (row.isTransfer ? t('transactions.transfer') : t('transactions.no_payee'))}
+    </>
+  );
+}
+
+/** " · Groceries", with the reason it was chosen on hover and for screen readers (AI-06). */
+export function RowCategories({ row }: { row: TransactionRow }) {
+  const { t } = useI18n();
+  return (
+    <span title={row.explanation ?? undefined} data-testid="row-categories">
+      {` · ${row.categories.join(', ')}`}
+      {row.explanation && (
+        <span className="sr-only">
+          {' '}
+          ({t('review.why')} {row.explanation})
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function ReviewBadge() {

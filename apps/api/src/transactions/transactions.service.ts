@@ -14,6 +14,13 @@ import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { TransactionPoster, type SplitSpec, type TransactionSpec } from './poster.js';
+import {
+  Categorizer,
+  payeeKeyOf,
+  toDto,
+  type StoredCategorization,
+} from '../categorization/categorizer.service.js';
+import { MerchantDirectory } from '../categorization/merchants.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -29,26 +36,92 @@ export class TransactionsService {
     @Inject(Db) private readonly db: Db,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
+    @Inject(Categorizer) private readonly categorizer: Categorizer,
+    @Inject(MerchantDirectory) private readonly merchants: MerchantDirectory,
   ) {}
 
   /** Income, expense or split transaction (TXN-01..03, DE-05). Uncategorized items go to the review queue. */
   async create(ctx: Ctx, req: CreateTransactionRequest): Promise<TransactionDto> {
-    const id = await this.db.run(ctx, (trx) =>
-      this.createInTrx(trx, ctx, {
+    const id = await this.db.run(ctx, async (trx) => {
+      const payeeKey = payeeKeyOf(req.payee, req.description);
+      let categoryId = req.categoryId;
+      let memberId = req.memberId;
+      let categorization: StoredCategorization | null = null;
+      let reviewState: 'auto_applied' | 'reviewed' | undefined;
+      const tags = [...(req.tags ?? [])];
+      if (!categoryId && !req.splits?.length) {
+        // AI-01: the pipeline runs on manual entries too. Confident results are applied; the rest are
+        // posted uncategorized with the suggestion kept for the review queue.
+        const account = await this.categorizer.accountInfo(trx, ctx, req.accountId);
+        const item = this.categorizer.item(account, {
+          id: 'manual',
+          payee: req.payee ?? null,
+          description: req.description ?? '',
+          amountMinor: BigInt(req.amount.amount),
+          date: calendarDate(req.date),
+        });
+        const { decisions } = await this.categorizer.categorize(trx, ctx, account, [item], { useAi: true });
+        const d = decisions[0];
+        if (d) {
+          categorization = this.categorizer.stored(d);
+          if (d.autoApply && d.categoryId) {
+            categoryId = d.categoryId;
+            reviewState = 'auto_applied';
+            if (memberId === undefined && d.memberId) memberId = d.memberId;
+            for (const t of d.tags) if (!tags.includes(t)) tags.push(t);
+          }
+        }
+      } else {
+        categorization = {
+          step: 'user',
+          confidence: 1,
+          explanation: 'Chosen by you',
+          ruleId: null,
+          suggested: null,
+        };
+      }
+      const id = await this.createInTrx(trx, ctx, {
         date: req.date,
         accountId: req.accountId,
         amount: req.amount,
         payee: req.payee ?? null,
         description: req.description ?? '',
-        categoryId: req.categoryId,
+        categoryId,
         splits: req.splits,
-        memberId: req.memberId,
+        memberId,
         memo: req.memo,
-        tags: req.tags,
+        tags,
         source: 'manual',
-      }),
-    );
+        reviewState,
+        payeeKey,
+        categorization,
+      });
+      if (categorization?.step === 'user' && categoryId) {
+        const { learned } = await this.categorizer.learn(trx, ctx, {
+          transactionId: id,
+          payee: req.payee ?? null,
+          payeeKey,
+          amountMinor: BigInt(req.amount.amount),
+          currency: req.amount.currency,
+          categoryId,
+          memberId: memberId ?? null,
+          previous: null,
+          previousCategoryId: null,
+        });
+        await this.setCategorization(trx, ctx, id, { ...categorization, learned });
+      }
+      return id;
+    });
     return this.getOrThrow(ctx, id);
+  }
+
+  async setCategorization(trx: Trx, ctx: Ctx, id: string, c: StoredCategorization | null): Promise<void> {
+    await trx
+      .updateTable('app.transaction')
+      .set({ categorization: c ? JSON.stringify(c) : null })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
   }
 
   /**
@@ -77,6 +150,8 @@ export class TransactionsService {
       rawDescription?: string | null;
       /** Mark this account's postings cleared on insert (imported statement lines). */
       clearedAccountId?: string;
+      payeeKey?: string | null;
+      categorization?: StoredCategorization | null;
     },
   ): Promise<string> {
     const id = newId();
@@ -107,6 +182,11 @@ export class TransactionsService {
         dedupe_key: input.dedupeKey ?? null,
         statement_date: input.statementDate ?? null,
         raw_description: input.rawDescription ?? null,
+        payee_key:
+          input.payeeKey !== undefined
+            ? input.payeeKey
+            : payeeKeyOf(input.payee, input.rawDescription ?? input.description),
+        categorization: input.categorization ? JSON.stringify(input.categorization) : null,
         spec: JSON.stringify(spec),
         posted_at: new Date(),
         created_by: ctx.userId,
@@ -180,7 +260,24 @@ export class TransactionsService {
     req: UpdateTransactionRequest,
     ifMatch?: string,
   ): Promise<TransactionDto> {
-    await this.db.run(ctx, async (trx) => {
+    await this.db.run(ctx, (trx) => this.updateInTrx(trx, ctx, id, req, ifMatch));
+    return this.getOrThrow(ctx, id);
+  }
+
+  /**
+   * Edits a transaction inside the caller's transaction. A category or member the user picks is learned
+   * (payee history, corrections, rule suggestions — AI-05) unless `learn` is false (rules applied in bulk).
+   */
+  async updateInTrx(
+    trx: Trx,
+    ctx: Ctx,
+    id: string,
+    req: UpdateTransactionRequest,
+    ifMatch?: string,
+    opts: { learn?: boolean; categorization?: StoredCategorization; reviewState?: 'auto_applied' } = {},
+  ): Promise<{ ruleSuggestion: Awaited<ReturnType<Categorizer['learn']>>['suggestion'] }> {
+    let ruleSuggestion: Awaited<ReturnType<Categorizer['learn']>>['suggestion'] = null;
+    {
       const row = await this.lockRow(trx, ctx, id, ifMatch);
       if (row.status === 'void')
         throw unprocessable('transaction.void', 'A voided transaction cannot be edited');
@@ -194,16 +291,59 @@ export class TransactionsService {
         await this.poster.repost(trx, ctx, id, built.drafts);
       }
       const reviewState =
+        opts.reviewState ??
         req.reviewState ??
         (next.type === 'standard' && !next.uncategorized && row.review_state === 'needs_review'
           ? 'reviewed'
           : row.review_state);
+      const payee = req.payee === undefined ? row.payee_raw : req.payee;
+      const payeeKey =
+        req.payee === undefined && req.description === undefined
+          ? row.payee_key
+          : payeeKeyOf(payee, row.raw_description ?? req.description ?? row.description);
+      let categorization = (opts.categorization ?? row.categorization) as StoredCategorization | null;
+      const before = singleCategory(spec);
+      const after = singleCategory(next);
+      const categoryChanged = after.categoryId !== before.categoryId || after.memberId !== before.memberId;
+      if (
+        !opts.categorization &&
+        opts.learn !== false &&
+        next.type === 'standard' &&
+        after.categoryId &&
+        !next.uncategorized &&
+        (categoryChanged || (row.review_state !== 'reviewed' && reviewState === 'reviewed'))
+      ) {
+        const res = await this.categorizer.learn(trx, ctx, {
+          transactionId: id,
+          payee,
+          payeeKey,
+          amountMinor: BigInt(next.amount),
+          currency: next.currency,
+          categoryId: after.categoryId,
+          memberId: after.memberId,
+          previous: categorization,
+          previousCategoryId: spec.type === 'standard' && !spec.uncategorized ? before.categoryId : null,
+          previousMemberId: before.memberId,
+        });
+        ruleSuggestion = res.suggestion;
+        const accepted = categorization?.suggested?.categoryId === after.categoryId;
+        categorization = {
+          step: accepted && categorization ? categorization.step : 'user',
+          confidence: accepted && categorization ? categorization.confidence : 1,
+          explanation: accepted && categorization ? categorization.explanation : 'Chosen by you',
+          ruleId: accepted ? (categorization?.ruleId ?? null) : null,
+          suggested: categorization?.suggested ?? null,
+          learned: res.learned,
+        };
+      }
       await trx
         .updateTable('app.transaction')
         .set({
           txn_date: date,
           spec: JSON.stringify(next),
-          payee_raw: req.payee === undefined ? row.payee_raw : req.payee,
+          payee_raw: payee,
+          payee_key: payeeKey,
+          categorization: categorization ? JSON.stringify(categorization) : null,
           description: req.description ?? row.description,
           review_state: reviewState,
           ...(req.memo !== undefined
@@ -214,8 +354,8 @@ export class TransactionsService {
         .where('id', '=', id)
         .execute();
       if (req.tags) await this.setTags(trx, ctx, id, req.tags);
-    });
-    return this.getOrThrow(ctx, id);
+    }
+    return { ruleSuggestion };
   }
 
   /** Void and move to trash (BAK-06). Entries are removed, or reversed when their period is closed. */
@@ -646,6 +786,7 @@ export class TransactionsService {
       .orderBy('t.name')
       .execute();
     const order = new Map(ids.map((id, i) => [id, i]));
+    const merchants = await this.merchants.load(trx);
     const result: TransactionDto[] = [];
     for (const t of txns.sort((a, b) => order.get(a.id)! - order.get(b.id)!)) {
       result.push({
@@ -655,6 +796,8 @@ export class TransactionsService {
         description: t.description,
         status: t.status,
         reviewState: t.review_state,
+        categorization: toDto(t.categorization as StoredCategorization | null),
+        merchant: t.payee_key ? merchants.lookup(t.payee_key) : null,
         source: t.source,
         version: t.version.toString(),
         memo: await this.crypto.decrypt(trx, ctx.workspaceId, 'transaction.memo', t.memo_enc),
@@ -712,4 +855,14 @@ function specAmount(spec: TransactionSpec | null): TransactionDto['amount'] {
   if (!spec) return null;
   const amount = spec.type === 'transfer' ? (-BigInt(spec.amount)).toString() : spec.amount;
   return { amount, currency: spec.currency as NonNullable<TransactionDto['amount']>['currency'] };
+}
+
+/** The single category (and member) of a one-split standard transaction; nulls otherwise. */
+function singleCategory(spec: TransactionSpec): { categoryId: string | null; memberId: string | null } {
+  if (spec.type !== 'standard' || spec.splits.length !== 1) return { categoryId: null, memberId: null };
+  const split = spec.splits[0]!;
+  return {
+    categoryId: spec.uncategorized ? null : split.accountId,
+    memberId: split.memberId ?? spec.memberId,
+  };
 }

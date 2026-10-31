@@ -4,6 +4,32 @@
  */
 import type { z } from 'zod';
 import type {
+  AcceptCategoryProposalsRequest,
+  AcceptInsightRequest,
+  AcceptReviewRequest,
+  AcceptReviewResponse,
+  AcceptRuleSuggestionRequest,
+  AiEventDto,
+  AiSettingsDto,
+  AiTaskDto,
+  BulkImportRowsRequest,
+  CategoryProposalsResponse,
+  CreateRuleRequest,
+  InsightDto,
+  ParseQuickAddRequest,
+  QuickAddDraftDto,
+  ResolveReviewRequest,
+  ResolveReviewResponse,
+  ReviewListResponse,
+  RuleDto,
+  RulePreviewDto,
+  RulePreviewRequest,
+  RuleSuggestionDto,
+  SuggestRequest,
+  SuggestionDto,
+  TestAiProviderResponse,
+  UpdateAiSettingsRequest,
+  UpdateRuleRequest,
   AccountDto,
   ColumnMappingDto,
   CreateImportRequest,
@@ -77,6 +103,25 @@ export type CreateImportInput = z.input<typeof CreateImportRequest>;
 export type UpdateMappingInput = z.input<typeof UpdateMappingRequest>;
 export type UpdateImportRowInput = z.input<typeof UpdateImportRowRequest>;
 export type StartReconciliationInput = z.input<typeof StartReconciliationRequest>;
+export type BulkImportRowsInput = z.input<typeof BulkImportRowsRequest>;
+export type UpdateAiSettingsInput = z.input<typeof UpdateAiSettingsRequest>;
+export type CreateRuleInput = z.input<typeof CreateRuleRequest>;
+export type UpdateRuleInput = z.input<typeof UpdateRuleRequest>;
+export type RulePreviewInput = z.input<typeof RulePreviewRequest>;
+export type AcceptRuleSuggestionInput = z.input<typeof AcceptRuleSuggestionRequest>;
+export type AcceptReviewInput = z.input<typeof AcceptReviewRequest>;
+export type ResolveReviewInput = z.input<typeof ResolveReviewRequest>;
+export type SuggestInput = z.input<typeof SuggestRequest>;
+export type ParseQuickAddInput = z.input<typeof ParseQuickAddRequest>;
+export type AcceptCategoryProposalsInput = z.input<typeof AcceptCategoryProposalsRequest>;
+export type AcceptInsightInput = z.input<typeof AcceptInsightRequest>;
+
+export interface ReviewListOptions {
+  entityId?: string;
+  minConfidence?: number;
+  cursor?: string;
+  limit?: number;
+}
 export type ColumnMapping = ColumnMappingDto;
 export type ImportRowStatus = ImportRowDto['status'];
 
@@ -622,6 +667,137 @@ export class ApiClient {
     );
   }
 
+  /** One decision for many rows: listed ids, or every row with a status (e.g. skip all probable duplicates). */
+  bulkImportRows(workspaceId: string, id: string, input: BulkImportRowsInput) {
+    return this.request<{ updated: number }>(
+      'PATCH',
+      this.ws(workspaceId, `/imports/${enc(id)}/rows`),
+      input,
+    );
+  }
+  /** Categories proposed from an import's payees (UP-03). */
+  categoryProposals(workspaceId: string, id: string) {
+    return this.request<CategoryProposalsResponse>(
+      'GET',
+      this.ws(workspaceId, `/imports/${enc(id)}/category-proposals`),
+    );
+  }
+  acceptCategoryProposals(workspaceId: string, id: string, input: AcceptCategoryProposalsInput) {
+    return this.request<unknown>(
+      'POST',
+      this.ws(workspaceId, `/imports/${enc(id)}/category-proposals/accept`),
+      input,
+    );
+  }
+  /** An account's reconciliations, newest first; `in_progress` finds the one to resume. */
+  listReconciliations(workspaceId: string, accountId: string, status?: 'in_progress' | 'completed') {
+    return this.request<{ data: ReconciliationDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/reconciliations${query({ status })}`),
+    ).then((r) => r.data);
+  }
+
+  // ----- AI settings and audit log (UP-13, UP-06, AIA-08, AIA-10) -----------------------------------------
+  getAiSettings(workspaceId: string) {
+    return this.request<AiSettingsDto>('GET', this.ws(workspaceId, '/ai/settings'));
+  }
+  updateAiSettings(workspaceId: string, input: UpdateAiSettingsInput) {
+    return this.request<AiSettingsDto>('PATCH', this.ws(workspaceId, '/ai/settings'), input);
+  }
+  testAiProvider(workspaceId: string) {
+    return this.request<TestAiProviderResponse>('POST', this.ws(workspaceId, '/ai/settings/test'));
+  }
+  listAiEvents(workspaceId: string, opts: { cursor?: string; limit?: number } = {}) {
+    return this.request<{ data: AiEventDto[]; nextCursor: string | null }>(
+      'GET',
+      this.ws(workspaceId, `/ai/events${query({ ...opts })}`),
+    );
+  }
+  deleteAiEvent(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/ai/events/${enc(id)}`));
+  }
+  deleteAllAiEvents(workspaceId: string) {
+    return this.request<unknown>('DELETE', this.ws(workspaceId, '/ai/events'));
+  }
+  /** Local mode: work parked for a client on the user's network. */
+  listAiTasks(workspaceId: string) {
+    return this.request<{ data: AiTaskDto[] }>('GET', this.ws(workspaceId, '/ai/tasks')).then((r) => r.data);
+  }
+  postAiTaskResult(workspaceId: string, id: string, output: unknown) {
+    return this.request<unknown>('POST', this.ws(workspaceId, `/ai/tasks/${enc(id)}/result`), { output });
+  }
+
+  // ----- Rules (UP-02) and rule suggestions (AI-05) -------------------------------------------------------
+  listRules(workspaceId: string) {
+    return this.request<{ data: RuleDto[] }>('GET', this.ws(workspaceId, '/rules')).then((r) => r.data);
+  }
+  createRule(workspaceId: string, input: CreateRuleInput) {
+    return this.request<RuleDto>('POST', this.ws(workspaceId, '/rules'), input);
+  }
+  updateRule(workspaceId: string, id: string, input: UpdateRuleInput) {
+    return this.request<RuleDto>('PATCH', this.ws(workspaceId, `/rules/${enc(id)}`), input);
+  }
+  deleteRule(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/rules/${enc(id)}`));
+  }
+  /** Match count and sample on existing transactions, for an unsaved rule. */
+  previewRule(workspaceId: string, input: RulePreviewInput) {
+    return this.request<RulePreviewDto>('POST', this.ws(workspaceId, '/rules/preview'), input);
+  }
+  previewSavedRule(workspaceId: string, id: string) {
+    return this.request<RulePreviewDto>('POST', this.ws(workspaceId, `/rules/${enc(id)}/preview`), {});
+  }
+  /** "Apply to existing" (UP-02): a job; poll getJob for the result. */
+  applyRule(workspaceId: string, id: string) {
+    return this.request<JobDto>('POST', this.ws(workspaceId, `/rules/${enc(id)}/apply`));
+  }
+  listRuleSuggestions(workspaceId: string) {
+    return this.request<{ data: RuleSuggestionDto[] }>('GET', this.ws(workspaceId, '/rule-suggestions')).then(
+      (r) => r.data,
+    );
+  }
+  acceptRuleSuggestion(workspaceId: string, id: string, input: AcceptRuleSuggestionInput = {}) {
+    return this.request<unknown>('POST', this.ws(workspaceId, `/rule-suggestions/${enc(id)}/accept`), input);
+  }
+  dismissRuleSuggestion(workspaceId: string, id: string) {
+    return this.request<unknown>('POST', this.ws(workspaceId, `/rule-suggestions/${enc(id)}/dismiss`));
+  }
+
+  // ----- Review queue (AI-03/04), suggestions and quick add (TXN-06) --------------------------------------
+  listReview(workspaceId: string, opts: ReviewListOptions = {}) {
+    return this.request<ReviewListResponse>('GET', this.ws(workspaceId, `/review${query({ ...opts })}`));
+  }
+  acceptReview(workspaceId: string, input: AcceptReviewInput) {
+    return this.request<AcceptReviewResponse>('POST', this.ws(workspaceId, '/review/accept'), input);
+  }
+  resolveReview(workspaceId: string, transactionId: string, input: ResolveReviewInput) {
+    return this.request<ResolveReviewResponse>(
+      'POST',
+      this.ws(workspaceId, `/review/${enc(transactionId)}/resolve`),
+      input,
+    );
+  }
+  suggestCategory(workspaceId: string, input: SuggestInput) {
+    return this.request<SuggestionDto>('POST', this.ws(workspaceId, '/categorize/suggest'), input);
+  }
+  parseQuickAdd(workspaceId: string, input: ParseQuickAddInput) {
+    return this.request<QuickAddDraftDto>('POST', this.ws(workspaceId, '/transactions/parse'), input);
+  }
+
+  // ----- Insights (AI-08, AI-09) ----------------------------------------------------------------------------
+  listInsights(workspaceId: string, status: 'open' | 'dismissed' | 'accepted' = 'open') {
+    return this.request<{ data: InsightDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/insights${query({ status })}`),
+    ).then((r) => r.data);
+  }
+  acceptInsight(workspaceId: string, id: string, input: AcceptInsightInput = {}) {
+    return this.request<unknown>('POST', this.ws(workspaceId, `/insights/${enc(id)}/accept`), input);
+  }
+  dismissInsight(workspaceId: string, id: string) {
+    return this.request<unknown>('POST', this.ws(workspaceId, `/insights/${enc(id)}/dismiss`));
+  }
+
   // ----- Sync (PLT-06) -------------------------------------------------------------------------------------
   /** Current position of the change feed, without the changes themselves. */
   syncHead(workspaceId: string) {
@@ -669,6 +845,19 @@ function toApiError(status: number, body: unknown): ApiError {
 }
 
 export type {
+  AiEventDto,
+  AiSettingsDto,
+  AiTaskDto,
+  CategoryProposalsResponse,
+  InsightDto,
+  QuickAddDraftDto,
+  ResolveReviewResponse,
+  ReviewListResponse,
+  RuleDto,
+  RulePreviewDto,
+  RuleSuggestionDto,
+  SuggestionDto,
+  TestAiProviderResponse,
   ImportBatchDto,
   ImportRowDto,
   JobDto,

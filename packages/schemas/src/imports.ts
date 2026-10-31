@@ -122,7 +122,7 @@ export const ImportBatchDto = z.object({
   status: ImportStatus,
   currency: z.string(),
   mapping: ColumnMappingDto.nullable(),
-  mappingSource: z.enum(['profile', 'reference', 'heuristic', 'user']).nullable(),
+  mappingSource: z.enum(['profile', 'reference', 'heuristic', 'ai', 'user']).nullable(),
   mappingConfidence: z.number().nullable(),
   /** Header, sample rows and (for app exports) the account names found — for the mapping UI. */
   analysis: z

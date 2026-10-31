@@ -79,6 +79,25 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'sharing.invite_status.': ['pending', 'accepted', 'revoked', 'expired'],
   'sharing.member_status.': ['invited', 'active', 'revoked'],
   'sharing.role_hint.': ['partner', 'viewer', 'accountant'],
+  'ai.mode.': ['builtin', 'byok', 'local', 'off'],
+  'ai.mode_hint.': ['builtin', 'byok', 'local', 'off'],
+  'ai.model.': ['small', 'vision', 'large'],
+  'ai.outcome.': ['ok', 'cached', 'off', 'budget', 'invalid_output', 'provider_error', 'refused'],
+  'ai.runner.': ['inactive', 'waiting', 'ok', 'unreachable'],
+  'ai.usage_state.': ['ok', 'downgraded', 'exhausted'],
+  'insights.kind.': ['recurring', 'unusual_amount', 'duplicate_charge', 'new_subscription', 'price_increase'],
+  'rules.dow.': ['0', '1', '2', '3', '4', '5', '6'],
+  'rules.field.': [
+    'payee',
+    'description',
+    'raw_description',
+    'amount',
+    'account',
+    'entity',
+    'date_dow',
+    'item_text',
+  ],
+  'rules.op.': ['equals', 'contains', 'starts_with', 'regex', 'between', 'gt', 'lt', 'in'],
 };
 
 describe('message catalog coverage (TZ-06)', () => {

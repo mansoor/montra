@@ -29,6 +29,17 @@ class GridResult(TypedDict):
     statement: Statement | None
 
 
+class OcrTextResult(TypedDict):
+    """A scanned PDF: redacted text per page; the Node pipeline extracts the table (ADR-0012 §9)."""
+
+    kind: Literal["ocr_text"]
+    pages: list[str]
+    pageCount: int
+    textLayer: Literal[False]
+    ocrEngine: Literal["tesseract"]
+    statement: Statement | None
+
+
 FileType = Literal["xls", "pdf"]
 
 _OLE2 = bytes.fromhex("D0CF11E0A1B11AE1")

@@ -29,14 +29,15 @@ export default defineConfig({
       command: 'node ../api/dist/main.js',
       url: `http://localhost:${API_PORT}/readyz`,
       reuseExistingServer: true,
-      env: { PORT: String(API_PORT), DATABASE_URL, AUTH_MODE: 'dev', STORAGE_DIR },
+      // AI_PROVIDER=fake: deterministic keyword categorization, no network (ADR-0012).
+      env: { PORT: String(API_PORT), DATABASE_URL, AUTH_MODE: 'dev', STORAGE_DIR, AI_PROVIDER: 'fake' },
     },
     {
       // Import jobs (parse, commit, undo). No HTTP port: ready once it logs that it is listening.
       command: 'node ../api/dist/worker-main.js',
       wait: { stdout: /listening on import/ },
       stdout: 'pipe',
-      env: { DATABASE_URL, STORAGE_DIR },
+      env: { DATABASE_URL, STORAGE_DIR, AI_PROVIDER: 'fake' },
     },
     {
       command: `pnpm exec next start --port ${WEB_PORT}`,

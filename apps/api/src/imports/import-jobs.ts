@@ -19,13 +19,11 @@ import {
   decodeText,
   detectDecimalSeparator,
   displayName,
-  matchMerchant,
   normalizeDescription,
   parseAmount,
   parseDelimited,
   readXlsx,
   type ColumnMapping,
-  type MerchantRef,
   type Sheet,
 } from '@montra/importers';
 import { Db } from '../db/database.js';
@@ -33,8 +31,23 @@ import { LedgerService } from '../ledger/ledger.service.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
 import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
-import { PermanentJobError, Worker, type Job, type JobContext } from '../jobs/queue.js';
+import { JobQueue, PermanentJobError, Worker, type Job, type JobContext } from '../jobs/queue.js';
 import { effectiveDecision } from './imports.service.js';
+import { Categorizer, type StoredCategorization } from '../categorization/categorizer.service.js';
+import { MerchantDirectory } from '../categorization/merchants.js';
+import { AiService } from '../ai/ai.service.js';
+
+/** What parse stores in `import_row.suggestion`: the pipeline decision plus what commit needs. */
+export interface RowSuggestion extends StoredCategorization {
+  categoryId: string | null;
+  memberId: string | null;
+  tags: string[];
+  renamePayee: string | null;
+  autoApply: boolean;
+  merchantId: string | null;
+  /** Set when the user picked the category in the preview. */
+  userSet?: boolean;
+}
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -44,8 +57,10 @@ interface ParsePayload {
   override?: ColumnMapping;
   saveProfile?: boolean;
   previousResult?: {
-    kind: 'grid';
-    sheets: Sheet[];
+    kind: 'grid' | 'ocr_text';
+    sheets?: Sheet[];
+    /** Scanned PDFs (ADR-0012 §9): redacted OCR text per page from the doc-worker. */
+    pages?: string[];
     statement?: {
       openingBalance?: string | null;
       closingBalance?: string | null;
@@ -56,6 +71,8 @@ interface ParsePayload {
 }
 
 const UNDO_DAYS = 30;
+/** Mapping confidence at or above which the preview opens without the mapping step. */
+const MAPPING_OK = 0.75;
 const SAMPLE_ROWS = 25;
 const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
 
@@ -68,6 +85,10 @@ export class ImportJobs {
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
+    @Inject(Categorizer) private readonly categorizer: Categorizer,
+    @Inject(MerchantDirectory) private readonly merchants: MerchantDirectory,
+    @Inject(AiService) private readonly ai: AiService,
+    @Inject(JobQueue) private readonly queue: JobQueue,
   ) {}
 
   register(): void {
@@ -106,8 +127,10 @@ export class ImportJobs {
       const account = await this.ledger.accountRef(trx, ctx.workspaceId, batch.ledger_account_id);
       const currency = asCurrencyCode(batch.currency);
 
-      const sheets = await this.sheets(batch.file_type, file.storage_key, p);
-      const statement = p.previousResult?.statement ?? null;
+      const ocr =
+        p.previousResult?.kind === 'ocr_text' ? await this.ocrTable(trx, ctx, batch.id, currency, p) : null;
+      const sheets = ocr ? ocr.sheets : await this.sheets(batch.file_type, file.storage_key, p);
+      const statement = ocr ? ocr.statement : (p.previousResult?.statement ?? null);
       const decimal = detectDecimalSeparator(
         [statement?.openingBalance ?? '', statement?.closingBalance ?? ''].filter(Boolean),
       );
@@ -142,23 +165,33 @@ export class ImportJobs {
         .select('locale')
         .where('id', '=', ctx.userId)
         .executeTakeFirst();
-      const analysis = analyze(
-        sheets,
-        {
-          fileType: batch.file_type,
-          currency,
-          accountType: account.type === 'liability' ? 'liability' : 'asset',
-          preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
-          profiles: ordered.map((x) => ({
-            id: x.id,
-            fingerprint: x.fingerprint,
-            mapping: x.mapping as unknown as ColumnMapping,
-          })),
-          accountFilter: p.accountFilter ?? undefined,
-          statement: statementBalances,
-        },
-        p.override,
-      );
+      const analyzeOpts: Parameters<typeof analyze>[1] = {
+        fileType: batch.file_type,
+        currency,
+        accountType: account.type === 'liability' ? 'liability' : 'asset',
+        preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
+        profiles: ordered.map((x) => ({
+          id: x.id,
+          fingerprint: x.fingerprint,
+          mapping: x.mapping as unknown as ColumnMapping,
+        })),
+        accountFilter: p.accountFilter ?? undefined,
+        statement: statementBalances,
+      };
+      let analysis = analyze(sheets, analyzeOpts, p.override);
+      // IMP-03: when the heuristics aren't sure, ask the AI column mapper and keep its mapping if it parses
+      // the file better. The user can still correct it in the mapping step.
+      if (!p.override && analysis.proposal.confidence < MAPPING_OK)
+        analysis = await this.aiMapping(
+          trx,
+          ctx,
+          batch.id,
+          batch.file_type,
+          sheets,
+          analysis,
+          analyzeOpts,
+          account.type,
+        );
       const { parsed, proposal } = analysis;
 
       // Candidates for dedupe and matching on this account, around the file's date range.
@@ -170,7 +203,7 @@ export class ImportJobs {
         ? await this.candidates(trx, ctx, account.id, batch.id, range)
         : { imported: [], manual: [], covered: [] };
       const classes = classifyRows(account.id, parsed.rows, imported, manual, covered);
-      const suggest = await this.suggester(trx, ctx, account.entityId);
+      const decisions = await this.categorizeRows(trx, ctx, batch.id, account.id, parsed.rows, classes);
 
       await trx
         .deleteFrom('app.import_row')
@@ -180,7 +213,7 @@ export class ImportJobs {
       const values = [
         ...parsed.rows.map((r, i) => {
           const c = classes[i]!;
-          const s = suggest(r.category, r.normalizedDescription);
+          const s = decisions.get(i) ?? null;
           return {
             workspace_id: ctx.workspaceId,
             id: newId(),
@@ -201,7 +234,8 @@ export class ImportJobs {
               c.status === 'duplicate' || c.status === 'probable_duplicate' ? c.transactionId : null,
             score: c.score === null ? null : String(c.score),
             suggestion: s ? JSON.stringify(s) : null,
-            category_id: s?.categoryId ?? null,
+            category_id: s?.autoApply ? s.categoryId : null,
+            member_id: s?.autoApply ? s.memberId : null,
           };
         }),
         ...parsed.errors.map((e) => ({
@@ -221,7 +255,7 @@ export class ImportJobs {
           .execute();
       }
 
-      const needsMapping = proposal.confidence < 0.75 || parsed.rows.length === 0;
+      const needsMapping = proposal.confidence < MAPPING_OK || parsed.rows.length === 0;
       const sheet = analysis.sheet;
       await trx
         .updateTable('app.import_batch')
@@ -252,7 +286,7 @@ export class ImportJobs {
             accountFilter: p.accountFilter ?? null,
             saveProfile: p.saveProfile ?? true,
             // Spreadsheet/PDF grids are kept so a mapping change doesn't need another extraction.
-            ...(p.previousResult ? { sheets, statement: p.previousResult.statement ?? null } : {}),
+            ...(p.previousResult ? { sheets, statement } : {}),
           }),
         })
         .where('workspace_id', '=', ctx.workspaceId)
@@ -267,7 +301,7 @@ export class ImportJobs {
   }
 
   private async sheets(fileType: string, storageKey: string, p: ParsePayload): Promise<Sheet[]> {
-    if (p.previousResult?.kind === 'grid') return p.previousResult.sheets;
+    if (p.previousResult?.kind === 'grid' && p.previousResult.sheets) return p.previousResult.sheets;
     if (fileType === 'xls' || fileType === 'pdf')
       throw new PermanentJobError('import.no_grid', 'The document has not been extracted');
     const bytes = await this.storage.get(storageKey);
@@ -354,61 +388,170 @@ export class ImportJobs {
   }
 
   /**
-   * Phase 2 category suggestions: the file's own category column, then reference-merchant hints. The full
-   * pipeline (rules, history, AI) replaces this in Phase 3 (AI-01).
+   * The categorization pipeline (04 §5) over the rows that will be imported: rules, transfers, history,
+   * the file's own category, known merchants, then AI. Duplicates and matches keep their existing entry.
    */
-  private async suggester(trx: Trx, ctx: Ctx, entityId: string) {
-    const cats = await trx
-      .selectFrom('app.ledger_account')
-      .select(['id', 'name'])
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('entity_id', '=', entityId)
-      .where('is_category', '=', true)
-      .where('system_role', 'is', null)
-      .where('archived_at', 'is', null)
-      .execute();
-    const byName = new Map(cats.map((c) => [c.name.toLowerCase(), c.id]));
-    const merchants: MerchantRef[] = (
-      await trx
-        .selectFrom('ref.merchant')
-        .select(['id', 'display_name', 'match_key', 'category_hint'])
-        .execute()
-    ).map((m) => ({
-      id: m.id,
-      displayName: m.display_name,
-      matchKey: m.match_key,
-      categoryHint: m.category_hint,
-    }));
-    return (fileCategory: string | null, key: string) => {
-      if (fileCategory) {
-        const leaf = fileCategory.split(/[:/>]/).at(-1)!.trim().toLowerCase();
-        const id = byName.get(fileCategory.toLowerCase()) ?? byName.get(leaf);
-        if (id)
-          return {
-            categoryId: id,
-            confidence: 0.9,
-            explanation: `From the file's category "${fileCategory}"`,
-          };
+  private async categorizeRows(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+    accountId: string,
+    rows: ReadonlyArray<{
+      date: CalendarDate;
+      amount: bigint;
+      description: string;
+      payee: string | null;
+      category: string | null;
+      normalizedDescription: string;
+    }>,
+    classes: ReadonlyArray<{ status: string }>,
+  ): Promise<Map<number, RowSuggestion>> {
+    const account = await this.categorizer.accountInfo(trx, ctx, accountId);
+    const prepared = await this.categorizer.prepare(trx, ctx);
+    const merchants = await this.merchants.load(trx);
+    const byName = new Map<string, string>();
+    for (const c of prepared.categories)
+      if (c.entityId === account.entityId) byName.set(c.name.toLowerCase(), c.id);
+    const items = [];
+    const merchantOf = new Map<number, string>();
+    for (const [i, r] of rows.entries()) {
+      const status = classes[i]!.status;
+      if (status !== 'new' && status !== 'probable_duplicate') continue;
+      let fileCategoryId: string | null = null;
+      if (r.category) {
+        const leaf = r.category.split(/[:/>]/).at(-1)!.trim().toLowerCase();
+        fileCategoryId = byName.get(r.category.toLowerCase()) ?? byName.get(leaf) ?? null;
       }
-      const merchant = matchMerchant(key, merchants);
-      if (merchant?.categoryHint) {
-        const id = byName.get(merchant.categoryHint.toLowerCase());
-        if (id)
-          return {
-            categoryId: id,
-            confidence: 0.8,
-            explanation: `Known merchant: ${merchant.displayName}`,
-            merchantId: merchant.id,
-          };
-      }
-      return merchant
-        ? {
-            categoryId: null,
-            confidence: 0,
-            explanation: `Known merchant: ${merchant.displayName}`,
-            merchantId: merchant.id,
-          }
-        : null;
+      const m = merchants.match(r.normalizedDescription);
+      if (m) merchantOf.set(i, m.id);
+      items.push(
+        this.categorizer.item(account, {
+          id: String(i),
+          payee: r.payee ?? (m ? m.displayName : null),
+          payeeKey: (r.payee ? normalizeDescription(r.payee) : r.normalizedDescription) || null,
+          description: r.description,
+          rawDescription: r.description,
+          amountMinor: r.amount,
+          date: r.date,
+          fileCategoryId,
+          fileCategoryName: r.category,
+          merchant: m
+            ? {
+                id: m.id,
+                name: m.displayName,
+                categoryId: m.categoryHint ? (byName.get(m.categoryHint.toLowerCase()) ?? null) : null,
+              }
+            : null,
+        }),
+      );
+    }
+    const { decisions } = await this.categorizer.categorize(trx, ctx, account, items, {
+      useAi: true,
+      prepared,
+      subject: { type: 'import_batch', id: batchId },
+    });
+    const out = new Map<number, RowSuggestion>();
+    for (const d of decisions) {
+      const i = Number(d.id);
+      out.set(i, {
+        ...this.categorizer.stored(d),
+        categoryId: d.categoryId,
+        memberId: d.memberId,
+        tags: d.tags,
+        renamePayee: d.renamePayee,
+        autoApply: d.autoApply && Boolean(d.categoryId),
+        merchantId: merchantOf.get(i) ?? null,
+      });
+    }
+    return out;
+  }
+
+  private async aiMapping(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf',
+    sheets: Sheet[],
+    current: ReturnType<typeof analyze>,
+    opts: Parameters<typeof analyze>[1],
+    accountType: string,
+  ): Promise<ReturnType<typeof analyze>> {
+    const runtime = await this.ai.runtime(trx, ctx, { type: 'import_batch', id: batchId });
+    if (!runtime.available) return current;
+    const user = await trx
+      .selectFrom('app.app_user')
+      .select('locale')
+      .where('id', '=', ctx.userId)
+      .executeTakeFirst();
+    const res = await this.ai.gateway.mapColumns(
+      {
+        fileType,
+        rows: current.sheet.rows.slice(0, 30).map((r) => r.map((cell) => String(cell ?? ''))),
+        locale: user?.locale ?? 'en-US',
+        accountType: accountType === 'liability' ? 'liability' : 'asset',
+      },
+      { ...runtime.ctx, parkLocal: false },
+    );
+    if (!res.ok) return current;
+    let candidate: ReturnType<typeof analyze>;
+    try {
+      candidate = analyze(sheets, opts, { ...res.value.mapping, sheet: current.sheet.name });
+    } catch {
+      return current;
+    }
+    const total = candidate.parsed.rows.length + candidate.parsed.errors.length;
+    const parseRate = total ? candidate.parsed.rows.length / total : 0;
+    if (candidate.parsed.rows.length === 0 || candidate.parsed.rows.length < current.parsed.rows.length)
+      return current;
+    const confidence = Number((res.value.confidence * parseRate).toFixed(3));
+    // Only a mapping good enough to skip the mapping step replaces the heuristic proposal; otherwise the
+    // user sees the heuristic one with its warnings.
+    if (confidence < MAPPING_OK) return current;
+    return { ...candidate, proposal: { ...candidate.proposal, source: 'ai', confidence } };
+  }
+
+  /**
+   * Scanned PDF (ADR-0012 §9): the doc-worker sends redacted OCR text; `extract_statement_table` turns it
+   * into rows, which then go through the same mapping, balance check and preview as any grid.
+   */
+  private async ocrTable(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+    currency: CurrencyCode,
+    p: ParsePayload,
+  ): Promise<{ sheets: Sheet[]; statement: NonNullable<ParsePayload['previousResult']>['statement'] }> {
+    const runtime = await this.ai.runtime(trx, ctx, { type: 'import_batch', id: batchId });
+    if (!runtime.available)
+      throw new PermanentJobError(
+        'pdf.needs_ai',
+        'This PDF is a scan. Reading scanned statements needs AI — turn it on in Settings → AI, or upload the CSV export instead.',
+      );
+    const res = await this.ai.gateway.extractStatementTable(
+      { pages: p.previousResult?.pages ?? [], currency },
+      runtime.ctx,
+    );
+    if (!res.ok)
+      throw new PermanentJobError(
+        res.reason === 'budget' ? 'ai.budget_exhausted' : 'pdf.extract_failed',
+        res.reason === 'budget'
+          ? "This month's AI budget is used up, so the scan can't be read. Raise the budget or upload a CSV."
+          : `The scanned statement couldn't be read (${res.reason}). Try a clearer scan or the CSV export.`,
+      );
+    const t = res.value;
+    const rows = [
+      ['Date', 'Description', 'Amount', 'Balance'],
+      ...t.rows.map((r) => [r.date, r.description, r.amount, r.balance ?? '']),
+    ];
+    const st = p.previousResult?.statement ?? null;
+    return {
+      sheets: [{ name: 'Statement', rows }],
+      statement: {
+        openingBalance: st?.openingBalance ?? t.opening,
+        closingBalance: st?.closingBalance ?? t.closing,
+        periodStart: st?.periodStart ?? t.periodStart,
+        periodEnd: st?.periodEnd ?? t.periodEnd,
+      },
     };
   }
 
@@ -468,11 +611,37 @@ export class ImportJobs {
             outcome = 'matched';
             matched++;
           } else {
-            const suggestion = row.suggestion as { merchantId?: string } | null;
+            const suggestion = row.suggestion as RowSuggestion | null;
             const key = row.normalized_desc ?? '';
             const name =
+              suggestion?.renamePayee ||
               (suggestion?.merchantId && merchants.get(suggestion.merchantId)) ||
               (row.payee_raw ?? (key ? displayName(key) : (row.description ?? '')));
+            // ADR-0012 §7: a category the user picked is reviewed; a confident pipeline result is
+            // auto-applied; anything else is posted uncategorized with the suggestion for review.
+            const chosen = row.category_id;
+            const userSet = Boolean(chosen && suggestion?.userSet);
+            const apply = Boolean(chosen && (userSet || suggestion?.autoApply));
+            const categorization: StoredCategorization | null = userSet
+              ? {
+                  step: 'user',
+                  confidence: 1,
+                  explanation: 'Chosen during import',
+                  ruleId: null,
+                  suggested: suggestion?.suggested ?? null,
+                }
+              : suggestion
+                ? {
+                    step: suggestion.step,
+                    confidence: suggestion.confidence,
+                    explanation: suggestion.explanation,
+                    ruleId: suggestion.ruleId,
+                    suggested: suggestion.suggested,
+                    transfer: suggestion.transfer ?? null,
+                  }
+                : null;
+            const memberId = row.member_id ?? (apply && !userSet ? (suggestion?.memberId ?? null) : null);
+            const rowPayeeKey = (row.payee_raw ? normalizeDescription(row.payee_raw) : key) || null;
             let payeeId = key ? (payees.get(key) ?? null) : null;
             if (key && !payeeId) {
               payeeId = await this.payeeId(trx, ctx, key, name);
@@ -485,14 +654,35 @@ export class ImportJobs {
               payee: name || null,
               payeeId,
               description: row.description ?? '',
-              categoryId: row.category_id ?? undefined,
+              categoryId: apply ? chosen! : undefined,
+              memberId,
+              tags: apply && !userSet ? (suggestion?.tags ?? []) : [],
               source: 'import',
-              reviewState: 'auto_applied',
+              reviewState: userSet ? 'reviewed' : 'auto_applied',
+              payeeKey: rowPayeeKey,
+              categorization,
               dedupeKey: row.dedupe_key,
               statementDate: row.txn_date,
               rawDescription: row.description,
               clearedAccountId: batch.ledger_account_id,
             });
+            if (userSet) {
+              const { learned } = await this.categorizer.learn(trx, ctx, {
+                transactionId,
+                payee: name || null,
+                payeeKey: rowPayeeKey,
+                amountMinor: row.amount_minor!,
+                currency,
+                categoryId: chosen,
+                memberId,
+                previous: categorization && { ...categorization, step: suggestion?.step ?? 'none' },
+                previousCategoryId: null,
+              });
+              await this.transactions.setCategorization(trx, ctx, transactionId, {
+                ...categorization!,
+                learned,
+              });
+            }
             sources.push({ transaction_id: transactionId, import_row_id: row.id });
             outcome = 'added';
             added++;
@@ -538,6 +728,14 @@ export class ImportJobs {
           .where('id', '=', batch.id)
           .execute();
         await this.saveProfile(trx, ctx, batch);
+        // AI-08/09: refresh recurring proposals and anomaly flags with the new rows.
+        if (added > 0)
+          await this.queue.enqueue(trx, {
+            ...ctx,
+            queue: 'ai',
+            type: 'insights.detect',
+            payload: { batchId },
+          });
         return { added, matched, skipped, failed };
       });
     } catch (err) {

@@ -10,4 +10,6 @@ export const sourceAliases = {
   '@montra/i18n': pkg('i18n'),
   '@montra/importers': pkg('importers'),
   '@montra/api-client': pkg('api-client'),
+  '@montra/ai-gateway': pkg('ai-gateway'),
+  '@montra/categorize': pkg('categorize'),
 };

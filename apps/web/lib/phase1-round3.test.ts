@@ -105,6 +105,8 @@ describe('closed contract gaps', () => {
       description: '',
       status: 'scheduled',
       reviewState: 'reviewed',
+      categorization: null,
+      merchant: null,
       source: 'recurring',
       version: '1',
       memo: null,

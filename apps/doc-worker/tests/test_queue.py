@@ -112,13 +112,13 @@ def test_processes_an_xls_job_and_enqueues_the_follow_up(
 def test_permanent_errors_fail_without_retry(
     admin: psycopg.Connection[Any], tmp_path: Path, cleanup: list[str]
 ) -> None:
-    (tmp_path / "scan.pdf").write_bytes(fixtures.make_scanned_like_pdf())
-    job_id = enqueue(admin, {"storageKey": "scan.pdf", "fileType": "pdf"})
+    (tmp_path / "broken.pdf").write_bytes(b"%PDF-1.7\nthis is not really a pdf")
+    job_id = enqueue(admin, {"storageKey": "broken.pdf", "fileType": "pdf"})
     cleanup.append(job_id)
     done = run_until_done(Worker(APP_URL, LocalStorage(tmp_path), "test-worker"), admin, job_id)
     assert done["status"] == "failed"
     assert done["attempts"] == 1
-    assert done["error"].startswith("pdf.no_text_layer")
+    assert done["error"].startswith("doc.corrupt")
 
 
 def test_transient_errors_are_retried_with_backoff(
