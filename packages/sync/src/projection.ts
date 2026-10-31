@@ -23,7 +23,10 @@ const categoryName = (categories: readonly CategoryDto[] | undefined, id: string
   id ? (categories?.find((c) => c.id === id)?.name ?? null) : null;
 
 /** Server DTO → local row (not pending). */
-export function projectTransaction(dto: TransactionDto, categories?: readonly CategoryDto[]): LocalTransaction {
+export function projectTransaction(
+  dto: TransactionDto,
+  categories?: readonly CategoryDto[],
+): LocalTransaction {
   const splits = dto.splits ?? [];
   const single = splits.length === 1 ? splits[0]! : null;
   const categoryId = single && !isUncategorizedAccount(dto, single.accountId) ? single.accountId : null;
@@ -135,7 +138,10 @@ export function groupsOf(patch: UpdateTransactionRequest): FieldGroup[] {
 }
 
 /** Merges two update patches; `categoryId` and `splits` replace each other. */
-export function mergePatches(a: UpdateTransactionRequest, b: UpdateTransactionRequest): UpdateTransactionRequest {
+export function mergePatches(
+  a: UpdateTransactionRequest,
+  b: UpdateTransactionRequest,
+): UpdateTransactionRequest {
   const merged: UpdateTransactionRequest = { ...a, ...b };
   if (b.categoryId !== undefined) delete merged.splits;
   if (b.splits !== undefined) delete merged.categoryId;
@@ -192,7 +198,8 @@ export function replayOp(
         ...local,
         reviewState: 'reviewed',
         categoryId: local.suggestedCategoryId ?? local.categoryId,
-        categoryName: categoryName(categories, local.suggestedCategoryId ?? local.categoryId) ?? local.categoryName,
+        categoryName:
+          categoryName(categories, local.suggestedCategoryId ?? local.categoryId) ?? local.categoryName,
       };
     case 'review.resolve':
       return {

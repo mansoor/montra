@@ -162,7 +162,13 @@ export class SyncEngine implements SyncEngineApi {
     const local = projectCreate(id, data, categories);
     await this.store.transaction(async () => {
       await this.store.putTransactions([local]);
-      await this.enqueue({ kind: 'transaction.create', opId: this.newId(), changedAt: this.stamp(), id, data });
+      await this.enqueue({
+        kind: 'transaction.create',
+        opId: this.newId(),
+        changedAt: this.stamp(),
+        id,
+        data,
+      });
     });
     this.kick();
     return local;
@@ -285,7 +291,13 @@ export class SyncEngine implements SyncEngineApi {
       let op = item.op;
       if (data && (op.kind === 'transaction.create' || op.kind === 'transaction.update'))
         op = { ...op, data, changedAt: this.stamp() } as PushOp;
-      await this.store.updateOutbox(opId, { op, status: 'pending', attempts: 0, error: null, nextAttemptAt: null });
+      await this.store.updateOutbox(opId, {
+        op,
+        status: 'pending',
+        attempts: 0,
+        error: null,
+        nextAttemptAt: null,
+      });
       if (data) await this.rebuild(op.id, categories);
     });
     this.kick();
@@ -352,8 +364,14 @@ export class SyncEngine implements SyncEngineApi {
           else applied++;
           await this.store.removeOutbox([r.opId]);
           if (r.transaction) await this.putServer(r.transaction, categories);
-          else if (item.op.kind === 'transaction.delete' && !(await this.busyIds()).has(item.op.id))
-            await this.store.removeTransactions([item.op.id]);
+          else if (item.op.kind === 'transaction.delete') {
+            if (!(await this.busyIds()).has(item.op.id)) await this.store.removeTransactions([item.op.id]);
+          } else if (!(await this.busyIds()).has(item.op.id)) {
+            // A replayed opId comes back without a row: the edit is on the server, and the pull that follows
+            // brings the current copy. Until then the row is no longer "pending".
+            const local = await this.store.getTransaction(item.op.id);
+            if (local?.pending) await this.store.putTransactions([{ ...local, pending: false }]);
+          }
           if (r.conflicts.length) {
             const notice = {
               transactionId: item.op.id,
