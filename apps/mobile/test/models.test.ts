@@ -235,3 +235,13 @@ describe('camera frame quality (spike)', () => {
     expect(summarize(samples.map((s) => ({ ...s, latencyMs: 2000 }))).pass).toBe(false);
   });
 });
+
+describe('base64', () => {
+  it('decodes without Buffer', async () => {
+    const { base64ToBytes } = await import('../src/features/base64');
+    const bytes = Uint8Array.from({ length: 300 }, (_, i) => (i * 37) % 256);
+    const b64 = btoa(String.fromCharCode(...bytes));
+    expect(Array.from(base64ToBytes(b64))).toEqual(Array.from(bytes));
+    expect(Array.from(base64ToBytes('aGk='))).toEqual([104, 105]);
+  });
+});
