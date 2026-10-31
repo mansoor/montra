@@ -90,6 +90,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@montra/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@types/nodemailer':
         specifier: ^8.0.2
         version: 8.0.2
