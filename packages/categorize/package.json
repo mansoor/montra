@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:perf": "PERF=1 vitest run"
   },
   "dependencies": {
     "@montra/domain": "workspace:*",

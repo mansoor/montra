@@ -42,7 +42,16 @@ export class TransactionsService {
 
   /** Income, expense or split transaction (TXN-01..03, DE-05). Uncategorized items go to the review queue. */
   async create(ctx: Ctx, req: CreateTransactionRequest): Promise<TransactionDto> {
-    const id = await this.db.run(ctx, async (trx) => {
+    const id = await this.db.run(ctx, (trx) => this.createManualInTrx(trx, ctx, req));
+    return this.getOrThrow(ctx, id);
+  }
+
+  /**
+   * Manual entry inside the caller's transaction: the pipeline for uncategorized entries, learning for chosen
+   * ones. `id` lets offline clients create with their own UUID (ADR-0013).
+   */
+  async createManualInTrx(trx: Trx, ctx: Ctx, req: CreateTransactionRequest, id?: string): Promise<string> {
+    {
       const payeeKey = payeeKeyOf(req.payee, req.description);
       let categoryId = req.categoryId;
       let memberId = req.memberId;
@@ -80,7 +89,7 @@ export class TransactionsService {
           suggested: null,
         };
       }
-      const id = await this.createInTrx(trx, ctx, {
+      const txnId = await this.createInTrx(trx, ctx, {
         date: req.date,
         accountId: req.accountId,
         amount: req.amount,
@@ -95,10 +104,11 @@ export class TransactionsService {
         reviewState,
         payeeKey,
         categorization,
+        id,
       });
       if (categorization?.step === 'user' && categoryId) {
         const { learned } = await this.categorizer.learn(trx, ctx, {
-          transactionId: id,
+          transactionId: txnId,
           payee: req.payee ?? null,
           payeeKey,
           amountMinor: BigInt(req.amount.amount),
@@ -108,11 +118,10 @@ export class TransactionsService {
           previous: null,
           previousCategoryId: null,
         });
-        await this.setCategorization(trx, ctx, id, { ...categorization, learned });
+        await this.setCategorization(trx, ctx, txnId, { ...categorization, learned });
       }
-      return id;
-    });
-    return this.getOrThrow(ctx, id);
+      return txnId;
+    }
   }
 
   async setCategorization(trx: Trx, ctx: Ctx, id: string, c: StoredCategorization | null): Promise<void> {
@@ -152,9 +161,11 @@ export class TransactionsService {
       clearedAccountId?: string;
       payeeKey?: string | null;
       categorization?: StoredCategorization | null;
+      /** Client-generated id (offline creates); a new one otherwise. */
+      id?: string;
     },
   ): Promise<string> {
-    const id = newId();
+    const id = input.id ?? newId();
     const date = calendarDate(input.date);
     const spec = await this.standardSpec(trx, ctx, {
       accountId: input.accountId,
@@ -360,18 +371,25 @@ export class TransactionsService {
 
   /** Void and move to trash (BAK-06). Entries are removed, or reversed when their period is closed. */
   async remove(ctx: Ctx, id: string, ifMatch?: string): Promise<{ outcome: 'removed' | 'reversed' }> {
-    return this.db.run(ctx, async (trx) => {
-      const row = await this.lockRow(trx, ctx, id, ifMatch);
-      if (row.status === 'void') return { outcome: 'removed' as const };
-      const outcome = await this.poster.unpost(trx, ctx, id);
-      await trx
-        .updateTable('app.transaction')
-        .set({ status: 'void', deleted_at: new Date() })
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', id)
-        .execute();
-      return { outcome };
-    });
+    return this.db.run(ctx, (trx) => this.removeInTrx(trx, ctx, id, ifMatch));
+  }
+
+  async removeInTrx(
+    trx: Trx,
+    ctx: Ctx,
+    id: string,
+    ifMatch?: string,
+  ): Promise<{ outcome: 'removed' | 'reversed' }> {
+    const row = await this.lockRow(trx, ctx, id, ifMatch);
+    if (row.status === 'void') return { outcome: 'removed' as const };
+    const outcome = await this.poster.unpost(trx, ctx, id);
+    await trx
+      .updateTable('app.transaction')
+      .set({ status: 'void', deleted_at: new Date() })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
+    return { outcome };
   }
 
   /** Restores a trashed transaction by re-posting its spec, if its entries were removed (not reversed). */
@@ -735,7 +753,7 @@ export class TransactionsService {
     }
   }
 
-  private async load(trx: Trx, ctx: Ctx, ids: string[]): Promise<TransactionDto[]> {
+  async load(trx: Trx, ctx: Ctx, ids: string[]): Promise<TransactionDto[]> {
     if (ids.length === 0) return [];
     const txns = await trx
       .selectFrom('app.transaction')

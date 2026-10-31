@@ -1,0 +1,23 @@
+appId: app.montra.mobile
+name: Create offline, sync when back online (PLT-05)
+---
+- runFlow: sign-in-dev.yaml
+- setAirplaneMode: enabled
+- tapOn: Add
+- tapOn: { id: key-4 }
+- tapOn: { id: key-2 }
+- tapOn: { id: key-0 }
+- tapOn: { id: qa-next }
+- inputText: Offline coffee
+- pressKey: Enter
+- tapOn: { id: qa-save }
+- tapOn: Home
+- assertVisible: 'Offline.*'
+- assertVisible: '1 change waiting to sync'
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    notVisible: '1 change waiting to sync'
+    timeout: 20000
+- tapOn: Transactions
+- assertVisible: Offline coffee
+- assertNotVisible: Waiting to sync

@@ -15,7 +15,7 @@
     "db:migrate": "pnpm --filter @montra/db migrate",
     "db:seed": "pnpm --filter @montra/db seed",
     "docs:trace": "node scripts/gen-traceability.mjs",
-    "verify": "pnpm format:check && turbo run build typecheck lint test --filter=!@montra/doc-worker && node scripts/gen-traceability.mjs && git diff --exit-code docs/design/traceability.md",
+    "verify": "pnpm format:check && turbo run build typecheck lint test --filter=!@montra/doc-worker && pnpm --filter @montra/categorize test:perf && node scripts/gen-traceability.mjs && git diff --exit-code docs/design/traceability.md",
     "verify:py": "pnpm --filter @montra/doc-worker run lint && pnpm --filter @montra/doc-worker run typecheck && pnpm --filter @montra/doc-worker run test"
   },
   "devDependencies": {

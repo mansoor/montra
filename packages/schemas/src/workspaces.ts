@@ -22,6 +22,7 @@ export const EntityDto = z.object({
   /** Books are closed through this date (DE-09); null when open. */
   lockedThrough: z.string().nullable(),
 });
+export type EntityDto = z.infer<typeof EntityDto>;
 
 export const WorkspaceDto = z.object({
   id: z.string(),

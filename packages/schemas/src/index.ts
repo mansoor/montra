@@ -5,3 +5,4 @@ export * from './transactions.js';
 export * from './ledger.js';
 export * from './imports.js';
 export * from './ai.js';
+export * from './sync.js';

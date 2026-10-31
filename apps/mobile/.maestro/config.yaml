@@ -1,0 +1,8 @@
+# Maestro flows for the Montra mobile app (09 quality plan). Run against a development build pointed at a dev API
+# (AUTH_MODE=dev, AI_PROVIDER=fake) with a seeded workspace that has one checking account:
+#   maestro test apps/mobile/.maestro
+flows:
+  - sign-in-dev.yaml
+  - quick-add.yaml
+  - review-swipe.yaml
+  - offline-create.yaml

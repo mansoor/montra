@@ -12,4 +12,5 @@ export const sourceAliases = {
   '@montra/api-client': pkg('api-client'),
   '@montra/ai-gateway': pkg('ai-gateway'),
   '@montra/categorize': pkg('categorize'),
+  '@montra/sync': pkg('sync'),
 };
