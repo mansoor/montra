@@ -54,10 +54,12 @@ export class KratosClient {
   async login(identifier: string, password: string): Promise<LoginResult> {
     const flow = await this.json<KratosFlow>('/self-service/login/api');
     if (flow.status !== 200) return { kind: 'error', message: 'Sign-in is unavailable right now' };
-    const res = await this.json<KratosFlow & { session_token?: string; session?: { authenticator_assurance_level?: string } }>(
-      `/self-service/login?flow=${encodeURIComponent(flow.body.id)}`,
-      { method: 'POST', body: JSON.stringify({ method: 'password', identifier, password }) },
-    );
+    const res = await this.json<
+      KratosFlow & { session_token?: string; session?: { authenticator_assurance_level?: string } }
+    >(`/self-service/login?flow=${encodeURIComponent(flow.body.id)}`, {
+      method: 'POST',
+      body: JSON.stringify({ method: 'password', identifier, password }),
+    });
     if (res.status !== 200 || !res.body.session_token)
       return { kind: 'error', message: firstMessage(res.body, 'Email or password is incorrect') };
     const token = res.body.session_token;
@@ -79,7 +81,8 @@ export class KratosClient {
         body: JSON.stringify({ method: 'totp', totp_code: code.replace(/\s/g, '') }),
       },
     );
-    if (res.status !== 200) return { kind: 'error', message: firstMessage(res.body, 'That code did not work') };
+    if (res.status !== 200)
+      return { kind: 'error', message: firstMessage(res.body, 'That code did not work') };
     return { kind: 'signed_in', token: res.body.session_token ?? token };
   }
 

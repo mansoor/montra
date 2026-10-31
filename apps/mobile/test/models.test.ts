@@ -14,7 +14,13 @@ import {
   nextStep,
 } from '../src/features/import-mapping';
 import { parseTimeout, shouldLock } from '../src/lock/policy';
-import { assessFrame, glareShare, laplacianVariance, summarize, toGray } from '../src/features/camera-metrics';
+import {
+  assessFrame,
+  glareShare,
+  laplacianVariance,
+  summarize,
+  toGray,
+} from '../src/features/camera-metrics';
 
 const t = (id: string, date: string, extra: Partial<LocalTransaction> = {}): LocalTransaction => ({
   id,
@@ -80,9 +86,22 @@ describe('quick add (≤ 3 taps)', () => {
         categoryId: null,
         date: '2026-10-31',
       }),
-    ).toEqual({ date: '2026-10-31', accountId: 'a1', amount: { amount: '-1850', currency: 'USD' }, payee: 'Lunch' });
+    ).toEqual({
+      date: '2026-10-31',
+      accountId: 'a1',
+      amount: { amount: '-1850', currency: 'USD' },
+      payee: 'Lunch',
+    });
     expect(() =>
-      buildCreateRequest({ accountId: 'a1', currency: 'USD', digits: '', direction: 'expense', payee: '', categoryId: null, date: '2026-10-31' }),
+      buildCreateRequest({
+        accountId: 'a1',
+        currency: 'USD',
+        digits: '',
+        direction: 'expense',
+        payee: '',
+        categoryId: null,
+        date: '2026-10-31',
+      }),
     ).toThrow();
   });
 });
@@ -216,7 +235,11 @@ describe('camera frame quality (spike)', () => {
   it('measures glare and downscales large frames', () => {
     const glare = frame(100, 100, (x) => (x < 20 ? 255 : 100));
     expect(glareShare(toGray(glare, 100, 100, 100))).toBeCloseTo(0.2, 5);
-    const g = toGray(frame(1024, 512, () => 50), 1024, 512);
+    const g = toGray(
+      frame(1024, 512, () => 50),
+      1024,
+      512,
+    );
     expect([g.width, g.height]).toEqual([256, 128]);
   });
 

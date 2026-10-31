@@ -56,7 +56,13 @@ export class RealtimeClient {
       this.attempt = 0;
       void this.o.token().then((token) => {
         if (this.socket === s)
-          s.send(JSON.stringify({ type: 'subscribe', workspaceId: this.o.workspaceId, ...(token ? { token } : {}) }));
+          s.send(
+            JSON.stringify({
+              type: 'subscribe',
+              workspaceId: this.o.workspaceId,
+              ...(token ? { token } : {}),
+            }),
+          );
       });
     };
     s.onmessage = (e) => {

@@ -66,7 +66,11 @@ export default function Transactions() {
 
   const renderItem = ({ item }: { item: LocalTransaction }) => {
     const name = item.merchantName ?? item.payee ?? item.description;
-    const meta = [fmtDate(item.date), item.categoryName ?? (item.reviewState === 'needs_review' ? t('mobile.txn.needs_review') : null), item.pending ? t('mobile.txn.pending') : null]
+    const meta = [
+      fmtDate(item.date),
+      item.categoryName ?? (item.reviewState === 'needs_review' ? t('mobile.txn.needs_review') : null),
+      item.pending ? t('mobile.txn.pending') : null,
+    ]
       .filter(Boolean)
       .join(' · ');
     return (
@@ -83,10 +87,23 @@ export default function Transactions() {
           onPress={() => router.push(`/transaction/${item.id}`)}
           accessibilityRole="button"
           accessibilityLabel={`${name}, ${fmtMoney(item.amount, item.currency)}, ${meta}`}
-          accessibilityActions={[{ name: 'categorize', label: t('mobile.txn.categorize') }, { name: 'delete', label: t('mobile.txn.delete') }]}
-          onAccessibilityAction={(e) => (e.nativeEvent.actionName === 'delete' ? remove(item) : setPicking(item))}
+          accessibilityActions={[
+            { name: 'categorize', label: t('mobile.txn.categorize') },
+            { name: 'delete', label: t('mobile.txn.delete') },
+          ]}
+          onAccessibilityAction={(e) =>
+            e.nativeEvent.actionName === 'delete' ? remove(item) : setPicking(item)
+          }
           testID="txn-row"
-          style={{ flexDirection: 'row', alignItems: 'center', gap: th.space(3), padding: th.space(3), backgroundColor: th.surface, borderBottomWidth: 0.5, borderColor: th.border }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: th.space(3),
+            padding: th.space(3),
+            backgroundColor: th.surface,
+            borderBottomWidth: 0.5,
+            borderColor: th.border,
+          }}
         >
           <Monogram name={name} />
           <View style={{ flex: 1 }}>
@@ -95,7 +112,13 @@ export default function Transactions() {
             </Text>
             <Small>{meta}</Small>
           </View>
-          <Text style={{ color: item.amount?.startsWith('-') ? th.text : th.success, fontSize: th.font.body, fontVariant: ['tabular-nums'] }}>
+          <Text
+            style={{
+              color: item.amount?.startsWith('-') ? th.text : th.success,
+              fontSize: th.font.body,
+              fontVariant: ['tabular-nums'],
+            }}
+          >
             {fmtMoney(item.amount, item.currency)}
           </Text>
         </Pressable>
@@ -106,12 +129,33 @@ export default function Transactions() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: th.bg }} edges={['top']}>
       <View style={{ padding: th.space(4), gap: th.space(2) }}>
-        <Field label={t('mobile.txn.search')} value={search} onChangeText={setSearch} returnKeyType="search" testID="txn-search" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: th.space(2) }}>
-          <Chip label={t('mobile.txn.all_accounts')} active={!accountId} onPress={() => setAccountId(undefined)} />
-          {accounts.filter((a) => !a.archived && !a.hidden).map((a) => (
-            <Chip key={a.id} label={a.name} active={accountId === a.id} onPress={() => setAccountId(a.id)} />
-          ))}
+        <Field
+          label={t('mobile.txn.search')}
+          value={search}
+          onChangeText={setSearch}
+          returnKeyType="search"
+          testID="txn-search"
+        />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: th.space(2) }}
+        >
+          <Chip
+            label={t('mobile.txn.all_accounts')}
+            active={!accountId}
+            onPress={() => setAccountId(undefined)}
+          />
+          {accounts
+            .filter((a) => !a.archived && !a.hidden)
+            .map((a) => (
+              <Chip
+                key={a.id}
+                label={a.name}
+                active={accountId === a.id}
+                onPress={() => setAccountId(a.id)}
+              />
+            ))}
         </ScrollView>
       </View>
       <FlatList
@@ -120,8 +164,14 @@ export default function Transactions() {
         renderItem={renderItem}
         onEndReached={() => !done && void load(true)}
         onEndReachedThreshold={0.5}
-        refreshControl={<RefreshControl refreshing={Boolean(state?.syncing)} onRefresh={() => void refresh()} />}
-        ListEmptyComponent={<View style={{ padding: th.space(4) }}><Small>{t('mobile.txn.empty')}</Small></View>}
+        refreshControl={
+          <RefreshControl refreshing={Boolean(state?.syncing)} onRefresh={() => void refresh()} />
+        }
+        ListEmptyComponent={
+          <View style={{ padding: th.space(4) }}>
+            <Small>{t('mobile.txn.empty')}</Small>
+          </View>
+        }
       />
       <CategoryPicker
         visible={picking !== null}
@@ -136,7 +186,12 @@ export default function Transactions() {
 
 function Action({ label, color, onPress }: { label: string; color: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} style={{ backgroundColor: color, justifyContent: 'center', paddingHorizontal: 16 }}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={{ backgroundColor: color, justifyContent: 'center', paddingHorizontal: 16 }}
+    >
       <Text style={{ color: '#fff', fontWeight: '600' }}>{label}</Text>
     </Pressable>
   );
@@ -149,7 +204,14 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: active ? th.primary : th.surface, borderWidth: 0.5, borderColor: th.border }}
+      style={{
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 16,
+        backgroundColor: active ? th.primary : th.surface,
+        borderWidth: 0.5,
+        borderColor: th.border,
+      }}
     >
       <Text style={{ color: active ? th.onPrimary : th.text }}>{label}</Text>
     </Pressable>

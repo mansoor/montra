@@ -15,7 +15,11 @@ export interface MonthSummary {
 }
 
 /** Totals for `today`'s month in `currency`; transfers (no category, reviewed) are left out. */
-export function monthSummary(rows: readonly LocalTransaction[], today: CalendarDate, currency: string): MonthSummary {
+export function monthSummary(
+  rows: readonly LocalTransaction[],
+  today: CalendarDate,
+  currency: string,
+): MonthSummary {
   const from = startOfMonth(today);
   const horizon = addDays(today, 14);
   let spent = 0n;

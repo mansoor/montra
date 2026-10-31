@@ -28,10 +28,17 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: t('mobile.tab.home'), tabBarIcon: icon('⌂') }} />
-      <Tabs.Screen name="transactions" options={{ title: t('mobile.tab.transactions'), tabBarIcon: icon('≡') }} />
+      <Tabs.Screen
+        name="transactions"
+        options={{ title: t('mobile.tab.transactions'), tabBarIcon: icon('≡') }}
+      />
       <Tabs.Screen
         name="capture"
-        options={{ title: t('mobile.tab.capture'), tabBarIcon: icon('＋'), tabBarAccessibilityLabel: t('mobile.capture.title') }}
+        options={{
+          title: t('mobile.tab.capture'),
+          tabBarIcon: icon('＋'),
+          tabBarAccessibilityLabel: t('mobile.capture.title'),
+        }}
       />
       <Tabs.Screen
         name="review"

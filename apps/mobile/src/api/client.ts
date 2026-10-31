@@ -70,7 +70,11 @@ export function createApi(opts: ApiOptions) {
     const json = text ? (JSON.parse(text) as unknown) : undefined;
     if (!res.ok) {
       const p = (json ?? {}) as { code?: string; title?: string; detail?: string };
-      throw new ApiError(res.status, p.code ?? `http_${res.status}`, p.detail ?? p.title ?? `HTTP ${res.status}`);
+      throw new ApiError(
+        res.status,
+        p.code ?? `http_${res.status}`,
+        p.detail ?? p.title ?? `HTTP ${res.status}`,
+      );
     }
     return json as T;
   }
@@ -82,7 +86,8 @@ export function createApi(opts: ApiOptions) {
     me: () => request<MeDto>('GET', '/v1/me'),
     workspaces: async () => (await request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces')).data,
     aiSettings: (w: string) => request<{ mode: string }>('GET', `${ws(w)}/ai/settings`),
-    suggest: (w: string, req: SuggestRequest) => request<SuggestionDto>('POST', `${ws(w)}/categorize/suggest`, req),
+    suggest: (w: string, req: SuggestRequest) =>
+      request<SuggestionDto>('POST', `${ws(w)}/categorize/suggest`, req),
     parseQuickAdd: (w: string, req: ParseQuickAddRequest) =>
       request<QuickAddDraftDto>('POST', `${ws(w)}/transactions/parse`, req),
 

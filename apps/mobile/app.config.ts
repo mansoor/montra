@@ -18,7 +18,9 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   runtimeVersion: { policy: 'appVersion' },
-  ...(projectId ? { updates: { url: `https://u.expo.dev/${projectId}`, checkAutomatically: 'ON_LOAD' } } : {}),
+  ...(projectId
+    ? { updates: { url: `https://u.expo.dev/${projectId}`, checkAutomatically: 'ON_LOAD' } }
+    : {}),
   ios: {
     bundleIdentifier: 'app.montra.mobile',
     supportsTablet: true,
@@ -36,6 +38,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    'expo-dev-client',
     'expo-secure-store',
     'expo-local-authentication',
     ['expo-sqlite', { useSQLCipher: true }],

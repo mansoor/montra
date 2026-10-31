@@ -28,7 +28,8 @@ export default function CameraSpike() {
   const [preview, setPreview] = useState<{ uri: string; started: number } | null>(null);
   const [last, setLast] = useState<SpikeSample | null>(null);
   const [busy, setBusy] = useState(false);
-  const device = `${Device.manufacturer ?? ''} ${Device.modelName ?? ''} (${Platform.OS} ${Platform.Version})`.trim();
+  const device =
+    `${Device.manufacturer ?? ''} ${Device.modelName ?? ''} (${Platform.OS} ${Platform.Version})`.trim();
 
   useEffect(() => {
     void store.getMeta(LOG_KEY).then((v) => v && setSamples(JSON.parse(v) as SpikeSample[]));
@@ -97,16 +98,29 @@ export default function CameraSpike() {
       <View style={{ flexDirection: 'row', gap: th.space(2) }}>
         {(['receipt', 'statement'] as const).map((k) => (
           <View key={k} style={{ flex: 1 }}>
-            <Button kind={kind === k ? 'primary' : 'secondary'} label={t(`mobile.spike.kind.${k}`)} onPress={() => setKind(k)} />
+            <Button
+              kind={kind === k ? 'primary' : 'secondary'}
+              label={t(`mobile.spike.kind.${k}`)}
+              onPress={() => setKind(k)}
+            />
           </View>
         ))}
       </View>
       <View style={{ height: 360, borderRadius: th.radius, overflow: 'hidden' }}>
         <CameraView ref={camera} style={{ flex: 1 }} facing="back" />
       </View>
-      <Button label={t('mobile.spike.capture')} busy={busy} onPress={() => void capture()} testID="spike-capture" />
+      <Button
+        label={t('mobile.spike.capture')}
+        busy={busy}
+        onPress={() => void capture()}
+        testID="spike-capture"
+      />
       {preview ? (
-        <Image source={{ uri: preview.uri }} style={{ height: 160, resizeMode: 'contain' }} onLoad={() => void onPreviewLoaded()} />
+        <Image
+          source={{ uri: preview.uri }}
+          style={{ height: 160, resizeMode: 'contain' }}
+          onLoad={() => void onPreviewLoaded()}
+        />
       ) : null}
       {last ? (
         <Card>
@@ -120,10 +134,18 @@ export default function CameraSpike() {
           <Body>{t('mobile.spike.glare', { value: (last.glare * 100).toFixed(1) })}</Body>
           <View style={{ flexDirection: 'row', gap: th.space(2) }}>
             <View style={{ flex: 1 }}>
-              <Button kind={last.usable === true ? 'primary' : 'secondary'} label={t('mobile.spike.usable')} onPress={() => void judge(true)} />
+              <Button
+                kind={last.usable === true ? 'primary' : 'secondary'}
+                label={t('mobile.spike.usable')}
+                onPress={() => void judge(true)}
+              />
             </View>
             <View style={{ flex: 1 }}>
-              <Button kind={last.usable === false ? 'danger' : 'secondary'} label={t('mobile.spike.unusable')} onPress={() => void judge(false)} />
+              <Button
+                kind={last.usable === false ? 'danger' : 'secondary'}
+                label={t('mobile.spike.unusable')}
+                onPress={() => void judge(false)}
+              />
             </View>
           </View>
         </Card>
@@ -139,7 +161,9 @@ export default function CameraSpike() {
       <Button
         kind="secondary"
         label={t('mobile.spike.export')}
-        onPress={() => void Share.share({ message: JSON.stringify({ device, summary: sum, samples }, null, 2) })}
+        onPress={() =>
+          void Share.share({ message: JSON.stringify({ device, summary: sum, samples }, null, 2) })
+        }
       />
       <Button kind="danger" label={t('mobile.spike.clear')} onPress={() => void save([])} />
     </Screen>

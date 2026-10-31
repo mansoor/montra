@@ -53,7 +53,11 @@ export default function Review() {
             Animated.spring(x, { toValue: 0, useNativeDriver: false }).start();
             return;
           }
-          Animated.timing(x, { toValue: outcome === 'accept' ? width : -width, duration: 160, useNativeDriver: false }).start(() => {
+          Animated.timing(x, {
+            toValue: outcome === 'accept' ? width : -width,
+            duration: 160,
+            useNativeDriver: false,
+          }).start(() => {
             x.setValue(0);
             if (outcome === 'accept') void accept(row);
             else setPicking(row);
@@ -82,15 +86,23 @@ export default function Review() {
         {t('mobile.review.hint')} {t('mobile.review.remaining', { count: queue.length })}
       </Small>
       <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Animated.View {...pan.panHandlers} style={{ transform: [{ translateX: x }, { rotate }] }} testID="review-card">
+        <Animated.View
+          {...pan.panHandlers}
+          style={{ transform: [{ translateX: x }, { rotate }] }}
+          testID="review-card"
+        >
           <Card style={{ gap: th.space(3), paddingVertical: th.space(6) }}>
             <Text style={{ color: th.text, fontSize: th.font.title, fontWeight: '700' }}>
               {current.merchantName ?? current.payee ?? current.description}
             </Text>
-            <Body style={{ fontSize: th.font.amount, fontWeight: '700' }}>{fmtMoney(current.amount, current.currency)}</Body>
+            <Body style={{ fontSize: th.font.amount, fontWeight: '700' }}>
+              {fmtMoney(current.amount, current.currency)}
+            </Body>
             <Small>{fmtDate(current.date)}</Small>
             <Body>
-              {suggested ? `${suggested.name}${current.confidence !== null ? ` · ${confidenceLabel(current.confidence)}` : ''}` : t('mobile.review.no_suggestion')}
+              {suggested
+                ? `${suggested.name}${current.confidence !== null ? ` · ${confidenceLabel(current.confidence)}` : ''}`
+                : t('mobile.review.no_suggestion')}
             </Body>
             {current.explanation ? <Small>{current.explanation}</Small> : null}
           </Card>
@@ -98,10 +110,20 @@ export default function Review() {
       </View>
       <View style={{ flexDirection: 'row', gap: th.space(3) }}>
         <View style={{ flex: 1 }}>
-          <Button kind="secondary" label={t('mobile.review.choose')} onPress={() => setPicking(current)} testID="review-choose" />
+          <Button
+            kind="secondary"
+            label={t('mobile.review.choose')}
+            onPress={() => setPicking(current)}
+            testID="review-choose"
+          />
         </View>
         <View style={{ flex: 1 }}>
-          <Button label={t('mobile.review.accept')} disabled={!suggested} onPress={() => void accept(current)} testID="review-accept" />
+          <Button
+            label={t('mobile.review.accept')}
+            disabled={!suggested}
+            onPress={() => void accept(current)}
+            testID="review-accept"
+          />
         </View>
       </View>
       <CategoryPicker

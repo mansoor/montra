@@ -39,14 +39,23 @@ export default function SignIn() {
               autoComplete="one-time-code"
               testID="totp"
             />
-            <Button label={t('mobile.signin.verify')} busy={busy} onPress={() => void run(() => s.submitTotp(code))} />
+            <Button
+              label={t('mobile.signin.verify')}
+              busy={busy}
+              onPress={() => void run(() => s.submitTotp(code))}
+            />
           </>
         ) : st.status === 'choose_workspace' ? (
           <>
             <Body>{t('mobile.signin.workspace')}</Body>
             {st.workspaces.length === 0 ? <Body muted>{t('mobile.signin.no_workspace')}</Body> : null}
             {st.workspaces.map((w) => (
-              <Row key={w.id} title={w.name} subtitle={w.baseCurrency} onPress={() => void s.chooseWorkspace(w.id)} />
+              <Row
+                key={w.id}
+                title={w.name}
+                subtitle={w.baseCurrency}
+                onPress={() => void s.chooseWorkspace(w.id)}
+              />
             ))}
           </>
         ) : (

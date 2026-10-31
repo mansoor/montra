@@ -22,10 +22,17 @@ export default function TransactionDetail() {
     if (row && !draft) setDraft(row);
   }, [row, draft]);
 
-  if (!row || !draft) return <Screen><Small>{t('mobile.common.loading')}</Small></Screen>;
+  if (!row || !draft)
+    return (
+      <Screen>
+        <Small>{t('mobile.common.loading')}</Small>
+      </Screen>
+    );
   const splits = row.server?.splits ?? null;
   const isSplit = Boolean(splits && splits.length > 1);
-  const categoryName = draft.categoryId ? (categories.find((c) => c.id === draft.categoryId)?.name ?? draft.categoryName) : null;
+  const categoryName = draft.categoryId
+    ? (categories.find((c) => c.id === draft.categoryId)?.name ?? draft.categoryName)
+    : null;
 
   const save = async () => {
     setError(null);
@@ -34,7 +41,8 @@ export default function TransactionDetail() {
     if (draft.date !== row.date) patch.date = draft.date as UpdateTransactionRequest['date'];
     if (draft.memo !== row.memo) patch.memo = draft.memo;
     if (draft.tags.join(',') !== row.tags.join(',')) patch.tags = draft.tags;
-    if (!isSplit && draft.categoryId && draft.categoryId !== row.categoryId) patch.categoryId = draft.categoryId;
+    if (!isSplit && draft.categoryId && draft.categoryId !== row.categoryId)
+      patch.categoryId = draft.categoryId;
     if (Object.keys(patch).length === 0) return router.back();
     try {
       if (patch.categoryId && row.reviewState === 'needs_review' && Object.keys(patch).length === 1)
@@ -55,7 +63,12 @@ export default function TransactionDetail() {
         <Body style={{ fontSize: 28, fontWeight: '700' }}>{fmtMoney(row.amount, row.currency)}</Body>
         {row.explanation ? <Small>{row.explanation}</Small> : null}
       </Card>
-      <Field label={t('mobile.txn.payee')} value={draft.payee ?? ''} onChangeText={(v) => setDraft({ ...draft, payee: v || null })} testID="ed-payee" />
+      <Field
+        label={t('mobile.txn.payee')}
+        value={draft.payee ?? ''}
+        onChangeText={(v) => setDraft({ ...draft, payee: v || null })}
+        testID="ed-payee"
+      />
       <Field
         label={t('mobile.txn.date')}
         value={draft.date}
@@ -76,13 +89,31 @@ export default function TransactionDetail() {
           <Small>{t('mobile.txn.split_readonly')}</Small>
         </Card>
       ) : (
-        <Row title={t('mobile.txn.category')} subtitle={categoryName ?? t('mobile.txn.uncategorized')} onPress={() => setPicking(true)} testID="ed-category" />
+        <Row
+          title={t('mobile.txn.category')}
+          subtitle={categoryName ?? t('mobile.txn.uncategorized')}
+          onPress={() => setPicking(true)}
+          testID="ed-category"
+        />
       )}
-      <Field label={t('mobile.txn.memo')} value={draft.memo ?? ''} onChangeText={(v) => setDraft({ ...draft, memo: v || null })} multiline />
+      <Field
+        label={t('mobile.txn.memo')}
+        value={draft.memo ?? ''}
+        onChangeText={(v) => setDraft({ ...draft, memo: v || null })}
+        multiline
+      />
       <Field
         label={t('mobile.txn.tags')}
         value={draft.tags.join(', ')}
-        onChangeText={(v) => setDraft({ ...draft, tags: v.split(',').map((x) => x.trim()).filter(Boolean) })}
+        onChangeText={(v) =>
+          setDraft({
+            ...draft,
+            tags: v
+              .split(',')
+              .map((x) => x.trim())
+              .filter(Boolean),
+          })
+        }
         autoCapitalize="none"
       />
       <Button label={t('mobile.txn.save')} onPress={() => void save()} testID="ed-save" />

@@ -17,7 +17,10 @@ export const currentLocale = locale;
 /** Day-first locales read 03/04 as 3 April (import mapping default). */
 export const prefersDayFirst = !/^en-(US|PH)|^en$/.test(locale);
 
-export function fmtMoney(amountMinor: string | bigint | null | undefined, currency: string | null | undefined): string {
+export function fmtMoney(
+  amountMinor: string | bigint | null | undefined,
+  currency: string | null | undefined,
+): string {
   if (amountMinor === null || amountMinor === undefined || !currency) return '';
   return formatMoney(money(BigInt(amountMinor), currency), { locale });
 }

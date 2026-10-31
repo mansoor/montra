@@ -15,7 +15,11 @@ export const keyName = (workspaceId: string) => `montra.dbkey.v1.${workspaceId}`
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 
-export async function getOrCreateKey(secrets: SecretPort, random: RandomBytes, workspaceId: string): Promise<string> {
+export async function getOrCreateKey(
+  secrets: SecretPort,
+  random: RandomBytes,
+  workspaceId: string,
+): Promise<string> {
   const name = keyName(workspaceId);
   const existing = await secrets.get(name);
   if (existing && /^[0-9a-f]{64}$/.test(existing)) return existing;

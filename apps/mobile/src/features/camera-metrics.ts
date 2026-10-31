@@ -11,7 +11,12 @@ export interface Gray {
 }
 
 /** ITU-R BT.601 luma from RGBA, downscaled by box-averaging to at most `maxSide` pixels on the long side. */
-export function toGray(rgba: Uint8Array | Uint8ClampedArray, width: number, height: number, maxSide = 256): Gray {
+export function toGray(
+  rgba: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  maxSide = 256,
+): Gray {
   const scale = Math.max(1, Math.ceil(Math.max(width, height) / maxSide));
   const w = Math.max(1, Math.floor(width / scale));
   const h = Math.max(1, Math.floor(height / scale));

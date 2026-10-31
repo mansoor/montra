@@ -1,0 +1,21 @@
+appId: app.montra.mobile
+name: Quick add in three taps (TXN-01)
+---
+- runFlow: sign-in-dev.yaml
+- tapOn: Add
+# The amount is typed on the keypad (not counted as taps).
+- tapOn: { id: key-1 }
+- tapOn: { id: key-8 }
+- tapOn: { id: key-5 }
+- tapOn: { id: key-0 }
+- assertVisible: '18.50.*'
+# Tap 1: next
+- tapOn: { id: qa-next }
+- inputText: Lunch
+# Tap 2: confirm the payee
+- pressKey: Enter
+# Tap 3: save with the suggested category
+- tapOn: { id: qa-save }
+- assertVisible: 'Saved Lunch'
+- tapOn: Transactions
+- assertVisible: Lunch

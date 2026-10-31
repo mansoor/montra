@@ -14,17 +14,32 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
 
-export function Screen({ children, scroll = true, testID }: { children: ReactNode; scroll?: boolean; testID?: string }) {
+export function Screen({
+  children,
+  scroll = true,
+  testID,
+}: {
+  children: ReactNode;
+  scroll?: boolean;
+  testID?: string;
+}) {
   const th = useTheme();
   const body = scroll ? (
-    <ScrollView contentContainerStyle={{ padding: th.space(4), gap: th.space(3) }} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={{ padding: th.space(4), gap: th.space(3) }}
+      keyboardShouldPersistTaps="handled"
+    >
       {children}
     </ScrollView>
   ) : (
     <View style={{ flex: 1, padding: th.space(4), gap: th.space(3) }}>{children}</View>
   );
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: th.bg }} edges={['top', 'left', 'right']} testID={testID}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: th.bg }}
+      edges={['top', 'left', 'right']}
+      testID={testID}
+    >
       {body}
     </SafeAreaView>
   );
@@ -41,7 +56,9 @@ export function Title({ children }: { children: ReactNode }) {
 
 export function Body({ children, muted, style }: { children: ReactNode; muted?: boolean; style?: object }) {
   const th = useTheme();
-  return <Text style={[{ color: muted ? th.muted : th.text, fontSize: th.font.body }, style]}>{children}</Text>;
+  return (
+    <Text style={[{ color: muted ? th.muted : th.text, fontSize: th.font.body }, style]}>{children}</Text>
+  );
 }
 
 export function Small({ children, color }: { children: ReactNode; color?: string }) {
@@ -49,7 +66,15 @@ export function Small({ children, color }: { children: ReactNode; color?: string
   return <Text style={{ color: color ?? th.muted, fontSize: th.font.small }}>{children}</Text>;
 }
 
-export function Card({ children, style, testID }: { children: ReactNode; style?: ViewStyle; testID?: string }) {
+export function Card({
+  children,
+  style,
+  testID,
+}: {
+  children: ReactNode;
+  style?: ViewStyle;
+  testID?: string;
+}) {
   const th = useTheme();
   return (
     <View
@@ -113,7 +138,11 @@ export function Button({
         justifyContent: 'center',
       })}
     >
-      {busy ? <ActivityIndicator color={fg} /> : <Text style={{ color: fg, fontSize: th.font.body, fontWeight: '600' }}>{label}</Text>}
+      {busy ? (
+        <ActivityIndicator color={fg} />
+      ) : (
+        <Text style={{ color: fg, fontSize: th.font.body, fontWeight: '600' }}>{label}</Text>
+      )}
     </Pressable>
   );
 }
@@ -191,7 +220,15 @@ export function Row({
   );
 }
 
-export function Banner({ text, tone = 'info', onPress }: { text: string; tone?: 'info' | 'warning' | 'danger'; onPress?: () => void }) {
+export function Banner({
+  text,
+  tone = 'info',
+  onPress,
+}: {
+  text: string;
+  tone?: 'info' | 'warning' | 'danger';
+  onPress?: () => void;
+}) {
   const th = useTheme();
   const color = tone === 'danger' ? th.danger : tone === 'warning' ? th.warning : th.primary;
   return (
@@ -200,7 +237,13 @@ export function Banner({ text, tone = 'info', onPress }: { text: string; tone?: 
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : 'text'}
       accessibilityLiveRegion="polite"
-      style={{ borderLeftWidth: 4, borderColor: color, backgroundColor: th.surface, padding: th.space(3), borderRadius: 6 }}
+      style={{
+        borderLeftWidth: 4,
+        borderColor: color,
+        backgroundColor: th.surface,
+        padding: th.space(3),
+        borderRadius: 6,
+      }}
     >
       <Text style={{ color: th.text, fontSize: th.font.small }}>{text}</Text>
     </Pressable>
@@ -220,7 +263,14 @@ export function Monogram({ name }: { name: string }) {
     <View
       importantForAccessibility="no"
       accessibilityElementsHidden
-      style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: th.border, alignItems: 'center', justifyContent: 'center' }}
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: th.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
     >
       <Text style={{ color: th.text, fontWeight: '700' }}>{letters || '·'}</Text>
     </View>

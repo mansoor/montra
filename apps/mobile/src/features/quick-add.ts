@@ -62,7 +62,9 @@ export function payeeSuggestions(
   return all
     .sort(
       (a, b) =>
-        rank(a) - rank(b) || b.count - a.count || (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : 0),
+        rank(a) - rank(b) ||
+        b.count - a.count ||
+        (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : 0),
     )
     .slice(0, limit);
 }

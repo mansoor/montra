@@ -19,7 +19,18 @@ import {
 } from '../../src/features/quick-add';
 import { todayLocal } from '../../src/features/home';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
-import { Banner, Body, Button, Card, Field, Row, Screen, Small, Title, useToast } from '../../src/ui/components';
+import {
+  Banner,
+  Body,
+  Button,
+  Card,
+  Field,
+  Row,
+  Screen,
+  Small,
+  Title,
+  useToast,
+} from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
 type Step = 'amount' | 'payee' | 'confirm' | 'sentence';
@@ -32,7 +43,9 @@ export default function Capture() {
   const { state: session, api } = useSession();
   const { engine, store, state, touch } = useSync();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
-  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter((a) => !a.archived && !a.hidden);
+  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(
+    (a) => !a.archived && !a.hidden,
+  );
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
   const history = useLocal((s) => s.listTransactions({ limit: 500 })) ?? [];
 
@@ -81,7 +94,10 @@ export default function Capture() {
     try {
       const s = await api.suggest(ws, {
         payee: name,
-        amount: { amount: (direction === 'expense' ? -BigInt(digits || '0') : BigInt(digits || '0')).toString(), currency: asCurrencyCode(currency) },
+        amount: {
+          amount: (direction === 'expense' ? -BigInt(digits || '0') : BigInt(digits || '0')).toString(),
+          currency: asCurrencyCode(currency),
+        },
         accountId: account.id,
         date: todayLocal(),
       });
@@ -159,7 +175,12 @@ export default function Capture() {
             onSubmitEditing={() => void parseSentence()}
             testID="qa-sentence"
           />
-          <Button label={t('mobile.capture.next')} busy={busy} disabled={!sentence.trim() || !state?.online} onPress={() => void parseSentence()} />
+          <Button
+            label={t('mobile.capture.next')}
+            busy={busy}
+            disabled={!sentence.trim() || !state?.online}
+            onPress={() => void parseSentence()}
+          />
           <Button kind="secondary" label={t('mobile.capture.keypad')} onPress={() => setStep('amount')} />
         </>
       ) : null}
@@ -173,21 +194,42 @@ export default function Capture() {
                 onPress={() => setDirection(d)}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: direction === d }}
-                style={{ flex: 1, padding: th.space(2), borderRadius: th.radius, alignItems: 'center', backgroundColor: direction === d ? th.primary : th.surface }}
+                style={{
+                  flex: 1,
+                  padding: th.space(2),
+                  borderRadius: th.radius,
+                  alignItems: 'center',
+                  backgroundColor: direction === d ? th.primary : th.surface,
+                }}
               >
-                <Text style={{ color: direction === d ? th.onPrimary : th.text }}>{t(`mobile.capture.${d}`)}</Text>
+                <Text style={{ color: direction === d ? th.onPrimary : th.text }}>
+                  {t(`mobile.capture.${d}`)}
+                </Text>
               </Pressable>
             ))}
           </View>
           <Text
             accessibilityLabel={`${t('mobile.capture.amount')} ${digitsToDisplay(digits, exponent)} ${currency}`}
             accessibilityLiveRegion="polite"
-            style={{ color: th.text, fontSize: th.font.amount, fontWeight: '700', textAlign: 'center', fontVariant: ['tabular-nums'] }}
+            style={{
+              color: th.text,
+              fontSize: th.font.amount,
+              fontWeight: '700',
+              textAlign: 'center',
+              fontVariant: ['tabular-nums'],
+            }}
             testID="qa-amount-display"
           >
             {digitsToDisplay(digits, exponent)} {currency}
           </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: th.space(2) }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
+              rowGap: th.space(2),
+            }}
+          >
             {KEYS.map((k) => (
               <Pressable
                 key={k}
@@ -195,7 +237,13 @@ export default function Capture() {
                 accessibilityRole="button"
                 accessibilityLabel={k === 'back' ? 'Delete' : k}
                 testID={`key-${k}`}
-                style={({ pressed }) => ({ width: '31%', paddingVertical: th.space(4), borderRadius: th.radius, alignItems: 'center', backgroundColor: pressed ? th.border : th.surface })}
+                style={({ pressed }) => ({
+                  width: '31%',
+                  paddingVertical: th.space(4),
+                  borderRadius: th.radius,
+                  alignItems: 'center',
+                  backgroundColor: pressed ? th.border : th.surface,
+                })}
               >
                 <Text style={{ color: th.text, fontSize: 24 }}>{k === 'back' ? '⌫' : k}</Text>
               </Pressable>
@@ -209,13 +257,23 @@ export default function Capture() {
                 onPress={() => setAccountId(a.id)}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: a.id === accountId }}
-                style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: a.id === accountId ? th.primary : th.surface }}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 16,
+                  backgroundColor: a.id === accountId ? th.primary : th.surface,
+                }}
               >
                 <Text style={{ color: a.id === accountId ? th.onPrimary : th.text }}>{a.name}</Text>
               </Pressable>
             ))}
           </View>
-          <Button label={t('mobile.capture.next')} disabled={!digits} onPress={() => setStep('payee')} testID="qa-next" />
+          <Button
+            label={t('mobile.capture.next')}
+            disabled={!digits}
+            onPress={() => setStep('payee')}
+            testID="qa-next"
+          />
           <Button kind="secondary" label={t('mobile.capture.sentence')} onPress={() => setStep('sentence')} />
         </>
       ) : null}
@@ -241,7 +299,11 @@ export default function Capture() {
               testID={`payee-${s.payee}`}
             />
           ))}
-          <Button label={t('mobile.capture.next')} disabled={!payee.trim()} onPress={() => void choosePayee(payee.trim(), null)} />
+          <Button
+            label={t('mobile.capture.next')}
+            disabled={!payee.trim()}
+            onPress={() => void choosePayee(payee.trim(), null)}
+          />
         </>
       ) : null}
 

@@ -22,7 +22,10 @@ export default function Settings() {
 
   useEffect(() => {
     if (state.status !== 'signed_in') return;
-    void api.aiSettings(state.workspace.id).then((s) => setAi(s.mode), () => undefined);
+    void api.aiSettings(state.workspace.id).then(
+      (s) => setAi(s.mode),
+      () => undefined,
+    );
     void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
   }, [api, state]);
 
@@ -54,9 +57,16 @@ export default function Settings() {
                   onPress={() => void lock.setTimeout(o)}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: lock.timeout === o }}
-                  style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: lock.timeout === o ? th.primary : th.bg }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 16,
+                    backgroundColor: lock.timeout === o ? th.primary : th.bg,
+                  }}
                 >
-                  <Body style={{ color: lock.timeout === o ? th.onPrimary : th.text }}>{t(`mobile.settings.lock.${o}`)}</Body>
+                  <Body style={{ color: lock.timeout === o ? th.onPrimary : th.text }}>
+                    {t(`mobile.settings.lock.${o}`)}
+                  </Body>
                 </Pressable>
               ))}
             </View>

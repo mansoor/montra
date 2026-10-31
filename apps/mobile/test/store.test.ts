@@ -79,9 +79,9 @@ describe.each(stores)('%s (SyncStore contract)', (_name, make) => {
     expect((await s.listTransactions({ reviewState: 'needs_review' })).map((t) => t.id)).toEqual(['c']);
     expect((await s.listTransactions({ search: 'shell' })).map((t) => t.id)).toEqual(['b']);
     expect((await s.listTransactions({ search: ' BLUE ' })).map((t) => t.id)).toEqual(['a']);
-    expect((await s.listTransactions({ before: { date: '2026-10-03', id: 'c' }, limit: 2 })).map((t) => t.id)).toEqual(
-      ['b', 'a'],
-    );
+    expect(
+      (await s.listTransactions({ before: { date: '2026-10-03', id: 'c' }, limit: 2 })).map((t) => t.id),
+    ).toEqual(['b', 'a']);
     await s.putTransactions([txn('a', '2026-10-05', { payee: 'Blue Bottle', memo: 'x' })]);
     expect((await s.getTransaction('a'))?.memo).toBe('x');
     await s.removeTransactions(['a', 'missing']);
@@ -91,9 +91,18 @@ describe.each(stores)('%s (SyncStore contract)', (_name, make) => {
   it('replaces and merges reference rows keeping order', async () => {
     const s = await make();
     const cat = (id: string, name: string) => ({ id, name }) as never;
-    await s.replaceReference({ accounts: [], categories: [cat('1', 'A'), cat('2', 'B')], members: [], entities: [] });
+    await s.replaceReference({
+      accounts: [],
+      categories: [cat('1', 'A'), cat('2', 'B')],
+      members: [],
+      entities: [],
+    });
     await s.mergeReference({ categories: [cat('2', 'B2'), cat('3', 'C')] });
-    expect((await s.getReference('categories')).map((c) => `${c.id}:${c.name}`)).toEqual(['1:A', '2:B2', '3:C']);
+    expect((await s.getReference('categories')).map((c) => `${c.id}:${c.name}`)).toEqual([
+      '1:A',
+      '2:B2',
+      '3:C',
+    ]);
     await s.replaceReference({ accounts: [], categories: [cat('9', 'Z')], members: [], entities: [] });
     expect((await s.getReference('categories')).map((c) => c.id)).toEqual(['9']);
   });

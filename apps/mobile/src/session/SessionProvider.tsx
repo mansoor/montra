@@ -59,9 +59,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!(await token())) return setState({ status: 'signed_out' });
       const [me, workspaces] = await Promise.all([api.me(), api.workspaces()]);
       const saved = await SecureStore.getItemAsync(WORKSPACE_KEY);
-      const ws = workspaces.find((w) => w.id === saved) ?? (workspaces.length === 1 ? workspaces[0] : undefined);
+      const ws =
+        workspaces.find((w) => w.id === saved) ?? (workspaces.length === 1 ? workspaces[0] : undefined);
       if (ws) await remember(me, ws);
-      setState(ws ? { status: 'signed_in', me, workspace: ws, workspaces } : { status: 'choose_workspace', me, workspaces });
+      setState(
+        ws
+          ? { status: 'signed_in', me, workspace: ws, workspaces }
+          : { status: 'choose_workspace', me, workspaces },
+      );
     } catch (e) {
       const err = e as { status?: number; message?: string };
       if (err.status === 401) {

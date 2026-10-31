@@ -12,16 +12,30 @@ export default function More() {
   return (
     <Screen testID="more">
       <Title>{t('mobile.tab.more')}</Title>
-      <Row title={t('mobile.more.accounts')} onPress={() => router.push('/accounts')} testID="more-accounts" />
+      <Row
+        title={t('mobile.more.accounts')}
+        onPress={() => router.push('/accounts')}
+        testID="more-accounts"
+      />
       <Row title={t('mobile.more.import')} onPress={() => router.push('/import')} testID="more-import" />
       <Row
         title={t('mobile.more.activity')}
-        subtitle={sync && sync.pending + sync.drafts > 0 ? t('mobile.activity.queue', { count: sync.pending + sync.drafts }) : undefined}
+        subtitle={
+          sync && sync.pending + sync.drafts > 0
+            ? t('mobile.activity.queue', { count: sync.pending + sync.drafts })
+            : undefined
+        }
         onPress={() => router.push('/activity')}
         testID="more-activity"
       />
-      <Row title={t('mobile.more.settings')} onPress={() => router.push('/settings')} testID="more-settings" />
-      {state.status === 'signed_in' ? <Small>{t('mobile.more.signed_in_as', { email: state.me.email })}</Small> : null}
+      <Row
+        title={t('mobile.more.settings')}
+        onPress={() => router.push('/settings')}
+        testID="more-settings"
+      />
+      {state.status === 'signed_in' ? (
+        <Small>{t('mobile.more.signed_in_as', { email: state.me.email })}</Small>
+      ) : null}
     </Screen>
   );
 }

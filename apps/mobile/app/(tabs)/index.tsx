@@ -15,31 +15,49 @@ export default function Home() {
   const { state: session } = useSession();
   const { state, refresh } = useSync();
   const currency = session.status === 'signed_in' ? session.workspace.baseCurrency : 'USD';
-  const summary = useLocal(async (s) => monthSummary(await s.listTransactions({ limit: 2000 }), todayLocal(), currency), [currency]);
-  const attention = useLocal(async (s) => (await s.conflicts()).length + (await s.outbox()).filter((o) => o.status === 'draft').length);
+  const summary = useLocal(
+    async (s) => monthSummary(await s.listTransactions({ limit: 2000 }), todayLocal(), currency),
+    [currency],
+  );
+  const attention = useLocal(
+    async (s) => (await s.conflicts()).length + (await s.outbox()).filter((o) => o.status === 'draft').length,
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: th.bg }} edges={['top']}>
       <ScrollView
         contentContainerStyle={{ padding: th.space(4), gap: th.space(3) }}
-        refreshControl={<RefreshControl refreshing={Boolean(state?.syncing)} onRefresh={() => void refresh()} />}
+        refreshControl={
+          <RefreshControl refreshing={Boolean(state?.syncing)} onRefresh={() => void refresh()} />
+        }
         testID="home"
       >
         <Title>{session.status === 'signed_in' ? session.workspace.name : ''}</Title>
         {state && !state.online ? <Banner tone="warning" text={t('mobile.home.offline')} /> : null}
         {attention ? (
-          <Banner tone="danger" text={t('mobile.home.attention', { count: attention })} onPress={() => router.push('/activity')} />
+          <Banner
+            tone="danger"
+            text={t('mobile.home.attention', { count: attention })}
+            onPress={() => router.push('/activity')}
+          />
         ) : null}
-        {state && state.pending > 0 ? <Banner text={t('mobile.home.pending', { count: state.pending })} /> : null}
+        {state && state.pending > 0 ? (
+          <Banner text={t('mobile.home.pending', { count: state.pending })} />
+        ) : null}
         <Card>
           <Small>{t('mobile.home.spent')}</Small>
-          <Body style={{ fontSize: th.font.amount, fontWeight: '700' }}>{fmtMoney(summary?.spent ?? 0n, currency)}</Body>
+          <Body style={{ fontSize: th.font.amount, fontWeight: '700' }}>
+            {fmtMoney(summary?.spent ?? 0n, currency)}
+          </Body>
           <Small>
             {t('mobile.home.income')}: {fmtMoney(summary?.income ?? 0n, currency)}
           </Small>
         </Card>
         {summary && summary.needsReview > 0 ? (
-          <Banner text={t('mobile.home.review', { count: summary.needsReview })} onPress={() => router.push('/review')} />
+          <Banner
+            text={t('mobile.home.review', { count: summary.needsReview })}
+            onPress={() => router.push('/review')}
+          />
         ) : null}
         <Card>
           <Small>{t('mobile.home.upcoming')}</Small>

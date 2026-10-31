@@ -68,7 +68,8 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
         newId: () => Crypto.randomUUID(),
         onEvent: (e) => {
           if (e.type === 'state') setState(e.state);
-          if (e.type === 'conflict') toast.show(t('mobile.home.attention', { count: e.notice.conflicts.length }));
+          if (e.type === 'conflict')
+            toast.show(t('mobile.home.attention', { count: e.notice.conflicts.length }));
           if (e.type === 'pulled' || e.type === 'pushed' || e.type === 'conflict') bump();
         },
       });
@@ -84,7 +85,11 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
 
       const net = await NetInfo.fetch();
       engine.setOnline(Boolean(net.isConnected));
-      const sync = () => void engine.sync().catch(() => undefined).finally(bump);
+      const sync = () =>
+        void engine
+          .sync()
+          .catch(() => undefined)
+          .finally(bump);
       if (!(await store.getMeta('latestSeq')) && net.isConnected)
         await engine.bootstrap().catch(() => undefined);
       bump();
@@ -126,7 +131,5 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
   }, [bump]);
 
   if (!ctx) return null;
-  return (
-    <Ctx.Provider value={{ ...ctx, state, version, refresh, touch: bump }}>{children}</Ctx.Provider>
-  );
+  return <Ctx.Provider value={{ ...ctx, state, version, refresh, touch: bump }}>{children}</Ctx.Provider>;
 }

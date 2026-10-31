@@ -16,7 +16,9 @@ const MS: Record<LockTimeout, number> = {
 export const timeoutMs = (t: LockTimeout): number => MS[t];
 
 export function parseTimeout(value: string | null | undefined): LockTimeout {
-  return (LOCK_TIMEOUTS as readonly string[]).includes(value ?? '') ? (value as LockTimeout) : DEFAULT_LOCK_TIMEOUT;
+  return (LOCK_TIMEOUTS as readonly string[]).includes(value ?? '')
+    ? (value as LockTimeout)
+    : DEFAULT_LOCK_TIMEOUT;
 }
 
 /**

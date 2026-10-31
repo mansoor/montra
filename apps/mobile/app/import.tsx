@@ -113,7 +113,10 @@ export default function ImportScreen() {
   }, [shared, accountId, phase, start, share]);
 
   const pick = async () => {
-    const r = await DocumentPicker.getDocumentAsync({ type: [...IMPORT_MIME_TYPES], copyToCacheDirectory: true });
+    const r = await DocumentPicker.getDocumentAsync({
+      type: [...IMPORT_MIME_TYPES],
+      copyToCacheDirectory: true,
+    });
     if (r.canceled || !r.assets[0]) return;
     const a = r.assets[0];
     if (!fileTypeOf(a.name, a.mimeType)) return setError(t('mobile.import.pick_hint'));
@@ -192,15 +195,30 @@ export default function ImportScreen() {
                 onPress={() => setAccountId(a.id)}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: a.id === accountId }}
-                style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: a.id === accountId ? th.primary : th.surface }}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 16,
+                  backgroundColor: a.id === accountId ? th.primary : th.surface,
+                }}
               >
                 <Body style={{ color: a.id === accountId ? th.onPrimary : th.text }}>{a.name}</Body>
               </Pressable>
             ))}
           </View>
-          <Button label={t('mobile.import.pick')} onPress={() => void pick()} disabled={!accountId} testID="import-pick" />
+          <Button
+            label={t('mobile.import.pick')}
+            onPress={() => void pick()}
+            disabled={!accountId}
+            testID="import-pick"
+          />
           <Small>{t('mobile.import.pick_hint')}</Small>
-          <Button kind="secondary" label={t('mobile.import.scan')} onPress={() => setPhase('scan')} disabled={!accountId} />
+          <Button
+            kind="secondary"
+            label={t('mobile.import.scan')}
+            onPress={() => setPhase('scan')}
+            disabled={!accountId}
+          />
         </>
       ) : null}
 
@@ -214,7 +232,11 @@ export default function ImportScreen() {
           ) : (
             <Button label={t('mobile.spike.permission')} onPress={() => void requestPermission()} />
           )}
-          <Button label={t('mobile.import.scan_add')} onPress={() => void addPage()} disabled={!permission?.granted} />
+          <Button
+            label={t('mobile.import.scan_add')}
+            onPress={() => void addPage()}
+            disabled={!permission?.granted}
+          />
           <Button
             kind="secondary"
             label={t('mobile.import.scan_done', { count: pages.length })}
@@ -247,13 +269,25 @@ export default function ImportScreen() {
             })}
           </Body>
           {batch.balanceCheck === 'ok' ? <Banner text={t('mobile.import.balance_ok')} /> : null}
-          {batch.balanceCheck === 'mismatch' ? <Banner tone="warning" text={t('mobile.import.balance_mismatch')} /> : null}
-          <Button label={t('mobile.import.commit', { count: willImport })} onPress={() => void commit()} testID="import-commit" />
+          {batch.balanceCheck === 'mismatch' ? (
+            <Banner tone="warning" text={t('mobile.import.balance_mismatch')} />
+          ) : null}
+          <Button
+            label={t('mobile.import.commit', { count: willImport })}
+            onPress={() => void commit()}
+            testID="import-commit"
+          />
           {rows.slice(0, 200).map((r) => (
             <Row
               key={r.id}
               title={r.payee ?? r.description ?? ''}
-              subtitle={[r.date ? fmtDate(r.date) : null, r.suggestion?.explanation, r.status !== 'new' ? r.status : null].filter(Boolean).join(' · ')}
+              subtitle={[
+                r.date ? fmtDate(r.date) : null,
+                r.suggestion?.explanation,
+                r.status !== 'new' ? r.status : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
               right={
                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
                   <Body>{r.amount ? fmtMoney(r.amount.amount, r.amount.currency) : ''}</Body>
@@ -261,7 +295,9 @@ export default function ImportScreen() {
                     value={r.effective !== 'skip'}
                     onValueChange={() => void toggle(r)}
                     disabled={r.effective === 'fail'}
-                    accessibilityLabel={r.effective === 'skip' ? t('mobile.import.include') : t('mobile.import.skip')}
+                    accessibilityLabel={
+                      r.effective === 'skip' ? t('mobile.import.include') : t('mobile.import.skip')
+                    }
                   />
                 </View>
               }
@@ -329,12 +365,26 @@ function GuidedMapping({
       <Title>{t('mobile.import.mapping')}</Title>
       <Body>{question}</Body>
       {step !== 'review' ? (
-        header.map((h, i) => <Row key={i} title={h} subtitle={firstData[i] ?? ''} onPress={() => choose(i)} testID={`map-col-${i}`} />)
+        header.map((h, i) => (
+          <Row
+            key={i}
+            title={h}
+            subtitle={firstData[i] ?? ''}
+            onPress={() => choose(i)}
+            testID={`map-col-${i}`}
+          />
+        ))
       ) : (
         <Card>
           {analysis.sample.slice(analysis.header ? 1 : 0, 4).map((r, i) => (
             <Small key={i}>
-              {[r[choices.date!], r[choices.description!], choices.amount !== null ? r[choices.amount] : `${r[choices.debit!] ?? ''} / ${r[choices.credit!] ?? ''}`].join(' · ')}
+              {[
+                r[choices.date!],
+                r[choices.description!],
+                choices.amount !== null
+                  ? r[choices.amount]
+                  : `${r[choices.debit!] ?? ''} / ${r[choices.credit!] ?? ''}`,
+              ].join(' · ')}
             </Small>
           ))}
         </Card>
@@ -342,16 +392,29 @@ function GuidedMapping({
       {step === 'amount' || step === 'review' ? (
         <View style={{ gap: th.space(2) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: th.space(2) }}>
-            <Switch value={two} onValueChange={(v) => { setTwo(v); onChange({ ...choices, amount: null, debit: null, credit: null }); }} accessibilityLabel={t('mobile.import.map_two_columns')} />
+            <Switch
+              value={two}
+              onValueChange={(v) => {
+                setTwo(v);
+                onChange({ ...choices, amount: null, debit: null, credit: null });
+              }}
+              accessibilityLabel={t('mobile.import.map_two_columns')}
+            />
             <Small>{t('mobile.import.map_two_columns')}</Small>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: th.space(2) }}>
-            <Switch value={choices.inverted} onValueChange={(v) => onChange({ ...choices, inverted: v })} accessibilityLabel={t('mobile.import.map_inverted')} />
+            <Switch
+              value={choices.inverted}
+              onValueChange={(v) => onChange({ ...choices, inverted: v })}
+              accessibilityLabel={t('mobile.import.map_inverted')}
+            />
             <Small>{t('mobile.import.map_inverted')}</Small>
           </View>
         </View>
       ) : null}
-      {step === 'review' ? <Button label={t('mobile.import.map_apply')} onPress={onApply} testID="map-apply" /> : null}
+      {step === 'review' ? (
+        <Button label={t('mobile.import.map_apply')} onPress={onApply} testID="map-apply" />
+      ) : null}
     </>
   );
 }

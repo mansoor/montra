@@ -11,7 +11,15 @@ import type {
   SyncStore,
   TransactionQuery,
 } from '@montra/sync';
-import { MIGRATIONS, UPSERT_TXN, listQuery, placeholders, txnParams, type SqlDriver, type TxnRow } from './sql';
+import {
+  MIGRATIONS,
+  UPSERT_TXN,
+  listQuery,
+  placeholders,
+  txnParams,
+  type SqlDriver,
+  type TxnRow,
+} from './sql';
 
 const TABLES: readonly ReferenceTable[] = ['accounts', 'categories', 'members', 'entities'];
 
@@ -131,9 +139,10 @@ export class SqliteStore implements SyncStore {
   }
 
   async getReference<T extends ReferenceTable>(table: T): Promise<ReferenceRows[T]> {
-    const rows = await this.db.all<{ data: string }>('select data from reference where tbl = ? order by ord', [
-      table,
-    ]);
+    const rows = await this.db.all<{ data: string }>(
+      'select data from reference where tbl = ? order by ord',
+      [table],
+    );
     return rows.map((r) => JSON.parse(r.data)) as ReferenceRows[T];
   }
 
@@ -172,7 +181,8 @@ export class SqliteStore implements SyncStore {
 
   async clearConflicts(ids?: string[]): Promise<void> {
     if (!ids) await this.db.run('delete from conflict');
-    else if (ids.length) await this.db.run(`delete from conflict where op_id in (${placeholders(ids.length)})`, ids);
+    else if (ids.length)
+      await this.db.run(`delete from conflict where op_id in (${placeholders(ids.length)})`, ids);
   }
 
   async wipe(): Promise<void> {

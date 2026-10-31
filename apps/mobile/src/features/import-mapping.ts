@@ -113,7 +113,9 @@ export function buildMapping(
       .map((r) => r[i] ?? '')
       .filter((v) => v.trim() !== '');
   const dateFormat =
-    detectDateFormat(col(c.date), preferDayFirst) ?? proposal?.dateFormat ?? (preferDayFirst ? 'DD/MM/YYYY' : 'MM/DD/YYYY');
+    detectDateFormat(col(c.date), preferDayFirst) ??
+    proposal?.dateFormat ??
+    (preferDayFirst ? 'DD/MM/YYYY' : 'MM/DD/YYYY');
   const moneyCols = c.amount !== null ? [c.amount] : [c.debit!, c.credit!];
   return {
     headerRow,

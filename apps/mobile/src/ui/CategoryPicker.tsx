@@ -31,7 +31,13 @@ export function CategoryPicker({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
       <View style={{ flex: 1, backgroundColor: th.bg, padding: th.space(4), gap: th.space(3) }}>
-        <Field label={t('mobile.txn.category')} value={q} onChangeText={setQ} autoFocus testID="category-search" />
+        <Field
+          label={t('mobile.txn.category')}
+          value={q}
+          onChangeText={setQ}
+          autoFocus
+          testID="category-search"
+        />
         <FlatList
           data={list}
           keyExtractor={(c) => c.id}

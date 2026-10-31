@@ -18,7 +18,12 @@ export default function Activity() {
   return (
     <Screen testID="activity">
       {pending > 0 ? <Body>{t('mobile.activity.queue', { count: pending })}</Body> : null}
-      <Button kind="secondary" label={t('mobile.activity.sync_now')} busy={Boolean(state?.syncing)} onPress={() => void refresh()} />
+      <Button
+        kind="secondary"
+        label={t('mobile.activity.sync_now')}
+        busy={Boolean(state?.syncing)}
+        onPress={() => void refresh()}
+      />
       {conflicts.length === 0 && drafts.length === 0 ? <Body muted>{t('mobile.activity.none')}</Body> : null}
 
       {drafts.length ? <Title>{t('mobile.activity.drafts')}</Title> : null}
@@ -26,9 +31,22 @@ export default function Activity() {
         <Card key={d.op.opId} testID="draft">
           <Body>{d.op.kind}</Body>
           <Small>{d.error?.message ?? ''}</Small>
-          {opTarget(d) ? <Button kind="secondary" label={t('mobile.txn.detail')} onPress={() => router.push(`/transaction/${opTarget(d)}`)} /> : null}
-          <Button label={t('mobile.activity.retry')} onPress={() => void engine.retryDraft(d.op.opId).then(refresh)} />
-          <Button kind="danger" label={t('mobile.activity.discard')} onPress={() => void engine.discardDraft(d.op.opId).then(touch)} />
+          {opTarget(d) ? (
+            <Button
+              kind="secondary"
+              label={t('mobile.txn.detail')}
+              onPress={() => router.push(`/transaction/${opTarget(d)}`)}
+            />
+          ) : null}
+          <Button
+            label={t('mobile.activity.retry')}
+            onPress={() => void engine.retryDraft(d.op.opId).then(refresh)}
+          />
+          <Button
+            kind="danger"
+            label={t('mobile.activity.discard')}
+            onPress={() => void engine.discardDraft(d.op.opId).then(touch)}
+          />
         </Card>
       ))}
 
@@ -37,11 +55,22 @@ export default function Activity() {
         <Card key={c.opId} testID="conflict">
           {c.conflicts.map((x) => (
             <Small key={x.group}>
-              {t('mobile.activity.conflict', { group: x.group, winner: t(`mobile.activity.winner.${x.winner}`) })}
+              {t('mobile.activity.conflict', {
+                group: x.group,
+                winner: t(`mobile.activity.winner.${x.winner}`),
+              })}
             </Small>
           ))}
-          <Button kind="secondary" label={t('mobile.txn.detail')} onPress={() => router.push(`/transaction/${c.transactionId}`)} />
-          <Button kind="secondary" label={t('mobile.activity.dismiss')} onPress={() => void store.clearConflicts([c.opId]).then(touch)} />
+          <Button
+            kind="secondary"
+            label={t('mobile.txn.detail')}
+            onPress={() => router.push(`/transaction/${c.transactionId}`)}
+          />
+          <Button
+            kind="secondary"
+            label={t('mobile.activity.dismiss')}
+            onPress={() => void store.clearConflicts([c.opId]).then(touch)}
+          />
         </Card>
       ))}
     </Screen>

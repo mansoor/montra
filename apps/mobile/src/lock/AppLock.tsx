@@ -66,7 +66,13 @@ export function AppLock({ children }: { children: ReactNode }) {
       setAvailable(usable);
       setEnabledState(on);
       setTimeoutState(parseTimeout(await SecureStore.getItemAsync(TIMEOUT_KEY)));
-      const lock = shouldLock({ enabled: on, coldStart: true, lastActiveAt: null, now: Date.now(), timeout: '5m' });
+      const lock = shouldLock({
+        enabled: on,
+        coldStart: true,
+        lastActiveAt: null,
+        now: Date.now(),
+        timeout: '5m',
+      });
       setLocked(lock);
       setReady(true);
       if (lock) void unlock();
@@ -77,7 +83,15 @@ export function AppLock({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') {
         setBackground(false);
-        if (shouldLock({ enabled, coldStart: false, lastActiveAt: lastActive.current, now: Date.now(), timeout })) {
+        if (
+          shouldLock({
+            enabled,
+            coldStart: false,
+            lastActiveAt: lastActive.current,
+            now: Date.now(),
+            timeout,
+          })
+        ) {
           setLocked(true);
           void unlock();
         } else lastActive.current = Date.now();
@@ -112,14 +126,24 @@ export function AppLock({ children }: { children: ReactNode }) {
     <Ctx.Provider value={settings}>
       {children}
       {locked ? (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: th.bg, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }]}>
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: th.bg, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
+          ]}
+        >
           <Title>{t('mobile.lock.title')}</Title>
           {error ? <Body muted>{error}</Body> : null}
           <Button label={t('mobile.lock.unlock')} onPress={() => void unlock()} testID="unlock" />
         </View>
       ) : null}
       {background && !locked ? (
-        <BlurView intensity={80} tint={th.dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} accessibilityElementsHidden />
+        <BlurView
+          intensity={80}
+          tint={th.dark ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFill}
+          accessibilityElementsHidden
+        />
       ) : null}
     </Ctx.Provider>
   );

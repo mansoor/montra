@@ -52,7 +52,8 @@ describe('sign-in', () => {
   it('runs the Kratos native login, asking for TOTP when AAL2 is required', async () => {
     const { f, calls } = fakeFetch((c) => {
       if (c.url.endsWith('/self-service/login/api')) return { status: 200, body: { id: 'flow1' } };
-      if (c.url.includes('/self-service/login?flow=flow1')) return { status: 200, body: { session_token: 'tok' } };
+      if (c.url.includes('/self-service/login?flow=flow1'))
+        return { status: 200, body: { session_token: 'tok' } };
       if (c.url.endsWith('/sessions/whoami'))
         return { status: 403, body: { error: { id: 'session_aal2_required' } } };
       if (c.url.endsWith('/self-service/login/api?aal=aal2')) return { status: 200, body: { id: 'flow2' } };
@@ -62,7 +63,11 @@ describe('sign-in', () => {
     const k = new KratosClient('http://kratos', f);
     const step1 = await k.login('a@b.co', 'pw');
     expect(step1).toEqual({ kind: 'needs_totp', token: 'tok', flowId: 'flow2' });
-    expect(JSON.parse(String(calls[1]!.init.body))).toEqual({ method: 'password', identifier: 'a@b.co', password: 'pw' });
+    expect(JSON.parse(String(calls[1]!.init.body))).toEqual({
+      method: 'password',
+      identifier: 'a@b.co',
+      password: 'pw',
+    });
     expect(await k.totp('tok', 'flow2', '123 456')).toEqual({ kind: 'signed_in', token: 'tok2' });
     expect(JSON.parse(String(calls.at(-1)!.init.body))).toEqual({ method: 'totp', totp_code: '123456' });
   });
@@ -71,7 +76,10 @@ describe('sign-in', () => {
     const { f } = fakeFetch((c) =>
       c.url.endsWith('/login/api')
         ? { status: 200, body: { id: 'f' } }
-        : { status: 400, body: { ui: { messages: [{ type: 'error', text: 'The provided credentials are invalid.' }] } } },
+        : {
+            status: 400,
+            body: { ui: { messages: [{ type: 'error', text: 'The provided credentials are invalid.' }] } },
+          },
     );
     expect(await new KratosClient('http://k', f).login('a@b.co', 'x')).toEqual({
       kind: 'error',
@@ -92,7 +100,13 @@ describe('realtime', () => {
       onChanges: () => changes++,
       createSocket: (url) => {
         expect(url).toBe('wss://api.montra.app/v1/ws');
-        const s = { sent: [] as string[], onopen: null, onmessage: null, onclose: null, onerror: null } as unknown as SocketLike & {
+        const s = {
+          sent: [] as string[],
+          onopen: null,
+          onmessage: null,
+          onclose: null,
+          onerror: null,
+        } as unknown as SocketLike & {
           sent: string[];
         };
         s.send = (d: string) => void s.sent.push(d);

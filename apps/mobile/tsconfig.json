@@ -10,6 +10,14 @@
     "allowJs": false,
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "expo-env.d.ts", "app.config.ts"],
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "expo-env.d.ts",
+    "app.config.ts"
+  ],
   "exclude": ["node_modules", "dist", "android", "ios", ".expo"]
 }

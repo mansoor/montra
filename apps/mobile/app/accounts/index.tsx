@@ -6,7 +6,9 @@ import { Body, Row, Screen, Small } from '../../src/ui/components';
 
 export default function Accounts() {
   const router = useRouter();
-  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter((a) => !a.archived && !a.hidden);
+  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(
+    (a) => !a.archived && !a.hidden,
+  );
   return (
     <Screen testID="accounts">
       {accounts.length === 0 ? <Small>{t('mobile.accounts.empty')}</Small> : null}
