@@ -87,7 +87,8 @@ is the personal entity (business A pays for business B), only `due_to_from` is a
   difference between the two functional amounts posts to `fx_gain_loss`, so the entry
   balances. The UI shows this amount, compared with the market rate for that day, as FX
   cost.
-- **Carrying value and realized FX** ([ADR-0010](adr/0010-fx-accounting-policy.md)): a
+- **Carrying value and realized FX** ([ADR-0010](adr/0010-fx-accounting-policy.md); builders take the account's
+  balance before the posting as `carrying` / `carryingFrom` / `carryingTo`, see `ledger/fx.ts`): a
   foreign-currency account carries its functional value at the historical rates of its
   postings. When foreign money leaves the account (a spend or a transfer out), the
   functional amount is the *carrying* value (average rate), and any gap to the
@@ -304,7 +305,9 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
    days`, amount within the tip tolerance (`total ≤ amount ≤ total × 1.30` for
    restaurants, otherwise exact ±0.02), and similar merchant. If the currencies differ,
    convert at that day's rate with ±3% tolerance (CUR-04) and store the actual rate.
-   Best score ≥ 0.8 links automatically; lower scores show candidates. With no match,
+   Score = 0.45 × amount + 0.20 × date + 0.35 × merchant, assigned one-to-one (ADR-0014).
+   Best score ≥ 0.8 links automatically, unless another candidate is within 0.05; lower scores
+   show candidates. With no match,
    the receipt waits in the **receipt inbox** and is re-tried on every import.
 7. **Apply**: the transaction's splits are replaced by the receipt groups (receipt
    lines take priority over merchant categorization, pipeline step 1). The splits must

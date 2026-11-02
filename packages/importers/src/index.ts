@@ -7,6 +7,7 @@ export * from './infer.js';
 export * from './parse.js';
 export * from './payees.js';
 export * from './dedupe.js';
+export * from './receipt-match.js';
 export * from './fingerprint.js';
 export * from './templates.js';
 export * from './analyze.js';

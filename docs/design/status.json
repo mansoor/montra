@@ -431,5 +431,25 @@
   "RCP-05": [
     "partial",
     "validateReceipt (±2 minor units, gap reported) in @montra/domain; receipt status/review in the P5 API step"
+  ],
+  "IMP-11": [
+    "partial",
+    "matchReceipts in @montra/importers (±5 days, tip tolerance, merchant, one-to-one, auto-link ≥ 0.8 when unambiguous); inbox, re-match on import and linking in the P5 API step"
+  ],
+  "CUR-04": [
+    "partial",
+    "matcher converts at the day rate within ±3% and returns the implied rate to store; rates service and storing it in the P5 API step"
+  ],
+  "CUR-06": [
+    "partial",
+    "unrealizedFx and the optional fx_revaluation entry in @montra/domain; net-worth reports in P6/P10"
+  ],
+  "CUR-07": [
+    "partial",
+    "postings keep both amounts, entries balance in functional, rounding to fx_rounding, carrying value and realized fx_gain_loss (ADR-0010) in the builders; the API still rejects foreign-currency accounts until the rates service lands"
+  ],
+  "CUR-08": [
+    "partial",
+    "cross-currency transfers keep both amounts with the gap in fx_gain_loss; transferFxCost against the market rate; UI and rates in the P5 API/web steps"
   ]
 }

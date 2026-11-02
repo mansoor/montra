@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-02, after the first Phase 5 session (contracts and receipt arithmetic on `claude/phase5-receipts-fx`). Keep this file current: update it at the
+_Last updated 2026-11-02, after the Phase 5 receipt matcher (`claude/phase5-receipt-matching`; steps 1–2a merged in PR #6). Keep this file current: update it at the
 end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -17,8 +17,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
 | **Pull requests** | #1 Phase 1, #2 Phase 2, #3 Phase 3, #4 Phase 4, all merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **79 done, 29 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **In progress** | **Phase 5: receipts and multi-currency** on `claude/phase5-receipts-fx` (not pushed yet). Steps 1–2 of §7 done; see §7 "Progress" |
+| **Requirements** | 252 IDs in total: **79 done, 34 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **In progress** | **Phase 5: receipts and multi-currency.** Contracts and receipt arithmetic merged (PR #6); the matcher is on `claude/phase5-receipt-matching`. See §7 "Progress" |
 
 ### Test suite (Phase 4 hand-off plus this branch; green locally)
 
@@ -28,8 +28,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
 | `@montra/web` unit | 70 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 71 |
-| `@montra/domain` | 71 |
-| `@montra/importers` (incl. a 22-file golden corpus) | 55 |
+| `@montra/domain` | 84 |
+| `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
 | `@montra/ai-gateway` (offline; fake and mocked providers) | 41 |
 | `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests) | 31 |
 | `@montra/db` (ledger triggers, RLS, receipts) | 26 |
@@ -374,19 +374,25 @@ integration):
 8. **Integration:** e2e specs for upload, then match, then apply splits, and for a foreign receipt; the
    Walmart and FX exit tests; `status.json`, the changelog and this file; then a PR into `develop`.
 
-**Progress (branch `claude/phase5-receipts-fx`):**
+**Progress (PR #6 merged; matcher on `claude/phase5-receipt-matching`):**
 - ✅ **Step 1, contracts:** migration `0012_receipts_fx.sql` (receipt, receipt_line, trip, `ref.currency`,
   `ref.fx_rate` with `app.upsert_fx_rates`, transaction `trip_id`/`local_time`/`fx_rate_source`,
   `posting.receipt_line_id`, file retention, OCR `tsvector`); Kysely types; `schemas/fx.ts` and
   `schemas/receipts.ts`; `TransactionDto.foreign/tripId/localTime`; currencies in reference data; ADR-0014
   (*proposed*); DB tests for RLS and constraints.
-- 🟡 **Step 2, domain:** `packages/domain/src/receipt.ts` has validation, grouping and allocation, returns,
+- 🟡 **Step 2, domain and matching:** `packages/domain/src/receipt.ts` has validation, grouping and allocation, returns,
   fitting to the charged amount (tip tolerance), conversion at the implied rate and the ±3% deviation. Both
-  exit criteria are unit tests there. **Still to do:** the IMP-11 matching score (date ±5 days, amount
-  tolerance, merchant similarity → score ≥ 0.8 auto-links) and the ADR-0010 posting side (carrying rate on
-  outflows, realized `fx_gain_loss`, `fx_rounding` lines).
+  exit criteria are unit tests there. The IMP-11 matcher is `packages/importers/src/receipt-match.ts`
+  (`matchReceipts`: hard limits, a weighted score, one-to-one assignment, auto-link at ≥ 0.8 when
+  unambiguous, the rate to store across currencies); rules in ADR-0014. The ADR-0010 posting rules are in
+  `packages/domain/src/ledger/fx.ts` and the builders: carrying value on postings that shrink a foreign
+  position, realized `fx_gain_loss`, same-currency carry-over, revaluation and transfer FX cost. Step 2
+  is done.
 - ⏭ **Next:** step 3 (FX rates service: ECB loader with recorded XML fixtures, `fx.daily` job) and step 4
-  (`extract_receipt`) can run in parallel; then the API (step 5).
+  (`extract_receipt`) can run in parallel; then the API (step 5). Enabling foreign-currency accounts in
+  `transactions/poster.ts` (it still rejects them with `fx.rate_required`) means passing each foreign
+  account's balance before the posting as `carrying`. Take it from the postings in date order; there is
+  no `account_balance_daily` until Phase 6.
 
 **Decisions and inputs to confirm with the product owner before or during Phase 5:**
 - whether an Open Exchange Rates app ID will be provided (otherwise the app is ECB-only, which covers

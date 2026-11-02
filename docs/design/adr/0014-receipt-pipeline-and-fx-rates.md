@@ -33,7 +33,20 @@ Several things were still open:
    - Every allocation uses `allocate(…, 'largest')`, so splits sum exactly. The Walmart example
      (requirements §3.5) is a unit test, and property tests (fast-check) check that splits always sum to
      the target.
-   - The matching score (IMP-11) is also pure; the API supplies the candidates.
+   - The matching score (IMP-11) is also pure: `matchReceipts` in `@montra/importers`, next to the
+     import matcher, because it reuses the payee normalizer and trigram similarity. The API supplies the
+     candidates and a rate lookup.
+     - Hard limits: ±5 days; same direction (purchase ↔ money out, refund ↔ money in); amount within
+       ±2 minor units, or up to +30% for tip merchants (MCC 5812–5814); across currencies, the day's
+       rate ±3% (plus the tip range); card last-4 must agree when both sides know it.
+     - Score = 0.45 × amount + 0.20 × date + 0.35 × merchant. The merchant term is 1 for the same
+       reference merchant, at least 0.9 when one key is a whole-word prefix of the other ("SHELL" /
+       "SHELL OIL"), else trigram similarity. An unreadable merchant can't reach 0.8 on amount and date
+       alone.
+     - Assignment is one-to-one, best score first. A receipt links automatically at ≥ 0.8 only when no
+       other candidate is within 0.05 of it, so two identical coffees are left for the user.
+     - Across currencies the stored rate is the implied one, except when the gap is a tip; then it is
+       the day's rate.
 3. **Extraction goes through the gateway's `extract_receipt` task.**
    - Builtin and BYOK modes send the image to the vision model group. Local mode runs Tesseract in the
      doc-worker and gives the OCR text to the local model for structure. Off mode keeps the OCR text and
