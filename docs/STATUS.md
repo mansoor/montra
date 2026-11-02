@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-02, after Phase 4 was merged and tagged. Keep this file current: update it at the
+_Last updated 2026-11-02, after the first Phase 5 session (contracts and receipt arithmetic on `claude/phase5-receipts-fx`). Keep this file current: update it at the
 end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -17,22 +17,22 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
 | **Pull requests** | #1 Phase 1, #2 Phase 2, #3 Phase 3, #4 Phase 4, all merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **79 done, 27 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | **Phase 5: receipts and multi-currency.** See §7 |
+| **Requirements** | 252 IDs in total: **79 done, 29 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **In progress** | **Phase 5: receipts and multi-currency** on `claude/phase5-receipts-fx` (not pushed yet). Steps 1–2 of §7 done; see §7 "Progress" |
 
-### Test suite at the hand-off (all green locally and in CI)
+### Test suite (Phase 4 hand-off plus this branch; green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 72 |
+| `@montra/api` (integration, real Postgres) | 83 |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
 | `@montra/web` unit | 70 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 71 |
-| `@montra/domain` | 57 |
+| `@montra/domain` | 71 |
 | `@montra/importers` (incl. a 22-file golden corpus) | 55 |
 | `@montra/ai-gateway` (offline; fake and mocked providers) | 41 |
 | `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests) | 31 |
-| `@montra/db` (ledger triggers, RLS) | 18 |
+| `@montra/db` (ledger triggers, RLS, receipts) | 26 |
 | `@montra/sync` (against a fake server) | 17 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
 | Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 9 specs |
@@ -60,7 +60,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 2 | Import pipeline | ✅ done | CSV/XLSX/XLS/PDF import, dedupe/matching, undo, reconciliation, Postgres job queue |
 | 3 | AI gateway and categorization | ✅ done | Gateway, rules, six-step pipeline, review queue, learning, insights, OCR scans |
 | 4 | Mobile foundation and offline sync | ✅ done (device checks pending) | Expo app, encrypted store, outbox sync with field-group LWW |
-| **5** | **Receipts and multi-currency** | ⏭ **next** | See §7 |
+| **5** | **Receipts and multi-currency** | 🚧 **in progress** | Contracts and domain arithmetic done; see §7 |
 | 6 | Budgeting, money flow and recommendations | not started | Budgets, dashboard, forecast, Sankey, net worth, recommendations |
 | 7 | Family members and payslips | not started | Payslip capture and posting, per-member reports |
 | 8 | Small business | not started | Invoices, bills, mileage, Schedule C, quarterly estimates, accountant export |
@@ -259,6 +259,11 @@ finished:
 | CI | Prettier failures (for example `infra/kratos/kratos.yml`) | `pnpm verify` runs `format:check` first. Run `pnpm format` before pushing |
 | Mobile | `react-native-vision-camera` setup on SDK 58 | Used `expo-camera` for the spike. Swipe review uses `PanResponder`; transaction rows use `ReanimatedSwipeable` |
 | Mobile | Metro with pnpm workspaces and the `@montra/source` condition | `apps/mobile/metro.config.js` sets watch folders and resolves workspace packages to their sources |
+| Windows | With `core.autocrlf=true` every file was checked out CRLF: the Postgres init script failed in the container ("required file not found") and `format:check` failed | `.gitattributes` forces LF. In a clone made before it, run `git config core.autocrlf false` and re-check out (or strip CR from tracked files) |
+| Windows | `LocalStorage` rejected every key (`path.normalize` turns `/` into `\`), failing 17 upload tests | Keys are checked with `posix.normalize`; containment with `path.relative`. `test/storage.test.ts` covers it |
+| Local | Host ports 5432/1025/8025/9000 taken by other stacks | Compose ports read `MONTRA_PG_PORT` etc. (defaults unchanged; put them in the gitignored `infra/.env`). Point `DATABASE_URL`, `DATABASE_ADMIN_URL` (montra_test) and `API_DATABASE_URL`, `API_DATABASE_ADMIN_URL` (montra_test_api) at that port; turbo passes all four to tests |
+| Local | `minio/minio` on Docker Hub is no longer pullable, which aborted `docker compose up` | Compose uses `quay.io/minio/minio` |
+| Local | `perf-commit.test.ts` (300-row commit < 9 s) measured 9.4 s once under full parallel `pnpm verify` on a busy Windows machine; it passes run alone (about 7 s for the whole test) and in CI | Not changed. If it recurs, move it to a run-alone step like `test:perf` rather than raising the limit |
 | Process (cloud) | The cloud sandbox couldn't push tags | Not an issue locally: tag from your machine |
 | Process (cloud) | Container restarts killed Postgres and in-flight workers | Locally, run Postgres in Docker. Commit early and often in long tasks |
 
@@ -367,6 +372,20 @@ integration):
    Decide `expo-camera` versus `vision-camera` here, using the spike results if you have them.
 8. **Integration:** e2e specs for upload, then match, then apply splits, and for a foreign receipt; the
    Walmart and FX exit tests; `status.json`, the changelog and this file; then a PR into `develop`.
+
+**Progress (branch `claude/phase5-receipts-fx`):**
+- ✅ **Step 1, contracts:** migration `0012_receipts_fx.sql` (receipt, receipt_line, trip, `ref.currency`,
+  `ref.fx_rate` with `app.upsert_fx_rates`, transaction `trip_id`/`local_time`/`fx_rate_source`,
+  `posting.receipt_line_id`, file retention, OCR `tsvector`); Kysely types; `schemas/fx.ts` and
+  `schemas/receipts.ts`; `TransactionDto.foreign/tripId/localTime`; currencies in reference data; ADR-0014
+  (*proposed*); DB tests for RLS and constraints.
+- 🟡 **Step 2, domain:** `packages/domain/src/receipt.ts` has validation, grouping and allocation, returns,
+  fitting to the charged amount (tip tolerance), conversion at the implied rate and the ±3% deviation. Both
+  exit criteria are unit tests there. **Still to do:** the IMP-11 matching score (date ±5 days, amount
+  tolerance, merchant similarity → score ≥ 0.8 auto-links) and the ADR-0010 posting side (carrying rate on
+  outflows, realized `fx_gain_loss`, `fx_rounding` lines).
+- ⏭ **Next:** step 3 (FX rates service: ECB loader with recorded XML fixtures, `fx.daily` job) and step 4
+  (`extract_receipt`) can run in parallel; then the API (step 5).
 
 **Decisions and inputs to confirm with the product owner before or during Phase 5:**
 - whether an Open Exchange Rates app ID will be provided (otherwise the app is ECB-only, which covers
