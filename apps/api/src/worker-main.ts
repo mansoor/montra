@@ -20,5 +20,5 @@ app.get(InsightsService).register();
 const fx = app.get(FxRatesService);
 fx.register(app.get(Worker));
 // Catch up at start-up; each daily run queues the next one.
-await fx.schedule();
+if (config.FX_DAILY) await fx.schedule();
 await app.get(Worker).start(['import', 'ai', 'schedule']);
