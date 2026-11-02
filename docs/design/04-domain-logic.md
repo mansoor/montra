@@ -304,7 +304,9 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
    days`, amount within the tip tolerance (`total ≤ amount ≤ total × 1.30` for
    restaurants, otherwise exact ±0.02), and similar merchant. If the currencies differ,
    convert at that day's rate with ±3% tolerance (CUR-04) and store the actual rate.
-   Best score ≥ 0.8 links automatically; lower scores show candidates. With no match,
+   Score = 0.45 × amount + 0.20 × date + 0.35 × merchant, assigned one-to-one (ADR-0014).
+   Best score ≥ 0.8 links automatically, unless another candidate is within 0.05; lower scores
+   show candidates. With no match,
    the receipt waits in the **receipt inbox** and is re-tried on every import.
 7. **Apply**: the transaction's splits are replaced by the receipt groups (receipt
    lines take priority over merchant categorization, pipeline step 1). The splits must

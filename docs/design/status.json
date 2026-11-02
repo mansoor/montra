@@ -431,5 +431,13 @@
   "RCP-05": [
     "partial",
     "validateReceipt (±2 minor units, gap reported) in @montra/domain; receipt status/review in the P5 API step"
+  ],
+  "IMP-11": [
+    "partial",
+    "matchReceipts in @montra/importers (±5 days, tip tolerance, merchant, one-to-one, auto-link ≥ 0.8 when unambiguous); inbox, re-match on import and linking in the P5 API step"
+  ],
+  "CUR-04": [
+    "partial",
+    "matcher converts at the day rate within ±3% and returns the implied rate to store; rates service and storing it in the P5 API step"
   ]
 }
