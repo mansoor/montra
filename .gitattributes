@@ -1,0 +1,18 @@
+# LF everywhere, including Windows checkouts: Prettier checks for LF, and shell scripts mounted into
+# containers (infra/docker/postgres-init.sh) fail with CRLF.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.heic binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.xls binary
+*.xlsx binary
+*.zip binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
