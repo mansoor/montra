@@ -17,18 +17,18 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
 | **Pull requests** | #1 Phase 1, #2 Phase 2, #3 Phase 3, #4 Phase 4, all merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **79 done, 34 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Requirements** | 252 IDs in total: **79 done, 35 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
 | **In progress** | **Phase 5: receipts and multi-currency.** Contracts and receipt arithmetic merged (PR #6); the matcher is on `claude/phase5-receipt-matching`. See §7 "Progress" |
 
 ### Test suite (Phase 4 hand-off plus this branch; green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 83 |
+| `@montra/api` (integration, real Postgres) | 96 |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
 | `@montra/web` unit | 70 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 71 |
-| `@montra/domain` | 84 |
+| `@montra/domain` | 85 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
 | `@montra/ai-gateway` (offline; fake and mocked providers) | 41 |
 | `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests) | 31 |
@@ -388,8 +388,18 @@ integration):
   `packages/domain/src/ledger/fx.ts` and the builders: carrying value on postings that shrink a foreign
   position, realized `fx_gain_loss`, same-currency carry-over, revaluation and transfer FX cost. Step 2
   is done.
-- ⏭ **Next:** step 3 (FX rates service: ECB loader with recorded XML fixtures, `fx.daily` job) and step 4
-  (`extract_receipt`) can run in parallel; then the API (step 5). Enabling foreign-currency accounts in
+- 🟡 **Step 3, FX rates service** (`apps/api/src/fx/`):
+  - ECB and optional OXR loaders.
+  - `ref.fx_rate` lookups: direct, inverse and cross, with a 7-day lookback for weekends; a preloaded
+    `RateTable` for matching.
+  - `GET /v1/workspaces/:id/fx/rates`.
+  - The self-rescheduling `fx.daily` system job (migration 0013) and `fx:load`.
+  - Fixtures in `apps/api/test/fixtures/fx` are hand-written in the published formats, not recorded
+    downloads.
+  - **Still to do in step 3:** enable foreign-currency accounts in `poster.ts`; foreign spend capture
+    with the four values and the fee to `bank_fees` (CUR-03); the per-transaction rate override
+    (CUR-05); cross-currency transfers (CUR-08).
+- ⏭ **Next:** finish step 3; step 4 (`extract_receipt`) can run in parallel; then the API (step 5). Enabling foreign-currency accounts in
   `transactions/poster.ts` (it still rejects them with `fx.rate_required`) means passing each foreign
   account's balance before the posting as `carrying`. Take it from the postings in date order; there is
   no `account_balance_daily` until Phase 6.

@@ -451,5 +451,9 @@
   "CUR-08": [
     "partial",
     "cross-currency transfers keep both amounts with the gap in fx_gain_loss; transferFxCost against the market rate; UI and rates in the P5 API/web steps"
+  ],
+  "CUR-05": [
+    "partial",
+    "ECB daily + historical and optional OXR into ref.fx_rate (fx.daily system job), direct/inverse/cross lookup with a 7-day lookback, GET /fx/rates; the per-transaction override comes with foreign-currency accounts in the P5 API step"
   ]
 }

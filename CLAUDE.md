@@ -39,7 +39,8 @@ pnpm db:migrate                                    # apply migrations to the dev
 pnpm verify                                        # what CI runs: format, build, typecheck, lint, tests, perf budget, traceability
 pnpm verify:py                                     # doc-worker lint, typecheck and tests (needs Python 3.12; Tesseract for OCR tests)
 pnpm --filter @montra/web test:e2e                 # Playwright (needs a migrated dev DB; builds are run by verify)
-pnpm --filter @montra/api dev | dev:worker         # API on :4000 | job worker
+pnpm --filter @montra/api dev | dev:worker         # API on :4000 | job worker (also loads FX rates daily)
+pnpm --filter @montra/api fx:load [-- --full]      # load ECB (+ OXR) rates now; --full backfills ECB since 1999
 pnpm --filter @montra/web dev                      # web on :3000 (dev sign-in: any email)
 pnpm --filter @montra/mobile start                 # Expo dev server
 ```

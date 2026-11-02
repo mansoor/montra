@@ -55,9 +55,19 @@ Several things were still open:
 4. **FX rates are reference data, stored as published.**
    - `ref.fx_rate (rate_date, base, quote, rate, source)`. ECB publishes EUR-based rates for about 30
      currencies, with no key. Open Exchange Rates is used as a second source only when `OXR_APP_ID` is set.
-   - A daily `fx.daily` job (queue `schedule`) loads the latest rates; a one-off backfill loads the ECB
-     historical file. Writes go through the definer function `app.upsert_fx_rates`.
-   - The rates service derives cross rates through EUR (or USD for OXR) with scaled-integer arithmetic.
+   - A daily `fx.daily` job (queue `schedule`) loads ECB's last 90 days, so missed days fill themselves
+     in, plus OXR's latest. `fx.backfill` (or `pnpm --filter @montra/api fx:load -- --full`) loads ECB's
+     history since 1999. Writes go through the definer function `app.upsert_fx_rates`, which skips
+     unchanged rows.
+   - **Scheduling without a scheduler.** The job runs as a *system job* (no workspace) created through
+     `app.schedule_system_job` (migration 0013). A partial unique index allows at most one queued run per
+     type. Each run queues the next one (16:00 UTC, after ECB publishes) *before* fetching, so a failing
+     source can't break the cycle. The worker queues an immediate run at start-up, which also recovers a
+     cycle whose job ran out of retries.
+   - ECB failing fails the run, and the queue retries it. OXR failing is logged and reported in the job
+     result, and the ECB rates are still stored.
+   - The rates service derives cross rates through EUR (or USD for OXR) with scaled-integer arithmetic
+     (`divideDecimal`, 10 places, half-even). ECB is preferred; OXR fills currencies ECB doesn't publish.
      For a date with no rate (weekends, holidays) it uses the latest earlier rate within 7 days, and
      returns the date used.
    - When no rate is available, conversions return a typed "no rate" result. The UI asks for a manual

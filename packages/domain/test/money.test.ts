@@ -4,6 +4,8 @@ import {
   add,
   convert,
   CurrencyMismatchError,
+  decimalToString,
+  divideDecimal,
   formatMoney,
   minorUnits,
   money,
@@ -89,5 +91,19 @@ describe('formatMoney (CUR-10)', () => {
     expect(formatMoney(money(1234, 'JPY'), { locale: 'ja-JP' })).toMatch(/1,234/);
     // Beyond float precision: 2^60 cents must not lose digits.
     expect(formatMoney(money(2n ** 60n, 'USD'))).toBe('$11,529,215,046,068,469.76');
+  });
+});
+
+describe('divideDecimal', () => {
+  it('derives cross and inverse rates exactly', () => {
+    // EUR→JPY 163.42 ÷ EUR→USD 1.0912 = USD→JPY 149.7617...
+    expect(decimalToString(divideDecimal(parseDecimal('163.42'), parseDecimal('1.0912'), 10))).toBe(
+      '149.7617302053',
+    );
+    expect(decimalToString(divideDecimal(parseDecimal('1'), parseDecimal('1.0912'), 10))).toBe(
+      '0.9164222874',
+    );
+    expect(decimalToString(divideDecimal(parseDecimal('2'), parseDecimal('4'), 2))).toBe('0.50');
+    expect(() => divideDecimal(parseDecimal('1'), parseDecimal('0'), 4)).toThrow(RangeError);
   });
 });
