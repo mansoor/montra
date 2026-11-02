@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
+import { dirname, isAbsolute, posix, relative, resolve } from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { CONFIG, type AppConfig } from '../config.js';
@@ -19,8 +19,16 @@ export function storageKey(workspaceId: string, kind: string, fileId: string, no
 
 export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
+// Keys are POSIX-style on every platform (S3 keys); `posix.normalize` keeps the check the same on Windows.
 const assertSafeKey = (key: string) => {
-  if (!key || isAbsolute(key) || key.includes('..') || key.includes('\0') || normalize(key) !== key) {
+  if (
+    !key ||
+    isAbsolute(key) ||
+    key.includes('..') ||
+    key.includes('\0') ||
+    key.includes('\\') ||
+    posix.normalize(key) !== key
+  ) {
     throw new Error(`Unsafe storage key: ${key}`);
   }
 };
@@ -34,8 +42,9 @@ export class LocalStorage implements StoragePort {
 
   private path(key: string): string {
     assertSafeKey(key);
-    const p = resolve(join(this.root, key));
-    if (!p.startsWith(this.root + '/')) throw new Error(`Unsafe storage key: ${key}`);
+    const p = resolve(this.root, key);
+    const rel = relative(this.root, p);
+    if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error(`Unsafe storage key: ${key}`);
     return p;
   }
 
