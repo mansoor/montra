@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { AppConfig } from '../src/config.js';
-import { LocalStorage, storageKey } from '../src/storage/storage.js';
+import { LocalStorage, storageKey, type StoragePort } from '../src/storage/storage.js';
 
 describe('LocalStorage', async () => {
   const root = await mkdtemp(join(tmpdir(), 'montra-storage-'));
-  const storage = new LocalStorage({ STORAGE_DIR: root } as AppConfig);
+  const storage: StoragePort = new LocalStorage({ STORAGE_DIR: root } as AppConfig);
   afterAll(() => rm(root, { recursive: true, force: true }));
 
   it('round-trips generated keys on every platform (POSIX keys on Windows paths)', async () => {
