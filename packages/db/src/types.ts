@@ -199,6 +199,12 @@ export interface TransactionTable {
   categorization: Json<Record<string, unknown>> | null;
   /** Field-group clocks for offline LWW: { group: { v, at } } (ADR-0013). */
   field_clock: Generated<Json<Record<string, { v: number; at: string }>>>;
+  /** Travel mode (CUR-09). */
+  trip_id: string | null;
+  /** The receipt's wall-clock time, 'HH:MM:SS' (TZ-03); txn_date stays the statement date. */
+  local_time: string | null;
+  /** Where fx_rate came from (CUR-05, ADR-0014). */
+  fx_rate_source: 'implied' | 'reference' | 'user' | null;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;
@@ -251,6 +257,8 @@ export interface PostingTable {
   memo: string | null;
   cleared: Generated<'uncleared' | 'cleared' | 'reconciled'>;
   reconciliation_id: string | null;
+  /** The receipt line this split came from (RCP-09 item reports). */
+  receipt_line_id: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -403,6 +411,9 @@ export interface FileTable {
   bytes: Int8;
   sha256: string;
   uploaded_by: string | null;
+  /** RCP-10: receipt images are kept until this date (7 years by default). */
+  retain_until: CalendarDateCol | null;
+  page_count: number | null;
   created_at: Generated<Date>;
   deleted_at: Date | null;
 }
@@ -731,6 +742,112 @@ export interface PushDeviceTable {
   last_seen_at: Generated<Date>;
 }
 
+// ----- Phase 5: receipts and multi-currency (migration 0012, ADR-0014) -----
+
+export interface RefCurrencyTable {
+  code: string;
+  minor_units: number;
+  name: string;
+  symbol: string | null;
+  version: Generated<number>;
+  updated_at: Generated<Date>;
+}
+
+export type FxRateSource = 'ecb' | 'oxr';
+
+export interface RefFxRateTable {
+  rate_date: CalendarDateCol;
+  base: string;
+  quote: string;
+  /** numeric(20, 10) as a string: 1 base = rate quote. */
+  rate: string;
+  source: FxRateSource;
+  fetched_at: Generated<Date>;
+}
+
+export interface TripTable {
+  workspace_id: string;
+  id: Generated<string>;
+  name: string;
+  start_date: CalendarDateCol;
+  end_date: CalendarDateCol;
+  currency: string;
+  time_zone: string | null;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+  deleted_at: Date | null;
+}
+
+export type ReceiptStatus = 'processing' | 'inbox' | 'matched' | 'needs_review' | 'rejected';
+
+export interface ReceiptTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  source: Generated<'camera' | 'upload' | 'order_import'>;
+  /** Ordered: multi-shot pages and PDF invoices keep page order. */
+  attachment_ids: Generated<string[]>;
+  status: Generated<ReceiptStatus>;
+  merchant: string | null;
+  merchant_raw: string | null;
+  payee_id: string | null;
+  receipt_date: CalendarDateCol | null;
+  local_time: string | null;
+  currency: string | null;
+  subtotal_minor: Int8 | null;
+  tax_minor: Int8Default;
+  discount_minor: Int8Default;
+  fees_minor: Int8Default;
+  tip_minor: Int8Default;
+  total_minor: Int8 | null;
+  card_last4: string | null;
+  validation_gap_minor: Int8 | null;
+  /** { provider, model, confidence, warnings[], mode } */
+  extraction: Json<Record<string, unknown>> | null;
+  transaction_id: string | null;
+  match_score: string | null;
+  /** [{ transactionId, score, reasons[] }] */
+  match_candidates: Json<unknown[]> | null;
+  fx_rate: string | null;
+  trip_id: string | null;
+  order_ref: string | null;
+  ocr_text: string | null;
+  /** Generated tsvector over merchant and OCR text (RCP-10); query it with sql, never write it. */
+  search: ColumnType<string, never, never>;
+  retain_until: ColumnType<string, string | undefined, string>;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+  deleted_at: Date | null;
+}
+
+export interface ReceiptLineTable {
+  workspace_id: string;
+  id: Generated<string>;
+  receipt_id: string;
+  line_no: number;
+  raw_text: string;
+  expanded_name: string | null;
+  /** numeric(12, 3) as a string. */
+  qty: string | null;
+  unit_price_minor: Int8 | null;
+  /** Negative for returns (RCP-08); is_return must agree. */
+  line_total_minor: Int8;
+  discount_minor: Int8Default;
+  taxable: Generated<boolean>;
+  is_return: Generated<boolean>;
+  category_id: string | null;
+  entity_id: string | null;
+  member_id: string | null;
+  confidence: string | null;
+  categorization: Json<Record<string, unknown>> | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -781,6 +898,11 @@ export interface Database {
   'app.insight': InsightTable;
   'app.sync_op': SyncOpTable;
   'app.push_device': PushDeviceTable;
+  'ref.currency': RefCurrencyTable;
+  'ref.fx_rate': RefFxRateTable;
+  'app.trip': TripTable;
+  'app.receipt': ReceiptTable;
+  'app.receipt_line': ReceiptLineTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
@@ -789,3 +911,6 @@ export type EntityRow = Selectable<EntityTable>;
 export type TransactionRow = Selectable<TransactionTable>;
 export type TransactionUpdate = Updateable<TransactionTable>;
 export type PostingRow = Selectable<PostingTable>;
+export type ReceiptRow = Selectable<ReceiptTable>;
+export type ReceiptLineRow = Selectable<ReceiptLineTable>;
+export type TripRow = Selectable<TripTable>;

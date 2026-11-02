@@ -138,8 +138,11 @@ keeps every number reconcilable to transactions (NFR-09, UP-05).
 
 | Table | Key columns |
 | --- | --- |
-| `receipt` | `id`, `workspace_id`, `attachment_ids uuid[]`, `merchant`, `receipt_date`, `local_time`, `currency`, `subtotal_minor`, `tax_minor`, `discount_minor`, `fees_minor`, `tip_minor`, `total_minor`, `card_last4`, `validation_gap_minor`, `status` (`processing`/`inbox`/`matched`/`needs_review`/`rejected`), `transaction_id`, `ocr_text` |
-| `receipt_line` | `id`, `receipt_id`, `line_no`, `raw_text`, `expanded_name`, `qty numeric`, `unit_price_minor`, `line_total_minor`, `discount_minor`, `taxable bool`, `category_id`, `entity_id`, `member_id`, `confidence`, `is_return bool` |
+| `receipt` | `id`, `workspace_id`, `entity_id` (primary entity: RLS and the change feed), `source` (`camera`/`upload`/`order_import`), `attachment_ids uuid[]` (ordered pages), `merchant`, `merchant_raw`, `payee_id`, `receipt_date`, `local_time`, `currency`, `subtotal_minor`, `tax_minor`, `discount_minor` (order-level), `fees_minor`, `tip_minor`, `total_minor`, `card_last4`, `validation_gap_minor`, `status` (`processing`/`inbox`/`matched`/`needs_review`/`rejected`), `extraction jsonb`, `transaction_id`, `match_score`, `match_candidates jsonb`, `fx_rate` (actual rate when matched across currencies), `trip_id`, `order_ref` (RCP-12), `ocr_text`, `search tsvector` (generated), `retain_until` (7 years, RCP-10) |
+| `receipt_line` | `id`, `receipt_id`, `line_no`, `raw_text`, `expanded_name`, `qty numeric`, `unit_price_minor`, `line_total_minor`, `discount_minor`, `taxable bool`, `category_id`, `entity_id`, `member_id`, `confidence`, `categorization jsonb`, `is_return bool` (= `line_total_minor < 0`) |
+| `trip` | `id`, `workspace_id`, `name`, `start_date`, `end_date`, `currency`, `time_zone` (CUR-09, TZ-03) |
+
+Migration 0012 also adds `transaction.trip_id`, `transaction.local_time`, `transaction.fx_rate_source` (`implied`/`reference`/`user`), `posting.receipt_line_id`, `file.retain_until` and `file.page_count`, plus `ref.currency` and `ref.fx_rate (rate_date, base, quote, rate, source)` stored as published ([ADR-0014](adr/0014-receipt-pipeline-and-fx-rates.md)).
 
 ## 7. Planning
 
