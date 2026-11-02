@@ -29,8 +29,8 @@
     "archive keeps history; per-user hide"
   ],
   "TXN-01": [
-    "partial",
-    "web quick-add; AI suggestion arrives in P3"
+    "done",
+    "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"
   ],
   "TXN-02": [
     "done",
@@ -253,8 +253,8 @@
     "30-day undo; partial undo reported"
   ],
   "IMP-10": [
-    "partial",
-    "rules + reference merchants; AI fallback in P3"
+    "done",
+    "rules + reference merchants, with AI payee normalization and merchant enrichment in the pipeline"
   ],
   "IMP-13": [
     "done",
