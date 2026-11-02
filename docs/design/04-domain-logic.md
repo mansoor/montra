@@ -87,7 +87,8 @@ is the personal entity (business A pays for business B), only `due_to_from` is a
   difference between the two functional amounts posts to `fx_gain_loss`, so the entry
   balances. The UI shows this amount, compared with the market rate for that day, as FX
   cost.
-- **Carrying value and realized FX** ([ADR-0010](adr/0010-fx-accounting-policy.md)): a
+- **Carrying value and realized FX** ([ADR-0010](adr/0010-fx-accounting-policy.md); builders take the account's
+  balance before the posting as `carrying` / `carryingFrom` / `carryingTo`, see `ledger/fx.ts`): a
   foreign-currency account carries its functional value at the historical rates of its
   postings. When foreign money leaves the account (a spend or a transfer out), the
   functional amount is the *carrying* value (average rate), and any gap to the

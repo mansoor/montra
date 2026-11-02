@@ -11,7 +11,10 @@
 import type { CalendarDate } from '../calendar-date.js';
 import { convert } from '../money.js';
 import { decimalToString, type Decimal } from '../decimal.js';
-import type { CurrencyCode } from '../currency.js';
+import { minorUnits, type CurrencyCode } from '../currency.js';
+import { impliedRate } from '../receipt.js';
+import { abs } from '../rounding.js';
+import { unrealizedFx, valueAtCarrying, type CarryingBalance } from './fx.js';
 import { LedgerError, validateEntry } from './validate.js';
 import type {
   EntityRef,
@@ -54,6 +57,12 @@ export interface TransactionInput {
   readonly amount: bigint;
   /** Functional-currency units per 1 unit of the account currency; required when they differ. */
   readonly fxRate?: Decimal;
+  /**
+   * The paying account's balance before this transaction, when it is a foreign-currency account
+   * (ADR-0010). Money leaving it is then valued at its carrying rate, and the difference to `fxRate` is
+   * realized FX gain or loss. Omitted: everything is valued at `fxRate`.
+   */
+  readonly carrying?: CarryingBalance;
   readonly splits: readonly SplitInput[];
   readonly kind?: JournalKind;
   /** Tags applied to the paying account's posting (e.g. default member of a card, FAM-04). */
@@ -136,6 +145,38 @@ function toFunctional(amount: bigint, from: CurrencyCode, functional: CurrencyCo
   return convert({ amount, currency: from }, functional, rate).amount;
 }
 
+/**
+ * Values a posting on `account`: at the transaction rate, or at carrying value when `carrying` is given for
+ * a foreign-currency account (ADR-0010). Returns the functional amount, the rate to store on the posting
+ * and the realized difference (functional - value at the transaction rate) to post as FX gain or loss.
+ */
+function valuePosting(
+  account: LedgerAccountRef,
+  amount: bigint,
+  atRate: bigint,
+  functionalCurrency: CurrencyCode,
+  rate: Decimal | undefined,
+  carrying: CarryingBalance | undefined,
+): { functional: bigint; rate: Decimal | undefined; realized: bigint } {
+  if (!carrying || account.currency === functionalCurrency) return { functional: atRate, rate, realized: 0n };
+  const functional = valueAtCarrying(amount, carrying, atRate);
+  if (functional === atRate) return { functional, rate, realized: 0n };
+  // The posting's own rate is the effective one: carrying value per account unit.
+  const effective = impliedRate(
+    abs(functional),
+    minorUnits(functionalCurrency),
+    abs(amount),
+    minorUnits(account.currency),
+  );
+  return { functional, rate: effective, realized: functional - atRate };
+}
+
+/** Posts realized FX gain (credit) or loss (debit) for a carrying-value difference (ADR-0010 §3). */
+function postRealized(writer: EntryWriter, resolver: AccountResolver, realized: bigint): void {
+  if (realized === 0n) return;
+  writer.add(resolver.systemAccount(writer.entity.id, 'fx_gain_loss'), -realized, -realized);
+}
+
 /** Posts any rounding residual from currency conversion to the entity's FX rounding account (CUR-07). */
 function settleResidual(writer: EntryWriter, resolver: AccountResolver, role: SystemRole): void {
   const residual = writer.functionalTotal();
@@ -168,13 +209,15 @@ export function buildTransactionEntries(
   const others = new Map<string, EntryWriter>();
   const rate = input.fxRate;
 
-  main.add(
+  const paying = valuePosting(
     input.account,
     input.amount,
     toFunctional(input.amount, input.account.currency, payer.functionalCurrency, rate),
-    input.accountTags,
+    payer.functionalCurrency,
     rate,
+    input.carrying,
   );
+  main.add(input.account, input.amount, paying.functional, input.accountTags, paying.rate);
 
   for (const split of input.splits) {
     const tags: PostingTags = split;
@@ -221,6 +264,7 @@ export function buildTransactionEntries(
     writer.add(remoteCounter, split.amount, split.amount, { memo: tags.memo ?? null });
   }
 
+  postRealized(main, resolver, paying.realized);
   settleResidual(main, resolver, 'fx_rounding');
   return [
     main.build(input.date, kind, input.description),
@@ -240,12 +284,17 @@ export interface TransferInput {
   /** Functional units per 1 unit of `from.currency` / `to.currency`, when they differ from functional. */
   readonly fxRateFrom?: Decimal;
   readonly fxRateTo?: Decimal;
+  /** Balances before the transfer of foreign-currency `from` / `to` accounts, for carrying value (ADR-0010). */
+  readonly carryingFrom?: CarryingBalance;
+  readonly carryingTo?: CarryingBalance;
   readonly memberId?: string | null;
 }
 
 /**
  * Transfers between accounts (DE-03, TXN-04, CUR-08). Same entity: one entry, never income or expense.
  * Different currencies: both amounts are kept; the functional difference is FX cost/gain (fx_gain_loss).
+ * With carrying balances (ADR-0010), a leg that shrinks a foreign position is valued at carrying value, and
+ * money moving between two accounts in the same foreign currency keeps its carrying value.
  * Different entities: one entry per entity through the inter-entity accounts.
  */
 export function buildTransferEntries(input: TransferInput, resolver: AccountResolver): JournalEntryDraft[] {
@@ -265,20 +314,32 @@ export function buildTransferEntries(input: TransferInput, resolver: AccountReso
   if (input.from.entityId === input.to.entityId) {
     const w = new EntryWriter(fromEntity);
     const f = fromEntity.functionalCurrency;
-    w.add(
-      input.to,
-      amountIn,
-      toFunctional(amountIn, input.to.currency, f, input.fxRateTo),
-      tags,
-      input.fxRateTo,
-    );
-    w.add(
+    const out = valuePosting(
       input.from,
       -input.amountOut,
       -toFunctional(input.amountOut, input.from.currency, f, input.fxRateFrom),
-      tags,
+      f,
       input.fxRateFrom,
+      input.carryingFrom,
     );
+    // Same foreign currency on both sides: the money arrives with the carrying value it left with.
+    const carriedOver =
+      input.carryingFrom !== undefined &&
+      input.from.currency === input.to.currency &&
+      input.from.currency !== f &&
+      amountIn === input.amountOut;
+    const into = valuePosting(
+      input.to,
+      amountIn,
+      carriedOver ? -out.functional : toFunctional(amountIn, input.to.currency, f, input.fxRateTo),
+      f,
+      carriedOver ? out.rate : input.fxRateTo,
+      input.carryingTo,
+    );
+    w.add(input.to, amountIn, into.functional, tags, into.rate);
+    w.add(input.from, -input.amountOut, out.functional, tags, out.rate);
+    // A carried-over transfer realizes nothing on the way out: the value moves, it isn't sold.
+    postRealized(w, resolver, (carriedOver ? 0n : out.realized) + into.realized);
     settleResidual(w, resolver, input.from.currency === input.to.currency ? 'fx_rounding' : 'fx_gain_loss');
     return [w.build(input.date, 'transfer', input.description)];
   }
@@ -328,6 +389,26 @@ export function buildOpeningBalanceEntry(
   const equity = resolver.systemAccount(entity.id, 'opening_balance_equity');
   w.add(equity, -functional, -functional);
   return w.build(date, 'opening_balance', 'Opening balance');
+}
+
+/**
+ * Optional period-close revaluation (ADR-0010 §6, CUR-06): brings a foreign account's carrying value to
+ * `latestRate` with a functional-only posting against `fx_gain_loss`. Returns null when nothing changes.
+ */
+export function buildRevaluationEntry(
+  account: LedgerAccountRef,
+  balance: CarryingBalance,
+  latestRate: Decimal,
+  date: CalendarDate,
+  resolver: AccountResolver,
+): JournalEntryDraft | null {
+  const entity = resolver.entity(account.entityId);
+  const delta = unrealizedFx(balance, account.currency, entity.functionalCurrency, latestRate);
+  if (delta === 0n) return null;
+  const w = new EntryWriter(entity);
+  w.add(account, 0n, delta, {}, latestRate);
+  w.add(resolver.systemAccount(entity.id, 'fx_gain_loss'), -delta, -delta);
+  return w.build(date, 'fx_revaluation', 'FX revaluation');
 }
 
 /** Reverses an entry (DE-10): same lines with opposite signs, dated `date`. */

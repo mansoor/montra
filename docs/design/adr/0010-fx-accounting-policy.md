@@ -38,3 +38,12 @@ The posting builder needs the account's carrying rate for outflows from foreign
 accounts. The API provides it from `account_balance_daily`. Phase 0's builder accepts an
 explicit `fxRate` per transaction; Phase 5 supplies the carrying rate for outflows and
 adds realized gain/loss lines.
+
+Implemented in `@montra/domain` (`ledger/fx.ts`, `ledger/builder.ts`) in Phase 5:
+- Any posting that *shrinks* a foreign position is valued at carrying value. That covers spending from a
+  foreign bank account and paying off a foreign card. Closing the position takes exactly the remaining
+  functional balance, and an amount that crosses zero opens the new position at the transaction rate.
+- A transfer between two accounts in the same foreign currency carries the value over and realizes
+  nothing.
+- `unrealizedFx`, `buildRevaluationEntry` and `transferFxCost` cover §6 and the CUR-08 display.
+- The API supplies the balance before each posting when it enables foreign-currency accounts.
