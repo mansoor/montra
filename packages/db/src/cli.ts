@@ -12,7 +12,7 @@ if (command === 'migrate' || command === 'reset') {
   const { applied, skipped } = await migrate(url, (m) => console.log(m));
   console.log(`migrations: ${applied.length} applied, ${skipped.length} already applied`);
   const ref = await loadReferenceData(url);
-  console.log(`reference data: ${ref.merchants} merchants`);
+  console.log(`reference data: ${ref.merchants} merchants, ${ref.currencies} currencies`);
 } else {
   console.error(`unknown command: ${command} (use migrate | reset)`);
   process.exit(1);

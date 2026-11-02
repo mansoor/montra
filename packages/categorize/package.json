@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
     "test": "vitest run",
-    "test:perf": "PERF=1 vitest run"
+    "test:perf": "vitest run --mode perf"
   },
   "dependencies": {
     "@montra/domain": "workspace:*",

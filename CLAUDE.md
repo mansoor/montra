@@ -14,7 +14,7 @@ the known workarounds and what to pick up next. Then read the design docs for th
 | `docs/requirements/R1-requirements.md`                    | The product requirements (IDs such as `IMP-05` and `RCP-04`)                                             |
 | `docs/design/01-phased-plan.md`                           | The 12-phase plan: scope, deliverables and exit criteria per phase                                       |
 | `docs/design/02`–`11`                                     | Architecture, data model, domain logic, API, AI gateway, security, clients, quality, assumptions, review |
-| `docs/design/adr/`                                        | Decisions (ADR-0001…0013). Add one for every significant decision (copy `0000-template.md`)              |
+| `docs/design/adr/`                                        | Decisions (ADR-0001…0014). Add one for every significant decision (copy `0000-template.md`)              |
 | `docs/design/status.json`                                 | Implementation status per requirement ID (`done` / `partial`). `traceability.md` is generated from it    |
 | `CHANGELOG.md`                                            | One entry per phase (`v0.N.0-dev.1`)                                                                     |
 | `apps/api`                                                | NestJS 11 on Fastify, Kysely, Postgres RLS. Also the Node job worker (`src/worker-main.ts`)              |

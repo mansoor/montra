@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { newId, type Trx } from '@montra/db';
+import { newId, type TransactionRow, type Trx } from '@montra/db';
 import { calendarDate } from '@montra/domain';
 import type {
   BulkEditRequest,
@@ -821,6 +821,9 @@ export class TransactionsService {
         memo: await this.crypto.decrypt(trx, ctx.workspaceId, 'transaction.memo', t.memo_enc),
         tags: tags.filter((x) => x.transaction_id === t.id).map((x) => x.name),
         recurringItemId: t.recurring_item_id,
+        foreign: foreignAmount(t),
+        tripId: t.trip_id,
+        localTime: t.local_time,
         amount: specAmount(t.spec as TransactionSpec | null),
         accountId: specAccount(t.spec as TransactionSpec | null),
         splits: specSplits(t.spec as TransactionSpec | null),
@@ -873,6 +876,18 @@ function specAmount(spec: TransactionSpec | null): TransactionDto['amount'] {
   if (!spec) return null;
   const amount = spec.type === 'transfer' ? (-BigInt(spec.amount)).toString() : spec.amount;
   return { amount, currency: spec.currency as NonNullable<TransactionDto['amount']>['currency'] };
+}
+
+/** CUR-03: the original foreign amount and rate, when the transaction stores one. The fee is a split. */
+function foreignAmount(t: TransactionRow): TransactionDto['foreign'] {
+  if (t.original_amount_minor === null || t.original_currency === null || t.fx_rate === null) return null;
+  type Currency = NonNullable<TransactionDto['foreign']>['original']['currency'];
+  return {
+    original: { amount: t.original_amount_minor.toString(), currency: t.original_currency as Currency },
+    rate: t.fx_rate,
+    rateSource: t.fx_rate_source ?? 'implied',
+    fee: null,
+  };
 }
 
 /** The single category (and member) of a one-split standard transaction; nulls otherwise. */

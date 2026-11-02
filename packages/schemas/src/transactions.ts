@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CalendarDateDto, Id, MoneyDto } from './common.js';
 import { CategorizationDto, MerchantDto } from './ai.js';
+import { ForeignAmountDto } from './fx.js';
 
 export const SplitInput = z.object({
   /** A category, or any ledger account (e.g. mortgage principal, escrow) for advanced splits. */
@@ -85,6 +86,12 @@ export const TransactionDto = z.object({
   memo: z.string().nullable(),
   tags: z.array(z.string()),
   recurringItemId: z.string().nullable(),
+  /** CUR-03: the original foreign amount and rate when the purchase was made in another currency. */
+  foreign: ForeignAmountDto.nullable(),
+  /** Travel mode (CUR-09). */
+  tripId: z.string().nullable(),
+  /** The receipt's wall-clock time, 'HH:MM:SS' (TZ-03); `date` stays the statement date. */
+  localTime: z.string().nullable(),
   /** Paying account (standard) or source account (transfer), from the stored input; null for journals. */
   accountId: z.string().nullable(),
   /** The categorization as entered (also present on scheduled occurrences that have no entries yet). */
