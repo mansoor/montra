@@ -133,7 +133,7 @@ export function AppShell({
       <Link
         href={homeHref}
         className={`flex items-center gap-3 px-4 pt-4 pb-3 ${rail ? 'justify-center px-0' : ''}`}
-        aria-label={rail ? `Montra · ${workspaceName}` : undefined}
+        aria-label={`Montra · ${workspaceName}`}
       >
         <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-m)] bg-brand-600 text-on-brand">
           <ShieldCheck aria-hidden size={20} strokeWidth={1.8} />
@@ -141,7 +141,7 @@ export function AppShell({
         {!rail && (
           <span className="min-w-0">
             <span className="block font-display text-[17px] leading-tight font-semibold">Montra</span>
-            <span className="block truncate text-xs text-muted" title={t('shell.workspace')}>
+            <span className="block truncate text-xs text-muted" aria-label={t('shell.workspace')}>
               {workspaceName}
             </span>
           </span>
