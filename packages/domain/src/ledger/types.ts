@@ -73,6 +73,8 @@ export interface PostingDraft extends PostingTags {
   readonly functionalAmount: bigint;
   /** Functional units per 1 unit of `currency`, as an exact decimal string; null when currencies match. */
   readonly fxRate: string | null;
+  /** In a restricted entry, this line stays visible (a payslip's net deposit, ADR-0016 §2). */
+  readonly publicLine?: boolean;
 }
 
 export interface JournalEntryDraft {
@@ -82,6 +84,9 @@ export interface JournalEntryDraft {
   readonly kind: JournalKind;
   readonly description: string;
   readonly postings: readonly PostingDraft[];
+  /** Visible only to owners and the member's linked user (PAY-09). */
+  readonly restricted?: boolean;
+  readonly restrictedMemberId?: string | null;
 }
 
 /** Debit-normal accounts grow with debits; credit-normal ones with credits. */

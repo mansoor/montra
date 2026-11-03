@@ -244,6 +244,8 @@ export class LedgerService {
           entry_date: draft.entryDate,
           description: draft.description,
           kind: draft.kind,
+          restricted: draft.restricted ?? false,
+          restricted_member_id: draft.restrictedMemberId ?? null,
           posted_by: ctx.userId,
         })
         .execute();
@@ -264,6 +266,7 @@ export class LedgerService {
             property_id: p.propertyId ?? null,
             unit_id: p.unitId ?? null,
             memo: p.memo ?? null,
+            public_line: p.publicLine ?? false,
             // Statement lines are cleared on arrival (DE-08).
             ...(opts.clearedAccountId && p.accountId === opts.clearedAccountId
               ? { cleared: 'cleared' as const }

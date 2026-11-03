@@ -263,6 +263,8 @@ export interface PostingTable {
   reconciliation_id: string | null;
   /** The receipt line this split came from (RCP-09 item reports). */
   receipt_line_id: string | null;
+  /** In a restricted entry, this line stays visible (a payslip's net deposit; migration 0017). */
+  public_line: Generated<boolean>;
   /** Copied from the journal entry by trigger (migration 0015, read models). */
   restricted_member_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: Generated<Date>;
@@ -966,6 +968,8 @@ export interface ExpectedIncomeTable {
   next_date: CalendarDateCol;
   account_id: string | null;
   payee_key: string | null;
+  /** PAY-07: follows this employer's payslips. */
+  employer_id: string | null;
   active: Generated<boolean>;
   version: Int8Default;
   created_at: Generated<Date>;
@@ -1018,6 +1022,75 @@ export interface AccountBalanceDailyTable {
   restricted_member_key: string;
   delta_minor: Int8;
   functional_delta_minor: Int8;
+}
+
+// Phase 7: employers and payslips (migration 0017, ADR-0016). Amounts are positive minor units.
+
+export type EmployerType = 'employer' | 'freelance' | 'pension' | 'benefits' | 'other';
+export type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'quarterly' | 'yearly';
+
+export interface EmployerTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  member_id: string;
+  name: string;
+  type: Generated<EmployerType>;
+  pay_frequency: Generated<PayFrequency>;
+  deposit_account_id: string;
+  payee_key: string | null;
+  retirement_account_id: string | null;
+  archived_at: Date | null;
+  restricted: Generated<boolean>;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type PayslipStatus = 'processing' | 'needs_review' | 'posted' | 'rejected';
+
+export interface PayslipTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  employer_id: string;
+  member_id: string;
+  status: Generated<PayslipStatus>;
+  pay_date: CalendarDateCol | null;
+  period_start: CalendarDateCol | null;
+  period_end: CalendarDateCol | null;
+  currency: string;
+  gross_minor: Int8Default;
+  net_minor: Int8Default;
+  attachment_ids: Generated<string[]>;
+  /** { provider, model, confidence, warnings[], mode } */
+  extraction: Json<Record<string, unknown>> | null;
+  transaction_id: string | null;
+  /** The matched deposit's spec before the payslip took it over (restored if the payslip is deleted). */
+  deposit_spec: Json<Record<string, unknown>> | null;
+  /** [{ transactionId, date, amount, payee }] when more than one deposit could be this pay. */
+  match_candidates: Json<unknown[]> | null;
+  restricted: Generated<boolean>;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type PayslipLineSection = 'earning' | 'pre_tax' | 'tax' | 'post_tax' | 'employer';
+
+export interface PayslipLineTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payslip_id: string;
+  line_no: number;
+  section: PayslipLineSection;
+  code: string;
+  label: string;
+  amount_minor: Int8;
+  ytd_minor: Int8 | null;
+  ledger_account_id: string | null;
 }
 
 export interface Database {
@@ -1085,6 +1158,9 @@ export interface Database {
   'app.recommendation': RecommendationTable;
   'app.category_activity_monthly': CategoryActivityMonthlyTable;
   'app.account_balance_daily': AccountBalanceDailyTable;
+  'app.employer': EmployerTable;
+  'app.payslip': PayslipTable;
+  'app.payslip_line': PayslipLineTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
@@ -1102,3 +1178,6 @@ export type BudgetLineRow = Selectable<BudgetLineTable>;
 export type GoalRow = Selectable<GoalTable>;
 export type ExpectedIncomeRow = Selectable<ExpectedIncomeTable>;
 export type RecommendationRow = Selectable<RecommendationTable>;
+export type EmployerRow = Selectable<EmployerTable>;
+export type PayslipRow = Selectable<PayslipTable>;
+export type PayslipLineRow = Selectable<PayslipLineTable>;
