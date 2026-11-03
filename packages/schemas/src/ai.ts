@@ -75,6 +75,11 @@ export const AiSettingsDto = z.object({
   monthlyBudgetUsd: z.number().nullable(),
   /** PAY-09/UP-06: allow statement scans and payslip images to be sent to an LLM. */
   allowDocumentsToLlm: z.boolean(),
+  /**
+   * TXN-08/UP-06: allow receipt photos and invoice PDFs to be sent to the AI provider (builtin/BYOK). Off: they
+   * are OCR'd in our infrastructure and only redacted text is sent (ADR-0014 §7).
+   */
+  allowReceiptImagesToLlm: z.boolean(),
   /** OPS-07: fall back to a second provider when the first fails. */
   failover: z.boolean(),
   usage: z.object({
@@ -103,6 +108,7 @@ export const UpdateAiSettingsRequest = z
     threshold: z.number().min(0.5).max(0.99),
     monthlyBudgetUsd: z.number().min(0).max(10000).nullable(),
     allowDocumentsToLlm: z.boolean(),
+    allowReceiptImagesToLlm: z.boolean(),
     failover: z.boolean(),
   })
   .partial();

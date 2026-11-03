@@ -48,6 +48,10 @@ test('a Walmart receipt splits its card line into groceries, electronics and clo
   test.setTimeout(120_000);
   await onboardHousehold(page, `receipts-${Date.now()}@example.com`, 'Everyday checking');
   const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  // The fake provider reads the text carried in the photo: let photos go to the AI (Settings → AI).
+  await page.request.patch(`/api/v1/workspaces/${workspaceId}/ai/settings`, {
+    data: { allowReceiptImagesToLlm: true },
+  });
 
   // The card line, as a statement import would record it.
   const accounts = await (await page.request.get(`/api/v1/workspaces/${workspaceId}/accounts`)).json();
@@ -107,6 +111,10 @@ test('a purchase abroad on a home-currency card records the original amount and 
   test.setTimeout(90_000);
   await onboardHousehold(page, `abroad-${Date.now()}@example.com`, 'Everyday checking');
   const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  // The fake provider reads the text carried in the photo: let photos go to the AI (Settings → AI).
+  await page.request.patch(`/api/v1/workspaces/${workspaceId}/ai/settings`, {
+    data: { allowReceiptImagesToLlm: true },
+  });
   const api = `/api/v1/workspaces/${workspaceId}`;
   const accounts = await (await page.request.get(`${api}/accounts`)).json();
   const categories = await (await page.request.get(`${api}/categories`)).json();
@@ -158,6 +166,10 @@ test('a foreign receipt matches its home-currency card line within ±3% and keep
 
   await onboardHousehold(page, `fx-receipt-${Date.now()}@example.com`, 'Everyday checking');
   const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  // The fake provider reads the text carried in the photo: let photos go to the AI (Settings → AI).
+  await page.request.patch(`/api/v1/workspaces/${workspaceId}/ai/settings`, {
+    data: { allowReceiptImagesToLlm: true },
+  });
   const api = `/api/v1/workspaces/${workspaceId}`;
   const accounts = await (await page.request.get(`${api}/accounts`)).json();
   const charge = await page.request.post(`${api}/transactions`, {

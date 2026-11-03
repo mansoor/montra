@@ -111,6 +111,8 @@ beforeAll(async () => {
   url = (p) => `/v1/workspaces/${ws.id}${p}`;
   const cats = (await c.get(url('/categories'))).body.data;
   cat = (name) => cats.find((x: any) => x.name === name).id;
+  // The fake provider reads the text carried in the photo, so these tests let photos go to the AI.
+  await c.patch(url('/ai/settings'), { allowReceiptImagesToLlm: true });
   card = (await c.post(url('/accounts'), { name: 'Visa', kind: 'credit_card', last4: '1234' })).body.id;
   checking = (await c.post(url('/accounts'), { name: 'Checking', kind: 'checking' })).body.id;
 });
@@ -313,6 +315,28 @@ describe('the inbox (IMP-11)', () => {
 });
 
 describe('AI modes', () => {
+  it('OCRs receipts first by default: photos go to the AI only when allowed (UP-06, ADR-0014 §7)', async () => {
+    await c.patch(url('/ai/settings'), { allowReceiptImagesToLlm: false });
+    try {
+      expect((await c.get(url('/ai/settings'))).body.allowReceiptImagesToLlm).toBe(false);
+      const f = await upload(encodeFakeReceiptImage(WALMART), 'private.png');
+      const created = (await c.post(url('/receipts'), { fileIds: [f.body.fileId] })).body;
+      const { rows } = await admin.query(
+        `select then_job from app.job where type = 'receipt.ocr' and payload->>'receiptId' = $1`,
+        [created.id],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].then_job).toMatchObject({ queue: 'ai', type: 'receipt.extract' });
+      // No doc-worker here: cancel the job so later tests that play the doc-worker don't pick it up.
+      await admin.query(
+        `update app.job set status = 'cancelled' where type = 'receipt.ocr' and payload->>'receiptId' = $1`,
+        [created.id],
+      );
+    } finally {
+      await c.patch(url('/ai/settings'), { allowReceiptImagesToLlm: true });
+    }
+  });
+
   it('sends receipts to review for manual entry when AI is off', async () => {
     await c.patch(url('/ai/settings'), { mode: 'off' });
     try {

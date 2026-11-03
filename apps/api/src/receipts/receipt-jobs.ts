@@ -76,9 +76,14 @@ export class ReceiptJobs {
     });
     const ocrText =
       p.previousResult?.kind === 'receipt_text' ? (p.previousResult.pages ?? []).join('\n\n') : null;
+    // Images go to the provider only with the workspace's permission (UP-06, ADR-0014 §7).
+    const allowImages = await this.db.run(
+      ctx,
+      async (trx) => (await this.ai.runtime(trx, ctx)).allowReceiptImages,
+    );
     const images: ImagePart[] = [];
     let total = 0;
-    for (const f of files) {
+    for (const f of allowImages ? files : []) {
       total += Number(f.bytes);
       if (total > MAX_IMAGE_BYTES) break;
       images.push({

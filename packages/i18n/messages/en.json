@@ -61,6 +61,8 @@
   "ai.advanced": "Advanced: model per task",
   "ai.allow_documents": "Allow statement scans and payslip images to be sent to the AI provider",
   "ai.allow_documents_hint": "Off by default. When off, documents are read in our own infrastructure and only redacted text is sent.",
+  "ai.allow_receipt_images": "Allow receipt photos and invoices to be sent to the AI provider",
+  "ai.allow_receipt_images_hint": "Off by default. Sending the photo reads receipts more accurately. When off, receipts are read with OCR in our own infrastructure and only redacted text is sent.",
   "ai.api_key": "API key",
   "ai.budget": "Monthly AI budget (USD)",
   "ai.budget_hint": "Leave blank for no limit. At 80% Montra switches to cheaper models; at 100% it uses rules and history only.",
