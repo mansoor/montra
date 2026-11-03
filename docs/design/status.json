@@ -365,8 +365,8 @@
     "heuristic parser + AI quick add"
   ],
   "FAM-05": [
-    "partial",
-    "member from rules, history, AI and account default; receipt items in P4/P5"
+    "done",
+    "member from rules, history, AI and account default; receipt lines carry their own member and split per member"
   ],
   "UP-02": [
     "done",

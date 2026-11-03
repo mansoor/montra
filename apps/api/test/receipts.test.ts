@@ -241,7 +241,7 @@ describe('a receipt in another currency (Phase 5 exit criterion 2, CUR-04)', () 
     expect(t.foreign).toMatchObject({
       original: { amount: '-4000', currency: 'EUR' },
       rate: '1.09',
-      rateSource: 'user',
+      rateSource: 'implied',
     });
     expect(t.splits.reduce((s: bigint, x: any) => s + BigInt(x.amount), 0n)).toBe(-4360n);
   });
