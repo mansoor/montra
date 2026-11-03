@@ -365,7 +365,7 @@ describe('recommendations (REC-01, AIA-05)', () => {
       budgetId: budget.id,
       periodStart: thisMonth,
       title: 'Your plan is $800.00 more than your income',
-      payload: { figures: { overAssigned: '80000', uncovered: '0' } },
+      payload: { figures: { overAssigned: '80000', stillOverAfterCuts: '0' } },
     });
     expect(rec.payload.actions).toEqual([
       { kind: 'assign', categoryId: cat('Entertainment'), from: '1000000', to: '920000' },

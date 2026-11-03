@@ -6,8 +6,8 @@ import { sourceAliases } from '../../vitest.shared.js';
 export default defineConfig(({ mode }) => ({
   resolve: { alias: sourceAliases },
   test: {
-    include: mode === 'perf' ? ['test/perf-commit.test.ts'] : ['test/**/*.test.ts'],
-    exclude: mode === 'perf' ? [] : ['test/perf-commit.test.ts'],
+    include: mode === 'perf' ? ['test/perf-*.test.ts'] : ['test/**/*.test.ts'],
+    exclude: mode === 'perf' ? [] : ['test/perf-*.test.ts'],
     globalSetup: ['test/global-setup.ts'],
     fileParallelism: false,
     hookTimeout: 30_000,

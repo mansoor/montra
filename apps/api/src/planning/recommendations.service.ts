@@ -277,8 +277,8 @@ export class RecommendationsService {
             ...base,
             figures: {
               overAssigned: String(cuts.deficit),
-              covered: String(cuts.covered),
-              uncovered: String(cuts.uncovered),
+              proposedCutsTotal: String(cuts.covered),
+              stillOverAfterCuts: String(cuts.uncovered),
             },
             subjects: cuts.cuts.map((x) => subject(x.categoryId, x.from - x.to)),
             actions: cuts.cuts.map((x) => ({
@@ -288,7 +288,7 @@ export class RecommendationsService {
               to: String(x.to),
             })),
           },
-          money: ['overAssigned', 'covered', 'uncovered'],
+          money: ['overAssigned', 'proposedCutsTotal', 'stillOverAfterCuts'],
         });
       }
     }
@@ -320,9 +320,9 @@ export class RecommendationsService {
           payload: {
             ...base,
             figures: {
-              overspend: String(res.overspend),
-              daysLeft: `${res.daysLeft} days`,
-              perDay: String(res.perDayReduction),
+              projectedOverspend: String(res.overspend),
+              daysLeftInPeriod: `${res.daysLeft} days`,
+              spendLessPerDayBy: String(res.perDayReduction),
             },
             subjects: [
               subject(line.categoryId, res.overspend),
@@ -343,7 +343,7 @@ export class RecommendationsService {
               },
             ],
           },
-          money: ['overspend', 'perDay'],
+          money: ['projectedOverspend', 'spendLessPerDayBy'],
         });
       }
     }
@@ -394,9 +394,9 @@ export class RecommendationsService {
           payload: {
             ...base,
             figures: {
-              surplus: String(alloc.surplus),
-              expected: String(expectedSum),
-              actual: String(actualSum),
+              extraIncome: String(alloc.surplus),
+              expectedIncome: String(expectedSum),
+              receivedIncome: String(actualSum),
             },
             subjects: alloc.allocations
               .filter((a) => a.categoryId || a.id)
@@ -413,7 +413,7 @@ export class RecommendationsService {
                   : [],
             ),
           },
-          money: ['surplus', 'expected', 'actual'],
+          money: ['extraIncome', 'expectedIncome', 'receivedIncome'],
         });
       }
     }
@@ -441,9 +441,16 @@ export class RecommendationsService {
           payload: {
             ...base,
             figures: {
-              saves: String(bare.saves),
-              ...(low ? { lowBalance: String(low.lowBalance!.balance), lowDate: low.lowBalance!.date } : {}),
-              ...(late.length ? { lateIncome: String(late.reduce((t, o) => t + o.item.amount, 0n)) } : {}),
+              budgetCutsWouldFree: String(bare.saves),
+              ...(low
+                ? {
+                    forecastBalanceThatDay: String(low.lowBalance!.balance),
+                    dayItDropsBelowWarning: low.lowBalance!.date,
+                  }
+                : {}),
+              ...(late.length
+                ? { incomeNotYetArrived: String(late.reduce((t, o) => t + o.item.amount, 0n)) }
+                : {}),
             },
             subjects: drivers
               .filter((x) => x.sourceId)
@@ -455,7 +462,7 @@ export class RecommendationsService {
               to: String(x.to),
             })),
           },
-          money: ['saves', 'lowBalance', 'lateIncome'],
+          money: ['budgetCutsWouldFree', 'forecastBalanceThatDay', 'incomeNotYetArrived'],
         });
       }
     }
@@ -478,11 +485,11 @@ export class RecommendationsService {
           title: `${cat.name} has been ${res.direction === 'over' ? 'over' : 'under'} budget for 3 periods; try ${fmt(res.suggested)}`,
           payload: {
             ...base,
-            figures: { suggested: String(res.suggested), current: String(now) },
+            figures: { suggestedAmount: String(res.suggested), currentAmount: String(now) },
             subjects: [subject(cat.id, res.suggested)],
             actions: [{ kind: 'assign', categoryId: cat.id, from: String(now), to: String(res.suggested) }],
           },
-          money: ['suggested', 'current'],
+          money: ['suggestedAmount', 'currentAmount'],
         });
       }
     }
@@ -517,11 +524,11 @@ export class RecommendationsService {
         title: `${label} went up ${d.percent ?? ''}%`.replace(' %', ''),
         payload: {
           ...base,
-          figures: { from: d.from, to: d.to, percent: `${d.percent ?? ''}%` },
+          figures: { previousPrice: d.from, newPrice: d.to, increase: `${d.percent ?? ''}%` },
           subjects: item ? [{ id: item.id, name: item.name, amount: d.to }] : [],
           actions: item ? [{ kind: 'review_subscription', recurringItemId: item.id }] : [],
         },
-        money: ['from', 'to'],
+        money: ['previousPrice', 'newPrice'],
       });
     }
 
@@ -547,14 +554,14 @@ export class RecommendationsService {
           payload: {
             ...base,
             figures: {
-              budgetIncome: String(res.budgetIncome),
+              incomeToBudgetFrom: String(res.budgetIncome),
               bufferTarget: String(res.bufferTarget),
-              bufferGap: String(res.bufferGap),
+              stillNeededForBuffer: String(res.bufferGap),
             },
             subjects: [],
             actions: [],
           },
-          money: ['budgetIncome', 'bufferTarget', 'bufferGap'],
+          money: ['incomeToBudgetFrom', 'bufferTarget', 'stillNeededForBuffer'],
         });
       }
     }
@@ -582,6 +589,9 @@ export class RecommendationsService {
         activity: l.activity,
       }));
     const review = rec07Review(income, lines);
+    const leakFigures = review.leaks.map(
+      (l) => [`overBudget: ${names.get(l.categoryId) ?? ''}`, String(l.overBy)] as const,
+    );
     const history = c.results.slice(-4, -1);
     const next = draftBudget(
       [...new Set(history.flatMap((p) => [...p.lines.keys()]))].map((id) => ({
@@ -600,8 +610,8 @@ export class RecommendationsService {
         figures: {
           income: String(review.income),
           spent: String(review.spent),
-          saved: String(review.saved),
-          ...Object.fromEntries(review.leaks.map((l, i) => [`leak${i + 1}`, String(l.overBy)])),
+          incomeMinusSpending: String(review.saved),
+          ...Object.fromEntries(leakFigures),
         },
         subjects: review.leaks.map((l) => ({
           id: l.categoryId,
@@ -637,7 +647,7 @@ export class RecommendationsService {
           })),
         },
       },
-      money: ['income', 'spent', 'saved', 'leak1', 'leak2', 'leak3'],
+      money: ['income', 'spent', 'incomeMinusSpending', ...leakFigures.map(([k]) => k)],
     };
   }
 

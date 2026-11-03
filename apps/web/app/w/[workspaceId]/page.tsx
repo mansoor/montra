@@ -182,6 +182,7 @@ export default async function HomePage({ params }: { params: Promise<{ workspace
             <p className="mt-0.5 text-xs text-muted">{t('home.net_position_hint')}</p>
             {d.netWorth.trend.length > 1 && (
               <LineChart
+                compact
                 title={t('home.net_worth')}
                 series={[{ label: t('home.net_worth'), values: d.netWorth.trend.map((p) => p.netWorth) }]}
                 labels={d.netWorth.trend.map((p) => p.date)}

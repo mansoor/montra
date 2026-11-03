@@ -8,9 +8,9 @@ export interface LineSeries {
   values: readonly string[];
 }
 
-const W = 900;
-const H = 240;
-const PAD = { l: 64, r: 12, t: 12, b: 26 };
+/** Drawing sizes: labels are in viewBox units, so a small card needs a small viewBox to keep them readable. */
+const SIZES = { full: { w: 900, h: 240 }, compact: { w: 420, h: 170 } };
+const PAD = { l: 68, r: 12, t: 12, b: 26 };
 
 /**
  * A small dependency-free line chart for balances over time (forecast, net worth). Amounts are converted to
@@ -22,6 +22,7 @@ export function LineChart({
   currency,
   threshold,
   title,
+  compact = false,
 }: {
   series: readonly LineSeries[];
   /** One label per x position (dates); only a few are drawn. */
@@ -29,8 +30,11 @@ export function LineChart({
   currency: string;
   threshold?: string | null;
   title: string;
+  /** For narrow cards such as the Home net position. */
+  compact?: boolean;
 }) {
   const { money, date } = useI18n();
+  const { w: W, h: H } = SIZES[compact ? 'compact' : 'full'];
   const all = series.flatMap((s) => s.values.map(Number));
   if (threshold != null) all.push(Number(threshold));
   if (all.length === 0) return null;
@@ -44,7 +48,7 @@ export function LineChart({
   const x = (i: number) => PAD.l + (i / n) * (W - PAD.l - PAD.r);
   const y = (v: number) => PAD.t + (1 - (v - min) / (max - min)) * (H - PAD.t - PAD.b);
   const ticks = [max, (max + min) / 2, min];
-  const every = Math.max(1, Math.ceil(labels.length / 6));
+  const every = Math.max(1, Math.ceil(labels.length / (compact ? 3 : 6)));
   return (
     <figure className="w-full">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title} className="h-auto w-full">
