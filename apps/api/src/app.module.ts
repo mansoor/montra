@@ -42,6 +42,12 @@ import { RulesService } from './categorization/rules.service.js';
 import { ReviewService } from './categorization/review.service.js';
 import { InsightsService } from './categorization/insights.service.js';
 import { CategorizationController } from './categorization/categorization.controller.js';
+import { FX_HTTP, FxRatesService } from './fx/fx.service.js';
+import { FxController } from './fx/fx.controller.js';
+import type { HttpGet } from './fx/sources.js';
+
+/** Outbound HTTP for the FX sources, with a timeout. */
+const httpGet: HttpGet = (url) => fetch(url, { signal: AbortSignal.timeout(30_000) });
 
 @Module({})
 export class AppModule {
@@ -69,6 +75,7 @@ export class AppModule {
       ReconciliationController,
       AiController,
       CategorizationController,
+      FxController,
     ];
     return {
       module: AppModule,
@@ -104,6 +111,8 @@ export class AppModule {
         ReviewService,
         InsightsService,
         SyncService,
+        FxRatesService,
+        { provide: FX_HTTP, useValue: httpGet },
       ],
     };
   }

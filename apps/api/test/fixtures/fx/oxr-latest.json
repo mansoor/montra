@@ -1,0 +1,14 @@
+{
+  "disclaimer": "Usage subject to terms: https://openexchangerates.org/terms",
+  "license": "https://openexchangerates.org/license",
+  "timestamp": 1793372400,
+  "base": "USD",
+  "rates": {
+    "AED": 3.6725,
+    "EUR": 0.916422,
+    "JPY": 149.7615,
+    "USD": 1,
+    "XYZ": 2,
+    "BAD": "1.0"
+  }
+}

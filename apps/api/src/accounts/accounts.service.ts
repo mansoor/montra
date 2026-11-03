@@ -4,8 +4,11 @@ import { sql } from 'kysely';
 import {
   asCurrencyCode,
   buildOpeningBalanceEntry,
+  convert,
+  decimalToString,
   naturalBalance,
   todayIn,
+  valueAtCarrying,
   type CalendarDate,
   type JournalEntryDraft,
 } from '@montra/domain';
@@ -19,6 +22,7 @@ import type {
   UpdateAccountRequest,
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
+import { FxRatesService } from '../fx/fx.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { notFound, unprocessable } from '../common/errors.js';
 
@@ -37,6 +41,7 @@ export class AccountsService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(LedgerService) private readonly ledger: LedgerService,
+    @Inject(FxRatesService) private readonly fx: FxRatesService,
   ) {}
 
   /** Creates a bank/card/loan/asset account and posts its opening balance (ACC-02, ACC-05). */
@@ -94,17 +99,16 @@ export class AccountsService {
         })
         .execute();
       if (natural !== 0n) {
-        if (currency !== entity.functional_currency) {
-          throw unprocessable(
-            'fx.rate_required',
-            'Foreign-currency opening balances arrive with FX support (Phase 5)',
-          );
-        }
+        // ACC-04: a foreign-currency opening balance is valued at the opening date's reference rate.
+        const rate =
+          currency !== entity.functional_currency
+            ? await this.fx.requireRate(trx, currency, entity.functional_currency, openingDate)
+            : undefined;
         const ref = await this.ledger.accountRef(trx, ctx.workspaceId, id);
         const resolver = await this.ledger.resolver(trx, ctx.workspaceId);
         // Natural → debit-positive: money held is a debit on assets; money owed is a credit on liabilities.
         const debitPositive = type === 'asset' ? natural : -natural;
-        const draft = buildOpeningBalanceEntry(ref, debitPositive, openingDate, resolver);
+        const draft = buildOpeningBalanceEntry(ref, debitPositive, openingDate, resolver, rate);
         await this.ledger.post(trx, ctx, null, [draft]);
       }
     });
@@ -262,8 +266,9 @@ export class AccountsService {
       }
       if (req.balance.currency !== account.currency)
         throw unprocessable('currency.mismatch', `Balance must be in ${account.currency}`);
-      const { rows } = await sql<{ total: bigint | null }>`
-        select sum(amount_minor)::bigint as total from app.posting
+      const { rows } = await sql<{ total: bigint | null; functional: bigint | null }>`
+        select sum(amount_minor)::bigint as total, sum(functional_amount_minor)::bigint as functional
+          from app.posting
          where workspace_id = ${ctx.workspaceId} and ledger_account_id = ${accountId} and entry_date <= ${req.date}`.execute(
         trx,
       );
@@ -274,6 +279,23 @@ export class AccountsService {
       const resolver = await this.ledger.resolver(trx, ctx.workspaceId);
       const equity = resolver.systemAccount(account.entityId, 'opening_balance_equity');
       const entity = resolver.entity(account.entityId);
+      // A foreign-currency account (ADR-0010): an increase at the day's rate, a decrease at carrying value.
+      let functional = debit;
+      let fxRate: string | null = null;
+      if (account.currency !== entity.functionalCurrency) {
+        const rate = await this.fx.requireRate(trx, account.currency, entity.functionalCurrency, req.date);
+        const atRate = convert(
+          { amount: debit, currency: account.currency },
+          entity.functionalCurrency,
+          rate,
+        ).amount;
+        functional = valueAtCarrying(
+          debit,
+          { foreign: BigInt(rows[0]?.total ?? 0n), functional: BigInt(rows[0]?.functional ?? 0n) },
+          atRate,
+        );
+        fxRate = decimalToString(rate);
+      }
       const draft: JournalEntryDraft = {
         entityId: account.entityId,
         functionalCurrency: entity.functionalCurrency,
@@ -287,16 +309,16 @@ export class AccountsService {
             accountEntityId: account.entityId,
             currency: account.currency,
             amount: debit,
-            functionalAmount: debit,
-            fxRate: null,
+            functionalAmount: functional,
+            fxRate,
           },
           {
             lineNo: 2,
             accountId: equity.id,
             accountEntityId: account.entityId,
             currency: equity.currency,
-            amount: -debit,
-            functionalAmount: -debit,
+            amount: -functional,
+            functionalAmount: -functional,
             fxRate: null,
           },
         ],

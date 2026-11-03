@@ -37,6 +37,16 @@ const Env = z.object({
     .int()
     .positive()
     .default(25 * 1024 * 1024),
+  /** FX rates (CUR-05, ADR-0014): ECB euro reference rates, no key needed. */
+  FX_ECB_URL: z.string().url().default('https://www.ecb.europa.eu/stats/eurofxref'),
+  /** Optional second source covering more currencies (Open Exchange Rates app id). */
+  OXR_APP_ID: z.string().min(1).optional(),
+  OXR_URL: z.string().url().default('https://openexchangerates.org/api'),
+  /** The worker refreshes rates daily (and once at start-up). Off for hermetic runs such as e2e. */
+  FX_DAILY: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   /** Public web origin used in links inside emails. */
   WEB_URL: z.string().url().default('http://localhost:3000'),
   /** Base64 32-byte master key for the local KMS adapter (development); production uses AWS KMS. */

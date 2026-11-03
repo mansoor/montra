@@ -37,7 +37,8 @@ export default defineConfig({
       command: 'node ../api/dist/worker-main.js',
       wait: { stdout: /listening on import/ },
       stdout: 'pipe',
-      env: { DATABASE_URL, STORAGE_DIR, AI_PROVIDER: 'fake' },
+      // FX_DAILY=false: no rate refresh against ECB during e2e.
+      env: { DATABASE_URL, STORAGE_DIR, AI_PROVIDER: 'fake', FX_DAILY: 'false' },
     },
     {
       command: `pnpm exec next start --port ${WEB_PORT}`,

@@ -205,8 +205,8 @@ export class RecurringService {
           if (!res.numInsertedOrUpdatedRows) continue;
           created++;
           if (item.auto_create === 'posted' && compareDates(date, today) <= 0) {
-            const built = await this.poster.build(trx, ctx, spec, date);
-            await this.poster.repost(trx, ctx, id, built.drafts);
+            const built = await this.poster.build(trx, ctx, spec, date, id);
+            await this.poster.post(trx, ctx, id, built);
             await trx
               .updateTable('app.transaction')
               .set({ status: 'posted', posted_at: new Date() })

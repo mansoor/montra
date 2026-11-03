@@ -72,3 +72,19 @@ export function mulRound(n: bigint, d: Decimal, mode: RoundingMode = 'half_up'):
 export function isZeroDecimal(d: Decimal): boolean {
   return d.coefficient === 0n;
 }
+
+/**
+ * Divides two decimals exactly and rounds to `scale` places: a ÷ b. Used for FX cross rates
+ * (EUR→JPY ÷ EUR→USD = USD→JPY) and inverse rates.
+ */
+export function divideDecimal(
+  a: Decimal,
+  b: Decimal,
+  scale: number,
+  mode: RoundingMode = 'half_even',
+): Decimal {
+  if (b.coefficient === 0n) throw new RangeError('Division by zero');
+  // (a.c / 10^a.s) / (b.c / 10^b.s) × 10^scale = a.c × 10^(b.s + scale) / (b.c × 10^a.s)
+  const coefficient = divRound(a.coefficient * pow10(b.scale + scale), b.coefficient * pow10(a.scale), mode);
+  return { coefficient, scale };
+}

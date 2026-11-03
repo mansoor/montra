@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
+import { ForeignAmountInput, RateDto } from './fx.js';
 import { SplitInput } from './transactions.js';
 
 // ----- Transactions: edit, bulk, void (TXN-10, DE-10) -----------------------------------------------------
@@ -17,6 +18,10 @@ export const UpdateTransactionRequest = z
     memo: z.string().max(2000).nullable(),
     tags: z.array(z.string().trim().min(1).max(50)).max(20),
     reviewState: z.enum(['reviewed', 'needs_review']),
+    /** CUR-05: set (or with null, clear) the rate override on a foreign-currency account. */
+    fxRate: RateDto.nullable(),
+    /** CUR-03: set or clear (null) the original foreign amount of a purchase on a home-currency account. */
+    foreign: ForeignAmountInput.nullable(),
   })
   .partial()
   .refine((t) => !(t.categoryId && t.splits), {
