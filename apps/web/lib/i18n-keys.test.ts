@@ -98,6 +98,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'item_text',
   ],
   'rules.op.': ['equals', 'contains', 'starts_with', 'regex', 'between', 'gt', 'lt', 'in'],
+  'receipts.status.': ['processing', 'inbox', 'needs_review', 'matched', 'rejected'],
+  'fx.source.': ['implied', 'reference', 'user'],
 };
 
 describe('message catalog coverage (TZ-06)', () => {

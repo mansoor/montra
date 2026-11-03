@@ -4,6 +4,8 @@ import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { TransactionEditor } from '@/components/transaction-editor';
 import { JournalView } from '@/components/journal-view';
+import { TransactionFx } from '@/components/receipts/transaction-fx';
+import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 
 export const metadata: Metadata = { title: 'Transaction' };
 export const dynamic = 'force-dynamic';
@@ -29,6 +31,11 @@ export default async function TransactionPage({
   );
   const { t } = await getI18n();
   const entityName = new Map(workspace.entities.map((e) => [e.id, e.name]));
+  // CUR-05: rates apply when the paying account's currency differs from its entity's.
+  const account = accounts.find((a) => a.id === transaction.accountId);
+  const functional = workspace.entities.find((e) => e.id === account?.entityId)?.functionalCurrency;
+  const foreignAccount = Boolean(account && functional && account.currency !== functional);
+  const standard = transaction.entries.some((e) => e.kind === 'standard') && transaction.amount !== null;
 
   return (
     <div className="space-y-6">
@@ -45,6 +52,16 @@ export default async function TransactionPage({
         categories={categories}
         members={members}
       />
+      <TransactionFx workspaceId={workspaceId} transaction={transaction} foreignAccount={foreignAccount} />
+      {standard && (
+        <section id="receipt" aria-labelledby="receipt-heading" className="card space-y-2">
+          <h2 id="receipt-heading" className="font-medium">
+            {t('receipts.add_receipt')}
+          </h2>
+          <p className="text-sm text-muted">{t('receipts.add_receipt_hint')}</p>
+          <ReceiptUpload workspaceId={workspaceId} transactionId={transaction.id} compact />
+        </section>
+      )}
       <section aria-labelledby="journal-heading" className="space-y-3">
         <h2 id="journal-heading" className="text-lg font-semibold">
           {t('journal.title')}

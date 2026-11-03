@@ -22,6 +22,7 @@ export function TransferForm({
   const router = useRouter();
   const { t, locale } = useI18n();
   const [fromId, setFromId] = useState(accounts[0]?.id ?? '');
+  const [toId, setToId] = useState(accounts.find((a) => a.id !== accounts[0]?.id)?.id ?? '');
   const [errors, setErrors] = useState<FormErrors>({ fields: {} });
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
@@ -29,6 +30,9 @@ export function TransferForm({
   if (accounts.length < 2)
     return <p className="card text-sm text-muted">{t('transfer.need_two_accounts')}</p>;
   const from = accounts.find((a) => a.id === fromId);
+  const to = accounts.find((a) => a.id === toId);
+  // CUR-08: between currencies, both amounts are kept; the API books the gap as FX cost or gain.
+  const crossCurrency = Boolean(from && to && from.currency !== to.currency);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -41,6 +45,13 @@ export function TransferForm({
     if (parsed.minor <= 0n) return setErrors({ fields: { amount: t('money.positive') } });
     if (get('toAccountId') === fromId)
       return setErrors({ fields: { toAccountId: t('transfer.different_account') } });
+    let amountIn: { amount: string; currency: string } | undefined;
+    if (crossCurrency && to) {
+      const received = parseAmountInput(get('amountIn'), to.currency, locale, t);
+      if (!received.ok) return setErrors({ fields: { amountIn: received.error } });
+      if (received.minor <= 0n) return setErrors({ fields: { amountIn: t('money.positive') } });
+      amountIn = { amount: received.minor.toString(), currency: to.currency };
+    }
     setBusy(true);
     setErrors({ fields: {} });
     try {
@@ -49,14 +60,16 @@ export function TransferForm({
         fromAccountId: fromId,
         toAccountId: get('toAccountId'),
         amount: { amount: parsed.minor.toString(), currency },
+        ...(amountIn ? { amountIn } : {}),
         description: get('description') || undefined,
       });
       setSaved(t('transfer.saved'));
       form.reset();
       setFromId(accounts[0]?.id ?? '');
+      setToId(accounts.find((a) => a.id !== accounts[0]?.id)?.id ?? '');
       router.refresh();
     } catch (err) {
-      setErrors(toFormErrors(err, { 'amount.amount': 'amount' }, t));
+      setErrors(toFormErrors(err, { 'amount.amount': 'amount', 'amountIn.amount': 'amountIn' }, t));
     } finally {
       setBusy(false);
     }
@@ -92,7 +105,8 @@ export function TransferForm({
               {...p}
               name="toAccountId"
               className="input"
-              defaultValue={accounts.find((a) => a.id !== fromId)?.id}
+              value={toId}
+              onChange={(e) => setToId(e.target.value)}
             >
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -105,6 +119,18 @@ export function TransferForm({
         <Field id="tr-amount" label={t('fields.amount')} error={errors.fields.amount}>
           {(p) => <input {...p} name="amount" className="input num" inputMode="decimal" placeholder="0.00" />}
         </Field>
+        {crossCurrency && to && (
+          <Field
+            id="tr-amount-in"
+            label={t('transfer.amount_in', { currency: to.currency })}
+            error={errors.fields.amountIn}
+            hint={t('transfer.amount_in_hint')}
+          >
+            {(p) => (
+              <input {...p} name="amountIn" className="input num" inputMode="decimal" placeholder="0.00" />
+            )}
+          </Field>
+        )}
         <Field id="tr-date" label={t('fields.date')} error={errors.fields.date}>
           {(p) => <input {...p} name="date" type="date" className="input" defaultValue={today} />}
         </Field>

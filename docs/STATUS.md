@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
 | **Pull requests** | #1 Phase 1, #2 Phase 2, #3 Phase 3, #4 Phase 4, all merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **85 done, 43 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Requirements** | 252 IDs in total: **95 done, 34 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
 | **In progress** | **Phase 5: receipts and multi-currency.** Contracts and receipt arithmetic merged (PR #6); the matcher is on `claude/phase5-receipt-matching`. See §7 "Progress" |
 
 ### Test suite (Phase 4 hand-off plus this branch; green locally)
@@ -35,7 +35,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | `@montra/db` (ledger triggers, RLS, receipts) | 26 |
 | `@montra/sync` (against a fake server) | 17 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 9 specs |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 11 tests in 9 spec files (receipts spec: 2) |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
@@ -427,7 +427,20 @@ integration):
   - RCP-11 recommendations with dismissals, RCP-12 Amazon order history, trips (CUR-09), and local
     time (TZ-03).
   - `test/receipts.test.ts` (18) covers both exit criteria through the API.
-- ⏭ **Next:** web screens (step 6). Enabling foreign-currency accounts in
+- ✅ **Step 6, web:**
+  - `/receipts`: upload of one receipt from several pages, the inbox, needs-review, matched and all tabs,
+    search, receipt recommended (RCP-11) and Amazon order history (RCP-12).
+  - `/receipts/[id]`: the review screen with the image beside editable lines, category and member
+    pickers, the gap, a splits preview, match candidates, record from the receipt, look again and reject.
+  - `/trips` (CUR-09).
+  - The transaction page: an FX panel (the original amount, rate and source, a rate override on
+    foreign-currency accounts, "Paid in another currency?" with a fee for CUR-03) and "Add a receipt".
+  - The transfer form asks for the amount received across currencies (CUR-08).
+  - `e2e/receipts.spec.ts` covers the Walmart receipt through the UI and the CUR-03 entry. The foreign
+    *receipt* match is covered by the API tests only: e2e runs against the dev database, which has no FX
+    rates unless `fx:load` has fetched them.
+- ⏭ **Next:** step 7, mobile. **Waiting on a product-owner input:** the camera library (`expo-camera`
+  or `react-native-vision-camera`), from the camera spike on real devices. Enabling foreign-currency accounts in
   `transactions/poster.ts` (it still rejects them with `fx.rate_required`) means passing each foreign
   account's balance before the posting as `carrying`. Take it from the postings in date order; there is
   no `account_balance_daily` until Phase 6.

@@ -155,18 +155,29 @@ export class TripsService {
   }
 }
 
+/** Trips per database transaction: bulk imports tag thousands of rows without a query each. */
+const tripCache = new WeakMap<Trx, Map<string, Array<{ id: string; start: string; end: string }>>>();
+
 /** The trip whose window contains `date` (newest first), for tagging new transactions (CUR-09). */
 export async function tripOn(trx: Trx, workspaceId: string, date: string): Promise<string | null> {
-  const t = await trx
-    .selectFrom('app.trip')
-    .select('id')
-    .where('workspace_id', '=', workspaceId)
-    .where('deleted_at', 'is', null)
-    .where('start_date', '<=', date)
-    .where('end_date', '>=', date)
-    .orderBy('start_date', 'desc')
-    .executeTakeFirst();
-  return t?.id ?? null;
+  let byWorkspace = tripCache.get(trx);
+  if (!byWorkspace) {
+    byWorkspace = new Map();
+    tripCache.set(trx, byWorkspace);
+  }
+  let trips = byWorkspace.get(workspaceId);
+  if (!trips) {
+    const rows = await trx
+      .selectFrom('app.trip')
+      .select(['id', 'start_date', 'end_date'])
+      .where('workspace_id', '=', workspaceId)
+      .where('deleted_at', 'is', null)
+      .orderBy('start_date', 'desc')
+      .execute();
+    trips = rows.map((r) => ({ id: r.id, start: r.start_date, end: r.end_date }));
+    byWorkspace.set(workspaceId, trips);
+  }
+  return trips.find((t) => t.start <= date && t.end >= date)?.id ?? null;
 }
 
 const UpdateTripRequest = TripInput.and(z.object({ version: z.string() }));

@@ -433,8 +433,8 @@
     "validateReceipt within ±2 minor units; needs_review with validationGap otherwise"
   ],
   "IMP-11": [
-    "partial",
-    "API: match on create and after every import (receipt.match job), auto-link ≥ 0.8 when unambiguous, inbox with candidates; inbox screens in the P5 web/mobile steps"
+    "done",
+    "receipts matched on create and after every import (receipt.match), auto-link ≥ 0.8 when unambiguous and valid; the receipt inbox on the web with candidates and record-from-receipt"
   ],
   "CUR-04": [
     "done",
@@ -450,19 +450,19 @@
   ],
   "CUR-08": [
     "partial",
-    "transfers between currencies keep both amounts (amountIn) with implied or reference leg rates and the gap in fx_gain_loss; transferFxCost for the FX-cost display in the P5 web step"
+    "transfers between currencies record both amounts (web asks for the amount received) with the gap in fx_gain_loss; the FX cost against the market rate is not shown in the UI yet (transferFxCost exists)"
   ],
   "CUR-05": [
-    "partial",
-    "ECB daily + historical and optional OXR (fx.daily system job), direct/inverse/cross lookup with a 7-day lookback, GET /fx/rates, per-transaction fxRate override on create and update; the rate field in the P5 web/mobile steps"
+    "done",
+    "ECB daily + historical and optional OXR (fx.daily job), lookup with a 7-day lookback, GET /fx/rates; rate override on foreign-currency transactions on the web"
   ],
   "ACC-04": [
-    "partial",
-    "foreign-currency accounts in the API: opening balance at the reference rate, spending and transfers with carrying value, balance adjustments; screens in the P5 web/mobile steps"
+    "done",
+    "foreign-currency accounts (web account form takes a currency) with opening balances at the reference rate, carrying-value spending and transfers, balance adjustments"
   ],
   "CUR-03": [
-    "partial",
-    "API stores the original amount and currency, the charged amount, the implied (or user) rate, and posts the foreign fee to Bank fees; capture screens in the P5 web/mobile steps"
+    "done",
+    "four values stored (original amount and currency, charged amount, implied or entered rate) with the fee split to Bank fees; entered on the web transaction page or set by applying a foreign receipt"
   ],
   "RCP-01": [
     "partial",
@@ -473,16 +473,16 @@
     "expandedName from the model (retailer product knowledge in the prompt); quality unmeasured without the real provider"
   ],
   "RCP-03": [
-    "partial",
-    "lines categorized by item rules, item history, then AI on the item name; grouped by (category, entity, member) into splits; review screen in the P5 web step"
+    "done",
+    "lines categorized by item rules, item history, then AI on the item name; grouped by (category, entity, member) into splits; review screen on the web"
   ],
   "RCP-06": [
-    "partial",
-    "API: review edits re-split linked transactions; a chosen line category creates an item rule (scope receipt_line); review screen with the image in the P5 web step"
+    "done",
+    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line)"
   ],
   "RCP-07": [
-    "partial",
-    "lines carry their own entity and member; groups split across entities (single-currency); UI in the P5 web step"
+    "done",
+    "each line picks a category of any entity (grouped by entity) and a member; groups split across entities"
   ],
   "RCP-08": [
     "done",
@@ -493,16 +493,16 @@
     "receipts and files kept 7 years (retain_until), soft delete only; search over merchant and OCR/extracted text (tsvector); no purge job yet"
   ],
   "RCP-11": [
-    "partial",
-    "GET /receipts/recommended lists Walmart/Target/Costco/Amazon purchases over 50 (major units) without a receipt, with dismissals; UI in the P5 web step"
+    "done",
+    "Walmart/Target/Costco/Amazon purchases over 50 (major units) without a receipt are listed on the receipts page, with add-receipt and dismiss"
   ],
   "RCP-12": [
-    "partial",
-    "Amazon Retail.OrderHistory and Items CSV import, one receipt per order, idempotent by order id, matched like receipts; invoice PDFs go through receipt upload"
+    "done",
+    "Amazon Retail.OrderHistory / Items CSV import on the receipts page (one receipt per order, per-item tax, idempotent, matched); invoice PDFs through receipt upload"
   ],
   "CUR-09": [
-    "partial",
-    "trips API: transactions in the window are tagged (existing and new), receipts expect the trip currency; travel mode screens in the P5 web/mobile steps"
+    "done",
+    "trips page: dates and currency; transactions in the window are tagged (existing and new); receipts expect the trip currency"
   ],
   "TZ-03": [
     "done",
@@ -511,5 +511,9 @@
   "TXN-08": [
     "partial",
     "server side done (upload, extraction, matching or creating the transaction); mobile camera capture with edge/blur/glare in the P5 mobile step"
+  ],
+  "UP-09": [
+    "partial",
+    "receipts are stored with their transaction (7-year retention, searchable); missing-receipt flags for deductible business expenses come with BIZ-12 in Phase 8"
   ]
 }
