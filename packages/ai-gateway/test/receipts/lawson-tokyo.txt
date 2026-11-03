@@ -1,0 +1,7 @@
+LAWSON
+2026-11-20 08:15
+CURRENCY JPY
+ONIGIRI SAKE             180
+GREEN TEA                150
+SANDWICH                 398
+TOTAL                    728

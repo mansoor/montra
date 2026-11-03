@@ -5,6 +5,7 @@
  */
 import { DATE_FORMATS, detectDateFormat, displayName, normalizeDescription } from '@montra/importers';
 import type { CompletionRequest, CompletionResponse, ProviderAdapter } from '../types.js';
+import { decodeFakeReceiptImage, parseReceiptText } from '../fake-receipt.js';
 
 /** keyword (in payee/description) → category name fragments it points to. */
 export const FAKE_SYNONYMS: ReadonlyArray<readonly [readonly string[], readonly string[]]> = [
@@ -120,6 +121,23 @@ export const FAKE_SYNONYMS: ReadonlyArray<readonly [readonly string[], readonly 
     ['parking', 'toll', 'parkmobile'],
     ['parking', 'transport', 'auto'],
   ],
+  // Receipt items (RCP-03): what was bought, not where.
+  [
+    ['milk', 'banana', 'bread', 'eggs', 'cheese', 'chicken breast', 'onigiri'],
+    ['groceries', 'grocery', 'food'],
+  ],
+  [
+    ['charger', 'hdmi', 'usb', 'headphone', 'cable'],
+    ['electronics', 'technology'],
+  ],
+  [
+    ['t-shirt', ' shirt', ' tee ', 'jeans', 'socks'],
+    ['clothing', 'apparel'],
+  ],
+  [
+    ['paper towels', 'detergent', 'dish soap', 'trash bags'],
+    ['household', 'home'],
+  ],
   [['interest'], ['interest']],
   [
     ['fee', 'service charge', 'overdraft'],
@@ -213,6 +231,13 @@ export class FakeAdapter implements ProviderAdapter {
         return fakeQuickAdd(input);
       case 'extract_statement_table':
         return fakeExtract(input);
+      case 'extract_receipt': {
+        // Fake receipt images carry their text; otherwise read the (masked) OCR text like a local model.
+        const fromImages = (req.images ?? [])
+          .map((i) => decodeFakeReceiptImage(i.data))
+          .filter((t): t is string => t !== null);
+        return parseReceiptText(fromImages.length ? fromImages.join('\n') : String(input.ocrText ?? ''));
+      }
       case 'propose_categories':
         return fakePropose(input);
       case 'ping':

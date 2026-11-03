@@ -1,0 +1,10 @@
+WALMART SUPERCENTER #1234
+10/05/2026 14:32
+GV 2% MLK GAL          3.48 N
+BANANAS                1.62 N
+ONN USB-C CHRGR       12.88 T
+TS MENS TEE            8.98 T
+SUBTOTAL              26.96
+TAX                    1.75
+TOTAL                 28.71
+CARD **** 1234

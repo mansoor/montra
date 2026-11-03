@@ -209,3 +209,14 @@ describe('properties', () => {
     );
   });
 });
+
+describe('VAT-inclusive receipts', () => {
+  it('reports the tax per group without adding it on top', () => {
+    // Paris: café crème 9.00 and croque 14.50, prices include 10% TVA (2.14); tip 3.00; total 26.50.
+    const lines = [line('Dining', 900n, true), line('Dining', 1450n, true)];
+    const t = totals({ tax: 214n, taxIncluded: true, tip: 300n, total: 2650n });
+    expect(validateReceipt(lines, t)).toEqual({ computed: 2650n, gap: 0n, ok: true });
+    const [dining] = groupReceipt(lines, t);
+    expect(dining).toMatchObject({ subtotal: 2350n, tax: 214n, tip: 300n, total: 2650n });
+  });
+});

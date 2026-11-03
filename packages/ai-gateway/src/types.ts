@@ -13,6 +13,7 @@ export type TaskName =
   | 'map_columns'
   | 'parse_quick_add'
   | 'extract_statement_table'
+  | 'extract_receipt'
   | 'propose_categories';
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
 export type ModelGroup = 'small' | 'vision' | 'large';
@@ -62,6 +63,8 @@ export interface CompletionRequest {
   context?: string;
   /** Volatile input (row data). */
   input: string;
+  /** Document images, sent before `input` (vision tasks in builtin/BYOK mode only, 06 §4). */
+  images?: readonly ImagePart[];
   /** JSON schema of the expected output object (generated from the task's Zod schema). */
   schema: Record<string, unknown>;
   maxTokens: number;
@@ -232,6 +235,54 @@ export interface StatementTable {
   periodEnd: string | null;
 }
 
+/** One page of a document: base64 bytes and the media type the provider expects. */
+export interface ImagePart {
+  mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'application/pdf';
+  /** Base64, no data: prefix. */
+  data: string;
+}
+
+/**
+ * A receipt to read (RCP-01): photos (multi-shot pages in order) or a PDF invoice, and/or OCR text from the
+ * doc-worker. Images reach the model only in builtin and BYOK modes; local mode reads the OCR text.
+ */
+export interface ReceiptDocument {
+  images: readonly ImagePart[];
+  /** Tesseract text, unredacted; the gateway masks it before sending. */
+  ocrText: string | null;
+  /** The household's currency, or the trip's (CUR-09: AI expects that currency on receipts). */
+  currencyHint: string | null;
+  locale: string;
+}
+
+/** Extracted receipt with amounts as decimal strings in `currency` (the caller converts to minor units). */
+export interface ReceiptExtraction {
+  merchant: string | null;
+  date: string | null;
+  localTime: string | null;
+  currency: string | null;
+  lines: Array<{
+    rawText: string;
+    expandedName: string | null;
+    qty: string | null;
+    unitPrice: string | null;
+    lineTotal: string;
+    discount: string | null;
+    taxable: boolean | null;
+  }>;
+  subtotal: string | null;
+  tax: string | null;
+  /** Prices include the tax (VAT receipts); null when unclear. */
+  taxIncluded: boolean | null;
+  discount: string | null;
+  fees: string | null;
+  tip: string | null;
+  total: string | null;
+  cardLast4: string | null;
+  /** Calibrated 0..1. */
+  confidence: number;
+}
+
 export interface CategoryProposalInput {
   entityType: 'personal' | 'business' | 'rental';
   existing: string[];
@@ -253,6 +304,7 @@ export interface AiGateway {
   mapColumns(sample: GridSample, ctx: AiContext): Promise<TaskResult<ColumnMappingProposal>>;
   parseQuickAdd(text: string, qctx: QuickAddContext, ctx: AiContext): Promise<TaskResult<TransactionDraft>>;
   extractStatementTable(doc: StatementText, ctx: AiContext): Promise<TaskResult<StatementTable>>;
+  extractReceipt(doc: ReceiptDocument, ctx: AiContext): Promise<TaskResult<ReceiptExtraction>>;
   proposeCategories(
     input: CategoryProposalInput,
     ctx: AiContext,

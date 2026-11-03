@@ -1,0 +1,35 @@
+{
+  "merchant": "LE PETIT BISTRO",
+  "date": "2026-11-12",
+  "localTime": "20:45",
+  "currency": "EUR",
+  "lines": [
+    {
+      "rawText": "CAFE CREME",
+      "expandedName": null,
+      "qty": "2",
+      "unitPrice": "4.50",
+      "lineTotal": "9.00",
+      "discount": null,
+      "taxable": null
+    },
+    {
+      "rawText": "CROQUE MONSIEUR",
+      "expandedName": null,
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "14.50",
+      "discount": null,
+      "taxable": null
+    }
+  ],
+  "subtotal": "23.50",
+  "tax": "2.14",
+  "taxIncluded": true,
+  "discount": null,
+  "fees": null,
+  "tip": "3.00",
+  "total": "26.50",
+  "cardLast4": null,
+  "confidence": 0.9
+}

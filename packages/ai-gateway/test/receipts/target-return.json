@@ -1,0 +1,44 @@
+{
+  "merchant": "TARGET",
+  "date": "2026-11-02",
+  "localTime": "10:05",
+  "currency": null,
+  "lines": [
+    {
+      "rawText": "UP&UP PPR TWL",
+      "expandedName": "UP&UP paper towels",
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "12.99",
+      "discount": "2.00",
+      "taxable": true
+    },
+    {
+      "rawText": "ORG BNNA",
+      "expandedName": "organic bananas",
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "2.49",
+      "discount": null,
+      "taxable": false
+    },
+    {
+      "rawText": "RETURN HDMI CABLE",
+      "expandedName": null,
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "-14.99",
+      "discount": null,
+      "taxable": true
+    }
+  ],
+  "subtotal": "-1.51",
+  "tax": "-0.32",
+  "taxIncluded": false,
+  "discount": null,
+  "fees": null,
+  "tip": null,
+  "total": "-1.83",
+  "cardLast4": "9876",
+  "confidence": 0.9
+}

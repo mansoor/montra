@@ -7,7 +7,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const venv = join(root, '.venv', 'bin', 'python');
+// POSIX venvs keep the interpreter in bin/, Windows venvs in Scripts/.
+const venv =
+  process.platform === 'win32'
+    ? join(root, '.venv', 'Scripts', 'python.exe')
+    : join(root, '.venv', 'bin', 'python');
 const python = existsSync(venv) ? venv : (process.env.PYTHON ?? 'python3');
 
 const probe = spawnSync(python, ['-c', 'import pytest, ruff, mypy, pdfplumber, xlrd, psycopg'], {

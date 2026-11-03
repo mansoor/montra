@@ -1,0 +1,10 @@
+LE PETIT BISTRO
+12 RUE DES ARTISTES 75011 PARIS
+2026-11-12 20:45
+CURRENCY EUR
+CAFE CREME 2 @ 4,50     9,00
+CROQUE MONSIEUR        14,50
+SOUS-TOTAL             23,50
+TVA 10%                 2,14
+TIP                     3,00
+TOTAL                  26,50

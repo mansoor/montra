@@ -1,0 +1,44 @@
+{
+  "merchant": "LAWSON",
+  "date": "2026-11-20",
+  "localTime": "08:15",
+  "currency": "JPY",
+  "lines": [
+    {
+      "rawText": "ONIGIRI SAKE",
+      "expandedName": null,
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "180",
+      "discount": null,
+      "taxable": null
+    },
+    {
+      "rawText": "GREEN TEA",
+      "expandedName": null,
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "150",
+      "discount": null,
+      "taxable": null
+    },
+    {
+      "rawText": "SANDWICH",
+      "expandedName": null,
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "398",
+      "discount": null,
+      "taxable": null
+    }
+  ],
+  "subtotal": null,
+  "tax": null,
+  "taxIncluded": null,
+  "discount": null,
+  "fees": null,
+  "tip": null,
+  "total": "728",
+  "cardLast4": null,
+  "confidence": 0.9
+}

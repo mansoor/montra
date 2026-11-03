@@ -27,10 +27,10 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | `@montra/api` (integration, real Postgres) | 110 |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
 | `@montra/web` unit | 70 |
-| `@montra/doc-worker` (pytest, real Tesseract) | 71 |
-| `@montra/domain` | 85 |
+| `@montra/doc-worker` (pytest, real Tesseract) | 77 |
+| `@montra/domain` | 86 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
-| `@montra/ai-gateway` (offline; fake and mocked providers) | 41 |
+| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 53 |
 | `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests) | 31 |
 | `@montra/db` (ledger triggers, RLS, receipts) | 26 |
 | `@montra/sync` (against a fake server) | 17 |
@@ -408,7 +408,16 @@ integration):
   - **Known limitations:** carrying balances count all same-day postings as earlier, and a back-dated
     transaction doesn't revalue later ones (ADR-0010 note). Imports into a foreign-currency account
     need a reference rate for every row's date. Cross-entity splits and transfers stay single-currency.
-- ⏭ **Next:** step 4 (`extract_receipt`), then the receipts API (step 5). Enabling foreign-currency accounts in
+- ✅ **Step 4, `extract_receipt`** (branch `claude/phase5-receipts`, stacked on PR #8):
+  - The gateway task, with images in builtin/BYOK and masked OCR text in local mode, plus
+    `taxIncluded` for VAT receipts, in the extraction and in the domain math.
+  - Anthropic and OpenAI-compatible image content.
+  - The fake provider: PNG `tEXt` receipt images, `parseReceiptText`, and item keywords.
+  - A 5-receipt corpus (`packages/ai-gateway/test/receipts`).
+  - The doc-worker `receipt.ocr` job, plus a Windows venv fix in `scripts/py.mjs`.
+  - **Not verified:** real-provider accuracy on real receipt photos (needs `ANTHROPIC_API_KEY` and
+    photos), and real Tesseract on receipts locally (Tesseract isn't installed here; CI runs it).
+- ⏭ **Next:** the receipts API (step 5). Enabling foreign-currency accounts in
   `transactions/poster.ts` (it still rejects them with `fx.rate_required`) means passing each foreign
   account's balance before the posting as `carrying`. Take it from the postings in date order; there is
   no `account_balance_daily` until Phase 6.

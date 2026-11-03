@@ -11,6 +11,13 @@ consumes `doc.extract` jobs from the Postgres job queue (ADR-0011):
   holder's name and address in the page header). The Node import job extracts the table from that text with
   the AI gateway (ADR-0012 §9). Without the `tesseract` binary the job fails with `pdf.ocr_unavailable`.
 
+- **Receipts** (`receipt.ocr`, local AI mode only, ADR-0014 §3): photos (JPEG, PNG, WebP) and PDF
+  invoices, sniffed by content. Photos are straightened from EXIF, converted to greyscale, upscaled to
+  1000 px wide and read with Tesseract `--psm 4` (single column, suits till rolls). PDFs use their text
+  layer when they have one. The result is `{kind: "receipt_text", pages, pageCount, textLayer,
+ocrEngine}`. Every line is redacted (long digit runs, emails, phone numbers); card endings such as
+  `**** 1234` survive. The Node `receipt.extract` job reads the text with `extract_receipt`.
+
 CSV and XLSX are parsed by the Node worker.
 
 OCR needs the Tesseract binary: `apt-get install tesseract-ocr` (Debian/Ubuntu) or `brew install tesseract`.
@@ -19,6 +26,7 @@ The OCR tests skip when it is missing, except in CI (`REQUIRE_TESSERACT=1`), whe
 ## Run
 
 ```bash
+# Windows: the interpreter is .venv\Scripts\python.exe (scripts/py.mjs finds either)
 python3 -m venv apps/doc-worker/.venv
 apps/doc-worker/.venv/bin/pip install -e "apps/doc-worker[dev]"
 apps/doc-worker/.venv/bin/python -m montra_doc_worker      # or: montra-doc-worker

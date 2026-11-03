@@ -51,7 +51,19 @@ Several things were still open:
    - Builtin and BYOK modes send the image to the vision model group. Local mode runs Tesseract in the
      doc-worker and gives the OCR text to the local model for structure. Off mode keeps the OCR text and
      leaves the receipt in review with no lines.
-   - The FakeAdapter returns fixture JSON keyed by image hash, so tests and e2e are deterministic.
+   - **Implemented:**
+     - `CompletionRequest.images` carries the pages. The Anthropic adapter sends them as image or
+       document blocks before the text; OpenAI-compatible servers get image data URLs (no PDFs).
+     - The audit hash covers the image bytes.
+     - The doc-worker's `receipt.ocr` job supplies local mode's text.
+   - **Prices that include tax.** The extraction has `taxIncluded`, because VAT, TVA, MwSt and Japanese
+     consumption-tax receipts print prices that already include the tax. Validation and allocation then
+     report the tax but don't add it on top (`ReceiptTotals.taxIncluded` in `@montra/domain`).
+   - **Fake provider.** A fake receipt image is a real 1×1 PNG whose `tEXt` chunk carries the receipt
+     text (`encodeFakeReceiptImage`), so uploads pass content sniffing. `parseReceiptText` reads it
+     deterministically, including a small abbreviation table for RCP-02.
+   - **Corpus.** The text receipts in `packages/ai-gateway/test/receipts` hold the expected
+     extraction, and each must add up under the domain rules.
 4. **FX rates are reference data, stored as published.**
    - `ref.fx_rate (rate_date, base, quote, rate, source)`. ECB publishes EUR-based rates for about 30
      currencies, with no key. Open Exchange Rates is used as a second source only when `OXR_APP_ID` is set.
