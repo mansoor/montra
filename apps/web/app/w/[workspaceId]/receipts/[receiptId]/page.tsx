@@ -30,7 +30,7 @@ export default async function ReceiptPage({
         <Link href={`/w/${workspaceId}/receipts`} className="text-sm underline">
           {t('receipts.back')}
         </Link>
-        <h1 className="text-xl font-semibold">{receipt.merchant ?? t('receipts.unknown_merchant')}</h1>
+        <h1 className="page-title">{receipt.merchant ?? t('receipts.unknown_merchant')}</h1>
       </div>
       <ReceiptReview
         workspace={workspace}

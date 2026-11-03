@@ -42,9 +42,7 @@ export default async function TransactionPage({
       <Link href={`/w/${workspaceId}/transactions`} className="text-sm text-brand-600 underline">
         ← {t('nav.transactions')}
       </Link>
-      <h1 className="text-xl font-semibold">
-        {transaction.payee || transaction.description || t('editor.untitled')}
-      </h1>
+      <h1 className="page-title">{transaction.payee || transaction.description || t('editor.untitled')}</h1>
       <TransactionEditor
         workspace={workspace}
         transaction={transaction}

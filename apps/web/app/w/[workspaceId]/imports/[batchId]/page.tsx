@@ -24,7 +24,7 @@ export default async function ImportBatchPage({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold">{batch.fileName}</h1>
+          <h1 className="page-title truncate">{batch.fileName}</h1>
           {account && (
             <p className="text-sm text-muted">
               {t('imports.into_account')}{' '}

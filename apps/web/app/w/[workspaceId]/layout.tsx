@@ -1,13 +1,12 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { API_URL } from '@/lib/session';
-import { NavLinks } from '@/components/nav-links';
 import { Realtime } from '@/components/realtime';
 import { I18nProvider } from '@/components/i18n';
 import { GlobalShortcuts, ReviewCountBadge } from '@/components/review/review-badge';
 import { LocalAiRunner } from '@/components/ai/local-ai-runner';
+import { AppShell, type NavGroup } from '@/components/shell/app-shell';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,54 +23,50 @@ export default async function WorkspaceLayout({
   const { workspaceId } = await params;
   const [workspace, { me, t }] = await Promise.all([load((api) => api.getWorkspace(workspaceId)), getI18n()]);
   const base = `/w/${workspace.id}`;
+  const groups: NavGroup[] = [
+    { items: [{ href: base, label: t('nav.home'), icon: 'home', exact: true }] },
+    {
+      label: t('nav.group.money'),
+      items: [
+        { href: `${base}/transactions`, label: t('nav.transactions'), icon: 'transactions' },
+        {
+          href: `${base}/review`,
+          label: t('nav.review'),
+          icon: 'review',
+          badge: <ReviewCountBadge workspaceId={workspace.id} />,
+        },
+        { href: `${base}/receipts`, label: t('nav.receipts'), icon: 'receipts' },
+        { href: `${base}/upcoming`, label: t('nav.upcoming'), icon: 'upcoming' },
+        { href: `${base}/recurring`, label: t('nav.recurring'), icon: 'recurring' },
+        { href: `${base}/accounts/new`, label: t('nav.add_account'), icon: 'add' },
+      ],
+    },
+    {
+      label: t('nav.group.books'),
+      items: [
+        { href: `${base}/journal`, label: t('nav.journal'), icon: 'journal' },
+        { href: `${base}/imports`, label: t('nav.imports'), icon: 'imports' },
+        { href: `${base}/rules`, label: t('nav.rules'), icon: 'rules' },
+        { href: `${base}/insights`, label: t('nav.insights'), icon: 'insights' },
+      ],
+    },
+  ];
   return (
     <I18nProvider locale={me.locale} dateFormat={me.dateFormat}>
-      <div className="min-h-screen">
-        <header className="border-b border-line bg-surface">
-          <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-            <Link href={base} className="text-lg font-semibold">
-              Montra
-            </Link>
-            <span className="text-sm text-muted" aria-label={t('shell.workspace')}>
-              {workspace.name}
-            </span>
-            <NavLinks
-              label={t('shell.nav')}
-              links={[
-                { href: base, label: t('nav.home'), exact: true },
-                { href: `${base}/transactions`, label: t('nav.transactions') },
-                {
-                  href: `${base}/review`,
-                  label: t('nav.review'),
-                  badge: <ReviewCountBadge workspaceId={workspace.id} />,
-                },
-                { href: `${base}/receipts`, label: t('nav.receipts') },
-                { href: `${base}/upcoming`, label: t('nav.upcoming') },
-                { href: `${base}/recurring`, label: t('nav.recurring') },
-                { href: `${base}/journal`, label: t('nav.journal') },
-                { href: `${base}/imports`, label: t('nav.imports') },
-                { href: `${base}/rules`, label: t('nav.rules') },
-                { href: `${base}/insights`, label: t('nav.insights') },
-                { href: `${base}/accounts/new`, label: t('nav.add_account') },
-                { href: `${base}/settings`, label: t('nav.settings') },
-              ]}
-            />
-            <div className="ml-auto flex items-center gap-3">
-              <Realtime workspaceId={workspace.id} wsUrl={wsUrl()} />
-              <form action="/sign-out" method="post">
-                <button type="submit" className="btn-secondary">
-                  {t('shell.sign_out')}
-                </button>
-              </form>
-            </div>
-          </div>
-        </header>
+      <AppShell
+        workspaceName={workspace.name}
+        homeHref={base}
+        navLabel={t('shell.nav')}
+        groups={groups}
+        settingsHref={`${base}/settings`}
+        userName={me.displayName}
+        userEmail={me.email}
+        status={<Realtime workspaceId={workspace.id} wsUrl={wsUrl()} />}
+      >
         <GlobalShortcuts workspaceId={workspace.id} />
         <LocalAiRunner workspaceId={workspace.id} />
-        <main id="main" className="mx-auto max-w-5xl px-4 py-6">
-          {children}
-        </main>
-      </div>
+        {children}
+      </AppShell>
     </I18nProvider>
   );
 }

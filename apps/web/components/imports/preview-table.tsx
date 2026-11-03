@@ -121,14 +121,13 @@ export function PreviewTable({
   return (
     <div className="card space-y-3 p-0">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
-        <div role="group" aria-label={t('imports.filter.label')} className="flex flex-wrap gap-1">
+        <div role="group" aria-label={t('imports.filter.label')} className="segmented segmented-md flex-wrap">
           {FILTERS.map((f) => (
             <button
               key={f.label}
               type="button"
               aria-pressed={filter === f.status}
               onClick={() => setFilter(f.status)}
-              className={`rounded-md border px-2 py-1 text-sm ${filter === f.status ? 'border-brand-600 bg-brand-600 text-white' : 'border-line bg-surface hover:bg-brand-50'}`}
             >
               {t(f.label)} <span className="num">({batch.counts[f.count]})</span>
             </button>

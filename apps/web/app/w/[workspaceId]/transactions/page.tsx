@@ -48,7 +48,7 @@ export default async function TransactionsPage({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('nav.transactions')}</h1>
+        <h1 className="page-title">{t('nav.transactions')}</h1>
         <Link href={`${base}/journal/new`} className="text-sm font-medium text-brand-600 underline">
           {t('journal.new')}
         </Link>
@@ -67,13 +67,13 @@ export default async function TransactionsPage({
             {t(FILTERS[filter].label)}
           </h2>
           <nav aria-label={t('transactions.filter.label')}>
-            <ul className="flex flex-wrap gap-1">
+            <ul className="tabs border-b-0">
               {(Object.keys(FILTERS) as FilterKey[]).map((k) => (
                 <li key={k}>
                   <Link
                     href={k === 'all' ? `${base}/transactions` : `${base}/transactions?filter=${k}`}
                     aria-current={filter === k ? 'page' : undefined}
-                    className={`rounded-md px-2 py-1 text-sm ${filter === k ? 'bg-brand-600 text-white' : 'border border-line bg-surface hover:bg-brand-50'}`}
+                    className="tab"
                   >
                     {t(FILTERS[k].label)}
                   </Link>

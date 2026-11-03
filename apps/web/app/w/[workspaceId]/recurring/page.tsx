@@ -18,7 +18,7 @@ export default async function RecurringPage({ params }: { params: Promise<{ work
   );
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Recurring</h1>
+      <h1 className="page-title">Recurring</h1>
       <p className="text-sm text-muted">
         Rent, salary and subscriptions. Each occurrence is scheduled for you to confirm, or posted
         automatically.

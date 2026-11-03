@@ -14,7 +14,7 @@ export default async function TripsPage({ params }: { params: Promise<{ workspac
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">{t('trips.title')}</h1>
+        <h1 className="page-title">{t('trips.title')}</h1>
         <p className="text-sm text-muted">{t('trips.intro')}</p>
       </div>
       <TripsManager workspaceId={workspaceId} trips={trips} />

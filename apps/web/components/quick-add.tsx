@@ -164,11 +164,7 @@ function QuickAddForm({
             {t('quick_add.title')}
           </h2>
           {toggle}
-          <div
-            role="radiogroup"
-            aria-label={t('quick_add.type')}
-            className="inline-flex overflow-hidden rounded-md border border-line"
-          >
+          <div role="radiogroup" aria-label={t('quick_add.type')} className="segmented segmented-md">
             {(['expense', 'income'] as const).map((d) => (
               <button
                 key={d}
@@ -179,7 +175,6 @@ function QuickAddForm({
                   setDirection(d);
                   setSplits([]);
                 }}
-                className={`px-3 py-1.5 text-sm ${direction === d ? 'bg-brand-600 text-white' : 'bg-surface hover:bg-brand-50'}`}
               >
                 {t(d === 'expense' ? 'quick_add.expense' : 'quick_add.income')}
               </button>

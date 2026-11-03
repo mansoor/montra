@@ -30,7 +30,7 @@ export default async function RegisterPage({
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">{account.name}</h1>
+          <h1 className="page-title">{account.name}</h1>
           <p className="text-sm text-muted">
             {account.type === 'liability' ? t('register.owed') : t('register.balance')}:{' '}
             <Money
@@ -51,18 +51,9 @@ export default async function RegisterPage({
             {t('register.imports')}
           </Link>
         </div>
-        <div
-          role="group"
-          aria-label={t('register.view')}
-          className="inline-flex overflow-hidden rounded-md border border-line"
-        >
+        <div role="group" aria-label={t('register.view')} className="segmented segmented-md">
           {(['ledger', 'simple'] as const).map((v) => (
-            <Link
-              key={v}
-              href={`${base}?view=${v}`}
-              aria-current={view === v ? 'true' : undefined}
-              className={`px-3 py-1.5 text-sm ${view === v ? 'bg-brand-600 text-white' : 'bg-surface hover:bg-brand-50'}`}
-            >
+            <Link key={v} href={`${base}?view=${v}`} aria-current={view === v ? 'true' : undefined}>
               {v === 'ledger' ? t('register.view_ledger') : t('register.view_simple')}
             </Link>
           ))}
@@ -73,7 +64,7 @@ export default async function RegisterPage({
         <p className="card text-sm text-muted">{t('register.empty')}</p>
       ) : (
         <div className="card overflow-x-auto p-0">
-          <table className="w-full min-w-[36rem] text-sm">
+          <table className="tbl min-w-[36rem] text-sm">
             <caption className="sr-only">
               {t(view === 'ledger' ? 'register.caption_ledger' : 'register.caption_simple', {
                 account: account.name,

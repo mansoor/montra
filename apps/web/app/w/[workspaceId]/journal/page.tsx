@@ -47,7 +47,7 @@ export default async function JournalListPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('journal.title')}</h1>
+        <h1 className="page-title">{t('journal.title')}</h1>
         <Link href={`${base}/journal/new`} className="btn-primary">
           {t('journal.new')}
         </Link>
@@ -99,7 +99,7 @@ export default async function JournalListPage({
         <p className="card text-sm text-muted">{t('journal.empty')}</p>
       ) : (
         <div className="card overflow-x-auto p-0">
-          <table className="w-full min-w-[36rem] text-sm">
+          <table className="tbl min-w-[36rem] text-sm">
             <caption className="sr-only">{t('journal.title')}</caption>
             <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
               <tr>

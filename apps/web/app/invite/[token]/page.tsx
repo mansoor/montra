@@ -12,7 +12,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const email = (await cookies()).get(SESSION_COOKIE)?.value ?? '';
   return (
     <main id="main" className="mx-auto max-w-md px-4 py-16">
-      <h1 className="mb-2 text-2xl font-semibold">You’ve been invited</h1>
+      <h1 className="page-title mb-2">You’ve been invited</h1>
       <p className="mb-6 text-sm text-muted">
         Accept to join the workspace as <strong>{email}</strong>. The invite must have been sent to this
         address.
