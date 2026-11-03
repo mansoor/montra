@@ -47,6 +47,9 @@ function Gate() {
       <Stack.Screen name="accounts/index" options={{ title: t('mobile.more.accounts') }} />
       <Stack.Screen name="accounts/[id]" options={{ title: t('mobile.accounts.register') }} />
       <Stack.Screen name="import" options={{ title: t('mobile.import.title') }} />
+      <Stack.Screen name="receipt-capture" options={{ title: t('mobile.receipts.capture_title') }} />
+      <Stack.Screen name="receipts/index" options={{ title: t('mobile.receipts.title') }} />
+      <Stack.Screen name="receipts/[id]" options={{ title: t('mobile.receipts.review_title') }} />
       <Stack.Screen name="activity" options={{ title: t('mobile.activity.title') }} />
       <Stack.Screen name="settings" options={{ title: t('mobile.settings.title') }} />
       <Stack.Screen name="developer/camera" options={{ title: t('mobile.spike.title') }} />

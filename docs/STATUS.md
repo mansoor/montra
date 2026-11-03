@@ -1,7 +1,8 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-02, after the Phase 5 receipt matcher (`claude/phase5-receipt-matching`; steps 1–2a merged in PR #6). Keep this file current: update it at the
-end of every work session and every phase._
+_Last updated 2026-11-03, at the end of Phase 5 (steps 1–6 merged in PRs #6–#9; step 7 mobile and step 8
+integration on `claude/phase5-mobile`). Keep this file current: update it at the end of every work session
+and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
 workarounds already in place (so nobody undoes them) and what to pick up next. Read it after
@@ -13,14 +14,14 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–4 merged. Last merge was PR #4 (Phase 4) at `bee2b04` |
+| **Integration branch** | `develop`: Phases 0–4 and Phase 5 steps 1–6 merged. Last merge was PR #9 at `0ebc60b` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
-| **Pull requests** | #1 Phase 1, #2 Phase 2, #3 Phase 3, #4 Phase 4, all merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **95 done, 34 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **In progress** | **Phase 5: receipts and multi-currency.** Contracts and receipt arithmetic merged (PR #6); the matcher is on `claude/phase5-receipt-matching`. See §7 "Progress" |
+| **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web. All merged into `develop` with green CI |
+| **Requirements** | 252 IDs in total: **96 done, 34 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Next** | Merge the Phase 5 closing PR (mobile + integration) and tag `v0.6.0-dev.1`; then **Phase 6: budgeting, money flow and recommendations** |
 
-### Test suite (Phase 4 hand-off plus this branch; green locally)
+### Test suite at the end of Phase 5 (green locally)
 
 | Suite | Tests |
 | --- | --- |
@@ -31,11 +32,11 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | `@montra/domain` | 86 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
 | `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 53 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests) | 31 |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture) | 35 |
 | `@montra/db` (ledger triggers, RLS, receipts) | 26 |
-| `@montra/sync` (against a fake server) | 17 |
+| `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 11 tests in 9 spec files (receipts spec: 2) |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 12 tests in 9 spec files (receipts spec: 3, both exit criteria) |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
@@ -60,8 +61,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 2 | Import pipeline | ✅ done | CSV/XLSX/XLS/PDF import, dedupe/matching, undo, reconciliation, Postgres job queue |
 | 3 | AI gateway and categorization | ✅ done | Gateway, rules, six-step pipeline, review queue, learning, insights, OCR scans |
 | 4 | Mobile foundation and offline sync | ✅ done (device checks pending) | Expo app, encrypted store, outbox sync with field-group LWW |
-| **5** | **Receipts and multi-currency** | 🚧 **in progress** | Contracts and domain arithmetic done; see §7 |
-| 6 | Budgeting, money flow and recommendations | not started | Budgets, dashboard, forecast, Sankey, net worth, recommendations |
+| 5 | Receipts and multi-currency | ✅ done (device checks pending) | Receipts end to end, FX rates and foreign-currency accounts, web and mobile capture; see §7 |
+| **6** | **Budgeting, money flow and recommendations** | ⏭ **next** | |
 | 7 | Family members and payslips | not started | Payslip capture and posting, per-member reports |
 | 8 | Small business | not started | Invoices, bills, mileage, Schedule C, quarterly estimates, accountant export |
 | 9 | Rental properties | not started | Units, leases, rent roll, Schedule E, depreciation, metrics |
@@ -193,7 +194,6 @@ finished:
   - AIA-01: summaries and Q&A, in Phases 6 and 10.
   - AIA-12 and NFR-14: tax outputs, in Phase 8.
   - AI-02: property and unit, in Phase 9.
-  - FAM-05: receipt items, in **Phase 5**.
   - PLT-03 and UP-07: mobile screens arrive with each feature phase.
   - UP-06: the privacy center, in Phase 10.
   - AI-07: logos, via reference data.
@@ -284,7 +284,7 @@ finished:
 
 ---
 
-## 7. Next: Phase 5, receipts and multi-currency
+## 7. Phase 5, receipts and multi-currency (done)
 
 **Scope** (from `01-phased-plan.md`): TXN-08, TXN-09; IMP-11; RCP-01..08, RCP-10, RCP-11, RCP-12; ACC-04;
 CUR-03..09; TZ-03; UP-09; and the receipt vault that BIZ-12 will use.
@@ -439,18 +439,34 @@ integration):
   - `e2e/receipts.spec.ts` covers the Walmart receipt through the UI and the CUR-03 entry. The foreign
     *receipt* match is covered by the API tests only: e2e runs against the dev database, which has no FX
     rates unless `fx:load` has fetched them.
-- ⏭ **Next:** step 7, mobile. **Waiting on a product-owner input:** the camera library (`expo-camera`
-  or `react-native-vision-camera`), from the camera spike on real devices. Enabling foreign-currency accounts in
-  `transactions/poster.ts` (it still rejects them with `fx.rate_required`) means passing each foreign
-  account's balance before the posting as `carrying`. Take it from the postings in date order; there is
-  no `account_balance_daily` until Phase 6.
+- ✅ **Step 7, mobile** (`expo-camera`, decided by the product owner; ADR-0009 amendment):
+  - Receipt capture: multi-shot, with a blur/glare verdict and retake after each shot, or a photo or
+    PDF from Files. Entry points: the Capture tab, More → Receipts, and a transaction's "Add a
+    receipt".
+  - Offline upload queue: `ReceiptUploadQueue` in `@montra/sync` (TXN-09, ADR-0014), run on every sync.
+  - The receipts list: waiting uploads with retry and discard, plus the server inbox.
+  - Receipt review: the image (bearer-authenticated), line categories through the category picker,
+    splits, candidates, record from the receipt, look again and reject.
+  - **Not done or not verified:** live edge detection (needs vision-camera frame processors). Nothing
+    has been run on a device yet: camera, file copies, offline upload, image loading. No Maestro flow
+    for capture (it needs a camera on the simulator).
+- ✅ **Step 8, integration:** `e2e/receipts.spec.ts` covers the Walmart receipt through the UI (exit
+  criterion 1), the foreign receipt matched within ±3% with the actual rate (exit criterion 2; rates loaded
+  through `app.upsert_fx_rates`) and the CUR-03 entry. An applied foreign receipt's rate is `implied` (from
+  the charge). CHANGELOG `v0.6.0-dev.1`.
 
-**Decisions and inputs to confirm with the product owner before or during Phase 5:**
-- whether an Open Exchange Rates app ID will be provided (otherwise the app is ECB-only, which covers
-  about 30 currencies);
-- an `ANTHROPIC_API_KEY` for real receipt extraction tests, which aren't possible with the fake provider;
-- results of the camera spike on real devices (`docs/design/spikes/phase4-camera.md`), to settle the camera
-  library.
+**Decisions and inputs:**
+- **Camera library:** `expo-camera`, decided by the product owner on 2026-11-03 (ADR-0009 amendment).
+  Edge detection would need `react-native-vision-camera`.
+- **Still open:**
+  - whether an Open Exchange Rates app ID will be provided (otherwise ECB only, about 30 currencies);
+  - an `ANTHROPIC_API_KEY` to measure receipt extraction on real photos (RCP-01/02);
+  - device runs of the mobile capture, the offline queue and the camera spike;
+  - whether receipt images should sit behind the `allowDocumentsToLlm` opt-in (ADR-0014 §7).
+- **Phase 5 leftovers, not blocking:**
+  - CUR-08: FX-cost display;
+  - RCP-10: purge after retention;
+  - UP-09: missing-receipt flags, with BIZ-12 in Phase 8.
 
 ---
 

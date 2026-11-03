@@ -1200,8 +1200,9 @@ export class ReceiptsService {
       {
         splits,
         reviewState: 'reviewed',
+        // CUR-03/04: the poster derives the rate from the charge and the original (source `implied`).
         ...(rate
-          ? { foreign: { original: { amount: r.total_minor!.toString(), currency: receiptCurrency }, rate } }
+          ? { foreign: { original: { amount: r.total_minor!.toString(), currency: receiptCurrency } } }
           : {}),
       },
       undefined,

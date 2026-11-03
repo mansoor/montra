@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
+import pg from 'pg';
 import { nav, onboardHousehold } from './phase3-helpers';
 
 /**
@@ -136,4 +137,59 @@ test('a purchase abroad on a home-currency card records the original amount and 
   await expect(fx).toContainText('$1.31');
   const journal = page.locator('section[aria-labelledby="journal-heading"]');
   await expect(journal.getByText('Bank fees')).toBeVisible();
+});
+
+test('a foreign receipt matches its home-currency card line within ±3% and keeps the actual rate', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  // The ECB rate for the day, loaded the way the fx.daily job stores it (app.upsert_fx_rates, ADR-0014).
+  const db = new pg.Client({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://montra_app:montra_app@localhost:5432/montra',
+  });
+  await db.connect();
+  try {
+    await db.query(`select app.upsert_fx_rates('ecb', $1::jsonb)`, [
+      JSON.stringify([{ date: '2026-10-30', base: 'EUR', quote: 'USD', rate: '1.0912' }]),
+    ]);
+  } finally {
+    await db.end();
+  }
+
+  await onboardHousehold(page, `fx-receipt-${Date.now()}@example.com`, 'Everyday checking');
+  const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  const api = `/api/v1/workspaces/${workspaceId}`;
+  const accounts = await (await page.request.get(`${api}/accounts`)).json();
+  const charge = await page.request.post(`${api}/transactions`, {
+    data: {
+      date: '2026-10-31',
+      accountId: accounts.data[0].id,
+      amount: { amount: '-4360', currency: 'USD' },
+      payee: 'GALERIES LAFAYETTE PARIS FR',
+    },
+  });
+  const { id: transactionId } = await charge.json();
+
+  const file = join(mkdtempSync(join(tmpdir(), 'montra-receipt-')), 'paris.png');
+  writeFileSync(
+    file,
+    fakeReceiptPng(
+      ['GALERIES LAFAYETTE', '2026-10-30', 'CURRENCY EUR', 'FOULARD SOIE   40,00', 'TOTAL   40,00'].join(
+        '\n',
+      ),
+    ),
+  );
+  await nav(page, 'Receipts');
+  await page.getByLabel('Choose files').setInputFiles(file);
+  await page.getByRole('button', { name: 'Read receipt' }).click();
+  await expect(page.getByText('Matched', { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  // Exit criterion 2: €40.00 at the day's 1.0912 would be $43.65; the $43.60 charge is −0.11% off. The
+  // transaction keeps the original amount and the rate actually charged.
+  await page.getByRole('link', { name: 'Open the transaction' }).click();
+  await expect(page).toHaveURL(new RegExp(`/transactions/${transactionId}$`));
+  const fx = page.locator('section[aria-labelledby="fx-title"]');
+  await expect(fx).toContainText('€40.00');
+  await expect(fx).toContainText('1.09');
+  await expect(fx).toContainText('from the charge');
 });

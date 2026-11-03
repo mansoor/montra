@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.6.0-dev.1 — Phase 5: receipts and multi-currency
+
+- **Receipts, end to end** (TXN-08, IMP-11, RCP-01..08, RCP-10..12; ADR-0014):
+  - **Reading.** `extract_receipt` reads lines, plain-language item names, tax (and whether the prices
+    include it), discounts, fees, tip, total and card ending.
+    - Images go to the model in builtin and BYOK modes. Local mode OCRs them in the doc-worker
+      (`receipt.ocr`) and sends only the masked text.
+  - **Categorizing items.** Item rules, then item history, then AI on the item name. Lines with the same
+    category, entity and member become one split, and tax, discounts, fees and tip are allocated so the
+    splits sum exactly.
+  - **Matching.** Receipts are matched to transactions (±5 days, tip tolerance, merchant, ±3% across
+    currencies) when created and after every import.
+    - A clear match is applied automatically: the transaction is split by the receipt, and a foreign
+      receipt stores the rate actually charged.
+    - Unmatched receipts wait in the inbox, or can record the transaction themselves.
+  - **Review.** The receipt image beside its lines; changing a line's category re-splits the transaction
+    and creates an item rule.
+  - **Also:**
+    - receipt recommended for big purchases at multi-department stores;
+    - Amazon order-history import;
+    - 7-year retention and search over receipt text;
+    - trips (travel mode);
+    - the receipt's local time on the transaction.
+- **Multi-currency** (ACC-04, CUR-03..09; ADR-0010):
+  - **Rates.** An FX rates service loads ECB daily and historical rates, plus Open Exchange Rates with
+    `OXR_APP_ID`, through a self-rescheduling daily job. Lookups cover direct, inverse and cross rates, with
+    a 7-day weekend lookback.
+  - **Foreign-currency accounts.**
+    - Opening balances post at the day's rate.
+    - Spending and transfers out are valued at the average carrying cost, with realized FX gain or loss;
+      an emptied account is at exactly 0.
+    - A rate override is available on any transaction.
+  - **Foreign spending on home-currency cards** records the original amount, the rate and the foreign
+    transaction fee (posted to Bank fees).
+  - **Transfers between currencies** record both amounts; the gap is FX gain or loss.
+  - **Domain helpers:** `valueAtCarrying`, `unrealizedFx`, a period-close `fx_revaluation` entry and
+    `transferFxCost`.
+- **Web:**
+  - Receipts page (upload, inbox, search, recommendations, order import) and the review screen.
+  - Trips page.
+  - On transactions: an FX panel (original amount, rate and source, override, "Paid in another
+    currency?") and "Add a receipt".
+  - Transfers ask for the amount received across currencies.
+- **Mobile** (`expo-camera`, ADR-0009 amended):
+  - Receipt capture with several photos per receipt and a blur/glare check with retake after each shot,
+    or a photo or PDF from Files.
+  - An offline upload queue that resumes interrupted uploads (TXN-09).
+  - The receipts list and review.
+- **Platform:**
+  - Migrations 0012 (receipts, trips, currencies, FX rates), 0013 (system jobs) and 0014 (receipt API
+    additions).
+  - Local setup works on Windows checkouts (LF line endings, storage keys, cross-platform scripts) and
+    alongside other stacks (configurable Compose ports).
+- **Exit criteria:**
+  - The requirements' Walmart receipt splits into exactly Groceries 5.10, Electronics 13.91,
+    Clothing 9.70 = 28.71. This is checked by a domain test, an API test and an e2e test through the UI.
+  - A €40.00 receipt matches its $43.60 statement line within ±3%, with the rate 1.09 stored. This is
+    checked by API and e2e tests.
+
 ## v0.5.0-dev.1 — Phase 4: mobile foundation and offline sync (on feature branch)
 
 - **Offline sync** (ADR-0013):

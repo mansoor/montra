@@ -11,3 +11,13 @@ export {
   projectTransaction,
   replayOp,
 } from './projection.js';
+export {
+  ReceiptUploadQueue,
+  type ErrorKind,
+  type ProcessResult,
+  type QueuedReceipt,
+  type ReceiptPage,
+  type ReceiptPageType,
+  type ReceiptQueueOptions,
+  type ReceiptUploader,
+} from './receipt-queue.js';
