@@ -14,12 +14,12 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–4 and Phase 5 steps 1–6 merged. Last merge was PR #9 at `0ebc60b` |
+| **Integration branch** | `develop`: Phases 0–5 merged. Last merge was PR #10 at `a89525c` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
-| **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web. All merged into `develop` with green CI |
+| **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
 | **Requirements** | 252 IDs in total: **98 done, 32 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge the Phase 5 closing PR (mobile + integration) and tag `v0.6.0-dev.1`; then **Phase 6: budgeting, money flow and recommendations** |
+| **Next** | Tag `v0.6.0-dev.1` on `develop`; Phase 6 API (budgets, goals, expected income, dashboard, flow, recommendations), then web, mobile and the dashboard perf budget. See §7a |
 
 ### Test suite at the end of Phase 5 (green locally)
 
@@ -62,7 +62,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 3 | AI gateway and categorization | ✅ done | Gateway, rules, six-step pipeline, review queue, learning, insights, OCR scans |
 | 4 | Mobile foundation and offline sync | ✅ done (device checks pending) | Expo app, encrypted store, outbox sync with field-group LWW |
 | 5 | Receipts and multi-currency | ✅ done (device checks pending) | Receipts end to end, FX rates and foreign-currency accounts, web and mobile capture; see §7 |
-| **6** | **Budgeting, money flow and recommendations** | ⏭ **next** | |
+| **6** | **Budgeting, money flow and recommendations** | 🚧 **in progress** | Contracts (migration 0015, DTOs, ADR-0015) and the domain engine done; API next. See §7a |
 | 7 | Family members and payslips | not started | Payslip capture and posting, per-member reports |
 | 8 | Small business | not started | Invoices, bills, mileage, Schedule C, quarterly estimates, accountant export |
 | 9 | Rental properties | not started | Units, leases, rent roll, Schedule E, depreciation, metrics |
@@ -473,6 +473,31 @@ integration):
   - CUR-08: FX-cost display;
   - RCP-10: purge after retention;
   - UP-09: missing-receipt flags, with BIZ-12 in Phase 8.
+
+---
+
+## 7a. Phase 6, budgeting, money flow and recommendations (in progress)
+
+Branch `claude/phase6-contracts` (stacked on `claude/receipt-images-setting`, PR #11).
+
+| Step | State | What |
+| --- | --- | --- |
+| 1. Contracts | ✅ | Migration 0015 (budget, budget_period, budget_line, budget_move, goal, expected_income, recommendation; bank_account min payment and low-balance threshold; `posting.restricted_member_id`), Kysely types, DTOs (`budgets.ts`, `flow.ts`, `recommendations.ts`), ADR-0015 |
+| 2. Read models | ✅ | `category_activity_monthly` and `account_balance_daily`, maintained by statement-level posting triggers (transition tables) in the same transaction; restricted rows follow the payslip rule. `packages/db/test/read-models.test.ts` reconciles them with postings through random writes |
+| 3. Domain engine | ✅ | `packages/domain/src/budget/`: periods, carried-in / available / left to assign (money conserved), pace, sinking funds, goal projection, snowball/avalanche, draft/copy, 50/30/20, forecast, REC-01..08 rules. Property tests |
+| 4. API | next | Budgets, periods, assign/move/copy, draft (AI explanation), goals, expected income, dashboard, Sankey, forecast, calendar, net worth, recommendations job and AI wording |
+| 5. Web | | Budget screen, dashboard, Sankey, forecast, calendar, goals, recommendations |
+| 6. Mobile | | Budget and dashboard views (read-only first), recommendations |
+| 7. Perf and integration | | 50k seed, dashboard p95 < 2 s, e2e, docs, CHANGELOG, tag `v0.7.0-dev.1` |
+
+Design notes that the API relies on:
+
+- Only intent is stored. Carried-in, available and left to assign are computed by walking periods from
+  the first one; a surplus or overspend a category doesn't carry goes back to left to assign, so
+  left to assign + Σ available = Σ income − Σ activity.
+- The budget's `version` is the concurrency token for its periods, lines and moves; only `budget` has a
+  change-feed trigger.
+- Read-model rows are never deleted (zeroed rows stay); filter on non-zero values.
 
 ---
 
