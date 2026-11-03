@@ -798,6 +798,8 @@ export interface ReceiptTable {
   currency: string | null;
   subtotal_minor: Int8 | null;
   tax_minor: Int8Default;
+  /** Prices include the tax (VAT receipts): reported, not added (migration 0014). */
+  tax_included: Generated<boolean>;
   discount_minor: Int8Default;
   fees_minor: Int8Default;
   tip_minor: Int8Default;
@@ -817,6 +819,7 @@ export interface ReceiptTable {
   /** Generated tsvector over merchant and OCR text (RCP-10); query it with sql, never write it. */
   search: ColumnType<string, never, never>;
   retain_until: ColumnType<string, string | undefined, string>;
+  reviewed_at: Date | null;
   created_by: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
@@ -844,8 +847,17 @@ export interface ReceiptLineTable {
   member_id: string | null;
   confidence: string | null;
   categorization: Json<Record<string, unknown>> | null;
+  /** Normalized printed text, for item history (RCP-03/06). */
+  item_key: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+export interface ReceiptFlagDismissalTable {
+  workspace_id: string;
+  transaction_id: string;
+  dismissed_by: string | null;
+  created_at: Generated<Date>;
 }
 
 export interface Database {
@@ -903,6 +915,7 @@ export interface Database {
   'app.trip': TripTable;
   'app.receipt': ReceiptTable;
   'app.receipt_line': ReceiptLineTable;
+  'app.receipt_flag_dismissal': ReceiptFlagDismissalTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;

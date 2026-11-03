@@ -425,20 +425,20 @@
     "mobile parity for the daily tasks of phases 1–3"
   ],
   "RCP-04": [
-    "partial",
-    "groupReceipt allocates tax by taxable subtotal, discounts/fees/tip by subtotal with allocate(largest) (@montra/domain; Walmart example is a unit test); applying to transactions in the P5 API step"
+    "done",
+    "groupReceipt allocates tax by taxable subtotal (none when included), discounts/fees/tip by subtotal with allocate(largest); applied to the transaction (Walmart example passes through the API)"
   ],
   "RCP-05": [
-    "partial",
-    "validateReceipt (±2 minor units, gap reported) in @montra/domain; receipt status/review in the P5 API step"
+    "done",
+    "validateReceipt within ±2 minor units; needs_review with validationGap otherwise"
   ],
   "IMP-11": [
     "partial",
-    "matchReceipts in @montra/importers (±5 days, tip tolerance, merchant, one-to-one, auto-link ≥ 0.8 when unambiguous); inbox, re-match on import and linking in the P5 API step"
+    "API: match on create and after every import (receipt.match job), auto-link ≥ 0.8 when unambiguous, inbox with candidates; inbox screens in the P5 web/mobile steps"
   ],
   "CUR-04": [
-    "partial",
-    "matcher converts at the day rate within ±3% and returns the implied rate to store; rates service and storing it in the P5 API step"
+    "done",
+    "foreign receipts match their home-currency line within ±3% of the day rate; the implied rate is stored on the receipt and the transaction"
   ],
   "CUR-06": [
     "partial",
@@ -463,5 +463,53 @@
   "CUR-03": [
     "partial",
     "API stores the original amount and currency, the charged amount, the implied (or user) rate, and posts the foreign fee to Bank fees; capture screens in the P5 web/mobile steps"
+  ],
+  "RCP-01": [
+    "partial",
+    "extract_receipt (images in builtin/BYOK, doc-worker OCR text in local mode) stores lines, qty, unit price, discounts, taxable flag, subtotal, tax (taxIncluded), fees, tip, total; real-provider accuracy unmeasured (needs ANTHROPIC_API_KEY and real photos)"
+  ],
+  "RCP-02": [
+    "partial",
+    "expandedName from the model (retailer product knowledge in the prompt); quality unmeasured without the real provider"
+  ],
+  "RCP-03": [
+    "partial",
+    "lines categorized by item rules, item history, then AI on the item name; grouped by (category, entity, member) into splits; review screen in the P5 web step"
+  ],
+  "RCP-06": [
+    "partial",
+    "API: review edits re-split linked transactions; a chosen line category creates an item rule (scope receipt_line); review screen with the image in the P5 web step"
+  ],
+  "RCP-07": [
+    "partial",
+    "lines carry their own entity and member; groups split across entities (single-currency); UI in the P5 web step"
+  ],
+  "RCP-08": [
+    "done",
+    "negative lines (is_return) reverse their category, tax allocated with signs (allocateSigned)"
+  ],
+  "RCP-10": [
+    "partial",
+    "receipts and files kept 7 years (retain_until), soft delete only; search over merchant and OCR/extracted text (tsvector); no purge job yet"
+  ],
+  "RCP-11": [
+    "partial",
+    "GET /receipts/recommended lists Walmart/Target/Costco/Amazon purchases over 50 (major units) without a receipt, with dismissals; UI in the P5 web step"
+  ],
+  "RCP-12": [
+    "partial",
+    "Amazon Retail.OrderHistory and Items CSV import, one receipt per order, idempotent by order id, matched like receipts; invoice PDFs go through receipt upload"
+  ],
+  "CUR-09": [
+    "partial",
+    "trips API: transactions in the window are tagged (existing and new), receipts expect the trip currency; travel mode screens in the P5 web/mobile steps"
+  ],
+  "TZ-03": [
+    "done",
+    "transactions keep the statement date; an applied receipt's local time is stored on the transaction (local_time)"
+  ],
+  "TXN-08": [
+    "partial",
+    "server side done (upload, extraction, matching or creating the transaction); mobile camera capture with edge/blur/glare in the P5 mobile step"
   ]
 }

@@ -16,6 +16,17 @@ const Minor = z.string().regex(/^-?\d{1,19}$/, 'Amount must be an integer number
 /** Wall-clock time on the receipt (TZ-03). */
 const LocalTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, 'Expected HH:MM or HH:MM:SS');
 
+/** A receipt file stored for later use in `CreateReceiptRequest` (images or a PDF invoice). */
+export const ReceiptFileDto = z.object({
+  fileId: Id,
+  mediaType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']),
+  bytes: z.number().int(),
+  sha256: z.string(),
+  /** The same picture uploaded before, and the receipt that used it. */
+  duplicateOf: z.object({ fileId: Id, receiptId: Id.nullable() }).nullable(),
+});
+export type ReceiptFileDto = z.infer<typeof ReceiptFileDto>;
+
 /**
  * Upload: one receipt from one or more files (multi-shot pages in order, or one PDF invoice). The files are
  * uploaded first (`POST /files`, kind `receipt`); the extract job starts when the receipt is created.
@@ -92,6 +103,8 @@ export const ReceiptDto = z.object({
   currency: z.string().nullable(),
   subtotal: Minor.nullable(),
   tax: Minor,
+  /** VAT-style receipt: the prices include `tax` (RCP-05). */
+  taxIncluded: z.boolean(),
   discount: Minor,
   fees: Minor,
   tip: Minor,
@@ -161,6 +174,7 @@ export const UpdateReceiptRequest = z.object({
   localTime: LocalTime.nullable().optional(),
   currency: z.string().length(3).nullable().optional(),
   tax: Minor.optional(),
+  taxIncluded: z.boolean().optional(),
   discount: Minor.optional(),
   fees: Minor.optional(),
   tip: Minor.optional(),
@@ -178,3 +192,26 @@ export const ApplyReceiptRequest = z.union([
   }),
 ]);
 export type ApplyReceiptRequest = z.output<typeof ApplyReceiptRequest>;
+
+export const ReceiptPageDto = z.object({ data: z.array(ReceiptDto), nextCursor: z.string().nullable() });
+export type ReceiptPageDto = z.infer<typeof ReceiptPageDto>;
+
+/** RCP-11: a purchase at a multi-department store above the threshold, with no receipt yet. */
+export const ReceiptRecommendationDto = z.object({
+  transactionId: Id,
+  date: z.string(),
+  payee: z.string().nullable(),
+  merchant: z.string(),
+  amount: MoneyDto,
+});
+export type ReceiptRecommendationDto = z.infer<typeof ReceiptRecommendationDto>;
+
+/** RCP-12: an order-history file turned into one receipt per order (idempotent by order id). */
+export const OrderImportResultDto = z.object({
+  orders: z.number().int(),
+  created: z.number().int(),
+  duplicates: z.number().int(),
+  matched: z.number().int(),
+  receiptIds: z.array(Id),
+});
+export type OrderImportResultDto = z.infer<typeof OrderImportResultDto>;

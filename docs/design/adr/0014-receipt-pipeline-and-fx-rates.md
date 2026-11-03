@@ -105,6 +105,34 @@ Several things were still open:
    OCR text is indexed with a stored `tsvector` (`simple` configuration) plus a trigram index on the
    merchant.
 
+7. **API decisions made while building it** (`apps/api/src/receipts`):
+   - **Line categorization:**
+     - Item rules (`scope: 'receipt_line'`, matched on `item_text`) come first, then item history
+       (`receipt_line.item_key`, from lines the user or a rule categorized), then AI.
+     - AI gets the *item name only*: no store, because a receipt is categorized by what was bought.
+     - A line below the threshold keeps the suggestion and stays uncategorized.
+   - **Learning (RCP-06).** A category the user picks for a line in review creates or updates an item
+     rule on the printed text (`origin: 'correction'`). It is visible and deletable on the rules page
+     (AIA-06).
+   - **Matching and applying:**
+     - A clear match ≥ 0.8 is applied automatically, but only when the receipt adds up (status `inbox`).
+       Receipts in `needs_review` keep their candidates.
+     - Applying replaces the splits through the normal transaction update (DE-10 rules), with
+       `categorization.step = 'receipt'`.
+     - Across currencies it records the CUR-03 foreign amount and the implied rate.
+     - It copies the receipt's local time (TZ-03) and trip.
+     - A gap the tolerances don't cover is a 422 `receipt.gap`.
+   - **Re-matching.** Inbox receipts are re-matched by a `receipt.match` job after every import commit
+     that adds rows.
+   - **Images and the documents setting.** Receipt images go to the model in builtin and BYOK modes
+     whatever `allowDocumentsToLlm` says. That setting covers statement scans and payslips
+     (PAY-09/UP-06); reading receipts is the feature itself. To revisit if the product owner wants
+     receipts behind the same opt-in.
+   - **Retention.** Deleting a receipt is a soft delete; files are kept until `retain_until` (7 years).
+     There is no purge job yet.
+   - **Item-level reports (RCP-09).** `posting.receipt_line_id` stays unset, because a split groups
+     several lines. Item-level reports (RCP-09, not in Phase 5) will join through the receipt lines.
+
 ## Consequences
 
 - Receipt review is a separate screen and API (`/receipts`). The transaction editor shows the linked

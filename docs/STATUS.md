@@ -17,14 +17,14 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
 | **Pull requests** | #1 Phase 1, #2 Phase 2, #3 Phase 3, #4 Phase 4, all merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **80 done, 36 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Requirements** | 252 IDs in total: **85 done, 43 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
 | **In progress** | **Phase 5: receipts and multi-currency.** Contracts and receipt arithmetic merged (PR #6); the matcher is on `claude/phase5-receipt-matching`. See §7 "Progress" |
 
 ### Test suite (Phase 4 hand-off plus this branch; green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 110 |
+| `@montra/api` (integration, real Postgres) | 128 |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
 | `@montra/web` unit | 70 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
@@ -417,7 +417,17 @@ integration):
   - The doc-worker `receipt.ocr` job, plus a Windows venv fix in `scripts/py.mjs`.
   - **Not verified:** real-provider accuracy on real receipt photos (needs `ANTHROPIC_API_KEY` and
     photos), and real Tesseract on receipts locally (Tesseract isn't installed here; CI runs it).
-- ⏭ **Next:** the receipts API (step 5). Enabling foreign-currency accounts in
+- ✅ **Step 5, receipts API** (`apps/api/src/receipts`, `apps/api/src/trips`; migration 0014):
+  - Uploads, sniffed by content.
+  - The extract job: builtin/BYOK images, or doc-worker OCR then text in local mode; off goes to
+    review.
+  - Item categorization (rules → history → AI), validation with the gap, the inbox and search.
+  - Matching on create and after each import, auto-apply, manual apply (including creating the
+    transaction), review edits that re-split linked transactions, and learned item rules.
+  - RCP-11 recommendations with dismissals, RCP-12 Amazon order history, trips (CUR-09), and local
+    time (TZ-03).
+  - `test/receipts.test.ts` (18) covers both exit criteria through the API.
+- ⏭ **Next:** web screens (step 6). Enabling foreign-currency accounts in
   `transactions/poster.ts` (it still rejects them with `fx.rate_required`) means passing each foreign
   account's balance before the posting as `carrying`. Take it from the postings in date order; there is
   no `account_balance_daily` until Phase 6.

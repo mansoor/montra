@@ -736,6 +736,9 @@ export class ImportJobs {
             type: 'insights.detect',
             payload: { batchId },
           });
+        // IMP-11: receipts waiting in the inbox are re-tried after every import.
+        if (added > 0)
+          await this.queue.enqueue(trx, { ...ctx, queue: 'ai', type: 'receipt.match', payload: {} });
         return { added, matched, skipped, failed };
       });
     } catch (err) {

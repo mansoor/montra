@@ -44,6 +44,10 @@ import { InsightsService } from './categorization/insights.service.js';
 import { CategorizationController } from './categorization/categorization.controller.js';
 import { FX_HTTP, FxRatesService } from './fx/fx.service.js';
 import { FxController } from './fx/fx.controller.js';
+import { ReceiptsService } from './receipts/receipts.service.js';
+import { ReceiptJobs } from './receipts/receipt-jobs.js';
+import { ReceiptsController } from './receipts/receipts.controller.js';
+import { TripsController, TripsService } from './trips/trips.js';
 import type { HttpGet } from './fx/sources.js';
 
 /** Outbound HTTP for the FX sources, with a timeout. */
@@ -76,6 +80,8 @@ export class AppModule {
       AiController,
       CategorizationController,
       FxController,
+      ReceiptsController,
+      TripsController,
     ];
     return {
       module: AppModule,
@@ -112,6 +118,9 @@ export class AppModule {
         InsightsService,
         SyncService,
         FxRatesService,
+        ReceiptsService,
+        ReceiptJobs,
+        TripsService,
         { provide: FX_HTTP, useValue: httpGet },
       ],
     };

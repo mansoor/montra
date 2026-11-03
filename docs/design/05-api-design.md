@@ -85,7 +85,11 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `PATCH /imports/{id}/rows/{rowId}` | Change one preview row (category, skip, not-duplicate) | IMP-06 |
 | `POST /imports/{id}/commit`, `POST /imports/{id}/undo` (202) | Commit atomically, undo within 30 days (the result lists kept rows) | IMP-08/09 |
 | `GET /jobs/{id}` | Job status, progress and result (commit/undo summaries) | — |
-| `POST /receipts` `{ uploadIds[] }` (202), `GET /receipts?status=inbox`, `GET /receipts/{id}`, `PATCH /receipts/{id}` (lines), `POST /receipts/{id}/match` | Receipt pipeline and inbox | TXN-08, IMP-11, RCP |
+| `POST /receipts/files` (multipart photo or PDF) → `fileId`; `POST /receipts` `{ fileIds[], source, transactionId?, entityId?, id? }` (201, extraction runs as a job); `GET /receipts?status&q&from&to&cursor`; `GET /receipts/{id}`; `GET /receipts/{id}/files/{fileId}`; `PATCH /receipts/{id}` (header and lines, `version`); `POST /receipts/{id}/apply` `{ transactionId \| createTransaction, version }`; `POST /receipts/{id}/match`; `POST /receipts/{id}/reject`; `DELETE /receipts/{id}` | Receipt pipeline, inbox, review, search | TXN-08, IMP-11, RCP-01..08, RCP-10 |
+| `GET /receipts/recommended`, `POST /receipts/recommended/{transactionId}/dismiss` | Receipt recommended | RCP-11 |
+| `POST /receipts/order-history` (multipart CSV) | Amazon order history, one receipt per order | RCP-12 |
+| `GET /trips`, `POST /trips`, `PATCH /trips/{id}`, `DELETE /trips/{id}` | Travel mode | CUR-09 |
+| `GET /fx/rates?base&quote&date` | Reference rate (direct, inverse, cross; 7-day lookback) | CUR-05 |
 | `GET /attachments/{id}/url` | Short-lived presigned GET | RCP-10 |
 
 ### Planning
