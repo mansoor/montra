@@ -63,7 +63,9 @@ test('budgets, drills a category to its transactions and applies a suggestion', 
   // The over-assigned plan gets a suggestion that cuts Groceries back, never below what's already spent.
   await nav(page, 'Suggestions');
   await page.getByRole('button', { name: 'Check now' }).click();
-  await expect(page.getByRole('heading', { name: 'Your plan is $400.00 more than your income' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Your plan is $400.00 more than your income' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Apply' }).click();
   await expect(page.getByText('Applied to your budget.')).toBeVisible();
   await nav(page, 'Budget');
