@@ -215,6 +215,11 @@ describe('spendingPace (FLOW-04)', () => {
     expect(spendingPace(nov, d('2026-11-10'), 60_000n, 10_000n)!.status).toBe('under');
     expect(spendingPace(nov, d('2026-12-01'), 60_000n, 10_000n)).toBeNull();
   });
+  it('waits until a fifth of the period has passed before calling overspending', () => {
+    // Day 3: one big shop projects far over budget, but it's too early to say.
+    expect(spendingPace(nov, d('2026-11-03'), 60_000n, 30_000n)!.status).toBe('on_track');
+    expect(spendingPace(nov, d('2026-11-06'), 60_000n, 30_000n)!.status).toBe('over');
+  });
   it('can follow a day-of-month pattern', () => {
     const weights = Array.from({ length: 30 }, (_, i) => (i === 0 ? 1 : 0)); // all spent on the 1st (rent)
     expect(spendingPace(nov, d('2026-11-02'), 150_000n, 150_000n, weights)!.expectedByToday).toBe(150_000n);

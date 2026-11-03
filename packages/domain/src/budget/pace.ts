@@ -5,6 +5,9 @@ import { periodDays, type Period } from './period.js';
 
 export type PaceStatus = 'under' | 'on_track' | 'over';
 
+/** Group kinds whose spending is paced (variable spending; fixed bills are paid once and aren't). */
+export const PACE_KINDS: ReadonlySet<string> = new Set(['daily', 'fun']);
+
 export interface Pace {
   /** Days elapsed including today (1 … period days). */
   elapsed: number;
@@ -17,7 +20,8 @@ export interface Pace {
 
 /**
  * `expected_by_today = assigned × elapsed / days`. A category is over pace when its activity is ≥ 110% of
- * that and the projection is ≥ 110% of the assigned amount; under pace below 90%. Null outside the period.
+ * that and the projection is ≥ 110% of the assigned amount (judged once a fifth of the period has passed);
+ * under pace below 90%. Null outside the period.
  * `weights` (optional, one per day of the period) replaces the linear share with the category's historical
  * day-of-month pattern.
  */
@@ -43,8 +47,11 @@ export function spendingPace(
   }
   const projected = divRound(activity * BigInt(days), BigInt(elapsed));
   let status: PaceStatus = 'on_track';
+  // A few days in, one shopping trip projects as a huge overspend: judge pace once a fifth of the period is gone.
+  const settled = elapsed * 5 >= days;
   if (assigned <= 0n) status = activity > 0n ? 'over' : 'on_track';
-  else if (activity * 100n >= expectedByToday * 110n && projected * 100n >= assigned * 110n) status = 'over';
+  else if (settled && activity * 100n >= expectedByToday * 110n && projected * 100n >= assigned * 110n)
+    status = 'over';
   else if (activity * 100n < expectedByToday * 90n) status = 'under';
   return { elapsed, days, expectedByToday, projected, status };
 }

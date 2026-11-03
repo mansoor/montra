@@ -22,6 +22,7 @@ import {
   rec07Review,
   rec08Buffer,
   spendingPace,
+  PACE_KINDS,
   type CalendarDate,
   type GroupKind,
   type PeriodResult,
@@ -302,7 +303,10 @@ export class RecommendationsService {
           kind: cat.kind!,
           assigned: total,
           available: l?.available ?? 0n,
-          pace: l && total > 0n ? spendingPace(c.period, c.today, total, l.activity) : null,
+          pace:
+            l && total > 0n && PACE_KINDS.has(cat.kind!)
+              ? spendingPace(c.period, c.today, total, l.activity)
+              : null,
         };
       });
       for (const line of paced) {

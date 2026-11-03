@@ -12,6 +12,7 @@ import { SharingSettings } from '@/components/settings/sharing-settings';
 import { AiSettings } from '@/components/ai/ai-settings';
 import { AiActivity } from '@/components/ai/ai-activity';
 import { ThemeChoiceControl } from '@/components/theme-choice';
+import { PlanningSettings } from '@/components/settings/planning-settings';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,7 @@ const TABS = {
   family: 'settings.tab.family',
   accounts: 'settings.tab.accounts',
   sharing: 'settings.tab.sharing',
+  planning: 'settings.tab.planning',
   ai: 'settings.tab.ai',
   'ai-activity': 'settings.tab.ai_activity',
 } as const;
@@ -31,7 +33,7 @@ type Tab = keyof typeof TABS;
 /** Sections grouped like the rest of the app: you, the workspace, AI. */
 const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: 'settings.group.you', tabs: ['profile', 'appearance'] },
-  { label: 'settings.group.workspace', tabs: ['entities', 'family', 'accounts', 'sharing'] },
+  { label: 'settings.group.workspace', tabs: ['entities', 'family', 'accounts', 'sharing', 'planning'] },
   { label: 'settings.group.ai', tabs: ['ai', 'ai-activity'] },
 ];
 
@@ -89,6 +91,11 @@ export default async function SettingsPage({
   } else if (tab === 'ai') {
     const settings = await load((api) => api.getAiSettings(workspaceId));
     body = <AiSettings workspaceId={workspaceId} initial={settings} isOwner={isOwner} />;
+  } else if (tab === 'planning') {
+    const [settings, categories] = await load((api) =>
+      Promise.all([api.getPlanningSettings(workspaceId), api.listCategories(workspaceId)]),
+    );
+    body = <PlanningSettings workspaceId={workspaceId} initial={settings} categories={categories} />;
   } else if (tab === 'ai-activity') {
     body = <AiActivity workspaceId={workspaceId} />;
   } else {

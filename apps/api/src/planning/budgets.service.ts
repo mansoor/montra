@@ -17,6 +17,7 @@ import {
   shiftPeriod,
   sinkingFundMonthly,
   spendingPace,
+  PACE_KINDS,
   type CalendarDate,
   type GroupKind,
   type Period,
@@ -541,7 +542,9 @@ export class BudgetsService {
       const available = l?.available ?? 0n;
       const budgetTotal = available + activity;
       const pace =
-        current && budgetTotal > 0n ? spendingPace(c.period, c.today, budgetTotal, activity) : null;
+        current && budgetTotal > 0n && PACE_KINDS.has(cat.kind!)
+          ? spendingPace(c.period, c.today, budgetTotal, activity)
+          : null;
       const g = goalByCat.get(cat.id);
       const line: BudgetLineDto = {
         categoryId: cat.id,

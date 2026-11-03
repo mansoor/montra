@@ -4,6 +4,34 @@
  */
 import type { z } from 'zod';
 import type {
+  AcceptRecommendationRequest,
+  AssignRequest,
+  BudgetDto,
+  BudgetMoveDto,
+  BudgetPeriodDto,
+  CalendarDto,
+  CopyBudgetRequest,
+  CreateBudgetRequest,
+  CreateExpectedIncomeRequest,
+  CreateGoalRequest,
+  DashboardDto,
+  DraftBudgetDto,
+  DraftBudgetRequest,
+  ExpectedIncomeDto,
+  ForecastDto,
+  GoalDto,
+  MoveRequest,
+  NetWorthDto,
+  PlanningSettingsDto,
+  RecommendationDto,
+  SankeyDto,
+  UpdateBudgetPeriodRequest,
+  UpdateBudgetRequest,
+  UpdateExpectedIncomeRequest,
+  UpdateGoalRequest,
+  UpdatePlanningSettingsRequest,
+} from '@montra/schemas';
+import type {
   AcceptCategoryProposalsRequest,
   AcceptInsightRequest,
   AcceptReviewRequest,
@@ -271,9 +299,29 @@ export interface TransactionListOptions {
   status?: 'scheduled' | 'pending' | 'posted' | 'void';
   reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
   accountId?: string;
+  /** Drill-down filters from the dashboard (FLOW-01/02). */
+  entityId?: string;
+  memberId?: string;
+  categoryIds?: string[];
+  accountIds?: string[];
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
   trash?: boolean;
 }
+
+// ----- Planning (Phase 6) inputs ----------------------------------------------------------------------------
+export type CreateBudgetInput = z.input<typeof CreateBudgetRequest>;
+export type UpdateBudgetInput = z.input<typeof UpdateBudgetRequest>;
+export type AssignInput = z.input<typeof AssignRequest>;
+export type MoveInput = z.input<typeof MoveRequest>;
+export type CopyBudgetInput = z.input<typeof CopyBudgetRequest>;
+export type UpdateBudgetPeriodInput = z.input<typeof UpdateBudgetPeriodRequest>;
+export type DraftBudgetInput = z.input<typeof DraftBudgetRequest>;
+export type CreateGoalInput = z.input<typeof CreateGoalRequest>;
+export type UpdateGoalInput = z.input<typeof UpdateGoalRequest>;
+export type CreateExpectedIncomeInput = z.input<typeof CreateExpectedIncomeRequest>;
+export type UpdateExpectedIncomeInput = z.input<typeof UpdateExpectedIncomeRequest>;
+export type AcceptRecommendationInput = z.input<typeof AcceptRecommendationRequest>;
+export type UpdatePlanningSettingsInput = z.input<typeof UpdatePlanningSettingsRequest>;
 
 export interface FieldError {
   path: string;
@@ -500,7 +548,15 @@ export class ApiClient {
   listTransactions(workspaceId: string, opts: TransactionListOptions = {}) {
     return this.request<{ data: TransactionDto[] }>(
       'GET',
-      this.ws(workspaceId, `/transactions${query({ ...opts, trash: opts.trash ? 'true' : undefined })}`),
+      this.ws(
+        workspaceId,
+        `/transactions${query({
+          ...opts,
+          categoryIds: opts.categoryIds?.join(','),
+          accountIds: opts.accountIds?.join(','),
+          trash: opts.trash ? 'true' : undefined,
+        })}`,
+      ),
     ).then((r) => r.data);
   }
   getTransaction(workspaceId: string, id: string) {
@@ -858,6 +914,141 @@ export class ApiClient {
   deleteReceipt(workspaceId: string, id: string) {
     return this.request<void>('DELETE', this.ws(workspaceId, `/receipts/${enc(id)}`));
   }
+
+  // ----- Budgets, goals and money flow (Phase 6) ------------------------------------------------------------
+  listBudgets(workspaceId: string, entityId?: string) {
+    return this.request<{ data: BudgetDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/budgets${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createBudget(workspaceId: string, input: CreateBudgetInput) {
+    return this.request<BudgetDto>('POST', this.ws(workspaceId, '/budgets'), input);
+  }
+  updateBudget(workspaceId: string, id: string, input: UpdateBudgetInput) {
+    return this.request<BudgetDto>('PATCH', this.ws(workspaceId, `/budgets/${enc(id)}`), input);
+  }
+  /** `start` is a period's first day, or 'current'. */
+  getBudgetPeriod(workspaceId: string, id: string, start = 'current') {
+    return this.request<BudgetPeriodDto>(
+      'GET',
+      this.ws(workspaceId, `/budgets/${enc(id)}/periods/${enc(start)}`),
+    );
+  }
+  updateBudgetPeriod(workspaceId: string, id: string, start: string, input: UpdateBudgetPeriodInput) {
+    return this.request<BudgetPeriodDto>(
+      'PATCH',
+      this.ws(workspaceId, `/budgets/${enc(id)}/periods/${enc(start)}`),
+      input,
+    );
+  }
+  assignBudget(workspaceId: string, id: string, start: string, categoryId: string, input: AssignInput) {
+    return this.request<BudgetPeriodDto>(
+      'PUT',
+      this.ws(workspaceId, `/budgets/${enc(id)}/periods/${enc(start)}/lines/${enc(categoryId)}`),
+      input,
+    );
+  }
+  moveBudget(workspaceId: string, id: string, start: string, input: MoveInput) {
+    return this.request<BudgetPeriodDto>(
+      'POST',
+      this.ws(workspaceId, `/budgets/${enc(id)}/periods/${enc(start)}/moves`),
+      input,
+    );
+  }
+  listBudgetMoves(workspaceId: string, id: string, start: string) {
+    return this.request<{ data: BudgetMoveDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/budgets/${enc(id)}/periods/${enc(start)}/moves`),
+    ).then((r) => r.data);
+  }
+  copyBudget(workspaceId: string, id: string, start: string, input: CopyBudgetInput) {
+    return this.request<BudgetPeriodDto>(
+      'POST',
+      this.ws(workspaceId, `/budgets/${enc(id)}/periods/${enc(start)}/copy`),
+      input,
+    );
+  }
+  draftBudget(workspaceId: string, input: DraftBudgetInput) {
+    return this.request<DraftBudgetDto>('POST', this.ws(workspaceId, '/budgets/draft'), input);
+  }
+  listGoals(workspaceId: string, entityId?: string) {
+    return this.request<{ data: GoalDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/goals${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createGoal(workspaceId: string, input: CreateGoalInput) {
+    return this.request<GoalDto>('POST', this.ws(workspaceId, '/goals'), input);
+  }
+  updateGoal(workspaceId: string, id: string, input: UpdateGoalInput) {
+    return this.request<GoalDto>('PATCH', this.ws(workspaceId, `/goals/${enc(id)}`), input);
+  }
+  listExpectedIncome(workspaceId: string, entityId?: string) {
+    return this.request<{ data: ExpectedIncomeDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/expected-income${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createExpectedIncome(workspaceId: string, input: CreateExpectedIncomeInput) {
+    return this.request<ExpectedIncomeDto>('POST', this.ws(workspaceId, '/expected-income'), input);
+  }
+  updateExpectedIncome(workspaceId: string, id: string, input: UpdateExpectedIncomeInput) {
+    return this.request<ExpectedIncomeDto>(
+      'PATCH',
+      this.ws(workspaceId, `/expected-income/${enc(id)}`),
+      input,
+    );
+  }
+  getDashboard(workspaceId: string, opts: { entityId?: string; memberId?: string } = {}) {
+    return this.request<DashboardDto>('GET', this.ws(workspaceId, `/dashboard${query(opts)}`));
+  }
+  getSankey(workspaceId: string, opts: { from?: string; to?: string; entityId?: string } = {}) {
+    return this.request<SankeyDto>('GET', this.ws(workspaceId, `/flow/sankey${query(opts)}`));
+  }
+  getForecast(workspaceId: string, opts: { days?: number; entityId?: string } = {}) {
+    return this.request<ForecastDto>('GET', this.ws(workspaceId, `/flow/forecast${query(opts)}`));
+  }
+  getCalendar(workspaceId: string, opts: { from?: string; to?: string; entityId?: string } = {}) {
+    return this.request<CalendarDto>('GET', this.ws(workspaceId, `/calendar${query(opts)}`));
+  }
+  getNetWorth(workspaceId: string, opts: { date?: string; months?: number; entityId?: string } = {}) {
+    return this.request<NetWorthDto>('GET', this.ws(workspaceId, `/net-worth${query(opts)}`));
+  }
+  listRecommendations(
+    workspaceId: string,
+    opts: { entityId?: string; status?: RecommendationDto['status'] } = {},
+  ) {
+    return this.request<{ data: RecommendationDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/recommendations${query(opts)}`),
+    ).then((r) => r.data);
+  }
+  refreshRecommendations(workspaceId: string) {
+    return this.request<{ created: number; expired: number }>(
+      'POST',
+      this.ws(workspaceId, '/recommendations/refresh'),
+    );
+  }
+  acceptRecommendation(workspaceId: string, id: string, input: AcceptRecommendationInput = {}) {
+    return this.request<RecommendationDto>(
+      'POST',
+      this.ws(workspaceId, `/recommendations/${enc(id)}/accept`),
+      input,
+    );
+  }
+  dismissRecommendation(workspaceId: string, id: string) {
+    return this.request<RecommendationDto>(
+      'POST',
+      this.ws(workspaceId, `/recommendations/${enc(id)}/dismiss`),
+    );
+  }
+  getPlanningSettings(workspaceId: string) {
+    return this.request<PlanningSettingsDto>('GET', this.ws(workspaceId, '/planning/settings'));
+  }
+  updatePlanningSettings(workspaceId: string, input: UpdatePlanningSettingsInput) {
+    return this.request<PlanningSettingsDto>('PATCH', this.ws(workspaceId, '/planning/settings'), input);
+  }
   /** RCP-11: purchases at multi-department stores above the threshold without a receipt. */
   listReceiptRecommendations(workspaceId: string) {
     return this.request<{ data: ReceiptRecommendationDto[] }>(
@@ -979,4 +1170,17 @@ export type {
   ReceiptPageDto,
   ReceiptRecommendationDto,
   TripDto,
+  BudgetDto,
+  BudgetMoveDto,
+  BudgetPeriodDto,
+  CalendarDto,
+  DashboardDto,
+  DraftBudgetDto,
+  ExpectedIncomeDto,
+  ForecastDto,
+  GoalDto,
+  NetWorthDto,
+  PlanningSettingsDto,
+  RecommendationDto,
+  SankeyDto,
 };

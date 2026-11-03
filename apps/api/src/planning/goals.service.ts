@@ -262,7 +262,8 @@ export class GoalsService {
         );
         if (g.type === 'debt_payoff') {
           const owed = -series[series.length - 1]!;
-          saved = target !== null ? target - owed : 0n;
+          // Paid down so far; charging more than was paid shows as no progress, not negative progress.
+          saved = target !== null && target > owed ? target - owed : 0n;
           contributions = series.slice(1, 4).map((v, i) => v - series[i]!);
           payoff = this.payoff(g, balances, info, today);
         } else {

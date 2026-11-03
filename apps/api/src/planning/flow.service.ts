@@ -21,6 +21,7 @@ import {
   parseDecimal,
   periodContaining,
   spendingPace,
+  PACE_KINDS,
   startOfMonth,
   type CalendarDate,
   type CurrencyCode,
@@ -715,7 +716,10 @@ export class FlowService {
           .flatMap((cat) => {
             const l = r.lines.get(cat.id);
             const total = l ? l.available + l.activity : 0n;
-            const p = l && total > 0n ? spendingPace(period, today, total, l.activity) : null;
+            const p =
+              l && total > 0n && PACE_KINDS.has(cat.kind!)
+                ? spendingPace(period, today, total, l.activity)
+                : null;
             return l && p && p.status === 'over' ? [{ l, total, p }] : [];
           })
           .sort((a, b) => (b.p.projected - b.total > a.p.projected - a.total ? 1 : -1))

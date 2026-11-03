@@ -7,6 +7,7 @@ import { minorToInput, parseAmountInput } from '@/lib/money';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { useI18n } from '../i18n';
+import { AccountPlanning } from './account-planning';
 
 /** Rename, archive, hide and adjust balances with an audit note (ACC-05, ACC-06, UP-04). */
 export function AccountSettings({
@@ -176,6 +177,7 @@ function AccountCard({
           </button>
         </div>
       </details>
+      <AccountPlanning workspaceId={workspaceId} account={account} />
       <StatusLine message={message} />
     </li>
   );

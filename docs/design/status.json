@@ -522,115 +522,115 @@
   ],
   "BUD-01": [
     "partial",
-    "API: zero-based, category limits, light mode with 50/30/20 view; web/mobile screens next"
+    "zero-based, category limits, light mode with 50/30/20 view; web done, mobile next"
   ],
   "BUD-02": [
     "partial",
-    "API: draft from 1–3 months (median, fixed vs variable, recurring bills) with AI explanation; web next"
+    "draft from 1–3 months (median, fixed vs variable, recurring bills) with AI explanation; web done, mobile next"
   ],
   "BUD-03": [
     "partial",
-    "API: expected income (salary, business, rent) matched to deposits; payslip patterns in P7"
+    "expected income (salary, business, rent) matched to deposits; payslip patterns in P7; web done, mobile next"
   ],
   "BUD-04": [
     "partial",
-    "category groups by kind; budget view grouped; web next"
+    "category groups by kind; budget view grouped; web done, mobile next"
   ],
   "BUD-05": [
     "partial",
-    "API: monthly, weekly and biweekly periods; web next"
+    "monthly, weekly and biweekly periods; web done, mobile next"
   ],
   "BUD-06": [
     "partial",
-    "API: carry surplus/deficit/both/reset per category; web next"
+    "carry surplus/deficit/both/reset per category; web done, mobile next"
   ],
   "BUD-07": [
     "partial",
-    "API: sinking funds with auto category and ceil monthly contribution; web next"
+    "sinking funds with auto category and ceil monthly contribution; web done, mobile next"
   ],
   "BUD-08": [
     "partial",
-    "API: goal progress and projection; snowball/avalanche simulation; web next"
+    "goal progress and projection; snowball/avalanche simulation; web done, mobile next"
   ],
   "BUD-09": [
     "partial",
-    "API: copy last period or 3-period average; web next"
+    "copy last period or 3-period average; web done, mobile next"
   ],
   "BUD-10": [
     "partial",
-    "API: moves with history and optimistic concurrency; web next"
+    "moves with history and optimistic concurrency; web done, mobile next"
   ],
   "FLOW-01": [
     "partial",
-    "API: dashboard with drill-down filters; web next; p95 budget in perf step"
+    "dashboard with drill-down filters; p95 budget in perf step; web done, mobile next"
   ],
   "FLOW-02": [
     "partial",
-    "API: Sankey income → entity → groups → categories, savings/debt; web next"
+    "Sankey income → entity → groups → categories, savings/debt; web done, mobile next"
   ],
   "FLOW-03": [
     "partial",
-    "API: 30/60/90-day forecast with schedules, expected income, burn and low-balance warnings; web next"
+    "30/60/90-day forecast with schedules, expected income, burn and low-balance warnings; web done, mobile next"
   ],
   "FLOW-04": [
     "partial",
-    "API: spending pace per category; web next"
+    "spending pace per category; web done, mobile next"
   ],
   "FLOW-05": [
     "partial",
-    "API: calendar of bills, paydays and goal due dates; web next"
+    "calendar of bills, paydays and goal due dates; web done, mobile next"
   ],
   "FLOW-06": [
     "partial",
-    "API: consolidated Sankey across entities; owner draws are not categories so never count as spending; web next"
+    "consolidated Sankey across entities; owner draws are not categories so never count as spending; web done, mobile next"
   ],
   "FLOW-07": [
     "partial",
-    "API: net worth with base-currency conversion and monthly trend; web next"
+    "net worth with base-currency conversion and monthly trend; web done, mobile next"
   ],
   "REC-01": [
     "partial",
-    "API: cuts flexible categories to floors by priority; AI wording checked for invented numbers"
+    "cuts flexible categories to floors by priority; AI wording checked for invented numbers; web done, mobile next"
   ],
   "REC-02": [
     "partial",
-    "API: moves from categories with spare money + daily reduction"
+    "moves from categories with spare money + daily reduction; web done, mobile next"
   ],
   "REC-03": [
     "partial",
-    "API: surplus allocation by priority order"
+    "surplus allocation by priority order; web done, mobile next"
   ],
   "REC-04": [
     "partial",
-    "API: low balance or late income → bare-bones budget"
+    "low balance or late income → bare-bones budget; web done, mobile next"
   ],
   "REC-05": [
     "partial",
-    "API: realistic amount after 3 off periods"
+    "realistic amount after 3 off periods; web done, mobile next"
   ],
   "REC-06": [
     "partial",
-    "API: from price-increase insights, linked to the subscription"
+    "from price-increase insights, linked to the subscription; web done, mobile next"
   ],
   "REC-07": [
     "partial",
-    "API: monthly review with leaks and next period draft"
+    "monthly review with leaks and next period draft; web done, mobile next"
   ],
   "REC-08": [
     "partial",
-    "API: budget-from-last-month and buffer target for irregular income"
+    "budget-from-last-month and buffer target for irregular income; web done, mobile next"
   ],
   "FAM-06": [
     "partial",
-    "API: member budgets filter the same activity by member; web next"
+    "member budgets filter the same activity by member; web done, mobile next"
   ],
   "FAM-07": [
     "partial",
-    "API: goals and sinking funds per member; web next"
+    "goals and sinking funds per member; web done, mobile next"
   ],
   "UP-11": [
     "partial",
-    "API: light mode (savings target + everything else); web next"
+    "light mode (savings target + everything else); web done, mobile next"
   ],
   "TZ-04": [
     "partial",
@@ -638,6 +638,6 @@
   ],
   "UP-14": [
     "partial",
-    "P6: upcoming bills on the calendar and dashboard"
+    "P6: upcoming bills on the calendar and dashboard; web done, mobile next"
   ]
 }
