@@ -267,7 +267,7 @@ finished:
 | Windows | `PERF=1 vitest run` (categorize `test:perf`) fails in cmd.exe, pnpm's script shell on Windows | `vitest run --mode perf`; the config selects the perf test by mode. Keep scripts free of `VAR=x` prefixes |
 | Local | Host ports 5432/1025/8025/9000 taken by other stacks | Compose ports read `MONTRA_PG_PORT` etc. (defaults unchanged; put them in the gitignored `infra/.env`). Point `DATABASE_URL`, `DATABASE_ADMIN_URL` (montra_test) and `API_DATABASE_URL`, `API_DATABASE_ADMIN_URL` (montra_test_api) at that port; turbo passes all four to tests |
 | Local | `minio/minio` on Docker Hub is no longer pullable, which aborted `docker compose up` | Compose uses `quay.io/minio/minio` |
-| Local | `perf-commit.test.ts` (300-row commit < 9 s) measured 9.4 s once under full parallel `pnpm verify` on a busy Windows machine; it passes run alone (about 7 s for the whole test) and in CI | Not changed. If it recurs, move it to a run-alone step like `test:perf` rather than raising the limit |
+| Tests | `perf-commit.test.ts` (300-row commit < 9 s) took 9.4–11.8 s under full parallel `pnpm verify` here, and about 5.7 s for the commit run alone (with or without the Phase 6 read-model triggers, which cost nothing measurable) | Moved to `@montra/api` `test:perf` (`vitest run --mode perf`), run alone after `turbo test` in CI and `pnpm verify`. The budget is unchanged |
 | Process (cloud) | The cloud sandbox couldn't push tags | Not an issue locally: tag from your machine |
 | Process (cloud) | Container restarts killed Postgres and in-flight workers | Locally, run Postgres in Docker. Commit early and often in long tasks |
 

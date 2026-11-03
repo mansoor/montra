@@ -43,7 +43,9 @@ jobs:
       - name: Build, typecheck, lint, test
         run: pnpm turbo run build typecheck lint test --filter=!@montra/doc-worker
       - name: Performance budgets (run alone)
-        run: pnpm --filter @montra/categorize test:perf
+        run: |
+          pnpm --filter @montra/categorize test:perf
+          pnpm --filter @montra/api test:perf
       - name: Requirements traceability is up to date
         run: |
           node scripts/gen-traceability.mjs
