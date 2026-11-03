@@ -107,11 +107,11 @@ export function PickerDialog({
               aria-selected={i === active}
               onMouseEnter={() => setActive(i)}
               onClick={() => choose(o)}
-              className={`cursor-pointer rounded px-2 py-1.5 ${i === active ? 'bg-brand-600 text-white' : ''}`}
+              className={`cursor-pointer rounded px-2 py-1.5 ${i === active ? 'bg-brand-600 text-on-brand' : ''}`}
             >
               {o.label}
               {o.group && (
-                <span className={`ml-2 text-xs ${i === active ? 'text-white/80' : 'text-muted'}`}>
+                <span className={`ml-2 text-xs ${i === active ? 'text-on-brand/80' : 'text-muted'}`}>
                   {o.group}
                 </span>
               )}

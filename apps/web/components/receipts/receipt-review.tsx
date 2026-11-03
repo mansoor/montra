@@ -16,6 +16,7 @@ import {
 import { DateText } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { ReceiptViewer } from './receipt-viewer';
 
 /**
  * The receipt review screen (RCP-06): the receipt image beside its lines. Lines get a category (and entity,
@@ -77,33 +78,32 @@ export function ReceiptReview({
     await run(() => browserApi.updateReceipt(ws, receipt.id, res.input), t('receipts.saved'));
   }
 
+  const viewer = (
+    // The receipt itself, kept in view while the lines are checked (RCP-06).
+    <aside aria-label={t('receipts.image')} className="lg:sticky lg:top-20 lg:h-[calc(100dvh-9rem)]">
+      <ReceiptViewer
+        pages={receipt.fileIds.map((fileId, i) => ({
+          src: browserApi.receiptFilePath(ws, receipt.id, fileId),
+          alt: t('receipts.page_n', { n: i + 1 }),
+        }))}
+      />
+    </aside>
+  );
+
   if (receipt.status === 'processing') {
     return (
-      <p role="status" className="card text-sm text-muted">
-        {t('receipts.reading')}
-      </p>
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]">
+        <p role="status" className="card text-sm text-muted">
+          {t('receipts.reading')}
+        </p>
+        {viewer}
+      </div>
     );
   }
 
   const gap = receipt.validationGap ? BigInt(receipt.validationGap) : null;
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-      <section aria-label={t('receipts.image')} className="space-y-2">
-        {receipt.fileIds.map((fileId, i) => {
-          const src = browserApi.receiptFilePath(ws, receipt.id, fileId);
-          return (
-            <a key={fileId} href={src} target="_blank" rel="noreferrer" className="block">
-              {/* A plain <img>: the image is private and served through the authenticated /api proxy. */}
-              <img
-                src={src}
-                alt={t('receipts.page_n', { n: i + 1 })}
-                className="w-full rounded-md border border-line bg-white object-contain"
-              />
-            </a>
-          );
-        })}
-      </section>
-
+    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]">
       <section className="space-y-4" aria-label={t('receipts.details')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className={STATUS_CHIP[receipt.status]}>{t(`receipts.status.${receipt.status}`)}</span>
@@ -406,6 +406,8 @@ export function ReceiptReview({
         )}
         <StatusLine message={message} />
       </section>
+
+      {viewer}
     </div>
   );
 }

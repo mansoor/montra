@@ -22,7 +22,7 @@ export default async function RulesPage({ params }: { params: Promise<{ workspac
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">{t('rules.title')}</h1>
+        <h1 className="page-title">{t('rules.title')}</h1>
         <p className="text-sm text-muted">{t('rules.intro')}</p>
       </div>
       <RulesManager

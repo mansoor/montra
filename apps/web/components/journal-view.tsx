@@ -23,7 +23,7 @@ export function JournalView({ entry, entityName }: { entry: JournalEntryDetailDt
           </span>
         )}
       </div>
-      <table className="w-full min-w-[30rem] text-sm">
+      <table className="tbl min-w-[30rem] text-sm">
         <caption className="sr-only">{t('journal.caption', { date: date(entry.date) })}</caption>
         <thead className="text-left text-xs uppercase tracking-wide text-muted">
           <tr>

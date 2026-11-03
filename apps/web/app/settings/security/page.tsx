@@ -41,7 +41,7 @@ export default async function SecurityPage({
     <I18nProvider locale={me.locale} dateFormat={me.dateFormat}>
       <main id="main" className="mx-auto max-w-2xl space-y-6 px-4 py-8">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">{t('security.title')}</h1>
+          <h1 className="page-title">{t('security.title')}</h1>
           <Link href="/" className="text-sm text-brand-600 underline">
             {t('security.back')}
           </Link>

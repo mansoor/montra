@@ -32,11 +32,7 @@ export function ReviewCountBadge({ workspaceId }: { workspaceId: string }) {
 
   if (!total) return null;
   return (
-    <span
-      className="ml-1 rounded-full bg-brand-600 px-1.5 text-xs font-semibold text-white"
-      data-testid="review-badge"
-      aria-label={t('review.badge', { count: total })}
-    >
+    <span className="count-badge" data-testid="review-badge" aria-label={t('review.badge', { count: total })}>
       {total > 999 ? '999+' : total}
     </span>
   );

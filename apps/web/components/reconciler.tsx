@@ -172,7 +172,7 @@ export function Reconciler({
         <p className="card text-sm text-muted">{t('reconcile.no_lines')}</p>
       ) : (
         <div className="card overflow-x-auto p-0">
-          <table className="w-full min-w-[32rem] text-sm">
+          <table className="tbl min-w-[32rem] text-sm">
             <caption className="sr-only">{t('reconcile.lines')}</caption>
             <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
               <tr>

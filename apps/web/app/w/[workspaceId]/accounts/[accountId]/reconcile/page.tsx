@@ -37,7 +37,7 @@ export default async function ReconcilePage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('reconcile.title', { account: account.name })}</h1>
+        <h1 className="page-title">{t('reconcile.title', { account: account.name })}</h1>
         <Link
           href={`/w/${workspaceId}/accounts/${accountId}`}
           className="text-sm font-medium text-brand-600 underline"

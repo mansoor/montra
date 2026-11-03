@@ -19,7 +19,7 @@ export default async function NewJournalPage({ params }: { params: Promise<{ wor
       <Link href={`/w/${workspaceId}/journal`} className="text-sm text-brand-600 underline">
         ← {t('journal.title')}
       </Link>
-      <h1 className="text-xl font-semibold">{t('journal.new')}</h1>
+      <h1 className="page-title">{t('journal.new')}</h1>
       <p className="text-sm text-muted">{t('journal.new_intro')}</p>
       <ManualJournalForm
         workspace={workspace}
