@@ -1,4 +1,4 @@
-/** More (08 §3): accounts and registers, import, sync activity, settings. */
+/** More (08 §3): review, planning, accounts and registers, import, sync activity, settings. */
 import { useRouter } from 'expo-router';
 import { t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
@@ -12,6 +12,20 @@ export default function More() {
   return (
     <Screen testID="more">
       <Title>{t('mobile.tab.more')}</Title>
+      <Row
+        title={t('mobile.tab.review')}
+        subtitle={sync?.reviewCount ? t('mobile.more.review_count', { count: sync.reviewCount }) : undefined}
+        onPress={() => router.push('/review')}
+        testID="more-review"
+      />
+      <Row title={t('nav.goals')} onPress={() => router.push('/goals')} testID="more-goals" />
+      <Row title={t('nav.cash_flow')} onPress={() => router.push('/cash-flow')} testID="more-cash-flow" />
+      <Row title={t('nav.calendar')} onPress={() => router.push('/calendar')} testID="more-calendar" />
+      <Row
+        title={t('nav.suggestions')}
+        onPress={() => router.push('/suggestions')}
+        testID="more-suggestions"
+      />
       <Row
         title={t('mobile.more.accounts')}
         onPress={() => router.push('/accounts')}

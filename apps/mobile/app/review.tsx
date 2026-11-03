@@ -8,12 +8,12 @@ import { Animated, PanResponder, Text, useWindowDimensions, View } from 'react-n
 import * as Haptics from 'expo-haptics';
 import type { CategoryDto } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
-import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useLocal, useSync } from '../../src/sync/SyncProvider';
-import { confidenceLabel, effectiveOutcome, reviewQueue, swipeOutcome } from '../../src/features/review';
-import { CategoryPicker } from '../../src/ui/CategoryPicker';
-import { Body, Button, Card, Screen, Small, Title, useToast } from '../../src/ui/components';
-import { useTheme } from '../../src/ui/theme';
+import { fmtDate, fmtMoney, t } from '../src/i18n';
+import { useLocal, useSync } from '../src/sync/SyncProvider';
+import { confidenceLabel, effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
+import { CategoryPicker } from '../src/ui/CategoryPicker';
+import { Body, Button, Card, Screen, Small, Title, useToast } from '../src/ui/components';
+import { useTheme } from '../src/ui/theme';
 
 export default function Review() {
   const th = useTheme();

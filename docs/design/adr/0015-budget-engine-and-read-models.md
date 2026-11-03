@@ -87,6 +87,14 @@ Open points were:
    expected income and budgets. The 90-day simulation per account is a few thousand additions; caching
    is added only if the perf budget needs it.
 
+7. **On mobile, planning reads are cached and planning writes are online-only.**
+   - Budgets, goals, forecasts and recommendations are computed by the server, and the app keeps no budget
+     logic. The last answer for each screen is saved in the encrypted store and shown while offline, marked
+     as saved.
+   - Assign, move, copy and accepting a recommendation need a connection and aren't queued in the outbox
+     (ADR-0013). Each depends on the budget's version and on left to assign at that moment, so replaying it
+     later could apply a decision the user made against numbers that have since changed.
+
 ## Consequences
 
 - Budget numbers can never drift from the ledger: there is no stored "available" to repair.
