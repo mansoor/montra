@@ -7,3 +7,4 @@ export * from './receipt.js';
 export * from './calendar-date.js';
 export * from './recurrence.js';
 export * from './ledger/index.js';
+export * from './budget/index.js';
