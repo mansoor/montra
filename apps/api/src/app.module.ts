@@ -49,6 +49,13 @@ import { ReceiptJobs } from './receipts/receipt-jobs.js';
 import { ReceiptsController } from './receipts/receipts.controller.js';
 import { TripsController, TripsService } from './trips/trips.js';
 import type { HttpGet } from './fx/sources.js';
+import { PlanningData } from './planning/data.js';
+import { BudgetsService } from './planning/budgets.service.js';
+import { GoalsService } from './planning/goals.service.js';
+import { IncomeService } from './planning/income.service.js';
+import { FlowService } from './planning/flow.service.js';
+import { RecommendationsService } from './planning/recommendations.service.js';
+import { PlanningController } from './planning/planning.controller.js';
 
 /** Outbound HTTP for the FX sources, with a timeout. */
 const httpGet: HttpGet = (url) => fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -82,6 +89,7 @@ export class AppModule {
       FxController,
       ReceiptsController,
       TripsController,
+      PlanningController,
     ];
     return {
       module: AppModule,
@@ -121,6 +129,12 @@ export class AppModule {
         ReceiptsService,
         ReceiptJobs,
         TripsService,
+        PlanningData,
+        BudgetsService,
+        GoalsService,
+        IncomeService,
+        FlowService,
+        RecommendationsService,
         { provide: FX_HTTP, useValue: httpGet },
       ],
     };

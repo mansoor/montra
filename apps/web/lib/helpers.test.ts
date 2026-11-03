@@ -92,6 +92,7 @@ describe('view models', () => {
     archived: false,
     hidden: false,
     defaultMemberId: null,
+    planning: { creditLimit: null, interestRateBps: null, minPayment: null, lowBalance: '0' },
   });
 
   it('computes net position per currency (assets minus liabilities)', () => {

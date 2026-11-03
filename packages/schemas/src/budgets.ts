@@ -253,6 +253,17 @@ export const DraftBudgetDto = z.object({
 });
 export type DraftBudgetDto = z.infer<typeof DraftBudgetDto>;
 
+/** GET/PATCH /planning/settings: inputs to the recommendation rules (workspace.priorities). */
+export const PlanningSettingsDto = z.object({
+  /** REC-01: category id → 1 (cut first) … 5 (protect). Unlisted categories are 3. */
+  categoryPriorities: z.record(z.string(), z.number().int().min(1).max(5)),
+  /** REC-03: debts at or above this APR (basis points) count as high-interest. */
+  highInterestBps: z.number().int().min(0).max(10_000),
+});
+export type PlanningSettingsDto = z.infer<typeof PlanningSettingsDto>;
+export const UpdatePlanningSettingsRequest = PlanningSettingsDto.partial();
+export type UpdatePlanningSettingsRequest = z.output<typeof UpdatePlanningSettingsRequest>;
+
 // ----- Goals and sinking funds (BUD-07, BUD-08, FAM-07) ----------------------------------------------------
 
 export const GOAL_TYPES = ['emergency_fund', 'debt_payoff', 'savings', 'sinking_fund'] as const;

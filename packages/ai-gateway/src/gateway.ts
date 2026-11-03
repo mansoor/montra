@@ -25,6 +25,7 @@ import * as normalizeV1 from './tasks/normalize-payees/v1.js';
 import * as quickAddV1 from './tasks/parse-quick-add/v1.js';
 import * as pingV1 from './tasks/ping/v1.js';
 import * as proposeV1 from './tasks/propose-categories/v1.js';
+import * as summaryV1 from './tasks/word-summary/v1.js';
 import type {
   AiContext,
   AiGateway,
@@ -49,6 +50,7 @@ import type {
   ReceiptExtraction,
   StatementTable,
   StatementText,
+  SummaryInput,
   TaskName,
   TaskResult,
   TransactionDraft,
@@ -968,6 +970,37 @@ export class Gateway implements AiGateway {
     );
   }
 
+  // ----- word_summary (REC-01..08, BUD-02) -----------------------------------------------------------------
+
+  /**
+   * Words a recommendation, monthly review or draft-budget explanation. The numbers come from code; an answer
+   * that contains any number not present in the title, figures or names is invalid (AIA-05), and the caller
+   * shows its template text instead.
+   */
+  async wordSummary(input: SummaryInput, ctx: AiContext): Promise<TaskResult<string>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const names = input.names.slice(0, 12).map((n) => minimizeText(n, ctx.pseudonyms));
+    const allowed = new Set(
+      [input.title, ...Object.values(input.figures), ...names].flatMap((s) => numbersIn(s)),
+    );
+    return this.callProvider<string>(
+      {
+        task: 'word_summary',
+        system: summaryV1.SYSTEM,
+        promptVersion: summaryV1.PROMPT_VERSION,
+        input: { kind: input.kind, title: oneLine(input.title, 200), figures: input.figures, names },
+        schema: summaryV1.Output,
+        validate: (o: summaryV1.Output) => {
+          const text = o.text.trim().replace(/\n{2,}/g, '\n');
+          if (!text || text.length > 900 || text.split('\n').length > 6) return null;
+          return numbersIn(text).every((n) => allowed.has(n)) ? text : null;
+        },
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
   // ----- ping ----------------------------------------------------------------------------------------------
 
   async ping(ctx: AiContext): Promise<TaskResult<{ model: string }>> {
@@ -985,6 +1018,17 @@ export class Gateway implements AiGateway {
       { spent: 0n },
     );
   }
+}
+
+/**
+ * The numbers in a text, normalized so "$1,250.00", "1,250" and "1250" compare equal (AIA-05 check for
+ * word_summary).
+ */
+export function numbersIn(text: string): string[] {
+  return (text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) => {
+    const plain = n.replace(/,/g, '');
+    return plain.includes('.') ? plain.replace(/0+$/, '').replace(/\.$/, '') : plain;
+  });
 }
 
 /** Stable pseudonyms for members (MEMBER_1, …), merged with any the caller supplies (tenants etc.). */

@@ -48,6 +48,14 @@ export const AccountDto = z.object({
   /** Hidden from the current user's lists (preference, UP-04). */
   hidden: z.boolean(),
   defaultMemberId: z.string().nullable(),
+  /** Planning inputs (Phase 6): debt payoff and forecast warnings. Minor units in the account currency. */
+  planning: z.object({
+    creditLimit: z.string().nullable(),
+    interestRateBps: z.number().int().nullable(),
+    minPayment: z.string().nullable(),
+    /** FLOW-03: the forecast warns below this balance. */
+    lowBalance: z.string(),
+  }),
 });
 export type AccountDto = z.infer<typeof AccountDto>;
 

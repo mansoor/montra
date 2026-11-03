@@ -282,3 +282,35 @@ describe('budgets (BUD-01, UP-04)', () => {
     ).rejects.toThrow(/budget_one_per_scope/);
   });
 });
+
+describe('nightly planning jobs (TZ-04)', () => {
+  it('queues one job per workspace and local date, run as the owner', async () => {
+    const enqueue = (hour: number) =>
+      withContext(db, {}, async (trx) => {
+        const { rows } = await sql<{
+          n: number;
+        }>`select app.enqueue_workspace_nightly('planning.nightly', ${hour}) as n`.execute(trx);
+        return rows[0]!.n;
+      });
+    // Hour 24 never passes; hour 0 always has.
+    await enqueue(24);
+    const jobs = () =>
+      asOwner((trx) =>
+        trx
+          .selectFrom('app.job')
+          .select(['type', 'queue', 'created_by', 'payload'])
+          .where('type', '=', 'planning.nightly')
+          .execute(),
+      );
+    expect(await jobs()).toEqual([]);
+    expect(await enqueue(0)).toBeGreaterThanOrEqual(1);
+    await enqueue(0);
+    const queued = await jobs();
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ queue: 'schedule', created_by: f.ownerId });
+    expect((queued[0]!.payload as { date: string }).date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await expect(
+      withContext(db, {}, (trx) => sql`select app.enqueue_workspace_nightly('bad type', 0)`.execute(trx)),
+    ).rejects.toThrow(/invalid job type/);
+  });
+});

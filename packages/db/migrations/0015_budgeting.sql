@@ -397,3 +397,35 @@ create policy account_balance_select on app.account_balance_daily for select
 grant select, insert, update, delete on app.budget, app.budget_period, app.budget_line, app.budget_move, app.goal,
   app.expected_income, app.recommendation to montra_app;
 grant select on app.category_activity_monthly, app.account_balance_daily to montra_app;
+
+-- ---------------------------------------------------------------------------------------------
+-- TZ-04: nightly per-workspace work runs after a local hour in each workspace's time zone. An hourly system
+-- job calls this; one job per workspace and local date, created by the workspace owner (whose context it
+-- runs in). Returns the number of jobs queued.
+-- ---------------------------------------------------------------------------------------------
+create index job_nightly on app.job (workspace_id, type, (payload ->> 'date')) where payload ? 'date';
+
+create function app.enqueue_workspace_nightly(p_type text, p_local_hour integer) returns integer
+  language plpgsql volatile security definer set search_path = app, pg_temp as $$
+declare n integer;
+begin
+  if p_type !~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$' then
+    raise exception 'invalid job type %', p_type;
+  end if;
+  insert into app.job (workspace_id, queue, type, payload, created_by)
+  select w.id, 'schedule', p_type, jsonb_build_object('date', l.local_date::text), o.user_id
+    from app.workspace w
+   cross join lateral (select (now() at time zone w.time_zone) as local_ts,
+                              (now() at time zone w.time_zone)::date as local_date) l
+    join lateral (select m.user_id from app.workspace_member m
+                   where m.workspace_id = w.id and m.role = 'owner' and m.status = 'active'
+                   order by m.created_at, m.user_id limit 1) o on true
+   where extract(hour from l.local_ts) >= p_local_hour
+     and not exists (select 1 from app.job j
+                      where j.workspace_id = w.id and j.type = p_type and j.payload ? 'date'
+                        and j.payload ->> 'date' = l.local_date::text);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+grant execute on function app.enqueue_workspace_nightly(text, integer) to montra_app;

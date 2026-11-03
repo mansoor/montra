@@ -469,6 +469,10 @@ export class TransactionsService {
       status?: string;
       reviewState?: string;
       accountId?: string;
+      entityId?: string;
+      memberId?: string;
+      categoryIds?: string[];
+      accountIds?: string[];
       trash?: boolean;
     },
   ): Promise<TransactionDto[]> {
@@ -497,6 +501,24 @@ export class TransactionsService {
               .select('p.id')
               .whereRef('je.transaction_id', '=', 't.id')
               .where('p.ledger_account_id', '=', accountId),
+          ),
+        );
+      }
+      if (opts.entityId || opts.memberId || opts.categoryIds || opts.accountIds) {
+        // One posting must satisfy every drill filter, so the list reproduces the dashboard number.
+        q = q.where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('app.posting as p')
+              .innerJoin('app.journal_entry as je', (j) =>
+                j.onRef('je.workspace_id', '=', 'p.workspace_id').onRef('je.id', '=', 'p.journal_entry_id'),
+              )
+              .select('p.id')
+              .whereRef('je.transaction_id', '=', 't.id')
+              .$if(!!opts.entityId, (s) => s.where('p.entity_id', '=', opts.entityId!))
+              .$if(!!opts.memberId, (s) => s.where('p.member_id', '=', opts.memberId!))
+              .$if(!!opts.categoryIds, (s) => s.where('p.ledger_account_id', 'in', opts.categoryIds!))
+              .$if(!!opts.accountIds, (s) => s.where('p.ledger_account_id', 'in', opts.accountIds!)),
           ),
         );
       }

@@ -38,8 +38,9 @@ Open points were:
      it doesn't carry (`carry_surplus`, `reset`) go back to next period's left to assign. So for every
      period, left to assign + Σ available = Σ budgeted income − Σ activity to date. Property tests check
      this invariant.
-   - A missing period is created on first read with the previous period's lines (assigned 0, rollover
-     mode copied), so "left to assign" never depends on whether a period row exists.
+   - Period rows are created on the first write to a period (assign, move, copy, income override). Reads
+     don't need one: rollover modes carry forward from earlier lines, so "left to assign" never depends on
+     whether a period row exists.
 
 2. **Two read models, maintained by statement-level triggers in the posting's transaction.**
    - `category_activity_monthly` (functional amounts per ledger account, month, member and restriction)
@@ -71,11 +72,15 @@ Open points were:
 
 5. **Recommendations: computed in code, stored with their inputs, worded by AI.**
    - The engine produces a payload (figures, subjects, proposed actions) per rule; `dedupe_key`
-     (type + subject + period) stops repeats. A job runs the rules after imports and nightly per
-     workspace in its time zone (TZ-04).
-   - AI wording (`word_recommendation` task) receives only the payload's figures and names, and the
-     result is checked to contain no number that isn't in the figures (AIA-05); otherwise the
-     template title is shown alone.
+     (type + subject + period) stops repeats, so a dismissed recommendation stays dismissed. An hourly
+     system job calls `app.enqueue_workspace_nightly`, which queues one `planning.nightly` job per
+     workspace after 03:00 in its time zone (TZ-04); that job materializes schedules and runs the rules.
+     `POST /recommendations/refresh` runs them on demand.
+   - Stored recommendations are computed without restricted (payslip) amounts, because anyone who can
+     read the entity can read them.
+   - AI wording (the `word_summary` gateway task, also used for the draft-budget explanation) receives
+     only the formatted figures and names. An answer containing any number that isn't in them is
+     rejected (AIA-05) and the template title is shown alone.
    - Accepting applies the proposed (or edited) actions as ordinary budget writes in one transaction.
 
 6. **Forecast and net worth are computed on request** from the read models plus recurring items,

@@ -240,6 +240,15 @@ export class FakeAdapter implements ProviderAdapter {
       }
       case 'propose_categories':
         return fakePropose(input);
+      case 'word_summary': {
+        // Restates the title and figures verbatim, so it always passes the numbers check.
+        const figures = Object.entries((input.figures as Record<string, string> | undefined) ?? {})
+          .map(([k, v]) => `${k.replace(/([A-Z])/g, ' $1').toLowerCase()} ${v}`)
+          .join(', ');
+        return {
+          text: `${String(input.title ?? '')}.${figures ? ` ${figures[0]!.toUpperCase()}${figures.slice(1)}.` : ''}`,
+        };
+      }
       case 'ping':
         return { ok: true };
     }

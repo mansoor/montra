@@ -130,6 +130,11 @@ export const UpdateAccountRequest = z
     defaultMemberId: Id.nullable(),
     archived: z.boolean(),
     hidden: z.boolean(),
+    /** Planning inputs (Phase 6): card limit, APR in basis points, minimum payment, low-balance warning. */
+    creditLimit: z.string().regex(/^\d{1,19}$/).nullable(),
+    interestRateBps: z.number().int().min(0).max(10_000).nullable(),
+    minPayment: z.string().regex(/^\d{1,19}$/).nullable(),
+    lowBalance: z.string().regex(/^-?\d{1,19}$/),
   })
   .partial();
 export type UpdateAccountRequest = z.output<typeof UpdateAccountRequest>;
