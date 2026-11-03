@@ -6,7 +6,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Crypto from 'expo-crypto';
-import { FetchTransport, SyncEngine, type SyncState, type SyncStore } from '@montra/sync';
+import { FetchTransport, ReceiptUploadQueue, SyncEngine, type SyncState, type SyncStore } from '@montra/sync';
+import { classifyUploadError } from '../features/receipt-capture';
+import { removePage } from '../receipts/files';
 import { config } from '../config';
 import { t } from '../i18n';
 import { useSession } from '../session/SessionProvider';
@@ -18,6 +20,8 @@ import { RealtimeClient, wsUrl } from './realtime';
 interface SyncCtx {
   engine: SyncEngine;
   store: SyncStore;
+  /** Receipt captures waiting to upload (TXN-09). */
+  receipts: ReceiptUploadQueue;
   state: SyncState | null;
   /** Bumped after every local write or sync, so screens re-read the store. */
   version: number;
@@ -50,7 +54,11 @@ export function useLocal<T>(read: (store: SyncStore) => Promise<T>, deps: unknow
 export function SyncProvider({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
   const session = useSession();
   const toast = useToast();
-  const [ctx, setCtx] = useState<{ engine: SyncEngine; store: SyncStore } | null>(null);
+  const [ctx, setCtx] = useState<{
+    engine: SyncEngine;
+    store: SyncStore;
+    receipts: ReceiptUploadQueue;
+  } | null>(null);
   const [state, setState] = useState<SyncState | null>(null);
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
@@ -73,9 +81,25 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
           if (e.type === 'pulled' || e.type === 'pushed' || e.type === 'conflict') bump();
         },
       });
+      const receipts = new ReceiptUploadQueue({
+        store,
+        uploader: {
+          uploadPage: async (page) =>
+            (
+              await session.api.uploadReceiptFile(workspaceId, {
+                uri: page.uri,
+                name: page.name,
+                type: page.type,
+              })
+            ).fileId,
+          createReceipt: async (input) => void (await session.api.createReceipt(workspaceId, input)),
+        },
+        classify: classifyUploadError,
+        removeFile: removePage,
+      });
       if (cancelled) return;
       engineRef.current = engine;
-      setCtx({ engine, store });
+      setCtx({ engine, store, receipts });
       setState(await engine.state());
       session.setSignOutHook(async () => {
         realtime?.stop();
@@ -85,9 +109,12 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
 
       const net = await NetInfo.fetch();
       engine.setOnline(Boolean(net.isConnected));
+      // Receipts upload alongside every sync: on start, reconnect, foreground and pull-to-refresh.
       const sync = () =>
         void engine
           .sync()
+          .catch(() => undefined)
+          .then(async () => ((await engine.state()).online ? receipts.process() : undefined))
           .catch(() => undefined)
           .finally(bump);
       if (!(await store.getMeta('latestSeq')) && net.isConnected)
@@ -127,8 +154,9 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
 
   const refresh = useCallback(async () => {
     await engineRef.current?.sync().catch(() => undefined);
+    await ctx?.receipts.process().catch(() => undefined);
     bump();
-  }, [bump]);
+  }, [bump, ctx]);
 
   if (!ctx) return null;
   return <Ctx.Provider value={{ ...ctx, state, version, refresh, touch: bump }}>{children}</Ctx.Provider>;

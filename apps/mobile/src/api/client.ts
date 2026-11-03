@@ -10,12 +10,34 @@ import type {
   MeDto,
   ParseQuickAddRequest,
   QuickAddDraftDto,
+  ReceiptDto,
+  ReceiptFileDto,
+  ReceiptPageDto,
   RegisterPushDeviceRequest,
   SuggestionDto,
   SuggestRequest,
   UploadDto,
   WorkspaceDto,
 } from '@montra/schemas';
+
+/** Review edits sent from the phone (RCP-06): line categories and amounts in minor units. */
+export interface ReceiptReviewInput {
+  version: string;
+  lines: Array<{
+    id?: string;
+    rawText: string;
+    expandedName?: string | null;
+    lineTotal: string;
+    discount?: string;
+    taxable?: boolean;
+    categoryId?: string | null;
+    memberId?: string | null;
+  }>;
+}
+
+export type ApplyReceiptInput =
+  | { transactionId: string; version: string }
+  | { createTransaction: { accountId: string; date?: string }; version: string };
 
 export class ApiError extends Error {
   constructor(
@@ -109,6 +131,32 @@ export function createApi(opts: ApiOptions) {
     commitImport: (w: string, id: string) => request<ImportBatchDto>('POST', `${ws(w)}/imports/${id}/commit`),
     categoryProposals: (w: string, id: string) =>
       request<CategoryProposalsResponse>('GET', `${ws(w)}/imports/${id}/category-proposals`),
+
+    // ----- Receipts (TXN-08/09, RCP-06) -----
+    uploadReceiptFile: (w: string, file: UploadFile) => {
+      const form = new FormData();
+      form.append('file', file as unknown as Blob);
+      return request<ReceiptFileDto>('POST', `${ws(w)}/receipts/files`, undefined, form);
+    },
+    /** Idempotent with a client id: a replayed offline capture returns the existing receipt. */
+    createReceipt: (w: string, input: { id: string; fileIds: string[]; transactionId?: string | null }) =>
+      request<ReceiptDto>('POST', `${ws(w)}/receipts`, {
+        id: input.id,
+        fileIds: input.fileIds,
+        source: 'camera',
+        ...(input.transactionId ? { transactionId: input.transactionId } : {}),
+      }),
+    listReceipts: (w: string, status?: ReceiptDto['status']) =>
+      request<ReceiptPageDto>('GET', `${ws(w)}/receipts?limit=100${status ? `&status=${status}` : ''}`),
+    getReceipt: (w: string, id: string) => request<ReceiptDto>('GET', `${ws(w)}/receipts/${id}`),
+    /** Path of a page image; load it with the bearer header. */
+    receiptFilePath: (w: string, id: string, fileId: string) => `${ws(w)}/receipts/${id}/files/${fileId}`,
+    updateReceipt: (w: string, id: string, input: ReceiptReviewInput) =>
+      request<ReceiptDto>('PATCH', `${ws(w)}/receipts/${id}`, input),
+    applyReceipt: (w: string, id: string, input: ApplyReceiptInput) =>
+      request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/apply`, input),
+    matchReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/match`),
+    rejectReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/reject`),
 
     registerPushDevice: (req: RegisterPushDeviceRequest) =>
       request<{ id: string }>('POST', '/v1/me/push-devices', req),

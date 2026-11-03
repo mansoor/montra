@@ -17,6 +17,11 @@ export default function More() {
         onPress={() => router.push('/accounts')}
         testID="more-accounts"
       />
+      <Row
+        title={t('mobile.more.receipts')}
+        onPress={() => router.push('/receipts')}
+        testID="more-receipts"
+      />
       <Row title={t('mobile.more.import')} onPress={() => router.push('/import')} testID="more-import" />
       <Row
         title={t('mobile.more.activity')}

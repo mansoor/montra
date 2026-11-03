@@ -117,6 +117,14 @@ export default function TransactionDetail() {
         autoCapitalize="none"
       />
       <Button label={t('mobile.txn.save')} onPress={() => void save()} testID="ed-save" />
+      {!row.pending && row.amount?.startsWith('-') ? (
+        <Button
+          kind="secondary"
+          label={t('mobile.receipts.add_to_transaction')}
+          onPress={() => router.push({ pathname: '/receipt-capture', params: { transactionId: row.id } })}
+          testID="txn-add-receipt"
+        />
+      ) : null}
       <CategoryPicker
         visible={picking}
         categories={categories}

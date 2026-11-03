@@ -510,10 +510,14 @@
   ],
   "TXN-08": [
     "partial",
-    "server side done (upload, extraction, matching or creating the transaction); mobile camera capture with edge/blur/glare in the P5 mobile step"
+    "mobile capture with expo-camera: multi-shot, blur/glare check and retake after each shot, upload, extraction, matching or creating the transaction; no live edge detection (needs vision-camera, ADR-0009 amendment); not yet run on devices"
   ],
   "UP-09": [
     "partial",
     "receipts are stored with their transaction (7-year retention, searchable); missing-receipt flags for deductible business expenses come with BIZ-12 in Phase 8"
+  ],
+  "TXN-09": [
+    "partial",
+    "ReceiptUploadQueue (@montra/sync): captures kept on the device, resumable page uploads, idempotent create by client id, offline/retry/permanent handling, run on every sync; tested against fakes, not yet on devices"
   ]
 }

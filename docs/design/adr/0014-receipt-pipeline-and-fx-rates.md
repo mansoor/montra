@@ -139,8 +139,14 @@ Several things were still open:
   receipt but doesn't edit its lines.
 - Applying a receipt replaces the transaction's splits through the DE-10 rules in `poster.ts`. A locked
   transaction gets a reclassification adjustment, not an in-place rewrite.
-- Mobile capture needs an upload op in the offline queue (TXN-09). That is a protocol addition to
-  ADR-0013 and is decided with the camera library choice.
+- **Offline mobile captures (TXN-09)** use a separate queue, not ADR-0013 outbox ops: `ReceiptUploadQueue`
+  in `@montra/sync`, persisted in the store's meta table.
+  - The pages are copied to the app's documents directory, so the OS can't clear them.
+  - Pages upload one by one and their file ids are kept, so an interrupted upload resumes.
+  - The receipt is created with the client id, so a replay returns the existing receipt.
+  - Errors are treated three ways: offline (wait), retry (backoff) and permanent (shown, with retry
+    and discard).
+  - The sync protocol is unchanged: receipts are not transactions and need no field merging.
 - ECB-only deployments cover about 30 currencies; others need OXR or a manual rate.
 
 ## Alternatives considered

@@ -4,6 +4,7 @@
  * reuses the last category for that payee. "Type a sentence" uses natural-language parsing when online (TXN-06).
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 import type { CategoryDto, SuggestionDto } from '@montra/schemas';
 import { asCurrencyCode, minorUnits } from '@montra/domain';
@@ -39,6 +40,7 @@ const LAST_ACCOUNT = 'mobile.lastAccount';
 
 export default function Capture() {
   const th = useTheme();
+  const router = useRouter();
   const toast = useToast();
   const { state: session, api } = useSession();
   const { engine, store, state, touch } = useSync();
@@ -159,6 +161,14 @@ export default function Capture() {
 
   return (
     <Screen testID="capture">
+      {step === 'amount' ? (
+        <Button
+          kind="secondary"
+          label={t('mobile.receipts.scan')}
+          onPress={() => router.push('/receipt-capture')}
+          testID="capture-receipt"
+        />
+      ) : null}
       <Title>{t('mobile.capture.title')}</Title>
       {error ? <Banner tone="danger" text={error} /> : null}
 

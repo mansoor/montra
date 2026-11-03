@@ -1,0 +1,215 @@
+/**
+ * Receipt review on the phone (RCP-06, IMP-11): the receipt image, its lines with their categories (tap a line
+ * to change it; the API learns an item rule), the splits, and linking to a transaction. Amount edits are on the
+ * web review screen.
+ */
+import { useCallback, useEffect, useState } from 'react';
+import { Image, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import type { CategoryDto, ReceiptDto } from '@montra/schemas';
+import { config } from '../../src/config';
+import { fmtDate, fmtMoney, t } from '../../src/i18n';
+import { useSession } from '../../src/session/SessionProvider';
+import { useLocal } from '../../src/sync/SyncProvider';
+import { reviewEdits, uncategorizedLines } from '../../src/features/receipt-capture';
+import { CategoryPicker } from '../../src/ui/CategoryPicker';
+import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
+import { useTheme } from '../../src/ui/theme';
+
+export default function ReceiptReview() {
+  const th = useTheme();
+  const router = useRouter();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { state: session, api, token } = useSession();
+  const ws = session.status === 'signed_in' ? session.workspace.id : '';
+  const categories = useLocal((s) => s.getReference('categories')) ?? [];
+  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter((a) => !a.archived);
+  const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
+  const [bearer, setBearer] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Map<string, string | null>>(new Map());
+  const [picking, setPicking] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const names = new Map(categories.map((c) => [c.id, c.name]));
+
+  const load = useCallback(async () => {
+    try {
+      setReceipt(await api.getReceipt(ws, id));
+      setPicked(new Map());
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, [api, ws, id]);
+
+  useEffect(() => {
+    void load();
+    void token().then(setBearer);
+  }, [load, token]);
+
+  // While the receipt is being read, check back.
+  useEffect(() => {
+    if (receipt?.status !== 'processing') return;
+    const timer = setInterval(() => void load(), 3000);
+    return () => clearInterval(timer);
+  }, [receipt?.status, load]);
+
+  const act = async (fn: () => Promise<ReceiptDto>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setReceipt(await fn());
+      setPicked(new Map());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!receipt)
+    return <Screen>{error ? <Banner tone="danger" text={error} /> : <Body muted>…</Body>}</Screen>;
+  const open = receipt.status === 'inbox' || receipt.status === 'needs_review';
+  const missing = uncategorizedLines(receipt).length;
+
+  return (
+    <Screen testID="receipt-review">
+      <Title>{receipt.merchant ?? t('mobile.receipts.unknown_merchant')}</Title>
+      <Small>
+        {[
+          receipt.receiptDate ? fmtDate(receipt.receiptDate) : null,
+          t(`mobile.receipts.status.${receipt.status}`),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </Small>
+      {receipt.status === 'processing' ? <Body muted>{t('mobile.receipts.reading')}</Body> : null}
+      {receipt.validationGap && receipt.validationGap !== '0' ? (
+        <Banner
+          tone="warning"
+          text={t('mobile.receipts.gap', { amount: fmtMoney(receipt.validationGap, receipt.currency) })}
+        />
+      ) : null}
+      {bearer
+        ? receipt.fileIds.map((fileId, i) => (
+            <Image
+              key={fileId}
+              accessibilityLabel={t('mobile.receipts.page_n', { n: i + 1 })}
+              source={{
+                uri: `${config.apiUrl}${api.receiptFilePath(ws, receipt.id, fileId)}`,
+                headers: { authorization: `Bearer ${bearer}` },
+              }}
+              style={{ height: 320, borderRadius: th.radius, backgroundColor: th.surface }}
+              resizeMode="contain"
+            />
+          ))
+        : null}
+
+      {receipt.lines.length ? <Title>{t('mobile.receipts.lines')}</Title> : null}
+      {missing > 0 ? <Small>{t('mobile.receipts.uncategorized_count', { count: missing })}</Small> : null}
+      {receipt.lines.map((l) => {
+        const categoryId = picked.has(l.id) ? picked.get(l.id) : l.categoryId;
+        return (
+          <Row
+            key={l.id}
+            testID="receipt-line"
+            title={l.expandedName ?? l.rawText}
+            subtitle={categoryId ? (names.get(categoryId) ?? '') : t('mobile.receipts.uncategorized')}
+            right={<Small>{fmtMoney(l.lineTotal, receipt.currency)}</Small>}
+            onPress={() => setPicking(l.id)}
+          />
+        );
+      })}
+      {picked.size > 0 ? (
+        <Button
+          label={t('mobile.receipts.save')}
+          busy={busy}
+          onPress={() => void act(() => api.updateReceipt(ws, receipt.id, reviewEdits(receipt, picked)))}
+          testID="receipt-save"
+        />
+      ) : null}
+
+      {receipt.groups.length ? (
+        <Card>
+          <Body>{t('mobile.receipts.splits')}</Body>
+          {receipt.groups.map((g) => (
+            <View key={g.lineIds.join()} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Small>
+                {g.categoryId ? (names.get(g.categoryId) ?? '') : t('mobile.receipts.uncategorized')}
+              </Small>
+              <Small>{fmtMoney(g.total, receipt.currency)}</Small>
+            </View>
+          ))}
+        </Card>
+      ) : null}
+
+      {receipt.transactionId ? (
+        <Button
+          kind="secondary"
+          label={t('mobile.receipts.open_transaction')}
+          onPress={() => router.push(`/transaction/${receipt.transactionId}`)}
+        />
+      ) : null}
+
+      {open ? (
+        <>
+          <Title>{t('mobile.receipts.match_title')}</Title>
+          {receipt.candidates.length === 0 ? <Body muted>{t('mobile.receipts.no_candidates')}</Body> : null}
+          {receipt.candidates.map((c) => (
+            <Row
+              key={c.transactionId}
+              title={`${c.payee ?? ''} · ${fmtMoney(c.amount.amount, c.amount.currency)}`}
+              subtitle={`${fmtDate(c.date)} · ${t('mobile.receipts.score', { score: Math.trunc(c.score * 100) })}`}
+              onPress={() =>
+                void act(() =>
+                  api.applyReceipt(ws, receipt.id, {
+                    transactionId: c.transactionId,
+                    version: receipt.version,
+                  }),
+                )
+              }
+            />
+          ))}
+          {accounts[0] ? (
+            <Button
+              kind="secondary"
+              label={t('mobile.receipts.record', { account: accounts[0].name })}
+              busy={busy}
+              onPress={() =>
+                void act(() =>
+                  api.applyReceipt(ws, receipt.id, {
+                    createTransaction: { accountId: accounts[0]!.id },
+                    version: receipt.version,
+                  }),
+                )
+              }
+            />
+          ) : null}
+          <Button
+            kind="secondary"
+            label={t('mobile.receipts.match_again')}
+            busy={busy}
+            onPress={() => void act(() => api.matchReceipt(ws, receipt.id))}
+          />
+          <Button
+            kind="danger"
+            label={t('mobile.receipts.reject')}
+            busy={busy}
+            onPress={() => void act(() => api.rejectReceipt(ws, receipt.id))}
+          />
+        </>
+      ) : null}
+      {error ? <Banner tone="danger" text={error} /> : null}
+      <CategoryPicker
+        visible={picking !== null}
+        categories={categories}
+        kind="expense"
+        onClose={() => setPicking(null)}
+        onPick={(c: CategoryDto) => {
+          if (picking) setPicked(new Map(picked).set(picking, c.id));
+          setPicking(null);
+        }}
+      />
+    </Screen>
+  );
+}
