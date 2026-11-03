@@ -78,6 +78,16 @@ Several things were still open:
      `fx_rate_source = 'implied'`.
    - A foreign transaction fee is its own split to the entity's `bank_fees` system account.
    - An override sets `fx_rate_source = 'user'` (CUR-05). A rate from `ref.fx_rate` is `'reference'`.
+   - **Implemented:**
+     - `foreign: { original, rate?, fee? }` on create and update. The fee must be a positive part of
+       money spent. The category or splits cover the charge minus the fee.
+     - A foreign-currency account takes `fxRate` (the user's rate) or the day's reference rate.
+       Without either, the API answers 422 `fx.no_rate`, and the UI asks for a rate.
+     - Its `TransactionDto.foreign` shows the amount in the account currency and the rate to the
+       functional currency.
+     - Transfers between currencies need `amountIn`. A leg in the functional currency fixes the other
+       leg's rate (implied); two foreign legs use reference rates. `fxRateFrom` / `fxRateTo`
+       override them.
 6. **Retention (RCP-10).** Receipts and their files get `retain_until` = upload date + 7 years. A purge
    job deletes them only after that date, and never while the linked transaction is in a locked period.
    OCR text is indexed with a stored `tsvector` (`simple` configuration) plus a trigram index on the

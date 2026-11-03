@@ -7,6 +7,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import {
+  abs,
   addDays,
   asCurrencyCode,
   buildAdjustment,
@@ -15,12 +16,21 @@ import {
   buildTransferEntries,
   calendarDate,
   compareDates,
+  decimalToString,
+  impliedRate,
   isBalanceSheet,
+  minorUnits,
+  parseDecimal,
   type CalendarDate,
+  type CarryingBalance,
+  type Decimal,
   type JournalEntryDraft,
+  type LedgerAccountRef,
   type SplitInput,
+  type SystemRole,
 } from '@montra/domain';
 import { AppError, unprocessable } from '../common/errors.js';
+import { FxRatesService } from '../fx/fx.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 
 export interface SplitSpec {
@@ -41,6 +51,13 @@ export type TransactionSpec =
       /** True when the split went to the uncategorized system account (review queue). */
       uncategorized: boolean;
       splits: SplitSpec[];
+      /** Foreign-currency account: a rate the user entered (CUR-05). Absent: the day's reference rate. */
+      fxRate?: string;
+      /**
+       * A purchase in another currency on a home-currency account (CUR-03): the original amount (signed like
+       * `amount`), the fee included in `amount` (its split posts to Bank fees) and a rate override.
+       */
+      foreign?: ForeignSpec;
     }
   | {
       type: 'transfer';
@@ -49,11 +66,33 @@ export type TransactionSpec =
       amount: string;
       currency: string;
       description: string;
+      /** Amount arriving in the destination account, when its currency differs (CUR-08). */
+      amountIn?: string;
+      /** Rate overrides for foreign-currency legs. */
+      fxRateFrom?: string;
+      fxRateTo?: string;
     };
+
+export interface ForeignSpec {
+  amount: string;
+  currency: string;
+  fee: string | null;
+  rate: string | null;
+}
+
+/** What the transaction stores in its FX columns (CUR-03/05, ADR-0014); null clears them. */
+export interface TransactionFx {
+  originalAmount: string;
+  originalCurrency: string;
+  /** Functional (home) units per original unit. */
+  rate: string;
+  source: 'implied' | 'reference' | 'user';
+}
 
 export interface BuiltTransaction {
   drafts: JournalEntryDraft[];
   primaryEntityId: string;
+  fx: TransactionFx | null;
 }
 
 type Ctx = { workspaceId: string; userId: string };
@@ -84,10 +123,24 @@ export class ReconciledError extends AppError {
 
 @Injectable()
 export class TransactionPoster {
-  constructor(@Inject(LedgerService) private readonly ledger: LedgerService) {}
+  constructor(
+    @Inject(LedgerService) private readonly ledger: LedgerService,
+    @Inject(FxRatesService) private readonly fx: FxRatesService,
+  ) {}
 
-  /** Builds the journal entries for a spec (no writes besides any missing inter-entity accounts). */
-  async build(trx: Trx, ctx: Ctx, spec: TransactionSpec, date: CalendarDate): Promise<BuiltTransaction> {
+  /**
+   * Builds the journal entries for a spec (no writes besides any missing inter-entity accounts).
+   * Foreign-currency accounts are valued at the day's reference rate (or the user's), and money leaving them
+   * at their carrying value (ADR-0010); `transactionId` keeps a re-posted transaction out of its own
+   * carrying balance.
+   */
+  async build(
+    trx: Trx,
+    ctx: Ctx,
+    spec: TransactionSpec,
+    date: CalendarDate,
+    transactionId?: string,
+  ): Promise<BuiltTransaction> {
     if (spec.type === 'transfer') {
       const from = await this.ledger.accountRef(trx, ctx.workspaceId, spec.fromAccountId);
       const to = await this.ledger.accountRef(trx, ctx.workspaceId, spec.toAccountId);
@@ -99,18 +152,56 @@ export class TransactionPoster {
       }
       if (spec.currency !== from.currency)
         throw unprocessable('currency.mismatch', `Amount currency must be ${from.currency}`);
-      if (from.currency !== to.currency) {
-        throw unprocessable(
-          'fx.rate_required',
-          'Transfers between currencies arrive with FX support (Phase 5)',
-        );
-      }
       const amountOut = BigInt(spec.amount);
       if (amountOut <= 0n) throw unprocessable('amount.not_positive', 'Transfer amount must be positive');
+      let amountIn = amountOut;
+      if (from.currency !== to.currency) {
+        if (!spec.amountIn) {
+          throw unprocessable(
+            'fx.amount_in_required',
+            `Enter the amount that arrived in ${to.currency} for a transfer between currencies`,
+          );
+        }
+        amountIn = BigInt(spec.amountIn);
+        if (amountIn <= 0n)
+          throw unprocessable('amount.not_positive', 'The amount received must be positive');
+      }
+      const functional = await this.functionalCurrency(trx, from.entityId);
       const resolver = await this.ledger.resolver(trx, ctx.workspaceId, [[from.entityId, to.entityId]]);
+      // CUR-08: a leg in the functional currency fixes the other leg's rate (implied by the two amounts);
+      // two foreign legs use the day's reference rates. The gap posts to fx_gain_loss.
+      const legRate = async (
+        leg: LedgerAccountRef,
+        other: LedgerAccountRef,
+        legAmount: bigint,
+        otherAmount: bigint,
+        override: string | undefined,
+      ): Promise<Decimal | undefined> => {
+        if (leg.currency === functional) return undefined;
+        if (override) return parseDecimal(override);
+        if (other.currency === functional) {
+          return impliedRate(otherAmount, minorUnits(other.currency), legAmount, minorUnits(leg.currency));
+        }
+        return this.referenceRate(trx, leg.currency, functional, date);
+      };
       return {
-        drafts: buildTransferEntries({ date, description: spec.description, from, to, amountOut }, resolver),
+        drafts: buildTransferEntries(
+          {
+            date,
+            description: spec.description,
+            from,
+            to,
+            amountOut,
+            ...(from.currency !== to.currency ? { amountIn } : {}),
+            fxRateFrom: await legRate(from, to, amountOut, amountIn, spec.fxRateFrom),
+            fxRateTo: await legRate(to, from, amountIn, amountOut, spec.fxRateTo),
+            carryingFrom: await this.carryingOf(trx, ctx, from, functional, date, transactionId),
+            carryingTo: await this.carryingOf(trx, ctx, to, functional, date, transactionId),
+          },
+          resolver,
+        ),
         primaryEntityId: from.entityId,
+        fx: null,
       };
     }
 
@@ -123,8 +214,50 @@ export class TransactionPoster {
     }
     if (spec.currency !== account.currency)
       throw unprocessable('currency.mismatch', `Amount currency must be ${account.currency}`);
-    if (account.currency !== (await this.functionalCurrency(trx, account.entityId))) {
-      throw unprocessable('fx.rate_required', 'Foreign-currency accounts arrive with FX support (Phase 5)');
+    const functional = await this.functionalCurrency(trx, account.entityId);
+    let fxRate: Decimal | undefined;
+    let fx: TransactionFx | null = null;
+    if (account.currency !== functional) {
+      // CUR-07: a foreign-currency account posts at the user's rate or the day's reference rate.
+      if (spec.foreign) {
+        throw unprocessable(
+          'fx.foreign_on_foreign_account',
+          'A foreign-currency account records its own currency; enter the amount in that currency',
+        );
+      }
+      fxRate = spec.fxRate
+        ? parseDecimal(spec.fxRate)
+        : await this.referenceRate(trx, account.currency, functional, date);
+      fx = {
+        originalAmount: spec.amount,
+        originalCurrency: account.currency,
+        rate: trimRate(decimalToString(fxRate)),
+        source: spec.fxRate ? 'user' : 'reference',
+      };
+    } else if (spec.fxRate) {
+      throw unprocessable('fx.not_foreign', `The account is in ${functional}; there is no rate to set`);
+    } else if (spec.foreign) {
+      // CUR-03: the postings stay in the account currency; the transaction keeps the original amount and the
+      // rate implied by the charge without the fee.
+      const charged = abs(BigInt(spec.amount)) - BigInt(spec.foreign.fee ?? '0');
+      const original = abs(BigInt(spec.foreign.amount));
+      fx = {
+        originalAmount: spec.foreign.amount,
+        originalCurrency: spec.foreign.currency,
+        rate:
+          spec.foreign.rate ??
+          trimRate(
+            decimalToString(
+              impliedRate(
+                charged,
+                minorUnits(account.currency),
+                original,
+                minorUnits(asCurrencyCode(spec.foreign.currency)),
+              ),
+            ),
+          ),
+        source: spec.foreign.rate ? 'user' : 'implied',
+      };
     }
     const splits: SplitInput[] = [];
     for (const s of spec.splits) {
@@ -145,23 +278,95 @@ export class TransactionPoster {
           description: spec.description,
           account,
           amount: BigInt(spec.amount),
+          fxRate,
+          carrying: await this.carryingOf(trx, ctx, account, functional, date, transactionId),
           splits,
           accountTags: { memberId: spec.memberId },
         },
         resolver,
       ),
       primaryEntityId: account.entityId,
+      fx,
     };
+  }
+
+  /** Posts a built transaction (see `repost`) and records its FX columns (CUR-03/05). */
+  async post(
+    trx: Trx,
+    ctx: Ctx,
+    transactionId: string,
+    built: BuiltTransaction,
+    opts: { fresh?: boolean; clearedAccountId?: string } = {},
+  ): Promise<void> {
+    await this.repost(trx, ctx, transactionId, built.drafts, opts);
+    // New rows start with empty FX columns; only write when there is something to record or clear.
+    if (opts.fresh && !built.fx) return;
+    await trx
+      .updateTable('app.transaction')
+      .set({
+        original_amount_minor: built.fx ? built.fx.originalAmount : null,
+        original_currency: built.fx?.originalCurrency ?? null,
+        fx_rate: built.fx?.rate ?? null,
+        fx_rate_source: built.fx?.source ?? null,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', transactionId)
+      .execute();
+  }
+
+  /** The day's reference rate (CUR-05), or a problem asking the user for one. */
+  private referenceRate(trx: Trx, from: string, to: string, date: CalendarDate): Promise<Decimal> {
+    return this.fx.requireRate(trx, from, to, date);
+  }
+
+  /**
+   * A foreign-currency account's balance before this transaction (ADR-0010 carrying value): its postings
+   * up to `date`, without the transaction's own entries. Same-day postings all count as earlier.
+   */
+  private async carryingOf(
+    trx: Trx,
+    ctx: Ctx,
+    account: LedgerAccountRef,
+    functional: string,
+    date: CalendarDate,
+    transactionId: string | undefined,
+  ): Promise<CarryingBalance | undefined> {
+    if (account.currency === functional) return undefined;
+    let q = trx
+      .selectFrom('app.posting as p')
+      .innerJoin('app.journal_entry as je', (j) =>
+        j.onRef('je.workspace_id', '=', 'p.workspace_id').onRef('je.id', '=', 'p.journal_entry_id'),
+      )
+      .select([
+        sql<string>`coalesce(sum(p.amount_minor), 0)`.as('foreign'),
+        sql<string>`coalesce(sum(p.functional_amount_minor), 0)`.as('functional'),
+      ])
+      .where('p.workspace_id', '=', ctx.workspaceId)
+      .where('p.ledger_account_id', '=', account.id)
+      .where('p.entry_date', '<=', date);
+    if (transactionId)
+      q = q.where((eb) =>
+        eb.or([eb('je.transaction_id', 'is', null), eb('je.transaction_id', '!=', transactionId)]),
+      );
+    const row = await q.executeTakeFirstOrThrow();
+    return { foreign: BigInt(row.foreign), functional: BigInt(row.functional) };
   }
 
   /** Category used when nothing else is known: the entity's uncategorized income or expense account. */
   async uncategorizedAccount(trx: Trx, ctx: Ctx, accountId: string, amount: bigint): Promise<string> {
+    return this.systemAccountFor(
+      trx,
+      ctx,
+      accountId,
+      amount < 0n ? 'uncategorized_expense' : 'uncategorized_income',
+    );
+  }
+
+  /** A system account (e.g. `bank_fees`, CUR-03) of the entity that owns `accountId`. */
+  async systemAccountFor(trx: Trx, ctx: Ctx, accountId: string, role: SystemRole): Promise<string> {
     const account = await this.ledger.accountRef(trx, ctx.workspaceId, accountId);
     const resolver = await this.ledger.resolver(trx, ctx.workspaceId);
-    return resolver.systemAccount(
-      account.entityId,
-      amount < 0n ? 'uncategorized_expense' : 'uncategorized_income',
-    ).id;
+    return resolver.systemAccount(account.entityId, role).id;
   }
 
   /** Replaces a transaction's ledger impact with `next`, entity by entity, following the lock rules. */
@@ -399,3 +604,6 @@ export class TransactionPoster {
     });
   }
 }
+
+/** "1.0900000000" → "1.09" for display and storage. */
+const trimRate = (s: string) => (s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s);

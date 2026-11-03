@@ -7,13 +7,14 @@ import type {
   ConfirmOccurrenceRequest,
   CreateTransactionRequest,
   CreateTransferRequest,
+  ForeignAmountInput,
   TransactionDto,
   UpdateTransactionRequest,
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { TransactionPoster, type SplitSpec, type TransactionSpec } from './poster.js';
+import { TransactionPoster, type ForeignSpec, type SplitSpec, type TransactionSpec } from './poster.js';
 import {
   Categorizer,
   payeeKeyOf,
@@ -105,6 +106,8 @@ export class TransactionsService {
         payeeKey,
         categorization,
         id,
+        fxRate: req.fxRate,
+        foreign: req.foreign,
       });
       if (categorization?.step === 'user' && categoryId) {
         const { learned } = await this.categorizer.learn(trx, ctx, {
@@ -163,6 +166,8 @@ export class TransactionsService {
       categorization?: StoredCategorization | null;
       /** Client-generated id (offline creates); a new one otherwise. */
       id?: string;
+      fxRate?: string;
+      foreign?: ForeignAmountInput;
     },
   ): Promise<string> {
     const id = input.id ?? newId();
@@ -174,8 +179,10 @@ export class TransactionsService {
       categoryId: input.categoryId,
       splits: input.splits,
       memberId: input.memberId,
+      fxRate: input.fxRate,
+      foreign: input.foreign ? foreignSpec(input.foreign, input.amount) : undefined,
     });
-    const built = await this.poster.build(trx, ctx, spec, date);
+    const built = await this.poster.build(trx, ctx, spec, date, id);
     const uncategorized = spec.type === 'standard' && spec.uncategorized;
     await trx
       .insertInto('app.transaction')
@@ -203,7 +210,7 @@ export class TransactionsService {
         created_by: ctx.userId,
       })
       .execute();
-    await this.poster.repost(trx, ctx, id, built.drafts, {
+    await this.poster.post(trx, ctx, id, built, {
       fresh: true,
       clearedAccountId: input.clearedAccountId,
     });
@@ -219,8 +226,8 @@ export class TransactionsService {
     let spec = row.spec as TransactionSpec;
     if (req.amount) spec = await this.mergeSpec(trx, ctx, spec, { amount: req.amount });
     const date = req.date ?? calendarDate(row.txn_date);
-    const built = await this.poster.build(trx, ctx, spec, date);
-    await this.poster.repost(trx, ctx, id, built.drafts);
+    const built = await this.poster.build(trx, ctx, spec, date, id);
+    await this.poster.post(trx, ctx, id, built);
     await trx
       .updateTable('app.transaction')
       .set({ status: 'posted', txn_date: date, spec: JSON.stringify(spec), posted_at: new Date() })
@@ -240,8 +247,11 @@ export class TransactionsService {
         amount: req.amount.amount,
         currency: req.amount.currency,
         description: req.description ?? 'Transfer',
+        ...(req.amountIn ? { amountIn: req.amountIn.amount } : {}),
+        ...(req.fxRateFrom ? { fxRateFrom: req.fxRateFrom } : {}),
+        ...(req.fxRateTo ? { fxRateTo: req.fxRateTo } : {}),
       };
-      const built = await this.poster.build(trx, ctx, spec, req.date);
+      const built = await this.poster.build(trx, ctx, spec, req.date, id);
       await trx
         .insertInto('app.transaction')
         .values({
@@ -256,7 +266,7 @@ export class TransactionsService {
           created_by: ctx.userId,
         })
         .execute();
-      await this.poster.repost(trx, ctx, id, built.drafts);
+      await this.poster.post(trx, ctx, id, built);
     });
     return this.getOrThrow(ctx, id);
   }
@@ -298,8 +308,8 @@ export class TransactionsService {
       const next = await this.mergeSpec(trx, ctx, spec, req);
       const ledgerChanged = JSON.stringify(next) !== JSON.stringify(spec) || date !== row.txn_date;
       if (ledgerChanged && row.status !== 'scheduled') {
-        const built = await this.poster.build(trx, ctx, next, date);
-        await this.poster.repost(trx, ctx, id, built.drafts);
+        const built = await this.poster.build(trx, ctx, next, date, id);
+        await this.poster.post(trx, ctx, id, built);
       }
       const reviewState =
         opts.reviewState ??
@@ -409,8 +419,9 @@ export class TransactionsService {
         ctx,
         row.spec as TransactionSpec,
         calendarDate(row.txn_date),
+        id,
       );
-      await this.poster.repost(trx, ctx, id, built.drafts);
+      await this.poster.post(trx, ctx, id, built);
       await trx
         .updateTable('app.transaction')
         .set({ status: 'posted', deleted_at: null })
@@ -519,6 +530,8 @@ export class TransactionsService {
         memo?: string;
       }[];
       memberId?: string | null;
+      fxRate?: string;
+      foreign?: ForeignSpec;
     },
   ): Promise<TransactionSpec> {
     const detail = await trx
@@ -531,6 +544,10 @@ export class TransactionsService {
     const memberId = input.memberId === undefined ? (detail?.default_member_id ?? null) : input.memberId;
     let splits: SplitSpec[];
     let uncategorized = false;
+    // CUR-03: a foreign transaction fee is part of the charge and gets its own split to Bank fees; the
+    // category (or the caller's splits) covers the rest.
+    const fee = BigInt(input.foreign?.fee ?? '0');
+    const categorized = (BigInt(input.amount.amount) + fee).toString();
     if (input.splits) {
       splits = input.splits.map((s) => {
         if (s.amount.currency !== input.amount.currency) {
@@ -544,7 +561,7 @@ export class TransactionsService {
         };
       });
     } else if (input.categoryId) {
-      splits = [{ accountId: input.categoryId, amount: input.amount.amount, memberId }];
+      splits = [{ accountId: input.categoryId, amount: categorized, memberId }];
     } else {
       splits = [
         {
@@ -554,11 +571,19 @@ export class TransactionsService {
             input.accountId,
             BigInt(input.amount.amount),
           ),
-          amount: input.amount.amount,
+          amount: categorized,
           memberId,
         },
       ];
       uncategorized = true;
+    }
+    if (fee > 0n) {
+      splits.push({
+        accountId: await this.poster.systemAccountFor(trx, ctx, input.accountId, 'bank_fees'),
+        amount: (-fee).toString(),
+        memberId,
+        memo: null,
+      });
     }
     return {
       type: 'standard',
@@ -569,6 +594,8 @@ export class TransactionsService {
       memberId,
       uncategorized,
       splits,
+      ...(input.fxRate ? { fxRate: input.fxRate } : {}),
+      ...(input.foreign ? { foreign: input.foreign } : {}),
     };
   }
 
@@ -596,6 +623,9 @@ export class TransactionsService {
     const accountId = req.accountId ?? spec.accountId;
     const memberId = req.memberId === undefined ? spec.memberId : req.memberId;
     const description = req.description ?? spec.description;
+    const fxRate = req.fxRate === undefined ? spec.fxRate : (req.fxRate ?? undefined);
+    const foreign =
+      req.foreign === undefined ? spec.foreign : req.foreign ? foreignSpec(req.foreign, amount) : undefined;
     if (req.splits || req.categoryId) {
       return this.standardSpec(trx, ctx, {
         accountId,
@@ -604,7 +634,15 @@ export class TransactionsService {
         categoryId: req.categoryId,
         splits: req.splits,
         memberId,
+        fxRate,
+        foreign,
       });
+    }
+    if ((foreign?.fee ?? null) !== (spec.foreign?.fee ?? null)) {
+      throw unprocessable(
+        'splits.required',
+        'Changing the foreign transaction fee needs the category or splits',
+      );
     }
     // Keep the existing categorization; scale a single split to a new amount, keep multi-split amounts.
     let splits = spec.splits.map((s) => (req.memberId !== undefined ? { ...s, memberId } : s));
@@ -625,14 +663,17 @@ export class TransactionsService {
         ];
       }
     }
+    const { fxRate: _rate, foreign: _foreign, ...rest } = spec;
     return {
-      ...spec,
+      ...rest,
       accountId,
       amount: amount.amount,
       currency: amount.currency,
       description,
       memberId,
       splits,
+      ...(fxRate ? { fxRate } : {}),
+      ...(foreign ? { foreign } : {}),
     };
   }
 
@@ -881,12 +922,15 @@ function specAmount(spec: TransactionSpec | null): TransactionDto['amount'] {
 /** CUR-03: the original foreign amount and rate, when the transaction stores one. The fee is a split. */
 function foreignAmount(t: TransactionRow): TransactionDto['foreign'] {
   if (t.original_amount_minor === null || t.original_currency === null || t.fx_rate === null) return null;
+  const spec = t.spec as TransactionSpec | null;
+  const fee = spec?.type === 'standard' ? (spec.foreign?.fee ?? null) : null;
   type Currency = NonNullable<TransactionDto['foreign']>['original']['currency'];
   return {
     original: { amount: t.original_amount_minor.toString(), currency: t.original_currency as Currency },
-    rate: t.fx_rate,
+    // numeric(20, 10) comes back zero-padded: "1.0912000000" → "1.0912".
+    rate: t.fx_rate.includes('.') ? t.fx_rate.replace(/0+$/, '').replace(/\.$/, '') : t.fx_rate,
     rateSource: t.fx_rate_source ?? 'implied',
-    fee: null,
+    fee: fee ? { amount: fee, currency: (spec as { currency: string }).currency as Currency } : null,
   };
 }
 
@@ -898,4 +942,33 @@ function singleCategory(spec: TransactionSpec): { categoryId: string | null; mem
     categoryId: spec.uncategorized ? null : split.accountId,
     memberId: split.memberId ?? spec.memberId,
   };
+}
+
+/**
+ * The stored form of a CUR-03 foreign amount: signed like the charge, the fee (positive, in the account
+ * currency) only on money out, and a rate override when given.
+ */
+function foreignSpec(input: ForeignAmountInput, amount: { amount: string; currency: string }): ForeignSpec {
+  if (input.original.currency === amount.currency) {
+    throw unprocessable(
+      'fx.same_currency',
+      `The original amount must be in another currency than ${amount.currency}`,
+    );
+  }
+  const charged = BigInt(amount.amount);
+  const original = BigInt(input.original.amount);
+  if (original === 0n) throw unprocessable('amount.zero', 'The original amount must not be zero');
+  let fee: string | null = null;
+  if (input.fee) {
+    if (input.fee.currency !== amount.currency) {
+      throw unprocessable('currency.mismatch', `The fee must be in ${amount.currency}`);
+    }
+    const f = BigInt(input.fee.amount);
+    if (f <= 0n || charged >= 0n || f >= -charged) {
+      throw unprocessable('fx.invalid_fee', 'A foreign transaction fee is a positive part of money spent');
+    }
+    fee = f.toString();
+  }
+  const signed = charged < 0n === original < 0n ? original : -original;
+  return { amount: signed.toString(), currency: input.original.currency, fee, rate: input.rate ?? null };
 }

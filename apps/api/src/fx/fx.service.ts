@@ -11,6 +11,7 @@ import {
   type Decimal,
 } from '@montra/domain';
 import type { FxRateDto } from '@montra/schemas';
+import { unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import type { Worker } from '../jobs/queue.js';
@@ -147,6 +148,15 @@ export class FxRatesService {
       for (const r of rows) legs.set(`${r.source}|${r.rate_date}|${r.quote}`, trim(r.rate));
     }
     return new RateTable(legs);
+  }
+
+  /** The day's reference rate as a decimal, or a 422 asking the user to enter one (CUR-05). */
+  async requireRate(trx: Trx, from: string, to: string, date: CalendarDate): Promise<Decimal> {
+    const rate = (await this.table(trx, [from, to], date, date)).get(from, to, date);
+    if (!rate) {
+      throw unprocessable('fx.no_rate', `No ${from}→${to} rate is available for ${date}; enter the rate`);
+    }
+    return parseDecimal(rate.rate);
   }
 
   /** One rate for the API (CUR-05). */

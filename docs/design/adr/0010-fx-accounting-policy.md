@@ -46,4 +46,8 @@ Implemented in `@montra/domain` (`ledger/fx.ts`, `ledger/builder.ts`) in Phase 5
 - A transfer between two accounts in the same foreign currency carries the value over and realizes
   nothing.
 - `unrealizedFx`, `buildRevaluationEntry` and `transferFxCost` cover §6 and the CUR-08 display.
-- The API supplies the balance before each posting when it enables foreign-currency accounts.
+- The API (`transactions/poster.ts`) supplies each foreign account's balance before the posting: the
+  sum of its postings up to the transaction date, without the transaction's own entries. Postings on
+  the same day all count as earlier.
+- A back-dated transaction doesn't revalue later ones; they keep the carrying value they were posted
+  with until they are edited.

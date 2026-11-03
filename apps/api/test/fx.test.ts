@@ -1,6 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { calendarDate, decimalToString } from '@montra/domain';
@@ -9,29 +7,9 @@ import { Db } from '../src/db/database.js';
 import { Worker } from '../src/jobs/queue.js';
 import { FxRatesService, nextDailyRun } from '../src/fx/fx.service.js';
 import { parseEcbXml, parseOxrJson, type HttpGet } from '../src/fx/sources.js';
+import { fixtureHttp, fxFixture as fixture } from './fx-fixtures.js';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
-
-const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures/fx', name), 'utf8');
-
-/** Serves the recorded files by URL suffix; `fail` makes a source return HTTP 503. */
-function fixtureHttp(fail: { ecb?: boolean; oxr?: boolean } = {}) {
-  const urls: string[] = [];
-  const get: HttpGet = async (url) => {
-    urls.push(url);
-    const file = url.includes('openexchangerates')
-      ? fail.oxr
-        ? null
-        : 'oxr-latest.json'
-      : fail.ecb
-        ? null
-        : url.slice(url.lastIndexOf('/') + 1);
-    return file
-      ? { ok: true, status: 200, text: async () => fixture(file) }
-      : { ok: false, status: 503, text: async () => 'unavailable' };
-  };
-  return { get, urls };
-}
 
 let h: Harness;
 let c: Client;

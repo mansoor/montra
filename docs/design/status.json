@@ -445,15 +445,23 @@
     "unrealizedFx and the optional fx_revaluation entry in @montra/domain; net-worth reports in P6/P10"
   ],
   "CUR-07": [
-    "partial",
-    "postings keep both amounts, entries balance in functional, rounding to fx_rounding, carrying value and realized fx_gain_loss (ADR-0010) in the builders; the API still rejects foreign-currency accounts until the rates service lands"
+    "done",
+    "postings keep account and functional amounts, entries balance in functional, rounding to fx_rounding, carrying value with realized fx_gain_loss (ADR-0010); foreign-currency accounts enabled in the API"
   ],
   "CUR-08": [
     "partial",
-    "cross-currency transfers keep both amounts with the gap in fx_gain_loss; transferFxCost against the market rate; UI and rates in the P5 API/web steps"
+    "transfers between currencies keep both amounts (amountIn) with implied or reference leg rates and the gap in fx_gain_loss; transferFxCost for the FX-cost display in the P5 web step"
   ],
   "CUR-05": [
     "partial",
-    "ECB daily + historical and optional OXR into ref.fx_rate (fx.daily system job), direct/inverse/cross lookup with a 7-day lookback, GET /fx/rates; the per-transaction override comes with foreign-currency accounts in the P5 API step"
+    "ECB daily + historical and optional OXR (fx.daily system job), direct/inverse/cross lookup with a 7-day lookback, GET /fx/rates, per-transaction fxRate override on create and update; the rate field in the P5 web/mobile steps"
+  ],
+  "ACC-04": [
+    "partial",
+    "foreign-currency accounts in the API: opening balance at the reference rate, spending and transfers with carrying value, balance adjustments; screens in the P5 web/mobile steps"
+  ],
+  "CUR-03": [
+    "partial",
+    "API stores the original amount and currency, the charged amount, the implied (or user) rate, and posts the foreign fee to Bank fees; capture screens in the P5 web/mobile steps"
   ]
 }
