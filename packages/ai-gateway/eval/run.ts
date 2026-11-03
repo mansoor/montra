@@ -13,6 +13,9 @@ import type { ProviderConfig } from '../src/types.js';
 import { runEval } from './harness.js';
 
 const { values } = parseArgs({
+  // pnpm forwards the `--` in `pnpm eval -- --provider anthropic`; drop it, or every option after it would be
+  // read as a positional and the run would silently use the defaults (the fake provider).
+  args: process.argv.slice(2).filter((a) => a !== '--'),
   options: {
     task: { type: 'string', default: 'categorize' },
     provider: { type: 'string', default: 'fake' },

@@ -50,6 +50,7 @@ export function AiSettings({
     initial.monthlyBudgetUsd === null ? '' : String(initial.monthlyBudgetUsd),
   );
   const [allowDocs, setAllowDocs] = useState(initial.allowDocumentsToLlm);
+  const [allowReceipts, setAllowReceipts] = useState(initial.allowReceiptImagesToLlm);
   const [failover, setFailover] = useState(initial.failover);
   const [errors, setErrors] = useState<FormErrors>({ fields: {} });
   const [busy, setBusy] = useState(false);
@@ -90,6 +91,7 @@ export function AiSettings({
       threshold: thresholdFromPercent(threshold),
       monthlyBudgetUsd: b.value,
       allowDocumentsToLlm: allowDocs,
+      allowReceiptImagesToLlm: allowReceipts,
       failover,
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
     };
@@ -333,6 +335,18 @@ export function AiSettings({
           <span>
             {t('ai.allow_documents')}
             <span className="block text-xs text-muted">{t('ai.allow_documents_hint')}</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm sm:col-span-2">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={allowReceipts}
+            onChange={(e) => setAllowReceipts(e.target.checked)}
+          />
+          <span>
+            {t('ai.allow_receipt_images')}
+            <span className="block text-xs text-muted">{t('ai.allow_receipt_images_hint')}</span>
           </span>
         </label>
         <label className="flex items-start gap-2 text-sm sm:col-span-2">

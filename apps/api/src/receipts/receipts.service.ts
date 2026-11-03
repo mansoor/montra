@@ -244,7 +244,11 @@ export class ReceiptsService {
     return this.get(ctx, id);
   }
 
-  /** Builtin/BYOK read the images; local mode OCRs them in the doc-worker first; off goes to review. */
+  /**
+   * Builtin/BYOK read the images when the workspace allows receipt images to go to the provider; otherwise
+   * (and always in local mode) the doc-worker OCRs them first and only redacted text is sent. Off goes to
+   * review.
+   */
   private async startExtraction(trx: Trx, ctx: Ctx, receiptId: string, transactionId: string | null) {
     const runtime = await this.ai.runtime(trx, ctx, { type: 'receipt', id: receiptId });
     const extract = { workspaceId: ctx.workspaceId, receiptId, transactionId };
@@ -257,7 +261,7 @@ export class ReceiptsService {
       });
       return;
     }
-    if (runtime.mode === 'local') {
+    if (!runtime.allowReceiptImages) {
       const keys = await this.storageKeys(trx, ctx, receiptId);
       await this.queue.enqueue(trx, {
         ...ctx,

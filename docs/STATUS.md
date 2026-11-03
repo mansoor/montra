@@ -18,7 +18,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
 | **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web. All merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **96 done, 34 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Requirements** | 252 IDs in total: **98 done, 32 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
 | **Next** | Merge the Phase 5 closing PR (mobile + integration) and tag `v0.6.0-dev.1`; then **Phase 6: budgeting, money flow and recommendations** |
 
 ### Test suite at the end of Phase 5 (green locally)
@@ -185,11 +185,14 @@ finished:
   - PLT-02, PLT-04, PLT-07, IMP-02, BAK-10: mobile behaviour on iOS and Android devices, plus the
     Maestro flows.
   - AUTH-01, NFR-02: run against a live Kratos (`docker compose --profile auth`).
-  - AIA-09, AI-11: the real-provider accuracy benchmark (target ≥ 85%) and the 1,000-row timing. Both
-    need `ANTHROPIC_API_KEY`. Run:
+  - AIA-09, AI-11: **measured on 2026-11-03** with `claude-haiku-5-5` on the 1,056-row test split. Accuracy
+    was 86.7% (target ≥ 85%), macro-F1 0.873, 26.4 s for the whole split, and $0.04. Calibration is off
+    (ECE 0.111): refit the Anthropic curve on the train split. Rerun with:
     ```bash
     pnpm --filter @montra/ai-gateway eval -- --provider anthropic --split test
     ```
+    The `--` is now handled; before that fix, the options were silently ignored.
+
 - **Finished by a later phase, as planned:**
   - AIA-01: summaries and Q&A, in Phases 6 and 10.
   - AIA-12 and NFR-14: tax outputs, in Phase 8.
@@ -456,13 +459,16 @@ integration):
   the charge). CHANGELOG `v0.6.0-dev.1`.
 
 **Decisions and inputs:**
+- **OXR app id** provided on 2026-11-03 and kept in the local `.env` (never committed). Live ECB and OXR
+  loads were verified, and the two sources agree on cross rates.
+- **Receipt images** go to the AI only with the new `allowReceiptImagesToLlm` setting (off by default);
+  otherwise they are OCR'd first (ADR-0014 §7).
 - **Camera library:** `expo-camera`, decided by the product owner on 2026-11-03 (ADR-0009 amendment).
   Edge detection would need `react-native-vision-camera`.
 - **Still open:**
-  - whether an Open Exchange Rates app ID will be provided (otherwise ECB only, about 30 currencies);
-  - an `ANTHROPIC_API_KEY` to measure receipt extraction on real photos (RCP-01/02);
+  - real receipt photos to measure extraction (RCP-01/02); the API key is set locally;
   - device runs of the mobile capture, the offline queue and the camera spike;
-  - whether receipt images should sit behind the `allowDocumentsToLlm` opt-in (ADR-0014 §7).
+  - device runs (see above).
 - **Phase 5 leftovers, not blocking:**
   - CUR-08: FX-cost display;
   - RCP-10: purge after retention;

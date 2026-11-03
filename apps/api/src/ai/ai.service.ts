@@ -27,6 +27,7 @@ interface StoredSettings {
   threshold?: number;
   monthlyBudgetUsd?: number | null;
   allowDocumentsToLlm?: boolean;
+  allowReceiptImagesToLlm?: boolean;
   failover?: boolean;
 }
 
@@ -35,6 +36,8 @@ export interface AiRuntime {
   mode: AiMode;
   threshold: number;
   allowDocumentsToLlm: boolean;
+  /** Receipt images may go to the provider (builtin/BYOK only); otherwise receipts are OCR'd first. */
+  allowReceiptImages: boolean;
   /** False when the mode can't run anything (off, or no key/endpoint configured). */
   available: boolean;
 }
@@ -151,6 +154,7 @@ export class AiService {
       mode,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
+      allowReceiptImages: (mode === 'builtin' || mode === 'byok') && (s.allowReceiptImagesToLlm ?? false),
       available: provider.id !== 'null',
     };
   }
@@ -321,6 +325,7 @@ export class AiService {
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
       monthlyBudgetUsd: budget,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
+      allowReceiptImagesToLlm: s.allowReceiptImagesToLlm ?? false,
       failover: s.failover ?? false,
       usage: {
         month: monthStart().slice(0, 7),
@@ -346,6 +351,7 @@ export class AiService {
     if (req.threshold !== undefined) s.threshold = req.threshold;
     if (req.monthlyBudgetUsd !== undefined) s.monthlyBudgetUsd = req.monthlyBudgetUsd;
     if (req.allowDocumentsToLlm !== undefined) s.allowDocumentsToLlm = req.allowDocumentsToLlm;
+    if (req.allowReceiptImagesToLlm !== undefined) s.allowReceiptImagesToLlm = req.allowReceiptImagesToLlm;
     if (req.failover !== undefined) s.failover = req.failover;
     const mode = req.mode ?? ws.ai_mode;
     if (mode === 'local' && !s.endpoint)

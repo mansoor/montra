@@ -124,10 +124,12 @@ Several things were still open:
      - A gap the tolerances don't cover is a 422 `receipt.gap`.
    - **Re-matching.** Inbox receipts are re-matched by a `receipt.match` job after every import commit
      that adds rows.
-   - **Images and the documents setting.** Receipt images go to the model in builtin and BYOK modes
-     whatever `allowDocumentsToLlm` says. That setting covers statement scans and payslips
-     (PAY-09/UP-06); reading receipts is the feature itself. To revisit if the product owner wants
-     receipts behind the same opt-in.
+   - **Images need the workspace's permission** (product owner, 2026-11-03).
+     - A separate setting, `allowReceiptImagesToLlm`, is off by default, like `allowDocumentsToLlm` for
+       statements and payslips.
+     - When it's off, builtin and BYOK modes read receipts the way local mode does: the doc-worker OCRs
+       them (`receipt.ocr`) and only masked text reaches the model.
+     - When it's on, the photos are sent, which is more accurate for faded or crumpled receipts.
    - **Retention.** Deleting a receipt is a soft delete; files are kept until `retain_until` (7 years).
      There is no purge job yet.
    - **Item-level reports (RCP-09).** `posting.receipt_line_id` stays unset, because a split groups
