@@ -19,7 +19,7 @@ export default async function InsightsPage({ params }: { params: Promise<{ works
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">{t('insights.title')}</h1>
+        <h1 className="page-title">{t('insights.title')}</h1>
         <p className="text-sm text-muted">{t('insights.intro')}</p>
       </div>
       <InsightsList workspace={workspace} initial={insights} categories={categories} />

@@ -29,7 +29,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ workspa
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">{t('review.title')}</h1>
+        <h1 className="page-title">{t('review.title')}</h1>
         <p className="text-sm text-muted">{t('review.intro')}</p>
       </div>
       <ReviewQueue

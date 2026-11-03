@@ -1,36 +1,108 @@
 @import 'tailwindcss';
 
-@theme {
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --color-brand-50: #eef6ff;
-  --color-brand-100: #d9eaff;
-  --color-brand-600: #1d5fd1;
-  --color-brand-700: #184ca8;
-  --color-ink: #111827;
-  --color-muted: #4b5563;
-  --color-line: #e5e7eb;
-  --color-surface: #ffffff;
-  --color-canvas: #f6f7f9;
-  --color-good: #047857;
-  --color-bad: #b91c1c;
-  --color-warn: #b45309;
+/*
+ * Design tokens (the only place colours are written; lib/colour-guard.test.ts enforces it). Light is a warm
+ * paper white; dark is a soft slate blue with lighter raised surfaces, never pure black. The theme is a
+ * concrete data-theme="light|dark" on <html>, set before first paint by the script in app/layout.tsx.
+ */
+:root {
+  color-scheme: light;
+  --bg: #faf8f4;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --sunken: #f3efe7;
+  --border: #e6e0d6;
+  --border-strong: #d6cebf;
+  --border-input: #8a8275;
+  --ink: #1c1a17;
+  --ink-soft: #3c362f;
+  --ink-muted: #5e574e;
+  --accent: #1f5d4c;
+  --accent-strong: #174a3c;
+  --accent-soft: #e9f0ec;
+  --accent-softer: #f2f6f3;
+  --on-accent: #ffffff;
+  --good: #1f6a3f;
+  --warn: #8a4b08;
+  --warn-soft: #fdf3e7;
+  --bad: #962d2d;
+  --bad-soft: #fbeaea;
+  --info: #3b5ba8;
+  --scrim: #1c1a1773;
+  --accent-glow: #1f5d4c40;
+  --paper: #ffffff;
+  --chart-1: #1f5d4c;
+  --chart-2: #b0702a;
+  --chart-3: #4a5fa8;
+  --chart-4: #962d2d;
+  --chart-5: #6b4fa0;
+  --chart-6: #3d7f8c;
+  --chart-7: #8a7d2b;
+  --chart-8: #a04f7a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-ink: #f3f4f6;
-    --color-muted: #9ca3af;
-    --color-line: #374151;
-    --color-surface: #111827;
-    --color-canvas: #0b1020;
-    --color-brand-50: #0f1d38;
-    --color-brand-100: #15284d;
-    --color-good: #34d399;
-    --color-bad: #f87171;
-    --color-warn: #fbbf24;
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1e2633;
+  --surface: #263142;
+  --raised: #2d3a4e;
+  --sunken: #1a212c;
+  --border: #3a4759;
+  --border-strong: #46546a;
+  --border-input: #8695ab;
+  --ink: #e8edf4;
+  --ink-soft: #c9d2de;
+  --ink-muted: #a3afc0;
+  --accent: #6db89e;
+  --accent-strong: #8ccbb3;
+  --accent-soft: #22413a;
+  --accent-softer: #233a37;
+  --on-accent: #0f2620;
+  --good: #7ccf9b;
+  --warn: #f0b46b;
+  --warn-soft: #3b2f1f;
+  --bad: #f2a0a0;
+  --bad-soft: #42282b;
+  --info: #9db3ea;
+  --scrim: #0b0f16b3;
+  --accent-glow: #6db89e40;
+  --paper: #ffffff;
+  --chart-1: #6db89e;
+  --chart-2: #e5a560;
+  --chart-3: #8fa5e6;
+  --chart-4: #ef9a9a;
+  --chart-5: #b9a0e6;
+  --chart-6: #7cc4d1;
+  --chart-7: #d6c46c;
+  --chart-8: #e29cc4;
+}
+
+/* Tailwind colour names used across the app, mapped onto the tokens (so every screen follows the theme). */
+@theme inline {
+  --font-sans: 'Figtree Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-canvas: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--ink-muted);
+  --color-brand-50: var(--accent-softer);
+  --color-brand-100: var(--accent-soft);
+  --color-brand-600: var(--accent);
+  --color-brand-700: var(--accent-strong);
+  --color-on-brand: var(--on-accent);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+  --radius-s: 8px;
+  --radius-m: 10px;
+  --radius-l: 14px;
 }
 
 html {
@@ -38,14 +110,22 @@ html {
 }
 
 body {
-  background: var(--color-canvas);
-  color: var(--color-ink);
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
 }
 
 /* Visible focus for keyboard users everywhere (WCAG 2.2 focus appearance). */
 :focus-visible {
-  outline: 3px solid var(--color-brand-600);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -54,33 +134,63 @@ body {
 }
 
 @layer components {
-  .card {
-    @apply rounded-lg border border-line bg-surface p-4 shadow-sm;
+  /* ----- Page structure ------------------------------------------------------------------------------ */
+  .page-title {
+    @apply font-display text-[26px] leading-tight font-semibold text-ink;
   }
+  .page-subtitle {
+    @apply mt-1 text-sm text-muted;
+  }
+  .section-h {
+    @apply text-xs font-bold tracking-[0.06em] text-muted uppercase;
+  }
+  .card {
+    @apply rounded-[var(--radius-l)] border border-line bg-surface p-4;
+  }
+  .card-flush {
+    @apply overflow-hidden rounded-[var(--radius-l)] border border-line bg-surface;
+  }
+
+  /* ----- Buttons --------------------------------------------------------------------------------------- */
   .btn-primary,
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-1 rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50;
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger {
+    @apply inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[var(--radius-m)] px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60;
   }
   .btn-primary {
-    @apply bg-brand-600 text-white hover:bg-brand-700;
+    @apply bg-brand-600 text-on-brand hover:bg-brand-700;
   }
   .btn-secondary {
-    @apply border border-line bg-surface text-ink hover:bg-brand-50;
+    @apply border border-line-strong bg-surface text-ink-soft hover:bg-canvas hover:text-ink;
   }
+  .btn-ghost {
+    @apply text-ink-soft hover:bg-canvas hover:text-ink;
+  }
+  .btn-danger {
+    @apply bg-bad text-surface hover:opacity-90;
+  }
+  .icon-btn {
+    @apply inline-flex size-9 items-center justify-center rounded-[var(--radius-m)] text-ink-soft hover:bg-canvas hover:text-ink;
+  }
+
+  /* ----- Forms ----------------------------------------------------------------------------------------- */
   .field-label {
-    @apply mb-1 block text-sm font-medium;
+    @apply mb-1 block text-sm font-semibold text-ink-soft;
   }
   .input {
-    @apply w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink;
+    @apply min-h-9 w-full rounded-[var(--radius-m)] border border-[var(--border-input)] bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-muted;
   }
   .input[aria-invalid='true'] {
-    @apply border-bad;
+    @apply border-bad ring-1 ring-bad;
   }
   .field-error {
     @apply mt-1 text-sm text-bad;
   }
+
+  /* ----- Chips and badges ------------------------------------------------------------------------------- */
   .chip {
-    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap;
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap;
   }
   .chip-good {
     @apply border-good/40 bg-good/10 text-good;
@@ -93,5 +203,58 @@ body {
   }
   .chip-muted {
     @apply border-line bg-canvas text-muted;
+  }
+  .count-badge {
+    @apply ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] leading-5 font-bold text-on-brand;
+  }
+
+  /* ----- Tables: one look for every list ------------------------------------------------------------- */
+  .tbl {
+    @apply w-full border-collapse text-sm;
+  }
+  .tbl thead th {
+    @apply border-b border-line bg-canvas text-left text-xs font-bold tracking-[0.05em] text-muted uppercase;
+  }
+  .tbl tbody tr {
+    @apply border-b border-line last:border-b-0;
+  }
+  .tbl tbody tr:hover {
+    @apply bg-canvas;
+  }
+
+  /* ----- Tabs (underline) and vertical section nav --------------------------------------------------- */
+  .tabs {
+    @apply flex gap-1 overflow-x-auto border-b border-line;
+  }
+  .tab {
+    @apply -mb-px border-b-[3px] border-transparent px-3 py-2 text-sm font-semibold whitespace-nowrap text-muted hover:text-ink;
+  }
+  .tab[aria-current='page'],
+  .tab[aria-selected='true'] {
+    @apply border-brand-600 text-brand-600;
+  }
+  .subnav-link {
+    @apply flex items-center gap-2.5 rounded-[var(--radius-m)] px-3 py-2 text-sm font-semibold text-ink-soft hover:bg-surface hover:text-ink;
+  }
+  .subnav-link[aria-current='page'] {
+    @apply bg-brand-100 text-brand-600;
+  }
+
+  /* ----- Segmented control (theme choice) ------------------------------------------------------------- */
+  .segmented {
+    @apply inline-flex rounded-[var(--radius-m)] border border-line bg-canvas p-0.5;
+  }
+  .segmented > button,
+  .segmented > a {
+    @apply inline-flex items-center gap-1.5 rounded-[var(--radius-s)] px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink;
+  }
+  .segmented > button[aria-pressed='true'],
+  .segmented > button[aria-checked='true'],
+  .segmented > a[aria-current] {
+    @apply bg-surface text-ink shadow-sm;
+  }
+  .segmented-md > button,
+  .segmented-md > a {
+    @apply px-3 py-1.5 text-sm;
   }
 }

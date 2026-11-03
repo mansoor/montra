@@ -29,7 +29,7 @@ export default async function ImportsPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('imports.history.title')}</h1>
+        <h1 className="page-title">{t('imports.history.title')}</h1>
         <Link href={`${base}/import${accountId ? `?account=${accountId}` : ''}`} className="btn-primary">
           {t('imports.upload.title')}
         </Link>
@@ -38,7 +38,7 @@ export default async function ImportsPage({
         <p className="card text-sm text-muted">{t('imports.history.empty')}</p>
       ) : (
         <div className="card overflow-x-auto p-0">
-          <table className="w-full min-w-[40rem] text-sm">
+          <table className="tbl min-w-[40rem] text-sm">
             <caption className="sr-only">{t('imports.history.title')}</caption>
             <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
               <tr>

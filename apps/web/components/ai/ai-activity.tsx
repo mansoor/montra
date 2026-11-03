@@ -97,7 +97,7 @@ export function AiActivity({ workspaceId }: { workspaceId: string }) {
         <p className="card text-sm text-muted">{t('ai.activity.empty')}</p>
       ) : (
         <div className="card overflow-x-auto p-0">
-          <table className="w-full text-sm">
+          <table className="tbl text-sm">
             <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-3 py-2">{t('ai.activity.time')}</th>

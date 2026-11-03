@@ -11,7 +11,7 @@ export default async function NewAccountPage({ params }: { params: Promise<{ wor
   const workspace = await load((api) => api.getWorkspace(workspaceId));
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Add an account</h1>
+      <h1 className="page-title">Add an account</h1>
       <NewAccountForm workspace={workspace} today={todayIn(workspace.timeZone)} />
     </div>
   );

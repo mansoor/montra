@@ -23,7 +23,7 @@ export default async function ImportPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('imports.upload.title')}</h1>
+        <h1 className="page-title">{t('imports.upload.title')}</h1>
         <Link href={`${base}/imports`} className="text-sm font-medium text-brand-600 underline">
           {t('imports.history.title')}
         </Link>

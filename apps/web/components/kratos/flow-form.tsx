@@ -92,7 +92,7 @@ function Item({ item, index }: { item: RenderItem; index: number }) {
             width={item.width ?? 200}
             height={item.height ?? 200}
             alt={item.label}
-            className="rounded bg-white p-2"
+            className="rounded bg-[var(--paper)] p-2"
           />
           <figcaption className="text-xs text-muted">{item.label}</figcaption>
         </figure>

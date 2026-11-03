@@ -43,7 +43,7 @@ export default async function ReceiptsPage({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('receipts.title')}</h1>
+        <h1 className="page-title">{t('receipts.title')}</h1>
         <Link href={`/w/${workspaceId}/trips`} className="text-sm font-medium text-brand-600 underline">
           {t('trips.title')}
         </Link>
@@ -87,7 +87,7 @@ export default async function ReceiptsPage({
         {page.data.length === 0 ? (
           <p className="text-sm text-muted">{t('receipts.empty')}</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="tbl text-sm">
             <thead className="text-left text-muted">
               <tr>
                 <th className="py-1">{t('receipts.date')}</th>

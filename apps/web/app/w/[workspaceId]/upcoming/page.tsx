@@ -35,7 +35,7 @@ export default async function UpcomingPage({ params }: { params: Promise<{ works
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Upcoming</h1>
+        <h1 className="page-title">Upcoming</h1>
         <Link href={`/w/${workspaceId}/recurring`} className="text-sm font-medium text-brand-600 underline">
           Manage recurring
         </Link>
