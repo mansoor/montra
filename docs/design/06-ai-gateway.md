@@ -44,6 +44,12 @@ per environment and per workspace mode.
 | --- | --- | --- | --- | --- |
 | `categorize`, `normalize_payees`, `map_columns`, `parse_quick_add` | `claude-haiku-5-5` (small, cheap) | `low` | up to 100 rows per call | JSON schema |
 | `extract_receipt`, `extract_payslip`, `extract_statement_table` | `claude-sonnet-5-5` (vision) | `medium` | 1 document | JSON schema |
+
+`extract_receipt` (`tasks/extract-receipt/v1.ts`) sends the receipt images in builtin and BYOK modes only,
+with the masked OCR text when there is some. Local mode sends only the masked OCR text from the doc-worker
+(`receipt.ocr`). Amounts come back as decimal strings, and `taxIncluded` marks VAT-style receipts. An answer
+that loses more than half of its lines to validation is `invalid_output`.
+
 | `summarize_month`, `explain_recommendation`, `answer_question` | `claude-opus-5-5` (larger) | `medium` | — | JSON (text fields) / tool use for Q&A |
 
 Implementation notes for the Anthropic adapter (current API):

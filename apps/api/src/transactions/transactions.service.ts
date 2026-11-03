@@ -14,6 +14,7 @@ import type {
 import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
+import { tripOn } from '../trips/trips.js';
 import { TransactionPoster, type ForeignSpec, type SplitSpec, type TransactionSpec } from './poster.js';
 import {
   Categorizer,
@@ -208,6 +209,8 @@ export class TransactionsService {
         spec: JSON.stringify(spec),
         posted_at: new Date(),
         created_by: ctx.userId,
+        // CUR-09: a purchase during a trip is tagged with it.
+        trip_id: await tripOn(trx, ctx.workspaceId, date),
       })
       .execute();
     await this.poster.post(trx, ctx, id, built, {

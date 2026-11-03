@@ -75,6 +75,17 @@ import type {
   UpdateRecurringRequest,
   UpdateTransactionRequest,
   WorkspaceDto,
+  ApplyReceiptRequest,
+  CreateReceiptRequest,
+  FxRateDto,
+  OrderImportResultDto,
+  ReceiptDto,
+  ReceiptFileDto,
+  ReceiptPageDto,
+  ReceiptRecommendationDto,
+  TripDto,
+  TripInput,
+  UpdateReceiptRequest,
 } from '@montra/schemas';
 
 export type CreateWorkspaceInput = z.input<typeof CreateWorkspaceRequest>;
@@ -115,6 +126,19 @@ export type SuggestInput = z.input<typeof SuggestRequest>;
 export type ParseQuickAddInput = z.input<typeof ParseQuickAddRequest>;
 export type AcceptCategoryProposalsInput = z.input<typeof AcceptCategoryProposalsRequest>;
 export type AcceptInsightInput = z.input<typeof AcceptInsightRequest>;
+export type CreateReceiptInput = z.input<typeof CreateReceiptRequest>;
+export type UpdateReceiptInput = z.input<typeof UpdateReceiptRequest>;
+export type ApplyReceiptInput = z.input<typeof ApplyReceiptRequest>;
+export interface ReceiptListOptions {
+  status?: ReceiptDto['status'];
+  /** RCP-10: search merchant and receipt text. */
+  q?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: number;
+}
+export type TripInputValue = z.input<typeof TripInput>;
 
 export interface ReviewListOptions {
   entityId?: string;
@@ -798,6 +822,79 @@ export class ApiClient {
     return this.request<unknown>('POST', this.ws(workspaceId, `/insights/${enc(id)}/dismiss`));
   }
 
+  // ----- Receipts (TXN-08, IMP-11, RCP-01..12) -------------------------------------------------------------
+  /** Uploads one receipt photo (JPEG, PNG, WebP) or PDF invoice; the API sniffs the type. */
+  uploadReceiptFile(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<ReceiptFileDto>('POST', this.ws(workspaceId, '/receipts/files'), form);
+  }
+  /** Creates a receipt from uploaded files (pages in order); extraction runs in the background. */
+  createReceipt(workspaceId: string, input: CreateReceiptInput) {
+    return this.request<ReceiptDto>('POST', this.ws(workspaceId, '/receipts'), input);
+  }
+  listReceipts(workspaceId: string, opts: ReceiptListOptions = {}) {
+    return this.request<ReceiptPageDto>('GET', this.ws(workspaceId, `/receipts${query({ ...opts })}`));
+  }
+  getReceipt(workspaceId: string, id: string) {
+    return this.request<ReceiptDto>('GET', this.ws(workspaceId, `/receipts/${enc(id)}`));
+  }
+  /** Path of a receipt page image (for <img src>, through the same-origin proxy in the browser). */
+  receiptFilePath(workspaceId: string, id: string, fileId: string) {
+    return this.baseUrl + this.ws(workspaceId, `/receipts/${enc(id)}/files/${enc(fileId)}`);
+  }
+  updateReceipt(workspaceId: string, id: string, input: UpdateReceiptInput) {
+    return this.request<ReceiptDto>('PATCH', this.ws(workspaceId, `/receipts/${enc(id)}`), input);
+  }
+  applyReceipt(workspaceId: string, id: string, input: ApplyReceiptInput) {
+    return this.request<ReceiptDto>('POST', this.ws(workspaceId, `/receipts/${enc(id)}/apply`), input);
+  }
+  matchReceipt(workspaceId: string, id: string) {
+    return this.request<ReceiptDto>('POST', this.ws(workspaceId, `/receipts/${enc(id)}/match`));
+  }
+  rejectReceipt(workspaceId: string, id: string) {
+    return this.request<ReceiptDto>('POST', this.ws(workspaceId, `/receipts/${enc(id)}/reject`));
+  }
+  deleteReceipt(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/receipts/${enc(id)}`));
+  }
+  /** RCP-11: purchases at multi-department stores above the threshold without a receipt. */
+  listReceiptRecommendations(workspaceId: string) {
+    return this.request<{ data: ReceiptRecommendationDto[] }>(
+      'GET',
+      this.ws(workspaceId, '/receipts/recommended'),
+    ).then((r) => r.data);
+  }
+  dismissReceiptRecommendation(workspaceId: string, transactionId: string) {
+    return this.request<void>(
+      'POST',
+      this.ws(workspaceId, `/receipts/recommended/${enc(transactionId)}/dismiss`),
+    );
+  }
+  /** RCP-12: an Amazon order-history CSV. */
+  importOrderHistory(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<OrderImportResultDto>('POST', this.ws(workspaceId, '/receipts/order-history'), form);
+  }
+
+  // ----- Trips (CUR-09) and FX rates (CUR-05) --------------------------------------------------------------
+  listTrips(workspaceId: string) {
+    return this.request<{ data: TripDto[] }>('GET', this.ws(workspaceId, '/trips')).then((r) => r.data);
+  }
+  createTrip(workspaceId: string, input: TripInputValue) {
+    return this.request<TripDto>('POST', this.ws(workspaceId, '/trips'), input);
+  }
+  updateTrip(workspaceId: string, id: string, input: TripInputValue & { version: string }) {
+    return this.request<TripDto>('PATCH', this.ws(workspaceId, `/trips/${enc(id)}`), input);
+  }
+  deleteTrip(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/trips/${enc(id)}`));
+  }
+  getFxRate(workspaceId: string, base: string, quote: string, date: string) {
+    return this.request<FxRateDto>('GET', this.ws(workspaceId, `/fx/rates${query({ base, quote, date })}`));
+  }
+
   // ----- Sync (PLT-06) -------------------------------------------------------------------------------------
   /** Current position of the change feed, without the changes themselves. */
   syncHead(workspaceId: string) {
@@ -875,4 +972,11 @@ export type {
   RecurringDto,
   TransactionDto,
   WorkspaceDto,
+  FxRateDto,
+  OrderImportResultDto,
+  ReceiptDto,
+  ReceiptFileDto,
+  ReceiptPageDto,
+  ReceiptRecommendationDto,
+  TripDto,
 };

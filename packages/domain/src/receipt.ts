@@ -22,6 +22,11 @@ export interface ReceiptLineAmounts {
 
 export interface ReceiptTotals {
   tax: bigint;
+  /**
+   * True when the printed prices already include the tax (VAT/TVA/MwSt receipts): the tax is then reported
+   * per group but not added on top. Default false (US-style sales tax).
+   */
+  taxIncluded?: boolean;
   /** Order-level discount, ≥ 0. */
   discount: bigint;
   fees: bigint;
@@ -31,7 +36,7 @@ export interface ReceiptTotals {
 }
 
 export interface ReceiptValidation {
-  /** Σ (line total − line discount) − order discount + tax + fees + tip. */
+  /** Σ (line total − line discount) − order discount + tax (unless included) + fees + tip. */
   computed: bigint;
   /** printed total − computed; null without a printed total. */
   gap: bigint | null;
@@ -43,7 +48,8 @@ export function validateReceipt(
   totals: ReceiptTotals,
 ): ReceiptValidation {
   const net = lines.reduce((s, l) => s + l.lineTotal - l.discount, 0n);
-  const computed = net - totals.discount + totals.tax + totals.fees + totals.tip;
+  const addedTax = totals.taxIncluded ? 0n : totals.tax;
+  const computed = net - totals.discount + addedTax + totals.fees + totals.tip;
   if (totals.total === null) return { computed, gap: null, ok: false };
   const gap = totals.total - computed;
   return { computed, gap, ok: abs(gap) <= RECEIPT_TOLERANCE_MINOR };
@@ -60,7 +66,7 @@ export interface ReceiptGroup {
   discount: bigint;
   fees: bigint;
   tip: bigint;
-  /** subtotal + tax − discount + fees + tip. */
+  /** subtotal + tax (unless included in the prices) − discount + fees + tip. */
   total: bigint;
 }
 
@@ -109,7 +115,7 @@ export function groupReceipt(lines: readonly ReceiptLineAmounts[], totals: Recei
     g.discount = discount[i]!;
     g.fees = fees[i]!;
     g.tip = tip[i]!;
-    g.total = g.subtotal + g.tax - g.discount + g.fees + g.tip;
+    g.total = g.subtotal + (totals.taxIncluded ? 0n : g.tax) - g.discount + g.fees + g.tip;
   });
   return groups;
 }

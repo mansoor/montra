@@ -57,7 +57,7 @@ export class AnthropicAdapter implements ProviderAdapter {
       model: req.model,
       max_tokens: req.maxTokens,
       system,
-      messages: [{ role: 'user' as const, content: req.input }],
+      messages: [{ role: 'user' as const, content: userContent(req) }],
       output_config: { format: { type: 'json_schema' as const, schema: req.schema }, effort: req.effort },
     };
     let res: ResponseLike;
@@ -93,6 +93,19 @@ export class AnthropicAdapter implements ProviderAdapter {
       return { ok: false, reason: 'invalid_output', detail: 'unparseable JSON', usage };
     }
   }
+}
+
+/** Document images (photos, PDF pages) first, then the text input (06 §4: vision tasks). */
+function userContent(req: CompletionRequest): string | Anthropic.ContentBlockParam[] {
+  if (!req.images?.length) return req.input;
+  return [
+    ...req.images.map((img): Anthropic.ContentBlockParam =>
+      img.mediaType === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: img.data } }
+        : { type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } },
+    ),
+    { type: 'text', text: req.input },
+  ];
 }
 
 function describeError(err: unknown): string {

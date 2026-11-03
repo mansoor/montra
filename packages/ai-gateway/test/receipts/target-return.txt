@@ -1,0 +1,10 @@
+TARGET
+11/02/2026 10:05
+UP&UP PPR TWL         12.99 T
+COUPON                -2.00
+ORG BNNA               2.49 N
+RETURN HDMI CABLE    -14.99 T
+SUBTOTAL              -1.51
+TAX                   -0.32
+TOTAL                 -1.83
+CARD **** 9876

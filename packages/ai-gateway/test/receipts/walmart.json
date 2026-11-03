@@ -1,0 +1,53 @@
+{
+  "merchant": "WALMART SUPERCENTER",
+  "date": "2026-10-05",
+  "localTime": "14:32",
+  "currency": null,
+  "lines": [
+    {
+      "rawText": "GV 2% MLK GAL",
+      "expandedName": "Great Value 2% milk 1 gal",
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "3.48",
+      "discount": null,
+      "taxable": false
+    },
+    {
+      "rawText": "BANANAS",
+      "expandedName": null,
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "1.62",
+      "discount": null,
+      "taxable": false
+    },
+    {
+      "rawText": "ONN USB-C CHRGR",
+      "expandedName": "onn. USB-C charger",
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "12.88",
+      "discount": null,
+      "taxable": true
+    },
+    {
+      "rawText": "TS MENS TEE",
+      "expandedName": "Men's T-shirt",
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "8.98",
+      "discount": null,
+      "taxable": true
+    }
+  ],
+  "subtotal": "26.96",
+  "tax": "1.75",
+  "taxIncluded": false,
+  "discount": null,
+  "fees": null,
+  "tip": null,
+  "total": "28.71",
+  "cardLast4": "1234",
+  "confidence": 0.9
+}

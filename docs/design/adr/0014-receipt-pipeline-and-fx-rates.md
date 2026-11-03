@@ -51,7 +51,19 @@ Several things were still open:
    - Builtin and BYOK modes send the image to the vision model group. Local mode runs Tesseract in the
      doc-worker and gives the OCR text to the local model for structure. Off mode keeps the OCR text and
      leaves the receipt in review with no lines.
-   - The FakeAdapter returns fixture JSON keyed by image hash, so tests and e2e are deterministic.
+   - **Implemented:**
+     - `CompletionRequest.images` carries the pages. The Anthropic adapter sends them as image or
+       document blocks before the text; OpenAI-compatible servers get image data URLs (no PDFs).
+     - The audit hash covers the image bytes.
+     - The doc-worker's `receipt.ocr` job supplies local mode's text.
+   - **Prices that include tax.** The extraction has `taxIncluded`, because VAT, TVA, MwSt and Japanese
+     consumption-tax receipts print prices that already include the tax. Validation and allocation then
+     report the tax but don't add it on top (`ReceiptTotals.taxIncluded` in `@montra/domain`).
+   - **Fake provider.** A fake receipt image is a real 1×1 PNG whose `tEXt` chunk carries the receipt
+     text (`encodeFakeReceiptImage`), so uploads pass content sniffing. `parseReceiptText` reads it
+     deterministically, including a small abbreviation table for RCP-02.
+   - **Corpus.** The text receipts in `packages/ai-gateway/test/receipts` hold the expected
+     extraction, and each must add up under the domain rules.
 4. **FX rates are reference data, stored as published.**
    - `ref.fx_rate (rate_date, base, quote, rate, source)`. ECB publishes EUR-based rates for about 30
      currencies, with no key. Open Exchange Rates is used as a second source only when `OXR_APP_ID` is set.
@@ -92,6 +104,34 @@ Several things were still open:
    job deletes them only after that date, and never while the linked transaction is in a locked period.
    OCR text is indexed with a stored `tsvector` (`simple` configuration) plus a trigram index on the
    merchant.
+
+7. **API decisions made while building it** (`apps/api/src/receipts`):
+   - **Line categorization:**
+     - Item rules (`scope: 'receipt_line'`, matched on `item_text`) come first, then item history
+       (`receipt_line.item_key`, from lines the user or a rule categorized), then AI.
+     - AI gets the *item name only*: no store, because a receipt is categorized by what was bought.
+     - A line below the threshold keeps the suggestion and stays uncategorized.
+   - **Learning (RCP-06).** A category the user picks for a line in review creates or updates an item
+     rule on the printed text (`origin: 'correction'`). It is visible and deletable on the rules page
+     (AIA-06).
+   - **Matching and applying:**
+     - A clear match ≥ 0.8 is applied automatically, but only when the receipt adds up (status `inbox`).
+       Receipts in `needs_review` keep their candidates.
+     - Applying replaces the splits through the normal transaction update (DE-10 rules), with
+       `categorization.step = 'receipt'`.
+     - Across currencies it records the CUR-03 foreign amount and the implied rate.
+     - It copies the receipt's local time (TZ-03) and trip.
+     - A gap the tolerances don't cover is a 422 `receipt.gap`.
+   - **Re-matching.** Inbox receipts are re-matched by a `receipt.match` job after every import commit
+     that adds rows.
+   - **Images and the documents setting.** Receipt images go to the model in builtin and BYOK modes
+     whatever `allowDocumentsToLlm` says. That setting covers statement scans and payslips
+     (PAY-09/UP-06); reading receipts is the feature itself. To revisit if the product owner wants
+     receipts behind the same opt-in.
+   - **Retention.** Deleting a receipt is a soft delete; files are kept until `retain_until` (7 years).
+     There is no purge job yet.
+   - **Item-level reports (RCP-09).** `posting.receipt_line_id` stays unset, because a split groups
+     several lines. Item-level reports (RCP-09, not in Phase 5) will join through the receipt lines.
 
 ## Consequences
 

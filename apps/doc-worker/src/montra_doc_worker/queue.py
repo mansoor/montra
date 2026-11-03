@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 from .errors import PermanentJobError, TransientJobError
 from .extract_pdf import extract_pdf
 from .extract_xls import extract_xls
+from .ocr_receipt import ReceiptTextResult, ocr_receipt
 from .result import GridResult, OcrTextResult, check_magic
 from .storage import Storage
 
@@ -29,7 +30,7 @@ CHANNEL = "montra_jobs"
 POLL_SECONDS = 5.0
 REQUEUE_EVERY_SECONDS = 60.0
 
-Handler = Callable[[dict[str, Any], Storage], GridResult | OcrTextResult]
+Handler = Callable[[dict[str, Any], Storage], GridResult | OcrTextResult | ReceiptTextResult]
 
 
 def handle_doc_extract(payload: dict[str, Any], storage: Storage) -> GridResult | OcrTextResult:
@@ -42,7 +43,15 @@ def handle_doc_extract(payload: dict[str, Any], storage: Storage) -> GridResult 
     return extract_xls(data) if kind == "xls" else extract_pdf(data)
 
 
-HANDLERS: dict[str, Handler] = {"doc.extract": handle_doc_extract}
+def handle_receipt_ocr(payload: dict[str, Any], storage: Storage) -> ReceiptTextResult:
+    """Local-mode receipts (ADR-0014 §3): text per page for the Node `receipt.extract` job."""
+    keys = payload.get("storageKeys")
+    if not isinstance(keys, list) or not keys or not all(isinstance(k, str) for k in keys):
+        raise PermanentJobError("doc.bad_payload", "storageKeys (a list of keys) is required")
+    return ocr_receipt([storage.read(k) for k in keys])
+
+
+HANDLERS: dict[str, Handler] = {"doc.extract": handle_doc_extract, "receipt.ocr": handle_receipt_ocr}
 
 
 class Worker:

@@ -45,6 +45,7 @@ export default async function WorkspaceLayout({
                   label: t('nav.review'),
                   badge: <ReviewCountBadge workspaceId={workspace.id} />,
                 },
+                { href: `${base}/receipts`, label: t('nav.receipts') },
                 { href: `${base}/upcoming`, label: t('nav.upcoming') },
                 { href: `${base}/recurring`, label: t('nav.recurring') },
                 { href: `${base}/journal`, label: t('nav.journal') },

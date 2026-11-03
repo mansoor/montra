@@ -17,25 +17,25 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
 | **Pull requests** | #1 Phase 1, #2 Phase 2, #3 Phase 3, #4 Phase 4, all merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **80 done, 36 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Requirements** | 252 IDs in total: **95 done, 34 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
 | **In progress** | **Phase 5: receipts and multi-currency.** Contracts and receipt arithmetic merged (PR #6); the matcher is on `claude/phase5-receipt-matching`. See §7 "Progress" |
 
 ### Test suite (Phase 4 hand-off plus this branch; green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 110 |
+| `@montra/api` (integration, real Postgres) | 128 |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
 | `@montra/web` unit | 70 |
-| `@montra/doc-worker` (pytest, real Tesseract) | 71 |
-| `@montra/domain` | 85 |
+| `@montra/doc-worker` (pytest, real Tesseract) | 77 |
+| `@montra/domain` | 86 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
-| `@montra/ai-gateway` (offline; fake and mocked providers) | 41 |
+| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 53 |
 | `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests) | 31 |
 | `@montra/db` (ledger triggers, RLS, receipts) | 26 |
 | `@montra/sync` (against a fake server) | 17 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 9 specs |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 11 tests in 9 spec files (receipts spec: 2) |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
@@ -408,7 +408,39 @@ integration):
   - **Known limitations:** carrying balances count all same-day postings as earlier, and a back-dated
     transaction doesn't revalue later ones (ADR-0010 note). Imports into a foreign-currency account
     need a reference rate for every row's date. Cross-entity splits and transfers stay single-currency.
-- ⏭ **Next:** step 4 (`extract_receipt`), then the receipts API (step 5). Enabling foreign-currency accounts in
+- ✅ **Step 4, `extract_receipt`** (branch `claude/phase5-receipts`, stacked on PR #8):
+  - The gateway task, with images in builtin/BYOK and masked OCR text in local mode, plus
+    `taxIncluded` for VAT receipts, in the extraction and in the domain math.
+  - Anthropic and OpenAI-compatible image content.
+  - The fake provider: PNG `tEXt` receipt images, `parseReceiptText`, and item keywords.
+  - A 5-receipt corpus (`packages/ai-gateway/test/receipts`).
+  - The doc-worker `receipt.ocr` job, plus a Windows venv fix in `scripts/py.mjs`.
+  - **Not verified:** real-provider accuracy on real receipt photos (needs `ANTHROPIC_API_KEY` and
+    photos), and real Tesseract on receipts locally (Tesseract isn't installed here; CI runs it).
+- ✅ **Step 5, receipts API** (`apps/api/src/receipts`, `apps/api/src/trips`; migration 0014):
+  - Uploads, sniffed by content.
+  - The extract job: builtin/BYOK images, or doc-worker OCR then text in local mode; off goes to
+    review.
+  - Item categorization (rules → history → AI), validation with the gap, the inbox and search.
+  - Matching on create and after each import, auto-apply, manual apply (including creating the
+    transaction), review edits that re-split linked transactions, and learned item rules.
+  - RCP-11 recommendations with dismissals, RCP-12 Amazon order history, trips (CUR-09), and local
+    time (TZ-03).
+  - `test/receipts.test.ts` (18) covers both exit criteria through the API.
+- ✅ **Step 6, web:**
+  - `/receipts`: upload of one receipt from several pages, the inbox, needs-review, matched and all tabs,
+    search, receipt recommended (RCP-11) and Amazon order history (RCP-12).
+  - `/receipts/[id]`: the review screen with the image beside editable lines, category and member
+    pickers, the gap, a splits preview, match candidates, record from the receipt, look again and reject.
+  - `/trips` (CUR-09).
+  - The transaction page: an FX panel (the original amount, rate and source, a rate override on
+    foreign-currency accounts, "Paid in another currency?" with a fee for CUR-03) and "Add a receipt".
+  - The transfer form asks for the amount received across currencies (CUR-08).
+  - `e2e/receipts.spec.ts` covers the Walmart receipt through the UI and the CUR-03 entry. The foreign
+    *receipt* match is covered by the API tests only: e2e runs against the dev database, which has no FX
+    rates unless `fx:load` has fetched them.
+- ⏭ **Next:** step 7, mobile. **Waiting on a product-owner input:** the camera library (`expo-camera`
+  or `react-native-vision-camera`), from the camera spike on real devices. Enabling foreign-currency accounts in
   `transactions/poster.ts` (it still rejects them with `fx.rate_required`) means passing each foreign
   account's balance before the posting as `carrying`. Take it from the postings in date order; there is
   no `account_balance_daily` until Phase 6.

@@ -54,7 +54,21 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       max_tokens: req.maxTokens,
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: req.input },
+        {
+          role: 'user',
+          // Vision models on OpenAI-compatible servers take images as data URLs; PDFs aren't supported there.
+          content: req.images?.length
+            ? [
+                ...req.images
+                  .filter((i) => i.mediaType !== 'application/pdf')
+                  .map((i) => ({
+                    type: 'image_url',
+                    image_url: { url: `data:${i.mediaType};base64,${i.data}` },
+                  })),
+                { type: 'text', text: req.input },
+              ]
+            : req.input,
+        },
       ],
       response_format:
         mode === 'json_schema'

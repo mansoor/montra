@@ -19,6 +19,7 @@ import { DEFAULT_ROUTING, DOWNGRADE_AT, modelFor } from './reference/routing.js'
 import { jsonSchemaOf } from './schema.js';
 import * as categorizeV1 from './tasks/categorize/v1.js';
 import * as extractV1 from './tasks/extract-statement-table/v1.js';
+import * as receiptV1 from './tasks/extract-receipt/v1.js';
 import * as mapColumnsV1 from './tasks/map-columns/v1.js';
 import * as normalizeV1 from './tasks/normalize-payees/v1.js';
 import * as quickAddV1 from './tasks/parse-quick-add/v1.js';
@@ -37,12 +38,15 @@ import type {
   CompletionResponse,
   FailureReason,
   GridSample,
+  ImagePart,
   MemberOption,
   PayeeNormalization,
   ProviderAdapter,
   ProviderConfig,
   ProviderId,
   QuickAddContext,
+  ReceiptDocument,
+  ReceiptExtraction,
   StatementTable,
   StatementText,
   TaskName,
@@ -83,6 +87,8 @@ interface CallSpec<T> {
   context?: string;
   /** Already minimized. */
   input: unknown;
+  /** Document images (never parked for local clients, never cached). */
+  images?: readonly ImagePart[];
   schema: z.ZodType;
   /** Post-schema validation and mapping; null = invalid output. */
   validate: (parsed: never, answered: { provider: ProviderId; model: string }) => T | null;
@@ -135,6 +141,13 @@ function validIsoDate(s: string | null | undefined): s is string {
 }
 const SIGNED_DECIMAL = /^-?\d+(\.\d+)?$/;
 const POSITIVE_DECIMAL = /^\d+(\.\d+)?$/;
+/** A discount is a positive amount; "-1.00" printed as a negative line still means 1.00 off. */
+function positiveDecimal(s: string | null): string | null {
+  if (s === null) return null;
+  const v = s.startsWith('-') ? s.slice(1) : s;
+  return /^0*(\.0*)?$/.test(v) ? null : v;
+}
+
 function cleanDecimal(s: string | null | undefined): string | null {
   if (s === null || s === undefined) return null;
   const t = s.replace(/[\s,$€£]/g, '').replace(/^\((.*)\)$/, '-$1');
@@ -249,6 +262,7 @@ export class Gateway implements AiGateway {
         system: spec.system,
         ...(spec.context ? { context: spec.context } : {}),
         input: inputText,
+        ...(spec.images?.length ? { images: spec.images } : {}),
         schema,
         maxTokens: route.maxTokens,
         ...(ctx.signal ? { signal: ctx.signal } : {}),
@@ -748,6 +762,87 @@ export class Gateway implements AiGateway {
   }
 
   // ----- extract_statement_table (IMP-05 scanned) ----------------------------------------------------------
+
+  /**
+   * Reads a receipt (RCP-01, RCP-02, 04 §7 step 2). Builtin and BYOK send the images (plus masked OCR text
+   * when there is some); local mode sends only the masked OCR text and never an image. Amounts come back as
+   * decimal strings; lines whose total isn't a number are dropped, and an answer that loses more than half
+   * of its lines is invalid.
+   */
+  async extractReceipt(doc: ReceiptDocument, ctx: AiContext): Promise<TaskResult<ReceiptExtraction>> {
+    const pv = receiptV1.PROMPT_VERSION;
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const imagesAllowed = ctx.mode === 'builtin' || ctx.mode === 'byok';
+    const images = imagesAllowed ? doc.images : [];
+    const ocrText = doc.ocrText ? maskText(doc.ocrText).slice(0, 20_000) : null;
+    if (images.length === 0 && !ocrText) {
+      return {
+        ok: false,
+        reason: 'invalid_output',
+        detail: imagesAllowed
+          ? 'no image or text to read'
+          : 'local mode reads receipts from OCR text; none yet',
+      };
+    }
+    // The hash covers the image bytes (not sent in `input`), so two photos never share an audit key.
+    const imageHashes = images.map((i) => sha256(i.data).slice(0, 16));
+    return this.callProvider<ReceiptExtraction>(
+      {
+        task: 'extract_receipt',
+        system: receiptV1.SYSTEM,
+        promptVersion: pv,
+        input: {
+          currencyHint: doc.currencyHint,
+          locale: doc.locale,
+          pages: images.length,
+          imageHashes,
+          ocrText,
+        },
+        images,
+        schema: receiptV1.Output,
+        validate: (o: receiptV1.Output) => {
+          const lines = o.lines
+            .map((l) => ({
+              rawText: oneLine(l.rawText, 300),
+              expandedName: l.expandedName ? oneLine(l.expandedName, 300) || null : null,
+              qty: cleanDecimal(l.qty),
+              unitPrice: cleanDecimal(l.unitPrice),
+              lineTotal: cleanDecimal(l.lineTotal),
+              discount: positiveDecimal(cleanDecimal(l.discount)),
+              taxable: l.taxable,
+            }))
+            .filter((l): l is ReceiptExtraction['lines'][number] => l.rawText !== '' && l.lineTotal !== null);
+          if (o.lines.length > 0 && lines.length < o.lines.length / 2) return null;
+          const currency = o.currency?.toUpperCase() ?? null;
+          return {
+            merchant: o.merchant ? oneLine(o.merchant, 200) || null : null,
+            date: validIsoDate(o.date) ? o.date : null,
+            localTime: o.localTime && /^([01]\d|2[0-3]):[0-5]\d$/.test(o.localTime) ? o.localTime : null,
+            currency: currency && isCurrencyCode(currency) ? currency : null,
+            lines,
+            subtotal: cleanDecimal(o.subtotal),
+            tax: cleanDecimal(o.tax),
+            taxIncluded: o.taxIncluded,
+            discount: positiveDecimal(cleanDecimal(o.discount)),
+            fees: cleanDecimal(o.fees),
+            tip: cleanDecimal(o.tip),
+            total: cleanDecimal(o.total),
+            cardLast4: o.cardLast4 && /^\d{4}$/.test(o.cardLast4) ? o.cardLast4 : null,
+            confidence: round3(clamp01(o.confidence)),
+          };
+        },
+        eventOutput: (v) => ({
+          merchant: v.merchant,
+          lines: v.lines.length,
+          total: v.total,
+          currency: v.currency,
+        }),
+        confidence: (v) => v.confidence,
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
 
   async extractStatementTable(doc: StatementText, ctx: AiContext): Promise<TaskResult<StatementTable>> {
     const pv = extractV1.PROMPT_VERSION;

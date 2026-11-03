@@ -1,0 +1,35 @@
+{
+  "merchant": "AMAZON.COM",
+  "date": "2026-11-03",
+  "localTime": null,
+  "currency": null,
+  "lines": [
+    {
+      "rawText": "BNLS CHKN BRST",
+      "expandedName": "boneless chicken breast",
+      "qty": "2",
+      "unitPrice": "9.99",
+      "lineTotal": "19.98",
+      "discount": null,
+      "taxable": false
+    },
+    {
+      "rawText": "USB HUB",
+      "expandedName": null,
+      "qty": null,
+      "unitPrice": null,
+      "lineTotal": "24.99",
+      "discount": null,
+      "taxable": true
+    }
+  ],
+  "subtotal": "44.97",
+  "tax": "2.00",
+  "taxIncluded": false,
+  "discount": "5.00",
+  "fees": "3.99",
+  "tip": null,
+  "total": "45.96",
+  "cardLast4": null,
+  "confidence": 0.9
+}

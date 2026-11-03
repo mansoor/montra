@@ -1,0 +1,10 @@
+AMAZON.COM
+ORDER 112-0000000-0000000
+11/03/2026
+BNLS CHKN BRST 2 @ 9.99   19.98 N
+USB HUB                   24.99 T
+DISCOUNT                  -5.00
+DELIVERY FEE               3.99
+SUBTOTAL                  44.97
+TAX                        2.00
+TOTAL                     45.96

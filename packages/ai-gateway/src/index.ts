@@ -26,3 +26,4 @@ export {
   type CalibrationCurve,
 } from './reference/calibration.js';
 export { MemoryStore } from './memory-store.js';
+export { decodeFakeReceiptImage, encodeFakeReceiptImage, parseReceiptText } from './fake-receipt.js';
