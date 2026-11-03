@@ -96,17 +96,21 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `GET/POST /budgets`, `GET /budgets/{id}/periods/{start}` | Budget with lines, available, left to assign | BUD-01..06 |
-| `PUT /budgets/{id}/periods/{start}/lines/{categoryId}` | Assign | BUD |
-| `POST /budgets/{id}/periods/{start}/moves` | Move money between categories | BUD-10 |
-| `POST /budgets/{id}/periods/{start}/copy` `{ from: "last" | "avg3" }` | Copy | BUD-09 |
-| `POST /budgets/draft` (202) | AI-drafted first budget | BUD-02 |
-| `GET/POST /goals`, `PATCH /goals/{id}` | Goals and sinking funds | BUD-07/08 |
-| `GET /dashboard?entityId&memberId` | Home numbers (one round trip) | FLOW-01, FAM-09 |
-| `GET /flow/sankey?from&to&entityId` | Sankey nodes and links with drill-down filters | FLOW-02 |
-| `GET /flow/forecast?days=90` | Daily balances per account + warnings | FLOW-03 |
-| `GET /calendar?from&to` | Bills and paydays | FLOW-05 |
-| `GET /recommendations`, `POST /recommendations/{id}/accept|dismiss`, `PATCH` (edit) | Recommendations | REC |
+| `GET/POST /budgets`, `PATCH /budgets/{id}`, `GET /budgets/{id}/periods/{start|current}`, `PATCH …/periods/{start}` (income override) | Budget with lines, available, left to assign; every write sends the budget `version` (409 when stale) | BUD-01..06 |
+| `PUT /budgets/{id}/periods/{start}/lines/{categoryId}` | Assign (and rollover mode) | BUD-06 |
+| `GET/POST /budgets/{id}/periods/{start}/moves` | Move money between categories; history | BUD-10 |
+| `POST /budgets/{id}/periods/{start}/copy` `{ from: "last" \| "avg3", overwrite }` | Copy | BUD-09 |
+| `POST /budgets/draft` (200) | Draft from 1–3 months of history; AI writes only the explanation; nothing is saved | BUD-02 |
+| `GET/POST /goals`, `GET/PATCH /goals/{id}` | Goals, sinking funds (own category), debt payoff simulation | BUD-07/08, FAM-07 |
+| `GET/POST /expected-income`, `PATCH /expected-income/{id}` | Expected take-home income, matched to deposits | BUD-03 |
+| `GET /dashboard?entityId&memberId` | Home numbers (one round trip), each with a transactions `drill` filter | FLOW-01, FAM-09 |
+| `GET /flow/sankey?from&to&entityId` | Sankey nodes and links with drill-down filters | FLOW-02, FLOW-06 |
+| `GET /flow/forecast?days=7..90&entityId` | Daily balances per cash/card account, items, low-balance warnings | FLOW-03 |
+| `GET /calendar?from&to&entityId` | Bills, paydays and goal due dates | FLOW-05, UP-14 |
+| `GET /net-worth?date&months&entityId` | Assets, liabilities, per-account values in the base currency, monthly trend | FLOW-07 |
+| `GET /recommendations?entityId&status`, `POST /recommendations/refresh`, `POST /recommendations/{id}/accept` (optionally edited actions) `\|dismiss` | Recommendations | REC-01..08 |
+| `GET/PATCH /planning/settings` | Category priorities and the high-interest threshold for the rules | REC-01/03 |
+| `GET /transactions?entityId&memberId&categoryIds&accountIds&from&to` | Drill-down: transactions behind a dashboard number | FLOW-01/02 |
 
 ### Business, rental, payroll
 

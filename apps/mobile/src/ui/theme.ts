@@ -1,4 +1,4 @@
-/** Design tokens (08 §1): light and dark palettes with AA contrast for text on surfaces. */
+/** Design tokens (08 §1): the web app's palette (app/globals.css), light and dark, AA contrast on surfaces. */
 import { useColorScheme } from 'react-native';
 
 export interface Theme {
@@ -27,31 +27,31 @@ const base = {
 export const light: Theme = {
   ...base,
   dark: false,
-  bg: '#f6f7f9',
+  bg: '#faf8f4',
   surface: '#ffffff',
-  border: '#d7dbe0',
-  text: '#14171a',
-  muted: '#5b6570',
-  primary: '#1f5fbf',
+  border: '#e6e0d6',
+  text: '#1c1a17',
+  muted: '#5e574e',
+  primary: '#1f5d4c',
   onPrimary: '#ffffff',
-  danger: '#b3261e',
-  success: '#1e7a3c',
-  warning: '#8a5a00',
+  danger: '#962d2d',
+  success: '#1f6a3f',
+  warning: '#8a4b08',
 };
 
 export const dark: Theme = {
   ...base,
   dark: true,
-  bg: '#0f1214',
-  surface: '#1a1f23',
-  border: '#2e353b',
-  text: '#eef1f4',
-  muted: '#a7b0b9',
-  primary: '#7fb0ff',
-  onPrimary: '#0b1a33',
-  danger: '#ffb4ab',
-  success: '#7ddc95',
-  warning: '#f3c35b',
+  bg: '#1e2633',
+  surface: '#263142',
+  border: '#3a4759',
+  text: '#e8edf4',
+  muted: '#a3afc0',
+  primary: '#6db89e',
+  onPrimary: '#0f2620',
+  danger: '#f2a0a0',
+  success: '#7ccf9b',
+  warning: '#f0b46b',
 };
 
 export const useTheme = (): Theme => (useColorScheme() === 'dark' ? dark : light);

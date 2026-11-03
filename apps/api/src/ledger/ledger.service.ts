@@ -278,9 +278,11 @@ export class LedgerService {
   /** Debit-positive balances per account, for the accounts list. */
   async balances(trx: Trx, workspaceId: string, accountIds: string[]): Promise<Map<string, bigint>> {
     if (accountIds.length === 0) return new Map();
+    // The read model is kept in the posting's own transaction, so it is exact, and far cheaper than summing
+    // postings (NFR-07). Its RLS applies the same restricted-entry rule as postings.
     const rows = await trx
-      .selectFrom('app.posting')
-      .select(['ledger_account_id', sql<bigint>`sum(amount_minor)::bigint`.as('total')])
+      .selectFrom('app.account_balance_daily')
+      .select(['ledger_account_id', sql<bigint>`sum(delta_minor)::bigint`.as('total')])
       .where('workspace_id', '=', workspaceId)
       .where('ledger_account_id', 'in', accountIds)
       .groupBy('ledger_account_id')

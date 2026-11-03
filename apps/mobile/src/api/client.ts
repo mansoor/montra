@@ -3,6 +3,15 @@
  * source so it is unit-testable; the sync endpoints themselves go through `FetchTransport` in @montra/sync.
  */
 import type {
+  BudgetDto,
+  BudgetPeriodDto,
+  CalendarDto,
+  DashboardDto,
+  ForecastDto,
+  GoalDto,
+  NetWorthDto,
+  RecommendationDto,
+  SankeyDto,
   CategoryProposalsResponse,
   ColumnMappingDto,
   ImportBatchDto,
@@ -108,6 +117,49 @@ export function createApi(opts: ApiOptions) {
     me: () => request<MeDto>('GET', '/v1/me'),
     workspaces: async () => (await request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces')).data,
     aiSettings: (w: string) => request<{ mode: string }>('GET', `${ws(w)}/ai/settings`),
+
+    // Planning (Phase 6): online reads (cached on the device by useCached) and online-only budget writes.
+    dashboard: (w: string) => request<DashboardDto>('GET', `${ws(w)}/dashboard`),
+    budgets: async (w: string) => (await request<{ data: BudgetDto[] }>('GET', `${ws(w)}/budgets`)).data,
+    createBudget: (w: string, input: { entityId: string; name: string }) =>
+      request<BudgetDto>('POST', `${ws(w)}/budgets`, input),
+    budgetPeriod: (w: string, id: string, start = 'current') =>
+      request<BudgetPeriodDto>('GET', `${ws(w)}/budgets/${id}/periods/${start}`),
+    assignBudget: (
+      w: string,
+      id: string,
+      start: string,
+      categoryId: string,
+      assigned: string,
+      version: number,
+    ) =>
+      request<BudgetPeriodDto>('PUT', `${ws(w)}/budgets/${id}/periods/${start}/lines/${categoryId}`, {
+        assigned,
+        version,
+      }),
+    moveBudget: (
+      w: string,
+      id: string,
+      start: string,
+      input: { from: string | null; to: string | null; amount: string; version: number },
+    ) => request<BudgetPeriodDto>('POST', `${ws(w)}/budgets/${id}/periods/${start}/moves`, input),
+    copyBudget: (w: string, id: string, start: string, from: 'last' | 'avg3', version: number) =>
+      request<BudgetPeriodDto>('POST', `${ws(w)}/budgets/${id}/periods/${start}/copy`, { from, version }),
+    goals: async (w: string) => (await request<{ data: GoalDto[] }>('GET', `${ws(w)}/goals`)).data,
+    sankey: (w: string, from: string, to: string) =>
+      request<SankeyDto>('GET', `${ws(w)}/flow/sankey?from=${from}&to=${to}`),
+    forecast: (w: string, days: number) => request<ForecastDto>('GET', `${ws(w)}/flow/forecast?days=${days}`),
+    calendar: (w: string, from: string, to: string) =>
+      request<CalendarDto>('GET', `${ws(w)}/calendar?from=${from}&to=${to}`),
+    netWorth: (w: string) => request<NetWorthDto>('GET', `${ws(w)}/net-worth?months=12`),
+    recommendations: async (w: string) =>
+      (await request<{ data: RecommendationDto[] }>('GET', `${ws(w)}/recommendations?status=open`)).data,
+    refreshRecommendations: (w: string) =>
+      request<{ created: number; expired: number }>('POST', `${ws(w)}/recommendations/refresh`),
+    acceptRecommendation: (w: string, id: string) =>
+      request<RecommendationDto>('POST', `${ws(w)}/recommendations/${id}/accept`, {}),
+    dismissRecommendation: (w: string, id: string) =>
+      request<RecommendationDto>('POST', `${ws(w)}/recommendations/${id}/dismiss`),
     suggest: (w: string, req: SuggestRequest) =>
       request<SuggestionDto>('POST', `${ws(w)}/categorize/suggest`, req),
     parseQuickAdd: (w: string, req: ParseQuickAddRequest) =>

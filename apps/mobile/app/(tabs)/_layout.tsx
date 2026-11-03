@@ -1,4 +1,4 @@
-/** Tabs (08 §3): Home, Transactions, centre Add, Review, More. */
+/** Tabs (08 §3): Home, Transactions, centre Add, Budget, More (the review count shows on More). */
 import { Tabs } from 'expo-router';
 import { Text, type ColorValue } from 'react-native';
 import { t } from '../../src/i18n';
@@ -40,15 +40,15 @@ export default function TabsLayout() {
           tabBarAccessibilityLabel: t('mobile.capture.title'),
         }}
       />
+      <Tabs.Screen name="budget" options={{ title: t('mobile.tab.budget'), tabBarIcon: icon('◔') }} />
       <Tabs.Screen
-        name="review"
+        name="more"
         options={{
-          title: t('mobile.tab.review'),
-          tabBarIcon: icon('✓'),
+          title: t('mobile.tab.more'),
+          tabBarIcon: icon('…'),
           tabBarBadge: review > 0 ? (review > 99 ? '99+' : review) : undefined,
         }}
       />
-      <Tabs.Screen name="more" options={{ title: t('mobile.tab.more'), tabBarIcon: icon('…') }} />
     </Tabs>
   );
 }

@@ -12,6 +12,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { sparkline, thin } from '../features/planning';
 import { useTheme } from './theme';
 
 export function Screen({
@@ -251,6 +252,132 @@ export function Banner({
 }
 
 /** Merchant monogram (AI-07): no third-party logo fetches. */
+/** A thin bar: spent against budget, with an optional marker for where you should be today (FLOW-04). */
+export function ProgressBar({
+  percent,
+  marker,
+  tone = 'primary',
+  label,
+}: {
+  percent: number;
+  marker?: number | null;
+  tone?: 'primary' | 'danger' | 'warning' | 'success';
+  label: string;
+}) {
+  const th = useTheme();
+  const color = { primary: th.primary, danger: th.danger, warning: th.warning, success: th.success }[tone];
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+      accessibilityValue={{ min: 0, max: 100, now: Math.trunc(percent) }}
+      style={{ height: 6, borderRadius: 3, backgroundColor: th.border, overflow: 'hidden' }}
+    >
+      <View style={{ height: 6, width: `${percent}%`, backgroundColor: color, borderRadius: 3 }} />
+      {marker != null ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: 2,
+            left: `${marker}%`,
+            backgroundColor: th.text,
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** A small trend drawn with plain views (no chart dependency); screen readers get the label only. */
+export function Sparkline({
+  values,
+  label,
+  height = 48,
+  color,
+}: {
+  values: readonly string[];
+  label: string;
+  height?: number;
+  color?: string;
+}) {
+  const th = useTheme();
+  const bars = sparkline(thin(values, 32));
+  return (
+    <View
+      accessible
+      accessibilityLabel={label}
+      style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, height }}
+    >
+      {bars.map((h, i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            height: Math.max(2, h * height),
+            borderRadius: 2,
+            backgroundColor: color ?? th.primary,
+            opacity: i === bars.length - 1 ? 1 : 0.55,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** A row of mutually exclusive choices. */
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: readonly { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  const th = useTheme();
+  return (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+      style={{
+        flexDirection: 'row',
+        backgroundColor: th.border,
+        borderRadius: th.radius,
+        padding: 2,
+        gap: 2,
+      }}
+    >
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: on }}
+            onPress={() => onChange(o.value)}
+            style={{
+              flex: 1,
+              minHeight: 40,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: th.radius - 2,
+              backgroundColor: on ? th.surface : 'transparent',
+            }}
+          >
+            <Text style={{ color: on ? th.text : th.muted, fontWeight: '600', fontSize: th.font.small }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function Monogram({ name }: { name: string }) {
   const th = useTheme();
   const letters = name

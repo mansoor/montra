@@ -274,7 +274,7 @@
   ],
   "NFR-07": [
     "partial",
-    "5k-row parse ~0.2 s; commit ~11 ms/row; dashboard target in P6"
+    "dashboard p95 1.0 s on 50k transactions, measured in a browser locally, plus a CI budget on the API; import 5k rows parse ~0.2 s; k6 load sign-off in P11"
   ],
   "AIA-01": [
     "partial",
@@ -519,5 +519,125 @@
   "TXN-09": [
     "partial",
     "ReceiptUploadQueue (@montra/sync): captures kept on the device, resumable page uploads, idempotent create by client id, offline/retry/permanent handling, run on every sync; tested against fakes, not yet on devices"
+  ],
+  "BUD-01": [
+    "done",
+    "zero-based, category limits and light (50/30/20); web and mobile; device run pending"
+  ],
+  "BUD-02": [
+    "done",
+    "draft from 1–3 months (median, fixed vs variable, recurring bills); AI writes only the explanation"
+  ],
+  "BUD-03": [
+    "partial",
+    "entered income matched to deposits, with a period override; payslip patterns in P7, rent roll in P9, detection later"
+  ],
+  "BUD-04": [
+    "done",
+    "category groups by kind; budget grouped on web and mobile"
+  ],
+  "BUD-05": [
+    "done",
+    "monthly, weekly and biweekly periods"
+  ],
+  "BUD-06": [
+    "done",
+    "carry surplus, deficit, both or reset per category; what is not carried returns to left to assign"
+  ],
+  "BUD-07": [
+    "done",
+    "sinking funds with their own category and a rounded-up monthly contribution"
+  ],
+  "BUD-08": [
+    "done",
+    "progress, projected completion, snowball and avalanche simulation"
+  ],
+  "BUD-09": [
+    "done",
+    "copy last period or the 3-period average"
+  ],
+  "BUD-10": [
+    "done",
+    "moves with history and optimistic concurrency"
+  ],
+  "FLOW-01": [
+    "done",
+    "dashboard with drill-down to transactions; 50k-transaction p95 1.0 s (NFR-07); device run pending"
+  ],
+  "FLOW-02": [
+    "done",
+    "Sankey with clickable nodes on web; the same data as a list on mobile"
+  ],
+  "FLOW-03": [
+    "done",
+    "30/60/90-day forecast from schedules, expected income and burn, with low-balance warnings"
+  ],
+  "FLOW-04": [
+    "done",
+    "pace bars for variable spending, judged after a fifth of the period"
+  ],
+  "FLOW-05": [
+    "done",
+    "month grid on web, agenda on mobile"
+  ],
+  "FLOW-06": [
+    "partial",
+    "consolidated Sankey; owner draws never count as spending, but are not yet drawn as transfers"
+  ],
+  "FLOW-07": [
+    "partial",
+    "accounts and asset accounts in the base currency with a trend; property values in P9"
+  ],
+  "REC-01": [
+    "done",
+    "cuts flexible categories to floors by priority; AI wording checked for invented numbers"
+  ],
+  "REC-02": [
+    "done",
+    "moves from categories with spare money, plus a daily reduction"
+  ],
+  "REC-03": [
+    "done",
+    "surplus allocated by priority order"
+  ],
+  "REC-04": [
+    "done",
+    "low balance or late income leads to a bare-bones budget"
+  ],
+  "REC-05": [
+    "done",
+    "realistic amount after 3 off periods"
+  ],
+  "REC-06": [
+    "partial",
+    "price increases flagged and linked to the subscription; unused subscriptions not detected yet"
+  ],
+  "REC-07": [
+    "done",
+    "monthly review with leaks and a next-period draft"
+  ],
+  "REC-08": [
+    "done",
+    "budget from last month and a one-month buffer target"
+  ],
+  "FAM-06": [
+    "partial",
+    "API supports member budgets (same activity, filtered); no screen to create one yet"
+  ],
+  "FAM-07": [
+    "partial",
+    "API supports member goals; no member picker on the goal form yet"
+  ],
+  "UP-11": [
+    "done",
+    "light mode: savings target and one everything-else amount"
+  ],
+  "TZ-04": [
+    "partial",
+    "nightly planning run after 03:00 in the workspace time zone; reminders and digests in P10"
+  ],
+  "UP-14": [
+    "done",
+    "detection (P3), upcoming bills on calendar and dashboard, price-change alerts through insights and REC-06"
   ]
 }

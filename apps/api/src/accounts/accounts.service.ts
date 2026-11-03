@@ -139,6 +139,10 @@ export class AccountsService {
           'b.institution',
           'b.last4',
           'b.default_member_id',
+          'b.credit_limit_minor',
+          'b.interest_rate_bps',
+          'b.min_payment_minor',
+          'b.low_balance_minor',
           'v.hidden',
         ])
         .where('b.workspace_id', '=', ctx.workspaceId)
@@ -169,6 +173,12 @@ export class AccountsService {
         archived: r.archived_at !== null,
         hidden: r.hidden ?? false,
         defaultMemberId: r.default_member_id,
+        planning: {
+          creditLimit: r.credit_limit_minor !== null ? String(r.credit_limit_minor) : null,
+          interestRateBps: r.interest_rate_bps,
+          minPayment: r.min_payment_minor !== null ? String(r.min_payment_minor) : null,
+          lowBalance: String(r.low_balance_minor),
+        },
       }));
     });
   }
@@ -215,14 +225,19 @@ export class AccountsService {
           .where('id', '=', accountId)
           .execute();
       }
-      if (req.institution !== undefined || req.last4 !== undefined || req.defaultMemberId !== undefined) {
+      const bank = {
+        ...(req.institution !== undefined ? { institution: req.institution } : {}),
+        ...(req.last4 !== undefined ? { last4: req.last4 } : {}),
+        ...(req.defaultMemberId !== undefined ? { default_member_id: req.defaultMemberId } : {}),
+        ...(req.creditLimit !== undefined ? { credit_limit_minor: req.creditLimit } : {}),
+        ...(req.interestRateBps !== undefined ? { interest_rate_bps: req.interestRateBps } : {}),
+        ...(req.minPayment !== undefined ? { min_payment_minor: req.minPayment } : {}),
+        ...(req.lowBalance !== undefined ? { low_balance_minor: req.lowBalance } : {}),
+      };
+      if (Object.keys(bank).length) {
         await trx
           .updateTable('app.bank_account')
-          .set({
-            ...(req.institution !== undefined ? { institution: req.institution } : {}),
-            ...(req.last4 !== undefined ? { last4: req.last4 } : {}),
-            ...(req.defaultMemberId !== undefined ? { default_member_id: req.defaultMemberId } : {}),
-          })
+          .set(bank)
           .where('workspace_id', '=', ctx.workspaceId)
           .where('ledger_account_id', '=', accountId)
           .execute();

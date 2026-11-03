@@ -38,6 +38,19 @@ const ListQuery = z.object({
   status: z.enum(['scheduled', 'pending', 'posted', 'void']).optional(),
   reviewState: z.enum(['auto_applied', 'needs_review', 'reviewed']).optional(),
   accountId: z.uuid().optional(),
+  /** Dashboard drill-down (FLOW-01/02): postings in these entities, members, categories or accounts. */
+  entityId: z.uuid().optional(),
+  memberId: z.uuid().optional(),
+  categoryIds: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(',') : undefined))
+    .pipe(z.array(z.uuid()).max(200).optional()),
+  accountIds: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(',') : undefined))
+    .pipe(z.array(z.uuid()).max(200).optional()),
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
   trash: z
     .enum(['true', 'false'])

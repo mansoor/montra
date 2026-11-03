@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.7.0-dev.1 — Phase 6: budgeting, money flow and recommendations
+
+- **Budgets** (BUD-01..10, UP-11; ADR-0015):
+  - Zero-based, category-limit and light (50/30/20) methods; monthly, weekly and biweekly periods.
+  - Assign, move money (with history), copy last period or the 3-period average, and rollover per category.
+  - Only intent is stored. Carried-in, available and left to assign are computed by walking the periods, and
+    what a category doesn't carry returns to left to assign, so money is always conserved.
+  - A draft from 1–3 months of history; AI writes only the explanation.
+- **Goals** (BUD-07, BUD-08): sinking funds, savings and emergency funds with projections, and snowball or
+  avalanche debt payoff plans.
+- **Expected income** (BUD-03): entered income matched to the deposits that fulfil it.
+- **Money flow** (FLOW-01..07, UP-14): a dashboard whose numbers drill down to their transactions, a Sankey, a
+  30/60/90-day forecast with low-balance warnings, spending pace, a calendar and net worth.
+- **Recommendations** (REC-01..08):
+  - Computed in code, stored once and applied only when the user accepts.
+  - The `word_summary` AI task words them from named figures, and an answer with a number it wasn't given is
+    rejected (AIA-05).
+  - A nightly run per workspace in its time zone (TZ-04) also creates due scheduled transactions.
+- **Read models**: `category_activity_monthly` and `account_balance_daily`, kept by statement-level triggers in the
+  posting's own transaction. Account balances now come from them.
+- **Web restyle**:
+  - Light and dark themes, a grouped sidebar that collapses to a rail, settings sections and shared page styles.
+  - The receipt stays in view beside its lines, with page turning and zoom.
+- **Mobile**: a Budget tab (assign, move, copy, pace), planning cards on Home, Goals, Cash flow, Calendar and
+  Suggestions. Planning reads are cached for offline viewing; budget writes need a connection. Review moves from a
+  tab to Home and More.
+- **Performance** (NFR-07):
+  - The Home page is visible in 1.0 s at p95 with 50,000 transactions (2 s target), measured in a browser against
+    a production build on a development machine.
+  - A new `test:perf` budget seeds 50k transactions and holds the API work behind Home to 1.5 s.
+  - Finding it took a benchmark: a partial index on deposits and balances from the read model took that API work
+    from 2.2 s to 0.7 s.
+
 ## v0.6.0-dev.1 — Phase 5: receipts and multi-currency
 
 - **Receipts, end to end** (TXN-08, IMP-11, RCP-01..08, RCP-10..12; ADR-0014):

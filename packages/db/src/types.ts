@@ -149,6 +149,10 @@ export interface BankAccountTable {
   credit_limit_minor: Int8 | null;
   interest_rate_bps: number | null;
   statement_day: number | null;
+  /** Debt payoff (BUD-08): the minimum monthly payment. */
+  min_payment_minor: Int8 | null;
+  /** FLOW-03: the forecast warns below this balance (migration 0015). */
+  low_balance_minor: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -259,6 +263,8 @@ export interface PostingTable {
   reconciliation_id: string | null;
   /** The receipt line this split came from (RCP-09 item reports). */
   receipt_line_id: string | null;
+  /** Copied from the journal entry by trigger (migration 0015, read models). */
+  restricted_member_id: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -860,6 +866,160 @@ export interface ReceiptFlagDismissalTable {
   created_at: Generated<Date>;
 }
 
+// Phase 6: budgeting, goals, expected income, recommendations and read models (migration 0015, ADR-0015).
+
+export type BudgetMethod = 'zero_based' | 'category_limits' | 'light';
+export type BudgetPeriodType = 'monthly' | 'weekly' | 'biweekly';
+export type RolloverMode = 'carry_surplus' | 'carry_deficit' | 'carry_both' | 'reset';
+
+export interface BudgetTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  /** Null = the household budget (FAM-06). */
+  member_id: string | null;
+  name: string;
+  method: Generated<BudgetMethod>;
+  period_type: Generated<BudgetPeriodType>;
+  /** Weekly/biweekly: the first day of a period. */
+  anchor_date: CalendarDateCol | null;
+  /** UP-11 light mode: savings set aside first each period. */
+  savings_target_minor: Int8 | null;
+  archived_at: Date | null;
+  created_by: string | null;
+  /** Bumped by every period, line and move change: the budget's concurrency token. */
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface BudgetPeriodTable {
+  workspace_id: string;
+  id: Generated<string>;
+  budget_id: string;
+  start_date: CalendarDateCol;
+  end_date: CalendarDateCol;
+  /** BUD-03: null = derived from expected income. */
+  expected_income_minor: Int8 | null;
+  status: Generated<'open' | 'closed'>;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface BudgetLineTable {
+  workspace_id: string;
+  budget_period_id: string;
+  category_id: string;
+  assigned_minor: Int8Default;
+  rollover_mode: Generated<RolloverMode>;
+  updated_at: Generated<Date>;
+}
+
+export interface BudgetMoveTable {
+  workspace_id: string;
+  id: Generated<string>;
+  budget_period_id: string;
+  /** Null = "left to assign". */
+  from_category_id: string | null;
+  to_category_id: string | null;
+  amount_minor: Int8;
+  note: string | null;
+  moved_by: string | null;
+  moved_at: Generated<Date>;
+}
+
+export type GoalType = 'emergency_fund' | 'debt_payoff' | 'savings' | 'sinking_fund';
+
+export interface GoalTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  member_id: string | null;
+  name: string;
+  type: GoalType;
+  target_minor: Int8 | null;
+  due_date: CalendarDateCol | null;
+  category_id: string | null;
+  strategy: 'snowball' | 'avalanche' | null;
+  linked_account_ids: Generated<string[]>;
+  extra_payment_minor: Int8 | null;
+  archived_at: Date | null;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type IncomeCadence = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'quarterly' | 'yearly';
+
+export interface ExpectedIncomeTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  member_id: string | null;
+  name: string;
+  source_type: 'salary' | 'business' | 'rent' | 'other';
+  amount_minor: Int8;
+  currency: string;
+  cadence: IncomeCadence;
+  next_date: CalendarDateCol;
+  account_id: string | null;
+  payee_key: string | null;
+  active: Generated<boolean>;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type RecommendationType =
+  'REC-01' | 'REC-02' | 'REC-03' | 'REC-04' | 'REC-05' | 'REC-06' | 'REC-07' | 'REC-08';
+export type RecommendationStatus = 'open' | 'accepted' | 'edited' | 'dismissed' | 'expired';
+
+export interface RecommendationTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  budget_id: string | null;
+  type: RecommendationType;
+  period_start: CalendarDateCol;
+  dedupe_key: string;
+  payload: Json<Record<string, unknown>>;
+  wording: string | null;
+  status: Generated<RecommendationStatus>;
+  notified_at: Date | null;
+  resolved_at: Date | null;
+  resolved_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** Read model (trigger-maintained, select only). Zero uuid = Household / no restricted member. */
+export interface CategoryActivityMonthlyTable {
+  workspace_id: string;
+  entity_id: string;
+  ledger_account_id: string;
+  month: CalendarDateCol;
+  member_key: string;
+  restricted: boolean;
+  restricted_member_key: string;
+  /** Σ functional amounts, debit positive. */
+  activity_minor: Int8;
+  postings: number;
+}
+
+/** Read model (trigger-maintained, select only): balance through a date = Σ delta. */
+export interface AccountBalanceDailyTable {
+  workspace_id: string;
+  entity_id: string;
+  ledger_account_id: string;
+  date: CalendarDateCol;
+  restricted: boolean;
+  restricted_member_key: string;
+  delta_minor: Int8;
+  functional_delta_minor: Int8;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -916,6 +1076,15 @@ export interface Database {
   'app.receipt': ReceiptTable;
   'app.receipt_line': ReceiptLineTable;
   'app.receipt_flag_dismissal': ReceiptFlagDismissalTable;
+  'app.budget': BudgetTable;
+  'app.budget_period': BudgetPeriodTable;
+  'app.budget_line': BudgetLineTable;
+  'app.budget_move': BudgetMoveTable;
+  'app.goal': GoalTable;
+  'app.expected_income': ExpectedIncomeTable;
+  'app.recommendation': RecommendationTable;
+  'app.category_activity_monthly': CategoryActivityMonthlyTable;
+  'app.account_balance_daily': AccountBalanceDailyTable;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
@@ -927,3 +1096,9 @@ export type PostingRow = Selectable<PostingTable>;
 export type ReceiptRow = Selectable<ReceiptTable>;
 export type ReceiptLineRow = Selectable<ReceiptLineTable>;
 export type TripRow = Selectable<TripTable>;
+export type BudgetRow = Selectable<BudgetTable>;
+export type BudgetPeriodRow = Selectable<BudgetPeriodTable>;
+export type BudgetLineRow = Selectable<BudgetLineTable>;
+export type GoalRow = Selectable<GoalTable>;
+export type ExpectedIncomeRow = Selectable<ExpectedIncomeTable>;
+export type RecommendationRow = Selectable<RecommendationTable>;

@@ -189,8 +189,8 @@ worker, doc-worker, Postgres, MinIO, Kratos and optional Ollama.
   postings pass about 200M rows; the schema already allows it, because every key includes
   `workspace_id`.
 - The dashboard reads from `account_balance_daily` and `category_activity_monthly`
-  summary tables. Workers maintain them incrementally from the change feed, so
-  dashboard p95 stays under 2 s at 50k transactions.
+  summary tables, maintained by statement-level triggers in the posting's own transaction
+  (ADR-0015), so dashboard p95 stays under 2 s at 50k transactions.
 - Import parsing is streaming (Papa Parse for CSV, exceljs for XLSX, xlrd and pdfplumber in the Python doc worker). 5k rows parse in
   under 10 s before AI.
 - AI categorization is batched (up to 100 rows per call), runs in parallel across

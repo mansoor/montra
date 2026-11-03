@@ -20,6 +20,7 @@ export const DEFAULT_ROUTING: Record<TaskName | 'ping', TaskRoute> = {
   map_columns: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 4000, cacheTtlDays: 0 },
   parse_quick_add: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 2000, cacheTtlDays: 0 },
   propose_categories: { group: 'small', effort: 'medium', batchSize: 1, maxTokens: 8000, cacheTtlDays: 0 },
+  word_summary: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 1000, cacheTtlDays: 0 },
   extract_statement_table: {
     group: 'vision',
     effort: 'medium',

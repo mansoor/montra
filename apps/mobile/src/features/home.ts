@@ -1,5 +1,5 @@
 /**
- * Home tab numbers from the offline store (08 §3). Budgets arrive in Phase 7; until then "spent this month" is the
+ * Home tab numbers from the offline store (08 §3). Budget numbers come from the server (useCached); "spent this month" is the
  * sum of categorized and to-review outflows, all computed in bigint minor units (NFR-09, AIA-05).
  */
 import { addDays, calendarDate, startOfMonth, type CalendarDate } from '@montra/domain';

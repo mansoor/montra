@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createGateway,
   FakeAdapter,
+  numbersIn,
   MemoryStore,
   type AiContext,
   type CategorizeItem,
@@ -593,5 +594,39 @@ describe('other tasks', () => {
 
   it('pings', async () => {
     expect(await gw.ping(ctxOf(store))).toMatchObject({ ok: true, value: { model: 'fake-small' } });
+  });
+});
+
+describe('word_summary (AIA-05)', () => {
+  const input = {
+    kind: 'recommendation' as const,
+    title: 'Groceries is on pace to overspend',
+    figures: { overspend: '$300.00', daysLeft: '20 days', perDay: '$15.00' },
+    names: ['Groceries', 'Fun money'],
+  };
+
+  it('words the figures through the fake provider', async () => {
+    const res = await createGateway().wordSummary(input, ctxOf(new MemoryStore()));
+    expect(res).toMatchObject({
+      ok: true,
+      value: 'Groceries is on pace to overspend. Days left 20 days, overspend $300.00, per day $15.00.',
+    });
+  });
+
+  it('rejects text with a number that is not in the figures', async () => {
+    const reply = (text: string) =>
+      new Scripted('fake', () => ({ ok: true, json: { text }, usage, model: 'fake-large' }));
+    const ok = await createGateway({
+      adapterFactory: () => reply('Cut $15 a day for 20 days to save $300.'),
+    }).wordSummary(input, ctxOf(new MemoryStore()));
+    expect(ok).toMatchObject({ ok: true });
+    const invented = await createGateway({
+      adapterFactory: () => reply('Cut $14.50 a day to stay on track.'),
+    }).wordSummary(input, ctxOf(new MemoryStore()));
+    expect(invented).toMatchObject({ ok: false, reason: 'invalid_output' });
+  });
+
+  it('normalizes number formats', () => {
+    expect(numbersIn('$1,250.00 or 1250 or 1,250.50 and 9 days')).toEqual(['1250', '1250', '1250.5', '9']);
   });
 });

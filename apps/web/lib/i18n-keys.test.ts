@@ -100,6 +100,30 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'rules.op.': ['equals', 'contains', 'starts_with', 'regex', 'between', 'gt', 'lt', 'in'],
   'receipts.status.': ['processing', 'inbox', 'needs_review', 'matched', 'rejected'],
   'fx.source.': ['implied', 'reference', 'user'],
+  // Phase 6: budgets, flow, goals, recommendations.
+  'budget.method_': [
+    'zero_based',
+    'category_limits',
+    'light',
+    'zero_based_hint',
+    'category_limits_hint',
+    'light_hint',
+  ],
+  'budget.period_': ['monthly', 'biweekly', 'weekly'],
+  'budget.rollover_': ['carry_surplus', 'carry_deficit', 'carry_both', 'reset'],
+  'budget.split_': ['needs', 'wants', 'savings'],
+  'budget.tab_': ['plan', 'income', 'moves'],
+  'cadence.': ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'yearly'],
+  'calendar.status_': ['upcoming', 'paid', 'overdue'],
+  'calendar.weekday_': ['0', '1', '2', '3', '4', '5', '6'],
+  'flow.kind_': ['asset', 'liability'],
+  'flow.tab_': ['flow', 'forecast', 'net-worth'],
+  'goal.strategy_': ['avalanche', 'snowball'],
+  'goal.type_': ['emergency_fund', 'savings', 'sinking_fund', 'debt_payoff'],
+  'income.source_': ['salary', 'business', 'rent', 'other'],
+  'planning.priority_': ['1', '2', '3', '4', '5'],
+  'rec.status_': ['open', 'accepted', 'dismissed'],
+  'rec.type_': ['REC-01', 'REC-02', 'REC-03', 'REC-04', 'REC-05', 'REC-06', 'REC-07', 'REC-08'],
 };
 
 describe('message catalog coverage (TZ-06)', () => {

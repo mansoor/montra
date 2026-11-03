@@ -14,7 +14,8 @@ export type TaskName =
   | 'parse_quick_add'
   | 'extract_statement_table'
   | 'extract_receipt'
-  | 'propose_categories';
+  | 'propose_categories'
+  | 'word_summary';
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
 export type ModelGroup = 'small' | 'vision' | 'large';
 export type Effort = 'low' | 'medium' | 'high';
@@ -294,6 +295,16 @@ export interface CategoryProposalOutput {
   assignments: Array<{ payee: string; category: string }>;
 }
 
+/** word_summary (REC-01..08, REC-07, BUD-02): AI words numbers that code computed (AIA-05). */
+export interface SummaryInput {
+  kind: 'recommendation' | 'monthly_review' | 'draft_budget';
+  title: string;
+  /** Named figures, already formatted for display ("$1,250.00", "9 days"). The only numbers allowed. */
+  figures: Record<string, string>;
+  /** Category, bill or goal names the text may mention. */
+  names: readonly string[];
+}
+
 export interface AiGateway {
   categorize(
     items: readonly CategorizeItem[],
@@ -309,6 +320,7 @@ export interface AiGateway {
     input: CategoryProposalInput,
     ctx: AiContext,
   ): Promise<TaskResult<CategoryProposalOutput>>;
+  wordSummary(input: SummaryInput, ctx: AiContext): Promise<TaskResult<string>>;
   /** Cheap round-trip for the settings page "Test connection" button. */
   ping(ctx: AiContext): Promise<TaskResult<{ model: string }>>;
 }

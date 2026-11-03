@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
     "test": "vitest run",
+    "test:perf": "vitest run --mode perf",
     "start:worker": "node dist/worker-main.js",
     "dev:worker": "tsx watch --conditions=@montra/source src/worker-main.ts",
     "fx:load": "tsx --conditions=@montra/source src/fx-cli.ts"

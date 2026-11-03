@@ -14,12 +14,12 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–4 and Phase 5 steps 1–6 merged. Last merge was PR #9 at `0ebc60b` |
+| **Integration branch** | `develop`: Phases 0–5 merged. Last merge was PR #10 at `a89525c` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
 | **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
-| **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web. All merged into `develop` with green CI |
-| **Requirements** | 252 IDs in total: **98 done, 32 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge the Phase 5 closing PR (mobile + integration) and tag `v0.6.0-dev.1`; then **Phase 6: budgeting, money flow and recommendations** |
+| **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
+| **Requirements** | 252 IDs in total: **121 done, 39 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Next** | Merge PRs #13 and #12, tag `v0.6.0-dev.1` (Phase 5, not yet tagged) and `v0.7.0-dev.1`, then **Phase 7: family members and payslips** |
 
 ### Test suite at the end of Phase 5 (green locally)
 
@@ -62,8 +62,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 3 | AI gateway and categorization | ✅ done | Gateway, rules, six-step pipeline, review queue, learning, insights, OCR scans |
 | 4 | Mobile foundation and offline sync | ✅ done (device checks pending) | Expo app, encrypted store, outbox sync with field-group LWW |
 | 5 | Receipts and multi-currency | ✅ done (device checks pending) | Receipts end to end, FX rates and foreign-currency accounts, web and mobile capture; see §7 |
-| **6** | **Budgeting, money flow and recommendations** | ⏭ **next** | |
-| 7 | Family members and payslips | not started | Payslip capture and posting, per-member reports |
+| 6 | Budgeting, money flow and recommendations | ✅ done (device checks pending) | Budgets, goals, flow, recommendations, read models, web restyle, mobile; see §7a |
+| **7** | **Family members and payslips** | ⏭ **next** | Payslip capture and posting, per-member reports |
 | 8 | Small business | not started | Invoices, bills, mileage, Schedule C, quarterly estimates, accountant export |
 | 9 | Rental properties | not started | Units, leases, rent roll, Schedule E, depreciation, metrics |
 | 10 | Reports, search, notifications, data ownership | not started | Report catalogue, search, notification engine, export, backup/restore |
@@ -267,7 +267,7 @@ finished:
 | Windows | `PERF=1 vitest run` (categorize `test:perf`) fails in cmd.exe, pnpm's script shell on Windows | `vitest run --mode perf`; the config selects the perf test by mode. Keep scripts free of `VAR=x` prefixes |
 | Local | Host ports 5432/1025/8025/9000 taken by other stacks | Compose ports read `MONTRA_PG_PORT` etc. (defaults unchanged; put them in the gitignored `infra/.env`). Point `DATABASE_URL`, `DATABASE_ADMIN_URL` (montra_test) and `API_DATABASE_URL`, `API_DATABASE_ADMIN_URL` (montra_test_api) at that port; turbo passes all four to tests |
 | Local | `minio/minio` on Docker Hub is no longer pullable, which aborted `docker compose up` | Compose uses `quay.io/minio/minio` |
-| Local | `perf-commit.test.ts` (300-row commit < 9 s) measured 9.4 s once under full parallel `pnpm verify` on a busy Windows machine; it passes run alone (about 7 s for the whole test) and in CI | Not changed. If it recurs, move it to a run-alone step like `test:perf` rather than raising the limit |
+| Tests | `perf-commit.test.ts` (300-row commit < 9 s) took 9.4–11.8 s under full parallel `pnpm verify` here, and about 5.7 s for the commit run alone (with or without the Phase 6 read-model triggers, which cost nothing measurable) | Moved to `@montra/api` `test:perf` (`vitest run --mode perf`), run alone after `turbo test` in CI and `pnpm verify`. The budget is unchanged |
 | Process (cloud) | The cloud sandbox couldn't push tags | Not an issue locally: tag from your machine |
 | Process (cloud) | Container restarts killed Postgres and in-flight workers | Locally, run Postgres in Docker. Commit early and often in long tasks |
 
@@ -473,6 +473,45 @@ integration):
   - CUR-08: FX-cost display;
   - RCP-10: purge after retention;
   - UP-09: missing-receipt flags, with BIZ-12 in Phase 8.
+
+---
+
+## 7a. Phase 6, budgeting, money flow and recommendations (done)
+
+Branch `claude/phase6-contracts` (PR #12), with the restyle in `claude/web-shell` (PR #13).
+
+| Step | State | What |
+| --- | --- | --- |
+| 1. Contracts | ✅ | Migration 0015 (budget, budget_period, budget_line, budget_move, goal, expected_income, recommendation; bank_account min payment and low-balance threshold; `posting.restricted_member_id`), Kysely types, DTOs (`budgets.ts`, `flow.ts`, `recommendations.ts`), ADR-0015 |
+| 2. Read models | ✅ | `category_activity_monthly` and `account_balance_daily`, maintained by statement-level posting triggers (transition tables) in the same transaction; restricted rows follow the payslip rule. `packages/db/test/read-models.test.ts` reconciles them with postings through random writes |
+| 3. Domain engine | ✅ | `packages/domain/src/budget/`: periods, carried-in / available / left to assign (money conserved), pace, sinking funds, goal projection, snowball/avalanche, draft/copy, 50/30/20, forecast, REC-01..08 rules. Property tests |
+| 4. API | ✅ | `apps/api/src/planning/`: budgets (periods, assign, move, copy, income override, draft), goals (sinking-fund category, payoff), expected income, dashboard with drill filters, Sankey, forecast, calendar, net worth, recommendations (REC-01..08, `word_summary` AI wording, accept/dismiss, settings), nightly per-workspace run (TZ-04). `apps/api/test/planning.test.ts` |
+| 5. Web | ✅ | On the restyled shell (PR #13). Home is the dashboard (tiles drill to transactions, pace, next 14 days, net position trend, suggestions). A Plan group: Budget (plan, income, moves tabs; setup with history draft; assign, move, copy, rollover, 50/30/20, light mode), Goals (progress, payoff plans), Cash flow (Sankey, 30/60/90 forecast, net worth), Calendar, Suggestions. Settings gains Planning (priorities, high-interest threshold) and per-account planning fields. SVG charts are in `components/charts` (no chart library). `e2e/planning.spec.ts` |
+| 6. Mobile | ✅ (device run pending) | Budget tab (period view, assign, move, copy, pace; creates a monthly zero-based budget), Home planning cards, Goals, Cash flow (flow as a list, forecast, net worth), Calendar agenda, Suggestions. Palette matches the web app. Review moved from a tab to Home and More, as 08 §3 lays out; its count shows on the More tab. Planning data comes from the API and is cached in the encrypted store for offline reading (`useCached`); budget writes need a connection. `apps/mobile/test/planning.test.ts`; both bundles build |
+| 7. Perf and integration | ✅ | `apps/api/test/perf-dashboard.test.ts` seeds 50k transactions (`perf-seed.ts`) and budgets the API work behind Home at 1.5 s (measured 0.69 s). In a browser against a production build: Home visible p95 1.0 s, median 0.81 s; Budget, Goals, Cash flow, Forecast, Calendar and Transactions all p95 under 0.65 s. Single user, on a development machine: k6 load testing stays in P11 |
+
+Pace applies only to variable spending (`PACE_KINDS`: daily, fun) and only once a fifth of the period has
+passed: fixed bills paid on the 1st, or one big shop on day 3, are not overspending.
+
+Recommendation wording was checked against the real provider on 15 hand-read samples. The first round showed the
+number check alone isn't enough: correct numbers were given the wrong meaning ("$15 per day" read as a limit, not a
+reduction). Figure names now say what they mean, and the prompt forbids inventing actions. This is not a formal eval.
+
+Phase 6 leftovers, not blocking:
+
+- FAM-06/07: the API supports member budgets and goals; the screens have no member picker yet (fits Phase 7).
+- FLOW-06: owner draws never count as spending, but the Sankey doesn't draw them as transfers yet.
+- REC-06: unused subscriptions aren't detected. REC-04's wording can name at-risk bills awkwardly.
+- Mobile: goals are read-only, and budgets are created only as monthly zero-based. No device run yet.
+
+Design notes that the API relies on:
+
+- Only intent is stored. Carried-in, available and left to assign are computed by walking periods from
+  the first one; a surplus or overspend a category doesn't carry goes back to left to assign, so
+  left to assign + Σ available = Σ income − Σ activity.
+- The budget's `version` is the concurrency token for its periods, lines and moves; only `budget` has a
+  change-feed trigger.
+- Read-model rows are never deleted (zeroed rows stay); filter on non-zero values.
 
 ---
 

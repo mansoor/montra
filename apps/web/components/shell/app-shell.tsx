@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   BookOpen,
   CalendarClock,
+  CalendarDays,
   ChartColumn,
   ChevronsLeft,
   ChevronsRight,
@@ -52,6 +53,7 @@ const ICONS = {
   goals: Flag,
   reports: ChartColumn,
   recommendations: Sparkles,
+  calendar: CalendarDays,
   inbox: Inbox,
 } as const;
 export type IconName = keyof typeof ICONS;

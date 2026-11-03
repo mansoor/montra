@@ -25,18 +25,37 @@ export default async function TransactionsPage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{
+    filter?: string;
+    entityId?: string;
+    memberId?: string;
+    categoryIds?: string;
+    accountIds?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const { workspaceId } = await params;
-  const raw = (await searchParams).filter;
+  const sp = await searchParams;
+  const raw = sp.filter;
   const filter: FilterKey = raw && raw in FILTERS ? (raw as FilterKey) : 'all';
+  // Drill-down from the dashboard, budget and flow screens (FLOW-01/02): the transactions behind a number.
+  const drill = {
+    entityId: sp.entityId,
+    memberId: sp.memberId,
+    categoryIds: sp.categoryIds ? sp.categoryIds.split(',').filter(Boolean) : undefined,
+    accountIds: sp.accountIds ? sp.accountIds.split(',').filter(Boolean) : undefined,
+    from: sp.from,
+    to: sp.to,
+  };
+  const drilled = Object.values(drill).some((v) => v !== undefined);
   const [workspace, accounts, categories, members, transactions] = await load((api) =>
     Promise.all([
       api.getWorkspace(workspaceId),
       api.listAccounts(workspaceId),
       api.listCategories(workspaceId),
       api.listFamilyMembers(workspaceId),
-      api.listTransactions(workspaceId, { limit: 200, ...FILTERS[filter].query }),
+      api.listTransactions(workspaceId, { limit: 200, ...FILTERS[filter].query, ...drill }),
     ]),
   );
   const open = accounts.filter((a) => !a.archived);
@@ -53,6 +72,17 @@ export default async function TransactionsPage({
           {t('journal.new')}
         </Link>
       </div>
+      {drilled && (
+        <p role="status" className="card flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span>
+            {t('transactions.drilled')}
+            {drill.from && drill.to ? ` · ${drill.from} – ${drill.to}` : ''}
+          </span>
+          <Link href={`${base}/transactions`} className="btn-secondary">
+            {t('transactions.clear_filter')}
+          </Link>
+        </p>
+      )}
       <QuickAdd
         workspace={workspace}
         accounts={open}
