@@ -1,5 +1,12 @@
 export * from './types.js';
-export { createGateway, defaultAdapterFactory, Gateway, numbersIn, type GatewayOptions } from './gateway.js';
+export {
+  createGateway,
+  defaultAdapterFactory,
+  Gateway,
+  maskPayslipText,
+  numbersIn,
+  type GatewayOptions,
+} from './gateway.js';
 export { AnthropicAdapter } from './adapters/anthropic.js';
 export { OpenAiCompatibleAdapter } from './adapters/openai-compatible.js';
 export { NullAdapter } from './adapters/null.js';
@@ -27,3 +34,4 @@ export {
 } from './reference/calibration.js';
 export { MemoryStore } from './memory-store.js';
 export { decodeFakeReceiptImage, encodeFakeReceiptImage, parseReceiptText } from './fake-receipt.js';
+export { parsePayslipText } from './fake-payslip.js';

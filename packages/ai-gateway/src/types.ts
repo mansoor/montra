@@ -14,6 +14,7 @@ export type TaskName =
   | 'parse_quick_add'
   | 'extract_statement_table'
   | 'extract_receipt'
+  | 'extract_payslip'
   | 'propose_categories'
   | 'word_summary';
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
@@ -295,6 +296,33 @@ export interface CategoryProposalOutput {
   assignments: Array<{ payee: string; category: string }>;
 }
 
+export interface PayslipDocument {
+  /** Sent only when the caller passes them: the workspace allows documents to go to the provider (PAY-09). */
+  images: readonly ImagePart[];
+  /** OCR text, unredacted; the gateway masks it before sending. */
+  ocrText: string | null;
+  currencyHint: string | null;
+  locale: string;
+}
+
+/** A draft payslip with amounts as decimal strings (the caller converts to minor units). */
+export interface PayslipExtraction {
+  employer: string | null;
+  payDate: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  currency: string | null;
+  lines: {
+    section: 'earning' | 'pre_tax' | 'tax' | 'post_tax' | 'employer';
+    code: string;
+    label: string;
+    amount: string;
+    ytd: string | null;
+  }[];
+  netPay: string | null;
+  confidence: number;
+}
+
 /** word_summary (REC-01..08, REC-07, BUD-02): AI words numbers that code computed (AIA-05). */
 export interface SummaryInput {
   kind: 'recommendation' | 'monthly_review' | 'draft_budget';
@@ -316,6 +344,7 @@ export interface AiGateway {
   parseQuickAdd(text: string, qctx: QuickAddContext, ctx: AiContext): Promise<TaskResult<TransactionDraft>>;
   extractStatementTable(doc: StatementText, ctx: AiContext): Promise<TaskResult<StatementTable>>;
   extractReceipt(doc: ReceiptDocument, ctx: AiContext): Promise<TaskResult<ReceiptExtraction>>;
+  extractPayslip(doc: PayslipDocument, ctx: AiContext): Promise<TaskResult<PayslipExtraction>>;
   proposeCategories(
     input: CategoryProposalInput,
     ctx: AiContext,

@@ -6,6 +6,7 @@
 import { DATE_FORMATS, detectDateFormat, displayName, normalizeDescription } from '@montra/importers';
 import type { CompletionRequest, CompletionResponse, ProviderAdapter } from '../types.js';
 import { decodeFakeReceiptImage, parseReceiptText } from '../fake-receipt.js';
+import { parsePayslipText } from '../fake-payslip.js';
 
 /** keyword (in payee/description) → category name fragments it points to. */
 export const FAKE_SYNONYMS: ReadonlyArray<readonly [readonly string[], readonly string[]]> = [
@@ -237,6 +238,12 @@ export class FakeAdapter implements ProviderAdapter {
           .map((i) => decodeFakeReceiptImage(i.data))
           .filter((t): t is string => t !== null);
         return parseReceiptText(fromImages.length ? fromImages.join('\n') : String(input.ocrText ?? ''));
+      }
+      case 'extract_payslip': {
+        const fromImages = (req.images ?? [])
+          .map((i) => decodeFakeReceiptImage(i.data))
+          .filter((t): t is string => t !== null);
+        return parsePayslipText(fromImages.length ? fromImages.join('\n') : String(input.ocrText ?? ''));
       }
       case 'propose_categories':
         return fakePropose(input);

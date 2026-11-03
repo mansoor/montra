@@ -12,13 +12,22 @@ import { FakeAdapter } from './adapters/fake.js';
 import { NullAdapter } from './adapters/null.js';
 import { OpenAiCompatibleAdapter } from './adapters/openai-compatible.js';
 import { amountBand, roundedAmount } from './bands.js';
-import { maskText, minimizeDate, minimizeText, unpseudonymize, type Pseudonym } from './minimize.js';
+import {
+  MASK,
+  maskText,
+  minimizeDate,
+  minimizeText,
+  pseudonymize,
+  unpseudonymize,
+  type Pseudonym,
+} from './minimize.js';
 import { calibrate } from './reference/calibration.js';
 import { costMicroUsd } from './reference/prices.js';
 import { DEFAULT_ROUTING, DOWNGRADE_AT, modelFor } from './reference/routing.js';
 import { jsonSchemaOf } from './schema.js';
 import * as categorizeV1 from './tasks/categorize/v1.js';
 import * as extractV1 from './tasks/extract-statement-table/v1.js';
+import * as payslipV1 from './tasks/extract-payslip/v1.js';
 import * as receiptV1 from './tasks/extract-receipt/v1.js';
 import * as mapColumnsV1 from './tasks/map-columns/v1.js';
 import * as normalizeV1 from './tasks/normalize-payees/v1.js';
@@ -46,6 +55,8 @@ import type {
   ProviderConfig,
   ProviderId,
   QuickAddContext,
+  PayslipDocument,
+  PayslipExtraction,
   ReceiptDocument,
   ReceiptExtraction,
   StatementTable,
@@ -970,6 +981,66 @@ export class Gateway implements AiGateway {
     );
   }
 
+  // ----- extract_payslip (PAY-03) ---------------------------------------------------------------------------
+
+  /**
+   * Reads a payslip into a draft for the user to check. The text is masked first, including Social Security
+   * numbers, and member names are replaced with pseudonyms; images go only if the caller passes them, which it does
+   * only with the workspace's permission (PAY-09). Identifiers never come back: only the fields below do.
+   */
+  async extractPayslip(doc: PayslipDocument, ctx: AiContext): Promise<TaskResult<PayslipExtraction>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const images = ctx.mode === 'builtin' || ctx.mode === 'byok' ? doc.images : [];
+    const ocrText = doc.ocrText ? maskPayslipText(doc.ocrText, ctx.pseudonyms) : null;
+    if (images.length === 0 && !ocrText) {
+      return { ok: false, reason: 'invalid_output', detail: 'no image or text to read' };
+    }
+    return this.callProvider<PayslipExtraction>(
+      {
+        task: 'extract_payslip',
+        system: payslipV1.SYSTEM,
+        promptVersion: payslipV1.PROMPT_VERSION,
+        input: {
+          currencyHint: doc.currencyHint,
+          locale: doc.locale,
+          pages: images.length,
+          imageHashes: images.map((i) => sha256(i.data).slice(0, 16)),
+          ocrText,
+        },
+        images,
+        schema: payslipV1.Output,
+        validate: (o: payslipV1.Output) => {
+          const lines = o.lines
+            .map((l) => ({
+              section: l.section,
+              code: oneLine(l.code, 40).toLowerCase() || 'other',
+              label: oneLine(l.label, 200),
+              amount: positiveDecimal(cleanDecimal(l.amount)),
+              ytd: positiveDecimal(cleanDecimal(l.ytd)),
+            }))
+            .filter((l): l is PayslipExtraction['lines'][number] => l.label !== '' && l.amount !== null);
+          if (o.lines.length > 0 && lines.length < o.lines.length / 2) return null;
+          const currency = o.currency?.toUpperCase() ?? null;
+          return {
+            employer: o.employer ? oneLine(o.employer, 200) || null : null,
+            payDate: validIsoDate(o.payDate) ? o.payDate : null,
+            periodStart: validIsoDate(o.periodStart) ? o.periodStart : null,
+            periodEnd: validIsoDate(o.periodEnd) ? o.periodEnd : null,
+            currency: currency && isCurrencyCode(currency) ? currency : null,
+            lines,
+            netPay: positiveDecimal(cleanDecimal(o.netPay)),
+            confidence: round3(clamp01(o.confidence)),
+          };
+        },
+        // No amounts or names in the audit log: it says that a payslip was read, not what it said.
+        eventOutput: (v) => ({ lines: v.lines.length, hasNetPay: v.netPay !== null, currency: v.currency }),
+        confidence: (v) => v.confidence,
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
   // ----- word_summary (REC-01..08, BUD-02) -----------------------------------------------------------------
 
   /**
@@ -1018,6 +1089,13 @@ export class Gateway implements AiGateway {
       { spent: 0n },
     );
   }
+}
+
+const SSN = /\b\d{3}[- ]\d{2}[- ]\d{4}\b/g;
+
+/** Payslip OCR text for the model: Social Security numbers and digit runs masked, member names pseudonymized. */
+export function maskPayslipText(text: string, pseudonyms: AiContext['pseudonyms']): string {
+  return pseudonymize(maskText(text.replace(SSN, MASK)), pseudonyms).slice(0, 20_000);
 }
 
 /**

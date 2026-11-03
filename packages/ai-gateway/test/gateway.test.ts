@@ -630,3 +630,63 @@ describe('word_summary (AIA-05)', () => {
     expect(numbersIn('$1,250.00 or 1250 or 1,250.50 and 9 days')).toEqual(['1250', '1250', '1250.5', '9']);
   });
 });
+
+describe('extract_payslip (PAY-03, PAY-09)', () => {
+  const TEXT = [
+    'Employer: ACME Corp',
+    'Employee: Sam Rivera  SSN 123-45-6789',
+    'Account 000123456789',
+    'Pay date: 2026-10-15',
+    'Period: 2026-10-01 to 2026-10-15',
+    'Regular salary   5,000.00 ytd 50,000.00',
+    '401(k)   300.00 ytd 3,000.00',
+    'Federal tax   620.00',
+    'Social Security   310.00',
+    'Employer match   150.00',
+    'Net pay   3,770.00',
+  ].join('\n');
+  const doc = { images: [], ocrText: TEXT, currencyHint: 'USD', locale: 'en-US' };
+
+  it('reads a draft from the text', async () => {
+    const res = await createGateway().extractPayslip(doc, ctxOf(new MemoryStore()));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value).toMatchObject({ employer: 'ACME Corp', payDate: '2026-10-15', netPay: '3770.00' });
+    expect(res.value.lines.map((l) => [l.section, l.code, l.amount])).toEqual([
+      ['earning', 'salary', '5000.00'],
+      ['pre_tax', '401k', '300.00'],
+      ['tax', 'fed_tax', '620.00'],
+      ['tax', 'social_security', '310.00'],
+      ['employer', 'match', '150.00'],
+    ]);
+  });
+
+  it('never sends the Social Security number, account number or member name', async () => {
+    const fake = new FakeAdapter();
+    await createGateway({ adapterFactory: () => fake }).extractPayslip(
+      doc,
+      ctxOf(new MemoryStore(), { pseudonyms: [{ name: 'Sam Rivera', token: 'MEMBER_1' }] }),
+    );
+    const sent = String(fake.calls[0]!.input);
+    expect(sent).not.toContain('123-45-6789');
+    expect(sent).not.toContain('000123456789');
+    expect(sent).not.toContain('Sam Rivera');
+    expect(sent).toContain('MEMBER_1');
+    // The amounts the model needs to read are still there.
+    expect(sent).toContain('5,000.00');
+  });
+
+  it('keeps amounts and names out of the audit record', async () => {
+    const store = new MemoryStore();
+    await createGateway().extractPayslip(doc, ctxOf(store));
+    const event = JSON.stringify(store.events.at(-1), (_k, v) => (typeof v === 'bigint' ? String(v) : v));
+    expect(event).not.toContain('ACME');
+    expect(event).not.toContain('5000.00');
+    expect(event).toContain('hasNetPay');
+  });
+
+  it('degrades when AI is off', async () => {
+    const res = await createGateway().extractPayslip(doc, ctxOf(new MemoryStore(), { mode: 'off' }));
+    expect(res).toMatchObject({ ok: false, reason: 'off' });
+  });
+});
