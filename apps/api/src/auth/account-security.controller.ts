@@ -124,6 +124,7 @@ export class AccountSecurityController {
     if ('error' in result) throw new AppError(422, 'email_change.wrong_code', 'That code is not correct');
     if (!(result.oldConfirmed && result.newConfirmed)) return { ...result, completed: false };
 
+    await this.logSecurity(ctx.user.id, 'email_changed');
     await this.auth.changeEmail(ctx.user.identityId, result.newEmail);
     await this.db.run({ userId: ctx.user.id }, async (trx) => {
       await trx
@@ -205,6 +206,7 @@ export class AccountSecurityController {
       );
     }
     await this.auth.removeSecondFactors(ctx.user.identityId);
+    await this.logSecurity(ctx.user.id, 'mfa_changed');
     await this.db.run({ userId: ctx.user.id }, (trx) =>
       trx
         .updateTable('app.mfa_reset_request')
@@ -219,6 +221,16 @@ export class AccountSecurityController {
       category: 'security',
     });
     return { status: 'completed' };
+  }
+
+  /** AUTH-12: kept for the user to see, separately from the audit log, since these have no workspace. */
+  private logSecurity(userId: string, kind: string) {
+    return this.db.run({ userId }, (trx) =>
+      trx
+        .insertInto('app.security_event')
+        .values({ user_id: userId, workspace_id: null, kind, detail: JSON.stringify({}) })
+        .execute(),
+    );
   }
 
   private pendingReset(ctx: RequestContext) {

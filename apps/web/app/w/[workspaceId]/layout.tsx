@@ -7,6 +7,7 @@ import { I18nProvider } from '@/components/i18n';
 import { GlobalShortcuts, ReviewCountBadge } from '@/components/review/review-badge';
 import { LocalAiRunner } from '@/components/ai/local-ai-runner';
 import { AppShell, type NavGroup } from '@/components/shell/app-shell';
+import { GlobalSearchBox, NotificationBell } from '@/components/shell/header-tools';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +64,8 @@ export default async function WorkspaceLayout({
         ...(workspace.entities.some((e) => e.type === 'rental')
           ? [{ href: `${base}/rentals`, label: t('nav.rentals'), icon: 'rentals' as const }]
           : []),
+        { href: `${base}/reports`, label: t('nav.reports'), icon: 'reports' },
+        { href: `${base}/ask`, label: t('nav.ask'), icon: 'ask' },
         { href: `${base}/journal`, label: t('nav.journal'), icon: 'journal' },
         { href: `${base}/imports`, label: t('nav.imports'), icon: 'imports' },
         { href: `${base}/rules`, label: t('nav.rules'), icon: 'rules' },
@@ -82,6 +85,12 @@ export default async function WorkspaceLayout({
         userName={me.displayName}
         userEmail={me.email}
         status={<Realtime workspaceId={workspace.id} wsUrl={wsUrl()} />}
+        tools={
+          <>
+            <GlobalSearchBox workspaceId={workspace.id} />
+            <NotificationBell workspaceId={workspace.id} />
+          </>
+        }
       >
         <GlobalShortcuts workspaceId={workspace.id} />
         <LocalAiRunner workspaceId={workspace.id} />
