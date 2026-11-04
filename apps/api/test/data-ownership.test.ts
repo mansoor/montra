@@ -1020,7 +1020,10 @@ describe('leaving (NFR-06, BAK-09)', () => {
     const res = await leaving.post('/v1/me/deletion', { confirm: 'DELETE' });
     expect(res.status).toBe(200);
     expect(res.body.requested).toBe(true);
-    expect(Math.round((Date.parse(res.body.purgeAfter) - Date.now()) / 86_400_000)).toBe(30);
+    // Gone within 30 days (NFR-06), allowing for the hourly job that does it.
+    const left = Date.parse(res.body.purgeAfter) - Date.now();
+    expect(left).toBeLessThan(30 * 86_400_000 - 3_600_000);
+    expect(left).toBeGreaterThan(29 * 86_400_000);
     const blocked = await leaving.get('/v1/workspaces');
     expect(blocked.status).toBe(403);
     expect(blocked.body.code ?? blocked.body.error?.code).toBe('account.deleting');

@@ -48,6 +48,7 @@ test('reports drill down and export, and search and ask find the same money', as
   const rows = page.getByTestId('report-row');
   await expect(rows.filter({ hasText: 'Dining out' })).toContainText('$45.00');
   await expect(page.getByTestId('report-total')).toContainText('$165.00');
+  await expect(page.getByTestId('report-period')).toBeVisible();
 
   // A filter lives in the URL, so it survives a reload.
   const categoryField = page
@@ -166,6 +167,8 @@ test('a backup restores into a new workspace with the same figures, and the tras
 
   await page.goto(`${base}/settings?tab=data`);
   await expect(page.getByTestId('storage-used')).toBeVisible();
+  // A household has only personal books, and those can have a tax package too.
+  await expect(page.getByRole('button', { name: 'Make tax package' })).toBeEnabled();
   const password = 'e2e backup passphrase';
   await page.getByLabel('Password (optional)').first().fill(password);
   await page.getByRole('button', { name: 'Back up now' }).click();
@@ -226,7 +229,11 @@ test('a backup restores into a new workspace with the same figures, and the tras
 test('deleting an account closes it, and it can be kept', async ({ page }) => {
   test.setTimeout(90_000);
   const { base } = await seed(page, `leaving-${Date.now()}@example.com`);
+  // Settings fits a phone without scrolling sideways, however many sections it has.
+  await page.setViewportSize({ width: 390, height: 800 });
   await page.goto(`${base}/settings?tab=data`);
+  await expect(page.getByTestId('storage-used')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
   const form = page.getByRole('form', { name: 'Delete my account' });
   await expect(form.getByRole('button', { name: 'Delete my account' })).toBeDisabled();
   await form.getByLabel('Type DELETE to confirm').fill('DELETE');

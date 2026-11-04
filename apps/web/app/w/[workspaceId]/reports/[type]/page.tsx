@@ -117,6 +117,19 @@ export default async function ReportPage({
     <div className="space-y-5">
       <PageHeader
         title={title}
+        subtitle={
+          <span data-testid="report-period">
+            {report.uses.includes('from') ? (
+              <>
+                <DateText date={report.from} /> – <DateText date={report.to} />
+              </>
+            ) : (
+              <>
+                {t('reports.as_of')} <DateText date={report.to} />
+              </>
+            )}
+          </span>
+        }
         back={back}
         actions={<ReportExport workspaceId={workspaceId} type={type} values={values} />}
       />

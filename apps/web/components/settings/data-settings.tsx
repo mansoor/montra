@@ -72,7 +72,9 @@ export function BackupPanel({
   const [entityId, setEntityId] = useState(isOwner ? '' : (workspace.entities[0]?.id ?? ''));
   const [password, setPassword] = useState('');
   const [cadence, setCadence] = useState<'weekly' | 'monthly'>(schedule?.cadence ?? 'weekly');
-  const [taxEntity, setTaxEntity] = useState(workspace.entities.find((e) => e.type !== 'personal')?.id ?? '');
+  const [taxEntity, setTaxEntity] = useState(
+    workspace.entities.find((e) => e.type !== 'personal')?.id ?? workspace.entities[0]?.id ?? '',
+  );
   const year = new Date().getFullYear();
   const [taxYear, setTaxYear] = useState(String(year - 1));
   return (

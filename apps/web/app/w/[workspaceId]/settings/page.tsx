@@ -160,7 +160,7 @@ export default async function SettingsPage({
       <header>
         <h1 className="page-title">{t('nav.settings')}</h1>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav aria-label={t('settings.sections')} className="lg:sticky lg:top-20 lg:self-start">
           <div className="tabs lg:hidden">
             {GROUPS.flatMap((g) => g.tabs).map((k) => (

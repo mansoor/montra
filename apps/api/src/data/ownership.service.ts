@@ -16,7 +16,8 @@ import { BackupService } from './backup.service.js';
 type Ctx = { workspaceId: string; userId: string };
 
 const TRASH_DAYS = 30;
-const DELETION_DAYS = 30;
+/** NFR-06 promises the data is gone within 30 days, so it falls due early enough for the hourly job to get there in time. */
+const DELETION_WINDOW_MS = 30 * 86_400_000 - 2 * 3_600_000;
 const RETENTION_EVERY_MS = 60 * 60_000;
 
 @Injectable()
@@ -168,7 +169,7 @@ export class OwnershipService {
   }
 
   async requestDeletion(userId: string): Promise<DeletionStatusDto> {
-    const purgeAfter = new Date(Date.now() + DELETION_DAYS * 86_400_000);
+    const purgeAfter = new Date(Date.now() + DELETION_WINDOW_MS);
     await this.db.run({ userId }, async (trx) => {
       await sql`select app.flag_account_deletion(${userId}::uuid, ${purgeAfter})`.execute(trx);
       await trx
