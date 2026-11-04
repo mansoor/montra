@@ -1,8 +1,7 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-03, at the end of Phase 5 (steps 1–6 merged in PRs #6–#9; step 7 mobile and step 8
-integration on `claude/phase5-mobile`). Keep this file current: update it at the end of every work session
-and every phase._
+_Last updated 2026-11-04, at the end of Phase 7 (on `claude/phase7-contracts`, PR open). Keep this file current:
+update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
 workarounds already in place (so nobody undoes them) and what to pick up next. Read it after
@@ -14,12 +13,12 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–5 merged. Last merge was PR #10 at `a89525c` |
+| **Integration branch** | `develop`: Phases 0–6 merged. Last merge was PR #12 at `3cbe477` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
-| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 |
+| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 |
 | **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements** | 252 IDs in total: **121 done, 39 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge PRs #13 and #12, tag `v0.6.0-dev.1` (Phase 5, not yet tagged) and `v0.7.0-dev.1`, then **Phase 7: family members and payslips** |
+| **Requirements** | 252 IDs in total: **134 done, 38 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Next** | Merge the Phase 7 PR, tag `v0.8.0-dev.1`, then **Phase 8: small business** |
 
 ### Test suite at the end of Phase 5 (green locally)
 
@@ -63,8 +62,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 4 | Mobile foundation and offline sync | ✅ done (device checks pending) | Expo app, encrypted store, outbox sync with field-group LWW |
 | 5 | Receipts and multi-currency | ✅ done (device checks pending) | Receipts end to end, FX rates and foreign-currency accounts, web and mobile capture; see §7 |
 | 6 | Budgeting, money flow and recommendations | ✅ done (device checks pending) | Budgets, goals, flow, recommendations, read models, web restyle, mobile; see §7a |
-| **7** | **Family members and payslips** | ⏭ **next** | Payslip capture and posting, per-member reports |
-| 8 | Small business | not started | Invoices, bills, mileage, Schedule C, quarterly estimates, accountant export |
+| 7 | Family members and payslips | ✅ done (device checks pending) | Payslip capture and posting, deposit matching, reports by member, privacy; see §7b |
+| **8** | **Small business** | ⏭ **next** | Invoices, bills, mileage, Schedule C, quarterly estimates, accountant export |
 | 9 | Rental properties | not started | Units, leases, rent roll, Schedule E, depreciation, metrics |
 | 10 | Reports, search, notifications, data ownership | not started | Report catalogue, search, notification engine, export, backup/restore |
 | 11 | Hardening and launch | not started | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
@@ -512,6 +511,41 @@ Design notes that the API relies on:
 - The budget's `version` is the concurrency token for its periods, lines and moves; only `budget` has a
   change-feed trigger.
 - Read-model rows are never deleted (zeroed rows stay); filter on non-zero values.
+
+---
+
+## 7b. Phase 7, family members and payslips (done)
+
+Branch `claude/phase7-contracts`. The design is ADR-0016.
+
+| Step | State | What |
+| --- | --- | --- |
+| 1. Contracts | ✅ | Migration 0017 (employer, payslip, payslip_line, `posting.public_line`, `expected_income.employer_id`, posting read rule), DTOs, `packages/domain/src/payslip.ts`, ADR-0016 |
+| 2. AI task | ✅ | `extract_payslip` with masked text (SSNs, account numbers, member pseudonyms); image only with `allowDocumentsToLlm` |
+| 3. API | ✅ | `apps/api/src/payslips/`: employers, capture jobs, confirm and re-post, deposit matching, expected income, reports by member |
+| 4. Web | ✅ | Payslips (capture, employers, side-by-side review), By member, Home filter, member budgets and goals |
+| 5. Mobile | ✅ (device run pending) | More → Payslips: camera or file, check, confirm, choose a deposit. Live reads only, nothing stored |
+| 6. Integration | ✅ | `apps/api/test/payslips.test.ts`, public-line RLS test, `apps/web/e2e/payslips.spec.ts` |
+
+Rules the code depends on (don't undo these):
+
+- **Only the net-pay posting is public.** A restricted entry with a public line must keep its transaction `spec` to the
+  bank fact: `transaction` has no restricted rule, and the DTO exposes the spec.
+- **A payslip owns its transaction.** `updateInTrx` refuses ledger fields before `mergeSpec`, because the merged spec
+  drops `payslipId`. Import undo keeps such a deposit. Anything new that posts from a spec must check `payslipId` too.
+- **A taken-over deposit keeps its statement date** (DE-10), even when the payslip's pay date differs.
+- **Budget income is take-home:** income categories minus payslip gross − net (`PlanningData.payslipWithheld`). Taxes are
+  in a `system`-kind group, excluded from spending.
+
+Phase 7 leftovers, not blocking:
+
+- FAM-10 (could-have) isn't started: marking education expenses for credits or 529 withdrawals.
+- **`extract_payslip` hasn't been run against the real provider or a real payslip.** Tests use the fake provider. Measure
+  this before relying on the drafts; the user checks every draft against the file regardless.
+- Mobile: no prefill from the last payslip and no amount edits (both on the web). No device run yet.
+- Foreign-currency payslips are refused.
+- After a payslip that took over an imported deposit is deleted, undoing that import no longer removes the deposit if the
+  undo already ran. The user deletes it by hand.
 
 ---
 

@@ -64,6 +64,15 @@ Reading the code raised one more point: the `transaction` table's RLS has no res
    per employer: anchored on the first pay date, with the median net of the last three payslips. A missing payslip is
    already "late income" for REC-04; a net more than 10% under the pattern now triggers it too.
 
+7. **A payslip owns its transaction.**
+   - Edits that reach the ledger are refused with `payslip.managed` and go through the payslip. Notes and tags stay
+     editable. The check runs before the spec is merged, because the merged spec loses `payslipId`.
+   - Undoing an import keeps a deposit a payslip has taken over and reports it (`kept`, reason `payslip`). Deleting the
+     payslip gives the deposit back, and the import can't be undone again for it, so the user deletes it by hand.
+   - The spec also carries `employerId`, an opaque id. It lets a partner's view and the owner's agree on which expected
+     income a deposit fulfils, without reading the private `payslip` table. A payslip's deposit is its employer's pay
+     whatever the statement calls it, and never another income's.
+
 ## Consequences
 
 - A partner can work out net pay from a shared account. That's true of any bank statement, and PAY-09 protects the
@@ -72,6 +81,9 @@ Reading the code raised one more point: the `transaction` table's RLS has no res
 - `expected_income` rows are visible to anyone who can read the entity, and they show expected net pay. Same reasoning.
 - Report totals differ by viewer, as RLS intends: a partner's "by member" report has no restricted income.
 - Foreign-currency payslips (pay currency differing from the entity's) are refused for now.
+- The retirement account a payslip creates is an ordinary account, so its name is visible to a partner, with no balance
+  from restricted lines. Its name repeats the employer's, which the deposit's payee usually shows anyway.
+- Payslips aren't stored on the phone: no offline list and no capture queue, unlike receipts.
 
 ## Alternatives considered
 

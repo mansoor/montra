@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.8.0-dev.1 — Phase 7: family members and payslips
+
+- **Employers** (PAY-01): employers and other income sources per member, with pay frequency and the account the pay
+  lands in.
+- **Payslip capture** (PAY-02, PAY-03; ADR-0016):
+  - Web: a PDF or photos, a start from the last payslip, or by hand. The payslip stays in view beside its lines, and it
+    confirms only when the lines add up to the printed net pay.
+  - Mobile: camera or file, then check and confirm. Amounts are corrected on the web.
+  - The `extract_payslip` AI task drafts the fields. Images go to the provider only with "Allow documents" on; otherwise
+    they're read in our own infrastructure and only masked text goes out. Nothing posts without confirmation.
+- **Posting** (PAY-05): one balanced entry tagged to the member. Taxes and deductions go to a system category group kept
+  out of budgets, retirement and health savings to an investment account, and employer contributions stay on the payslip.
+- **Deposit matching** (PAY-04): the exact net pay in the employer's account within 3 days takes the imported deposit
+  over, so pay counts once. Several candidates are offered to choose from. Deleting the payslip restores the deposit.
+- **Budgets** (PAY-07, FAM-06, FAM-07):
+  - Budget income is take-home pay, and expected income follows each employer's payslips. A missing payslip, or pay more
+    than 10% under the pattern, triggers REC-04.
+  - Budgets and goals can now be set up per member from the screens.
+- **Reports by member** (FAM-08, FAM-09, PAY-06, PAY-08, RPT-01): income by earner, spending by member and category,
+  Household as its own group, cost over time and withholding against last year. Every total drills down, and Home filters
+  by member.
+- **Privacy** (PAY-09): only workspace owners and the member's linked login see a payslip, enforced by RLS on the tables,
+  the postings and the files. Only the net-pay line is public, so a partner's balance on a shared account stays right.
+- **Also since v0.6.0-dev.1, missing from earlier entries**: a setting to allow receipt photos to go to the AI provider
+  (PR #11), off by default.
+- **Not done**: FAM-10 (optional education and dependent tax helpers).
+
 ## v0.7.0-dev.1 — Phase 6: budgeting, money flow and recommendations
 
 - **Budgets** (BUD-01..10, UP-11; ADR-0015):

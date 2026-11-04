@@ -410,6 +410,20 @@ describe('privacy (PAY-09, ADR-0016)', () => {
     expect(JSON.stringify(sankey)).not.toContain('500000');
   });
 
+  it("keeps it out of a partner's sync feed, which a phone stores offline", async () => {
+    const boot = (await partner.get(url('/sync/pull?since=0'))).body;
+    const slip = (await c.get(url('/payslips?status=posted'))).body.data[0];
+    const pay = boot.transactions.find((t: any) => t.id === slip.transactionId);
+    expect(pay.amount).toEqual(usd(NET));
+    const text = JSON.stringify(boot.transactions);
+    for (const secret of ['500000', '62000', '30000', 'Federal income tax', '401(k)']) {
+      expect(text).not.toContain(secret);
+    }
+    // Its balance is what the partner may see: restricted lines don't count.
+    expect(boot.accounts.find((x: any) => x.name === 'ACME Corp retirement').balance.amount).toBe('0');
+    expect(JSON.stringify(boot)).not.toContain('"payslipId"');
+  });
+
   it('shows a member their own payslips once linked to their login', async () => {
     const me = (await partner.get('/v1/me')).body;
     const member = (await c.get(url('/family-members'))).body.data.find((m: any) => m.id === sam);
