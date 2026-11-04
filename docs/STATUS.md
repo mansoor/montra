@@ -24,18 +24,18 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 210, plus 4 perf budgets run alone |
+| `@montra/api` (integration, real Postgres) | 251, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 91 |
+| `@montra/web` unit | 108 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
-| `@montra/domain` | 135 |
+| `@montra/domain` | 167 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
-| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 65 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business) | 55 |
-| `@montra/db` (ledger triggers, RLS, read models, receipts) | 35 |
+| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 68 |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals) | 57 |
+| `@montra/db` (ledger triggers, RLS, read models, receipts) | 36 |
 | `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 15 tests in 11 spec files |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 16 tests in 12 spec files |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
