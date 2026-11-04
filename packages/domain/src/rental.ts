@@ -14,7 +14,8 @@ const nextMonth = (y: number, m: number): [number, number] => (m === 12 ? [y + 1
 
 /** Whole days from `a` to `b`. */
 export const daysBetween = (a: CalendarDate, b: CalendarDate): number =>
-  Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+  // Both are UTC midnights, so this is always a whole number of days.
+  (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000;
 
 // ----- The rent roll (RNT-04) ---------------------------------------------------------------------------------
 
