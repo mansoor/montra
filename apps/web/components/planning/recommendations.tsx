@@ -1,6 +1,7 @@
 'use client';
 
 import { RefreshCw, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { RecommendationDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
@@ -16,18 +17,23 @@ export function RecommendationList({
   items,
   categoryNames,
   compact = false,
+  empty,
 }: {
   workspaceId: string;
   items: RecommendationDto[];
   categoryNames: Record<string, string>;
   compact?: boolean;
+  /** Shown here rather than instead of the list: the list has to stay, to say what happened to the last item. */
+  empty?: ReactNode;
 }) {
   const { t } = useI18n();
   const { run, busy, message } = useAction();
   const name = (id: string | null) =>
     id ? (categoryNames[id] ?? t('rec.a_category')) : t('budget.lta_label');
+  if (items.length === 0 && !empty && !message) return null;
   return (
     <div className="space-y-3">
+      {items.length === 0 && empty}
       {items.map((r) => (
         <article key={r.id} className="card space-y-2" aria-labelledby={`rec-${r.id}`}>
           <div className="flex items-start gap-3">

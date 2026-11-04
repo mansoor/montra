@@ -97,7 +97,7 @@ export default async function BusinessOverviewPage({
           href={`${here}/taxes`}
         />
       </section>
-      {notes.length > 0 && <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} />}
+      <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <LinkTabs
