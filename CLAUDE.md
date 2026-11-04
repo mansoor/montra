@@ -95,6 +95,10 @@ pnpm --filter @montra/mobile start                 # Expo dev server
   - `SECURITY DEFINER` functions must use qualified names (`public.citext`, `app.*`) and
     `set search_path`.
 - **Migrations** are append-only once merged to `develop`. Never edit a merged migration; add a new one.
+  They must also stay backward compatible: `scripts/check-migrations.mjs` refuses destructive statements unless
+  marked `-- contract: <why>`.
+- **Staff roles:** `montra_admin` and `montra_support` have almost no grants, and tests pin the list. New functions
+  default to `montra_app`. Run `infra/db/bootstrap.sql` once on an older local cluster to add the roles.
 - **New workspace packages** must be added to `vitest.shared.ts` `sourceAliases`, or Vitest won't resolve
   them to TS sources, and to the consumer's `package.json`.
 - **When a DTO changes**, update the web test fixtures (`apps/web/lib/*.test.ts`) and the mobile types in the

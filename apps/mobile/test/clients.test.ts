@@ -30,6 +30,27 @@ describe('API client', () => {
     expect(err).toMatchObject({ status: 422, code: 'account.not_found', message: 'No such account' });
   });
 
+  it('says which app this is, and tells when it’s too old (OPS-04)', async () => {
+    const { f, calls } = fakeFetch(() => ({
+      status: 426,
+      body: { code: 'app.update_required', title: 'Upgrade required' },
+    }));
+    let told = 0;
+    const api = createApi({
+      baseUrl: 'http://api',
+      token: async () => null,
+      fetch: f,
+      app: { version: '1.2.3', platform: 'ios' },
+      onUpdateRequired: () => told++,
+    });
+    const err = await api.workspaces().catch((e) => e);
+    expect(err).toMatchObject({ status: 426, code: 'app.update_required' });
+    expect(told).toBe(1);
+    const headers = calls[0]!.init.headers as Record<string, string>;
+    expect(headers['x-app-version']).toBe('1.2.3');
+    expect(headers['x-app-platform']).toBe('ios');
+  });
+
   it('reports network failures as offline', async () => {
     const api = createApi({
       baseUrl: 'http://api',

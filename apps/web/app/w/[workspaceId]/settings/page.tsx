@@ -1,3 +1,4 @@
+import { BillingPanel, SupportAccessPanel } from '@/components/settings/billing-support';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -39,6 +40,8 @@ const TABS = {
   security: 'settings.tab.security',
   data: 'settings.tab.data',
   privacy: 'settings.tab.privacy',
+  billing: 'settings.tab.billing',
+  support: 'settings.tab.support',
 } as const;
 type Tab = keyof typeof TABS;
 
@@ -47,7 +50,7 @@ const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: 'settings.group.you', tabs: ['profile', 'appearance', 'notifications', 'security'] },
   { label: 'settings.group.workspace', tabs: ['entities', 'family', 'accounts', 'sharing', 'planning'] },
   { label: 'settings.group.ai', tabs: ['ai', 'ai-activity'] },
-  { label: 'settings.group.data', tabs: ['data', 'privacy'] },
+  { label: 'settings.group.data', tabs: ['data', 'privacy', 'support', 'billing'] },
 ];
 
 export default async function SettingsPage({
@@ -141,6 +144,18 @@ export default async function SettingsPage({
         </section>
         <DeleteAccountPanel status={deletion} />
       </div>
+    );
+  } else if (tab === 'billing') {
+    body = (
+      <BillingPanel workspaceId={workspaceId} billing={await load((api) => api.getBilling(workspaceId))} />
+    );
+  } else if (tab === 'support') {
+    body = (
+      <SupportAccessPanel
+        workspaceId={workspaceId}
+        grants={await load((api) => api.listSupportGrants(workspaceId))}
+        canManage={isOwner}
+      />
     );
   } else if (tab === 'privacy') {
     const settings = await load((api) => api.getAiSettings(workspaceId));

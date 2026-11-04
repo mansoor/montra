@@ -17,6 +17,7 @@ export default function Home() {
   const { state, refresh } = useSync();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const dash = useCached(ws, 'dashboard', () => api.dashboard(ws), Boolean(ws)).data;
+  const notices = useCached(ws, 'status', () => api.status(), Boolean(ws)).data?.notices ?? [];
   const currency = session.status === 'signed_in' ? session.workspace.baseCurrency : 'USD';
   const summary = useLocal(
     async (s) => monthSummary(await s.listTransactions({ limit: 2000 }), todayLocal(), currency),
@@ -36,6 +37,9 @@ export default function Home() {
         testID="home"
       >
         <Title>{session.status === 'signed_in' ? session.workspace.name : ''}</Title>
+        {notices.map((n) => (
+          <Banner key={n.id} tone="warning" text={n.body ? `${n.title}. ${n.body}` : n.title} />
+        ))}
         {state && !state.online ? <Banner tone="warning" text={t('mobile.home.offline')} /> : null}
         {attention ? (
           <Banner

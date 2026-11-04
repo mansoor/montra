@@ -97,6 +97,7 @@ subset (AUTH-12) and owners see the full log.
   email, plan and billing state, feature flags, import-failure analytics, and a
   reference-data editor (tax lines, mileage rates, merchant aliases, import profiles,
   currencies) with versioning (OPS-01, OPS-05).
+- As built, see ADR-0020: support is `montra_support`, always read-only, and shows books, imports and AI outcomes rather than the whole workspace.
 - Staff **cannot** read financial tables. The admin API runs under a database role that
   has no grants on the `app.*` financial tables. Support access requires a
   `support_grant` created by the user (72 h default, read-only default, logged, revocable)

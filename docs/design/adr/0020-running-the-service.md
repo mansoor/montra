@@ -32,7 +32,7 @@ them (OPS-01, OPS-02). Prices are still an open product question (assumption 2).
    building one is the safest way to keep the promise. An owner grants it (72 hours by default, 7 days at most) and can revoke it.
    Each look is written to that person's security log and to the staff log. A session shows books and their currencies, import results and AI outcomes, not
    transactions, balances, notes, payslips or tenants, which covers most support questions. If it turns out not to, widen the grant list on purpose.
-9. **Staff are added by hand.** `pnpm staff:add` is run by someone with the owner role. Staff need a second factor, as owners do. There's
+9. **Staff are added by hand.** `pnpm --filter @montra/api staff:add` needs the database owner's URL, which the running service doesn't have. Staff need a second factor, as owners do. There's
    no separate staff SSO yet; `AuthPort` is unchanged.
 10. **Metrics come from the database.** `/internal/metrics`, behind a token, reports counts for queues, failures and AI through
     definer functions, plus request timings from the API process. The worker needs no HTTP port, and a restart loses nothing.

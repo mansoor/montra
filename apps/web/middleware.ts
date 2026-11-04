@@ -20,5 +20,5 @@ export function middleware(req: NextRequest) {
 export const config = {
   // Sign-in, sign-up and the Kratos self-service pages work without a session. The /api proxy checks the
   // session itself: middleware buffers request bodies (10 MB cap), which would truncate statement uploads.
-  matcher: ['/((?!api/|sign-in|sign-up|auth/|unsubscribe|_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!api/|sign-in|sign-up|auth/|unsubscribe|status|legal|help|_next/static|_next/image|favicon.ico).*)'],
 };

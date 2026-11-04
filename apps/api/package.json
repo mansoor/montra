@@ -13,7 +13,8 @@
     "test:perf": "vitest run --mode perf",
     "start:worker": "node dist/worker-main.js",
     "dev:worker": "tsx watch --conditions=@montra/source src/worker-main.ts",
-    "fx:load": "tsx --conditions=@montra/source src/fx-cli.ts"
+    "fx:load": "tsx --conditions=@montra/source src/fx-cli.ts",
+    "staff:add": "tsx --conditions=@montra/source src/staff-cli.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1161.0",

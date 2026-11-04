@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getI18n } from '@/lib/i18n-server';
+import { getPublicI18n } from '@/lib/i18n-public';
 import { UnsubscribeButton } from '@/components/account-state';
 import { I18nProvider } from '@/components/i18n';
 
@@ -12,7 +12,7 @@ export default async function UnsubscribePage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const { token } = await searchParams;
-  const { t, locale } = await getI18n();
+  const { t, locale } = getPublicI18n();
   return (
     <I18nProvider locale={locale} dateFormat={null}>
       <main className="mx-auto max-w-md space-y-4 px-4 py-16">

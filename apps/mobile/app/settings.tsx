@@ -1,8 +1,8 @@
 /** Settings (OPS-13): profile, family, entities, currency and time zone to read, app lock (PLT-07), notifications, your data, workspace, AI mode (read-only), sign out (wipes, BAK-10), version. */
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, Switch, View } from 'react-native';
+import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import type { FamilyMemberDto, MeDto } from '@montra/schemas';
+import type { BillingDto, FamilyMemberDto, MeDto } from '@montra/schemas';
 import { config } from '../src/config';
 import { t } from '../src/i18n';
 import { LOCK_TIMEOUTS } from '../src/lock/policy';
@@ -22,6 +22,7 @@ export default function Settings() {
   const [push, setPush] = useState<PushStatus | null>(null);
   const [me, setMe] = useState<MeDto | null>(null);
   const [family, setFamily] = useState<FamilyMemberDto[]>([]);
+  const [plan, setPlan] = useState<BillingDto | null>(null);
 
   useEffect(() => {
     if (state.status !== 'signed_in') return;
@@ -31,6 +32,7 @@ export default function Settings() {
     );
     void api.me().then(setMe, () => undefined);
     void api.familyMembers(state.workspace.id).then(setFamily, () => undefined);
+    void api.billing(state.workspace.id).then(setPlan, () => undefined);
     void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
   }, [api, state]);
 
@@ -129,6 +131,9 @@ export default function Settings() {
           {family.map((f) => (
             <Body key={f.id}>{f.name}</Body>
           ))}
+          {plan && plan.mode !== 'off' ? (
+            <Small>{t(plan.plan === 'pro' ? 'billing.plan_pro' : 'billing.plan_free')}</Small>
+          ) : null}
           <Small>{t('mobile.settings.change_on_web')}</Small>
         </Card>
       ) : null}
@@ -148,6 +153,17 @@ export default function Settings() {
         </Card>
       ) : null}
 
+      {/* OPS-09: help and the legal pages open in the browser, and work signed out. */}
+      <Row
+        title={t('help.title')}
+        onPress={() => void Linking.openURL(`${config.webUrl}/help`)}
+        testID="settings-help"
+      />
+      <Row
+        title={t('legal.privacy')}
+        onPress={() => void Linking.openURL(`${config.webUrl}/legal/privacy`)}
+        testID="settings-privacy"
+      />
       <Button kind="danger" label={t('mobile.settings.sign_out')} onPress={signOut} testID="sign-out" />
       <Small>{t('mobile.settings.sign_out_note')}</Small>
       <Row title={t('mobile.settings.developer')} onPress={() => router.push('/developer/camera')} />

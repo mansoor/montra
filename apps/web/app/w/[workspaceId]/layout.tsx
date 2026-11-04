@@ -8,6 +8,8 @@ import { GlobalShortcuts, ReviewCountBadge } from '@/components/review/review-ba
 import { LocalAiRunner } from '@/components/ai/local-ai-runner';
 import { AppShell, type NavGroup } from '@/components/shell/app-shell';
 import { GlobalSearchBox, NotificationBell } from '@/components/shell/header-tools';
+import { ClientErrorReporter } from '@/components/shell/error-reporter';
+import { HelpLink, Tour } from '@/components/help';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +26,10 @@ export default async function WorkspaceLayout({
   const { workspaceId } = await params;
   const [workspace, { me, t }] = await Promise.all([load((api) => api.getWorkspace(workspaceId)), getI18n()]);
   const base = `/w/${workspace.id}`;
+  // OPS-03: what's been announced. Nothing else on the page should fail because this did.
+  const notices = await load((api) => api.getStatus())
+    .then((s) => s.notices)
+    .catch(() => []);
   const groups: NavGroup[] = [
     { items: [{ href: base, label: t('nav.home'), icon: 'home', exact: true }] },
     {
@@ -89,11 +95,33 @@ export default async function WorkspaceLayout({
           <>
             <GlobalSearchBox workspaceId={workspace.id} />
             <NotificationBell workspaceId={workspace.id} />
+            <HelpLink workspaceId={workspace.id} />
           </>
         }
       >
         <GlobalShortcuts workspaceId={workspace.id} />
         <LocalAiRunner workspaceId={workspace.id} />
+        <ClientErrorReporter />
+        <Tour workspaceId={workspace.id} />
+        {notices.map((n) => (
+          <section
+            key={n.id}
+            role="region"
+            aria-label={t('notice.label')}
+            className="card mb-4 border-warn text-sm"
+            data-testid="system-notice"
+          >
+            <p className="font-semibold">{n.title}</p>
+            {n.body && <p className="text-muted">{n.body}</p>}
+            {n.startsAt && (
+              <p className="text-xs text-muted">
+                {new Intl.DateTimeFormat(me.locale, { dateStyle: 'long', timeStyle: 'short' }).format(
+                  new Date(n.startsAt),
+                )}
+              </p>
+            )}
+          </section>
+        ))}
         {children}
       </AppShell>
     </I18nProvider>

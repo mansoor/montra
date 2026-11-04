@@ -5,6 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import type { MeDto, WorkspaceDto } from '@montra/schemas';
+import { Platform } from 'react-native';
 import { config } from '../config';
 import { createApi, type Api } from '../api/client';
 import { KratosClient, devToken, type LoginResult } from '../auth/kratos';
@@ -30,6 +31,8 @@ interface SessionApi {
   /** Registered by the sync layer: runs before the token is dropped (wipe store, unregister push). */
   setSignOutHook(fn: (() => Promise<void>) | null): void;
   signOut(): Promise<void>;
+  /** The server says this version is too old (OPS-04). */
+  updateRequired: boolean;
 }
 
 const Ctx = createContext<SessionApi | null>(null);
@@ -51,7 +54,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionState>({ status: 'loading' });
   const [hook, setHook] = useState<{ fn: (() => Promise<void>) | null }>({ fn: null });
   const token = useCallback(() => SecureStore.getItemAsync(TOKEN_KEY), []);
-  const api = useMemo(() => createApi({ baseUrl: config.apiUrl, token }), [token]);
+  const [updateRequired, setUpdateRequired] = useState(false);
+  const api = useMemo(
+    () =>
+      createApi({
+        baseUrl: config.apiUrl,
+        token,
+        app: { version: config.version, platform: Platform.OS },
+        onUpdateRequired: () => setUpdateRequired(true),
+      }),
+    [token],
+  );
   const kratos = useMemo(() => (config.kratosUrl ? new KratosClient(config.kratosUrl) : null), []);
 
   const load = useCallback(async () => {
@@ -103,6 +116,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionApi>(
     () => ({
       state,
+      updateRequired,
       api,
       token,
       async signIn(email, password) {
@@ -140,7 +154,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setState({ status: 'signed_out' });
       },
     }),
-    [state, api, token, kratos, finish, hook],
+    [updateRequired, state, api, token, kratos, finish, hook],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

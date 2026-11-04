@@ -158,7 +158,13 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET /v1/me/security-activity` | Security log | AUTH-12 |
 | `GET/POST/DELETE /v1/me/deletion` | Delete the account, or cancel within the window. While it's closing, only this and reading `/v1/me` work (403 `account.deleting`) | NFR-06, BAK-09 |
 | `GET /ai-events`, `DELETE /ai-events` | AI audit log | AIA-10 |
-| `POST /support-grants`, `DELETE /support-grants/{id}` | Support access | OPS-02 |
+| `GET/POST /support-grants`, `DELETE /support-grants/{id}` | Support access: owner only, read-only, 72 h by default | OPS-02 |
+| `GET /billing`, `POST /billing/checkout` `{ interval }`, `POST /billing/portal` | Plan, flags and links to pay; 402 `plan.required` when adding books | UP-12, OPS-08 |
+| `POST /v1/billing/stripe/webhook` (signed) | Provider events, each handled once | OPS-08 |
+| `GET /v1/status` (no session) | Status and notices | OPS-03 |
+| `POST /v1/support/requests`, `GET /v1/support/requests`, `POST /v1/client-errors` | Help and error reports | OPS-09, NFR-13 |
+| `/v1/admin/*` (staff, 404 for anyone else) | Accounts, plans, flags, notices, app versions, analytics, requests, reference data, support view | OPS-01, OPS-02, OPS-05 |
+| `GET /internal/metrics` (bearer token, 404 without) | Prometheus metrics | NFR-13, OPS-07 |
 
 ## 3. Sync and real-time (PLT-05, PLT-06)
 

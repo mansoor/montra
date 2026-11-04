@@ -79,6 +79,27 @@ import type {
   CreateAccountRequest,
   CreateEntityRequest,
   CreateFamilyMemberRequest,
+  AdminAccountDto,
+  AdminSetPlanRequest,
+  AdminSupportRequestDto,
+  AdminWorkspaceDto,
+  AiAccuracyRowDto,
+  AppVersionsDto,
+  BillingDto,
+  BillingLinkDto,
+  ClientErrorRequest,
+  CreateNoticeRequest,
+  CreateSupportRequest,
+  FeatureFlagDto,
+  ImportFailureRowDto,
+  SaveFeatureFlagRequest,
+  SaveMerchantRequest,
+  SaveMileageRateRequest,
+  StaffMeDto,
+  StatusDto,
+  SupportGrantDto,
+  SupportViewDto,
+  SystemNoticeDto,
   CreateInviteRequest,
   CreateRecurringRequest,
   CreateTransactionRequest,
@@ -673,6 +694,135 @@ export class ApiClient {
       'GET',
       this.ws(workspaceId, `/entities/${enc(entityId)}/period-lock/history`),
     ).then((r) => r.data);
+  }
+
+  // ----- Plans, support and help (ADR-0020) --------------------------------------------------------
+  getBilling(workspaceId: string) {
+    return this.request<BillingDto>('GET', this.ws(workspaceId, '/billing'));
+  }
+  startCheckout(workspaceId: string, input: { interval: 'month' | 'year' }) {
+    return this.request<BillingLinkDto>('POST', this.ws(workspaceId, '/billing/checkout'), input);
+  }
+  openBillingPortal(workspaceId: string) {
+    return this.request<BillingLinkDto>('POST', this.ws(workspaceId, '/billing/portal'));
+  }
+  listSupportGrants(workspaceId: string) {
+    return this.request<{ data: SupportGrantDto[] }>('GET', this.ws(workspaceId, '/support-grants')).then(
+      (r) => r.data,
+    );
+  }
+  createSupportGrant(workspaceId: string, input: { hours?: number; reason?: string }) {
+    return this.request<SupportGrantDto>('POST', this.ws(workspaceId, '/support-grants'), input);
+  }
+  revokeSupportGrant(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/support-grants/${enc(id)}`));
+  }
+  createSupportRequest(input: z.input<typeof CreateSupportRequest>) {
+    return this.request<{ id: string }>('POST', '/v1/support/requests', input);
+  }
+  listSupportRequests() {
+    return this.request<{
+      data: { id: string; kind: string; subject: string; status: string; createdAt: string }[];
+    }>('GET', '/v1/support/requests').then((r) => r.data);
+  }
+  reportClientError(input: ClientErrorRequest) {
+    return this.request<void>('POST', '/v1/client-errors', input);
+  }
+  getStatus() {
+    return this.request<StatusDto>('GET', '/v1/status');
+  }
+
+  // ----- The staff console (OPS-01) ----------------------------------------------------------------
+  adminMe() {
+    return this.request<StaffMeDto>('GET', '/v1/admin/me');
+  }
+  adminAccounts(q: string) {
+    return this.request<{ data: AdminAccountDto[] }>('GET', `/v1/admin/accounts${query({ q })}`).then(
+      (r) => r.data,
+    );
+  }
+  adminAccountWorkspaces(id: string) {
+    return this.request<{ data: AdminWorkspaceDto[] }>(
+      'GET',
+      `/v1/admin/accounts/${enc(id)}/workspaces`,
+    ).then((r) => r.data);
+  }
+  adminSetPlan(workspaceId: string, input: AdminSetPlanRequest) {
+    return this.request<void>('PUT', `/v1/admin/workspaces/${enc(workspaceId)}/plan`, input);
+  }
+  adminSupportView(workspaceId: string) {
+    return this.request<SupportViewDto>('GET', `/v1/admin/support/${enc(workspaceId)}`);
+  }
+  adminFlags() {
+    return this.request<{ data: FeatureFlagDto[] }>('GET', '/v1/admin/flags').then((r) => r.data);
+  }
+  adminSaveFlag(input: SaveFeatureFlagRequest) {
+    return this.request<void>('PUT', '/v1/admin/flags', input);
+  }
+  adminDeleteFlag(key: string) {
+    return this.request<void>('DELETE', `/v1/admin/flags/${enc(key)}`);
+  }
+  adminNotices() {
+    return this.request<{ data: (SystemNoticeDto & { showFrom: string })[] }>(
+      'GET',
+      '/v1/admin/notices',
+    ).then((r) => r.data);
+  }
+  adminCreateNotice(input: z.input<typeof CreateNoticeRequest>) {
+    return this.request<{ id: string }>('POST', '/v1/admin/notices', input);
+  }
+  adminEndNotice(id: string) {
+    return this.request<void>('POST', `/v1/admin/notices/${enc(id)}/end`);
+  }
+  adminAppVersions() {
+    return this.request<AppVersionsDto>('GET', '/v1/admin/app-versions');
+  }
+  adminSaveAppVersions(input: AppVersionsDto) {
+    return this.request<void>('PUT', '/v1/admin/app-versions', input);
+  }
+  adminImportFailures(days: number) {
+    return this.request<{ data: ImportFailureRowDto[] }>(
+      'GET',
+      `/v1/admin/analytics/imports${query({ days })}`,
+    ).then((r) => r.data);
+  }
+  adminAiAccuracy(days: number) {
+    return this.request<{ data: AiAccuracyRowDto[] }>('GET', `/v1/admin/analytics/ai${query({ days })}`).then(
+      (r) => r.data,
+    );
+  }
+  adminSupportRequests() {
+    return this.request<{ data: AdminSupportRequestDto[] }>('GET', '/v1/admin/support-requests').then(
+      (r) => r.data,
+    );
+  }
+  adminCloseSupportRequest(id: string) {
+    return this.request<void>('POST', `/v1/admin/support-requests/${enc(id)}/close`);
+  }
+  adminSupportScreenshot(id: string) {
+    return this.requestFile(`/v1/admin/support-requests/${enc(id)}/screenshot`).then((f) => f.blob);
+  }
+  adminMerchants(q: string) {
+    return this.request<{
+      data: {
+        id: string;
+        displayName: string;
+        matchKey: string;
+        categoryHint: string | null;
+        version: number;
+      }[];
+    }>('GET', `/v1/admin/reference/merchants${query({ q })}`).then((r) => r.data);
+  }
+  adminSaveMerchant(input: z.input<typeof SaveMerchantRequest>) {
+    return this.request<void>('PUT', '/v1/admin/reference/merchants', input);
+  }
+  adminMileageRates() {
+    return this.request<{
+      data: { country: string; effectiveFrom: string; tenthsOfCent: number; source: string }[];
+    }>('GET', '/v1/admin/reference/mileage-rates').then((r) => r.data);
+  }
+  adminSaveMileageRate(input: SaveMileageRateRequest) {
+    return this.request<void>('PUT', '/v1/admin/reference/mileage-rates', input);
   }
 
   // ----- Family members (FAM) ------------------------------------------------------------------------------
@@ -1980,4 +2130,16 @@ export type {
   PlanningSettingsDto,
   RecommendationDto,
   SankeyDto,
+};
+
+export type {
+  AdminAccountDto,
+  AdminSupportRequestDto,
+  AdminWorkspaceDto,
+  AppVersionsDto,
+  BillingDto,
+  FeatureFlagDto,
+  StatusDto,
+  SupportGrantDto,
+  SystemNoticeDto,
 };

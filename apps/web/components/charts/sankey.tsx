@@ -64,7 +64,7 @@ export function Sankey({ data, base }: { data: SankeyDto; base: string }) {
   if (cols.every((c) => c.length === 0)) return <p className="text-sm text-muted">{t('flow.empty')}</p>;
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('flow.sankey_label')} className="h-auto w-full">
+    <svg viewBox={`0 0 ${W} ${H}`} role="group" aria-label={t('flow.sankey_label')} className="h-auto w-full">
       {links.map((l, i) => {
         const s = pos.get(l.source)!;
         const d = pos.get(l.target)!;
