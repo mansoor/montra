@@ -33,6 +33,11 @@
     "overrides": {
       "fastify": "^5.12.7",
       "postcss": "^8.5.18"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-mrhx-c7xc-m3w5"
+      ]
     }
   }
 }

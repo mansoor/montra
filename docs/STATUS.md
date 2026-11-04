@@ -749,7 +749,8 @@ Measured locally, on 2026-11-04:
 Phase 11 leftovers:
 
 - **Not tried on the real thing:** Stripe, Sentry, AWS KMS, S3 with KMS, SES, Cloudflare, Grafana, the deploy workflow, and every mobile screen on a device.
-- **`security.yml` will fail until decided:** a zod finding in the Expo CLI, which is a build tool, and Kratos v1.3.1.
+- **`security.yml` fails until Kratos is upgraded:** v1.3.1's image findings. A `zod` finding in the Expo CLI is accepted until 2027-02-04;
+  the reason is in `docs/runbooks/security-patching.md`.
 - **PLT-08** (widgets) moves to R1.x. **Store billing** isn't built, so the phone shows the plan and doesn't sell it.
 - **NFR-10:** axe only. No screen reader or manual audit, and nothing on mobile.
 - **PLT-01:** only Chromium runs in e2e.
