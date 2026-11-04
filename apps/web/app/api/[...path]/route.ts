@@ -13,6 +13,7 @@ const FORWARDED_REQUEST_HEADERS = ['accept', 'content-type', 'idempotency-key', 
 const FORWARDED_RESPONSE_HEADERS = [
   'cache-control', // private documents say no-store
   'content-disposition',
+  'content-length',
   'content-type',
   'etag',
   'idempotent-replay',
@@ -54,7 +55,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     const v = upstream.headers.get(h);
     if (v) out.set(h, v);
   }
-  return new Response(upstream.status === 204 ? null : await upstream.arrayBuffer(), {
+  return new Response(upstream.status === 204 ? null : upstream.body, {
     status: upstream.status,
     headers: out,
   });

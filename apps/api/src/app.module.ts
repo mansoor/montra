@@ -65,6 +65,21 @@ import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
+import { BackupService } from './data/backup.service.js';
+import { AccountDataController, DataController, RestoresController } from './data/data.controller.js';
+import { OwnershipService } from './data/ownership.service.js';
+import { RestoreService } from './data/restore.service.js';
+import { NotificationJobs } from './notifications/notification-jobs.service.js';
+import {
+  NotificationPrefsController,
+  NotificationsController,
+  UnsubscribeController,
+} from './notifications/notifications.controller.js';
+import { NotificationsService } from './notifications/notifications.service.js';
+import { pushProvider } from './notifications/push.js';
+import { ReportsController } from './reports/reports.controller.js';
+import { ReportsService } from './reports/reports.service.js';
+import { SearchService } from './reports/search.service.js';
 import { LoansService } from './rentals/loans.service.js';
 import { PropertiesService } from './rentals/properties.service.js';
 import { RentService } from './rentals/rent.service.js';
@@ -113,6 +128,13 @@ export class AppModule {
       PayslipsController,
       BusinessController,
       RentalsController,
+      ReportsController,
+      NotificationsController,
+      DataController,
+      RestoresController,
+      AccountDataController,
+      NotificationPrefsController,
+      UnsubscribeController,
     ];
     return {
       module: AppModule,
@@ -173,6 +195,14 @@ export class AppModule {
         RentalOpsService,
         RentalReportsService,
         RentalJobs,
+        BackupService,
+        RestoreService,
+        OwnershipService,
+        NotificationsService,
+        NotificationJobs,
+        pushProvider,
+        ReportsService,
+        SearchService,
         PayslipJobs,
         MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },

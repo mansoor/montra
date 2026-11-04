@@ -37,6 +37,12 @@ export default function More() {
         testID="more-receipts"
       />
       <Row title={t('nav.business')} onPress={() => router.push('/business')} testID="more-business" />
+      <Row
+        title={t('notifications.title')}
+        onPress={() => router.push('/notifications')}
+        testID="more-notifications"
+      />
+      <Row title={t('settings.tab.data')} onPress={() => router.push('/your-data')} testID="more-your-data" />
       <Row title={t('nav.rentals')} onPress={() => router.push('/rentals')} testID="more-rentals" />
       <Row title={t('nav.payslips')} onPress={() => router.push('/payslips')} testID="more-payslips" />
       <Row title={t('mobile.more.import')} onPress={() => router.push('/import')} testID="more-import" />

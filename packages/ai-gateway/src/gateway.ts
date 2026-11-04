@@ -37,6 +37,7 @@ import * as proposeV1 from './tasks/propose-categories/v1.js';
 import * as taxLinesV1 from './tasks/map-tax-lines/v1.js';
 import * as separationV1 from './tasks/flag-separation/v1.js';
 import * as capitalV1 from './tasks/flag-capital/v1.js';
+import * as questionV1 from './tasks/answer-question/v1.js';
 import * as summaryV1 from './tasks/word-summary/v1.js';
 import type {
   AiContext,
@@ -49,6 +50,8 @@ import type {
   CategoryProposalOutput,
   CapitalFlag,
   CapitalInput,
+  QuestionInput,
+  QuestionPlan,
   SeparationFlag,
   SeparationInput,
   TaxLineInput,
@@ -1087,6 +1090,54 @@ export class Gateway implements AiGateway {
           return out;
         },
         eventOutput: (v) => ({ flags: v.length }),
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
+  // ----- answer_question (RPT-06) --------------------------------------------------------------------
+
+  /**
+   * A question as a query plan. Everything is checked here: only offered category names, real dates in order, at most six periods. A
+   * plan that fails comes back as not understood rather than as a guess. No amounts go in, and none can come out.
+   */
+  async answerQuestion(input: QuestionInput, ctx: AiContext): Promise<TaskResult<QuestionPlan>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const names = new Map(input.categories.map((n) => [n.trim().toLowerCase(), n]));
+    const isDate = (d: string) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+    return this.callProvider<QuestionPlan>(
+      {
+        task: 'answer_question',
+        system: questionV1.SYSTEM,
+        promptVersion: questionV1.PROMPT_VERSION,
+        input: {
+          question: minimizeText(input.question, ctx.pseudonyms),
+          today: input.today,
+          categories: input.categories,
+        },
+        schema: questionV1.Output,
+        validate: (o: questionV1.Output) => {
+          const periods = o.periods
+            .filter((p) => isDate(p.from) && isDate(p.to) && p.from <= p.to && p.from <= input.today)
+            .slice(0, 6)
+            .map((p) => ({ label: oneLine(p.label, 60), from: p.from, to: p.to }));
+          if (!o.understood || !o.metric || periods.length === 0) {
+            return { understood: false, metric: null, categories: [], payee: null, periods: [] };
+          }
+          return {
+            understood: true,
+            metric: o.metric,
+            categories: o.categories.flatMap((c) => {
+              const name = names.get(c.trim().toLowerCase());
+              return name ? [name] : [];
+            }),
+            payee: o.payee ? oneLine(o.payee, 100) : null,
+            periods,
+          };
+        },
+        eventOutput: (v) => ({ understood: v.understood, periods: v.periods.length }),
       },
       ctx,
       { spent: 0n },

@@ -22,6 +22,11 @@ const Env = z.object({
   /** Outgoing email: 'log' (development), 'memory' (tests), 'smtp' (Mailpit locally, SES/Postmark in production). */
   MAIL_MODE: z.enum(['log', 'memory', 'smtp']).default('log'),
   MAIL_URL: z.string().optional(),
+  /** Push notifications (NOT-01). `expo` sends through Expo's service; `log` writes to the log. */
+  PUSH_MODE: z.enum(['log', 'memory', 'expo']).default('log'),
+  PUSH_EXPO_URL: z.string().url().default('https://exp.host/--/api/v2/push/send'),
+  /** This API's public origin, for links that must reach it directly, such as one-click unsubscribe. */
+  API_URL: z.string().url().default('http://localhost:4000'),
   MAIL_FROM: z.string().default('Montra <no-reply@montra.local>'),
   /** File storage (design 02 §8): 'local' directory for development/tests, 's3' for MinIO or AWS S3. */
   STORAGE_MODE: z.enum(['local', 's3']).default('local'),
@@ -32,6 +37,12 @@ const Env = z.object({
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
+  /** A backup being restored (BAK-06). */
+  MAX_RESTORE_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1024 * 1024 * 1024),
   MAX_UPLOAD_BYTES: z.coerce
     .number()
     .int()

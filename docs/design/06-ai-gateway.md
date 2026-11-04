@@ -53,7 +53,7 @@ with the masked OCR text when there is some. Local mode sends only the masked OC
 (`receipt.ocr`). Amounts come back as decimal strings, and `taxIncluded` marks VAT-style receipts. An answer
 that loses more than half of its lines to validation is `invalid_output`.
 
-| `summarize_month`, `explain_recommendation`, `answer_question` | `claude-opus-5-5` (larger) | `medium` | — | JSON (text fields) / tool use for Q&A |
+| `summarize_month`, `explain_recommendation` | `claude-opus-5-5` (larger) | `medium` | — | JSON (text fields) |
 
 Implementation notes for the Anthropic adapter (current API):
 
@@ -65,10 +65,10 @@ Implementation notes for the Anthropic adapter (current API):
   `ok:false`. Server-side fallbacks are enabled where the model supports them.
 - Prompt caching: the stable system prompt and the user's category list come first in
   the prompt, with a cache breakpoint after them. Row data comes after.
-- `answer_question` (RPT-06) uses tool use: the model calls read-only query tools
-  (`sum_postings`, `list_transactions`, `compare_periods`) whose results are computed in
-  SQL. The returned number always comes from a tool result, never from the model's text
-  (AIA-05).
+- `answer_question` (RPT-06) uses the small group and returns a plan, not an answer: the metric, categories, payee and periods. The
+  API validates the plan against the workspace's categories and computes every figure in SQL, so the number can't come from the
+  model (AIA-05). It sees the question, category names and today's date, and no amounts. This replaces the tool-use design: tool
+  results would have carried amounts to the provider (ADR-0019).
 
 ## 4. Data minimization (AIA-03)
 

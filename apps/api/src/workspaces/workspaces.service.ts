@@ -134,6 +134,7 @@ export class WorkspacesService {
         )
         .select(['w.id', 'w.name', 'w.base_currency', 'w.time_zone', 'm.role'])
         .where('w.id', '=', workspaceId)
+        .where('w.deleted_at', 'is', null)
         .executeTakeFirst();
       if (!ws) return null;
       const entities = await trx

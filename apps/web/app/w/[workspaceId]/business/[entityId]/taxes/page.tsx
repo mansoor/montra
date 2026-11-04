@@ -7,6 +7,7 @@ import { drillHref } from '@/lib/planning';
 import { TaxRateForm, UnmappedCategories } from '@/components/business/tax-tools';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
+import { TaxPackageButton } from '@/components/settings/privacy-security';
 import { StatTile } from '@/components/ui/page-header';
 
 export const metadata: Metadata = { title: 'Taxes' };
@@ -39,13 +40,16 @@ export default async function TaxesPage({
   const here = `${base}/business/${entityId}/taxes`;
   return (
     <div className="space-y-5">
-      <nav aria-label={t('business.tax_year')} className="segmented segmented-md w-fit">
-        {[thisYear - 1, thisYear].map((y) => (
-          <Link key={y} href={`${here}?year=${y}`} aria-current={y === year ? 'page' : undefined}>
-            {y}
-          </Link>
-        ))}
-      </nav>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <nav aria-label={t('business.tax_year')} className="segmented segmented-md w-fit">
+          {[thisYear - 1, thisYear].map((y) => (
+            <Link key={y} href={`${here}?year=${y}`} aria-current={y === year ? 'page' : undefined}>
+              {y}
+            </Link>
+          ))}
+        </nav>
+        <TaxPackageButton workspaceId={workspaceId} entityId={entityId} year={year} />
+      </div>
 
       <section className="space-y-3" aria-labelledby="estimate-title">
         <h2 id="estimate-title" className="text-lg font-semibold">

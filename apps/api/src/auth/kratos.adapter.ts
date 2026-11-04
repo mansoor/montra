@@ -126,6 +126,19 @@ export class KratosAuthAdapter implements AuthPort {
       return { isNew: fresh, hadOthers: Boolean(others) };
     });
     if (isNew && hadOthers) {
+      await this.db
+        .run({ userId: user.id }, (trx) =>
+          trx
+            .insertInto('app.security_event')
+            .values({
+              user_id: user.id,
+              workspace_id: null,
+              kind: 'sign_in_new_device',
+              detail: JSON.stringify({ userAgent, ip }),
+            })
+            .execute(),
+        )
+        .catch((err: Error) => this.logger.warn(`Could not log a new device: ${err.message}`));
       await this.mail
         .send(
           templates.newDevice({

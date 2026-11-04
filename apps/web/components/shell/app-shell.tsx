@@ -8,6 +8,7 @@ import {
   BookOpen,
   Briefcase,
   Building2,
+  MessageCircleQuestion,
   CalendarClock,
   CalendarDays,
   ChartColumn,
@@ -47,6 +48,7 @@ const ICONS = {
   payslips: FileText,
   business: Briefcase,
   rentals: Building2,
+  ask: MessageCircleQuestion,
   members: Users,
   upcoming: CalendarClock,
   recurring: Repeat,
@@ -96,6 +98,7 @@ export function AppShell({
   userName,
   userEmail,
   status,
+  tools,
   children,
 }: {
   workspaceName: string;
@@ -107,6 +110,8 @@ export function AppShell({
   userEmail: string;
   /** Live-update indicator (realtime). */
   status: ReactNode;
+  /** Search and notifications. */
+  tools?: ReactNode;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -253,6 +258,7 @@ export function AppShell({
           </button>
           <span className="truncate font-display text-base font-semibold lg:hidden">Montra</span>
           <div className="ml-auto flex items-center gap-3">
+            {tools}
             {status}
             <ThemeChoiceControl compact />
             <AccountMenu name={userName} email={userEmail} />

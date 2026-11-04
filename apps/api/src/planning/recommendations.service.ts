@@ -46,6 +46,7 @@ import { FlowService } from './flow.service.js';
 import { GoalsService } from './goals.service.js';
 import { PlanningData, type Ctx } from './data.js';
 import { BusinessJobs } from '../business/business-jobs.service.js';
+import { NotificationJobs } from '../notifications/notification-jobs.service.js';
 import { RentalJobs } from '../rentals/rental-jobs.service.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { wordSummary } from './wording.js';
@@ -91,6 +92,7 @@ export class RecommendationsService {
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(BusinessJobs) private readonly business: BusinessJobs,
     @Inject(RentalJobs) private readonly rentals: RentalJobs,
+    @Inject(NotificationJobs) private readonly notifications: NotificationJobs,
   ) {}
 
   // ----- Jobs (TZ-04) ------------------------------------------------------------------------------------
@@ -113,7 +115,9 @@ export class RecommendationsService {
       const recs = await this.run(ctx);
       const business = await this.business.nightly(ctx);
       const rentals = await this.rentals.nightly(ctx);
-      return { ...materialized, ...recs, business, rentals };
+      // Last, so it sees what the steps above produced.
+      const notifications = await this.notifications.nightly(job.workspace_id);
+      return { ...materialized, ...recs, business, rentals, notifications };
     });
     this.worker.register('planning.recommend', async (job: Job) => {
       if (!job.workspace_id || !job.created_by) throw new Error('Job without workspace or user');

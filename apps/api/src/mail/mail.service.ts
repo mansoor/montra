@@ -7,8 +7,9 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
-  /** Transactional vs marketing streams are separated (OPS-10); everything here is transactional. */
-  category: 'security' | 'sharing' | 'invoice';
+  /** OPS-10: `notification` is the non-essential stream, and can be unsubscribed from. The rest are transactional. */
+  category: 'security' | 'sharing' | 'invoice' | 'transactional' | 'notification';
+  headers?: Record<string, string>;
   replyTo?: string;
   attachments?: { filename: string; content: Uint8Array; contentType: string }[];
 }
@@ -60,7 +61,11 @@ export class SmtpMail implements MailPort {
             })),
           }
         : {}),
-      headers: { 'X-Montra-Category': m.category },
+      headers: {
+        'X-Montra-Category': m.category,
+        'X-Montra-Stream': m.category === 'notification' ? 'notification' : 'transactional',
+        ...m.headers,
+      },
     });
   }
 }

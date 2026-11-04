@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-04, at the end of Phase 9 (on `claude/phase9-contracts`, PR open). Keep this file current:
+_Last updated 2026-11-04, at the end of Phase 10 (on `claude/phase10-contracts`, PR open). Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -13,29 +13,29 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–8 merged. Last merge was PR #15 at `bd28b3f` |
+| **Integration branch** | `develop`: Phases 0–9 merged. Last merge was PR #16 at `e2a97e0` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
-| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 |
+| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 |
 | **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements** | 252 IDs in total: **162 done, 39 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge the Phase 9 PR, tag `v0.10.0-dev.1`, then **Phase 10: reports, search, notifications, data ownership** |
+| **Requirements** | 252 IDs in total: **179 done, 41 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Next** | Merge the Phase 10 PR, tag `v0.11.0-dev.1`, then **Phase 11: hardening and launch** |
 
-### Test suite at the end of Phase 9 (green locally)
+### Test suite at the end of Phase 10 (green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 251, plus 4 perf budgets run alone |
+| `@montra/api` (integration, real Postgres) | 357, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 108 |
+| `@montra/web` unit | 117 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
-| `@montra/domain` | 167 |
+| `@montra/domain` | 181 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
-| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 68 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals) | 57 |
-| `@montra/db` (ledger triggers, RLS, read models, receipts) | 36 |
+| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 73 |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals, your data) | 63 |
+| `@montra/db` (ledger triggers, RLS, read models, receipts) | 38 |
 | `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 16 tests in 12 spec files |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 20 tests in 13 spec files |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
@@ -65,8 +65,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 7 | Family members and payslips | ✅ done (device checks pending) | Payslip capture and posting, deposit matching, reports by member, privacy; see §7b |
 | 8 | Small business | ✅ done (device checks pending) | Invoices, bills, mileage, Schedule C, estimated tax, accountant export; see §7c |
 | 9 | Rental properties | ✅ done (device checks pending) | Leases, rent roll, deposits, mortgages, Schedule E, depreciation, metrics; see §7d |
-| **10** | **Reports, search, notifications, data ownership** | ⏭ **next** | Report catalogue, search, notification engine, export, backup/restore |
-| 11 | Hardening and launch | not started | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
+| 10 | Reports, search, notifications, data ownership | ✅ done (device checks pending) | Report catalogue, search, ask, notifications, backup and restore, trash, account deletion; see §7e |
+| **11** | **Hardening and launch** | ⏭ **next** | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
 
 Scope, deliverables and exit criteria for each phase are in `docs/design/01-phased-plan.md`.
 
@@ -193,11 +193,10 @@ finished:
     The `--` is now handled; before that fix, the options were silently ignored.
 
 - **Finished by a later phase, as planned:**
-  - AIA-01: summaries and Q&A, in Phases 6 and 10.
+  - AIA-01: a monthly summary and a budget recommendation by AI.
   - AIA-12 and NFR-14: tax outputs, in Phase 8.
   - AI-02: AI doesn't suggest a property or unit. They're tagged by hand or by rent, mortgage and capital improvement links.
   - PLT-03 and UP-07: mobile screens arrive with each feature phase.
-  - UP-06: the privacy center, in Phase 10.
   - AI-07: logos, via reference data.
 - **Phase 11 hardening:**
   - NFR-01: the AWS KMS adapter and TLS.
@@ -605,7 +604,7 @@ Phase 8 leftovers, not blocking:
 - Foreign-currency invoices and bills are refused.
 - Estimated-tax periods assume a calendar tax year, even for a business with another fiscal year.
 - The mileage rate editor is the admin screen in Phase 11; until then a new rate is a reference-data change.
-- Reminders appear on the calendar and as suggestions; push and email reminders come with the notification engine in Phase 10.
+- Reminders appear on the calendar and as suggestions, and since Phase 10 by push and email too.
 - Mobile: invoices and bills are read-only, and there's no device run yet.
 - BIZ-08, BIZ-14 and BIZ-15 (could-haves) aren't started.
 
@@ -641,7 +640,7 @@ Rules the code depends on (don't undo these):
 Phase 9 leftovers, not blocking:
 
 - **Not tried on the real thing:** `flag_capital` against the real provider, and the mobile screens on a device.
-- The Schedule E export is CSV or Excel. The one-click tax package (UP-10) comes with the Phase 10 export work, so UP-10 stays partial.
+- The Schedule E export is CSV or Excel. The one-click tax package (UP-10) came in Phase 10.
 - A lease and an entered expected-income item for the same rent both count in the forecast. The household budget's expected income
   still comes from entered items, so BUD-03 stays partial.
 - A mortgage's schedule follows its terms: extra principal and rate changes aren't modeled. Escrow goes straight to Taxes and Insurance
@@ -649,9 +648,54 @@ Phase 9 leftovers, not blocking:
 - Rent isn't prorated: a mid-month move-in gets a full charge, which the landlord edits.
 - A detected recurring bill for the same payee as a mortgage can show twice on the calendar. Invoices and bills have the same limit.
 - Foreign-currency leases aren't handled separately: a portfolio's rent is in its own currency.
-- Reminders are on a list and the calendar; push and email come with the notification engine in Phase 10.
+- Reminders are on a list and the calendar, and since Phase 10 by push and email too.
 - Mobile: only logging rent. Everything else is managed on the web.
 - RNT-15 and RNT-16 (could-haves) aren't started.
+
+---
+
+## 7e. Phase 10, reports, search, notifications, data ownership (done)
+
+Branch `claude/phase10-contracts`. The design is ADR-0019.
+
+| Step | State | What |
+| --- | --- | --- |
+| 1. Contracts | ✅ | Migration 0020 (saved_report, notification, notification_pref, security_event, export_job, backup_schedule, restore_job, `transaction.search`, quota trigger, purge functions), DTOs, the search parser and notification timing in `@montra/domain` |
+| 2. Reports and questions | ✅ | `apps/api/src/reports/`: one `ReportDto`, PDF, CSV and Excel from it, search, and `answer_question` returning a plan |
+| 3. Notifications | ✅ | `apps/api/src/notifications/`: written nightly, delivered every 5 minutes with quiet hours and the cap, through Expo push and mail |
+| 4. Your data | ✅ | `apps/api/src/data/`: archive from the DB catalog, restore with new ids, tax package, trash, storage, deletion and the hourly retention job |
+| 5. Screens | ✅ | Web: reports, search, ask, inbox and bell, trash, four settings sections. Phone: inbox, channel switches, your data, settings to read |
+| 6. Tests | ✅ | `reports.test.ts`, `notifications.test.ts`, `data-ownership.test.ts`, RLS additions, `e2e/reports-data.spec.ts` |
+
+Rules this phase depends on:
+
+- **A new table must be classified for backup.** `apps/api/src/data/catalog.ts` lists what isn't exported and why, and a test fails on
+  anything unclassified. Restore works out insert order from `pg_constraint` and maps every id.
+- **`search` is derived.** `app.audit_row` skips it, so it can't copy payees into audit diffs, and a new generated column needs the same.
+- **The worker needs `BackupService`, `RestoreService` and `OwnershipService` registered**, and tests must call `register()` and drain
+  the `report` queue.
+- **A closing account gets 403 `account.deleting`** except on `/v1/me/deletion` and reading `/v1/me`. The page explaining it needs the
+  person's language; without that it redirects to itself.
+- **Quota lives in a trigger on `app.file`** (`storage.quota`). Exports don't count, so a full quota can't stop someone leaving.
+- **Purge is due 2 hours before the 30 days**, so the hourly job finishes inside what NFR-06 promises.
+
+Phase 10 leftovers, not blocking:
+
+- **Not tried on the real thing:** `answer_question` against the real provider; push on a device and through real Expo; the phone's
+  backup download and share sheet; new-device sign-ins on a live Kratos; a large restore (uploads are limited to 1 GB, in one
+  transaction).
+- **BAK-05** is the emailed link only. Drive, OneDrive, Dropbox and iCloud need OAuth apps.
+- **OPS-13**: profile, family, entities, currency, time zone, AI mode and quiet hours are read-only on the phone.
+- **AUTH-12**: password changes and session revocations aren't logged (the first happens in Kratos, the second in `sessions.controller.ts`);
+  support access waits for the Phase 11 tool.
+- **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
+- **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
+- **CUR-06**: net worth revalues at the period-end rate, but no report shows unrealized gain or loss yet.
+- Personal books can't be restored into an existing workspace, which already has its one personal entity. Use a new workspace.
+- Restoring to an existing workspace only counts likely duplicates; it doesn't drop them.
+- Search reads the latest 5,000 notes, and leaves receipts out when the query has an amount or a tag.
+- Line chart points reach their transactions through the table beneath, not by clicking the line.
+- A notification on the phone doesn't deep-link to what it's about, and tapping a push opens the app rather than the item.
 
 ---
 

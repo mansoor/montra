@@ -141,14 +141,22 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `GET /reports/{type}` (`spending`, `income-expense`, `budget-actual`, `cash-flow`, `net-worth`, `pnl`, `schedule-c`, `schedule-e`, `general-ledger`, `trial-balance`, `balance-sheet`, `by-member`, `payslip-summary`, `property`, `items`) | JSON report with drill-down filters | RPT-01..03 |
-| `POST /reports/{type}/export` `{ format: pdf|csv|xlsx }` (202) | Export | RPT-04 |
-| `GET/POST /saved-reports` | Saved custom reports | RPT-02 |
-| `POST /tax-package` `{ entityId, year }` (202) | ZIP of reports + receipts | RPT-04, UP-10 |
-| `POST /ask` | Ask-your-data (number + chart spec + transaction ids) | RPT-06 |
-| `POST /exports` (re-auth, 202) / `POST /backups`, `POST /restores` (preview → confirm) | Full export, backup, restore | NFR-06, BAK-04/06 |
-| `GET /trash`, `POST /trash/{id}/restore` | Trash bin | BAK-06 |
-| `GET /notifications`, `PATCH /notification-prefs` | Notifications, quiet hours, caps | NOT-01..03 |
+| `GET /reports/catalog/{type}` (`spending`, `income-expense`, `budget-actual`, `cash-flow`, `net-worth`, `pnl`, `schedule-c`, `schedule-e`, `general-ledger`, `trial-balance`, `balance-sheet`, `by-member`, `items`) | One report shape: columns, rows with a drill, totals, chart | RPT-01..03, RCP-09 |
+| `GET /reports/catalog/{type}/export?format=pdf\|csv\|xlsx` (re-auth) | The same report as a file | RPT-04 |
+| `GET/POST /saved-reports`, `DELETE /saved-reports/{id}` | Saved custom reports, per person | RPT-02 |
+| `GET /search?q=` | Transactions, payees, receipts. Syntax: words, `"phrases"`, `>500`, `tag:travel` | RPT-05 |
+| `POST /ask` | A question: the plan comes from AI, the figures and transactions from SQL | RPT-06 |
+| `POST /backups` (re-auth), `GET /backups`, `GET /backups/{id}`, `GET /backups/{id}/download` | Backup, optionally with a password; kept 7 days | NFR-06, BAK-04 |
+| `POST /tax-package` `{ entityId, year }` (re-auth) | ZIP of reports + receipts, listed with the backups | RPT-04, UP-10 |
+| `GET/PUT/DELETE /backup-schedule` | Weekly or monthly, by emailed link | BAK-05 |
+| `POST /v1/me/restores` (multipart, re-auth), `GET /v1/me/restores`, `GET /v1/me/restores/{id}`, `POST /v1/me/restores/{id}/confirm` | Preview, then restore into a new workspace or as added books | BAK-06 |
+| `GET /trash`, `POST /trash/{kind}/{id}/restore` | Trash bin | BAK-06 |
+| `GET /storage` | Usage against the quota | BAK-08 |
+| `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/{id}/read`, `POST /notifications/read-all` | Inbox | NOT-01 |
+| `GET/PATCH /v1/me/notification-prefs` | Channels per type, quiet hours, cap, digest day, thresholds | NOT-01..03 |
+| `POST /v1/unsubscribe?token=` (no session) | One-click unsubscribe | OPS-10 |
+| `GET /v1/me/security-activity` | Security log | AUTH-12 |
+| `GET/POST/DELETE /v1/me/deletion` | Delete the account, or cancel within the window. While it's closing, only this and reading `/v1/me` work (403 `account.deleting`) | NFR-06, BAK-09 |
 | `GET /ai-events`, `DELETE /ai-events` | AI audit log | AIA-10 |
 | `POST /support-grants`, `DELETE /support-grants/{id}` | Support access | OPS-02 |
 

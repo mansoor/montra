@@ -278,7 +278,7 @@
   ],
   "AIA-01": [
     "partial",
-    "categorize, map columns, normalize payees, quick add, statement table, category proposals; summaries/recommendations/Q&A arrive with their features"
+    "categorize, map columns, normalize payees, quick add, statement table, category proposals; worded summaries and questions; a dedicated monthly summary and budget recommendation task are still to come"
   ],
   "AIA-02": [
     "done",
@@ -373,8 +373,8 @@
     "rules engine (RE2), preview, apply to existing"
   ],
   "UP-06": [
-    "partial",
-    "per-mode AI disclosure; full data-use page with the privacy center"
+    "done",
+    "no ads, no data sale, local-AI option and a data-use page per AI mode in Settings → Privacy"
   ],
   "UP-13": [
     "done",
@@ -442,7 +442,7 @@
   ],
   "CUR-06": [
     "partial",
-    "unrealizedFx and the optional fx_revaluation entry in @montra/domain; net-worth reports in P6/P10"
+    "reports convert at the charged rate, else the transaction date, and net worth revalues at the period-end rate. Unrealized gain or loss isn't shown on a report yet"
   ],
   "CUR-07": [
     "done",
@@ -633,8 +633,8 @@
     "light mode: savings target and one everything-else amount"
   ],
   "TZ-04": [
-    "partial",
-    "nightly planning run after 03:00 in the workspace time zone; reminders and digests in P10"
+    "done",
+    "nightly checks, quiet hours and the digest day run in local time and follow daylight saving; recurring items as before"
   ],
   "UP-14": [
     "done",
@@ -685,8 +685,8 @@
     "RLS: owners and the linked member only; the net-pay line alone is public, so shared balances stay right; kept out of the sync feed and off the phone"
   ],
   "RPT-01": [
-    "partial",
-    "by family member, P&L, Schedule C and income and spending by customer and vendor; the rest of the catalogue in P10"
+    "done",
+    "the full catalogue: spending, income and expense, budget vs actual, cash flow, net worth, P&L, Schedule C and E, general ledger, trial balance, balance sheet and by family member with Household as its own group"
   ],
   "BIZ-01": [
     "done",
@@ -718,7 +718,7 @@
   ],
   "BIZ-09": [
     "done",
-    "set-aside from profit after mileage at the user's rate; IRS periods and due dates on the Taxes page, calendar and suggestions. Reminders go through the notification engine in P10"
+    "set-aside from profit after mileage at the user's rate; IRS periods and due dates on the Taxes page, calendar and suggestions. Reminders go through the notification engine"
   ],
   "BIZ-10": [
     "done",
@@ -790,7 +790,7 @@
   ],
   "RNT-12": [
     "done",
-    "lease ends at 60/30 days, insurance, property tax and inspections, on a list and the calendar. Push and email come with notifications in P10"
+    "lease ends at 60/30 days, insurance, property tax and inspections, on a list and the calendar. Push and email through the notification engine"
   ],
   "RNT-13": [
     "done",
@@ -801,7 +801,83 @@
     "expected rent less planned expenses and capex reserve per unit per month, against actuals"
   ],
   "UP-10": [
+    "done",
+    "per-property books on Schedule E lines, and the tax package"
+  ],
+  "RPT-02": [
+    "done",
+    "date, books, account, category, tag, property and member, kept in the URL; saved per person"
+  ],
+  "RPT-03": [
+    "done",
+    "every row and bar links to the transactions behind it. Points on a line chart are reached through the table under it"
+  ],
+  "RPT-04": [
+    "done",
+    "PDF, CSV and Excel from the same report, and a year-end tax package ZIP per entity"
+  ],
+  "RPT-05": [
+    "done",
+    "payees, descriptions, notes, amounts, tags and receipt OCR text. Notes are decrypted in the API, for the latest 5,000 with a note. Receipts are left out when a query has an amount or tag"
+  ],
+  "RPT-06": [
+    "done",
+    "the AI turns the question into a validated plan and SQL gives the numbers. Provider sees the question, category names and today, no amounts. Not yet tried on the real provider"
+  ],
+  "RCP-09": [
+    "done",
+    "items on receipts across stores, by item, store or category"
+  ],
+  "NOT-01": [
+    "done",
+    "in-app, email and push per type per person, all eight types plus tax dates, rental reminders and suggestions. Push not yet tried on a device or real Expo"
+  ],
+  "NOT-02": [
+    "done",
+    "weekly digest on the chosen day, by email or push. Only its email carries figures"
+  ],
+  "NOT-03": [
+    "done",
+    "quiet hours hold email and push until they end, in the person's time zone; past the daily cap they wait in the app"
+  ],
+  "AUTH-12": [
     "partial",
-    "per-property books on Schedule E lines with a CSV or Excel export; the one-click tax package comes in P10"
+    "sign-ins from new devices, MFA and email changes, exports, restores and deletion, on web and phone. Password changes and session revocations aren't logged yet, and support access needs the Phase 11 tool"
+  ],
+  "NFR-05": [
+    "done",
+    "no ads or data sale stated in Settings → Privacy with what each AI mode sends; export and delete are self-service. Legal text comes with launch"
+  ],
+  "NFR-06": [
+    "done",
+    "backup with JSON, CSV, Excel and files at any time; a deleted account is purged inside 30 days by an hourly job"
+  ],
+  "BAK-04": [
+    "done",
+    "whole workspace or one entity, optionally with a password, on the web; whole workspace on the phone, saved through the share sheet. The phone download isn't yet tried on a device"
+  ],
+  "BAK-05": [
+    "partial",
+    "weekly or monthly emailed download link. Google Drive, OneDrive, Dropbox and iCloud need OAuth apps of their own"
+  ],
+  "BAK-06": [
+    "done",
+    "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions and receipts for 30 days. Restore is web only"
+  ],
+  "BAK-08": [
+    "partial",
+    "quota enforced in the database with a usage meter, 5 GB for everyone until plans exist in Phase 11. The phone compresses receipt photos; web uploads aren't compressed and there's no choice to keep an original"
+  ],
+  "BAK-09": [
+    "partial",
+    "purge job for deleted accounts, trash and retention dates. Ageing out of infrastructure backups within 35 days comes with Phase 11"
+  ],
+  "OPS-10": [
+    "partial",
+    "transactional and notification mail separated, one-click unsubscribe. SPF, DKIM and DMARC come with the Phase 11 domains"
+  ],
+  "OPS-13": [
+    "partial",
+    "every section on the web. The phone switches notification channels, backs up, shows security activity and deletes the account; profile, family, entities, currency, time zone, AI mode and quiet hours are read-only there"
   ]
 }

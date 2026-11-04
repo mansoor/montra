@@ -4,6 +4,7 @@ export interface Drill {
   entityId?: string;
   memberId?: string;
   propertyId?: string;
+  q?: string;
   categoryIds?: string[];
   accountIds?: string[];
   from?: string;
@@ -17,6 +18,7 @@ export function drillHref(base: string, d: Drill | null | undefined): string {
   if (d.entityId) q.set('entityId', d.entityId);
   if (d.memberId) q.set('memberId', d.memberId);
   if (d.propertyId) q.set('propertyId', d.propertyId);
+  if (d.q) q.set('q', d.q);
   if (d.categoryIds?.length) q.set('categoryIds', d.categoryIds.join(','));
   if (d.accountIds?.length) q.set('accountIds', d.accountIds.join(','));
   if (d.from) q.set('from', d.from);

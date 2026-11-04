@@ -23,6 +23,7 @@ import {
   type SplitSpec,
   type TransactionSpec,
 } from './poster.js';
+import { searchFilter } from './search-filter.js';
 import {
   Categorizer,
   payeeKeyOf,
@@ -514,6 +515,7 @@ export class TransactionsService {
       entityId?: string;
       memberId?: string;
       propertyId?: string;
+      q?: string;
       categoryIds?: string[];
       accountIds?: string[];
       trash?: boolean;
@@ -567,6 +569,10 @@ export class TransactionsService {
               .$if(!!opts.accountIds, (s) => s.where('p.ledger_account_id', 'in', opts.accountIds!)),
           ),
         );
+      }
+      if (opts.q) {
+        const { where } = await searchFilter(trx, ctx, this.crypto, opts.q);
+        q = q.where(where);
       }
       const ids = await q.execute();
       return this.load(

@@ -43,6 +43,8 @@ const ListQuery = z.object({
   /** A member, or "household" for what isn't tagged to anyone (FAM-09). */
   memberId: z.union([z.uuid(), z.literal('household')]).optional(),
   propertyId: z.uuid().optional(),
+  /** RPT-05: `coffee >20 tag:travel`. */
+  q: z.string().max(500).optional(),
   categoryIds: z
     .string()
     .optional()

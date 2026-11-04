@@ -22,6 +22,16 @@ import type {
   BillDto,
   AccountDto,
   ArrearsDto,
+  CreateBackupRequest,
+  DeletionStatusDto,
+  ExportJobDto,
+  FamilyMemberDto,
+  NotificationListDto,
+  NotificationPrefsDto,
+  RequestDeletionRequest,
+  SecurityEventDto,
+  StorageUsageDto,
+  UpdateNotificationPrefsRequest,
   BusinessProfileDto,
   LeaseDto,
   RentPaymentRequest,
@@ -97,6 +107,12 @@ export type Api = ReturnType<typeof createApi>;
 
 export function createApi(opts: ApiOptions) {
   const fetchImpl = opts.fetch ?? ((...a: Parameters<typeof fetch>) => globalThis.fetch(...a));
+
+  /** For a download the file system does itself, where `request` can't add the token. */
+  async function authHeaders(): Promise<Record<string, string>> {
+    const token = await opts.token();
+    return token ? { authorization: `Bearer ${token}` } : {};
+  }
 
   async function request<T>(method: string, path: string, body?: unknown, raw?: FormData): Promise<T> {
     const token = await opts.token();
@@ -255,6 +271,29 @@ export function createApi(opts: ApiOptions) {
       (await request<{ data: AccountDto[] }>('GET', `${ws(w)}/accounts`)).data,
     recordRent: (w: string, leaseId: string, input: RentPaymentRequest) =>
       request<LeaseDto>('POST', `${ws(w)}/leases/${leaseId}/payments`, input),
+
+    // ----- Notifications and your data (OPS-13): read live, nothing is kept on the device. ---------
+    familyMembers: async (w: string) =>
+      (await request<{ data: FamilyMemberDto[] }>('GET', `${ws(w)}/family-members`)).data,
+    notifications: (w: string) => request<NotificationListDto>('GET', `${ws(w)}/notifications`),
+    markNotificationRead: (w: string, id: string) =>
+      request<void>('POST', `${ws(w)}/notifications/${id}/read`),
+    markAllNotificationsRead: (w: string) => request<void>('POST', `${ws(w)}/notifications/read-all`),
+    notificationPrefs: () => request<NotificationPrefsDto>('GET', '/v1/me/notification-prefs'),
+    updateNotificationPrefs: (input: UpdateNotificationPrefsRequest) =>
+      request<NotificationPrefsDto>('PATCH', '/v1/me/notification-prefs', input),
+    listBackups: async (w: string) =>
+      (await request<{ data: ExportJobDto[] }>('GET', `${ws(w)}/backups`)).data,
+    createBackup: (w: string, input: CreateBackupRequest) =>
+      request<ExportJobDto>('POST', `${ws(w)}/backups`, input),
+    backupDownloadUrl: (w: string, id: string) => `${opts.baseUrl}${ws(w)}/backups/${id}/download`,
+    authHeaders,
+    storageUsage: (w: string) => request<StorageUsageDto>('GET', `${ws(w)}/storage`),
+    securityActivity: async () =>
+      (await request<{ data: SecurityEventDto[] }>('GET', '/v1/me/security-activity')).data,
+    deletionStatus: () => request<DeletionStatusDto>('GET', '/v1/me/deletion'),
+    requestDeletion: (input: RequestDeletionRequest) =>
+      request<DeletionStatusDto>('POST', '/v1/me/deletion', input),
 
     // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
     listEmployers: async (w: string) =>

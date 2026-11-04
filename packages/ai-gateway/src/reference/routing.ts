@@ -23,6 +23,7 @@ export const DEFAULT_ROUTING: Record<TaskName | 'ping', TaskRoute> = {
   map_tax_lines: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 4000, cacheTtlDays: 0 },
   flag_separation: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 4000, cacheTtlDays: 0 },
   flag_capital: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 2000, cacheTtlDays: 0 },
+  answer_question: { group: 'small', effort: 'medium', batchSize: 1, maxTokens: 2000, cacheTtlDays: 0 },
   word_summary: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 1000, cacheTtlDays: 0 },
   extract_statement_table: {
     group: 'vision',

@@ -7,6 +7,8 @@ export * from './receipt.js';
 export * from './payslip.js';
 export * from './business.js';
 export * from './rental.js';
+export * from './search.js';
+export * from './notifications.js';
 export * from './calendar-date.js';
 export * from './recurrence.js';
 export * from './ledger/index.js';

@@ -19,6 +19,7 @@ export type TaskName =
   | 'map_tax_lines'
   | 'flag_separation'
   | 'flag_capital'
+  | 'answer_question'
   | 'word_summary';
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
 export type ModelGroup = 'small' | 'vision' | 'large';
@@ -331,6 +332,22 @@ export interface SeparationFlag {
   reason: string;
 }
 
+export interface QuestionInput {
+  question: string;
+  /** Category names in the books. No amounts: the provider never sees a figure (ADR-0019 §4). */
+  categories: string[];
+  today: string;
+}
+
+/** A checked plan for the app to run. It holds no numbers. */
+export interface QuestionPlan {
+  understood: boolean;
+  metric: 'spending' | 'income' | 'net' | null;
+  categories: string[];
+  payee: string | null;
+  periods: { label: string; from: string; to: string }[];
+}
+
 export interface CapitalInput {
   items: Array<{ id: string; payee: string; amountMinor: bigint; currency: string; category: string }>;
 }
@@ -400,6 +417,8 @@ export interface AiGateway {
   flagSeparation(input: SeparationInput, ctx: AiContext): Promise<TaskResult<SeparationFlag[]>>;
   /** RNT-09: spending filed as repairs that may be a capital improvement. */
   flagCapital(input: CapitalInput, ctx: AiContext): Promise<TaskResult<CapitalFlag[]>>;
+  /** RPT-06: a question as a plan. The numbers come from queries, not from here. */
+  answerQuestion(input: QuestionInput, ctx: AiContext): Promise<TaskResult<QuestionPlan>>;
   wordSummary(input: SummaryInput, ctx: AiContext): Promise<TaskResult<string>>;
   /** Cheap round-trip for the settings page "Test connection" button. */
   ping(ctx: AiContext): Promise<TaskResult<{ model: string }>>;

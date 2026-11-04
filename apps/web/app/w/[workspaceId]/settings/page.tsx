@@ -13,6 +13,14 @@ import { AiSettings } from '@/components/ai/ai-settings';
 import { AiActivity } from '@/components/ai/ai-activity';
 import { ThemeChoiceControl } from '@/components/theme-choice';
 import { PlanningSettings } from '@/components/settings/planning-settings';
+import { NotificationSettings } from '@/components/settings/notification-settings';
+import { PrivacyPanel, SecurityActivity } from '@/components/settings/privacy-security';
+import {
+  BackupPanel,
+  DeleteAccountPanel,
+  RestorePanel,
+  StorageMeter,
+} from '@/components/settings/data-settings';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -27,14 +35,19 @@ const TABS = {
   planning: 'settings.tab.planning',
   ai: 'settings.tab.ai',
   'ai-activity': 'settings.tab.ai_activity',
+  notifications: 'settings.tab.notifications',
+  security: 'settings.tab.security',
+  data: 'settings.tab.data',
+  privacy: 'settings.tab.privacy',
 } as const;
 type Tab = keyof typeof TABS;
 
 /** Sections grouped like the rest of the app: you, the workspace, AI. */
 const GROUPS: { label: string; tabs: Tab[] }[] = [
-  { label: 'settings.group.you', tabs: ['profile', 'appearance'] },
+  { label: 'settings.group.you', tabs: ['profile', 'appearance', 'notifications', 'security'] },
   { label: 'settings.group.workspace', tabs: ['entities', 'family', 'accounts', 'sharing', 'planning'] },
   { label: 'settings.group.ai', tabs: ['ai', 'ai-activity'] },
+  { label: 'settings.group.data', tabs: ['data', 'privacy'] },
 ];
 
 export default async function SettingsPage({
@@ -98,6 +111,40 @@ export default async function SettingsPage({
     body = <PlanningSettings workspaceId={workspaceId} initial={settings} categories={categories} />;
   } else if (tab === 'ai-activity') {
     body = <AiActivity workspaceId={workspaceId} />;
+  } else if (tab === 'notifications') {
+    const prefs = await load((api) => api.getNotificationPrefs());
+    const baseCurrency = workspace.entities[0]?.functionalCurrency ?? 'USD';
+    body = <NotificationSettings initial={prefs} currency={baseCurrency} />;
+  } else if (tab === 'security') {
+    const events = await load((api) => api.getSecurityActivity());
+    body = <SecurityActivity events={events} />;
+  } else if (tab === 'data') {
+    const [usage, jobs, schedule, restores, deletion] = await load((api) =>
+      Promise.all([
+        api.getStorageUsage(workspaceId),
+        api.listBackups(workspaceId),
+        api.getBackupSchedule(workspaceId),
+        api.listRestores(),
+        api.getDeletionStatus(),
+      ]),
+    );
+    body = (
+      <div className="space-y-5">
+        <StorageMeter usage={usage} />
+        <BackupPanel workspace={workspace} jobs={jobs} schedule={schedule} />
+        <RestorePanel workspace={workspace} restores={restores} />
+        <section className="card flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm">{t('data.trash_hint')}</p>
+          <Link className="btn-secondary" href={`/w/${workspaceId}/trash`}>
+            {t('data.open_trash')}
+          </Link>
+        </section>
+        <DeleteAccountPanel status={deletion} />
+      </div>
+    );
+  } else if (tab === 'privacy') {
+    const settings = await load((api) => api.getAiSettings(workspaceId));
+    body = <PrivacyPanel disclosures={settings.disclosures} currentMode={settings.mode} />;
   } else {
     const [members, invites] = await load((api) =>
       Promise.all([
@@ -113,7 +160,7 @@ export default async function SettingsPage({
       <header>
         <h1 className="page-title">{t('nav.settings')}</h1>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav aria-label={t('settings.sections')} className="lg:sticky lg:top-20 lg:self-start">
           <div className="tabs lg:hidden">
             {GROUPS.flatMap((g) => g.tabs).map((k) => (

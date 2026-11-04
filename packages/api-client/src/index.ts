@@ -156,6 +156,31 @@ import type {
   UpdateReminderRequest,
   UpdateTenantRequest,
   UpdateUnitRequest,
+  AskAnswerDto,
+  AskRequest,
+  BackupScheduleDto,
+  ConfirmRestoreRequest,
+  CreateBackupRequest,
+  CreateSavedReportRequest,
+  CreateTaxPackageRequest,
+  DeletionStatusDto,
+  ExportJobDto,
+  NotificationDto,
+  NotificationListDto,
+  NotificationPrefsDto,
+  ReportDto,
+  ReportExportFormat,
+  ReportFilters,
+  ReportType,
+  RequestDeletionRequest,
+  RestoreJobDto,
+  SaveBackupScheduleRequest,
+  SavedReportDto,
+  SearchResultsDto,
+  SecurityEventDto,
+  StorageUsageDto,
+  TrashItemDto,
+  UpdateNotificationPrefsRequest,
   BusinessProfileDto,
   InvoiceDto,
   InvoiceLineDto,
@@ -250,6 +275,15 @@ export type UpdateBillInput = z.input<typeof UpdateBillRequest>;
 export type CreateTripInput = z.input<typeof CreateTripRequest>;
 export type UpdateTripInput = z.input<typeof UpdateTripRequest>;
 export type UpdateBusinessInput = z.input<typeof UpdateBusinessProfileRequest>;
+export type ReportFiltersInput = z.input<typeof ReportFilters>;
+export type CreateSavedReportInput = z.input<typeof CreateSavedReportRequest>;
+export type AskInput = z.input<typeof AskRequest>;
+export type UpdateNotificationPrefsInput = z.input<typeof UpdateNotificationPrefsRequest>;
+export type CreateBackupInput = z.input<typeof CreateBackupRequest>;
+export type CreateTaxPackageInput = z.input<typeof CreateTaxPackageRequest>;
+export type SaveBackupScheduleInput = z.input<typeof SaveBackupScheduleRequest>;
+export type ConfirmRestoreInput = z.input<typeof ConfirmRestoreRequest>;
+export type RequestDeletionInput = z.input<typeof RequestDeletionRequest>;
 export type CreatePropertyInput = z.input<typeof CreatePropertyRequest>;
 export type UpdatePropertyInput = z.input<typeof UpdatePropertyRequest>;
 export type CreateUnitInput = z.input<typeof CreateUnitRequest>;
@@ -425,6 +459,8 @@ export interface TransactionListOptions {
   memberId?: string;
   /** RNT-11: what's on one property. */
   propertyId?: string;
+  /** RPT-05: `coffee >20 tag:travel`. */
+  q?: string;
   categoryIds?: string[];
   accountIds?: string[];
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
@@ -503,6 +539,12 @@ const query = (params: Record<string, string | number | undefined>): string => {
 
 /** ETag value for optimistic concurrency on a transaction (docs/design/05 §1). */
 export const versionTag = (version: string | number | bigint): string => `"v${version}"`;
+
+/** Lists travel as comma-separated text in a report's query. */
+function reportQuery<T extends ReportFiltersInput>(f: T) {
+  const list = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(',') : v);
+  return { ...f, accountIds: list(f.accountIds), categoryIds: list(f.categoryIds), tags: list(f.tags) };
+}
 
 export class ApiClient {
   private readonly baseUrl: string;
@@ -1384,6 +1426,138 @@ export class ApiClient {
     return this.requestFile(this.ws(workspaceId, `/exports/schedule-e${query(opts)}`));
   }
 
+  // ----- Reports, search and asking (RPT-01..06) ------------------------------------------------------------
+  getReport(workspaceId: string, type: ReportType, filters: ReportFiltersInput = {}) {
+    return this.request<ReportDto>(
+      'GET',
+      this.ws(workspaceId, `/reports/catalog/${enc(type)}${query(reportQuery(filters))}`),
+    );
+  }
+  downloadReport(
+    workspaceId: string,
+    type: ReportType,
+    opts: ReportFiltersInput & { format: ReportExportFormat },
+  ) {
+    return this.requestFile(
+      this.ws(workspaceId, `/reports/catalog/${enc(type)}/export${query(reportQuery(opts))}`),
+    );
+  }
+  listSavedReports(workspaceId: string) {
+    return this.request<{ data: SavedReportDto[] }>('GET', this.ws(workspaceId, '/saved-reports')).then(
+      (r) => r.data,
+    );
+  }
+  createSavedReport(workspaceId: string, input: CreateSavedReportInput) {
+    return this.request<SavedReportDto>('POST', this.ws(workspaceId, '/saved-reports'), input);
+  }
+  deleteSavedReport(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/saved-reports/${enc(id)}`));
+  }
+  search(workspaceId: string, q: string) {
+    return this.request<SearchResultsDto>('GET', this.ws(workspaceId, `/search${query({ q })}`));
+  }
+  ask(workspaceId: string, input: AskInput) {
+    return this.request<AskAnswerDto>('POST', this.ws(workspaceId, '/ask'), input);
+  }
+
+  // ----- Notifications (NOT-01..03) ----------------------------------------------------------------------------
+  listNotifications(workspaceId: string, opts: { limit?: number; unread?: boolean } = {}) {
+    return this.request<NotificationListDto>(
+      'GET',
+      this.ws(
+        workspaceId,
+        `/notifications${query({ limit: opts.limit, unread: opts.unread ? 'true' : undefined })}`,
+      ),
+    );
+  }
+  notificationsUnread(workspaceId: string) {
+    return this.request<{ unread: number }>('GET', this.ws(workspaceId, '/notifications/unread-count')).then(
+      (r) => r.unread,
+    );
+  }
+  markNotificationRead(workspaceId: string, id: string) {
+    return this.request<void>('POST', this.ws(workspaceId, `/notifications/${enc(id)}/read`));
+  }
+  markAllNotificationsRead(workspaceId: string) {
+    return this.request<void>('POST', this.ws(workspaceId, '/notifications/read-all'));
+  }
+  getNotificationPrefs() {
+    return this.request<NotificationPrefsDto>('GET', '/v1/me/notification-prefs');
+  }
+  updateNotificationPrefs(input: UpdateNotificationPrefsInput) {
+    return this.request<NotificationPrefsDto>('PATCH', '/v1/me/notification-prefs', input);
+  }
+
+  // ----- Data ownership (NFR-06, BAK-04..09, AUTH-12) -------------------------------------------------------------
+  listBackups(workspaceId: string) {
+    return this.request<{ data: ExportJobDto[] }>('GET', this.ws(workspaceId, '/backups')).then(
+      (r) => r.data,
+    );
+  }
+  createBackup(workspaceId: string, input: CreateBackupInput) {
+    return this.request<ExportJobDto>('POST', this.ws(workspaceId, '/backups'), input);
+  }
+  createTaxPackage(workspaceId: string, input: CreateTaxPackageInput) {
+    return this.request<ExportJobDto>('POST', this.ws(workspaceId, '/tax-package'), input);
+  }
+  getBackup(workspaceId: string, id: string) {
+    return this.request<ExportJobDto>('GET', this.ws(workspaceId, `/backups/${enc(id)}`));
+  }
+  downloadBackup(workspaceId: string, id: string) {
+    return this.requestFile(this.ws(workspaceId, `/backups/${enc(id)}/download`));
+  }
+  backupDownloadPath(workspaceId: string, id: string) {
+    return this.baseUrl + this.ws(workspaceId, `/backups/${enc(id)}/download`);
+  }
+  getBackupSchedule(workspaceId: string) {
+    return this.request<{ schedule: BackupScheduleDto | null }>(
+      'GET',
+      this.ws(workspaceId, '/backup-schedule'),
+    ).then((r) => r.schedule);
+  }
+  saveBackupSchedule(workspaceId: string, input: SaveBackupScheduleInput) {
+    return this.request<BackupScheduleDto>('PUT', this.ws(workspaceId, '/backup-schedule'), input);
+  }
+  deleteBackupSchedule(workspaceId: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, '/backup-schedule'));
+  }
+  listTrash(workspaceId: string) {
+    return this.request<{ data: TrashItemDto[] }>('GET', this.ws(workspaceId, '/trash')).then((r) => r.data);
+  }
+  restoreFromTrash(workspaceId: string, kind: TrashItemDto['kind'], id: string) {
+    return this.request<void>('POST', this.ws(workspaceId, `/trash/${enc(kind)}/${enc(id)}/restore`));
+  }
+  getStorageUsage(workspaceId: string) {
+    return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
+  }
+  listRestores() {
+    return this.request<{ data: RestoreJobDto[] }>('GET', '/v1/me/restores').then((r) => r.data);
+  }
+  uploadRestore(file: Blob, fileName: string, password?: string) {
+    const form = new FormData();
+    if (password) form.append('password', password);
+    form.append('file', file, fileName);
+    return this.request<RestoreJobDto>('POST', '/v1/me/restores', form);
+  }
+  getRestore(id: string, workspaceId?: string) {
+    return this.request<RestoreJobDto>('GET', `/v1/me/restores/${enc(id)}${query({ workspaceId })}`);
+  }
+  confirmRestore(id: string, input: ConfirmRestoreInput) {
+    return this.request<RestoreJobDto>('POST', `/v1/me/restores/${enc(id)}/confirm`, input);
+  }
+  getSecurityActivity() {
+    return this.request<{ data: SecurityEventDto[] }>('GET', '/v1/me/security-activity').then((r) => r.data);
+  }
+  getDeletionStatus() {
+    return this.request<DeletionStatusDto>('GET', '/v1/me/deletion');
+  }
+  requestDeletion(input: RequestDeletionInput) {
+    return this.request<DeletionStatusDto>('POST', '/v1/me/deletion', input);
+  }
+  cancelDeletion() {
+    return this.request<DeletionStatusDto>('DELETE', '/v1/me/deletion');
+  }
+
   // ----- Employers and payslips (PAY-01..09), reports by member (FAM-08, RPT-01) ---------------------------
   listEmployers(workspaceId: string, opts: { memberId?: string } = {}) {
     return this.request<{ data: EmployerDto[] }>(
@@ -1697,6 +1871,22 @@ function toApiError(status: number, body: unknown): ApiError {
 }
 
 export type {
+  AskAnswerDto,
+  BackupScheduleDto,
+  DeletionStatusDto,
+  ExportJobDto,
+  NotificationDto,
+  NotificationListDto,
+  NotificationPrefsDto,
+  ReportDto,
+  ReportExportFormat,
+  ReportType,
+  RestoreJobDto,
+  SavedReportDto,
+  SearchResultsDto,
+  SecurityEventDto,
+  StorageUsageDto,
+  TrashItemDto,
   AllocationRuleDto,
   AmortizationRowDto,
   ArrearsDto,

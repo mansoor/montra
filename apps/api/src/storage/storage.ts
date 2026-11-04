@@ -1,14 +1,21 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, posix, relative, resolve } from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import type { Readable } from 'node:stream';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { CONFIG, type AppConfig } from '../config.js';
 
 /** Object storage for uploaded files (design 02 §8): S3 in production, MinIO locally, the filesystem in tests. */
 export interface StoragePort {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
   get(key: string): Promise<Uint8Array>;
+  /** Archives can be larger than memory (ADR-0019). */
+  putFile(key: string, path: string, contentType: string): Promise<void>;
+  getStream(key: string): Promise<Readable>;
+  /** Fine if it's already gone. */
+  delete(key: string): Promise<void>;
 }
 export const STORAGE_PORT = Symbol('STORAGE_PORT');
 
@@ -57,6 +64,20 @@ export class LocalStorage implements StoragePort {
   async get(key: string): Promise<Uint8Array> {
     return new Uint8Array(await readFile(this.path(key)));
   }
+
+  async putFile(key: string, path: string): Promise<void> {
+    const p = this.path(key);
+    await mkdir(dirname(p), { recursive: true });
+    await copyFile(path, p);
+  }
+
+  async getStream(key: string): Promise<Readable> {
+    return createReadStream(this.path(key));
+  }
+
+  async delete(key: string): Promise<void> {
+    await rm(this.path(key), { force: true });
+  }
 }
 
 @Injectable()
@@ -91,6 +112,32 @@ export class S3Storage implements StoragePort {
     assertSafeKey(key);
     const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     return new Uint8Array(await res.Body!.transformToByteArray());
+  }
+
+  async putFile(key: string, path: string, contentType: string): Promise<void> {
+    assertSafeKey(key);
+    const { size } = await stat(path);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: createReadStream(path),
+        ContentLength: size,
+        ContentType: contentType,
+        ServerSideEncryption: 'AES256',
+      }),
+    );
+  }
+
+  async getStream(key: string): Promise<Readable> {
+    assertSafeKey(key);
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    return res.Body as Readable;
+  }
+
+  async delete(key: string): Promise<void> {
+    assertSafeKey(key);
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }
 

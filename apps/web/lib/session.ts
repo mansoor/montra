@@ -61,5 +61,6 @@ export function stepUpHref(code: string, returnTo: string): string | null {
   if (code === 'mfa.required') return `/sign-in?aal=aal2&return_to=${back}`;
   if (code === 'reauth.required') return `/sign-in?refresh=true&return_to=${back}`;
   if (code === 'email.unverified') return '/auth/verification';
+  if (code === 'account.deleting') return '/account-deleting';
   return null;
 }

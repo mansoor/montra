@@ -846,3 +846,84 @@ describe('flag_capital (RNT-09)', () => {
     expect(res).toMatchObject({ ok: false, reason: 'off' });
   });
 });
+
+describe('answer_question (RPT-06)', () => {
+  const input = {
+    question: 'How much did I spend on Dining out in Q3 vs Q2?',
+    categories: ['Dining out', 'Groceries'],
+    today: '2026-11-04',
+  };
+
+  it('turns a question into a plan with no numbers', async () => {
+    const res = await createGateway().answerQuestion(input, ctxOf(new MemoryStore()));
+    expect(res.ok && res.value).toEqual({
+      understood: true,
+      metric: 'spending',
+      categories: ['Dining out'],
+      payee: null,
+      periods: [
+        { label: 'Q2', from: '2026-04-01', to: '2026-06-30' },
+        { label: 'Q3', from: '2026-07-01', to: '2026-09-30' },
+      ],
+    });
+  });
+
+  it('keeps only offered categories, real dates, and at most six periods', async () => {
+    const fake = new Scripted('fake', () => ({
+      ok: true as const,
+      json: {
+        understood: true,
+        metric: 'spending',
+        categories: ['dining OUT', 'Made up'],
+        payee: null,
+        periods: [
+          { label: 'bad', from: 'soon', to: 'later' },
+          { label: 'backwards', from: '2026-05-01', to: '2026-04-01' },
+          { label: 'future', from: '2030-01-01', to: '2030-02-01' },
+          ...Array.from({ length: 8 }, (_, i) => ({ label: `m${i}`, from: '2026-01-01', to: '2026-01-31' })),
+        ],
+      },
+      usage,
+      model: 'fake',
+    }));
+    const res = await createGateway({ adapterFactory: () => fake }).answerQuestion(
+      input,
+      ctxOf(new MemoryStore()),
+    );
+    expect(res.ok && res.value.categories).toEqual(['Dining out']);
+    expect(res.ok && res.value.periods.map((p) => p.label)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4', 'm5']);
+  });
+
+  it('says it did not understand rather than guessing', async () => {
+    const res = await createGateway().answerQuestion(
+      { ...input, question: 'Should I buy a boat?' },
+      ctxOf(new MemoryStore()),
+    );
+    expect(res.ok && res.value).toMatchObject({ understood: false, periods: [] });
+  });
+
+  it('sends the masked question and category names, and no amounts', async () => {
+    let sent: unknown;
+    const fake = new Scripted('fake', (req) => {
+      sent = req.input;
+      return {
+        ok: true as const,
+        json: { understood: false, metric: null, categories: [], payee: null, periods: [] },
+        usage,
+        model: 'fake',
+      };
+    });
+    await createGateway({ adapterFactory: () => fake }).answerQuestion(
+      { ...input, question: 'How much on card 4111222233334444?' },
+      ctxOf(new MemoryStore()),
+    );
+    expect(JSON.stringify(sent)).not.toContain('4111222233334444');
+    const parsed = typeof sent === 'string' ? JSON.parse(sent) : (sent as object);
+    expect(Object.keys(parsed).sort()).toEqual(['categories', 'question', 'today']);
+  });
+
+  it('does nothing when AI is off', async () => {
+    const res = await createGateway().answerQuestion(input, ctxOf(new MemoryStore(), { mode: 'off' }));
+    expect(res).toMatchObject({ ok: false, reason: 'off' });
+  });
+});

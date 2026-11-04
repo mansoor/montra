@@ -127,7 +127,10 @@ const UNVERIFIED_WRITE_ALLOWLIST = [/^\/v1\/me(\/|$)/];
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(@Inject(AUTH_PORT) private readonly auth: AuthPort) {}
+  constructor(
+    @Inject(AUTH_PORT) private readonly auth: AuthPort,
+    @Inject(Db) private readonly db: Db,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<ContextRequest>();
@@ -140,8 +143,25 @@ export class AuthGuard implements CanActivate {
     ) {
       throw new AppError(403, 'email.unverified', 'Verify your email address before adding financial data');
     }
+    // The way back stays open, and so does reading their own profile: the page that explains this needs their language.
+    const stillOpen =
+      /\/v1\/me\/deletion(\?|$)/.test(req.url) || (req.method === 'GET' && /\/v1\/me(\?|$)/.test(req.url));
+    if (!stillOpen && (await this.isDeleting(user.id))) {
+      throw new AppError(
+        403,
+        'account.deleting',
+        'This account is being deleted. You can cancel that for 30 days.',
+      );
+    }
     req.montra = { user };
     return true;
+  }
+
+  private async isDeleting(userId: string): Promise<boolean> {
+    const row = await this.db.run({ userId }, (trx) =>
+      trx.selectFrom('app.app_user').select('deleted_at').where('id', '=', userId).executeTakeFirst(),
+    );
+    return Boolean(row?.deleted_at);
   }
 }
 
@@ -166,6 +186,16 @@ export class WorkspaceGuard implements CanActivate {
         .where('workspace_id', '=', workspaceId)
         .where('user_id', '=', ctx.user.id)
         .where('status', '=', 'active')
+        // Being deleted (BAK-09): closed to everyone for its last 30 days.
+        .where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('app.workspace as w')
+              .select('w.id')
+              .whereRef('w.id', '=', 'app.workspace_member.workspace_id')
+              .where('w.deleted_at', 'is', null),
+          ),
+        )
         .executeTakeFirst(),
     );
     // Same response whether the workspace exists or not.
