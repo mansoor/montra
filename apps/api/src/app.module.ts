@@ -1,5 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { CONFIG, loadConfig, type AppConfig } from './config.js';
 import { Db } from './db/database.js';
 import { AUTH_PORT, AuthGuard, DevAuthAdapter, WorkspaceGuard } from './auth/auth.js';
@@ -17,7 +17,23 @@ import { AccountsController } from './accounts/accounts.controller.js';
 import { TransactionsService } from './transactions/transactions.service.js';
 import { TransactionsController } from './transactions/transactions.controller.js';
 import { HealthController } from './health/health.controller.js';
-import { FieldCrypto, KMS_PORT, LocalKms } from './crypto/crypto.service.js';
+import { AwsKms, FieldCrypto, KMS_PORT, LocalKms } from './crypto/crypto.service.js';
+import { AdminService } from './ops/admin.service.js';
+import { billingProvider } from './ops/billing.port.js';
+import { BillingService } from './ops/billing.service.js';
+import { errorReporterProvider } from './ops/errors.js';
+import { AppVersionInterceptor, MetricsService } from './ops/metrics.js';
+import {
+  AdminController,
+  BillingWebhookController,
+  MetricsController,
+  StatusController,
+  SupportController,
+  WorkspaceOpsController,
+} from './ops/ops.controller.js';
+import { OpsJobs } from './ops/ops-jobs.js';
+import { AdminDb, StaffGuard, SupportDb } from './ops/staff.js';
+import { StatusService, SupportService } from './ops/support.service.js';
 import { TransactionPoster } from './transactions/poster.js';
 import { EntitiesController, FamilyMembersController, MeController } from './settings/settings.controller.js';
 import { JournalsController } from './journals/journals.controller.js';
@@ -128,6 +144,12 @@ export class AppModule {
       PayslipsController,
       BusinessController,
       RentalsController,
+      WorkspaceOpsController,
+      SupportController,
+      StatusController,
+      BillingWebhookController,
+      MetricsController,
+      AdminController,
       ReportsController,
       NotificationsController,
       DataController,
@@ -153,8 +175,20 @@ export class AppModule {
         TransactionsService,
         TransactionPoster,
         RecurringService,
-        // Production binds the AWS KMS adapter here.
-        { provide: KMS_PORT, useClass: LocalKms },
+        { provide: KMS_PORT, useClass: config.KMS_MODE === 'aws' ? AwsKms : LocalKms },
+        errorReporterProvider(config),
+        billingProvider(config),
+        BillingService,
+        AdminDb,
+        SupportDb,
+        StaffGuard,
+        AdminService,
+        SupportService,
+        StatusService,
+        MetricsService,
+        OpsJobs,
+        AppVersionInterceptor,
+        { provide: APP_INTERCEPTOR, useExisting: AppVersionInterceptor },
         FieldCrypto,
         ...(opts.worker ? [] : [RealtimeService]),
         mailProvider(config),

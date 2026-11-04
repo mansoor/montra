@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Trx } from '@montra/db';
+import { DecryptCommand, EncryptCommand, KMSClient } from '@aws-sdk/client-kms';
 import { CONFIG, type AppConfig } from '../config.js';
 
 /** Wraps and unwraps data keys (envelope encryption, design 03 §12). Production uses AWS KMS. */
@@ -50,6 +51,34 @@ export class LocalKms implements KmsPort {
 
   async unwrap(wrapped: Buffer): Promise<Buffer> {
     return open(this.master, wrapped, Buffer.from('montra:dek'));
+  }
+}
+
+/** AWS KMS (NFR-01): the master key never leaves KMS, and data keys are wrapped and unwrapped there. */
+@Injectable()
+export class AwsKms implements KmsPort {
+  private readonly client: Pick<KMSClient, 'send'>;
+  private readonly keyId: string;
+
+  constructor(@Inject(CONFIG) config: AppConfig) {
+    this.keyId = config.AWS_KMS_KEY_ID ?? '';
+    this.client = new KMSClient({ region: config.S3_REGION });
+  }
+
+  private static readonly CONTEXT = { purpose: 'montra:dek' };
+
+  async wrap(dataKey: Buffer): Promise<Buffer> {
+    const out = await this.client.send(
+      new EncryptCommand({ KeyId: this.keyId, Plaintext: dataKey, EncryptionContext: AwsKms.CONTEXT }),
+    );
+    return Buffer.from(out.CiphertextBlob as Uint8Array);
+  }
+
+  async unwrap(wrapped: Buffer): Promise<Buffer> {
+    const out = await this.client.send(
+      new DecryptCommand({ CiphertextBlob: wrapped, KeyId: this.keyId, EncryptionContext: AwsKms.CONTEXT }),
+    );
+    return Buffer.from(out.Plaintext as Uint8Array);
   }
 }
 

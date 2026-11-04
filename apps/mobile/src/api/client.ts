@@ -22,6 +22,8 @@ import type {
   BillDto,
   AccountDto,
   ArrearsDto,
+  BillingDto,
+  StatusDto,
   CreateBackupRequest,
   DeletionStatusDto,
   ExportJobDto,
@@ -94,6 +96,9 @@ export interface ApiOptions {
   baseUrl: string;
   token: () => Promise<string | null>;
   fetch?: typeof fetch;
+  /** OPS-04: sent with every request, so the server can turn away a version too old to be safe. */
+  app?: { version: string; platform: string };
+  onUpdateRequired?: () => void;
 }
 
 /** A file picked from Files, the share sheet or the camera (React Native's FormData file shape). */
@@ -118,6 +123,10 @@ export function createApi(opts: ApiOptions) {
     const token = await opts.token();
     const headers: Record<string, string> = { accept: 'application/json' };
     if (token) headers.authorization = `Bearer ${token}`;
+    if (opts.app) {
+      headers['x-app-version'] = opts.app.version;
+      headers['x-app-platform'] = opts.app.platform;
+    }
     if (body !== undefined) headers['content-type'] = 'application/json';
     let res: Response;
     try {
@@ -133,6 +142,7 @@ export function createApi(opts: ApiOptions) {
     const text = await res.text();
     const json = text ? (JSON.parse(text) as unknown) : undefined;
     if (!res.ok) {
+      if (res.status === 426) opts.onUpdateRequired?.();
       const p = (json ?? {}) as { code?: string; title?: string; detail?: string };
       throw new ApiError(
         res.status,
@@ -273,6 +283,8 @@ export function createApi(opts: ApiOptions) {
       request<LeaseDto>('POST', `${ws(w)}/leases/${leaseId}/payments`, input),
 
     // ----- Notifications and your data (OPS-13): read live, nothing is kept on the device. ---------
+    status: () => request<StatusDto>('GET', '/v1/status'),
+    billing: (w: string) => request<BillingDto>('GET', `${ws(w)}/billing`),
     familyMembers: async (w: string) =>
       (await request<{ data: FamilyMemberDto[] }>('GET', `${ws(w)}/family-members`)).data,
     notifications: (w: string) => request<NotificationListDto>('GET', `${ws(w)}/notifications`),

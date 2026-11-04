@@ -118,7 +118,7 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
   await expect(p2.getByRole('heading', { name: 'You’ve been invited' })).toBeVisible();
   await p2.getByRole('button', { name: 'Accept invite' }).click();
   await expect(p2.getByRole('heading', { name: 'Net position' })).toBeVisible();
-  await expect(p2.getByLabel('Workspace')).toHaveText('Phase 1a household');
+  await expect(p2.getByTestId('workspace-name').first()).toHaveText('Phase 1a household');
   // A partner sees the Personal books only by default.
   await expect(p2.getByRole('link', { name: /Joint checking/ })).toBeVisible();
 

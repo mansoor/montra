@@ -6,7 +6,7 @@
   ],
   "NFR-12": [
     "partial",
-    "multi-tenant RLS and partition-ready keys; load test in P11"
+    "multi-tenant RLS and partition-ready keys; k6 scripts written, no load test at scale"
   ],
   "ACC-01": [
     "done",
@@ -150,7 +150,7 @@
   ],
   "AUTH-05": [
     "partial",
-    "30-minute code recovery, session revocation + cache eviction; email templates pending"
+    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change"
   ],
   "AUTH-06": [
     "done",
@@ -162,7 +162,7 @@
   ],
   "AUTH-08": [
     "partial",
-    "Kratos rate limits; new-device email alerts; CAPTCHA (Turnstile) at the edge in P11"
+    "Kratos rate limits, new-device alerts, and a Cloudflare challenge in Terraform, never applied"
   ],
   "AUTH-09": [
     "done",
@@ -174,7 +174,7 @@
   ],
   "NFR-01": [
     "partial",
-    "field encryption (AES-256-GCM, KMS port); AWS KMS adapter and TLS in P11"
+    "field encryption; AWS KMS adapter tested with a stubbed client; Postgres TLS worked locally with a test CA; TLS 1.2+ at the load balancer and encryption at rest in Terraform, never applied"
   ],
   "NFR-02": [
     "partial",
@@ -186,7 +186,7 @@
   ],
   "PLT-01": [
     "partial",
-    "responsive web app for all Phase 1 flows; WCAG audit in P11"
+    "responsive and passing an automated WCAG pass, with phone-width overflow checks on main screens. Not tested across browsers: only Chromium runs"
   ],
   "PLT-06": [
     "done",
@@ -206,7 +206,7 @@
   ],
   "OPS-06": [
     "partial",
-    "Renovate configured"
+    "Renovate, pnpm audit and Trivy in CI, and a patching runbook. A zod finding in the Expo CLI and Kratos v1.3.1’s findings are open"
   ],
   "TZ-06": [
     "done",
@@ -270,11 +270,11 @@
   ],
   "OPS-05": [
     "partial",
-    "versioned reference data loader (merchants); admin editor in P11"
+    "versioned loader, plus editing merchants and mileage rates in the console. Tax lines, import profiles and currencies are still by migration"
   ],
   "NFR-07": [
     "partial",
-    "dashboard p95 1.0 s on 50k transactions, measured in a browser locally, plus a CI budget on the API; import 5k rows parse ~0.2 s; k6 load sign-off in P11"
+    "dashboard p95 1.0 s on 50k transactions in a local browser, and a CI budget on the API. k6 scripts exist; a 5,000-row parse took 5.7 to 9.0 s locally, close to the 10 s limit. Not measured on real infrastructure"
   ],
   "AIA-01": [
     "partial",
@@ -386,7 +386,7 @@
   ],
   "OPS-07": [
     "partial",
-    "provider failover in the gateway; alerting/monitoring in P11"
+    "provider failover in the gateway, metrics, alert rules and CloudWatch alarms as files. Never run, and no on-call yet"
   ],
   "NFR-14": [
     "partial",
@@ -842,7 +842,7 @@
   ],
   "AUTH-12": [
     "partial",
-    "sign-ins from new devices, MFA and email changes, exports, restores and deletion, on web and phone. Password changes and session revocations aren't logged yet, and support access needs the Phase 11 tool"
+    "sign-ins from new devices, MFA and email changes, exports, restores, deletion and support access. Password changes and session revocations aren’t logged yet"
   ],
   "NFR-05": [
     "done",
@@ -866,18 +866,90 @@
   ],
   "BAK-08": [
     "partial",
-    "quota enforced in the database with a usage meter, 5 GB for everyone until plans exist in Phase 11. The phone compresses receipt photos; web uploads aren't compressed and there's no choice to keep an original"
+    "quota per plan, 5 or 50 GB, with a usage meter. The phone compresses receipt photos; web uploads aren’t compressed and there’s no choice to keep an original"
   ],
   "BAK-09": [
     "partial",
-    "purge job for deleted accounts, trash and retention dates. Ageing out of infrastructure backups within 35 days comes with Phase 11"
+    "purge job for deleted accounts, trash and retention dates. Ageing out of backups is in Terraform, and BAK-01’s 12-month snapshots conflict with it"
   ],
   "OPS-10": [
     "partial",
-    "transactional and notification mail separated, one-click unsubscribe. SPF, DKIM and DMARC come with the Phase 11 domains"
+    "separate streams and one-click unsubscribe. SPF, DKIM and DMARC are in Terraform, never applied"
   ],
   "OPS-13": [
     "partial",
     "every section on the web. The phone switches notification channels, backs up, shows security activity and deletes the account; profile, family, entities, currency, time zone, AI mode and quiet hours are read-only there"
+  ],
+  "UP-12": [
+    "partial",
+    "free personal books, Pro adds business and rental books and 50 GB, in entitlements. Prices are for you to set in Stripe; never run against real Stripe"
+  ],
+  "NFR-04": [
+    "partial",
+    "dependency and image scans in CI. The pen test and SOC 2 readiness are still to be arranged"
+  ],
+  "NFR-08": [
+    "partial",
+    "Written as Terraform that passes validate, never applied: Multi-AZ, 35-day recovery, daily backups, zero-downtime deploys. 99.9% can only be measured once running"
+  ],
+  "NFR-10": [
+    "partial",
+    "automated WCAG 2.2 AA pass over every main web screen in both themes, with what it found fixed. It catches about a third of what an audit would: no manual or screen reader audit yet, and nothing on phones"
+  ],
+  "NFR-11": [
+    "partial",
+    "help and a guided tour exist. Needs timing with real people in the beta"
+  ],
+  "NFR-13": [
+    "partial",
+    "Sentry port with scrubbing, metrics at /internal/metrics, import failures by bank and AI accuracy in the staff console, Grafana dashboards and alert rules as files. Never run against real Sentry or Grafana"
+  ],
+  "BAK-01": [
+    "partial",
+    "Written as Terraform that passes validate, never applied. Monthly snapshots kept 12 months conflict with BAK-09, for the owner to settle"
+  ],
+  "BAK-02": [
+    "partial",
+    "Written as Terraform that passes validate, never applied: KMS keys, second region and a separate account, Vault Lock"
+  ],
+  "BAK-03": [
+    "partial",
+    "Written as Terraform that passes validate, never applied: versioning, replication, 30-day recovery. Uploads now use the bucket’s KMS default"
+  ],
+  "BAK-07": [
+    "partial",
+    "runbook and scripts, and a local drill with a small database. No drill on real infrastructure, so RPO and RTO are unmeasured. Across regions the RPO is up to 24 hours"
+  ],
+  "OPS-01": [
+    "done",
+    "staff console on its own database role: account lookup, plans, flags, import failures. A test fails if the role can read anything else. Real staff SSO is not in place: staff sign in like everyone, with a second factor"
+  ],
+  "OPS-02": [
+    "done",
+    "granted by the owner from Settings, 72 hours by default, always read-only, logged to the owner’s security log and the staff log, on its own role in a read-only transaction"
+  ],
+  "OPS-03": [
+    "partial",
+    "notices with the 48-hour rule, a banner in the app and on the phone, a status page, a migration check, blue/green in Terraform. Never deployed; the status page runs on the same stack, so a separate host is still needed"
+  ],
+  "OPS-04": [
+    "done",
+    "scripts/check-migrations.mjs in verify, and a 426 with an update screen below the minimum version"
+  ],
+  "OPS-08": [
+    "partial",
+    "Stripe checkout, portal, 14-day trial, 14-day grace, data stays usable after a lapse, tested with a stubbed network. Store billing isn’t built, so the phone doesn’t sell plans"
+  ],
+  "OPS-09": [
+    "partial",
+    "help center, an on-request tour, contact with screenshot and logs on the web. On the phone, help opens in the browser and there’s no contact form"
+  ],
+  "OPS-11": [
+    "partial",
+    "terms, privacy, cookies and subprocessor pages, marked as drafts. They need a lawyer, and DPAs with each AI and OCR provider need signing"
+  ],
+  "OPS-12": [
+    "partial",
+    "disaster recovery and incident response runbooks, never exercised"
   ]
 }

@@ -1,0 +1,77 @@
+name: Security
+
+on:
+  pull_request:
+  schedule:
+    - cron: '0 5 * * 1' # Weekly, Mondays at 05:00 UTC (OPS-06)
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.69.3
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: pnpm audit
+        run: pnpm audit --audit-level=high
+
+  trivy-filesystem:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan dependencies, secrets and misconfiguration
+        run: |
+          docker run --rm -v "$PWD":/src -w /src "$TRIVY_IMAGE" filesystem \
+            --scanners vuln,secret,misconfig \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --skip-dirs node_modules \
+            .
+
+  trivy-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dockerfile: apps/api/Dockerfile
+            context: .
+          - name: web
+            dockerfile: apps/web/Dockerfile
+            context: .
+          - name: doc-worker
+            dockerfile: apps/doc-worker/Dockerfile
+            context: .
+          - name: kratos
+            dockerfile: infra/kratos/Dockerfile
+            context: infra/kratos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -f ${{ matrix.dockerfile }} -t montra/${{ matrix.name }}:scan ${{ matrix.context }}
+      - name: Scan
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            montra/${{ matrix.name }}:scan

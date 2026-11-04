@@ -1,0 +1,127 @@
+# promtool test rules alerts.test.yml. Synthetic series only.
+rule_files:
+  - ../rules/recording.yml
+  - ../rules/alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: A full outage pages on the fast burn rate
+    interval: 1m
+    input_series:
+      - series: 'montra_http_requests_total{method="GET",route="/readyz",status="200"}'
+        values: '0+100x10 1000x120'
+      - series: 'montra_http_requests_total{method="GET",route="/readyz",status="503"}'
+        values: '0x10 0+100x120'
+    alert_rule_test:
+      - alertname: ApiAvailabilityBurnFast
+        eval_time: 5m
+        exp_alerts: []
+      - alertname: ApiAvailabilityBurnFast
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: API error budget burning fast
+              description: '5xx share is 100% over 5 minutes, and the 1-hour rate agrees.'
+              runbook: docs/runbooks/incident-response.md
+
+  - name: Healthy traffic does not alert
+    interval: 1m
+    input_series:
+      - series: 'montra_http_requests_total{method="GET",route="/readyz",status="200"}'
+        values: '0+1000x120'
+      - series: 'montra_http_requests_total{method="GET",route="/readyz",status="500"}'
+        values: '0+0x120'
+    alert_rule_test:
+      - alertname: ApiAvailabilityBurnFast
+        eval_time: 2h
+        exp_alerts: []
+      - alertname: ApiAvailabilityBurnSlow
+        eval_time: 2h
+        exp_alerts: []
+
+  - name: A single reconciliation failure pages at once
+    interval: 1m
+    input_series:
+      - series: 'montra_reconciliation_failures{instance="a"}'
+        values: '0 0 1 1'
+    alert_rule_test:
+      - alertname: ReconciliationFailures
+        eval_time: 1m
+        exp_alerts: []
+      - alertname: ReconciliationFailures
+        eval_time: 3m
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: Ledger reconciliation found failures
+              description: '1 failures. This should never happen. Treat as Sev-1 until shown otherwise.'
+              runbook: docs/runbooks/incident-response.md
+
+  - name: Queue lag crosses the SLO and then the page threshold
+    interval: 1m
+    input_series:
+      - series: 'montra_job_queue_lag_seconds{queue="import"}'
+        values: '5x20 600x20'
+    alert_rule_test:
+      - alertname: QueueLagCritical
+        eval_time: 15m
+        exp_alerts: []
+      - alertname: QueueLagCritical
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              queue: import
+            exp_annotations:
+              summary: Queue import is backing up
+              description: Lag is 10m 0s. Check the worker tasks and autoscaling.
+              runbook: docs/runbooks/incident-response.md
+
+  - name: AI error rate counts provider errors and invalid output, but not budget stops
+    interval: 1m
+    input_series:
+      - series: 'montra_ai_calls_total{provider="anthropic",task="categorize",outcome="ok"}'
+        values: '0+90x120'
+      - series: 'montra_ai_calls_total{provider="anthropic",task="categorize",outcome="provider_error"}'
+        values: '0+10x120'
+      - series: 'montra_ai_calls_total{provider="anthropic",task="categorize",outcome="budget"}'
+        values: '0+500x120'
+    promql_expr_test:
+      - expr: round(montra:ai_error:ratio_rate1h, 0.001)
+        eval_time: 2h
+        exp_samples:
+          - labels: '{}'
+            value: 0.1
+    alert_rule_test:
+      - alertname: AiErrorRateHigh
+        eval_time: 2h
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: AI task error rate above 2%
+              description: Error rate is 10% over the last hour.
+
+  - name: Dashboard p95 reads only dashboard routes
+    interval: 1m
+    input_series:
+      - series: 'montra_http_request_duration_seconds_bucket{method="GET",route="/v1/workspaces/:workspaceId/dashboard",status="200",le="1"}'
+        values: '0+100x30'
+      - series: 'montra_http_request_duration_seconds_bucket{method="GET",route="/v1/workspaces/:workspaceId/dashboard",status="200",le="2"}'
+        values: '0+100x30'
+      - series: 'montra_http_request_duration_seconds_bucket{method="GET",route="/v1/workspaces/:workspaceId/dashboard",status="200",le="+Inf"}'
+        values: '0+100x30'
+      - series: 'montra_http_request_duration_seconds_bucket{method="POST",route="/v1/workspaces/:workspaceId/imports",status="202",le="1"}'
+        values: '0+0x30'
+      - series: 'montra_http_request_duration_seconds_bucket{method="POST",route="/v1/workspaces/:workspaceId/imports",status="202",le="2"}'
+        values: '0+0x30'
+      - series: 'montra_http_request_duration_seconds_bucket{method="POST",route="/v1/workspaces/:workspaceId/imports",status="202",le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - alertname: DashboardLatencyHigh
+        eval_time: 30m
+        exp_alerts: []

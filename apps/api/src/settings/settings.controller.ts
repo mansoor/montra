@@ -12,6 +12,7 @@ import {
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { Db } from '../db/database.js';
+import { BillingService } from '../ops/billing.service.js';
 import { notFound } from '../common/errors.js';
 import { requireRole } from '../common/roles.js';
 import { parse } from '../common/zod.js';
@@ -71,6 +72,7 @@ export class EntitiesController {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(WorkspacesService) private readonly workspaces: WorkspacesService,
+    @Inject(BillingService) private readonly billing: BillingService,
   ) {}
 
   @Post()
@@ -78,6 +80,7 @@ export class EntitiesController {
     requireRole(ctx, 'owner');
     const req = parse(CreateEntityRequest, body);
     const id = await this.db.run(dbCtx(ctx), async (trx) => {
+      await this.billing.assertCanAddEntity(trx, ctx.workspaceId!, req.type);
       const ws = await trx
         .selectFrom('app.workspace')
         .select('base_currency')

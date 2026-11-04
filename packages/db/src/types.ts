@@ -1174,6 +1174,94 @@ export interface NotificationPrefTable {
   updated_at: Generated<Date>;
 }
 
+// Phase 11: running the service (migration 0021, ADR-0020).
+
+export interface SubscriptionTable {
+  workspace_id: string;
+  plan: Generated<string>;
+  status: Generated<string>;
+  provider: string | null;
+  customer_ref: string | null;
+  subscription_ref: string | null;
+  billing_interval: string | null;
+  trial_end: Date | null;
+  current_period_end: Date | null;
+  grace_until: Date | null;
+  cancel_at_period_end: Generated<boolean>;
+  updated_at: Generated<Date>;
+}
+
+export interface FeatureFlagTable {
+  key: string;
+  enabled: Generated<boolean>;
+  rollout: Generated<number>;
+  note: Generated<string>;
+  updated_at: Generated<Date>;
+}
+
+export interface FeatureFlagOverrideTable {
+  key: string;
+  workspace_id: string;
+  enabled: boolean;
+}
+
+export interface SystemNoticeTable {
+  id: Generated<string>;
+  kind: string;
+  title: string;
+  body: Generated<string>;
+  show_from: Generated<Date>;
+  starts_at: Date | null;
+  ends_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface SystemSettingTable {
+  key: string;
+  value: string;
+  updated_at: Generated<Date>;
+}
+
+export interface SupportGrantTable {
+  workspace_id: string;
+  id: Generated<string>;
+  granted_by: string;
+  reason: Generated<string>;
+  expires_at: Date;
+  revoked_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface SupportRequestTable {
+  id: Generated<string>;
+  user_id: string;
+  workspace_id: string | null;
+  kind: string;
+  subject: string;
+  body: string;
+  context: Json<Record<string, unknown>>;
+  screenshot: Buffer | null;
+  status: Generated<string>;
+  created_at: Generated<Date>;
+}
+
+export interface AdminLogTable {
+  id: Generated<string>;
+  staff_id: string;
+  action: string;
+  subject: string | null;
+  detail: Json<Record<string, unknown>>;
+  at: Generated<Date>;
+}
+
+export interface ReconciliationRunTable {
+  id: Generated<string>;
+  finished_at: Generated<Date>;
+  unbalanced_entries: number;
+  read_model_gaps: number;
+  sample: Json<unknown[]>;
+}
+
 export interface SecurityEventTable {
   id: Generated<string>;
   user_id: string;
@@ -1326,6 +1414,15 @@ export interface Database {
   'app.export_job': ExportJobTable;
   'app.backup_schedule': BackupScheduleTable;
   'app.restore_job': RestoreJobTable;
+  'app.subscription': SubscriptionTable;
+  'app.feature_flag': FeatureFlagTable;
+  'app.feature_flag_override': FeatureFlagOverrideTable;
+  'app.system_notice': SystemNoticeTable;
+  'app.system_setting': SystemSettingTable;
+  'app.support_grant': SupportGrantTable;
+  'app.support_request': SupportRequestTable;
+  'app.admin_log': AdminLogTable;
+  'app.reconciliation_run': ReconciliationRunTable;
   'ref.tax_line': TaxLineTable;
   'ref.mileage_rate': MileageRateTable;
 }

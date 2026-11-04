@@ -67,6 +67,7 @@ const config: ExpoConfig = {
   extra: {
     apiUrl: process.env.MONTRA_API_URL ?? 'http://localhost:4000',
     kratosUrl: process.env.MONTRA_KRATOS_URL ?? null,
+    webUrl: process.env.MONTRA_WEB_URL ?? 'http://localhost:3000',
     authMode: process.env.MONTRA_AUTH_MODE ?? 'dev',
     minIos: '17.0',
     minAndroidSdk: 30,

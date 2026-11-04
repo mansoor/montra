@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-04, at the end of Phase 10 (on `claude/phase10-contracts`, PR open). Keep this file current:
+_Last updated 2026-11-04, with Phase 11 code complete (on `claude/phase11-contracts`, PR open). Launch steps remain. Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -13,29 +13,29 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–9 merged. Last merge was PR #16 at `e2a97e0` |
+| **Integration branch** | `develop`: Phases 0–10 merged. Last merge was PR #17 at `4d5e62c` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
-| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 |
+| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10 |
 | **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements** | 252 IDs in total: **179 done, 41 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge the Phase 10 PR, tag `v0.11.0-dev.1`, then **Phase 11: hardening and launch** |
+| **Requirements** | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Next** | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready |
 
-### Test suite at the end of Phase 10 (green locally)
+### Test suite at the end of Phase 11 (green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 357, plus 4 perf budgets run alone |
+| `@montra/api` (integration, real Postgres) | 412, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 117 |
+| `@montra/web` unit | 123 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
-| `@montra/domain` | 181 |
+| `@montra/domain` | 194 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
 | `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 73 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals, your data) | 63 |
-| `@montra/db` (ledger triggers, RLS, read models, receipts) | 38 |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals, your data) | 64 |
+| `@montra/db` (ledger triggers, RLS, staff roles, read models, receipts) | 43 |
 | `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 20 tests in 13 spec files |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 29 tests in 15 spec files |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
@@ -66,7 +66,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 8 | Small business | ✅ done (device checks pending) | Invoices, bills, mileage, Schedule C, estimated tax, accountant export; see §7c |
 | 9 | Rental properties | ✅ done (device checks pending) | Leases, rent roll, deposits, mortgages, Schedule E, depreciation, metrics; see §7d |
 | 10 | Reports, search, notifications, data ownership | ✅ done (device checks pending) | Report catalogue, search, ask, notifications, backup and restore, trash, account deletion; see §7e |
-| **11** | **Hardening and launch** | ⏭ **next** | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
+| **11** | **Hardening and launch** | 🟡 **code complete, not launched** | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
 
 Scope, deliverables and exit criteria for each phase are in `docs/design/01-phased-plan.md`.
 
@@ -696,6 +696,70 @@ Phase 10 leftovers, not blocking:
 - Search reads the latest 5,000 notes, and leaves receipts out when the query has an amount or a tag.
 - Line chart points reach their transactions through the table beneath, not by clicking the line.
 - A notification on the phone doesn't deep-link to what it's about, and tapping a push opens the app rather than the item.
+
+---
+
+## 7f. Phase 11, hardening and launch (code complete, not launched)
+
+Branch `claude/phase11-contracts`. The design is ADR-0020. **Nothing has been deployed**, and `validate` is as far as the Terraform has been.
+
+| Step | State | What |
+| --- | --- | --- |
+| 1. Contracts | ✅ | Migration 0021, DTOs, entitlements and version checks in `@montra/domain` |
+| 2. API | ✅ | `apps/api/src/ops/`: billing, staff console, support access, notices, metrics, reconciliation |
+| 3. Web | ✅ | Plan and support access in Settings, notices, `/status`, `/help`, `/legal/*`, `/admin`, a tour, error reporting |
+| 4. Mobile | ✅ | Update screen on 426, notices on Home, plan and help links in Settings |
+| 5. Infrastructure | ✅ written | `infra/terraform`, images, `security.yml`, `terraform.yml`, `deploy.yml`, `infra/observability`, `infra/load`, `docs/runbooks` |
+| 6. Audit | ✅ automated only | `e2e/accessibility.spec.ts` |
+| 7. Launch | ❌ | See below |
+
+Rules this phase depends on:
+
+- **Staff roles.** `packages/db/test/rls.test.ts` pins what `montra_admin` and `montra_support` can reach. Don't widen it to make something pass.
+- **Clocks.** Compare a time written from JS with `now()` in SQL carefully: the database clock and this machine's differ. Write `now()` from SQL if SQL reads it.
+- **`BILLING_MODE=off` is the default**, and is what e2e runs on. Paying is covered in `apps/api/test/operations.test.ts`, with Stripe stubbed.
+- **Public pages use `getPublicI18n`.** `getI18n` needs a session, and redirects to sign-in without one.
+- **The tour never opens by itself**, so it can't sit over someone's work or over a test's click.
+
+What only the owner can do, in `docs/runbooks/first-time-setup.md` and `launch-checklist.md`:
+
+- Create the AWS accounts, Cloudflare, SES production access, Stripe products and prices, Sentry, and DB roles, then the first `terraform apply`.
+- Decide pricing.
+- Have a lawyer read the legal pages, and sign DPAs with each AI and OCR provider.
+- Commission the pen test (NFR-04), and run the quarterly restore drill for real (BAK-07).
+- Run the closed beta and measure the exit metrics (≥ 85% categorization accepted, a month imported and reviewed in < 10 min, NFR-07).
+- Cut `release/1.0`, `v1.0.0-rc.N` on staging, and merge to `main`.
+
+Questions for the owner, each blocking something:
+
+1. **BAK-01 or BAK-09?** Monthly snapshots kept 12 months conflict with deleted data ageing out within 35 days, and Vault Lock makes the choice permanent 3 days after apply. Settle before the first production apply.
+2. **Is a 5-minute RPO only within a region acceptable?** Cross-region copies are daily, so losing a region can lose up to 24 hours. Closing that needs Aurora Global Database, at a monthly cost.
+3. **Upgrade Kratos, or accept its findings in writing?** v1.3.1 fails the image scan, and OPS-06 asks for criticals fixed in 72 hours.
+4. **Is an emailed code acceptable for AUTH-05?** The requirement says a link.
+5. **Can the Aurora master create a `BYPASSRLS` role?** Untested. The setup runbook checks first and stops.
+
+Measured locally, on 2026-11-04:
+
+- **Restore drill:** `pg_dump` and `pg_restore` of the dev database into a scratch one, then `infra/db/reconciliation-checks.sql` and
+  `app.reconcile_books()`. 416 workspaces and 2,680 postings came back the same, in about 10 seconds, with no problems found. This shows
+  the checks work. It says nothing about a real restore's size or time, or about RPO and RTO.
+- **A flaky limit:** `lib/colour-guard.test.ts` hit Vitest's 5-second limit once during a parallel `pnpm verify`, and passes in 0.4 s alone.
+  It reads files without waiting, so a slow disk could do it again. The limit hasn't been changed.
+
+Phase 11 leftovers:
+
+- **Not tried on the real thing:** Stripe, Sentry, AWS KMS, S3 with KMS, SES, Cloudflare, Grafana, the deploy workflow, and every mobile screen on a device.
+- **`security.yml` will fail until decided:** a zod finding in the Expo CLI, which is a build tool, and Kratos v1.3.1.
+- **PLT-08** (widgets) moves to R1.x. **Store billing** isn't built, so the phone shows the plan and doesn't sell it.
+- **NFR-10:** axe only. No screen reader or manual audit, and nothing on mobile.
+- **PLT-01:** only Chromium runs in e2e.
+- **The status page** runs on the same stack it reports on, so it goes down with it. It needs a separate host before launch.
+- **Staff sign-in** is the ordinary one with a second factor, not SSO.
+- **Reference data:** merchants and mileage rates are editable. Tax lines, import profiles and currencies need a migration.
+- **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
+- **A password change or session revocation** isn't in the security log (AUTH-12), and profile, family and entities are read-only on the phone (OPS-13). A session card covers both.
+- **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
+- Import parse p95 was 5.7 to 9.0 s locally for 5,000 rows, close to the 10 s limit, and worth watching.
 
 ---
 

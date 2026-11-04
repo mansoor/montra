@@ -1,0 +1,58 @@
+groups:
+  - name: montra-availability
+    interval: 30s
+    rules:
+      - record: montra:http_error:ratio_rate5m
+        expr: |
+          sum(rate(montra_http_requests_total{status=~"5.."}[5m]))
+          / sum(rate(montra_http_requests_total[5m]))
+      - record: montra:http_error:ratio_rate30m
+        expr: |
+          sum(rate(montra_http_requests_total{status=~"5.."}[30m]))
+          / sum(rate(montra_http_requests_total[30m]))
+      - record: montra:http_error:ratio_rate1h
+        expr: |
+          sum(rate(montra_http_requests_total{status=~"5.."}[1h]))
+          / sum(rate(montra_http_requests_total[1h]))
+      - record: montra:http_error:ratio_rate6h
+        expr: |
+          sum(rate(montra_http_requests_total{status=~"5.."}[6h]))
+          / sum(rate(montra_http_requests_total[6h]))
+      - record: montra:http_availability:ratio_rate30d
+        expr: |
+          1 - (
+            sum(rate(montra_http_requests_total{status=~"5.."}[30d]))
+            / sum(rate(montra_http_requests_total[30d]))
+          )
+
+  - name: montra-latency
+    interval: 30s
+    rules:
+      - record: montra:dashboard_latency:p95_5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(montra_http_request_duration_seconds_bucket{route=~".*/dashboard"}[5m]))
+          )
+
+  - name: montra-queues
+    interval: 30s
+    rules:
+      - record: montra:job_queue_lag:p95_1h
+        expr: quantile_over_time(0.95, montra_job_queue_lag_seconds[1h])
+
+  - name: montra-ai
+    interval: 30s
+    rules:
+      - record: montra:ai_error:ratio_rate5m
+        expr: |
+          sum(rate(montra_ai_calls_total{outcome=~"provider_error|invalid_output"}[5m]))
+          / sum(rate(montra_ai_calls_total{outcome!~"off|budget"}[5m]))
+      - record: montra:ai_error:ratio_rate1h
+        expr: |
+          sum(rate(montra_ai_calls_total{outcome=~"provider_error|invalid_output"}[1h]))
+          / sum(rate(montra_ai_calls_total{outcome!~"off|budget"}[1h]))
+      - record: montra:ai_error:ratio_rate5m_by_provider
+        expr: |
+          sum by (provider) (rate(montra_ai_calls_total{outcome=~"provider_error|invalid_output"}[5m]))
+          / sum by (provider) (rate(montra_ai_calls_total{outcome!~"off|budget"}[5m]))

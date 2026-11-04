@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.12.0-dev.1 — Phase 11: hardening, code complete
+
+Everything here that talks to an outside service has been tested with stubs only, and nothing has been deployed. `v1.0.0` needs what's
+in `docs/runbooks/launch-checklist.md`.
+
+- **Plans** (UP-12, OPS-08; ADR-0020): personal books free, Pro for business and rental books and 50 GB, Stripe checkout and portal, a
+  14-day trial and grace period. A lapse only stops adding: data stays readable, editable and exportable.
+- **Staff console** (OPS-01, OPS-05, NFR-13): account lookup, plans, flags, import failures by bank, AI accuracy, requests, and reference
+  data, on a database role with no grant on any financial table. A test fails if that changes.
+- **Support access** (OPS-02): the owner allows it, read-only, 72 hours by default, on its own role in a read-only transaction. It shows
+  books, imports and AI outcomes, not money, and each look appears in the owner's activity log.
+- **Notices and versions** (OPS-03, OPS-04): banners with a 48-hour rule, a public status page, an update screen for old phone apps, and a
+  check that refuses destructive migrations.
+- **Help** (OPS-09): a help center, a tour on request, and contact with an optional screenshot and logs.
+- **Observability** (NFR-13, OPS-07): error tracking behind a port, metrics, a nightly reconciliation of every workspace's books, dashboards
+  and alert rules.
+- **Security** (NFR-01, OPS-06): AWS KMS adapter, security headers, functions no longer public, `fastify`, `nodemailer` and `postcss`
+  patched, dependency and image scans in CI.
+- **Accessibility** (NFR-10): an automated WCAG 2.2 AA pass over the main screens in both themes, and what it found fixed.
+- **Infrastructure** (BAK-01..03, BAK-07, OPS-12): Terraform for AWS and Cloudflare, images, a deploy workflow, runbooks and k6 scripts.
+- **Legal** (OPS-11): terms, privacy, cookies and subprocessor pages, marked as drafts until a lawyer has read them.
+- **Fixes from Phase 10**: the unsubscribe page sent signed-out people to sign-in, which is who it's for. Function grants were open to any role.
+- **Not done**: widgets (PLT-08), which move to R1.x. Store billing. The pen test, legal review, DPAs and the beta, which are for the owner.
+
 ## v0.11.0-dev.1 — Phase 10: reports, search, notifications, data ownership
 
 - **Reports** (RPT-01..04, RCP-09; ADR-0019): thirteen reports with one shape, filters kept in the URL, saved reports, every row and

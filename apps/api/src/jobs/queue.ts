@@ -5,6 +5,7 @@ import pg from 'pg';
 import type { JobTable, Trx } from '@montra/db';
 import type { Selectable } from 'kysely';
 import { CONFIG, type AppConfig } from '../config.js';
+import { ERROR_REPORTER, type ErrorReporter } from '../ops/errors.js';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
 
@@ -76,6 +77,7 @@ export class Worker implements OnApplicationShutdown {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(ERROR_REPORTER) private readonly errors: ErrorReporter,
   ) {}
 
   register(type: string, handler: JobHandler): void {
@@ -102,6 +104,7 @@ export class Worker implements OnApplicationShutdown {
       const permanent = err instanceof PermanentJobError || (err instanceof AppError && err.status < 500);
       const code = err instanceof PermanentJobError || err instanceof AppError ? err.code : 'job.error';
       const message = `${code}: ${(err as Error).message}`;
+      if (!permanent) this.errors.captureException(err, { queue: job.queue, type: job.type });
       if (!permanent)
         this.logger.error(`job ${job.id} (${job.type}) failed: ${(err as Error).stack ?? message}`);
       await sql`select app.fail_job(${job.id}, ${message}, ${permanent})`.execute(this.db.kysely);

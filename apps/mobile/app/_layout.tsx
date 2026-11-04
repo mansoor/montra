@@ -1,5 +1,6 @@
 /** Root: providers (session, app lock, toasts, share intent, sync) and the auth gate. */
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -8,12 +9,12 @@ import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
 import { SessionProvider, useSession } from '../src/session/SessionProvider';
 import { AppLock } from '../src/lock/AppLock';
 import { SyncProvider } from '../src/sync/SyncProvider';
-import { ToastHost } from '../src/ui/components';
+import { Body, Title, ToastHost } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 import { t } from '../src/i18n';
 
 function Gate() {
-  const { state } = useSession();
+  const { state, updateRequired } = useSession();
   const segments = useSegments();
   const router = useRouter();
   const th = useTheme();
@@ -31,6 +32,25 @@ function Gate() {
   useEffect(() => {
     if (signedIn && share.hasShareIntent && share.shareIntent.files?.length) router.push('/import');
   }, [signedIn, share.hasShareIntent, share.shareIntent.files, router]);
+
+  // OPS-04: nothing else works until it's updated, so nothing else is shown.
+  if (updateRequired) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          padding: th.space(4),
+          gap: th.space(2),
+          backgroundColor: th.bg,
+        }}
+        testID="update-required"
+      >
+        <Title>{t('mobile.update.title')}</Title>
+        <Body>{t('mobile.update.body')}</Body>
+      </View>
+    );
+  }
 
   const stack = (
     <Stack

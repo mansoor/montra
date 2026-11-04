@@ -1,0 +1,132 @@
+groups:
+  - name: montra-slo
+    rules:
+      # Multi-window burn-rate alerts on the 99.9% availability SLO. A burn rate of 14.4 uses 2% of the monthly budget
+      # in an hour; 6 uses 5% in six hours.
+      - alert: ApiAvailabilityBurnFast
+        expr: montra:http_error:ratio_rate5m > (14.4 * 0.001) and montra:http_error:ratio_rate1h > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: API error budget burning fast
+          description: '5xx share is {{ $value | humanizePercentage }} over 5 minutes, and the 1-hour rate agrees.'
+          runbook: docs/runbooks/incident-response.md
+      - alert: ApiAvailabilityBurnSlow
+        expr: montra:http_error:ratio_rate30m > (6 * 0.001) and montra:http_error:ratio_rate6h > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: API error budget burning steadily
+          description: '5xx share is {{ $value | humanizePercentage }} over 30 minutes, and the 6-hour rate agrees.'
+          runbook: docs/runbooks/incident-response.md
+      - alert: DashboardLatencyHigh
+        expr: montra:dashboard_latency:p95_5m > 2
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Dashboard p95 above 2 s
+          description: 'Dashboard p95 is {{ $value | humanizeDuration }} (NFR-07).'
+      - alert: ImportParseSlow
+        expr: montra_import_parse_p95_seconds > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Import parsing p95 is over 10 s, counting queue time
+          description: This is an upper bound on the NFR-07 target. Check queue lag first, then run infra/load/import-parse.js.
+      - alert: QueueLagHigh
+        expr: montra:job_queue_lag:p95_1h > 30
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'Queue {{ $labels.queue }} lag above its SLO'
+          description: 'p95 lag over the last hour is {{ $value | humanizeDuration }}. The SLO is 30 s.'
+      - alert: QueueLagCritical
+        expr: montra_job_queue_lag_seconds > 300
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Queue {{ $labels.queue }} is backing up'
+          description: 'Lag is {{ $value | humanizeDuration }}. Check the worker tasks and autoscaling.'
+          runbook: docs/runbooks/incident-response.md
+      - alert: AiErrorRateHigh
+        expr: montra:ai_error:ratio_rate1h > 0.02
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: AI task error rate above 2%
+          description: 'Error rate is {{ $value | humanizePercentage }} over the last hour.'
+      - alert: AiProviderErrors
+        expr: montra:ai_error:ratio_rate5m_by_provider > 0.2
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: 'AI provider {{ $labels.provider }} is failing'
+          description: >-
+            {{ $value | humanizePercentage }} of calls fail. Failover to the second provider or the review queue should be
+            active (OPS-07). Check that it is.
+          runbook: docs/runbooks/incident-response.md
+
+  - name: montra-integrity
+    rules:
+      - alert: ReconciliationFailures
+        expr: max(montra_reconciliation_failures) > 0
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: Ledger reconciliation found failures
+          description: '{{ $value }} failures. This should never happen. Treat as Sev-1 until shown otherwise.'
+          runbook: docs/runbooks/incident-response.md
+      - alert: BackupJobFailed
+        expr: increase(montra_backup_job_failures_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: A backup job failed
+          description: 'Failures in the last hour: {{ $value }}. Check AWS Backup and the in-app backup jobs.'
+          runbook: docs/runbooks/disaster-recovery.md
+      - alert: MetricsEndpointDown
+        expr: absent(up{job="montra-api"} == 1)
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: No API task answers on /internal/metrics
+          description: Every other alert here is blind until this clears. Check the API tasks and METRICS_TOKEN.
+          runbook: docs/runbooks/incident-response.md
+
+  - name: montra-business
+    rules:
+      - alert: JobFailuresHigh
+        expr: sum by (queue, type) (rate(montra_job_failures_total[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'Jobs failing: {{ $labels.queue }} {{ $labels.type }}'
+          description: '{{ $value | humanize }} failures per second.'
+      - alert: ImportFailuresByInstitution
+        expr: sum by (institution, file_type) (increase(montra_import_failures_total[1h])) > 10
+        for: 0m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'Imports failing for {{ $labels.institution }} ({{ $labels.file_type }})'
+          description: '{{ $value | humanize }} failures in the last hour. The bank may have changed its format.'
+      - alert: AiAcceptedRatioLow
+        expr: montra_ai_suggestions_accepted_ratio < 0.85
+        for: 24h
+        labels:
+          severity: ticket
+        annotations:
+          summary: AI suggestions accepted below the 85% R1 target
+          description: 'Accepted ratio is {{ $value | humanizePercentage }}.'
