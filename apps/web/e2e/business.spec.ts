@@ -51,7 +51,7 @@ test('invoices, bills and mileage reach Schedule C and the export', async ({ pag
 
   // Nothing counts until it's paid.
   await page.getByRole('button', { name: 'Email the invoice' }).click();
-  await expect(page.getByText('Sent to ap@bluebird.example')).toBeVisible();
+  await expect(page.getByText('Sent to ap@bluebird.example', { exact: true })).toBeVisible();
   await expect(page.getByTestId('invoice-status')).toHaveText('Sent');
   await expect(
     (await page.request.get(`${ws}/reports/pnl?entityId=${entityId}`)).json(),
