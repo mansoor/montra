@@ -55,6 +55,10 @@ export default async function WorkspaceLayout({
     {
       label: t('nav.group.books'),
       items: [
+        // BIZ-01: only with a business this login can see.
+        ...(workspace.entities.some((e) => e.type === 'business')
+          ? [{ href: `${base}/business`, label: t('nav.business'), icon: 'business' as const }]
+          : []),
         { href: `${base}/journal`, label: t('nav.journal'), icon: 'journal' },
         { href: `${base}/imports`, label: t('nav.imports'), icon: 'imports' },
         { href: `${base}/rules`, label: t('nav.rules'), icon: 'rules' },

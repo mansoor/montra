@@ -7,7 +7,7 @@ export interface ForecastItem {
   accountId: string;
   /** Signed, account currency: income positive, bills negative. */
   amount: bigint;
-  kind: 'recurring' | 'income' | 'card_payment' | 'burn';
+  kind: 'recurring' | 'income' | 'card_payment' | 'burn' | 'invoice' | 'bill';
   name: string;
   sourceId: string | null;
 }

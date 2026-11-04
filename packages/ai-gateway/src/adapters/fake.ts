@@ -247,6 +247,10 @@ export class FakeAdapter implements ProviderAdapter {
       }
       case 'propose_categories':
         return fakePropose(input);
+      case 'map_tax_lines':
+        return fakeTaxLines(input);
+      case 'flag_separation':
+        return fakeSeparation(input);
       case 'word_summary': {
         // Restates the title and figures verbatim, so it always passes the numbers check.
         const figures = Object.entries((input.figures as Record<string, string> | undefined) ?? {})
@@ -459,6 +463,53 @@ const PROPOSALS: Record<string, { name: string; group: string; kind: 'income' | 
   interest: { name: 'Interest', group: 'Income', kind: 'income' },
   fees: { name: 'Bank fees', group: 'Fixed', kind: 'expense' },
 };
+
+/** A category maps to the line sharing a word with its name. */
+function fakeTaxLines(input: Json) {
+  const lines = (input.lines as { code: string; label: string }[] | undefined) ?? [];
+  const categories = (input.categories as { id: string; name: string }[] | undefined) ?? [];
+  const words = (s: string) =>
+    s
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .filter((w) => w.length > 3);
+  const mappings: { id: string; code: string; explanation: string }[] = [];
+  for (const c of categories) {
+    const line = lines.find((l) => words(l.label).some((w) => words(c.name).includes(w)));
+    if (line) mappings.push({ id: c.id, code: line.code, explanation: `Usually reported as ${line.label}.` });
+  }
+  return { mappings };
+}
+
+const BUSINESS_LOOKING = /\b(adobe|github|aws|figma|quickbooks|staples|zoom)\b/;
+const PERSONAL_LOOKING = /\b(netflix|spotify|whole foods|grocery|groceries|disney)\b/;
+
+/** Known names flagged at high confidence; the category is the other side's closest by name. */
+function fakeSeparation(input: Json) {
+  const items = (input.items as { id: string; payee: string; side: string }[] | undefined) ?? [];
+  const business = (input.businessCategories as string[] | undefined) ?? [];
+  const personal = (input.personalCategories as string[] | undefined) ?? [];
+  const pick = (names: string[], re: RegExp) => names.find((n) => re.test(n.toLowerCase())) ?? names[0];
+  const flags: { id: string; category: string; confidence: number; reason: string }[] = [];
+  for (const t of items) {
+    const payee = t.payee.toLowerCase();
+    if (t.side === 'personal' && BUSINESS_LOOKING.test(payee)) {
+      const category = pick(business, /software|office/);
+      if (category)
+        flags.push({
+          id: t.id,
+          category,
+          confidence: 0.9,
+          reason: 'Looks like business software or supplies.',
+        });
+    } else if (t.side === 'business' && PERSONAL_LOOKING.test(payee)) {
+      const category = pick(personal, /grocer|entertainment|fun/);
+      if (category)
+        flags.push({ id: t.id, category, confidence: 0.9, reason: 'Looks like a household expense.' });
+    }
+  }
+  return { flags };
+}
 
 function fakePropose(input: Json) {
   const existing = new Set(((input.existing as string[] | undefined) ?? []).map((e) => e.toLowerCase()));

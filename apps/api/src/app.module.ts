@@ -56,6 +56,15 @@ import { IncomeService } from './planning/income.service.js';
 import { FlowService } from './planning/flow.service.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
 import { PlanningController } from './planning/planning.controller.js';
+import { BillsService } from './business/bills.service.js';
+import { BusinessController } from './business/business.controller.js';
+import { BusinessJobs } from './business/business-jobs.service.js';
+import { BusinessReportsService } from './business/business-reports.service.js';
+import { BusinessService } from './business/business.service.js';
+import { ExportService } from './business/export.service.js';
+import { InvoicesService } from './business/invoices.service.js';
+import { MileageService } from './business/mileage.service.js';
+import { PaymentLinks } from './business/payment-links.service.js';
 import { PayslipsService } from './payslips/payslips.service.js';
 import { PayslipJobs } from './payslips/payslip-jobs.js';
 import { MemberReportsService } from './payslips/member-reports.service.js';
@@ -95,6 +104,7 @@ export class AppModule {
       TripsController,
       PlanningController,
       PayslipsController,
+      BusinessController,
     ];
     return {
       module: AppModule,
@@ -141,6 +151,14 @@ export class AppModule {
         FlowService,
         RecommendationsService,
         PayslipsService,
+        BusinessService,
+        PaymentLinks,
+        InvoicesService,
+        BillsService,
+        MileageService,
+        BusinessReportsService,
+        ExportService,
+        BusinessJobs,
         PayslipJobs,
         MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },

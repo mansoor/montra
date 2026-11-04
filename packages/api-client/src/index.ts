@@ -115,6 +115,35 @@ import type {
   TripInput,
   UpdateReceiptRequest,
   ConfirmPayslipRequest,
+  BillDto,
+  BusinessProfileDto,
+  InvoiceDto,
+  InvoiceLineDto,
+  InvoicePaymentDto,
+  MileageSummaryDto,
+  MileageTripDto,
+  MissingReceiptsDto,
+  PartyDto,
+  PartyReportDto,
+  PaymentCandidateDto,
+  PnlDto,
+  PnlLineDto,
+  ScheduleCDto,
+  TaxEstimateDto,
+  TaxLineDto,
+  TaxLineSuggestionDto,
+  CreateBillRequest,
+  CreateInvoiceRequest,
+  CreatePartyRequest,
+  CreateTripRequest,
+  RecordPaymentRequest,
+  SendInvoiceRequest,
+  UpdateBillRequest,
+  UpdateBusinessProfileRequest,
+  UpdateInvoiceRequest,
+  UpdatePartyRequest,
+  UpdateTripRequest,
+  AccountingExportFormat,
   DepositCandidateDto,
   MemberTotalsDto,
   PayslipLineDto,
@@ -170,6 +199,17 @@ export type AcceptInsightInput = z.input<typeof AcceptInsightRequest>;
 export type CreateReceiptInput = z.input<typeof CreateReceiptRequest>;
 export type UpdateReceiptInput = z.input<typeof UpdateReceiptRequest>;
 export type ApplyReceiptInput = z.input<typeof ApplyReceiptRequest>;
+export type CreatePartyInput = z.input<typeof CreatePartyRequest>;
+export type UpdatePartyInput = z.input<typeof UpdatePartyRequest>;
+export type CreateInvoiceInput = z.input<typeof CreateInvoiceRequest>;
+export type UpdateInvoiceInput = z.input<typeof UpdateInvoiceRequest>;
+export type SendInvoiceInput = z.input<typeof SendInvoiceRequest>;
+export type RecordPaymentInput = z.input<typeof RecordPaymentRequest>;
+export type CreateBillInput = z.input<typeof CreateBillRequest>;
+export type UpdateBillInput = z.input<typeof UpdateBillRequest>;
+export type CreateTripInput = z.input<typeof CreateTripRequest>;
+export type UpdateTripInput = z.input<typeof UpdateTripRequest>;
+export type UpdateBusinessInput = z.input<typeof UpdateBusinessProfileRequest>;
 export type CreateEmployerInput = z.input<typeof CreateEmployerRequest>;
 export type UpdateEmployerInput = z.input<typeof UpdateEmployerRequest>;
 export type CreatePayslipInput = z.input<typeof CreatePayslipRequest>;
@@ -443,6 +483,23 @@ export class ApiClient {
     const json: unknown = text ? safeJson(text) : undefined;
     if (!res.ok) throw toApiError(res.status, json);
     return json as T;
+  }
+
+  /** A file response, with its name from Content-Disposition. Errors come back as JSON like any other request. */
+  async requestFile(path: string): Promise<{ blob: Blob; fileName: string }> {
+    const h: Record<string, string> = { ...(await this.extraHeaders?.()) };
+    let res: Response;
+    try {
+      res = await this.fetchImpl(this.baseUrl + path, { method: 'GET', headers: h, cache: 'no-store' });
+    } catch (err) {
+      throw new ApiError(0, 'network_error', (err as Error).message || 'Network error');
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw toApiError(res.status, text ? safeJson(text) : undefined);
+    }
+    const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '');
+    return { blob: await res.blob(), fileName: match?.[1] ?? 'download' };
   }
 
   private ws(workspaceId: string, path = ''): string {
@@ -897,6 +954,167 @@ export class ApiClient {
     return this.request<unknown>('POST', this.ws(workspaceId, `/insights/${enc(id)}/dismiss`));
   }
 
+  // ----- Small business (BIZ-01..13, AI-10) ------------------------------------------------------------------
+  listBusinesses(workspaceId: string) {
+    return this.request<{ data: BusinessProfileDto[] }>('GET', this.ws(workspaceId, '/businesses')).then(
+      (r) => r.data,
+    );
+  }
+  getBusiness(workspaceId: string, entityId: string) {
+    return this.request<BusinessProfileDto>('GET', this.ws(workspaceId, `/businesses/${enc(entityId)}`));
+  }
+  updateBusiness(workspaceId: string, entityId: string, input: UpdateBusinessInput) {
+    return this.request<BusinessProfileDto>(
+      'PATCH',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}`),
+      input,
+    );
+  }
+  uploadBusinessFile(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<{ fileId: string }>('POST', this.ws(workspaceId, '/businesses/files'), form);
+  }
+  listParties(workspaceId: string, opts: { entityId: string; kind?: PartyDto['kind'] }) {
+    return this.request<{ data: PartyDto[] }>('GET', this.ws(workspaceId, `/parties${query(opts)}`)).then(
+      (r) => r.data,
+    );
+  }
+  createParty(workspaceId: string, input: CreatePartyInput) {
+    return this.request<PartyDto>('POST', this.ws(workspaceId, '/parties'), input);
+  }
+  updateParty(workspaceId: string, id: string, input: UpdatePartyInput) {
+    return this.request<PartyDto>('PATCH', this.ws(workspaceId, `/parties/${enc(id)}`), input);
+  }
+  listInvoices(
+    workspaceId: string,
+    opts: { entityId: string; status?: InvoiceDto['status']; partyId?: string },
+  ) {
+    return this.request<{ data: InvoiceDto[] }>('GET', this.ws(workspaceId, `/invoices${query(opts)}`)).then(
+      (r) => r.data,
+    );
+  }
+  getInvoice(workspaceId: string, id: string) {
+    return this.request<InvoiceDto>('GET', this.ws(workspaceId, `/invoices/${enc(id)}`));
+  }
+  createInvoice(workspaceId: string, input: CreateInvoiceInput) {
+    return this.request<InvoiceDto>('POST', this.ws(workspaceId, '/invoices'), input);
+  }
+  updateInvoice(workspaceId: string, id: string, input: UpdateInvoiceInput) {
+    return this.request<InvoiceDto>('PATCH', this.ws(workspaceId, `/invoices/${enc(id)}`), input);
+  }
+  deleteInvoice(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/invoices/${enc(id)}`));
+  }
+  sendInvoice(workspaceId: string, id: string, input: SendInvoiceInput) {
+    return this.request<InvoiceDto>('POST', this.ws(workspaceId, `/invoices/${enc(id)}/send`), input);
+  }
+  voidInvoice(workspaceId: string, id: string, input: { version: number }) {
+    return this.request<InvoiceDto>('POST', this.ws(workspaceId, `/invoices/${enc(id)}/void`), input);
+  }
+  /** The PDF through the authenticated proxy, for a link. */
+  invoicePdfPath(workspaceId: string, id: string) {
+    return this.baseUrl + this.ws(workspaceId, `/invoices/${enc(id)}/pdf`);
+  }
+  listInvoiceCandidates(workspaceId: string, id: string) {
+    return this.request<{ data: PaymentCandidateDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/invoices/${enc(id)}/candidates`),
+    ).then((r) => r.data);
+  }
+  recordInvoicePayment(workspaceId: string, id: string, input: RecordPaymentInput) {
+    return this.request<InvoiceDto>('POST', this.ws(workspaceId, `/invoices/${enc(id)}/payments`), input);
+  }
+  removeInvoicePayment(workspaceId: string, id: string, paymentId: string) {
+    return this.request<InvoiceDto>(
+      'DELETE',
+      this.ws(workspaceId, `/invoices/${enc(id)}/payments/${enc(paymentId)}`),
+    );
+  }
+  listBills(workspaceId: string, opts: { entityId: string; status?: BillDto['status']; partyId?: string }) {
+    return this.request<{ data: BillDto[] }>('GET', this.ws(workspaceId, `/bills${query(opts)}`)).then(
+      (r) => r.data,
+    );
+  }
+  createBill(workspaceId: string, input: CreateBillInput) {
+    return this.request<BillDto>('POST', this.ws(workspaceId, '/bills'), input);
+  }
+  updateBill(workspaceId: string, id: string, input: UpdateBillInput) {
+    return this.request<BillDto>('PATCH', this.ws(workspaceId, `/bills/${enc(id)}`), input);
+  }
+  listBillCandidates(workspaceId: string, id: string) {
+    return this.request<{ data: PaymentCandidateDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/bills/${enc(id)}/candidates`),
+    ).then((r) => r.data);
+  }
+  payBill(workspaceId: string, id: string, input: RecordPaymentInput) {
+    return this.request<BillDto>('POST', this.ws(workspaceId, `/bills/${enc(id)}/payment`), input);
+  }
+  removeBillPayment(workspaceId: string, id: string) {
+    return this.request<BillDto>('DELETE', this.ws(workspaceId, `/bills/${enc(id)}/payment`));
+  }
+  billFilePath(workspaceId: string, id: string, fileId: string) {
+    return this.baseUrl + this.ws(workspaceId, `/bills/${enc(id)}/files/${enc(fileId)}`);
+  }
+  getMileage(workspaceId: string, opts: { entityId: string; year?: number }) {
+    return this.request<MileageSummaryDto>('GET', this.ws(workspaceId, `/mileage-trips${query(opts)}`));
+  }
+  createMileageTrip(workspaceId: string, input: CreateTripInput) {
+    return this.request<MileageTripDto>('POST', this.ws(workspaceId, '/mileage-trips'), input);
+  }
+  updateMileageTrip(workspaceId: string, id: string, input: UpdateTripInput) {
+    return this.request<MileageTripDto>('PATCH', this.ws(workspaceId, `/mileage-trips/${enc(id)}`), input);
+  }
+  deleteMileageTrip(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/mileage-trips/${enc(id)}`));
+  }
+  getTaxEstimate(workspaceId: string, opts: { entityId: string; year?: number }) {
+    return this.request<TaxEstimateDto>('GET', this.ws(workspaceId, `/tax/estimates${query(opts)}`));
+  }
+  listTaxLines(workspaceId: string, form?: 'schedule_c' | 'schedule_e') {
+    return this.request<{ data: TaxLineDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/tax/lines${query({ form })}`),
+    ).then((r) => r.data);
+  }
+  setTaxLine(workspaceId: string, categoryId: string, taxLineCode: string | null) {
+    return this.request<void>('PATCH', this.ws(workspaceId, `/categories/${enc(categoryId)}/tax-line`), {
+      taxLineCode,
+    });
+  }
+  suggestTaxLines(workspaceId: string, entityId: string) {
+    return this.request<{ data: TaxLineSuggestionDto[] }>(
+      'POST',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/tax-lines/suggest`),
+    ).then((r) => r.data);
+  }
+  getPnl(workspaceId: string, opts: { entityId: string; from?: string; to?: string }) {
+    return this.request<PnlDto>('GET', this.ws(workspaceId, `/reports/pnl${query(opts)}`));
+  }
+  getPartyReport(
+    workspaceId: string,
+    opts: { entityId: string; kind: PartyDto['kind']; from?: string; to?: string },
+  ) {
+    return this.request<PartyReportDto>('GET', this.ws(workspaceId, `/reports/parties${query(opts)}`));
+  }
+  getScheduleC(workspaceId: string, opts: { entityId: string; year?: number }) {
+    return this.request<ScheduleCDto>('GET', this.ws(workspaceId, `/reports/schedule-c${query(opts)}`));
+  }
+  getMissingReceipts(workspaceId: string, opts: { entityId: string; year?: number }) {
+    return this.request<MissingReceiptsDto>(
+      'GET',
+      this.ws(workspaceId, `/reports/missing-receipts${query(opts)}`),
+    );
+  }
+  /** BIZ-13: the journal as a file. Goes through `fetch` so a refusal comes back as an error, not a saved page. */
+  async downloadAccountingExport(
+    workspaceId: string,
+    opts: { entityId: string; from: string; to: string; format: AccountingExportFormat },
+  ): Promise<{ blob: Blob; fileName: string }> {
+    return this.requestFile(this.ws(workspaceId, `/exports/accounting${query(opts)}`));
+  }
+
   // ----- Employers and payslips (PAY-01..09), reports by member (FAM-08, RPT-01) ---------------------------
   listEmployers(workspaceId: string, opts: { memberId?: string } = {}) {
     return this.request<{ data: EmployerDto[] }>(
@@ -1210,6 +1428,23 @@ function toApiError(status: number, body: unknown): ApiError {
 }
 
 export type {
+  BillDto,
+  BusinessProfileDto,
+  InvoiceDto,
+  InvoiceLineDto,
+  InvoicePaymentDto,
+  MileageSummaryDto,
+  MileageTripDto,
+  MissingReceiptsDto,
+  PartyDto,
+  PartyReportDto,
+  PaymentCandidateDto,
+  PnlDto,
+  PnlLineDto,
+  ScheduleCDto,
+  TaxEstimateDto,
+  TaxLineDto,
+  TaxLineSuggestionDto,
   AiEventDto,
   AiSettingsDto,
   AiTaskDto,

@@ -76,3 +76,12 @@ export function reconnectDelay(attempt: number, random: () => number = Math.rand
 
 /** Errors after which reconnecting won't help until the user signs in again. */
 export const isFatalSocketError = (code: string) => code === 'unauthenticated' || code === 'forbidden';
+
+/** How long a click or submit may still be navigating; a refresh during a navigation can lose it. */
+export const ACTION_SETTLE_MS = 1000;
+
+/** How much longer a background refresh should wait after the user's last action; 0 when it's clear to go. */
+export function refreshWaitAfterAction(lastAction: number, now: number): number {
+  const left = lastAction + ACTION_SETTLE_MS - now;
+  return left > 0 ? left : 0;
+}

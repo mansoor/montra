@@ -50,6 +50,8 @@ export const CreateBudgetRequest = z
     anchorDate: CalendarDateDto.nullable().default(null),
     /** UP-11 light mode: "pay yourself first" savings per period. */
     savingsTarget: NonNegativeMinor.nullable().default(null),
+    /** BIZ-11: what a business aims to bring in per period. */
+    revenueTarget: NonNegativeMinor.nullable().default(null),
   })
   .refine((b) => b.periodType === 'monthly' || b.anchorDate !== null, {
     message: 'Weekly and biweekly budgets need an anchor date',
@@ -62,6 +64,7 @@ export const UpdateBudgetRequest = z
     name: z.string().trim().min(1).max(200),
     method: BudgetMethod,
     savingsTarget: NonNegativeMinor.nullable(),
+    revenueTarget: NonNegativeMinor.nullable(),
     archived: z.boolean(),
   })
   .partial()
@@ -77,6 +80,7 @@ export const BudgetDto = z.object({
   periodType: BudgetPeriodType,
   anchorDate: CalendarDateDto.nullable(),
   savingsTarget: MinorDto.nullable(),
+  revenueTarget: MinorDto.nullable(),
   currency: CurrencyCodeDto,
   archived: z.boolean(),
   version: z.number().int(),

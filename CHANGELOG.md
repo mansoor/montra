@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.9.0-dev.1 — Phase 8: small business
+
+- **Businesses** (BIZ-01, BIZ-02; ADR-0017): a profile per business, a chart mapped to Schedule C, and any category mappable
+  to a line. Everything is on a cash basis: invoices and bills post nothing until they're paid.
+- **Customers and vendors** (BIZ-04): listed from activity, with details kept per business so a partner with no access to it
+  doesn't see them. A payment linked to a customer credits them however the bank spelled the name.
+- **Invoices** (BIZ-05): lines, sales tax, PDF and email, with status following the payments and date. A statement line that
+  is the exact amount, or quotes the number, links by itself; anything ambiguous is offered instead. Linking keeps the
+  line's date and amount, counts it once, and sends sales tax to a liability rather than income.
+- **Bills** (BIZ-06): in the forecast and calendar until paid, with the document kept beside them.
+- **Mileage** (BIZ-07): the IRS rate for each trip's date, including mid-year changes, on the web and the phone. It reaches
+  Schedule C and never the ledger.
+- **Estimated tax** (BIZ-09, REC-09): a set-aside from profit after mileage at the user's own rate, the IRS payment dates, and
+  a suggestion that makes the transfer when accepted.
+- **Reports** (BIZ-10, BIZ-11, BIZ-12): P&L for any dates, income by customer, expenses by vendor, a Schedule C summary, a
+  revenue target on business budgets, a monthly margin note and a list of expenses missing a receipt.
+- **Business or personal** (BIZ-03, AI-10): nightly flags from the user's own filing and AI, with one tap to move a
+  transaction; tax line hints on transactions and proposals for categories with no line.
+- **Accountants** (BIZ-13): read-only or edit access to chosen businesses, and the journal as CSV, XLSX, QuickBooks Desktop IIF
+  or a Xero manual journal.
+- **Mobile**: More → Business shows profit, what's owed and the tax to set aside, and logs trips.
+- **Fixes from Phase 7**: deleting a payslip re-posted its deposit on the pay date instead of the statement date. The web proxy
+  also dropped `Cache-Control: no-store` from private documents such as payslips; it now passes it on.
+- **Not done**: BIZ-08, BIZ-14 and BIZ-15 (could-haves).
+
 ## v0.8.0-dev.1 — Phase 7: family members and payslips
 
 - **Employers** (PAY-01): employers and other income sources per member, with pay frequency and the account the pay

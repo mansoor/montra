@@ -8,7 +8,9 @@ export interface MailMessage {
   text: string;
   html?: string;
   /** Transactional vs marketing streams are separated (OPS-10); everything here is transactional. */
-  category: 'security' | 'sharing';
+  category: 'security' | 'sharing' | 'invoice';
+  replyTo?: string;
+  attachments?: { filename: string; content: Uint8Array; contentType: string }[];
 }
 
 /** Outgoing email port. Phase 10 routes these through the notification queue (retries, preferences). */
@@ -48,6 +50,16 @@ export class SmtpMail implements MailPort {
       subject: m.subject,
       text: m.text,
       ...(m.html ? { html: m.html } : {}),
+      ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+      ...(m.attachments
+        ? {
+            attachments: m.attachments.map((a) => ({
+              filename: a.filename,
+              content: Buffer.from(a.content),
+              contentType: a.contentType,
+            })),
+          }
+        : {}),
       headers: { 'X-Montra-Category': m.category },
     });
   }

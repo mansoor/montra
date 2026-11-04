@@ -43,15 +43,12 @@ export default async function SuggestionsPage({
           label: t(`rec.status_${s}`),
         }))}
       />
-      {items.length === 0 ? (
-        <EmptyState title={t('rec.empty')}>{t('rec.empty_hint')}</EmptyState>
-      ) : (
-        <RecommendationList
-          workspaceId={workspaceId}
-          items={items}
-          categoryNames={Object.fromEntries(categories.map((c) => [c.id, c.name]))}
-        />
-      )}
+      <RecommendationList
+        workspaceId={workspaceId}
+        items={items}
+        categoryNames={Object.fromEntries(categories.map((c) => [c.id, c.name]))}
+        empty={<EmptyState title={t('rec.empty')}>{t('rec.empty_hint')}</EmptyState>}
+      />
     </div>
   );
 }

@@ -16,6 +16,8 @@ export type TaskName =
   | 'extract_receipt'
   | 'extract_payslip'
   | 'propose_categories'
+  | 'map_tax_lines'
+  | 'flag_separation'
   | 'word_summary';
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
 export type ModelGroup = 'small' | 'vision' | 'large';
@@ -296,6 +298,38 @@ export interface CategoryProposalOutput {
   assignments: Array<{ payee: string; category: string }>;
 }
 
+export interface TaxLineInput {
+  lines: Array<{ code: string; label: string }>;
+  categories: Array<{ id: string; name: string; group: string | null }>;
+}
+
+export interface TaxLineMapping {
+  categoryId: string;
+  code: string;
+  explanation: string;
+}
+
+export interface SeparationInput {
+  items: Array<{
+    id: string;
+    payee: string;
+    amountMinor: bigint;
+    currency: string;
+    category: string | null;
+    side: 'personal' | 'business';
+  }>;
+  personalCategories: string[];
+  businessCategories: string[];
+}
+
+export interface SeparationFlag {
+  id: string;
+  /** A category name on the other side. */
+  category: string;
+  confidence: number;
+  reason: string;
+}
+
 export interface PayslipDocument {
   /** Sent only when the caller passes them: the workspace allows documents to go to the provider (PAY-09). */
   images: readonly ImagePart[];
@@ -349,6 +383,10 @@ export interface AiGateway {
     input: CategoryProposalInput,
     ctx: AiContext,
   ): Promise<TaskResult<CategoryProposalOutput>>;
+  /** AI-10: a tax line for categories without one. */
+  mapTaxLines(input: TaxLineInput, ctx: AiContext): Promise<TaskResult<TaxLineMapping[]>>;
+  /** BIZ-03: spending that looks recorded on the wrong side of business and personal. */
+  flagSeparation(input: SeparationInput, ctx: AiContext): Promise<TaskResult<SeparationFlag[]>>;
   wordSummary(input: SummaryInput, ctx: AiContext): Promise<TaskResult<string>>;
   /** Cheap round-trip for the settings page "Test connection" button. */
   ping(ctx: AiContext): Promise<TaskResult<{ model: string }>>;

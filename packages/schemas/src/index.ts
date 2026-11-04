@@ -12,3 +12,4 @@ export * from './budgets.js';
 export * from './flow.js';
 export * from './recommendations.js';
 export * from './payslips.js';
+export * from './business.js';

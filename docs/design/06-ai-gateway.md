@@ -11,6 +11,8 @@ interface AiGateway {
   categorize(input: CategorizeInput[], ctx: AiContext): Promise<TaskResult<CategorizeOutput[]>>;
   extractReceipt(images: ImageRef[], ctx): Promise<TaskResult<ReceiptExtraction>>;
   extractPayslip(doc: DocRef, ctx): Promise<TaskResult<PayslipExtraction>>;
+  mapTaxLines(input, ctx): Promise<TaskResult<TaxLineMapping[]>>;       // AI-10: proposes, the user maps
+  flagSeparation(input, ctx): Promise<TaskResult<SeparationFlag[]>>;   // BIZ-03: flags, the user reclassifies
   extractStatementTable(doc: DocRef, ctx): Promise<TaskResult<StatementTable>>;
   mapColumns(sample: GridSample, ctx): Promise<TaskResult<ColumnMapping>>;
   normalizePayees(raw: string[], ctx): Promise<TaskResult<PayeeNormalization[]>>;

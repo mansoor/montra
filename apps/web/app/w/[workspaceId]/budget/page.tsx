@@ -146,6 +146,18 @@ export default async function BudgetPage({
           label: t(`budget.tab_${k}`),
         }))}
       />
+      {budget.revenueTarget !== null && (
+        <p
+          className="card flex flex-wrap items-center justify-between gap-2 text-sm"
+          data-testid="revenue-target"
+        >
+          <span>{t('budget.revenue_target')}</span>
+          <span className="font-semibold">
+            <Money amount={period.income.actual} currency={budget.currency} /> /{' '}
+            <Money amount={budget.revenueTarget} currency={budget.currency} />
+          </span>
+        </p>
+      )}
       {tab === 'plan' && <BudgetView key={period.start} initial={period} workspaceId={workspaceId} />}
       {tab === 'income' && (
         <IncomeManager

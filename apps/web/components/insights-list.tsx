@@ -40,7 +40,13 @@ export function InsightsList({
       if (kind === 'accept') {
         const categoryId = categoryFor[item.id];
         await browserApi.acceptInsight(workspace.id, item.id, categoryId ? { categoryId } : {});
-        setNotice(item.kind === 'recurring' ? t('insights.accepted_recurring') : t('insights.accepted'));
+        setNotice(
+          item.kind === 'recurring'
+            ? t('insights.accepted_recurring')
+            : item.kind === 'separation'
+              ? t('insights.accepted_separation', { category: String(item.data.category ?? '') })
+              : t('insights.accepted'),
+        );
       } else {
         await browserApi.dismissInsight(workspace.id, item.id);
         setNotice(t('insights.dismissed'));

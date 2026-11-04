@@ -34,6 +34,8 @@ import * as normalizeV1 from './tasks/normalize-payees/v1.js';
 import * as quickAddV1 from './tasks/parse-quick-add/v1.js';
 import * as pingV1 from './tasks/ping/v1.js';
 import * as proposeV1 from './tasks/propose-categories/v1.js';
+import * as taxLinesV1 from './tasks/map-tax-lines/v1.js';
+import * as separationV1 from './tasks/flag-separation/v1.js';
 import * as summaryV1 from './tasks/word-summary/v1.js';
 import type {
   AiContext,
@@ -44,6 +46,10 @@ import type {
   CategoryOption,
   CategoryProposalInput,
   CategoryProposalOutput,
+  SeparationFlag,
+  SeparationInput,
+  TaxLineInput,
+  TaxLineMapping,
   ColumnMappingProposal,
   CompletionResponse,
   FailureReason,
@@ -975,6 +981,109 @@ export class Gateway implements AiGateway {
           return { categories: [...proposed.values()], assignments };
         },
         eventOutput: (v) => ({ categories: v.categories, assignments: v.assignments.length }),
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
+  // ----- map_tax_lines (AI-10) --------------------------------------------------------------------
+
+  /** Proposes a line for categories without one. Only the codes passed in can come back; the user decides. */
+  async mapTaxLines(input: TaxLineInput, ctx: AiContext): Promise<TaskResult<TaxLineMapping[]>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const categories = input.categories.slice(0, 100);
+    if (categories.length === 0) return { ok: false, reason: 'invalid_output', detail: 'no categories' };
+    const byId = new Map(categories.map((c, i) => [`c${i + 1}`, c.id]));
+    const codes = new Set(input.lines.map((l) => l.code));
+    return this.callProvider<TaxLineMapping[]>(
+      {
+        task: 'map_tax_lines',
+        system: taxLinesV1.SYSTEM,
+        promptVersion: taxLinesV1.PROMPT_VERSION,
+        input: {
+          lines: input.lines,
+          categories: categories.map((c, i) => ({
+            id: `c${i + 1}`,
+            name: minimizeText(c.name, ctx.pseudonyms),
+            group: c.group,
+          })),
+        },
+        schema: taxLinesV1.Output,
+        validate: (o: taxLinesV1.Output) => {
+          const out: TaxLineMapping[] = [];
+          const seen = new Set<string>();
+          for (const m of o.mappings) {
+            const categoryId = byId.get(m.id);
+            if (!categoryId || !codes.has(m.code) || seen.has(categoryId)) continue;
+            seen.add(categoryId);
+            out.push({ categoryId, code: m.code, explanation: oneLine(m.explanation, 200) });
+          }
+          return out;
+        },
+        eventOutput: (v) => ({ mappings: v.length }),
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
+  // ----- flag_separation (BIZ-03) -----------------------------------------------------------------
+
+  /**
+   * Flags what looks recorded on the wrong side. Below 0.7 confidence a flag is dropped: flags interrupt the user,
+   * and most transactions are right. Payees are minimized and amounts rounded.
+   */
+  async flagSeparation(input: SeparationInput, ctx: AiContext): Promise<TaskResult<SeparationFlag[]>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const items = input.items.slice(0, 100);
+    const byId = new Map(items.map((t, i) => [`t${i + 1}`, t]));
+    const names = (side: 'personal' | 'business') =>
+      new Map(
+        (side === 'personal' ? input.personalCategories : input.businessCategories).map((n) => [
+          n.trim().toLowerCase(),
+          n,
+        ]),
+      );
+    return this.callProvider<SeparationFlag[]>(
+      {
+        task: 'flag_separation',
+        system: separationV1.SYSTEM,
+        promptVersion: separationV1.PROMPT_VERSION,
+        input: {
+          personalCategories: input.personalCategories,
+          businessCategories: input.businessCategories,
+          items: items.map((t, i) => ({
+            id: `t${i + 1}`,
+            payee: minimizeText(t.payee, ctx.pseudonyms),
+            amount: roundedAmount(t.amountMinor, exponentOf(t.currency)),
+            category: t.category,
+            side: t.side,
+          })),
+        },
+        schema: separationV1.Output,
+        validate: (o: separationV1.Output) => {
+          const out: SeparationFlag[] = [];
+          const seen = new Set<string>();
+          for (const f of o.flags) {
+            const item = byId.get(f.id);
+            if (!item || seen.has(item.id) || f.confidence < 0.7) continue;
+            // The category must be on the other side of where it's recorded now.
+            const category = names(item.side === 'personal' ? 'business' : 'personal').get(
+              f.category.trim().toLowerCase(),
+            );
+            if (!category) continue;
+            seen.add(item.id);
+            out.push({
+              id: item.id,
+              category,
+              confidence: Math.min(1, f.confidence),
+              reason: oneLine(f.reason, 200),
+            });
+          }
+          return out;
+        },
+        eventOutput: (v) => ({ flags: v.length }),
       },
       ctx,
       { spent: 0n },

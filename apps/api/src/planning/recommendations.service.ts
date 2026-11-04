@@ -26,6 +26,7 @@ import {
   type CalendarDate,
   type GroupKind,
   type PeriodResult,
+  todayIn,
 } from '@montra/domain';
 import {
   ProposedActionDto,
@@ -44,6 +45,8 @@ import { BudgetsService, conflict, isBudgetCategory, type ComputedPeriod } from 
 import { FlowService } from './flow.service.js';
 import { GoalsService } from './goals.service.js';
 import { PlanningData, type Ctx } from './data.js';
+import { BusinessJobs } from '../business/business-jobs.service.js';
+import { TransactionsService } from '../transactions/transactions.service.js';
 import { wordSummary } from './wording.js';
 
 /** Local hour after which the nightly planning run starts in each workspace (TZ-04). */
@@ -84,6 +87,8 @@ export class RecommendationsService {
     @Inject(AiService) private readonly ai: AiService,
     @Inject(Worker) private readonly worker: Worker,
     @Inject(RecurringService) private readonly recurring: RecurringService,
+    @Inject(TransactionsService) private readonly transactions: TransactionsService,
+    @Inject(BusinessJobs) private readonly business: BusinessJobs,
   ) {}
 
   // ----- Jobs (TZ-04) ------------------------------------------------------------------------------------
@@ -104,11 +109,12 @@ export class RecommendationsService {
       const ctx = { workspaceId: job.workspace_id, userId: job.created_by };
       const materialized = await this.recurring.materialize(ctx);
       const recs = await this.run(ctx);
-      return { ...materialized, ...recs };
+      const business = await this.business.nightly(ctx);
+      return { ...materialized, ...recs, business };
     });
     this.worker.register('planning.recommend', async (job: Job) => {
       if (!job.workspace_id || !job.created_by) throw new Error('Job without workspace or user');
-      return this.run({ workspaceId: job.workspace_id, userId: job.created_by });
+      return this.refresh({ workspaceId: job.workspace_id, userId: job.created_by });
     });
   }
 
@@ -149,6 +155,12 @@ export class RecommendationsService {
   // ----- Run ---------------------------------------------------------------------------------------------
 
   /** Evaluates every rule for every household budget the user can write; returns the number created. */
+  /** Budget recommendations and the business notes (REC-09, BIZ-09, BIZ-11). */
+  async refresh(ctx: Ctx): Promise<{ created: number; expired: number }> {
+    const res = await this.run(ctx);
+    return { ...res, created: res.created + (await this.business.notes(ctx)) };
+  }
+
   async run(ctx: Ctx): Promise<{ created: number; expired: number }> {
     return this.db.run(ctx, async (trx) => {
       const budgets = await trx
@@ -823,6 +835,19 @@ export class RecommendationsService {
               .execute();
           }
         }
+      }
+      // REC-09: money moved between accounts is an ordinary transfer, done now, in this transaction.
+      for (const a of actions) {
+        if (a.kind !== 'transfer') continue;
+        const currency = (rec.payload as { currency?: string }).currency;
+        if (!currency) throw unprocessable('recommendation.currency', 'This recommendation has no currency');
+        await this.transactions.transferIn(trx, ctx, {
+          date: todayIn((await this.data.entity(trx, ctx, rec.entity_id)).timeZone),
+          fromAccountId: a.fromAccountId,
+          toAccountId: a.toAccountId,
+          amount: { amount: a.amount, currency: currency as never },
+          description: 'Tax set-aside',
+        });
       }
       const row = await trx
         .updateTable('app.recommendation')

@@ -59,6 +59,15 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'reference',
   ],
   'imports.row_error.': ['invalid_date', 'invalid_amount', 'missing_amount'],
+  'invoices.status.': ['draft', 'sent', 'partial', 'paid', 'overdue', 'void'],
+  'bills.status.': ['open', 'overdue', 'paid', 'void'],
+  'business.format_': ['csv', 'xlsx', 'quickbooks_iif', 'xero_csv'],
+  'business.range_': ['month', 'quarter', 'ytd', 'last_year'],
+  'business.show_': ['pnl', 'customers', 'vendors'],
+  'parties.add_': ['customer', 'vendor'],
+  'parties.new_': ['customer', 'vendor'],
+  'parties.empty_': ['customer', 'vendor'],
+  'parties.year_total_': ['customer', 'vendor'],
   'payslips.status.': ['processing', 'needs_review', 'posted', 'rejected'],
   'payslips.section.': ['earning', 'pre_tax', 'tax', 'post_tax', 'employer'],
   'payslips.code.': [
@@ -83,7 +92,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'employers.type_': ['employer', 'freelance', 'pension', 'benefits', 'other'],
   'employers.frequency_': ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'yearly'],
   'members_report.range_': ['month', 'ytd', 'last_year'],
-  'imports.kept_reason.': ['payslip', 'reconciled', 'reversed_in_open_period'],
+  'imports.kept_reason.': ['bill', 'invoice', 'payslip', 'reconciled', 'reversed_in_open_period'],
   'entities.action.': ['lock', 'unlock', 'relock'],
   'journal.kind.': [
     'standard',
@@ -109,7 +118,14 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'ai.outcome.': ['ok', 'cached', 'off', 'budget', 'invalid_output', 'provider_error', 'refused'],
   'ai.runner.': ['inactive', 'waiting', 'ok', 'unreachable'],
   'ai.usage_state.': ['ok', 'downgraded', 'exhausted'],
-  'insights.kind.': ['recurring', 'unusual_amount', 'duplicate_charge', 'new_subscription', 'price_increase'],
+  'insights.kind.': [
+    'recurring',
+    'unusual_amount',
+    'duplicate_charge',
+    'new_subscription',
+    'price_increase',
+    'separation',
+  ],
   'rules.dow.': ['0', '1', '2', '3', '4', '5', '6'],
   'rules.field.': [
     'payee',
@@ -147,7 +163,19 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'income.source_': ['salary', 'business', 'rent', 'other'],
   'planning.priority_': ['1', '2', '3', '4', '5'],
   'rec.status_': ['open', 'accepted', 'dismissed'],
-  'rec.type_': ['REC-01', 'REC-02', 'REC-03', 'REC-04', 'REC-05', 'REC-06', 'REC-07', 'REC-08'],
+  'rec.type_': [
+    'REC-01',
+    'REC-02',
+    'REC-03',
+    'REC-04',
+    'REC-05',
+    'REC-06',
+    'REC-07',
+    'REC-08',
+    'REC-09',
+    'BIZ-09',
+    'BIZ-11',
+  ],
 };
 
 describe('message catalog coverage (TZ-06)', () => {

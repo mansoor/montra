@@ -130,6 +130,7 @@ export class BudgetsService {
           period_type: req.periodType,
           anchor_date: req.periodType === 'monthly' ? null : req.anchorDate,
           savings_target_minor: req.savingsTarget,
+          revenue_target_minor: req.revenueTarget,
           created_by: ctx.userId,
         })
         .returningAll()
@@ -161,6 +162,7 @@ export class BudgetsService {
           ...(req.name !== undefined ? { name: req.name } : {}),
           ...(req.method !== undefined ? { method: req.method } : {}),
           ...(req.savingsTarget !== undefined ? { savings_target_minor: req.savingsTarget } : {}),
+          ...(req.revenueTarget !== undefined ? { revenue_target_minor: req.revenueTarget } : {}),
           ...(req.archived !== undefined ? { archived_at: req.archived ? new Date() : null } : {}),
         })
         .where('workspace_id', '=', ctx.workspaceId)
@@ -662,6 +664,7 @@ export class BudgetsService {
       periodType: b.period_type,
       anchorDate: b.anchor_date ? calendarDate(b.anchor_date) : null,
       savingsTarget: b.savings_target_minor !== null ? String(b.savings_target_minor) : null,
+      revenueTarget: b.revenue_target_minor !== null ? String(b.revenue_target_minor) : null,
       currency: entity.currency as BudgetDto['currency'],
       archived: b.archived_at !== null,
       version: Number(b.version),

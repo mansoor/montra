@@ -19,6 +19,7 @@ export const SYSTEM_ROLES = [
   'fx_rounding',
   'security_deposits_held',
   'bank_fees',
+  'sales_tax_payable',
 ] as const;
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 

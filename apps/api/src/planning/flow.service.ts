@@ -17,6 +17,7 @@ import {
   endOfMonth,
   forecast as simulate,
   money,
+  estimatedTaxPeriods,
   occurrencesBetween,
   parseDecimal,
   periodContaining,
@@ -39,6 +40,9 @@ import type {
 } from '@montra/schemas';
 import { notFound } from '../common/errors.js';
 import { Db } from '../db/database.js';
+import { BillsService } from '../business/bills.service.js';
+import { BusinessReportsService } from '../business/business-reports.service.js';
+import { InvoicesService } from '../business/invoices.service.js';
 import { FxRatesService } from '../fx/fx.service.js';
 import type { TransactionSpec } from '../transactions/poster.js';
 import { BudgetsService, isBudgetCategory } from './budgets.service.js';
@@ -80,6 +84,9 @@ export class FlowService {
     @Inject(PlanningData) private readonly data: PlanningData,
     @Inject(BudgetsService) private readonly budgets: BudgetsService,
     @Inject(FxRatesService) private readonly fx: FxRatesService,
+    @Inject(InvoicesService) private readonly invoices: InvoicesService,
+    @Inject(BillsService) private readonly bills: BillsService,
+    @Inject(BusinessReportsService) private readonly businessReports: BusinessReportsService,
   ) {}
 
   // ----- Accounts ----------------------------------------------------------------------------------------
@@ -245,6 +252,63 @@ export class FlowService {
         accountId: null,
         status: 'upcoming',
       });
+    }
+    // A business's open invoices and bills, and its estimated-tax dates (BIZ-05, BIZ-06, BIZ-09).
+    const inRange = (d: CalendarDate) => d >= from && d <= to;
+    for (const i of await this.invoices.openInvoices(trx, ctx, entityId ?? undefined)) {
+      if (!inRange(i.dueDate)) continue;
+      push({
+        date: i.dueDate,
+        kind: 'invoice',
+        name: `${i.partyName} · ${i.number}`,
+        amount: s(i.open),
+        currency: i.currency as Money,
+        sourceId: i.id,
+        accountId: null,
+        status: i.dueDate < today ? 'overdue' : 'upcoming',
+      });
+    }
+    for (const b of await this.bills.openBills(trx, ctx, entityId ?? undefined)) {
+      if (!inRange(b.dueDate)) continue;
+      push({
+        date: b.dueDate,
+        kind: 'bill',
+        name: b.partyName,
+        amount: s(-b.amount),
+        currency: b.currency as Money,
+        sourceId: b.id,
+        accountId: null,
+        status: b.dueDate < today ? 'overdue' : 'upcoming',
+      });
+    }
+    const businesses = await trx
+      .selectFrom('app.entity')
+      .select('id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('type', '=', 'business')
+      .where('archived_at', 'is', null)
+      .$if(!!entityId, (q) => q.where('id', '=', entityId!))
+      .execute();
+    for (const b of businesses) {
+      // The payment for a tax year falls due up to January of the next one.
+      for (const year of new Set([Number(from.slice(0, 4)) - 1, Number(to.slice(0, 4))])) {
+        // Most views hold no tax date, and the amounts take a scan of the year: look only when there's one to show.
+        if (!estimatedTaxPeriods(year).some((p) => inRange(p.due))) continue;
+        const estimate = await this.businessReports.taxEstimateIn(trx, ctx, b.id, year);
+        for (const p of estimate.periods) {
+          if (!inRange(p.due)) continue;
+          push({
+            date: p.due,
+            kind: 'tax_due',
+            name: `Estimated tax Q${p.quarter}`,
+            amount: s(-BigInt(p.target)),
+            currency: estimate.currency,
+            sourceId: b.id,
+            accountId: null,
+            status: p.due < today ? 'paid' : 'upcoming',
+          });
+        }
+      }
     }
     items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.name.localeCompare(b.name)));
     return { from, to, items };
@@ -428,6 +492,31 @@ export class FlowService {
           .sort((a, b) =>
             (balances.get(b.id)?.get(today) ?? 0n) > (balances.get(a.id)?.get(today) ?? 0n) ? 1 : -1,
           )[0] ?? cash[0];
+      // Open invoices and bills (BIZ-05, BIZ-06). One past its date is still expected, so it counts from tomorrow.
+      if (primary) {
+        for (const i of await this.invoices.openInvoices(trx, ctx, e)) {
+          if (i.dueDate > last) continue;
+          add({
+            date: i.dueDate < from ? from : i.dueDate,
+            accountId: primary.id,
+            amount: i.open,
+            kind: 'invoice',
+            name: `${i.partyName} · ${i.number}`,
+            sourceId: i.id,
+          });
+        }
+        for (const b of await this.bills.openBills(trx, ctx, e)) {
+          if (b.dueDate > last) continue;
+          add({
+            date: b.dueDate < from ? from : b.dueDate,
+            accountId: primary.id,
+            amount: -b.amount,
+            kind: 'bill',
+            name: b.partyName,
+            sourceId: b.id,
+          });
+        }
+      }
       const incomeItems = await this.data.incomeItems(trx, ctx, e);
       if (incomeItems.length) {
         const deposits = await this.data.deposits(trx, ctx, e, addDays(today, -8), last);

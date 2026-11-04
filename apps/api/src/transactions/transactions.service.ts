@@ -15,7 +15,14 @@ import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { tripOn } from '../trips/trips.js';
-import { TransactionPoster, type ForeignSpec, type SplitSpec, type TransactionSpec } from './poster.js';
+import {
+  assertNotOwned,
+  ownerOf,
+  TransactionPoster,
+  type ForeignSpec,
+  type SplitSpec,
+  type TransactionSpec,
+} from './poster.js';
 import {
   Categorizer,
   payeeKeyOf,
@@ -255,8 +262,14 @@ export class TransactionsService {
 
   /** Transfer between accounts: one entry per entity, never income or expense (TXN-04, DE-03). */
   async transfer(ctx: Ctx, req: CreateTransferRequest): Promise<TransactionDto> {
+    const id = await this.db.run(ctx, (trx) => this.transferIn(trx, ctx, req));
+    return this.getOrThrow(ctx, id);
+  }
+
+  /** The same, inside the caller's transaction. */
+  async transferIn(trx: Trx, ctx: Ctx, req: CreateTransferRequest): Promise<string> {
     const id = newId();
-    await this.db.run(ctx, async (trx) => {
+    {
       const spec: TransactionSpec = {
         type: 'transfer',
         fromAccountId: req.fromAccountId,
@@ -284,8 +297,8 @@ export class TransactionsService {
         })
         .execute();
       await this.poster.post(trx, ctx, id, built);
-    });
-    return this.getOrThrow(ctx, id);
+    }
+    return id;
   }
 
   /**
@@ -322,12 +335,10 @@ export class TransactionsService {
       const spec = row.spec as TransactionSpec | null;
       if (!spec) throw unprocessable('transaction.not_editable', 'This transaction has no editable input');
       const date = req.date ?? calendarDate(row.txn_date);
-      // ADR-0016: a payslip owns its entry. Notes and tags stay editable; anything the ledger depends on
-      // changes on the payslip, because merging here would post a plain entry over the payslip's lines.
-      const managed = spec.type === 'standard' && !!spec.payslipId;
-      if (managed && LEDGER_FIELDS.some((f) => req[f] !== undefined)) {
-        throw unprocessable('payslip.managed', 'This comes from a payslip: change it on the payslip');
-      }
+      // ADR-0016, ADR-0017: a payslip, invoice or bill owns its entry. Notes and tags stay editable; anything the
+      // ledger depends on changes there, because merging here would post a plain entry over its lines.
+      const managed = ownerOf(spec) !== null;
+      if (managed && LEDGER_FIELDS.some((f) => req[f] !== undefined)) assertNotOwned(spec);
       const next = managed ? spec : await this.mergeSpec(trx, ctx, spec, req);
       const ledgerChanged = JSON.stringify(next) !== JSON.stringify(spec) || date !== row.txn_date;
       if (ledgerChanged && row.status !== 'scheduled') {
@@ -415,10 +426,7 @@ export class TransactionsService {
   ): Promise<{ outcome: 'removed' | 'reversed' }> {
     const row = await this.lockRow(trx, ctx, id, ifMatch);
     if (row.status === 'void') return { outcome: 'removed' as const };
-    const owned = row.spec as { payslipId?: string } | null;
-    if (owned?.payslipId) {
-      throw unprocessable('payslip.managed', 'This comes from a payslip: delete it on the payslip');
-    }
+    assertNotOwned(row.spec);
     const outcome = await this.poster.unpost(trx, ctx, id);
     await trx
       .updateTable('app.transaction')

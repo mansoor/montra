@@ -16,13 +16,14 @@ export default async function TransactionPage({
   params: Promise<{ workspaceId: string; transactionId: string }>;
 }) {
   const { workspaceId, transactionId } = await params;
-  const [workspace, transaction, accounts, categories, members] = await load((api) =>
+  const [workspace, transaction, accounts, categories, members, taxLines] = await load((api) =>
     Promise.all([
       api.getWorkspace(workspaceId),
       api.getTransaction(workspaceId, transactionId),
       api.listAccounts(workspaceId, { include: 'all' }),
       api.listCategories(workspaceId),
       api.listFamilyMembers(workspaceId),
+      api.listTaxLines(workspaceId),
     ]),
   );
   // Journal detail (lock state, cleared status) per entry (DE-07).
@@ -36,6 +37,16 @@ export default async function TransactionPage({
   const functional = workspace.entities.find((e) => e.id === account?.entityId)?.functionalCurrency;
   const foreignAccount = Boolean(account && functional && account.currency !== functional);
   const standard = transaction.entries.some((e) => e.kind === 'standard') && transaction.amount !== null;
+  // AI-10: a hint at the tax line its categories usually go on, for bookkeeping; not tax advice.
+  const hints = [
+    ...new Map(
+      (transaction.splits ?? []).flatMap((split) => {
+        const code = categories.find((c) => c.id === split.accountId)?.taxLineCode;
+        const line = taxLines.find((l) => l.code === code);
+        return line ? [[line.code, line] as const] : [];
+      }),
+    ).values(),
+  ];
 
   return (
     <div className="space-y-6">
@@ -50,6 +61,15 @@ export default async function TransactionPage({
         categories={categories}
         members={members}
       />
+      {hints.map((line) => (
+        <p key={line.code} className="text-sm text-muted" data-testid="tax-hint">
+          {t(line.form === 'schedule_c' ? 'tax_hint.schedule_c' : 'tax_hint.schedule_e', {
+            line: line.line,
+            label: line.label,
+          })}
+          {line.deductibleBps < 10000 && ` ${t('tax_hint.partly', { percent: line.deductibleBps / 100 })}`}
+        </p>
+      ))}
       <TransactionFx workspaceId={workspaceId} transaction={transaction} foreignAccount={foreignAccount} />
       {standard && (
         <section id="receipt" aria-labelledby="receipt-heading" className="card space-y-2">

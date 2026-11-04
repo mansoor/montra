@@ -36,6 +36,7 @@ export default function More() {
         onPress={() => router.push('/receipts')}
         testID="more-receipts"
       />
+      <Row title={t('nav.business')} onPress={() => router.push('/business')} testID="more-business" />
       <Row title={t('nav.payslips')} onPress={() => router.push('/payslips')} testID="more-payslips" />
       <Row title={t('mobile.more.import')} onPress={() => router.push('/import')} testID="more-import" />
       <Row

@@ -277,7 +277,7 @@ export class PlanningController {
   @Post('recommendations/refresh')
   @HttpCode(200)
   refresh(@Ctx() ctx: RequestContext) {
-    return this.recs.run(dbCtx(ctx));
+    return this.recs.refresh(dbCtx(ctx));
   }
 
   @Post('recommendations/:id/accept')

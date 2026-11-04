@@ -690,3 +690,114 @@ describe('extract_payslip (PAY-03, PAY-09)', () => {
     expect(res).toMatchObject({ ok: false, reason: 'off' });
   });
 });
+
+describe('map_tax_lines (AI-10)', () => {
+  const lines = [
+    { code: 'US_SCH_C_L8', label: 'Advertising' },
+    { code: 'US_SCH_C_L22', label: 'Supplies' },
+  ];
+
+  it('proposes only the codes it was given, keyed by the real category id', async () => {
+    const res = await createGateway().mapTaxLines(
+      {
+        lines,
+        categories: [
+          { id: 'real-1', name: 'Workshop supplies', group: null },
+          { id: 'real-2', name: 'Mystery', group: null },
+        ],
+      },
+      ctxOf(new MemoryStore()),
+    );
+    expect(res.ok && res.value).toEqual([
+      { categoryId: 'real-1', code: 'US_SCH_C_L22', explanation: 'Usually reported as Supplies.' },
+    ]);
+  });
+
+  it('drops an answer with a code or category that was not offered', async () => {
+    const fake = new Scripted('fake', () => ({
+      ok: true as const,
+      json: {
+        mappings: [
+          { id: 'c1', code: 'US_SCH_C_L99', explanation: 'made up' },
+          { id: 'c9', code: 'US_SCH_C_L8', explanation: 'made up' },
+          { id: 'c1', code: 'US_SCH_C_L8', explanation: 'fine' },
+        ],
+      },
+      usage,
+      model: 'fake',
+    }));
+    const res = await createGateway({ adapterFactory: () => fake }).mapTaxLines(
+      { lines, categories: [{ id: 'real-1', name: 'Ads', group: null }] },
+      ctxOf(new MemoryStore()),
+    );
+    expect(res.ok && res.value).toEqual([{ categoryId: 'real-1', code: 'US_SCH_C_L8', explanation: 'fine' }]);
+  });
+
+  it('does nothing when AI is off', async () => {
+    const res = await createGateway().mapTaxLines(
+      { lines, categories: [{ id: 'real-1', name: 'Ads', group: null }] },
+      ctxOf(new MemoryStore(), { mode: 'off' }),
+    );
+    expect(res).toMatchObject({ ok: false, reason: 'off' });
+  });
+});
+
+describe('flag_separation (BIZ-03)', () => {
+  const input = {
+    personalCategories: ['Groceries', 'Dining out'],
+    businessCategories: ['Software & subscriptions', 'Supplies'],
+    items: [
+      {
+        id: 'a',
+        payee: 'ADOBE CREATIVE',
+        amountMinor: -5499n,
+        currency: 'USD',
+        category: 'Dining out',
+        side: 'personal' as const,
+      },
+      {
+        id: 'b',
+        payee: 'WHOLE FOODS',
+        amountMinor: -8000n,
+        currency: 'USD',
+        category: 'Supplies',
+        side: 'business' as const,
+      },
+      {
+        id: 'c',
+        payee: 'CORNER CAFE',
+        amountMinor: -500n,
+        currency: 'USD',
+        category: 'Dining out',
+        side: 'personal' as const,
+      },
+    ],
+  };
+
+  it('flags the clear ones, with a category from the other side', async () => {
+    const res = await createGateway().flagSeparation(input, ctxOf(new MemoryStore()));
+    expect(res.ok && res.value.map((f) => [f.id, f.category])).toEqual([
+      ['a', 'Software & subscriptions'],
+      ['b', 'Groceries'],
+    ]);
+  });
+
+  it('drops low confidence and a category from the same side', async () => {
+    const fake = new Scripted('fake', () => ({
+      ok: true as const,
+      json: {
+        flags: [
+          { id: 't1', category: 'Supplies', confidence: 0.5, reason: 'unsure' },
+          { id: 't2', category: 'Supplies', confidence: 0.95, reason: 'same side' },
+        ],
+      },
+      usage,
+      model: 'fake',
+    }));
+    const res = await createGateway({ adapterFactory: () => fake }).flagSeparation(
+      input,
+      ctxOf(new MemoryStore()),
+    );
+    expect(res.ok && res.value).toEqual([]);
+  });
+});
