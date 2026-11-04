@@ -85,3 +85,9 @@ variable "rate_limit_count_failures_only" {
   type        = bool
   default     = false
 }
+
+variable "image_tag" {
+  description = "Image tag for the task definitions Terraform registers. Set it once, to the tag from the first build_only run of deploy.yml. Later deployments replace it."
+  type        = string
+  default     = "bootstrap"
+}
