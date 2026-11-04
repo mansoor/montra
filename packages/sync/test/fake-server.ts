@@ -69,11 +69,21 @@ export function makeDto(t: TxInput, version = 1): TransactionDto {
     memo: t.memo ?? null,
     tags: [],
     recurringItemId: null,
+    managedBy: null,
     foreign: null,
     tripId: null,
     localTime: null,
     accountId: ACCOUNT,
-    splits: [{ accountId: category, amount: String(-BigInt(amount)), memberId: null, memo: null }],
+    splits: [
+      {
+        accountId: category,
+        amount: String(-BigInt(amount)),
+        memberId: null,
+        memo: null,
+        propertyId: null,
+        unitId: null,
+      },
+    ],
     amount: { amount, currency: 'USD' },
     entries: [
       {
