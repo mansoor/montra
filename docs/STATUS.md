@@ -20,22 +20,22 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements** | 252 IDs in total: **147 done, 39 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
 | **Next** | Merge the Phase 8 PR, tag `v0.9.0-dev.1`, then **Phase 9: rental properties** |
 
-### Test suite at the end of Phase 7 (green locally)
+### Test suite at the end of Phase 8 (green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 168, plus 4 perf budgets run alone |
+| `@montra/api` (integration, real Postgres) | 210, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 82 |
+| `@montra/web` unit | 89 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
-| `@montra/domain` | 117 |
+| `@montra/domain` | 135 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
-| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 60 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips) | 50 |
-| `@montra/db` (ledger triggers, RLS, read models, receipts) | 34 |
+| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 65 |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business) | 55 |
+| `@montra/db` (ledger triggers, RLS, read models, receipts) | 35 |
 | `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 14 tests in 10 spec files |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 15 tests in 11 spec files |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
@@ -575,6 +575,8 @@ Rules the code depends on (don't undo these):
   and the payee key second.
 - **Rates apply from a date** (`ref.mileage_rate`). IRS rates changed mid-year in 2022 and 2026. Rates were checked against the IRS
   page on 2026-11-03; update `packages/db/src/reference/tax.ts` when a new notice is published.
+- **The calendar computes a tax estimate only when a due date is in view.** Home and the calendar both read it, and the estimate
+  scans a year of postings. The 50k perf budget caught this at 2 s; it's 61 ms now.
 - **Automatic links stay conservative.** Only in the business's own accounts, and only one exact pair or a quoted number. Offering is
   always safe; a wrong automatic link misstates income.
 

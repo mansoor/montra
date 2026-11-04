@@ -96,20 +96,4 @@ export async function profitBetween(
   return { revenue, expenses, profit: revenue - expenses };
 }
 
-/** The mileage deduction in a date range (BIZ-07). It isn't in the ledger, but it does reduce taxable profit. */
-export async function mileageBetween(
-  trx: Trx,
-  ctx: Ctx,
-  entityId: string,
-  from: CalendarDate,
-  to: CalendarDate,
-): Promise<bigint> {
-  const { rows } = await sql<{ total: string }>`
-    select coalesce(sum(deduction_minor), 0)::text as total from app.mileage_trip
-     where workspace_id = ${ctx.workspaceId} and entity_id = ${entityId} and trip_date between ${from} and ${to}`.execute(
-    trx,
-  );
-  return BigInt(rows[0]?.total ?? '0');
-}
-
 export const dateOf = (v: unknown): CalendarDate => calendarDate(String(v).slice(0, 10));

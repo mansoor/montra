@@ -17,6 +17,7 @@ import {
   endOfMonth,
   forecast as simulate,
   money,
+  estimatedTaxPeriods,
   occurrencesBetween,
   parseDecimal,
   periodContaining,
@@ -291,6 +292,8 @@ export class FlowService {
     for (const b of businesses) {
       // The payment for a tax year falls due up to January of the next one.
       for (const year of new Set([Number(from.slice(0, 4)) - 1, Number(to.slice(0, 4))])) {
+        // Most views hold no tax date, and the amounts take a scan of the year: look only when there's one to show.
+        if (!estimatedTaxPeriods(year).some((p) => inRange(p.due))) continue;
         const estimate = await this.businessReports.taxEstimateIn(trx, ctx, b.id, year);
         for (const p of estimate.periods) {
           if (!inRange(p.due)) continue;

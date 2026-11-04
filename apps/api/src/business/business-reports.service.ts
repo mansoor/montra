@@ -26,16 +26,7 @@ import type {
 import { AiService } from '../ai/ai.service.js';
 import { Db } from '../db/database.js';
 import { BusinessService } from './business.service.js';
-import {
-  businessEntity,
-  dateOf,
-  mileageBetween,
-  profitBetween,
-  TAX_COUNTRY,
-  todayOf,
-  type BusinessEntity,
-  type Ctx,
-} from './shared.js';
+import { businessEntity, dateOf, TAX_COUNTRY, todayOf, type BusinessEntity, type Ctx } from './shared.js';
 
 const SCHEDULE_C = 'schedule_c';
 const CAR_AND_TRUCK = 'US_SCH_C_L9';
@@ -361,18 +352,32 @@ export class BusinessReportsService {
     const start = `${y}-01-01` as CalendarDate;
     const yearEnd = `${y}-12-31` as CalendarDate;
     const through = today < yearEnd ? today : yearEnd;
-    // After mileage, so this agrees with Schedule C: the deduction isn't in the ledger, but it does lower the tax.
-    const taxableProfit = async (to: CalendarDate) =>
-      (await profitBetween(trx, ctx, entityId, start, to)).profit -
-      (await mileageBetween(trx, ctx, entityId, start, to));
-    const profit = await taxableProfit(through);
+    // After mileage, so this agrees with Schedule C: the deduction isn't in the ledger, but it does lower the tax. One scan
+    // of the year, by day: every period and the total are running sums of it.
+    const { rows: days } = await sql<{ d: string; profit: string }>`
+      select d, sum(amount)::text as profit from (
+        select p.entry_date::text as d,
+               -p.functional_amount_minor as amount
+          from app.posting p
+          join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
+         where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${entityId}
+           and a.type in ('income', 'expense') and p.entry_date between ${start} and ${through}
+        union all
+        select trip_date::text, -deduction_minor
+          from app.mileage_trip
+         where workspace_id = ${ctx.workspaceId} and entity_id = ${entityId}
+           and trip_date between ${start} and ${through}
+      ) x group by d order by d`.execute(trx);
+    const taxableProfit = (to: CalendarDate) =>
+      days.reduce((t, r) => (r.d <= to ? t + BigInt(r.profit) : t), 0n);
+    const profit = taxableProfit(through);
     const rate = profile.tax_rate_bps;
     const saved = await this.savedSoFar(trx, ctx, profile.tax_savings_account_id, start, through);
     let seenNext = false;
     const periods: TaxEstimateDto['periods'] = [];
     for (const p of estimatedTaxPeriods(y)) {
       const end = p.through < today ? p.through : today;
-      const periodProfit = start <= end ? await taxableProfit(end) : 0n;
+      const periodProfit = taxableProfit(end);
       let status: 'past' | 'next' | 'later' = 'later';
       if (p.due < today) status = 'past';
       else if (!seenNext) {
