@@ -34,7 +34,7 @@
   ],
   "TXN-02": [
     "done",
-    "property/unit fields wired in P9"
+    "all fields, including property and unit on each split"
   ],
   "TXN-03": [
     "done",
@@ -66,7 +66,7 @@
   ],
   "DE-04": [
     "done",
-    "split to principal/interest/escrow; amortization schedules in P9"
+    "split to principal, interest and escrow from an amortization schedule"
   ],
   "DE-05": [
     "done",
@@ -326,7 +326,7 @@
   ],
   "AI-02": [
     "partial",
-    "category, entity (via category) and member; property/unit with rentals (P6)"
+    "category, entity (via category) and member. Property and unit are tagged by hand, or by rent, mortgage and capital improvement links; AI does not suggest them yet"
   ],
   "AI-03": [
     "done",
@@ -530,7 +530,7 @@
   ],
   "BUD-03": [
     "partial",
-    "entered income and payslip patterns matched to deposits, with a period override; rent roll in P9, detection later"
+    "entered income and payslip patterns matched to deposits, with a period override. The rent roll feeds the forecast, calendar and each property budget, not the household budget; detection later"
   ],
   "BUD-04": [
     "done",
@@ -585,8 +585,8 @@
     "consolidated Sankey; owner draws never count as spending, but are not yet drawn as transfers"
   ],
   "FLOW-07": [
-    "partial",
-    "accounts and asset accounts in the base currency with a trend; property values in P9"
+    "done",
+    "accounts and asset accounts in the base currency with a trend, and your share of property values"
   ],
   "REC-01": [
     "done",
@@ -738,10 +738,70 @@
   ],
   "REC-09": [
     "done",
-    "set-aside suggested when business income arrives; accepting transfers it. Rental income follows in P9"
+    "set-aside suggested when business or rental income arrives; accepting transfers it. For a portfolio it uses your share after depreciation"
   ],
   "AI-10": [
     "partial",
-    "business: tax line hints on transactions, AI proposals for unmapped categories. Rental reports in P9; proposals not run against the real provider"
+    "tax line hints on transactions and AI proposals for unmapped categories, on Schedule C and Schedule E. Proposals not run against the real provider"
+  ],
+  "RNT-01": [
+    "done",
+    "address, type, purchase date and price, ownership %, current value; a house gets its one unit by itself"
+  ],
+  "RNT-02": [
+    "done",
+    "beds, baths, market rent; occupied or vacant follows from leases, under repair is set by hand"
+  ],
+  "RNT-03": [
+    "done",
+    "tenants, terms, late-fee rule, deposit, lease document; overlapping leases on a unit are refused"
+  ],
+  "RNT-04": [
+    "done",
+    "charges written a month ahead, paid status derived oldest first with a credit for extra. Matched in code by amount, payer and date, not AI, so tenant names stay local (ADR-0018 §3)"
+  ],
+  "RNT-05": [
+    "done",
+    "arrears list with days late; late fees assessed nightly, once per period, and can be waived"
+  ],
+  "RNT-06": [
+    "done",
+    "property and unit tags on splits, Schedule E chart, a report per property with unmapped categories called out"
+  ],
+  "RNT-07": [
+    "done",
+    "by percent, units or square feet, to the cent, one off or from a saved rule"
+  ],
+  "RNT-08": [
+    "done",
+    "schedule from the terms; a payment posts principal, interest and escrow, and an exact bank line links by itself. Escrow counts when paid in, not paid out (ADR-0018 §6)"
+  ],
+  "RNT-09": [
+    "done",
+    "flagged from $2,500 in code and from $500 by AI, the owner decides; 27.5 and 39 year straight-line helper with a disclaimer. AI task not run against the real provider"
+  ],
+  "RNT-10": [
+    "done",
+    "held as a liability; returned capped at what is held; forfeited becomes income with no cash moved"
+  ],
+  "RNT-11": [
+    "done",
+    "income, expenses, NOI, debt service, capex, cash flow, cap rate, cash on cash, occupancy and Schedule E, per property and portfolio"
+  ],
+  "RNT-12": [
+    "done",
+    "lease ends at 60/30 days, insurance, property tax and inspections, on a list and the calendar. Push and email come with notifications in P10"
+  ],
+  "RNT-13": [
+    "done",
+    "issue, vendor, cost, status, photos and linked transactions"
+  ],
+  "RNT-14": [
+    "done",
+    "expected rent less planned expenses and capex reserve per unit per month, against actuals"
+  ],
+  "UP-10": [
+    "partial",
+    "per-property books on Schedule E lines with a CSV or Excel export; the one-click tax package comes in P10"
   ]
 }

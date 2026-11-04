@@ -52,6 +52,11 @@ export const US_TAX_LINES: TaxLine[] = [
   { code: 'US_SCH_E_L12', form: 'schedule_e', line: '12', label: 'Mortgage interest paid to banks' },
   { code: 'US_SCH_E_L13', form: 'schedule_e', line: '13', label: 'Other interest' },
   { code: 'US_SCH_E_L14', form: 'schedule_e', line: '14', label: 'Repairs' },
+  { code: 'US_SCH_E_L15', form: 'schedule_e', line: '15', label: 'Supplies' },
+  { code: 'US_SCH_E_L16', form: 'schedule_e', line: '16', label: 'Taxes' },
+  { code: 'US_SCH_E_L17', form: 'schedule_e', line: '17', label: 'Utilities' },
+  { code: 'US_SCH_E_L18', form: 'schedule_e', line: '18', label: 'Depreciation expense or depletion' },
+  { code: 'US_SCH_E_L19', form: 'schedule_e', line: '19', label: 'Other' },
 ];
 
 export interface MileageRate {

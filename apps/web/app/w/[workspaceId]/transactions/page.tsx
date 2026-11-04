@@ -29,6 +29,7 @@ export default async function TransactionsPage({
     filter?: string;
     entityId?: string;
     memberId?: string;
+    propertyId?: string;
     categoryIds?: string;
     accountIds?: string;
     from?: string;
@@ -43,6 +44,7 @@ export default async function TransactionsPage({
   const drill = {
     entityId: sp.entityId,
     memberId: sp.memberId,
+    propertyId: sp.propertyId,
     categoryIds: sp.categoryIds ? sp.categoryIds.split(',').filter(Boolean) : undefined,
     accountIds: sp.accountIds ? sp.accountIds.split(',').filter(Boolean) : undefined,
     from: sp.from,

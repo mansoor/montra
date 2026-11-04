@@ -9,10 +9,21 @@ import { newId, type Trx } from '@montra/db';
 import { calendarDate, type CalendarDate } from '@montra/domain';
 import type { PaymentCandidateDto } from '@montra/schemas';
 import { notFound, unprocessable } from '../common/errors.js';
-import { TransactionPoster, ownerOf, type SplitSpec, type TransactionSpec } from '../transactions/poster.js';
+import {
+  NOT_OWNED,
+  TransactionPoster,
+  ownerOf,
+  type SplitSpec,
+  type TransactionSpec,
+} from '../transactions/poster.js';
 import type { Ctx } from './shared.js';
 
-export type PaymentOwner = { invoiceId: string } | { billId: string };
+export type PaymentOwner =
+  | { invoiceId: string }
+  | { billId: string }
+  | { leaseId: string }
+  | { depositLeaseId: string }
+  | { loanId: string };
 
 type StandardSpec = Extract<TransactionSpec, { type: 'standard' }>;
 
@@ -83,7 +94,7 @@ export class PaymentLinks {
       payee: string;
       payeeKey: string | null;
       description: string;
-      source: 'invoice' | 'bill';
+      source: 'invoice' | 'bill' | 'rent' | 'security_deposit' | 'loan';
       owner: PaymentOwner;
       splits: SplitSpec[];
     },
@@ -165,7 +176,7 @@ export class PaymentLinks {
          and t.spec->>'currency' = ${q.currency}
          and (t.spec->>'amount')::bigint * ${q.sign}::bigint between 1 and ${String(q.max)}::bigint
          and t.txn_date between ${q.from} and ${q.to}
-         and t.spec->>'payslipId' is null and t.spec->>'invoiceId' is null and t.spec->>'billId' is null
+         and ${NOT_OWNED}
        order by abs(t.txn_date - ${q.near}::date), t.id
        limit 20`.execute(trx);
     return rows.map((r) => ({

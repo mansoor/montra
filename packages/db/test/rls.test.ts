@@ -307,3 +307,105 @@ describe('business records (ADR-0017)', () => {
     ).rejects.toThrow(/row-level security/);
   });
 });
+
+describe('rental records (ADR-0018)', () => {
+  it('keep properties, leases and what hangs off them to those with a grant on the portfolio', async () => {
+    const entityId = newId();
+    const propertyId = newId();
+    const unitId = newId();
+    const tenantId = newId();
+    const leaseId = newId();
+    await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, async (trx) => {
+      await trx
+        .insertInto('app.entity')
+        .values({
+          workspace_id: a.workspaceId,
+          id: entityId,
+          type: 'rental',
+          name: 'Private portfolio',
+          functional_currency: 'USD',
+        })
+        .execute();
+      await trx
+        .insertInto('app.property')
+        .values({
+          workspace_id: a.workspaceId,
+          id: propertyId,
+          entity_id: entityId,
+          name: 'Private house',
+          type: 'sfh',
+          created_by: a.ownerId,
+        })
+        .execute();
+      await trx
+        .insertInto('app.unit')
+        .values({
+          workspace_id: a.workspaceId,
+          id: unitId,
+          entity_id: entityId,
+          property_id: propertyId,
+          label: 'Main',
+        })
+        .execute();
+      await trx
+        .insertInto('app.tenant')
+        .values({ workspace_id: a.workspaceId, id: tenantId, entity_id: entityId, name: 'Private tenant' })
+        .execute();
+      await trx
+        .insertInto('app.lease')
+        .values({
+          workspace_id: a.workspaceId,
+          id: leaseId,
+          entity_id: entityId,
+          property_id: propertyId,
+          unit_id: unitId,
+          start_date: '2026-01-01',
+          rent_minor: 100000n,
+          created_by: a.ownerId,
+        })
+        .execute();
+      await trx
+        .insertInto('app.lease_tenant')
+        .values({ workspace_id: a.workspaceId, lease_id: leaseId, tenant_id: tenantId })
+        .execute();
+      await trx
+        .insertInto('app.rent_charge')
+        .values({
+          workspace_id: a.workspaceId,
+          id: newId(),
+          entity_id: entityId,
+          lease_id: leaseId,
+          kind: 'rent',
+          period_start: '2026-01-01',
+          due_date: '2026-01-01',
+          amount_minor: 100000n,
+        })
+        .execute();
+    });
+    const read = (ctx: { workspaceId: string; userId: string }) =>
+      withContext(db, ctx, async (trx) => ({
+        properties: await trx.selectFrom('app.property').select('id').where('id', '=', propertyId).execute(),
+        units: await trx.selectFrom('app.unit').select('id').where('id', '=', unitId).execute(),
+        tenants: await trx.selectFrom('app.tenant').select('id').where('id', '=', tenantId).execute(),
+        leases: await trx.selectFrom('app.lease').select('id').where('id', '=', leaseId).execute(),
+        charges: await trx
+          .selectFrom('app.rent_charge')
+          .select('id')
+          .where('lease_id', '=', leaseId)
+          .execute(),
+      }));
+    const counts = (r: Awaited<ReturnType<typeof read>>) => Object.values(r).map((x) => x.length);
+    expect(counts(await read({ workspaceId: a.workspaceId, userId: a.ownerId }))).toEqual([1, 1, 1, 1, 1]);
+    expect(counts(await read({ workspaceId: a.workspaceId, userId: partnerId }))).toEqual([0, 0, 0, 0, 0]);
+    expect(counts(await read({ workspaceId: b.workspaceId, userId: b.ownerId }))).toEqual([0, 0, 0, 0, 0]);
+    // A partner without the grant can't write there either.
+    await expect(
+      withContext(db, { workspaceId: a.workspaceId, userId: partnerId }, (trx) =>
+        trx
+          .insertInto('app.tenant')
+          .values({ workspace_id: a.workspaceId, id: newId(), entity_id: entityId, name: 'Injected' })
+          .execute(),
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+});

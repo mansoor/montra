@@ -42,6 +42,7 @@ const ListQuery = z.object({
   entityId: z.uuid().optional(),
   /** A member, or "household" for what isn't tagged to anyone (FAM-09). */
   memberId: z.union([z.uuid(), z.literal('household')]).optional(),
+  propertyId: z.uuid().optional(),
   categoryIds: z
     .string()
     .optional()

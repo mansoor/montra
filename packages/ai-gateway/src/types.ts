@@ -18,6 +18,7 @@ export type TaskName =
   | 'propose_categories'
   | 'map_tax_lines'
   | 'flag_separation'
+  | 'flag_capital'
   | 'word_summary';
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
 export type ModelGroup = 'small' | 'vision' | 'large';
@@ -330,6 +331,16 @@ export interface SeparationFlag {
   reason: string;
 }
 
+export interface CapitalInput {
+  items: Array<{ id: string; payee: string; amountMinor: bigint; currency: string; category: string }>;
+}
+
+export interface CapitalFlag {
+  id: string;
+  confidence: number;
+  reason: string;
+}
+
 export interface PayslipDocument {
   /** Sent only when the caller passes them: the workspace allows documents to go to the provider (PAY-09). */
   images: readonly ImagePart[];
@@ -387,6 +398,8 @@ export interface AiGateway {
   mapTaxLines(input: TaxLineInput, ctx: AiContext): Promise<TaskResult<TaxLineMapping[]>>;
   /** BIZ-03: spending that looks recorded on the wrong side of business and personal. */
   flagSeparation(input: SeparationInput, ctx: AiContext): Promise<TaskResult<SeparationFlag[]>>;
+  /** RNT-09: spending filed as repairs that may be a capital improvement. */
+  flagCapital(input: CapitalInput, ctx: AiContext): Promise<TaskResult<CapitalFlag[]>>;
   wordSummary(input: SummaryInput, ctx: AiContext): Promise<TaskResult<string>>;
   /** Cheap round-trip for the settings page "Test connection" button. */
   ping(ctx: AiContext): Promise<TaskResult<{ model: string }>>;

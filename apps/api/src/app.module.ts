@@ -65,6 +65,13 @@ import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
+import { LoansService } from './rentals/loans.service.js';
+import { PropertiesService } from './rentals/properties.service.js';
+import { RentService } from './rentals/rent.service.js';
+import { RentalJobs } from './rentals/rental-jobs.service.js';
+import { RentalOpsService } from './rentals/rental-ops.service.js';
+import { RentalReportsService } from './rentals/rental-reports.service.js';
+import { RentalsController } from './rentals/rentals.controller.js';
 import { PayslipsService } from './payslips/payslips.service.js';
 import { PayslipJobs } from './payslips/payslip-jobs.js';
 import { MemberReportsService } from './payslips/member-reports.service.js';
@@ -105,6 +112,7 @@ export class AppModule {
       PlanningController,
       PayslipsController,
       BusinessController,
+      RentalsController,
     ];
     return {
       module: AppModule,
@@ -159,6 +167,12 @@ export class AppModule {
         BusinessReportsService,
         ExportService,
         BusinessJobs,
+        PropertiesService,
+        RentService,
+        LoansService,
+        RentalOpsService,
+        RentalReportsService,
+        RentalJobs,
         PayslipJobs,
         MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },

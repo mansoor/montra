@@ -20,6 +20,8 @@ export interface EditState {
   payee: string;
   description: string;
   memberId: string; // '' = Household
+  /** RNT-06: '' = none. Only offered when every split is on the same one. */
+  propertyId: string;
   memo: string;
   tags: string; // comma separated
   mode: 'category' | 'splits';
@@ -50,12 +52,16 @@ export function toEditState(t: TransactionDto, accountIds: ReadonlySet<string>):
         amount: (BigInt(p.credit ?? '0') - BigInt(p.debit ?? '0')).toString(),
         memberId: p.memberId,
         memo: p.memo,
+        propertyId: null,
+        unitId: null,
       }));
   const splits: SplitLine[] = lines.map((l, i) => ({
     key: `s${i}`,
     accountId: l.accountId,
     amount: minorToInput(abs(BigInt(l.amount)), currency),
     memo: l.memo ?? undefined,
+    propertyId: l.propertyId ?? null,
+    unitId: l.unitId ?? null,
   }));
   const accountId = t.accountId ?? bank?.accountId ?? '';
   return {
@@ -67,6 +73,7 @@ export function toEditState(t: TransactionDto, accountIds: ReadonlySet<string>):
     payee: t.payee ?? '',
     description: t.description,
     memberId: lines[0]?.memberId ?? bank?.memberId ?? '',
+    propertyId: lines[0]?.propertyId ?? '',
     memo: t.memo ?? '',
     tags: t.tags.join(', '),
     mode: lines.length > 1 ? 'splits' : 'category',
@@ -113,6 +120,7 @@ export function buildPatch(initial: EditState, current: EditState, t: T = static
   if (current.description.trim() !== initial.description) patch.description = current.description.trim();
   if (current.memo !== initial.memo) patch.memo = current.memo || null;
   if (current.memberId !== initial.memberId) patch.memberId = current.memberId || null;
+  if (current.propertyId !== initial.propertyId) patch.propertyId = current.propertyId || null;
   const tags = parseTags(current.tags);
   if (tags.join('\u0000') !== parseTags(initial.tags).join('\u0000')) patch.tags = tags;
 

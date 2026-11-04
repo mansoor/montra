@@ -49,6 +49,8 @@ const LEDGER_FIELDS = [
   'categoryId',
   'splits',
   'memberId',
+  'propertyId',
+  'unitId',
   'fxRate',
   'foreign',
 ] as const;
@@ -121,6 +123,8 @@ export class TransactionsService {
         categoryId,
         splits: req.splits,
         memberId,
+        propertyId: req.propertyId,
+        unitId: req.unitId,
         memo: req.memo,
         tags,
         source: 'manual',
@@ -174,6 +178,8 @@ export class TransactionsService {
       categoryId?: string;
       splits?: CreateTransactionRequest['splits'];
       memberId?: string | null;
+      propertyId?: string | null;
+      unitId?: string | null;
       memo?: string;
       tags?: string[];
       source: 'manual' | 'import';
@@ -194,13 +200,15 @@ export class TransactionsService {
   ): Promise<string> {
     const id = input.id ?? newId();
     const date = calendarDate(input.date);
-    const spec = await this.standardSpec(trx, ctx, {
+    const spec = await this.checkedStandardSpec(trx, ctx, {
       accountId: input.accountId,
       amount: input.amount,
       description: input.description || input.payee || '',
       categoryId: input.categoryId,
       splits: input.splits,
       memberId: input.memberId,
+      propertyId: input.propertyId,
+      unitId: input.unitId,
       fxRate: input.fxRate,
       foreign: input.foreign ? foreignSpec(input.foreign, input.amount) : undefined,
     });
@@ -339,7 +347,9 @@ export class TransactionsService {
       // ledger depends on changes there, because merging here would post a plain entry over its lines.
       const managed = ownerOf(spec) !== null;
       if (managed && LEDGER_FIELDS.some((f) => req[f] !== undefined)) assertNotOwned(spec);
-      const next = managed ? spec : await this.mergeSpec(trx, ctx, spec, req);
+      const next = managed
+        ? spec
+        : await this.withProperty(trx, ctx, await this.mergeSpec(trx, ctx, spec, req), req);
       const ledgerChanged = JSON.stringify(next) !== JSON.stringify(spec) || date !== row.txn_date;
       if (ledgerChanged && row.status !== 'scheduled') {
         const built = await this.poster.build(trx, ctx, next, date, id);
@@ -503,6 +513,7 @@ export class TransactionsService {
       accountId?: string;
       entityId?: string;
       memberId?: string;
+      propertyId?: string;
       categoryIds?: string[];
       accountIds?: string[];
       trash?: boolean;
@@ -537,7 +548,7 @@ export class TransactionsService {
         );
       }
       const household = opts.memberId === 'household';
-      if (opts.entityId || opts.memberId || opts.categoryIds || opts.accountIds) {
+      if (opts.entityId || opts.memberId || opts.categoryIds || opts.accountIds || opts.propertyId) {
         // One posting must satisfy every drill filter, so the list reproduces the dashboard number.
         q = q.where((eb) =>
           eb.exists(
@@ -549,6 +560,7 @@ export class TransactionsService {
               .select('p.id')
               .whereRef('je.transaction_id', '=', 't.id')
               .$if(!!opts.entityId, (s) => s.where('p.entity_id', '=', opts.entityId!))
+              .$if(!!opts.propertyId, (s) => s.where('p.property_id', '=', opts.propertyId!))
               .$if(household, (s) => s.where('p.member_id', 'is', null))
               .$if(!!opts.memberId && !household, (s) => s.where('p.member_id', '=', opts.memberId!))
               .$if(!!opts.categoryIds, (s) => s.where('p.ledger_account_id', 'in', opts.categoryIds!))
@@ -573,6 +585,10 @@ export class TransactionsService {
 
   // -------------------------------------------------------------------------------------------------------
 
+  private async checkedStandardSpec(...args: Parameters<TransactionsService['standardSpec']>) {
+    return this.withProperty(args[0], args[1], await this.standardSpec(...args), {});
+  }
+
   /** Builds a standard spec from user input: category, explicit splits, or the uncategorized account. */
   async standardSpec(
     trx: Trx,
@@ -580,6 +596,8 @@ export class TransactionsService {
     input: {
       accountId: string;
       amount: { amount: string; currency: string };
+      propertyId?: string | null;
+      unitId?: string | null;
       description: string;
       categoryId?: string;
       splits?: {
@@ -587,6 +605,8 @@ export class TransactionsService {
         amount: { amount: string; currency: string };
         memberId?: string | null;
         memo?: string;
+        propertyId?: string | null;
+        unitId?: string | null;
       }[];
       memberId?: string | null;
       fxRate?: string;
@@ -617,10 +637,20 @@ export class TransactionsService {
           amount: s.amount.amount,
           memberId: s.memberId === undefined ? memberId : s.memberId,
           memo: s.memo ?? null,
+          propertyId: s.propertyId ?? input.propertyId ?? null,
+          unitId: s.unitId ?? input.unitId ?? null,
         };
       });
     } else if (input.categoryId) {
-      splits = [{ accountId: input.categoryId, amount: categorized, memberId }];
+      splits = [
+        {
+          accountId: input.categoryId,
+          amount: categorized,
+          memberId,
+          propertyId: input.propertyId ?? null,
+          unitId: input.unitId ?? null,
+        },
+      ];
     } else {
       splits = [
         {
@@ -658,6 +688,60 @@ export class TransactionsService {
     };
   }
 
+  /** RNT-06: a property on the whole transaction tags all its splits, and must be in the same books as them. */
+  private async withProperty(
+    trx: Trx,
+    ctx: Ctx,
+    spec: TransactionSpec,
+    req: { propertyId?: string | null; unitId?: string | null },
+  ): Promise<TransactionSpec> {
+    if (spec.type !== 'standard') return spec;
+    const splits =
+      req.propertyId === undefined && req.unitId === undefined
+        ? spec.splits
+        : spec.splits.map((s) => ({
+            ...s,
+            ...(req.propertyId !== undefined ? { propertyId: req.propertyId, unitId: null } : {}),
+            ...(req.unitId !== undefined ? { unitId: req.unitId } : {}),
+          }));
+    const propertyIds = [...new Set(splits.map((s) => s.propertyId).filter((p): p is string => !!p))];
+    if (propertyIds.length) {
+      const found = await trx
+        .selectFrom('app.property')
+        .select(['id', 'entity_id'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', 'in', propertyIds)
+        .execute();
+      if (found.length !== propertyIds.length)
+        throw unprocessable('property.not_found', 'That property is not available');
+      for (const s of splits) {
+        if (!s.propertyId) continue;
+        const account = await trx
+          .selectFrom('app.ledger_account')
+          .select('entity_id')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', s.accountId)
+          .executeTakeFirst();
+        if (found.find((f) => f.id === s.propertyId)!.entity_id !== account?.entity_id) {
+          throw unprocessable('property.other_books', 'That property is in other books than this category');
+        }
+      }
+    }
+    for (const s of splits) {
+      if (!s.unitId) continue;
+      const u = await trx
+        .selectFrom('app.unit')
+        .select('property_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', s.unitId)
+        .executeTakeFirst();
+      if (!u || u.property_id !== s.propertyId) {
+        throw unprocessable('unit.not_in_property', 'That unit is not in the chosen property');
+      }
+    }
+    return { ...spec, splits };
+  }
+
   private async mergeSpec(
     trx: Trx,
     ctx: Ctx,
@@ -686,11 +770,27 @@ export class TransactionsService {
     const foreign =
       req.foreign === undefined ? spec.foreign : req.foreign ? foreignSpec(req.foreign, amount) : undefined;
     if (req.splits || req.categoryId) {
+      const tagged = new Set(spec.splits.map((x) => x.propertyId ?? null));
+      let only = tagged.size === 1 ? spec.splits[0] : undefined;
+      // A move to other books leaves the property behind.
+      if (only?.propertyId && req.categoryId) {
+        const row = await trx
+          .selectFrom('app.ledger_account as a')
+          .innerJoin('app.property as p', (j) => j.onRef('p.workspace_id', '=', 'a.workspace_id'))
+          .select(['a.entity_id as account_entity', 'p.entity_id as property_entity'])
+          .where('a.workspace_id', '=', ctx.workspaceId)
+          .where('a.id', '=', req.categoryId)
+          .where('p.id', '=', only.propertyId)
+          .executeTakeFirst();
+        if (row?.account_entity !== row?.property_entity) only = undefined;
+      }
       return this.standardSpec(trx, ctx, {
         accountId,
         amount,
         description,
         categoryId: req.categoryId,
+        propertyId: only?.propertyId ?? null,
+        unitId: only?.unitId ?? null,
         splits: req.splits,
         memberId,
         fxRate,
@@ -927,6 +1027,7 @@ export class TransactionsService {
         amount: specAmount(t.spec as TransactionSpec | null),
         accountId: specAccount(t.spec as TransactionSpec | null),
         splits: specSplits(t.spec as TransactionSpec | null),
+        managedBy: ownerOf(t.spec),
         entries: entries
           .filter((e) => e.transaction_id === t.id)
           .map((e) => ({
@@ -968,6 +1069,8 @@ function specSplits(spec: TransactionSpec | null): TransactionDto['splits'] {
     amount: s.amount,
     memberId: s.memberId,
     memo: s.memo ?? null,
+    propertyId: s.propertyId ?? null,
+    unitId: s.unitId ?? null,
   }));
 }
 

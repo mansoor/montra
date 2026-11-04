@@ -19,6 +19,10 @@ const TONE = {
   card_due: 'text-bad',
   invoice: 'text-good',
   tax_due: 'text-warn',
+  rent: 'text-good',
+  mortgage: 'text-bad',
+  lease_end: 'text-warn',
+  reminder: 'text-info',
 };
 
 /** Bills, paydays and goal due dates by day (FLOW-05, UP-14). */
@@ -129,7 +133,7 @@ export default async function CalendarPage({
                         {i.name}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Money amount={i.amount} currency={i.currency} />
+                        {BigInt(i.amount) !== 0n && <Money amount={i.amount} currency={i.currency} />}
                         {i.status !== 'upcoming' && (
                           <span className={`chip ${i.status === 'paid' ? 'chip-good' : 'chip-bad'}`}>
                             {t(`calendar.status_${i.status}`)}

@@ -6,6 +6,7 @@ import type {
   AccountDto,
   CategoryDto,
   FamilyMemberDto,
+  PropertyDto,
   TransactionDto,
   WorkspaceDto,
 } from '@montra/api-client';
@@ -31,12 +32,14 @@ export function TransactionEditor({
   accounts,
   categories,
   members,
+  properties = [],
 }: {
   workspace: WorkspaceDto;
   transaction: TransactionDto;
   accounts: AccountDto[];
   categories: CategoryDto[];
   members: FamilyMemberDto[];
+  properties?: PropertyDto[];
 }) {
   const router = useRouter();
   const { t, locale } = useI18n();
@@ -53,6 +56,11 @@ export function TransactionEditor({
     [workspace, categories, state.direction],
   );
   const set = <K extends keyof EditState>(k: K, v: EditState[K]) => setState((s) => ({ ...s, [k]: v }));
+  // RNT-06: a property of the same books as the chosen category.
+  const categoryEntity = categories.find((c) => c.id === state.categoryId)?.entityId;
+  const propertyChoices = transaction.managedBy
+    ? []
+    : properties.filter((p) => p.entityId === categoryEntity && !p.archived);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -283,6 +291,26 @@ export function TransactionEditor({
                 }
               />
             </div>
+          )}
+          {state.mode === 'category' && propertyChoices.length > 0 && (
+            <Field id="ed-property" label={t('fields.property')} error={errors.fields.propertyId}>
+              {(p) => (
+                <select
+                  {...p}
+                  className="input"
+                  value={state.propertyId}
+                  disabled={!initial.ledgerEditable}
+                  onChange={(e) => set('propertyId', e.target.value)}
+                >
+                  <option value="">{t('rentals.not_assigned')}</option>
+                  {propertyChoices.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
           )}
           <Field id="ed-member" label={t('fields.member')} error={errors.fields.memberId}>
             {(p) => (

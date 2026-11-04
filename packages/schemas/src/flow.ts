@@ -24,6 +24,10 @@ export const CALENDAR_ITEM_KINDS = [
   'card_due',
   'invoice',
   'tax_due',
+  'rent',
+  'mortgage',
+  'lease_end',
+  'reminder',
 ] as const;
 
 /** FLOW-05 / UP-14: an upcoming bill, payday or due date. */
@@ -78,6 +82,8 @@ export const NetWorthDto = z.object({
       value: MinorDto,
     }),
   ),
+  /** FLOW-07: your share of each property's value, in the base currency. In `assets`, from its purchase date. */
+  properties: z.array(z.object({ propertyId: Id, entityId: Id, name: z.string(), value: MinorDto })),
   /** Month ends (and today) for the trend chart. */
   trend: z.array(NetWorthPointDto),
 });
@@ -149,7 +155,7 @@ export type SankeyDto = z.infer<typeof SankeyDto>;
 /** A forecast driver: one item moving an account's balance on a date. */
 export const ForecastItemDto = z.object({
   date: CalendarDateDto,
-  kind: z.enum(['recurring', 'income', 'card_payment', 'burn', 'invoice', 'bill']),
+  kind: z.enum(['recurring', 'income', 'card_payment', 'burn', 'invoice', 'bill', 'rent', 'mortgage']),
   name: z.string(),
   amount: MinorDto,
   sourceId: Id.nullable(),

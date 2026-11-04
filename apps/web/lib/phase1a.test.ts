@@ -40,6 +40,7 @@ const txn = (postings: ReturnType<typeof posting>[], over: Partial<TransactionDt
   memo: 'weekly shop',
   tags: ['food'],
   recurringItemId: null,
+  managedBy: null,
   foreign: null,
   tripId: null,
   localTime: null,

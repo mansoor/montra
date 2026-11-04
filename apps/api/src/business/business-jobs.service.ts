@@ -26,7 +26,15 @@ import { BillsService } from './bills.service.js';
 import { BusinessReportsService } from './business-reports.service.js';
 import { BusinessService } from './business.service.js';
 import { InvoicesService } from './invoices.service.js';
-import { businessEntities, profitBetween, todayOf, type BusinessEntity, type Ctx } from './shared.js';
+import { NOT_OWNED } from '../transactions/poster.js';
+import {
+  businessEntities,
+  taxedEntities,
+  profitBetween,
+  todayOf,
+  type BusinessEntity,
+  type Ctx,
+} from './shared.js';
 
 /** Flags interrupt the user: look only at what's recent, and only at so many a night. */
 const SEPARATION_DAYS = 30;
@@ -153,7 +161,7 @@ export class BusinessJobs {
          and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
          and (t.spec->>'amount')::bigint * ${sign}::bigint > 0
          and t.txn_date between ${from} and ${to}
-         and t.spec->>'payslipId' is null and t.spec->>'invoiceId' is null and t.spec->>'billId' is null
+         and ${NOT_OWNED}
        order by t.txn_date, t.id
        limit 2000`.execute(trx);
     return rows.map((r) => ({
@@ -210,7 +218,7 @@ export class BusinessJobs {
          and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
          and (t.spec->>'amount')::bigint < 0 and jsonb_array_length(t.spec->'splits') = 1
          and t.txn_date >= ${since} and a.is_category and a.system_role is null
-         and t.spec->>'payslipId' is null and t.spec->>'invoiceId' is null and t.spec->>'billId' is null
+         and ${NOT_OWNED}
          and not exists (select 1 from app.insight i where i.workspace_id = t.workspace_id
                           and i.dedupe_key = 'separation:' || t.id::text)
        order by t.txn_date desc, t.id
@@ -325,7 +333,7 @@ export class BusinessJobs {
   async notes(ctx: Ctx): Promise<number> {
     return this.db.run(ctx, async (trx) => {
       let created = 0;
-      for (const e of await businessEntities(trx, ctx)) {
+      for (const e of await taxedEntities(trx, ctx)) {
         for (const n of await this.notesFor(trx, ctx, e)) {
           if (await this.store(trx, ctx, e, n)) created++;
         }
@@ -368,6 +376,8 @@ export class BusinessJobs {
     }
 
     const next = estimate.periods.find((p) => p.status === 'next');
+    // A portfolio gets only the set-aside, and tax dates once its owner has set a rate.
+    if (e.type === 'rental' && profile.tax_rate_bps === null) return notes;
     if (
       next &&
       next.due >= today &&
@@ -387,6 +397,8 @@ export class BusinessJobs {
         actions: [],
       });
     }
+
+    if (e.type === 'rental') return notes;
 
     // Last month's margin against the month before, once there's a month to talk about.
     const lastStart = startOfMonth(addDays(month, -1));

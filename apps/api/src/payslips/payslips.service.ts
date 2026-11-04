@@ -36,7 +36,7 @@ import { Db } from '../db/database.js';
 import { JobQueue } from '../jobs/queue.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
-import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
+import { NOT_OWNED, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -638,7 +638,7 @@ export class PayslipsService {
          and t.txn_date between ${addDays(date, -MATCH_DAYS)} and ${addDays(date, MATCH_DAYS)}
          and t.spec->>'accountId' = ${employer.deposit_account_id}
          and (t.spec->>'amount')::bigint = ${String(p.net_minor)}::bigint
-         and t.spec->>'payslipId' is null
+         and ${NOT_OWNED}
        order by abs(t.txn_date - ${date}::date), t.id`.execute(trx);
     return rows.map((r) => ({
       transactionId: r.id,

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
+import { AllocatePanel } from '@/components/rentals/rental-ops';
 import { TransactionEditor } from '@/components/transaction-editor';
 import { JournalView } from '@/components/journal-view';
 import { TransactionFx } from '@/components/receipts/transaction-fx';
@@ -30,6 +31,21 @@ export default async function TransactionPage({
   const entries = await load((api) =>
     Promise.all(transaction.entries.map((e) => api.getJournalEntry(workspaceId, e.id))),
   );
+  // RNT-06, RNT-07: properties to tag or split this across, in the books its category is in.
+  const portfolios = workspace.entities.filter((e) => e.type === 'rental');
+  const [properties, allocationRules] = await load((api) =>
+    Promise.all([
+      Promise.all(portfolios.map((e) => api.listProperties(workspaceId, e.id))),
+      Promise.all(portfolios.map((e) => api.listAllocationRules(workspaceId, e.id))),
+    ]),
+  );
+  const allProperties = properties.flat();
+  const splitEntity = categories.find((c) => c.id === transaction.splits?.[0]?.accountId)?.entityId;
+  const canAllocate =
+    transaction.amount !== null &&
+    transaction.splits !== null &&
+    !transaction.managedBy &&
+    portfolios.some((e) => e.id === splitEntity);
   const { t } = await getI18n();
   const entityName = new Map(workspace.entities.map((e) => [e.id, e.name]));
   // CUR-05: rates apply when the paying account's currency differs from its entity's.
@@ -60,7 +76,16 @@ export default async function TransactionPage({
         accounts={accounts}
         categories={categories}
         members={members}
+        properties={allProperties}
       />
+      {canAllocate && (
+        <AllocatePanel
+          workspaceId={workspaceId}
+          transactionId={transaction.id}
+          properties={allProperties.filter((p) => p.entityId === splitEntity && !p.archived)}
+          rules={allocationRules.flat().filter((r) => r.entityId === splitEntity)}
+        />
+      )}
       {hints.map((line) => (
         <p key={line.code} className="text-sm text-muted" data-testid="tax-hint">
           {t(line.form === 'schedule_c' ? 'tax_hint.schedule_c' : 'tax_hint.schedule_e', {

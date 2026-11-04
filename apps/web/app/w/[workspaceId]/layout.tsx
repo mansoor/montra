@@ -59,6 +59,10 @@ export default async function WorkspaceLayout({
         ...(workspace.entities.some((e) => e.type === 'business')
           ? [{ href: `${base}/business`, label: t('nav.business'), icon: 'business' as const }]
           : []),
+        // RNT-01: likewise for a rental portfolio.
+        ...(workspace.entities.some((e) => e.type === 'rental')
+          ? [{ href: `${base}/rentals`, label: t('nav.rentals'), icon: 'rentals' as const }]
+          : []),
         { href: `${base}/journal`, label: t('nav.journal'), icon: 'journal' },
         { href: `${base}/imports`, label: t('nav.imports'), icon: 'imports' },
         { href: `${base}/rules`, label: t('nav.rules'), icon: 'rules' },

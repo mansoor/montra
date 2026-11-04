@@ -9,6 +9,9 @@ export const SplitInput = z.object({
   amount: MoneyDto,
   memberId: Id.nullable().optional(),
   memo: z.string().max(500).optional(),
+  /** RNT-06: the property and unit this part belongs to. */
+  propertyId: Id.nullable().optional(),
+  unitId: Id.nullable().optional(),
 });
 
 /**
@@ -25,6 +28,9 @@ export const CreateTransactionRequest = z
     categoryId: Id.optional(),
     splits: z.array(SplitInput).min(1).max(250).optional(),
     memberId: Id.nullable().optional(),
+    /** RNT-06: tags every split, unless a split says otherwise. */
+    propertyId: Id.nullable().optional(),
+    unitId: Id.nullable().optional(),
     memo: z.string().max(2000).optional(),
     tags: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
     /**
@@ -99,6 +105,8 @@ export const TransactionDto = z.object({
   memo: z.string().nullable(),
   tags: z.array(z.string()),
   recurringItemId: z.string().nullable(),
+  /** What owns this transaction's money side, if anything: it changes there, not here (ADR-0016..18). */
+  managedBy: z.enum(['payslip', 'invoice', 'bill', 'lease', 'security_deposit', 'loan']).nullable(),
   /** CUR-03: the original foreign amount and rate when the purchase was made in another currency. */
   foreign: ForeignAmountDto.nullable(),
   /** Travel mode (CUR-09). */
@@ -115,6 +123,8 @@ export const TransactionDto = z.object({
         amount: z.string(),
         memberId: z.string().nullable(),
         memo: z.string().nullable(),
+        propertyId: z.string().nullable(),
+        unitId: z.string().nullable(),
       }),
     )
     .nullable(),

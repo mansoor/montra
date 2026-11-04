@@ -36,6 +36,7 @@ import * as pingV1 from './tasks/ping/v1.js';
 import * as proposeV1 from './tasks/propose-categories/v1.js';
 import * as taxLinesV1 from './tasks/map-tax-lines/v1.js';
 import * as separationV1 from './tasks/flag-separation/v1.js';
+import * as capitalV1 from './tasks/flag-capital/v1.js';
 import * as summaryV1 from './tasks/word-summary/v1.js';
 import type {
   AiContext,
@@ -46,6 +47,8 @@ import type {
   CategoryOption,
   CategoryProposalInput,
   CategoryProposalOutput,
+  CapitalFlag,
+  CapitalInput,
   SeparationFlag,
   SeparationInput,
   TaxLineInput,
@@ -1080,6 +1083,45 @@ export class Gateway implements AiGateway {
               confidence: Math.min(1, f.confidence),
               reason: oneLine(f.reason, 200),
             });
+          }
+          return out;
+        },
+        eventOutput: (v) => ({ flags: v.length }),
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
+  // ----- flag_capital (RNT-09) --------------------------------------------------------------------
+
+  /** Flags what may be a capital improvement. Below 0.7 confidence a flag is dropped; the owner decides on the rest. */
+  async flagCapital(input: CapitalInput, ctx: AiContext): Promise<TaskResult<CapitalFlag[]>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const items = input.items.slice(0, 50);
+    const byId = new Map(items.map((t, i) => [`t${i + 1}`, t.id]));
+    return this.callProvider<CapitalFlag[]>(
+      {
+        task: 'flag_capital',
+        system: capitalV1.SYSTEM,
+        promptVersion: capitalV1.PROMPT_VERSION,
+        input: {
+          items: items.map((t, i) => ({
+            id: `t${i + 1}`,
+            payee: minimizeText(t.payee, ctx.pseudonyms),
+            amount: roundedAmount(t.amountMinor, exponentOf(t.currency)),
+            category: t.category,
+          })),
+        },
+        schema: capitalV1.Output,
+        validate: (o: capitalV1.Output) => {
+          const out: CapitalFlag[] = [];
+          const seen = new Set<string>();
+          for (const f of o.flags) {
+            const id = byId.get(f.id);
+            if (!id || seen.has(id) || f.confidence < 0.7) continue;
+            seen.add(id);
+            out.push({ id, confidence: Math.min(1, f.confidence), reason: oneLine(f.reason, 200) });
           }
           return out;
         },

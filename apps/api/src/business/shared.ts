@@ -11,6 +11,7 @@ export const TAX_COUNTRY = 'US';
 
 export interface BusinessEntity {
   id: string;
+  type: 'business' | 'rental';
   name: string;
   currency: string;
   businessType: string | null;
@@ -20,6 +21,20 @@ export interface BusinessEntity {
 
 /** The business, under RLS: without access to it, it doesn't exist. */
 export async function businessEntity(trx: Trx, ctx: Ctx, entityId: string): Promise<BusinessEntity> {
+  return readEntity(trx, ctx, entityId, ['business']);
+}
+
+/** A business or a rental portfolio: both have a tax rate, a set-aside and tax lines (REC-09, AI-10). */
+export async function taxedEntity(trx: Trx, ctx: Ctx, entityId: string): Promise<BusinessEntity> {
+  return readEntity(trx, ctx, entityId, ['business', 'rental']);
+}
+
+async function readEntity(
+  trx: Trx,
+  ctx: Ctx,
+  entityId: string,
+  types: readonly string[],
+): Promise<BusinessEntity> {
   const e = await trx
     .selectFrom('app.entity as e')
     .innerJoin('app.workspace as w', 'w.id', 'e.workspace_id')
@@ -36,9 +51,10 @@ export async function businessEntity(trx: Trx, ctx: Ctx, entityId: string): Prom
     .where('e.id', '=', entityId)
     .executeTakeFirst();
   if (!e) throw notFound('Business');
-  if (e.type !== 'business') throw unprocessable('business.not_a_business', 'This is not a business');
+  if (!types.includes(e.type)) throw unprocessable('business.not_a_business', 'This is not a business');
   return {
     id: e.id,
+    type: e.type as BusinessEntity['type'],
     name: e.name,
     currency: e.functional_currency,
     businessType: e.business_type,
@@ -97,3 +113,16 @@ export async function profitBetween(
 }
 
 export const dateOf = (v: unknown): CalendarDate => calendarDate(String(v).slice(0, 10));
+
+/** Everything that gets tax notes. */
+export async function taxedEntities(trx: Trx, ctx: Ctx): Promise<BusinessEntity[]> {
+  const rows = await trx
+    .selectFrom('app.entity')
+    .select('id')
+    .where('workspace_id', '=', ctx.workspaceId)
+    .where('type', 'in', ['business', 'rental'])
+    .where('archived_at', 'is', null)
+    .orderBy('name')
+    .execute();
+  return Promise.all(rows.map((r) => taxedEntity(trx, ctx, r.id)));
+}

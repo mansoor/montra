@@ -421,6 +421,7 @@ export const InsightKind = z.enum([
   'new_subscription',
   'price_increase',
   'separation',
+  'capital_improvement',
 ]);
 export const InsightDto = z.object({
   id: z.string(),
@@ -440,6 +441,8 @@ export type InsightDto = z.infer<typeof InsightDto>;
 export const AcceptInsightRequest = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   categoryId: Id.optional(),
+  /** RNT-09: the property a capital improvement belongs to, when the transaction doesn't say. */
+  propertyId: Id.optional(),
 });
 export type AcceptInsightRequest = z.output<typeof AcceptInsightRequest>;
 
