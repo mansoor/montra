@@ -76,6 +76,9 @@ export default async function TransactionsPage({
         <p role="status" className="card flex flex-wrap items-center justify-between gap-2 text-sm">
           <span>
             {t('transactions.drilled')}
+            {drill.memberId
+              ? ` · ${drill.memberId === 'household' ? t('members.household') : (members.find((m) => m.id === drill.memberId)?.name ?? '')}`
+              : ''}
             {drill.from && drill.to ? ` · ${drill.from} – ${drill.to}` : ''}
           </span>
           <Link href={`${base}/transactions`} className="btn-secondary">

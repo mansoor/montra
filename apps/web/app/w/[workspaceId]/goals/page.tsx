@@ -9,8 +9,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function GoalsPage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
-  const [workspace, goals, accounts] = await load((api) =>
-    Promise.all([api.getWorkspace(workspaceId), api.listGoals(workspaceId), api.listAccounts(workspaceId)]),
+  const [workspace, goals, accounts, members] = await load((api) =>
+    Promise.all([
+      api.getWorkspace(workspaceId),
+      api.listGoals(workspaceId),
+      api.listAccounts(workspaceId),
+      api.listFamilyMembers(workspaceId),
+    ]),
   );
   const { t } = await getI18n();
   const active = goals.filter((g) => !g.archived);
@@ -22,7 +27,11 @@ export default async function GoalsPage({ params }: { params: Promise<{ workspac
       ) : (
         <GoalsList goals={active} />
       )}
-      <GoalForm workspace={workspace} accounts={accounts} />
+      <GoalForm
+        workspace={workspace}
+        accounts={accounts}
+        members={members.filter((m) => m.status === 'active')}
+      />
     </div>
   );
 }

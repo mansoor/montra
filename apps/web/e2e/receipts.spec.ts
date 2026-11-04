@@ -1,10 +1,9 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { crc32, deflateSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import pg from 'pg';
-import { nav, onboardHousehold } from './phase3-helpers';
+import { fakeDocumentPng, nav, onboardHousehold } from './phase3-helpers';
 
 /**
  * Phase 5: a receipt photo is read, matched to its card line and splits it by item (requirements §3.5,
@@ -24,25 +23,6 @@ const WALMART = [
   'TOTAL                 28.71',
   'CARD **** 1234',
 ].join('\n');
-
-/** The fake provider's receipt photo: a 1×1 PNG with the text in a `montra:receipt` tEXt chunk. */
-function fakeReceiptPng(text: string): Buffer {
-  const chunk = (type: string, data: Buffer) => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([len, body, crc]);
-  };
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0])),
-    chunk('tEXt', Buffer.from(`montra:receipt\0${Buffer.from(text).toString('base64')}`, 'latin1')),
-    chunk('IDAT', deflateSync(Buffer.from([0, 0]))),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
 
 test('a Walmart receipt splits its card line into groceries, electronics and clothing', async ({ page }) => {
   test.setTimeout(120_000);
@@ -67,7 +47,7 @@ test('a Walmart receipt splits its card line into groceries, electronics and clo
 
   // Upload the photo (TXN-08 on the web) and wait for the worker to read and match it (IMP-11).
   const file = join(mkdtempSync(join(tmpdir(), 'montra-receipt-')), 'walmart.png');
-  writeFileSync(file, fakeReceiptPng(WALMART));
+  writeFileSync(file, fakeDocumentPng(WALMART));
   await nav(page, 'Receipts');
   await expect(page.getByRole('heading', { name: 'Receipts', exact: true })).toBeVisible();
   await page.getByLabel('Choose files').setInputFiles(file);
@@ -185,7 +165,7 @@ test('a foreign receipt matches its home-currency card line within ±3% and keep
   const file = join(mkdtempSync(join(tmpdir(), 'montra-receipt-')), 'paris.png');
   writeFileSync(
     file,
-    fakeReceiptPng(
+    fakeDocumentPng(
       ['GALERIES LAFAYETTE', '2026-10-30', 'CURRENCY EUR', 'FOULARD SOIE   40,00', 'TOTAL   40,00'].join(
         '\n',
       ),

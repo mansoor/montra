@@ -1,3 +1,4 @@
+import { crc32, deflateSync } from 'node:zlib';
 import { expect, type Page } from '@playwright/test';
 
 /**
@@ -52,4 +53,23 @@ export async function importCsv(page: Page, account: string, name: string, csv: 
   await expect(page.getByTestId('preview-row')).toHaveCount(rows, { timeout: 30_000 });
   await page.getByRole('button', { name: 'Import transactions' }).click();
   await expect(page.getByTestId('import-summary')).toContainText('Import complete', { timeout: 30_000 });
+}
+
+/** The fake provider's document photo: a 1×1 PNG with the text in a `montra:receipt` tEXt chunk. */
+export function fakeDocumentPng(text: string): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0])),
+    chunk('tEXt', Buffer.from(`montra:receipt\0${Buffer.from(text).toString('base64')}`, 'latin1')),
+    chunk('IDAT', deflateSync(Buffer.from([0, 0]))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }

@@ -12,21 +12,31 @@ import { drillHref, percentOf } from '@/lib/planning';
 
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage({ params }: { params: Promise<{ workspaceId: string }> }) {
+export default async function HomePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ workspaceId: string }>;
+  searchParams: Promise<{ memberId?: string }>;
+}) {
   const { workspaceId } = await params;
-  const [[workspace, accounts, transactions, dashboard, recs, categories], { t }] = await Promise.all([
-    load((api) =>
-      Promise.all([
-        api.getWorkspace(workspaceId),
-        api.listAccounts(workspaceId),
-        api.listTransactions(workspaceId, { limit: 10 }),
-        api.getDashboard(workspaceId),
-        api.listRecommendations(workspaceId, { status: 'open' }),
-        api.listCategories(workspaceId),
-      ]),
-    ),
-    getI18n(),
-  ]);
+  const { memberId } = await searchParams;
+  const only = memberId ? { memberId } : {};
+  const [[workspace, accounts, transactions, dashboard, recs, categories, members], { t }] =
+    await Promise.all([
+      load((api) =>
+        Promise.all([
+          api.getWorkspace(workspaceId),
+          api.listAccounts(workspaceId),
+          api.listTransactions(workspaceId, { limit: 10, ...only }),
+          api.getDashboard(workspaceId, only),
+          api.listRecommendations(workspaceId, { status: 'open' }),
+          api.listCategories(workspaceId),
+          api.listFamilyMembers(workspaceId),
+        ]),
+      ),
+      getI18n(),
+    ]);
   const d = dashboard;
   const ccy = d.currency;
   const lta = d.leftToAssign !== null ? BigInt(d.leftToAssign) : null;
@@ -34,6 +44,7 @@ export default async function HomePage({ params }: { params: Promise<{ workspace
   const net = netPosition(accounts);
   const names = accountMap(accounts);
   const base = `/w/${workspace.id}`;
+  const active = members.filter((m) => m.status === 'active');
 
   return (
     <div className="space-y-6">
@@ -45,9 +56,27 @@ export default async function HomePage({ params }: { params: Promise<{ workspace
           </>
         }
         actions={
-          <Link href={`${base}/budget`} className="btn-secondary">
-            {d.budgetId ? t('home.open_budget') : t('home.start_budget')}
-          </Link>
+          <>
+            {active.length > 0 && (
+              <nav aria-label={t('home.filter_member')} className="segmented segmented-md">
+                <Link href={base} aria-current={!memberId ? 'page' : undefined}>
+                  {t('home.everyone')}
+                </Link>
+                {active.map((m) => (
+                  <Link
+                    key={m.id}
+                    href={`${base}?memberId=${m.id}`}
+                    aria-current={m.id === memberId ? 'page' : undefined}
+                  >
+                    {m.name}
+                  </Link>
+                ))}
+              </nav>
+            )}
+            <Link href={`${base}/budget`} className="btn-secondary">
+              {d.budgetId ? t('home.open_budget') : t('home.start_budget')}
+            </Link>
+          </>
         }
       />
 

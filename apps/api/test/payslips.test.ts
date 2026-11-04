@@ -489,6 +489,48 @@ describe('budgets and reports (PAY-06, PAY-07, FAM-08, FAM-09)', () => {
     expect(d).toMatchObject({ memberId: sam, spent: { amount: '4000' } });
   });
 
+  it('counts the pay as arrived whatever the statement calls it (PAY-07)', async () => {
+    const robin = (await c.post(url('/family-members'), { name: 'Robin', relationship: 'other' })).body.id;
+    const gig = (
+      await c.post(url('/employers'), { memberId: robin, name: 'Side Gig', depositAccountId: checking })
+    ).body;
+    await c.post(url('/transactions'), {
+      date: payDate,
+      accountId: checking,
+      amount: usd('25000'),
+      payee: 'XYZ*TRANSFER 0042',
+      categoryId: cat('Other income'),
+    });
+    const lines = [{ section: 'earning', code: 'salary', label: 'Fee', amount: '25000' }];
+    const p = (await c.post(url('/payslips'), { employerId: gig.id, payDate })).body;
+    const edited = (await c.patch(url(`/payslips/${p.id}`), { lines, net: '25000', version: p.version }))
+      .body;
+    const posted = (await c.post(url(`/payslips/${p.id}/confirm`), { version: edited.version })).body;
+    expect(posted).toMatchObject({ status: 'posted', matchedDeposit: true });
+
+    const cal = (await c.get(url(`/calendar?from=${payDate}&to=${payDate}`))).body;
+    expect(cal.items.filter((i: any) => i.name === 'Side Gig').map((i: any) => i.status)).toEqual(['paid']);
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+    await c.delete(url(`/transactions/${posted.transactionId}`));
+  });
+
+  it('counts other income tagged to a member with no payslips (PAY-08)', async () => {
+    const kid = (await c.post(url('/family-members'), { name: 'Kit', relationship: 'child' })).body.id;
+    const gift = (
+      await c.post(url('/transactions'), {
+        date: payDate,
+        accountId: checking,
+        amount: usd('5000'),
+        payee: 'Scholarship fund',
+        categoryId: cat('Other income'),
+        memberId: kid,
+      })
+    ).body;
+    const r = (await c.get(url('/reports/by-member'))).body;
+    expect(r.members.find((m: any) => m.memberId === kid)).toMatchObject({ name: 'Kit', income: '5000' });
+    await c.delete(url(`/transactions/${gift.id}`));
+  });
+
   it('summarizes withholding for a member (PAY-06)', async () => {
     const s = (await c.get(url(`/reports/payslip-summary?memberId=${sam}`))).body;
     expect(s).toMatchObject({ name: 'Sam', year: Number(today.slice(0, 4)) });

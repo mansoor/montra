@@ -15,22 +15,31 @@ export const dynamic = 'force-dynamic';
 const TABS = ['plan', 'income', 'moves'] as const;
 type Tab = (typeof TABS)[number];
 
-/** The budget (BUD-01..10): one household budget per entity; tabs for the plan, income and move history. */
+/**
+ * The budget (BUD-01..10): one household budget per entity, and optionally one per member (FAM-06), whose spending
+ * counts in both; tabs for the plan, income and move history.
+ */
 export default async function BudgetPage({
   params,
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ start?: string; tab?: string; entityId?: string }>;
+  searchParams: Promise<{ start?: string; tab?: string; entityId?: string; memberId?: string }>;
 }) {
   const { workspaceId } = await params;
   const sp = await searchParams;
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? '') ? (sp.tab as Tab) : 'plan';
-  const [workspace, budgets] = await load((api) =>
-    Promise.all([api.getWorkspace(workspaceId), api.listBudgets(workspaceId)]),
+  const [workspace, budgets, members] = await load((api) =>
+    Promise.all([
+      api.getWorkspace(workspaceId),
+      api.listBudgets(workspaceId),
+      api.listFamilyMembers(workspaceId),
+    ]),
   );
   const { t } = await getI18n();
-  const active = budgets.filter((b) => !b.archived && b.memberId === null);
+  const people = members.filter((m) => m.status === 'active');
+  const member = people.find((m) => m.id === sp.memberId) ?? null;
+  const active = budgets.filter((b) => !b.archived && b.memberId === (member?.id ?? null));
   const entities = workspace.entities;
   const entityId =
     sp.entityId ?? active[0]?.entityId ?? entities.find((e) => e.type === 'personal')?.id ?? entities[0]!.id;
@@ -38,7 +47,12 @@ export default async function BudgetPage({
   const base = `/w/${workspaceId}/budget`;
   const qs = (extra: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    for (const [k, v] of Object.entries({ entityId: sp.entityId, start: sp.start, ...extra }))
+    for (const [k, v] of Object.entries({
+      entityId: sp.entityId,
+      memberId: member?.id,
+      start: sp.start,
+      ...extra,
+    }))
       if (v) q.set(k, v);
     const s = q.toString();
     return s ? `${base}?${s}` : base;
@@ -50,7 +64,7 @@ export default async function BudgetPage({
         {entities.map((e) => (
           <a
             key={e.id}
-            href={`${base}?entityId=${e.id}`}
+            href={qs({ entityId: e.id, start: undefined, tab: undefined })}
             aria-current={e.id === entityId ? 'page' : undefined}
           >
             {e.name}
@@ -59,11 +73,48 @@ export default async function BudgetPage({
       </nav>
     ) : null;
 
+  const memberTabs =
+    people.length > 0 ? (
+      <nav aria-label={t('budget.whose')} className="segmented segmented-md">
+        <a
+          href={qs({ memberId: undefined, start: undefined, tab: undefined })}
+          aria-current={!member ? 'page' : undefined}
+        >
+          {t('members.household')}
+        </a>
+        {people.map((m) => (
+          <a
+            key={m.id}
+            href={qs({ memberId: m.id, start: undefined, tab: undefined })}
+            aria-current={m.id === member?.id ? 'page' : undefined}
+          >
+            {m.name}
+          </a>
+        ))}
+      </nav>
+    ) : null;
+  const headerActions = (
+    <>
+      {memberTabs}
+      {entityTabs}
+    </>
+  );
+
   if (!budget) {
     return (
       <div className="space-y-5">
-        <PageHeader title={t('nav.budget')} subtitle={t('budget.none_yet')} actions={entityTabs} />
-        <BudgetSetup workspace={workspace} entityId={entityId} today={todayIn(workspace.timeZone)} />
+        <PageHeader
+          title={member ? t('budget.member_title', { name: member.name }) : t('nav.budget')}
+          subtitle={member ? t('budget.member_none_yet', { name: member.name }) : t('budget.none_yet')}
+          actions={headerActions}
+        />
+        <BudgetSetup
+          key={`${entityId}-${member?.id ?? 'household'}`}
+          workspace={workspace}
+          entityId={entityId}
+          member={member}
+          today={todayIn(workspace.timeZone)}
+        />
       </div>
     );
   }
@@ -81,7 +132,11 @@ export default async function BudgetPage({
 
   return (
     <div className="space-y-5">
-      <PageHeader title={budget.name} subtitle={t(`budget.method_${budget.method}`)} actions={entityTabs} />
+      <PageHeader
+        title={budget.name}
+        subtitle={t(`budget.method_${budget.method}`)}
+        actions={headerActions}
+      />
       <LinkTabs
         label={t('budget.sections')}
         current={tab}
@@ -97,7 +152,7 @@ export default async function BudgetPage({
           workspaceId={workspaceId}
           entityId={entityId}
           currency={budget.currency}
-          items={income}
+          items={member ? income.filter((i) => i.memberId === member.id) : income}
           accounts={accounts.filter((a) => a.entityId === entityId && !a.archived)}
           period={period}
         />

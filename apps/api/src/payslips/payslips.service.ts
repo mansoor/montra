@@ -617,6 +617,7 @@ export class PayslipsService {
       uncategorized: false,
       splits: [{ accountId: income, amount: net, memberId: p.member_id }],
       payslipId: p.id,
+      employerId: employer.id,
     };
   }
 

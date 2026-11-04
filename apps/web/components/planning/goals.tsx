@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { AccountDto, GoalDto, WorkspaceDto } from '@montra/api-client';
+import type { AccountDto, FamilyMemberDto, GoalDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { parseAmountInput } from '@/lib/money';
 import { percentOf } from '@/lib/planning';
@@ -147,11 +147,20 @@ export function GoalsList({ goals }: { goals: GoalDto[] }) {
   );
 }
 
-export function GoalForm({ workspace, accounts }: { workspace: WorkspaceDto; accounts: AccountDto[] }) {
+export function GoalForm({
+  workspace,
+  accounts,
+  members,
+}: {
+  workspace: WorkspaceDto;
+  accounts: AccountDto[];
+  members: FamilyMemberDto[];
+}) {
   const { t, locale } = useI18n();
   const { run, busy, message, setMessage } = useAction();
   const personal = workspace.entities.find((e) => e.type === 'personal') ?? workspace.entities[0]!;
   const [entityId, setEntityId] = useState(personal.id);
+  const [memberId, setMemberId] = useState('');
   const [type, setType] = useState<(typeof TYPES)[number]>('savings');
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
@@ -188,6 +197,7 @@ export function GoalForm({ workspace, accounts }: { workspace: WorkspaceDto; acc
           () =>
             browserApi.createGoal(workspace.id, {
               entityId,
+              memberId: memberId || null,
               name,
               type,
               target: tgt,
@@ -223,6 +233,19 @@ export function GoalForm({ workspace, accounts }: { workspace: WorkspaceDto; acc
             ))}
           </select>
         </label>
+        {members.length > 0 && (
+          <label>
+            <span className="field-label">{t('goal.member')}</span>
+            <select className="input" value={memberId} onChange={(e) => setMemberId(e.target.value)}>
+              <option value="">{t('members.household')}</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {workspace.entities.length > 1 && (
           <label>
             <span className="field-label">{t('goal.entity')}</span>

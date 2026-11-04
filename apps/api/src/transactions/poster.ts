@@ -55,6 +55,8 @@ export type TransactionSpec =
       fxRate?: string;
       /** Set when a payslip owns this transaction (ADR-0016): change it through the payslip, not here. */
       payslipId?: string;
+      /** The payslip's employer: this deposit is the pay its expected income is waiting for (PAY-07). */
+      employerId?: string;
       /**
        * A purchase in another currency on a home-currency account (CUR-03): the original amount (signed like
        * `amount`), the fee included in `amount` (its split posts to Bank fees) and a rate override.
