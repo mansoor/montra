@@ -9,6 +9,7 @@ import {
   maxSeq,
   needsRefresh,
   parseServerMessage,
+  refreshWaitAfterAction,
   POLL_INTERVAL_MS,
   reconnectDelay,
 } from '@/lib/sync';
@@ -30,14 +31,38 @@ export function Realtime({ workspaceId, wsUrl }: { workspaceId: string; wsUrl: s
   const [status, setStatus] = useState<Status>('connecting');
   const seq = useRef<string | null>(null);
   const lastRefresh = useRef(0);
+  const lastAction = useRef(0);
   const pathname = usePathname();
   const search = useSearchParams()?.toString() ?? '';
 
   // A realtime refresh still in flight when the user navigates can land after the navigation and show the
   // previous page's data; refreshing once more after such a navigation makes the new page authoritative.
   useEffect(() => {
-    if (Date.now() - lastRefresh.current < REFRESH_RACE_WINDOW_MS) router.refresh();
+    if (Date.now() - lastRefresh.current >= REFRESH_RACE_WINDOW_MS) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = () => {
+      const wait = refreshWaitAfterAction(lastAction.current, Date.now());
+      if (wait > 0) timer = setTimeout(attempt, wait);
+      else router.refresh();
+    };
+    attempt();
+    return () => clearTimeout(timer);
   }, [pathname, search, router]);
+
+  // The URL changes only when a navigation finishes, so right after a click or submit it can't say whether one is
+  // under way. Refreshing then can lose the navigation altogether, leaving the click with no effect, so every refresh
+  // here waits until the user's last action has had time to land.
+  useEffect(() => {
+    const noteAction = () => {
+      lastAction.current = Date.now();
+    };
+    document.addEventListener('click', noteAction, true);
+    document.addEventListener('submit', noteAction, true);
+    return () => {
+      document.removeEventListener('click', noteAction, true);
+      document.removeEventListener('submit', noteAction, true);
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -53,12 +78,17 @@ export function Realtime({ workspaceId, wsUrl }: { workspaceId: string; wsUrl: s
     // when the user has navigated meanwhile, since the new page was just rendered with fresh data.
     const scheduleRefresh = () => {
       const href = window.location.href;
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => {
-        if (disposed || window.location.href !== href) return;
-        lastRefresh.current = Date.now();
-        router.refresh();
-      }, REFRESH_DEBOUNCE_MS);
+      const attempt = (delay: number) => {
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
+          if (disposed || window.location.href !== href) return;
+          const wait = refreshWaitAfterAction(lastAction.current, Date.now());
+          if (wait > 0) return attempt(wait);
+          lastRefresh.current = Date.now();
+          router.refresh();
+        }, delay);
+      };
+      attempt(REFRESH_DEBOUNCE_MS);
     };
 
     async function pull() {

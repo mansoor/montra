@@ -580,6 +580,20 @@ Rules the code depends on (don't undo these):
 - **Automatic links stay conservative.** Only in the business's own accounts, and only one exact pair or a quoted number. Offering is
   always safe; a wrong automatic link misstates income.
 
+Known intermittent problem: **a click right after a background refresh can be lost.**
+
+- What happens: the link does nothing and the page stays put. A second click works. It shows up in e2e as a failed navigation, in
+  a different spec each time, about one full run in four on a loaded machine. Each spec passes alone (12 of 12 repeated).
+- Why: `router.refresh()` from `components/realtime.tsx` (Phase 1) or `useAction` overlaps the navigation. In Next 15.5 a navigation
+  that interrupts a pending action marks it discarded and never resolves its promise (`app-router-instance.js`), which looks like
+  the cause. That isn't proven end to end.
+- What's done: `realtime.tsx` now holds its refreshes until a click has had a second to land (`refreshWaitAfterAction`). This
+  narrows the race but can't close it: a refresh already in flight when the click happens still overlaps. Failures seemed less
+  frequent afterwards, but on too few runs to claim a fix.
+- CI retries a failed e2e test once, which mostly hides this. It isn't new: Phase 6 CI runs show the same kind of flake.
+- Next step: see whether a newer Next release resolves discarded actions, or make `useAction`'s refresh the only one for a user's
+  own writes. Don't raise e2e timeouts or add retries to cover it.
+
 Phase 8 leftovers, not blocking:
 
 - **Not tried on the real thing:** IIF and Xero files against QuickBooks and Xero themselves; invoice email through a real mail
