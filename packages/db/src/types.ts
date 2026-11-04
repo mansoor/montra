@@ -886,6 +886,7 @@ export interface BudgetTable {
   /** Weekly/biweekly: the first day of a period. */
   anchor_date: CalendarDateCol | null;
   /** UP-11 light mode: savings set aside first each period. */
+  revenue_target_minor: Int8 | null;
   savings_target_minor: Int8 | null;
   archived_at: Date | null;
   created_by: string | null;
@@ -1161,6 +1162,165 @@ export interface Database {
   'app.employer': EmployerTable;
   'app.payslip': PayslipTable;
   'app.payslip_line': PayslipLineTable;
+  'app.business_profile': BusinessProfileTable;
+  'app.business_party': BusinessPartyTable;
+  'app.invoice': InvoiceTable;
+  'app.invoice_line': InvoiceLineTable;
+  'app.invoice_payment': InvoicePaymentTable;
+  'app.bill': BillTable;
+  'app.mileage_trip': MileageTripTable;
+  'ref.tax_line': TaxLineTable;
+  'ref.mileage_rate': MileageRateTable;
+}
+
+// Phase 8: small business (migration 0018, ADR-0017). Amounts are positive minor units.
+
+export interface BusinessProfileTable {
+  workspace_id: string;
+  entity_id: string;
+  legal_name: string | null;
+  address: string | null;
+  email: string | null;
+  invoice_prefix: Generated<string>;
+  next_invoice_number: Generated<number>;
+  default_terms_days: Generated<number>;
+  default_deposit_account_id: string | null;
+  tax_rate_bps: number | null;
+  tax_savings_account_id: string | null;
+  receipt_threshold_minor: Int8Default;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface BusinessPartyTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  kind: 'customer' | 'vendor';
+  name: string;
+  payee_key: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  terms_days: number | null;
+  notes: string | null;
+  archived_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface InvoiceTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  party_id: string;
+  number: string;
+  status: Generated<'draft' | 'sent' | 'void'>;
+  issue_date: string;
+  due_date: string;
+  currency: string;
+  subtotal_minor: Int8Default;
+  tax_minor: Int8Default;
+  total_minor: Int8Default;
+  notes: string | null;
+  pdf_file_id: string | null;
+  sent_at: Date | null;
+  sent_to: string | null;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface InvoiceLineTable {
+  workspace_id: string;
+  id: Generated<string>;
+  invoice_id: string;
+  line_no: number;
+  description: string;
+  quantity_milli: Int8;
+  unit_price_minor: Int8;
+  tax_rate_bps: Generated<number>;
+  amount_minor: Int8;
+  tax_minor: Int8;
+  income_account_id: string;
+}
+
+export interface InvoicePaymentTable {
+  workspace_id: string;
+  id: Generated<string>;
+  invoice_id: string;
+  entity_id: string;
+  transaction_id: string;
+  amount_minor: Int8;
+  source: 'auto' | 'manual';
+  deposit_spec: unknown;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface BillTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  party_id: string;
+  reference: string | null;
+  status: Generated<'open' | 'paid' | 'void'>;
+  bill_date: string;
+  due_date: string;
+  currency: string;
+  amount_minor: Int8;
+  expense_account_id: string;
+  notes: string | null;
+  attachment_ids: Generated<string[]>;
+  transaction_id: string | null;
+  payment_source: 'auto' | 'manual' | null;
+  payment_spec: unknown;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface MileageTripTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  trip_date: string;
+  origin: string | null;
+  destination: string | null;
+  purpose: string;
+  vehicle: string | null;
+  miles_tenths: number;
+  tenths_of_cent: number;
+  deduction_minor: Int8;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface TaxLineTable {
+  country: string;
+  code: string;
+  form: string;
+  line: string;
+  label: string;
+  sort_order: number;
+  deductible_bps: Generated<number>;
+  version: Int8Default;
+  updated_at: Generated<Date>;
+}
+
+export interface MileageRateTable {
+  country: string;
+  effective_from: string;
+  tenths_of_cent: number;
+  source: string;
+  version: Int8Default;
+  updated_at: Generated<Date>;
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
@@ -1173,6 +1333,12 @@ export type ReceiptRow = Selectable<ReceiptTable>;
 export type ReceiptLineRow = Selectable<ReceiptLineTable>;
 export type TripRow = Selectable<TripTable>;
 export type BudgetRow = Selectable<BudgetTable>;
+export type BusinessProfileRow = Selectable<BusinessProfileTable>;
+export type BusinessPartyRow = Selectable<BusinessPartyTable>;
+export type InvoiceRow = Selectable<InvoiceTable>;
+export type InvoiceLineRow = Selectable<InvoiceLineTable>;
+export type BillRow = Selectable<BillTable>;
+export type MileageTripRow = Selectable<MileageTripTable>;
 export type BudgetPeriodRow = Selectable<BudgetPeriodTable>;
 export type BudgetLineRow = Selectable<BudgetLineTable>;
 export type GoalRow = Selectable<GoalTable>;
