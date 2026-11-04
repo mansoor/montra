@@ -1,0 +1,19 @@
+# Example scrape config. METRICS_TOKEN goes in the file named by credentials_file, not in this file.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - rules/recording.yml
+  - rules/alerts.yml
+
+scrape_configs:
+  - job_name: montra-api
+    metrics_path: /internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics-token
+    # /internal/metrics is blocked at the ALB and at Cloudflare, so scrape from inside the VPC. Each API task answers on
+    # its own IP. In ECS, use ecs_sd_configs or a collector sidecar that remote-writes.
+    static_configs:
+      - targets: ['localhost:4000']

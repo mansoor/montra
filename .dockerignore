@@ -1,0 +1,38 @@
+# Build context for apps/api, apps/web and apps/doc-worker images. Build from the repository root.
+**/node_modules
+**/dist
+**/build
+**/.next
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/*.log
+**/.DS_Store
+**/playwright-report
+**/test-results
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+
+# Never send secrets or local data to the daemon.
+**/.env
+**/.env.*
+.data
+
+# Not needed by any image.
+.git
+.github
+.claude
+.expo
+apps/mobile
+docs
+infra
+scripts
+CHANGELOG.md
+CLAUDE.md
+README.md
+renovate.json
