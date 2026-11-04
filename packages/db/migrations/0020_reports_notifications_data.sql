@@ -65,6 +65,8 @@ create table app.notification_pref (
   low_balance_days         smallint not null default 14 check (low_balance_days between 1 and 90),
   import_reminder_days     smallint not null default 9 check (import_reminder_days between 1 and 90),
   email_unsubscribed_at    timestamptz,
+  -- OPS-10: all a one-click unsubscribe link carries.
+  unsubscribe_token        uuid not null default gen_random_uuid() unique,
   version                  bigint not null default 1,
   updated_at               timestamptz not null default now()
 );
@@ -218,6 +220,23 @@ create function app.workspace_active_members(p_workspace uuid)
    where m.workspace_id = p_workspace and m.status = 'active' and u.deleted_at is null
 $$;
 grant execute on function app.workspace_active_members(uuid) to montra_app;
+
+-- OPS-10: one-click unsubscribe has no session, so it can't pass RLS. It can do nothing but this.
+create function app.unsubscribe_notifications(p_token uuid) returns boolean
+  language plpgsql volatile security definer set search_path = app, pg_temp as $$
+begin
+  update app.notification_pref set email_unsubscribed_at = coalesce(email_unsubscribed_at, now())
+   where unsubscribe_token = p_token;
+  return found;
+end $$;
+grant execute on function app.unsubscribe_notifications(uuid) to montra_app;
+
+-- Someone gets an email before they've ever opened settings, so a row with its token has to exist by then.
+create function app.ensure_notification_pref(p_user uuid) returns void
+  language sql volatile security definer set search_path = app, pg_temp as $$
+  insert into app.notification_pref (user_id) values (p_user) on conflict (user_id) do nothing
+$$;
+grant execute on function app.ensure_notification_pref(uuid) to montra_app;
 
 -- Scheduled backups due today in their workspace's time zone.
 create function app.backup_schedules_due()

@@ -1169,6 +1169,7 @@ export interface NotificationPrefTable {
   low_balance_days: Generated<number>;
   import_reminder_days: Generated<number>;
   email_unsubscribed_at: Date | null;
+  unsubscribe_token: Generated<string>;
   version: Int8Default;
   updated_at: Generated<Date>;
 }

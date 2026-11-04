@@ -65,6 +65,14 @@ import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
+import { NotificationJobs } from './notifications/notification-jobs.service.js';
+import {
+  NotificationPrefsController,
+  NotificationsController,
+  UnsubscribeController,
+} from './notifications/notifications.controller.js';
+import { NotificationsService } from './notifications/notifications.service.js';
+import { pushProvider } from './notifications/push.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { ReportsService } from './reports/reports.service.js';
 import { SearchService } from './reports/search.service.js';
@@ -117,6 +125,9 @@ export class AppModule {
       BusinessController,
       RentalsController,
       ReportsController,
+      NotificationsController,
+      NotificationPrefsController,
+      UnsubscribeController,
     ];
     return {
       module: AppModule,
@@ -177,6 +188,9 @@ export class AppModule {
         RentalOpsService,
         RentalReportsService,
         RentalJobs,
+        NotificationsService,
+        NotificationJobs,
+        pushProvider,
         ReportsService,
         SearchService,
         PayslipJobs,

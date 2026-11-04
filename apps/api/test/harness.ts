@@ -32,6 +32,7 @@ export async function startHarness(env: Record<string, string> = {}): Promise<Ha
       DATABASE_URL: APP_URL,
       AUTH_MODE: 'dev',
       MAIL_MODE: 'memory',
+      PUSH_MODE: 'memory',
       ...env,
     }),
   );

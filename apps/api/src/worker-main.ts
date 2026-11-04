@@ -8,6 +8,7 @@ import { RulesService } from './categorization/rules.service.js';
 import { InsightsService } from './categorization/insights.service.js';
 import { FxRatesService } from './fx/fx.service.js';
 import { ReceiptJobs } from './receipts/receipt-jobs.js';
+import { NotificationJobs } from './notifications/notification-jobs.service.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
 import { PayslipJobs } from './payslips/payslip-jobs.js';
 
@@ -24,10 +25,14 @@ app.get(ReceiptJobs).register();
 app.get(PayslipJobs).register();
 const planning = app.get(RecommendationsService);
 planning.register();
+const notifications = app.get(NotificationJobs);
+notifications.register();
 const fx = app.get(FxRatesService);
 fx.register(app.get(Worker));
 // Catch up at start-up; each daily run queues the next one.
 if (config.FX_DAILY) await fx.schedule();
 // Hourly check that queues each workspace's nightly planning run after its local 03:00 (TZ-04).
 await planning.schedule();
+// Sends what's waiting every few minutes (NOT-01), holding it through quiet hours.
+await notifications.schedule();
 await app.get(Worker).start(['import', 'ai', 'schedule']);
