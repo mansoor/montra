@@ -55,6 +55,9 @@ export type TransactionSpec =
       fxRate?: string;
       /** Set when a payslip owns this transaction (ADR-0016): change it through the payslip, not here. */
       payslipId?: string;
+      /** The same for an invoice or bill this pays (ADR-0017). */
+      invoiceId?: string;
+      billId?: string;
       /** The payslip's employer: this deposit is the pay its expected income is waiting for (PAY-07). */
       employerId?: string;
       /**
@@ -76,6 +79,22 @@ export type TransactionSpec =
       fxRateFrom?: string;
       fxRateTo?: string;
     };
+
+export type TransactionOwner = 'payslip' | 'invoice' | 'bill';
+
+/** What owns this transaction, if anything (ADR-0016, ADR-0017). Its ledger side changes only through the owner. */
+export function ownerOf(spec: unknown): TransactionOwner | null {
+  const s = spec as { payslipId?: unknown; invoiceId?: unknown; billId?: unknown } | null | undefined;
+  if (s?.payslipId) return 'payslip';
+  if (s?.invoiceId) return 'invoice';
+  if (s?.billId) return 'bill';
+  return null;
+}
+
+export function assertNotOwned(spec: unknown): void {
+  const owner = ownerOf(spec);
+  if (owner) throw unprocessable(`${owner}.managed`, `This comes from a ${owner}: change it on the ${owner}`);
+}
 
 export interface ForeignSpec {
   amount: string;
@@ -145,9 +164,7 @@ export class TransactionPoster {
     date: CalendarDate,
     transactionId?: string,
   ): Promise<BuiltTransaction> {
-    if (spec.type === 'standard' && spec.payslipId) {
-      throw unprocessable('payslip.managed', 'This comes from a payslip: change it on the payslip');
-    }
+    assertNotOwned(spec);
     if (spec.type === 'transfer') {
       const from = await this.ledger.accountRef(trx, ctx.workspaceId, spec.fromAccountId);
       const to = await this.ledger.accountRef(trx, ctx.workspaceId, spec.toAccountId);
@@ -370,6 +387,24 @@ export class TransactionPoster {
   }
 
   /** A system account (e.g. `bank_fees`, CUR-03) of the entity that owns `accountId`. */
+  /**
+   * Puts a transaction back as it was before a payslip, invoice or bill took it over. It keeps its statement date, and a
+   * statement line stays cleared (DE-08, DE-10).
+   */
+  async restoreTaken(trx: Trx, ctx: Ctx, transactionId: string, spec: TransactionSpec): Promise<void> {
+    const t = await trx
+      .updateTable('app.transaction')
+      .set({ spec: JSON.stringify(spec) })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', transactionId)
+      .returning(['txn_date', 'source'])
+      .executeTakeFirstOrThrow();
+    const built = await this.build(trx, ctx, spec, calendarDate(String(t.txn_date)), transactionId);
+    await this.post(trx, ctx, transactionId, built, {
+      ...(t.source === 'import' && spec.type === 'standard' ? { clearedAccountId: spec.accountId } : {}),
+    });
+  }
+
   async systemAccountFor(trx: Trx, ctx: Ctx, accountId: string, role: SystemRole): Promise<string> {
     const account = await this.ledger.accountRef(trx, ctx.workspaceId, accountId);
     const resolver = await this.ledger.resolver(trx, ctx.workspaceId);

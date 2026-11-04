@@ -397,6 +397,10 @@ export const ScheduleCDto = z.object({
 });
 export type ScheduleCDto = z.infer<typeof ScheduleCDto>;
 
+/** BIZ-02, AI-10: the user's choice of line for a category; null takes it off the form. */
+export const SetTaxLineRequest = z.object({ taxLineCode: z.string().max(40).nullable() });
+export type SetTaxLineRequest = z.output<typeof SetTaxLineRequest>;
+
 /** AI-10: a proposed tax line for a category without one. The user accepts it by mapping the category. */
 export const TaxLineSuggestionDto = z.object({
   categoryId: Id,

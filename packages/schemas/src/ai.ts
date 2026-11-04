@@ -420,6 +420,7 @@ export const InsightKind = z.enum([
   'duplicate_charge',
   'new_subscription',
   'price_increase',
+  'separation',
 ]);
 export const InsightDto = z.object({
   id: z.string(),

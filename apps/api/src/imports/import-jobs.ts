@@ -2,7 +2,7 @@
  * Import worker jobs (design 04 §3): parse → stage preview rows, commit → post atomically, undo → void.
  * Each job runs in the workspace's RLS context as the user who started it.
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import { newId, type Trx } from '@montra/db';
 import {
@@ -29,7 +29,8 @@ import {
 import { Db } from '../db/database.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
-import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
+import { BusinessJobs } from '../business/business-jobs.service.js';
+import { ownerOf, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { JobQueue, PermanentJobError, Worker, type Job, type JobContext } from '../jobs/queue.js';
 import { effectiveDecision } from './imports.service.js';
@@ -78,6 +79,8 @@ const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|f
 
 @Injectable()
 export class ImportJobs {
+  private readonly logger = new Logger('Imports');
+
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Worker) private readonly worker: Worker,
@@ -89,6 +92,7 @@ export class ImportJobs {
     @Inject(MerchantDirectory) private readonly merchants: MerchantDirectory,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(JobQueue) private readonly queue: JobQueue,
+    @Inject(BusinessJobs) private readonly business: BusinessJobs,
   ) {}
 
   register(): void {
@@ -562,7 +566,7 @@ export class ImportJobs {
     const ctx = this.ctxOf(job);
     const { batchId } = job.payload as { batchId: string };
     try {
-      return await this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      const committed = await this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
         const batch = await trx
           .selectFrom('app.import_batch')
           .selectAll()
@@ -741,6 +745,11 @@ export class ImportJobs {
           await this.queue.enqueue(trx, { ...ctx, queue: 'ai', type: 'receipt.match', payload: {} });
         return { added, matched, skipped, failed };
       });
+      // BIZ-05, BIZ-06: a new statement may hold the payment of an open invoice or bill. A failure here isn't the import's.
+      await this.business
+        .matchPayments(ctx)
+        .catch((e: Error) => this.logger.warn(`Matching payments: ${e.message}`));
+      return committed;
     } catch (err) {
       // The commit rolled back as a whole: put the batch back in preview with the reason (UP-01: no partial import).
       await this.db.run(ctx, (trx) =>
@@ -907,15 +916,17 @@ export class ImportJobs {
           kept.push({ transactionId: s.transaction_id, reason: 'reconciled' });
           continue;
         }
-        // ADR-0016: the deposit now carries a payslip's entry. Removing it would take the payslip with it.
-        const owner = await trx
-          .selectFrom('app.payslip')
-          .select('id')
+        // ADR-0016, ADR-0017: the line now carries a payslip's, invoice's or bill's entry. Removing it would take that
+        // with it.
+        const current = await trx
+          .selectFrom('app.transaction')
+          .select('spec')
           .where('workspace_id', '=', ctx.workspaceId)
-          .where('transaction_id', '=', s.transaction_id)
+          .where('id', '=', s.transaction_id)
           .executeTakeFirst();
+        const owner = ownerOf(current?.spec);
         if (owner) {
-          kept.push({ transactionId: s.transaction_id, reason: 'payslip' });
+          kept.push({ transactionId: s.transaction_id, reason: owner });
           continue;
         }
         if (s.role === 'created') {

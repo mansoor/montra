@@ -13,8 +13,7 @@ export const RECOMMENDATION_TYPES = [
   'REC-05',
   'REC-06',
   'REC-07',
-  'REC-08',
-] as const;
+  'REC-08', 'REC-09', 'BIZ-09', 'BIZ-11'] as const;
 export const RecommendationType = z.enum(RECOMMENDATION_TYPES);
 export type RecommendationType = z.infer<typeof RecommendationType>;
 
@@ -33,6 +32,8 @@ export const ProposedActionDto = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('review_subscription'), recurringItemId: Id }),
   /** Fund a goal (REC-03). */
   z.object({ kind: z.literal('fund_goal'), goalId: Id, amount: MinorDto }),
+  /** Move money between accounts: tax savings (REC-09). */
+  z.object({ kind: z.literal('transfer'), fromAccountId: Id, toAccountId: Id, amount: MinorDto }),
 ]);
 export type ProposedActionDto = z.infer<typeof ProposedActionDto>;
 

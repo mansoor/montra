@@ -223,6 +223,13 @@ create index mileage_trip_date on app.mileage_trip (workspace_id, entity_id, tri
 -- ---------------------------------------------------------------------------------------------
 alter table app.budget add column revenue_target_minor bigint check (revenue_target_minor is null or revenue_target_minor >= 0);
 
+-- Sales tax collected on invoices is owed on, not income (ADR-0017).
+alter table app.ledger_account drop constraint ledger_account_system_role_check;
+alter table app.ledger_account add constraint ledger_account_system_role_check check (system_role in (
+  'opening_balance_equity', 'uncategorized_income', 'uncategorized_expense', 'owner_contribution', 'owner_draw',
+  'inter_entity_clearing', 'due_to_entity', 'due_from_entity', 'fx_gain_loss', 'fx_rounding', 'security_deposits_held',
+  'bank_fees', 'sales_tax_payable'));
+
 alter table app.recommendation drop constraint recommendation_type_check;
 alter table app.recommendation add constraint recommendation_type_check
   check (type in ('REC-01', 'REC-02', 'REC-03', 'REC-04', 'REC-05', 'REC-06', 'REC-07', 'REC-08', 'REC-09', 'BIZ-09', 'BIZ-11'));

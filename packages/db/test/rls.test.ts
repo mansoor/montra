@@ -236,3 +236,74 @@ describe('restricted payslip entries (PAY-09)', () => {
     expect(await employers(partnerId)).toHaveLength(0);
   });
 });
+
+describe('business records (ADR-0017)', () => {
+  it('keep invoices, their lines and customers to those with a grant on the business', async () => {
+    const partyId = newId();
+    const invoiceId = newId();
+    await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, async (trx) => {
+      await trx
+        .insertInto('app.business_party')
+        .values({
+          workspace_id: a.workspaceId,
+          id: partyId,
+          entity_id: a.businessId,
+          kind: 'customer',
+          name: 'Private customer',
+          email: 'private@example.com',
+        })
+        .execute();
+      await trx
+        .insertInto('app.invoice')
+        .values({
+          workspace_id: a.workspaceId,
+          id: invoiceId,
+          entity_id: a.businessId,
+          party_id: partyId,
+          number: 'INV-0001',
+          issue_date: '2026-10-01',
+          due_date: '2026-10-31',
+          currency: 'USD',
+        })
+        .execute();
+      await trx
+        .insertInto('app.invoice_line')
+        .values({
+          workspace_id: a.workspaceId,
+          id: newId(),
+          invoice_id: invoiceId,
+          line_no: 1,
+          description: 'Secret project',
+          quantity_milli: 1000n,
+          unit_price_minor: 100n,
+          amount_minor: 100n,
+          tax_minor: 0n,
+          income_account_id: a.accounts.office,
+        })
+        .execute();
+    });
+    const seen = (userId: string) =>
+      withContext(db, { workspaceId: a.workspaceId, userId }, async (trx) => ({
+        parties: await trx.selectFrom('app.business_party').select('id').where('id', '=', partyId).execute(),
+        invoices: await trx.selectFrom('app.invoice').select('id').where('id', '=', invoiceId).execute(),
+        lines: await trx
+          .selectFrom('app.invoice_line')
+          .select('id')
+          .where('invoice_id', '=', invoiceId)
+          .execute(),
+      }));
+    const owner = await seen(a.ownerId);
+    expect([owner.parties.length, owner.invoices.length, owner.lines.length]).toEqual([1, 1, 1]);
+    const partner = await seen(partnerId);
+    expect([partner.parties.length, partner.invoices.length, partner.lines.length]).toEqual([0, 0, 0]);
+    // Nor can they write one in.
+    await expect(
+      withContext(db, { workspaceId: a.workspaceId, userId: partnerId }, (trx) =>
+        trx
+          .insertInto('app.business_party')
+          .values({ workspace_id: a.workspaceId, entity_id: a.businessId, kind: 'vendor', name: 'Nope' })
+          .execute(),
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+});

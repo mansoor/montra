@@ -349,6 +349,12 @@ describe('posting and deposit matching (PAY-04, PAY-05)', () => {
     expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
     const back = (await c.get(url(`/transactions/${two.id}`))).body;
     expect(back.amount).toEqual(usd('100000'));
+    // It keeps the statement's date, not the payslip's pay date.
+    const dates = await admin.query(
+      `select distinct je.entry_date::text as d from app.journal_entry je where je.transaction_id = $1`,
+      [two.id],
+    );
+    expect(dates.rows).toEqual([{ d: addDays(date, 1) }]);
     expect(back.splits).toEqual([
       expect.objectContaining({ accountId: cat('Other income'), amount: '100000' }),
     ]);

@@ -30,6 +30,7 @@
     "fastify": "^5.12.7",
     "kysely": "^0.28.18",
     "nodemailer": "^8.0.11",
+    "pdf-lib": "1.17.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "ws": "^8.22.0",

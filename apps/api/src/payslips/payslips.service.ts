@@ -853,15 +853,7 @@ export class PayslipsService {
         .where('id', '=', id)
         .execute();
       if (transactionId && p.deposit_spec) {
-        const spec = p.deposit_spec as unknown as TransactionSpec;
-        await trx
-          .updateTable('app.transaction')
-          .set({ spec: JSON.stringify(spec) })
-          .where('workspace_id', '=', ctx.workspaceId)
-          .where('id', '=', transactionId)
-          .execute();
-        const built = await this.poster.build(trx, ctx, spec, calendarDate(p.pay_date!), transactionId);
-        await this.poster.post(trx, ctx, transactionId, built);
+        await this.poster.restoreTaken(trx, ctx, transactionId, p.deposit_spec as unknown as TransactionSpec);
       } else if (transactionId) {
         await this.poster.unpost(trx, ctx, transactionId);
         await trx

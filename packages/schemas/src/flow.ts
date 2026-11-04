@@ -16,7 +16,15 @@ export const DrillDto = z.object({
 });
 export type DrillDto = z.infer<typeof DrillDto>;
 
-export const CALENDAR_ITEM_KINDS = ['bill', 'payday', 'scheduled', 'goal_due', 'card_due'] as const;
+export const CALENDAR_ITEM_KINDS = [
+  'bill',
+  'payday',
+  'scheduled',
+  'goal_due',
+  'card_due',
+  'invoice',
+  'tax_due',
+] as const;
 
 /** FLOW-05 / UP-14: an upcoming bill, payday or due date. */
 export const CalendarItemDto = z.object({
@@ -141,7 +149,7 @@ export type SankeyDto = z.infer<typeof SankeyDto>;
 /** A forecast driver: one item moving an account's balance on a date. */
 export const ForecastItemDto = z.object({
   date: CalendarDateDto,
-  kind: z.enum(['recurring', 'income', 'card_payment', 'burn']),
+  kind: z.enum(['recurring', 'income', 'card_payment', 'burn', 'invoice', 'bill']),
   name: z.string(),
   amount: MinorDto,
   sourceId: Id.nullable(),

@@ -187,7 +187,7 @@ export interface TransactionTable {
   memo_enc: Buffer | null;
   status: Generated<'scheduled' | 'pending' | 'posted' | 'void'>;
   review_state: Generated<'auto_applied' | 'needs_review' | 'reviewed'>;
-  source: Generated<'manual' | 'camera' | 'import' | 'receipt' | 'payslip' | 'recurring' | 'system' | 'feed'>;
+  source: Generated<'manual' | 'camera' | 'import' | 'receipt' | 'payslip' | 'recurring' | 'system' | 'feed' | 'invoice' | 'bill'>;
   dedupe_key: string | null;
   original_amount_minor: Int8 | null;
   original_currency: string | null;
@@ -714,7 +714,7 @@ export interface AiTaskTable {
 }
 
 export type InsightKind =
-  'recurring' | 'unusual_amount' | 'duplicate_charge' | 'new_subscription' | 'price_increase';
+  'recurring' | 'unusual_amount' | 'duplicate_charge' | 'new_subscription' | 'price_increase' | 'separation';
 
 export interface InsightTable {
   workspace_id: string;
@@ -978,7 +978,7 @@ export interface ExpectedIncomeTable {
 }
 
 export type RecommendationType =
-  'REC-01' | 'REC-02' | 'REC-03' | 'REC-04' | 'REC-05' | 'REC-06' | 'REC-07' | 'REC-08';
+  'REC-01' | 'REC-02' | 'REC-03' | 'REC-04' | 'REC-05' | 'REC-06' | 'REC-07' | 'REC-08' | 'REC-09' | 'BIZ-09' | 'BIZ-11';
 export type RecommendationStatus = 'open' | 'accepted' | 'edited' | 'dismissed' | 'expired';
 
 export interface RecommendationTable {

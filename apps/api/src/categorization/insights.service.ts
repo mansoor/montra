@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import { addDays, calendarDate, formatMoney, money, type CalendarDate } from '@montra/domain';
 import { detectAnomalies, detectRecurring, type HistoryTxn, type PayeeSeries } from '@montra/categorize';
+import { TransactionsService } from '../transactions/transactions.service.js';
 import type { AcceptInsightRequest, InsightDto } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { notFound, unprocessable } from '../common/errors.js';
@@ -21,6 +22,7 @@ export class InsightsService {
     @Inject(Db) private readonly db: Db,
     @Inject(Worker) private readonly worker: Worker,
     @Inject(RecurringService) private readonly recurring: RecurringService,
+    @Inject(TransactionsService) private readonly transactions: TransactionsService,
   ) {}
 
   register(): void {
@@ -235,6 +237,21 @@ export class InsightsService {
         startDate: calendarDate(d.nextDate),
         autoCreate: 'scheduled',
       });
+    }
+    if (insight.kind === 'separation') {
+      // BIZ-03: one tap moves it to the other side; money between the two is recorded as an owner draw or contribution
+      // (DE-05). Not learned from here: the flag came from us, not from the user's own choice of category.
+      const d = insight.data as { categoryId: string };
+      await this.db.run(ctx, (trx) =>
+        this.transactions.updateInTrx(
+          trx,
+          ctx,
+          insight.transaction_id!,
+          { categoryId: req.categoryId ?? d.categoryId },
+          undefined,
+          { learn: false },
+        ),
+      );
     }
     return this.db.run(ctx, async (trx) =>
       toDto(
