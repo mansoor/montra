@@ -35,7 +35,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | `@montra/db` (ledger triggers, RLS, staff roles, read models, receipts) | 43 |
 | `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 28 tests in 15 spec files |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 29 tests in 15 spec files |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
