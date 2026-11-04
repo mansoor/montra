@@ -24,7 +24,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 169, plus 4 perf budgets run alone |
+| `@montra/api` (integration, real Postgres) | 168, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
 | `@montra/web` unit | 82 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
