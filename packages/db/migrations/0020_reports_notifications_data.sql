@@ -24,6 +24,38 @@ alter table app.transaction add column search tsvector generated always as
   (to_tsvector('simple', coalesce(payee_raw, '') || ' ' || coalesce(description, ''))) stored;
 create index transaction_search on app.transaction using gin (search);
 
+-- A search index is derived, not user data: keep it out of the audit trail (NFR-03), as with the sync clocks.
+create or replace function app.audit_row() returns trigger
+  language plpgsql security definer set search_path = app, pg_temp as $$
+declare o jsonb; n jsonb; d jsonb; k text;
+begin
+  o := case when tg_op <> 'INSERT' then to_jsonb(old) end;
+  n := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+  if tg_op = 'UPDATE' then
+    d := '{}';
+    for k in select jsonb_object_keys(n) loop
+      if k not in ('updated_at', 'version', 'field_clock', 'search') and (o -> k) is distinct from (n -> k) then
+        d := d || jsonb_build_object(k, case when k like '%\_enc' then '"[redacted]"'::jsonb
+                                             else jsonb_build_array(o -> k, n -> k) end);
+      end if;
+    end loop;
+    if d = '{}' then return null; end if;
+  else
+    d := coalesce(n, o) - 'field_clock' - 'search';
+    for k in select jsonb_object_keys(d) loop
+      if k like '%\_enc' then d := d || jsonb_build_object(k, '[redacted]'::text); end if;
+    end loop;
+  end if;
+  insert into app.audit_log (workspace_id, actor_user_id, actor_type, action, subject_type, subject_id, diff)
+  values (coalesce((coalesce(n, o) ->> 'workspace_id')::uuid, (coalesce(n, o) ->> 'id')::uuid),
+          app.current_user_id(),
+          coalesce(nullif(current_setting('app.actor_type', true), ''), 'user'),
+          tg_table_name || '.' || lower(tg_op), tg_table_name,
+          coalesce(coalesce(n, o) ->> 'id', coalesce(n, o) ->> 'ledger_account_id', coalesce(n, o) ->> 'entity_id'),
+          d);
+  return null;
+end $$;
+
 -- -----------------------------------------------------------------------------
 -- NOT-01..03: notifications, per user. Preferences follow the user across workspaces.
 -- -----------------------------------------------------------------------------
