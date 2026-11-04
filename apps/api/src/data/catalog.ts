@@ -13,6 +13,11 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   entity_grant: 'As for workspace_member',
   workspace_invite: 'Holds tokens for other people',
   account_visibility: 'Per member, as for workspace_member',
+  subscription:
+    'Belongs to the payment provider and the original workspace, and a file must not bring a plan with it',
+  feature_flag_override: 'How the service is run, not part of the books',
+  support_grant: 'Access, as for workspace_member',
+  support_request: 'A conversation with support, belonging to the person',
   workspace_key: 'A secret, and useless under another workspace',
   ai_credential: 'A secret: an API key is not copied into a file',
   ai_cache: 'A cache',

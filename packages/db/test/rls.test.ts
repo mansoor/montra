@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql, type Kysely } from 'kysely';
+import pg from 'pg';
 import { newId, withContext, type Database } from '../src/index.js';
+import { APP_URL } from './env.js';
 import { addMember, appDb, createWorkspace, postEntry, type Fixture } from './fixtures.js';
 
 let db: Kysely<Database>;
@@ -394,6 +396,114 @@ describe('reports, notifications and your data (ADR-0019)', () => {
         trx.deleteFrom('app.security_event').where('id', '=', eventId).execute(),
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('staff (ADR-0020)', () => {
+  const asRole = async <T>(role: string, fn: (c: pg.Client) => Promise<T>) => {
+    const url = new URL(APP_URL);
+    url.username = role;
+    url.password = role;
+    const client = new pg.Client({ connectionString: url.toString() });
+    await client.connect();
+    try {
+      return await fn(client);
+    } finally {
+      await client.end();
+    }
+  };
+
+  // Each table here is one staff can touch directly. A new table is out of reach unless it's added, on purpose.
+  const STAFF_TABLES = new Set([
+    'admin_log',
+    'feature_flag',
+    'feature_flag_override',
+    'system_notice',
+    'system_setting',
+  ]);
+
+  it('can reach no table but their own through the console’s role', async () => {
+    const rows = await asRole('montra_admin', async (c) => {
+      const { rows } = await c.query<{ table_name: string; can: boolean }>(`
+        select c.relname as table_name,
+               has_table_privilege(c.oid, 'select,insert,update,delete')
+               or has_any_column_privilege(c.oid, 'select,insert,update') as can
+          from pg_class c join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = 'app' and c.relkind in ('r', 'p', 'v', 'm')`);
+      return rows;
+    });
+    expect(rows.length).toBeGreaterThan(50);
+    expect(rows.filter((r) => r.can && !STAFF_TABLES.has(r.table_name))).toEqual([]);
+  });
+
+  it('can call only the functions named for them', async () => {
+    const callable = await asRole('montra_admin', async (c) => {
+      const { rows } = await c.query<{ proname: string }>(`
+        select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'app' and has_function_privilege(p.oid, 'execute')`);
+      return rows.map((r) => r.proname).sort();
+    });
+    expect(callable).toEqual([
+      'admin_account_workspaces',
+      'admin_ai_accuracy',
+      'admin_close_support_request',
+      'admin_find_accounts',
+      'admin_import_failures',
+      'admin_subscription',
+      'admin_support_grant',
+      'admin_support_requests',
+      'admin_support_screenshot',
+      'apply_subscription',
+      'log_support_access',
+    ]);
+  });
+
+  it('can’t call the staff functions from the app', async () => {
+    await asRole('montra_app', async (c) => {
+      await expect(c.query(`select * from app.admin_find_accounts('a')`)).rejects.toThrow(
+        /permission denied/,
+      );
+    });
+  });
+
+  it('gives a support session no way to read money or write anything', async () => {
+    await asRole('montra_support', async (c) => {
+      for (const table of [
+        'transaction',
+        'posting',
+        'journal_entry',
+        'ledger_account',
+        'payslip',
+        'tenant',
+        'file',
+      ]) {
+        await expect(c.query(`select count(*) from app.${table}`)).rejects.toThrow(/permission denied/);
+      }
+      await expect(c.query(`select mapping from app.import_batch`)).rejects.toThrow(/permission denied/);
+      await expect(c.query(`update app.entity set name = 'x'`)).rejects.toThrow(/permission denied/);
+    });
+  });
+
+  it('keeps a support grant to its workspace, and its owner', async () => {
+    const id = newId();
+    const expires = new Date(Date.now() + 3_600_000);
+    await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, (trx) =>
+      trx
+        .insertInto('app.support_grant')
+        .values({ workspace_id: a.workspaceId, id, granted_by: a.ownerId, expires_at: expires })
+        .execute(),
+    );
+    await withContext(db, { workspaceId: b.workspaceId, userId: b.ownerId }, async (trx) => {
+      expect(await trx.selectFrom('app.support_grant').select('id').where('id', '=', id).execute()).toEqual(
+        [],
+      );
+      await expect(
+        trx
+          .insertInto('app.support_grant')
+          .values({ workspace_id: a.workspaceId, granted_by: b.ownerId, expires_at: expires })
+          .execute(),
+      ).rejects.toThrow();
+    });
   });
 });
 

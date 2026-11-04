@@ -1,7 +1,8 @@
-import { ArgumentsHost, Catch, HttpException, Logger, type ExceptionFilter } from '@nestjs/common';
+import { ArgumentsHost, Catch, HttpException, Inject, Logger, type ExceptionFilter } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
 import { LedgerError } from '@montra/domain';
+import { ERROR_REPORTER, type ErrorReporter } from '../ops/errors.js';
 import { AppError } from './errors.js';
 
 interface Problem {
@@ -17,10 +18,13 @@ const TITLES: Record<number, string> = {
   400: 'Bad request',
   401: 'Unauthorized',
   403: 'Forbidden',
+  402: 'Payment required',
   404: 'Not found',
   409: 'Conflict',
   412: 'Precondition failed',
   422: 'Unprocessable entity',
+  426: 'Upgrade required',
+  429: 'Too many requests',
   500: 'Internal server error',
 };
 
@@ -38,11 +42,15 @@ const problem = (status: number, code: string, detail?: string, errors?: Problem
 export class ProblemFilter implements ExceptionFilter {
   private readonly logger = new Logger('ProblemFilter');
 
+  constructor(@Inject(ERROR_REPORTER) private readonly errors: ErrorReporter) {}
+
   catch(error: unknown, host: ArgumentsHost): void {
     const reply = host.switchToHttp().getResponse<FastifyReply>();
     const p = this.toProblem(error);
-    if (p.status >= 500)
+    if (p.status >= 500) {
       this.logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      this.errors.captureException(error, { code: p.code });
+    }
     void reply.status(p.status).header('content-type', 'application/problem+json').send(p);
   }
 

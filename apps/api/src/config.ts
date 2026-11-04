@@ -48,6 +48,25 @@ const Env = z.object({
     .int()
     .positive()
     .default(25 * 1024 * 1024),
+  /** ADR-0020: staff and support connect with their own roles. Locally these come from DATABASE_URL's host. */
+  ADMIN_DATABASE_URL: z.string().optional(),
+  SUPPORT_DATABASE_URL: z.string().optional(),
+  /** Plans (OPS-08). `off` turns gating off, as for a self-hosted install, development and tests. */
+  BILLING_MODE: z.enum(['off', 'stripe']).default('off'),
+  STRIPE_API_URL: z.string().url().default('https://api.stripe.com'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PRO_YEARLY: z.string().optional(),
+  /** Error tracking (NFR-13). Without it, errors only go to the log. */
+  SENTRY_DSN: z.string().url().optional(),
+  /** Bearer token for /internal/metrics. Without it, the route doesn't answer. */
+  METRICS_TOKEN: z.string().min(16).optional(),
+  /** Where a new question or bug report is announced (OPS-09). */
+  SUPPORT_EMAIL: z.string().email().optional(),
+  /** Key wrapping (NFR-01): 'local' for development and tests, 'aws' for AWS KMS. */
+  KMS_MODE: z.enum(['local', 'aws']).default('local'),
+  AWS_KMS_KEY_ID: z.string().optional(),
   /** FX rates (CUR-05, ADR-0014): ECB euro reference rates, no key needed. */
   FX_ECB_URL: z.string().url().default('https://www.ecb.europa.eu/stats/eurofxref'),
   /** Optional second source covering more currencies (Open Exchange Rates app id). */
@@ -99,8 +118,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error('S3_BUCKET is required when STORAGE_MODE=s3');
   if (config.MAIL_MODE === 'smtp' && !config.MAIL_URL)
     throw new Error('MAIL_URL is required when MAIL_MODE=smtp');
-  if (config.NODE_ENV === 'production' && !config.MASTER_KEY) {
-    throw new Error('MASTER_KEY (or the AWS KMS adapter) is required in production');
+  if (config.NODE_ENV === 'production' && config.KMS_MODE === 'local' && !config.MASTER_KEY) {
+    throw new Error('MASTER_KEY (or KMS_MODE=aws) is required in production');
+  }
+  if (config.KMS_MODE === 'aws' && !config.AWS_KMS_KEY_ID) {
+    throw new Error('AWS_KMS_KEY_ID is required when KMS_MODE=aws');
+  }
+  if (config.NODE_ENV === 'production' && !(config.ADMIN_DATABASE_URL && config.SUPPORT_DATABASE_URL)) {
+    throw new Error('ADMIN_DATABASE_URL and SUPPORT_DATABASE_URL are required in production');
+  }
+  if (config.BILLING_MODE === 'stripe' && !(config.STRIPE_SECRET_KEY && config.STRIPE_WEBHOOK_SECRET)) {
+    throw new Error('STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are required when BILLING_MODE=stripe');
   }
   return config;
 }

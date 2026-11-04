@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { loadConfig } from './config.js';
 import { Worker } from './jobs/queue.js';
+import { OpsJobs } from './ops/ops-jobs.js';
 import { ImportJobs } from './imports/import-jobs.js';
 import { RulesService } from './categorization/rules.service.js';
 import { InsightsService } from './categorization/insights.service.js';
@@ -44,4 +45,8 @@ await planning.schedule();
 await notifications.schedule();
 // Hourly: expired archives, files past retention, accounts past their 30 days, and scheduled backups (BAK-05, BAK-09).
 await retention.schedule();
+// Nightly reconciliation of every workspace's books, and the hourly check for lapsed plans.
+const ops = app.get(OpsJobs);
+ops.register();
+await ops.schedule();
 await app.get(Worker).start(['import', 'ai', 'schedule', 'report']);

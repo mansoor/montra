@@ -5,6 +5,11 @@ select format('create role montra_owner login password %L bypassrls', 'montra_ow
  where not exists (select from pg_roles where rolname = 'montra_owner') \gexec
 select format('create role montra_app login password %L nobypassrls noinherit', 'montra_app')
  where not exists (select from pg_roles where rolname = 'montra_app') \gexec
+-- Phase 11 (ADR-0020): the staff console and support sessions connect separately, with very little.
+select format('create role montra_admin login password %L nobypassrls noinherit', 'montra_admin')
+ where not exists (select from pg_roles where rolname = 'montra_admin') \gexec
+select format('create role montra_support login password %L nobypassrls noinherit', 'montra_support')
+ where not exists (select from pg_roles where rolname = 'montra_support') \gexec
 select format('create database %I owner montra_owner', :'db')
  where not exists (select from pg_database where datname = :'db') \gexec
 \connect :db
