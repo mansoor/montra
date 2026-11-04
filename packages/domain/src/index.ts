@@ -6,6 +6,7 @@ export * from './allocate.js';
 export * from './receipt.js';
 export * from './payslip.js';
 export * from './business.js';
+export * from './rental.js';
 export * from './calendar-date.js';
 export * from './recurrence.js';
 export * from './ledger/index.js';

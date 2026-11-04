@@ -198,6 +198,9 @@ export interface TransactionTable {
     | 'feed'
     | 'invoice'
     | 'bill'
+    | 'rent'
+    | 'security_deposit'
+    | 'loan'
   >;
   dedupe_key: string | null;
   original_amount_minor: Int8 | null;
@@ -725,7 +728,13 @@ export interface AiTaskTable {
 }
 
 export type InsightKind =
-  'recurring' | 'unusual_amount' | 'duplicate_charge' | 'new_subscription' | 'price_increase' | 'separation';
+  | 'recurring'
+  | 'unusual_amount'
+  | 'duplicate_charge'
+  | 'new_subscription'
+  | 'price_increase'
+  | 'separation'
+  | 'capital_improvement';
 
 export interface InsightTable {
   workspace_id: string;
@@ -1190,6 +1199,22 @@ export interface Database {
   'app.invoice_payment': InvoicePaymentTable;
   'app.bill': BillTable;
   'app.mileage_trip': MileageTripTable;
+  'app.property': PropertyTable;
+  'app.unit': UnitTable;
+  'app.tenant': TenantTable;
+  'app.lease': LeaseTable;
+  'app.lease_tenant': LeaseTenantTable;
+  'app.rent_charge': RentChargeTable;
+  'app.rent_payment': RentPaymentTable;
+  'app.security_deposit_event': SecurityDepositEventTable;
+  'app.allocation_rule': AllocationRuleTable;
+  'app.loan_schedule': LoanScheduleTable;
+  'app.loan_payment': LoanPaymentTable;
+  'app.depreciation_schedule': DepreciationScheduleTable;
+  'app.rental_reminder': RentalReminderTable;
+  'app.maintenance_log': MaintenanceLogTable;
+  'app.property_budget': PropertyBudgetTable;
+  'app.property_budget_line': PropertyBudgetLineTable;
   'ref.tax_line': TaxLineTable;
   'ref.mileage_rate': MileageRateTable;
 }
@@ -1344,6 +1369,248 @@ export interface MileageRateTable {
   updated_at: Generated<Date>;
 }
 
+// Phase 9: rental properties (migration 0019, ADR-0018). Amounts are non-negative minor units.
+
+export interface PropertyTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  name: string;
+  address: string | null;
+  type: Generated<'sfh' | 'multi_family' | 'condo' | 'str' | 'commercial'>;
+  purchase_date: string | null;
+  purchase_price_minor: Int8 | null;
+  land_value_minor: Int8 | null;
+  cash_invested_minor: Int8 | null;
+  ownership_bps: Generated<number>;
+  current_value_minor: Int8 | null;
+  sqft: number | null;
+  improvements_account_id: string | null;
+  archived_at: Date | null;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface UnitTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  property_id: string;
+  label: string;
+  beds: number | null;
+  baths_tenths: number | null;
+  sqft: number | null;
+  market_rent_minor: Int8 | null;
+  under_repair: Generated<boolean>;
+  archived_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface TenantTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  payee_keys: Generated<string[]>;
+  notes: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface LeaseTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  property_id: string;
+  unit_id: string;
+  start_date: string;
+  end_date: string | null;
+  ended_on: string | null;
+  rent_minor: Int8;
+  due_day: Generated<number>;
+  late_grace_days: Generated<number>;
+  late_fee_flat_minor: Int8Default;
+  late_fee_bps: Generated<number>;
+  late_fee_cap_minor: Int8 | null;
+  deposit_minor: Int8Default;
+  deposit_account_id: string | null;
+  attachment_ids: Generated<string[]>;
+  notes: string | null;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface LeaseTenantTable {
+  workspace_id: string;
+  lease_id: string;
+  tenant_id: string;
+}
+
+export interface RentChargeTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  lease_id: string;
+  kind: Generated<'rent' | 'late_fee'>;
+  period_start: string;
+  due_date: string;
+  amount_minor: Int8;
+  waived_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface RentPaymentTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  lease_id: string;
+  transaction_id: string;
+  amount_minor: Int8;
+  source: 'auto' | 'manual';
+  deposit_spec: unknown;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface SecurityDepositEventTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  lease_id: string;
+  kind: 'received' | 'returned' | 'forfeited';
+  event_date: string;
+  amount_minor: Int8;
+  transaction_id: string;
+  deposit_spec: unknown;
+  source: Generated<'auto' | 'manual'>;
+  notes: string | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface AllocationRuleTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  name: string;
+  basis: 'percent' | 'units' | 'sqft';
+  targets: unknown;
+  archived_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface LoanScheduleTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  property_id: string;
+  loan_account_id: string;
+  name: string;
+  principal_minor: Int8;
+  rate_bps: number;
+  term_months: number;
+  first_payment_date: string;
+  escrow_taxes_minor: Int8Default;
+  escrow_insurance_minor: Int8Default;
+  archived_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface LoanPaymentTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  loan_id: string;
+  number: number;
+  transaction_id: string;
+  source: 'auto' | 'manual';
+  deposit_spec: unknown;
+  created_at: Generated<Date>;
+}
+
+export interface DepreciationScheduleTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  property_id: string;
+  name: string;
+  basis_minor: Int8;
+  in_service_date: string;
+  method: Generated<'SL_27_5' | 'SL_39'>;
+  transaction_id: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface RentalReminderTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  property_id: string | null;
+  kind: 'insurance' | 'property_tax' | 'inspection' | 'other';
+  title: string;
+  due_date: string;
+  lead_days: Generated<number>;
+  done_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface MaintenanceLogTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  property_id: string;
+  unit_id: string | null;
+  issue: string;
+  vendor: string | null;
+  cost_minor: Int8 | null;
+  status: Generated<'open' | 'scheduled' | 'done'>;
+  reported_on: string;
+  completed_on: string | null;
+  attachment_ids: Generated<string[]>;
+  transaction_ids: Generated<string[]>;
+  notes: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface PropertyBudgetTable {
+  workspace_id: string;
+  property_id: string;
+  entity_id: string;
+  capex_reserve_per_unit_minor: Int8Default;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface PropertyBudgetLineTable {
+  workspace_id: string;
+  property_id: string;
+  entity_id: string;
+  category_id: string;
+  amount_minor: Int8;
+}
+
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
 export type NewLedgerAccount = Insertable<LedgerAccountTable>;
 export type EntityRow = Selectable<EntityTable>;
@@ -1360,6 +1627,15 @@ export type InvoiceRow = Selectable<InvoiceTable>;
 export type InvoiceLineRow = Selectable<InvoiceLineTable>;
 export type BillRow = Selectable<BillTable>;
 export type MileageTripRow = Selectable<MileageTripTable>;
+export type PropertyRow = Selectable<PropertyTable>;
+export type UnitRow = Selectable<UnitTable>;
+export type TenantRow = Selectable<TenantTable>;
+export type LeaseRow = Selectable<LeaseTable>;
+export type RentChargeRow = Selectable<RentChargeTable>;
+export type LoanRow = Selectable<LoanScheduleTable>;
+export type DepreciationRow = Selectable<DepreciationScheduleTable>;
+export type MaintenanceRow = Selectable<MaintenanceLogTable>;
+export type ReminderRow = Selectable<RentalReminderTable>;
 export type BudgetPeriodRow = Selectable<BudgetPeriodTable>;
 export type BudgetLineRow = Selectable<BudgetLineTable>;
 export type GoalRow = Selectable<GoalTable>;
