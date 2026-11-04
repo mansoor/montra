@@ -451,7 +451,14 @@ describe('contract additions for the web client', () => {
     const t = (await expense(w, c, '2026-10-06', '-300', w.cat(w.personalId, 'Groceries'))).body;
     expect(t.accountId).toBe(w.card);
     expect(t.splits).toEqual([
-      { accountId: w.cat(w.personalId, 'Groceries'), amount: '-300', memberId: null, memo: null },
+      {
+        accountId: w.cat(w.personalId, 'Groceries'),
+        amount: '-300',
+        memberId: null,
+        memo: null,
+        propertyId: null,
+        unitId: null,
+      },
     ]);
     await c.delete(w.url(`/transactions/${t.id}`));
     expect((await c.get(w.url('/transactions'))).body.data.map((x: any) => x.id)).not.toContain(t.id);
