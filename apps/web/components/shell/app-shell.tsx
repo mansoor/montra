@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowLeftRight,
   BookOpen,
+  Briefcase,
   CalendarClock,
   CalendarDays,
   ChartColumn,
@@ -43,6 +44,7 @@ const ICONS = {
   review: ListChecks,
   receipts: Receipt,
   payslips: FileText,
+  business: Briefcase,
   members: Users,
   upcoming: CalendarClock,
   recurring: Repeat,

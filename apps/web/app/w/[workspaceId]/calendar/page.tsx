@@ -17,6 +17,8 @@ const TONE = {
   scheduled: 'text-info',
   goal_due: 'text-warn',
   card_due: 'text-bad',
+  invoice: 'text-good',
+  tax_due: 'text-warn',
 };
 
 /** Bills, paydays and goal due dates by day (FLOW-05, UP-14). */

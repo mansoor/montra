@@ -40,7 +40,12 @@ export function BudgetSetup({
         ? t('budget.default_name')
         : (entity?.name ?? ''),
   );
-  const [method, setMethod] = useState<(typeof METHODS)[number]>('zero_based');
+  // BIZ-11: a business usually thinks in limits and a revenue target, not assigning every dollar.
+  const isBusiness = entity?.type === 'business' && !member;
+  const [method, setMethod] = useState<(typeof METHODS)[number]>(
+    isBusiness ? 'category_limits' : 'zero_based',
+  );
+  const [revenue, setRevenue] = useState('');
   const [periodType, setPeriodType] = useState<(typeof PERIODS)[number]>('monthly');
   const [anchor, setAnchor] = useState(today);
   const [savings, setSavings] = useState('');
@@ -58,8 +63,18 @@ export function BudgetSetup({
       }
       savingsTarget = String(parsed.minor);
     }
+    let revenueTarget: string | null = null;
+    if (isBusiness && revenue.trim()) {
+      const parsed = parseAmountInput(revenue, ccy, locale);
+      if (!parsed.ok || parsed.minor < 0n) {
+        setMessage({ tone: 'bad', text: t('budget.amount_invalid') });
+        return;
+      }
+      revenueTarget = String(parsed.minor);
+    }
     await run(async () => {
       const budget = await browserApi.createBudget(workspace.id, {
+        revenueTarget,
         entityId,
         memberId: member?.id ?? null,
         name,
@@ -103,6 +118,18 @@ export function BudgetSetup({
             onChange={(e) => setName(e.target.value)}
           />
         </label>
+        {isBusiness && (
+          <label className="block">
+            <span className="field-label">{t('budget.revenue_target')}</span>
+            <input
+              className="input"
+              inputMode="decimal"
+              value={revenue}
+              onChange={(e) => setRevenue(e.target.value)}
+            />
+            <span className="mt-1 block text-xs text-muted">{t('budget.revenue_target_hint')}</span>
+          </label>
+        )}
         <fieldset>
           <legend className="field-label">{t('budget.method')}</legend>
           <div className="grid gap-2">

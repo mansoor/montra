@@ -71,6 +71,11 @@ export function RecommendationList({
                     </>
                   )}
                   {a.kind === 'review_subscription' && t('rec.action_review')}
+                  {a.kind === 'transfer' && (
+                    <>
+                      {t('rec.action_transfer')} <Money amount={a.amount} currency={r.payload.currency} />
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -104,7 +109,8 @@ export function RecommendationList({
           {r.status === 'open' && (
             <div className="ml-11 flex flex-wrap gap-2">
               {r.payload.actions.some(
-                (a) => a.kind === 'assign' || a.kind === 'move' || a.kind === 'fund_goal',
+                (a) =>
+                  a.kind === 'assign' || a.kind === 'move' || a.kind === 'fund_goal' || a.kind === 'transfer',
               ) && (
                 <button
                   type="button"
