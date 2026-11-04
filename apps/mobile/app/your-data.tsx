@@ -6,12 +6,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Platform, Share, View } from 'react-native';
 import { Directory, File, Paths } from 'expo-file-system';
 import type { DeletionStatusDto, ExportJobDto, SecurityEventDto, StorageUsageDto } from '@montra/schemas';
-import { hasRunningExport, humanBytes } from '../src/features/data-settings';
+import { hasRunningExport, humanBytes, needsFreshSignIn } from '../src/features/data-settings';
 import { t } from '../src/i18n';
 import { useSession } from '../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Field, Row, Screen, Small, Title } from '../src/ui/components';
 
 const POLL_MS = 3000;
+
+const failure = (err: unknown) => (needsFreshSignIn(err) ? t('mobile.data.reauth') : (err as Error).message);
 
 export default function YourData() {
   const session = useSession();
@@ -64,7 +66,7 @@ export default function YourData() {
       setNotice(t('data.backup_started'));
       await load();
     } catch (err) {
-      setError((err as Error).message);
+      setError(failure(err));
     } finally {
       setBusy(false);
     }
@@ -83,7 +85,7 @@ export default function YourData() {
       });
       await Share.share(Platform.OS === 'ios' ? { url: file.uri } : { message: file.uri });
     } catch (err) {
-      setError((err as Error).message);
+      setError(failure(err));
     } finally {
       setBusy(false);
     }
@@ -99,7 +101,7 @@ export default function YourData() {
           void api
             .requestDeletion({ confirm: 'DELETE' })
             .then(() => session.signOut())
-            .catch((err: Error) => setError(err.message)),
+            .catch((err: unknown) => setError(failure(err))),
       },
     ]);
 

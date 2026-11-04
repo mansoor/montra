@@ -3,6 +3,7 @@ import type { ExportJobDto, NotificationPrefsDto } from '@montra/schemas';
 import {
   hasRunningExport,
   humanBytes,
+  needsFreshSignIn,
   NOTIFICATION_ROWS,
   toggleChannel,
 } from '../src/features/data-settings';
@@ -39,6 +40,15 @@ describe('hasRunningExport', () => {
     expect(hasRunningExport([job('queued')])).toBe(true);
     expect(hasRunningExport([job('ready'), job('failed'), job('expired')])).toBe(false);
     expect(hasRunningExport([])).toBe(false);
+  });
+});
+
+describe('needsFreshSignIn', () => {
+  it('only for the step-up refusal', () => {
+    expect(needsFreshSignIn({ code: 'reauth.required' })).toBe(true);
+    expect(needsFreshSignIn({ code: 'forbidden' })).toBe(false);
+    expect(needsFreshSignIn(new Error('boom'))).toBe(false);
+    expect(needsFreshSignIn(null)).toBe(false);
   });
 });
 

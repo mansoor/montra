@@ -1,7 +1,8 @@
-/** Settings: app lock (PLT-07), notifications, workspace, AI mode (read-only), sign out (wipes, BAK-10), version. */
+/** Settings (OPS-13): profile, family, entities, currency and time zone to read, app lock (PLT-07), notifications, your data, workspace, AI mode (read-only), sign out (wipes, BAK-10), version. */
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import type { FamilyMemberDto, MeDto } from '@montra/schemas';
 import { config } from '../src/config';
 import { t } from '../src/i18n';
 import { LOCK_TIMEOUTS } from '../src/lock/policy';
@@ -19,6 +20,8 @@ export default function Settings() {
   const { state, api } = session;
   const [ai, setAi] = useState<string | null>(null);
   const [push, setPush] = useState<PushStatus | null>(null);
+  const [me, setMe] = useState<MeDto | null>(null);
+  const [family, setFamily] = useState<FamilyMemberDto[]>([]);
 
   useEffect(() => {
     if (state.status !== 'signed_in') return;
@@ -26,6 +29,8 @@ export default function Settings() {
       (s) => setAi(s.mode),
       () => undefined,
     );
+    void api.me().then(setMe, () => undefined);
+    void api.familyMembers(state.workspace.id).then(setFamily, () => undefined);
     void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
   }, [api, state]);
 
@@ -86,7 +91,47 @@ export default function Settings() {
             onPress={() => void registerForPush(api, true).then(setPush)}
           />
         )}
+        <Row
+          title={t('notifications.settings')}
+          onPress={() => router.push('/notification-settings')}
+          testID="settings-notifications"
+        />
       </Card>
+
+      <Row
+        title={t('settings.tab.data')}
+        subtitle={t('mobile.settings.data_note')}
+        onPress={() => router.push('/your-data')}
+        testID="settings-your-data"
+      />
+
+      {state.status === 'signed_in' ? (
+        <Card testID="settings-account">
+          <Small>{t('mobile.settings.profile')}</Small>
+          {me ? (
+            <>
+              <Body>{me.displayName}</Body>
+              <Small>{me.email}</Small>
+              <Small>{t('mobile.settings.your_time_zone', { zone: me.timeZone })}</Small>
+            </>
+          ) : null}
+          <Small>
+            {t('mobile.settings.books', {
+              currency: state.workspace.baseCurrency,
+              zone: state.workspace.timeZone,
+            })}
+          </Small>
+          <Small>{t('mobile.settings.entities')}</Small>
+          {state.workspace.entities.map((e) => (
+            <Body key={e.id}>{e.name}</Body>
+          ))}
+          {family.length > 0 ? <Small>{t('mobile.settings.family')}</Small> : null}
+          {family.map((f) => (
+            <Body key={f.id}>{f.name}</Body>
+          ))}
+          <Small>{t('mobile.settings.change_on_web')}</Small>
+        </Card>
+      ) : null}
 
       {state.status === 'signed_in' ? (
         <Card>

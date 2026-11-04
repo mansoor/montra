@@ -25,6 +25,7 @@ import type {
   CreateBackupRequest,
   DeletionStatusDto,
   ExportJobDto,
+  FamilyMemberDto,
   NotificationListDto,
   NotificationPrefsDto,
   RequestDeletionRequest,
@@ -272,6 +273,8 @@ export function createApi(opts: ApiOptions) {
       request<LeaseDto>('POST', `${ws(w)}/leases/${leaseId}/payments`, input),
 
     // ----- Notifications and your data (OPS-13): read live, nothing is kept on the device. ---------
+    familyMembers: async (w: string) =>
+      (await request<{ data: FamilyMemberDto[] }>('GET', `${ws(w)}/family-members`)).data,
     notifications: (w: string) => request<NotificationListDto>('GET', `${ws(w)}/notifications`),
     markNotificationRead: (w: string, id: string) =>
       request<void>('POST', `${ws(w)}/notifications/${id}/read`),

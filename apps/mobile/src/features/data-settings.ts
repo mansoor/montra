@@ -35,6 +35,14 @@ export function toggleChannel(
 export const hasRunningExport = (jobs: readonly ExportJobDto[]): boolean =>
   jobs.some((j) => j.status === 'queued' || j.status === 'running');
 
+/**
+ * What to say when a request fails. Taking the books out or deleting the account needs a recent sign-in (AUTH-09), and the phone has no
+ * password prompt of its own, so it says how to get one.
+ */
+export function needsFreshSignIn(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === 'reauth.required';
+}
+
 export function humanBytes(bytes: string | null): string {
   if (!bytes) return '';
   const n = Number(bytes);

@@ -308,6 +308,95 @@ describe('business records (ADR-0017)', () => {
   });
 });
 
+describe('reports, notifications and your data (ADR-0019)', () => {
+  it('keeps saved reports and export jobs inside the workspace', async () => {
+    const reportId = newId();
+    const jobId = newId();
+    await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, async (trx) => {
+      await trx
+        .insertInto('app.saved_report')
+        .values({
+          workspace_id: a.workspaceId,
+          id: reportId,
+          user_id: a.ownerId,
+          name: 'Mine',
+          type: 'spending',
+          filters: JSON.stringify({}),
+        })
+        .execute();
+      await trx
+        .insertInto('app.export_job')
+        .values({
+          workspace_id: a.workspaceId,
+          id: jobId,
+          requested_by: a.ownerId,
+          kind: 'backup',
+        })
+        .execute();
+    });
+    await withContext(db, { workspaceId: b.workspaceId, userId: b.ownerId }, async (trx) => {
+      expect(
+        await trx.selectFrom('app.saved_report').select('id').where('id', '=', reportId).execute(),
+      ).toEqual([]);
+      expect(await trx.selectFrom('app.export_job').select('id').where('id', '=', jobId).execute()).toEqual(
+        [],
+      );
+    });
+    // A context pointing at the other workspace can't put a row in this one either.
+    await expect(
+      withContext(db, { workspaceId: b.workspaceId, userId: b.ownerId }, (trx) =>
+        trx
+          .insertInto('app.saved_report')
+          .values({
+            workspace_id: a.workspaceId,
+            id: newId(),
+            user_id: b.ownerId,
+            name: 'Planted',
+            type: 'spending',
+            filters: JSON.stringify({}),
+          })
+          .execute(),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('shows each person only their own notifications and security log, and the log can’t be changed', async () => {
+    const eventId = newId();
+    const noteId = newId();
+    await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, async (trx) => {
+      await trx
+        .insertInto('app.notification')
+        .values({
+          workspace_id: a.workspaceId,
+          id: noteId,
+          user_id: a.ownerId,
+          type: 'reminder',
+          title: 'Private',
+          body: '',
+          dedupe_key: noteId,
+        })
+        .execute();
+      await trx
+        .insertInto('app.security_event')
+        .values({ id: eventId, user_id: a.ownerId, kind: 'sign_in_new_device' })
+        .execute();
+    });
+    await withContext(db, { workspaceId: b.workspaceId, userId: b.ownerId }, async (trx) => {
+      expect(
+        await trx.selectFrom('app.notification').select('id').where('id', '=', noteId).execute(),
+      ).toEqual([]);
+      expect(
+        await trx.selectFrom('app.security_event').select('id').where('id', '=', eventId).execute(),
+      ).toEqual([]);
+    });
+    await expect(
+      withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, (trx) =>
+        trx.deleteFrom('app.security_event').where('id', '=', eventId).execute(),
+      ),
+    ).rejects.toThrow();
+  });
+});
+
 describe('rental records (ADR-0018)', () => {
   it('keep properties, leases and what hangs off them to those with a grant on the portfolio', async () => {
     const entityId = newId();
