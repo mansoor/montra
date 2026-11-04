@@ -141,6 +141,18 @@ function Item({ item, index }: { item: RenderItem; index: number }) {
  */
 export function FlowForm({ model, label }: { model: RenderModel; label: string }) {
   if (!model.action) {
+    // A finished flow has nothing to submit: its action is the next page, with method GET, offered as a link too.
+    const links = model.items.filter((item) => item.kind === 'link');
+    if (model.method === 'GET' && links.length > 0) {
+      return (
+        <div className="space-y-4">
+          <FlowMessages messages={model.messages} />
+          {links.map((item, i) => (
+            <Item key={item.href} item={item} index={i} />
+          ))}
+        </div>
+      );
+    }
     return (
       <FlowMessages messages={[{ id: 0, text: 'This form could not be loaded safely.', tone: 'error' }]} />
     );
