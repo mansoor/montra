@@ -843,6 +843,8 @@ describe('reports (RNT-06, RNT-09, RNT-11, UP-10)', () => {
     expect(r.untagged).toMatchObject({ operatingExpenses: '700' });
     expect(r.portfolio).toMatchObject({ income: '200000', operatingExpenses: '35700', noi: '164300' });
     expect(r.portfolio.debtService).toBe('59955');
+    // One property has no value entered, so no ratio over the whole portfolio.
+    expect(r.portfolio).toMatchObject({ capRateBps: null, cashOnCashBps: null, currentValue: null });
   });
 
   it('files each property on Schedule E, with depreciation and your share', async () => {

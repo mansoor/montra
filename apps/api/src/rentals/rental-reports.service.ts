@@ -190,10 +190,11 @@ export class RentalReportsService {
         };
       };
 
-      const totalOf = (key: 'current_value_minor' | 'cash_invested_minor') => {
-        const known = properties.filter((p) => p[key] !== null);
-        return known.length === 0 ? null : known.reduce((t, p) => t + BigInt(p[key]!), 0n);
-      };
+      // A ratio over all the income needs every property's figure: a partial total would overstate it.
+      const totalOf = (key: 'current_value_minor' | 'cash_invested_minor') =>
+        properties.length === 0 || properties.some((p) => p[key] === null)
+          ? null
+          : properties.reduce((t, p) => t + BigInt(p[key]!), 0n);
       return {
         entityId: q.entityId,
         from,

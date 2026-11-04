@@ -21,9 +21,11 @@ const TABS = [
 export function RentalTabs({ base }: { base: string }) {
   const { t } = useI18n();
   const path = usePathname();
+  // A lease is reached from its property, so that's the section it's in.
+  const here = path.startsWith(`${base}/leases/`) ? `${base}/properties` : path;
   const current =
     TABS.slice(1).find(
-      ([suffix]) => path === `${base}${suffix}` || path.startsWith(`${base}${suffix}/`),
+      ([suffix]) => here === `${base}${suffix}` || here.startsWith(`${base}${suffix}/`),
     )?.[0] ?? '';
   return (
     <LinkTabs

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import pg from 'pg';
 import { nav, onboardHousehold } from './phase3-helpers';
 
 const open = (page: Page, summary: string) => page.locator('summary', { hasText: summary }).click();
@@ -147,15 +148,18 @@ test('a lease, rent, a deposit and a mortgage reach the reports and Schedule E',
   const spendId = (await spend.json()).id as string;
   await page.goto(`/w/${workspaceId}/transactions/${spendId}`);
   await page.getByLabel('Property').selectOption({ label: '12 Elm St' });
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByText('Saved', { exact: false }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
 
   // The reports: rent and the repair on the property, the deposit nowhere, ratios worked out (RNT-11).
   await page.goto(`/w/${workspaceId}/rentals/${entityId}`);
   const reportRow = page.getByTestId('property-report-row').filter({ hasText: '12 Elm St' });
   await expect(reportRow).toContainText('$1,500.00');
-  await expect(reportRow).toContainText('$300.00');
-  await expect(reportRow).toContainText('$1,200.00');
+  // Expenses are the $300 repair and $300 of escrow; NOI is before the $1,199.10 of principal and interest.
+  await expect(reportRow).toContainText('$600.00');
+  await expect(reportRow).toContainText('$900.00');
+  await expect(reportRow).toContainText('$1,199.10');
+  await expect(reportRow).toContainText('-$299.10');
 
   // Schedule E, your half of the net, and a file for the accountant (UP-10).
   await sections.getByRole('link', { name: 'Schedule E' }).click();
@@ -166,10 +170,55 @@ test('a lease, rent, a deposit and a mortgage reach the reports and Schedule E',
   await expect(schedule.getByTestId('schedule-e-line').filter({ hasText: 'Repairs' })).toContainText(
     '$300.00',
   );
+  await expect(
+    schedule.getByTestId('schedule-e-line').filter({ hasText: 'Mortgage interest' }),
+  ).toContainText('$1,000.00');
   await expect(schedule).toContainText('Your share (50%)');
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export CSV' }).click();
   expect((await download).suggestedFilename()).toBe(`schedule-e-${year}.csv`);
+
+  // One bill shared across two properties, to the cent (RNT-07).
+  const flat = await page.request.post(`${ws}/properties`, {
+    data: { entityId, name: 'Oak Flat', type: 'condo' },
+  });
+  expect(flat.status()).toBe(201);
+  const utilitiesId = (
+    (await (await page.request.get(`${ws}/categories?entityId=${entityId}`)).json()).data as {
+      id: string;
+      name: string;
+    }[]
+  ).find((c) => c.name === 'Utilities')!.id;
+  const shared = await page.request.post(`${ws}/transactions`, {
+    data: {
+      date: today,
+      accountId: checking,
+      amount: { amount: '-10001', currency: 'USD' },
+      payee: 'Water Co',
+      categoryId: utilitiesId,
+    },
+  });
+  const sharedId = (await shared.json()).id as string;
+  await page.goto(`/w/${workspaceId}/transactions/${sharedId}`);
+  await open(page, 'Split across properties');
+  const split = page.getByRole('form', { name: 'Split across properties' });
+  await split.getByLabel('12 Elm St').check();
+  await split.getByLabel('Oak Flat').check();
+  await split.getByLabel('Percent for 12 Elm St').fill('60');
+  await split.getByLabel('Percent for Oak Flat').fill('50');
+  await split.getByRole('button', { name: 'Split it' }).click();
+  await expect(split.getByText('The percentages must add up to 100.')).toBeVisible();
+  await split.getByLabel('Percent for Oak Flat').fill('40');
+  await split.getByRole('button', { name: 'Split it' }).click();
+  await expect(split.getByText('Split across properties.', { exact: true })).toBeVisible();
+  const parts = (
+    (await (await page.request.get(`${ws}/transactions/${sharedId}`)).json()).splits as {
+      amount: string;
+    }[]
+  ).map((x) => BigInt(x.amount));
+  expect(parts).toHaveLength(2);
+  expect(parts.reduce((t, x) => t + x, 0n)).toBe(-10001n);
+  await page.goto(`/w/${workspaceId}/rentals/${entityId}/maintenance`);
 
   // Maintenance and a reminder (RNT-12, RNT-13).
   await sections.getByRole('link', { name: 'Maintenance' }).click();
@@ -191,6 +240,54 @@ test('a lease, rent, a deposit and a mortgage reach the reports and Schedule E',
   await expect(reminder).toContainText('Renew insurance');
   await reminder.getByRole('button', { name: 'Done' }).click();
   await expect(page.getByText('Nothing to remember right now.')).toBeVisible();
+
+  // A flagged repair becomes an improvement once it's given a property (RNT-09).
+  const roof = await page.request.post(`${ws}/transactions`, {
+    data: {
+      date: today,
+      accountId: checking,
+      amount: { amount: '-300000', currency: 'USD' },
+      payee: 'Acme Roofing',
+      categoryId: repairsId,
+    },
+  });
+  const roofId = (await roof.json()).id as string;
+  const me = (await (await page.request.get('/api/v1/me')).json()) as { id?: string; user?: { id: string } };
+  const db = new pg.Client({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://montra_app:montra_app@localhost:5432/montra',
+  });
+  await db.connect();
+  try {
+    await db.query('begin');
+    await db.query(`select set_config('app.workspace_id', $1, true), set_config('app.user_id', $2, true)`, [
+      workspaceId,
+      me.user?.id ?? me.id,
+    ]);
+    await db.query(
+      `insert into app.insight (workspace_id, kind, entity_id, transaction_id, dedupe_key, data)
+       values ($1, 'capital_improvement', $2, $3, $4, $5)`,
+      [
+        workspaceId,
+        entityId,
+        roofId,
+        `capital:${roofId}`,
+        JSON.stringify({ payee: 'Acme Roofing', message: 'This may be an improvement.', propertyId: null }),
+      ],
+    );
+    await db.query('commit');
+  } finally {
+    await db.end();
+  }
+  await nav(page, 'Insights');
+  const flag = page.getByTestId('insight-row').filter({ hasText: 'Acme Roofing' });
+  await expect(flag.getByRole('button', { name: 'Capitalize' })).toBeDisabled();
+  await flag.getByLabel('Property for Acme Roofing').selectOption({ label: '12 Elm St' });
+  await flag.getByRole('button', { name: 'Capitalize' }).click();
+  await expect(page.getByText('Moved to improvements and added to depreciation.')).toBeVisible();
+  await page.goto(`/w/${workspaceId}/rentals/${entityId}/properties`);
+  await page.getByRole('link', { name: '12 Elm St', exact: true }).click();
+  await expect(page.getByTestId('depreciation-row')).toContainText('Acme Roofing');
+  await expect(page.getByTestId('depreciation-row')).toContainText('$3,000.00');
 
   // It's on the calendar too.
   await nav(page, 'Calendar');

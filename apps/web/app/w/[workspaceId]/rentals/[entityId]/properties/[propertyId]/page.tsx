@@ -107,7 +107,14 @@ export default async function PropertyPage({
       <BudgetPanel
         workspaceId={workspaceId}
         budget={budget}
-        categories={categories.filter((c) => c.entityId === entityId && c.type === 'expense')}
+        // Depreciation is never cash and system accounts aren't planned for; either shows once it has spending.
+        categories={categories.filter(
+          (c) =>
+            c.entityId === entityId &&
+            c.type === 'expense' &&
+            (budget.lines.some((l) => l.categoryId === c.id) ||
+              (c.group !== null && c.taxLineCode !== 'US_SCH_E_L18')),
+        )}
       />
       <DepreciationPanel
         workspaceId={workspaceId}

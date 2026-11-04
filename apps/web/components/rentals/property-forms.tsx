@@ -650,37 +650,40 @@ export function BudgetPanel({
             onChange={(e) => setReserve(e.target.value)}
           />
         </label>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th className="py-2 pr-2">{t('rentals.category')}</th>
-              <th className="px-2 py-2 text-right">{t('rentals.spent')}</th>
-              <th className="py-2 pl-2 text-right">{t('rentals.planned')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {categories.map((c) => {
-              const line = budget.lines.find((l) => l.categoryId === c.id);
-              return (
-                <tr key={c.id}>
-                  <td className="py-1 pr-2 text-sm">{c.name}</td>
-                  <td className="px-2 py-1 text-right text-sm">
-                    <Money amount={line?.spent ?? '0'} currency={ccy} />
-                  </td>
-                  <td className="py-1 pl-2 text-right">
-                    <input
-                      className="input ml-auto w-28 text-right"
-                      inputMode="decimal"
-                      aria-label={t('rentals.planned_for', { name: c.name })}
-                      value={planned[c.id] ?? ''}
-                      onChange={(e) => setPlanned({ ...planned, [c.id]: e.target.value })}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <details>
+          <summary className="cursor-pointer text-sm underline">{t('rentals.plan_expenses')}</summary>
+          <table className="tbl mt-2">
+            <thead>
+              <tr>
+                <th className="py-2 pr-2">{t('rentals.category')}</th>
+                <th className="px-2 py-2 text-right">{t('rentals.spent')}</th>
+                <th className="py-2 pl-2 text-right">{t('rentals.planned')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {categories.map((c) => {
+                const line = budget.lines.find((l) => l.categoryId === c.id);
+                return (
+                  <tr key={c.id}>
+                    <td className="py-1 pr-2 text-sm">{c.name}</td>
+                    <td className="px-2 py-1 text-right text-sm">
+                      <Money amount={line?.spent ?? '0'} currency={ccy} />
+                    </td>
+                    <td className="py-1 pl-2 text-right">
+                      <input
+                        className="input ml-auto w-28 text-right"
+                        inputMode="decimal"
+                        aria-label={t('rentals.planned_for', { name: c.name })}
+                        value={planned[c.id] ?? ''}
+                        onChange={(e) => setPlanned({ ...planned, [c.id]: e.target.value })}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </details>
         <button type="submit" className="btn-secondary" disabled={busy}>
           {t('rentals.save_budget')}
         </button>
