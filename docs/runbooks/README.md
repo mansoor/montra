@@ -22,6 +22,7 @@ These were run locally in Docker, and only these:
 | `infra/db/production-roles.sql` as a superuser, then migrating as the owner | Works. As a plain `CREATEROLE` user it fails, see [setup](first-time-setup.md#3-create-the-database-roles) |
 | Connection strings with `sslmode=verify-full` from Node, Python and Kratos  | Work, against a local Postgres with a test CA                                                              |
 | `infra/db/reconciliation-checks.sql`                                        | Returns no rows on a clean local database with 80 postings                                                 |
-| Recovery and verification email through Kratos and Mailpit                  | Correct text; same response for an unknown address; the code works once                                    |
-| Kratos with the production environment variables                            | Starts, and uses the configured URLs and hook secret                                                       |
+| Recovery and verification email through Kratos v26.2.0 and Mailpit | Correct text; same response for an unknown address; the code works once; also through the web pages |
+| Kratos v26.2.0 with the production environment variables, `serve` and `courier watch` as separate containers, Postgres over `verify-full` with a test CA | `scripts/kratos-smoke.mjs` passes, including the recovery hook to the API. A wrong CA is refused |
+| Kratos migrations from v1.3.1 to v26.2.0, on a local database with an MFA identity | 23 migrations apply. The old session, password, TOTP and recovery codes still work |
 | API, worker, web and doc worker images                                      | Start as non-root; `/readyz` answers                                                                       |

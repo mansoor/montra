@@ -30,25 +30,25 @@ services:
     image: axllent/mailpit:latest
     ports: ['${MONTRA_SMTP_PORT:-1025}:1025', '${MONTRA_MAILPIT_PORT:-8025}:8025']
   # Identity (ADR-0006). `docker compose --profile auth up -d` to run it locally.
+  # The same image production builds, config included: after editing infra/kratos, run with --build.
   kratos-migrate:
-    image: oryd/kratos:v1.3.1
+    image: montra/kratos:local
+    build: ./kratos
     profiles: [auth]
     environment:
       DSN: postgres://postgres:postgres@postgres:5432/kratos?sslmode=disable
-    command: migrate sql -e --yes
-    volumes:
-      - ./kratos:/etc/config/kratos:ro
+    command: migrate sql up -e --yes
     depends_on:
       postgres: { condition: service_healthy }
   kratos:
-    image: oryd/kratos:v1.3.1
+    image: montra/kratos:local
+    build: ./kratos
     profiles: [auth]
     environment:
       DSN: postgres://postgres:postgres@postgres:5432/kratos?sslmode=disable
     command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
     ports: ['4433:4433', '4434:4434']
-    volumes:
-      - ./kratos:/etc/config/kratos:ro
+    extra_hosts: ['host.docker.internal:host-gateway'] # the recovery hook calls the API on the host
     depends_on:
       kratos-migrate: { condition: service_completed_successfully }
 volumes:
