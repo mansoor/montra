@@ -14,3 +14,6 @@ export * from './recommendations.js';
 export * from './payslips.js';
 export * from './business.js';
 export * from './rentals.js';
+export * from './reports.js';
+export * from './notifications.js';
+export * from './data-ownership.js';

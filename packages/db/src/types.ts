@@ -23,6 +23,7 @@ export interface AppUserTable {
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
   deleted_at: Date | null;
+  purge_after: Date | null;
 }
 
 export interface WorkspaceTable {
@@ -35,6 +36,9 @@ export interface WorkspaceTable {
   priorities: Json<Record<string, unknown>>;
   inter_entity_mode: Generated<'equity' | 'due_to_from'>;
   plan: Generated<string>;
+  storage_quota_bytes: Int8Default;
+  deleted_at: Date | null;
+  purge_after: Date | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -1124,6 +1128,105 @@ export interface PayslipLineTable {
   ledger_account_id: string | null;
 }
 
+export interface SavedReportTable {
+  workspace_id: string;
+  id: string;
+  user_id: string;
+  name: string;
+  type: string;
+  filters: Json<Record<string, unknown>>;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type NotificationChannelStatus = 'sent' | 'off' | 'capped' | 'failed' | 'none';
+
+export interface NotificationTable {
+  workspace_id: string;
+  id: Generated<string>;
+  user_id: string;
+  type: string;
+  title: string;
+  body: Generated<string>;
+  link: string | null;
+  dedupe_key: string;
+  deliver_after: Timestamp;
+  email_status: NotificationChannelStatus | null;
+  push_status: NotificationChannelStatus | null;
+  read_at: Date | null;
+  created_at: Generated<Date>;
+}
+
+export interface NotificationPrefTable {
+  user_id: string;
+  channels: Json<Record<string, { inApp: boolean; email: boolean; push: boolean }>>;
+  quiet_start: number | null;
+  quiet_end: number | null;
+  daily_cap: Generated<number>;
+  digest_weekday: Generated<number>;
+  large_transaction_minor: Int8Default;
+  low_balance_days: Generated<number>;
+  import_reminder_days: Generated<number>;
+  email_unsubscribed_at: Date | null;
+  version: Int8Default;
+  updated_at: Generated<Date>;
+}
+
+export interface SecurityEventTable {
+  id: Generated<string>;
+  user_id: string;
+  workspace_id: string | null;
+  kind: string;
+  detail: Json<Record<string, unknown>>;
+  at: Generated<Date>;
+}
+
+export interface ExportJobTable {
+  workspace_id: string;
+  id: string;
+  requested_by: string;
+  kind: 'backup' | 'tax_package';
+  entity_id: string | null;
+  tax_year: number | null;
+  status: Generated<'queued' | 'running' | 'ready' | 'failed' | 'expired'>;
+  encrypted: Generated<boolean>;
+  storage_key: string | null;
+  file_name: string | null;
+  bytes: Int8 | null;
+  error: string | null;
+  created_at: Generated<Date>;
+  finished_at: Date | null;
+  expires_at: Date | null;
+}
+
+export interface BackupScheduleTable {
+  workspace_id: string;
+  user_id: string;
+  cadence: 'weekly' | 'monthly';
+  destination: Generated<'email_link'>;
+  next_run_on: CalendarDateCol;
+  last_run_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+}
+
+export interface RestoreJobTable {
+  id: string;
+  user_id: string;
+  status: Generated<'uploaded' | 'ready' | 'restoring' | 'done' | 'failed'>;
+  storage_key: string;
+  wrapped_key: Buffer;
+  preview: Json<unknown> | null;
+  mode: 'new' | 'existing' | null;
+  target_workspace_id: string | null;
+  result: Json<unknown> | null;
+  error: string | null;
+  created_at: Generated<Date>;
+  finished_at: Date | null;
+  expires_at: Timestamp;
+}
+
 export interface Database {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -1215,6 +1318,13 @@ export interface Database {
   'app.maintenance_log': MaintenanceLogTable;
   'app.property_budget': PropertyBudgetTable;
   'app.property_budget_line': PropertyBudgetLineTable;
+  'app.saved_report': SavedReportTable;
+  'app.notification': NotificationTable;
+  'app.notification_pref': NotificationPrefTable;
+  'app.security_event': SecurityEventTable;
+  'app.export_job': ExportJobTable;
+  'app.backup_schedule': BackupScheduleTable;
+  'app.restore_job': RestoreJobTable;
   'ref.tax_line': TaxLineTable;
   'ref.mileage_rate': MileageRateTable;
 }
