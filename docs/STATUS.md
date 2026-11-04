@@ -26,7 +26,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | --- | --- |
 | `@montra/api` (integration, real Postgres) | 210, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 89 |
+| `@montra/web` unit | 91 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
 | `@montra/domain` | 135 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
@@ -590,7 +590,9 @@ Known intermittent problem: **a click right after a background refresh can be lo
 - What's done: `realtime.tsx` now holds its refreshes until a click has had a second to land (`refreshWaitAfterAction`). This
   narrows the race but can't close it: a refresh already in flight when the click happens still overlaps. Failures seemed less
   frequent afterwards, but on too few runs to claim a fix.
-- CI retries a failed e2e test once, which mostly hides this. It isn't new: Phase 6 CI runs show the same kind of flake.
+- Whether it's new is unknown. The refresh code dates from Phase 1, but this has only been seen locally, on a machine about twice as
+  slow as CI, and not in the last eight CI runs' logs. (CI retries a failed e2e test once, and a retried pass still logs as flaky.
+  The flakes in Phase 6's CI were a different bug, a confirmation message lost with the last suggestion, fixed in Phase 8.)
 - Next step: see whether a newer Next release resolves discarded actions, or make `useAction`'s refresh the only one for a user's
   own writes. Don't raise e2e timeouts or add retries to cover it.
 
