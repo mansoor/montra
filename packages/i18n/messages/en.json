@@ -515,6 +515,7 @@
   "imports.history.title": "Import history",
   "imports.history.uploaded": "Uploaded",
   "imports.into_account": "Into",
+  "imports.kept_reason.payslip": "a payslip uses it; remove the payslip first",
   "imports.kept_reason.reconciled": "it is reconciled",
   "imports.kept_reason.reversed_in_open_period": "it was in a closed period, so it was reversed in an open one",
   "imports.mapping.account_filter": "Account to import",

@@ -118,6 +118,7 @@ export interface PostingSpec {
   account: string;
   amount: bigint;
   memberId?: string | null;
+  publicLine?: boolean;
 }
 
 /** Inserts a transaction with one journal entry (postings debit-positive). */
@@ -163,6 +164,7 @@ export async function postEntry(
           currency: 'USD',
           functional_amount_minor: p.amount,
           member_id: p.memberId ?? null,
+          public_line: p.publicLine ?? false,
         })),
       )
       .execute();

@@ -32,6 +32,20 @@ export class VersionMismatchError extends AppError {
   }
 }
 
+/** The update fields that end up in a transaction's spec or its entry. */
+const LEDGER_FIELDS = [
+  'date',
+  'accountId',
+  'amount',
+  'payee',
+  'description',
+  'categoryId',
+  'splits',
+  'memberId',
+  'fxRate',
+  'foreign',
+] as const;
+
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -308,7 +322,13 @@ export class TransactionsService {
       const spec = row.spec as TransactionSpec | null;
       if (!spec) throw unprocessable('transaction.not_editable', 'This transaction has no editable input');
       const date = req.date ?? calendarDate(row.txn_date);
-      const next = await this.mergeSpec(trx, ctx, spec, req);
+      // ADR-0016: a payslip owns its entry. Notes and tags stay editable; anything the ledger depends on
+      // changes on the payslip, because merging here would post a plain entry over the payslip's lines.
+      const managed = spec.type === 'standard' && !!spec.payslipId;
+      if (managed && LEDGER_FIELDS.some((f) => req[f] !== undefined)) {
+        throw unprocessable('payslip.managed', 'This comes from a payslip: change it on the payslip');
+      }
+      const next = managed ? spec : await this.mergeSpec(trx, ctx, spec, req);
       const ledgerChanged = JSON.stringify(next) !== JSON.stringify(spec) || date !== row.txn_date;
       if (ledgerChanged && row.status !== 'scheduled') {
         const built = await this.poster.build(trx, ctx, next, date, id);
@@ -395,6 +415,10 @@ export class TransactionsService {
   ): Promise<{ outcome: 'removed' | 'reversed' }> {
     const row = await this.lockRow(trx, ctx, id, ifMatch);
     if (row.status === 'void') return { outcome: 'removed' as const };
+    const owned = row.spec as { payslipId?: string } | null;
+    if (owned?.payslipId) {
+      throw unprocessable('payslip.managed', 'This comes from a payslip: delete it on the payslip');
+    }
     const outcome = await this.poster.unpost(trx, ctx, id);
     await trx
       .updateTable('app.transaction')
@@ -504,6 +528,7 @@ export class TransactionsService {
           ),
         );
       }
+      const household = opts.memberId === 'household';
       if (opts.entityId || opts.memberId || opts.categoryIds || opts.accountIds) {
         // One posting must satisfy every drill filter, so the list reproduces the dashboard number.
         q = q.where((eb) =>
@@ -516,7 +541,8 @@ export class TransactionsService {
               .select('p.id')
               .whereRef('je.transaction_id', '=', 't.id')
               .$if(!!opts.entityId, (s) => s.where('p.entity_id', '=', opts.entityId!))
-              .$if(!!opts.memberId, (s) => s.where('p.member_id', '=', opts.memberId!))
+              .$if(household, (s) => s.where('p.member_id', 'is', null))
+              .$if(!!opts.memberId && !household, (s) => s.where('p.member_id', '=', opts.memberId!))
               .$if(!!opts.categoryIds, (s) => s.where('p.ledger_account_id', 'in', opts.categoryIds!))
               .$if(!!opts.accountIds, (s) => s.where('p.ledger_account_id', 'in', opts.accountIds!)),
           ),

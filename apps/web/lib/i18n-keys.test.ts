@@ -59,7 +59,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'reference',
   ],
   'imports.row_error.': ['invalid_date', 'invalid_amount', 'missing_amount'],
-  'imports.kept_reason.': ['reconciled', 'reversed_in_open_period'],
+  'imports.kept_reason.': ['payslip', 'reconciled', 'reversed_in_open_period'],
   'entities.action.': ['lock', 'unlock', 'relock'],
   'journal.kind.': [
     'standard',

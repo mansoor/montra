@@ -360,7 +360,7 @@ export class RulesService {
         .where('t.workspace_id', '=', ctx.workspaceId)
         .where('t.status', '=', 'posted')
         .where('t.deleted_at', 'is', null)
-        .where(sql<boolean>`t.spec->>'type' = 'standard'`)
+        .where(sql<boolean>`t.spec->>'type' = 'standard' and t.spec->>'payslipId' is null`)
         .orderBy('t.txn_date', 'desc')
         .orderBy('t.id', 'desc')
         .limit(SCAN_CHUNK);

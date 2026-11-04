@@ -56,6 +56,10 @@ import { IncomeService } from './planning/income.service.js';
 import { FlowService } from './planning/flow.service.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
 import { PlanningController } from './planning/planning.controller.js';
+import { PayslipsService } from './payslips/payslips.service.js';
+import { PayslipJobs } from './payslips/payslip-jobs.js';
+import { MemberReportsService } from './payslips/member-reports.service.js';
+import { PayslipsController } from './payslips/payslips.controller.js';
 
 /** Outbound HTTP for the FX sources, with a timeout. */
 const httpGet: HttpGet = (url) => fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -90,6 +94,7 @@ export class AppModule {
       ReceiptsController,
       TripsController,
       PlanningController,
+      PayslipsController,
     ];
     return {
       module: AppModule,
@@ -135,6 +140,9 @@ export class AppModule {
         IncomeService,
         FlowService,
         RecommendationsService,
+        PayslipsService,
+        PayslipJobs,
+        MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },
       ],
     };

@@ -202,6 +202,37 @@ export class PlanningData {
     return out;
   }
 
+  /**
+   * What payslips withheld per period: gross − net, in the viewer's RLS (who sees gross sees this too). Budgets and
+   * the dashboard plan on take-home pay (04 §8), though the ledger's income category holds gross (PAY-05).
+   */
+  async payslipWithheld(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+    periods: readonly Period[],
+    f: ActivityFilter = {},
+  ): Promise<Map<CalendarDate, bigint>> {
+    const out = new Map<CalendarDate, bigint>(periods.map((p) => [p.start, 0n]));
+    if (!periods.length || f.includeRestricted === false) return out;
+    let q = trx
+      .selectFrom('app.payslip')
+      .select(['pay_date', 'gross_minor', 'net_minor'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .where('status', '=', 'posted')
+      .where('pay_date', '>=', periods[0]!.start)
+      .where('pay_date', '<=', periods[periods.length - 1]!.end);
+    if (f.memberId) q = q.where('member_id', '=', f.memberId);
+    const rows = await q.execute();
+    for (const r of rows) {
+      const d = calendarDate(String(r.pay_date));
+      const p = periods.find((x) => d >= x.start && d <= x.end);
+      if (p) out.set(p.start, out.get(p.start)! + BigInt(r.gross_minor) - BigInt(r.net_minor));
+    }
+    return out;
+  }
+
   /** Posted deposits (positive standard transactions) of an entity in [from, to], for income matching. */
   async deposits(
     trx: Trx,

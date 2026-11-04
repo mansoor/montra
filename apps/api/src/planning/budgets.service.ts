@@ -454,6 +454,7 @@ export class BudgetsService {
     );
     const filter = this.filter(budget, opts.includeRestricted ?? true);
     const activity = await this.data.activity(trx, ctx, budget.entity_id, periods, filter);
+    const withheld = await this.data.payslipWithheld(trx, ctx, budget.entity_id, periods, filter);
 
     // Income: expected items matched to deposits, over the whole walk.
     const items = (await this.data.incomeItems(trx, ctx, budget.entity_id, budget.member_id)).filter(
@@ -468,6 +469,7 @@ export class BudgetsService {
       const act = activity.get(p.start) ?? new Map<string, bigint>();
       let actual = 0n;
       for (const [c, v] of act) if (incomeCats.has(c)) actual -= v;
+      actual -= withheld.get(p.start) ?? 0n;
       const occ = occurrences.filter((o) => o.date >= p.start && o.date <= p.end);
       const override = byStart.get(p.start)?.expected_income_minor;
       const expected =

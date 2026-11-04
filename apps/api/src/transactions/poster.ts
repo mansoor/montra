@@ -53,6 +53,8 @@ export type TransactionSpec =
       splits: SplitSpec[];
       /** Foreign-currency account: a rate the user entered (CUR-05). Absent: the day's reference rate. */
       fxRate?: string;
+      /** Set when a payslip owns this transaction (ADR-0016): change it through the payslip, not here. */
+      payslipId?: string;
       /**
        * A purchase in another currency on a home-currency account (CUR-03): the original amount (signed like
        * `amount`), the fee included in `amount` (its split posts to Bank fees) and a rate override.
@@ -141,6 +143,9 @@ export class TransactionPoster {
     date: CalendarDate,
     transactionId?: string,
   ): Promise<BuiltTransaction> {
+    if (spec.type === 'standard' && spec.payslipId) {
+      throw unprocessable('payslip.managed', 'This comes from a payslip: change it on the payslip');
+    }
     if (spec.type === 'transfer') {
       const from = await this.ledger.accountRef(trx, ctx.workspaceId, spec.fromAccountId);
       const to = await this.ledger.accountRef(trx, ctx.workspaceId, spec.toAccountId);
