@@ -50,6 +50,8 @@ function Gate() {
       <Stack.Screen name="receipt-capture" options={{ title: t('mobile.receipts.capture_title') }} />
       <Stack.Screen name="receipts/index" options={{ title: t('mobile.receipts.title') }} />
       <Stack.Screen name="receipts/[id]" options={{ title: t('mobile.receipts.review_title') }} />
+      <Stack.Screen name="business/index" options={{ title: t('nav.business') }} />
+      <Stack.Screen name="business/mileage" options={{ title: t('business.tab_mileage') }} />
       <Stack.Screen name="payslips/index" options={{ title: t('nav.payslips') }} />
       <Stack.Screen name="payslips/capture" options={{ title: t('mobile.payslips.capture_title') }} />
       <Stack.Screen name="payslips/[id]" options={{ title: t('mobile.payslips.review_title') }} />

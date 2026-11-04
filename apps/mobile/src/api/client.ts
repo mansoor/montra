@@ -19,7 +19,15 @@ import type {
   MeDto,
   ParseQuickAddRequest,
   QuickAddDraftDto,
+  BillDto,
+  BusinessProfileDto,
   ConfirmPayslipRequest,
+  CreateTripRequest,
+  InvoiceDto,
+  MileageSummaryDto,
+  MileageTripDto,
+  PnlDto,
+  TaxEstimateDto,
   CreatePayslipRequest,
   EmployerDto,
   PayslipDto,
@@ -213,6 +221,21 @@ export function createApi(opts: ApiOptions) {
       request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/apply`, input),
     matchReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/match`),
     rejectReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/reject`),
+
+    // ----- Business (08 §3): reads, and logging a trip. Invoices and bills are written on the web. ------------
+    businesses: async (w: string) =>
+      (await request<{ data: BusinessProfileDto[] }>('GET', `${ws(w)}/businesses`)).data,
+    pnl: (w: string, entityId: string) => request<PnlDto>('GET', `${ws(w)}/reports/pnl?entityId=${entityId}`),
+    invoices: async (w: string, entityId: string) =>
+      (await request<{ data: InvoiceDto[] }>('GET', `${ws(w)}/invoices?entityId=${entityId}`)).data,
+    bills: async (w: string, entityId: string) =>
+      (await request<{ data: BillDto[] }>('GET', `${ws(w)}/bills?entityId=${entityId}`)).data,
+    taxEstimate: (w: string, entityId: string) =>
+      request<TaxEstimateDto>('GET', `${ws(w)}/tax/estimates?entityId=${entityId}`),
+    mileage: (w: string, entityId: string) =>
+      request<MileageSummaryDto>('GET', `${ws(w)}/mileage-trips?entityId=${entityId}`),
+    createMileageTrip: (w: string, input: CreateTripRequest) =>
+      request<MileageTripDto>('POST', `${ws(w)}/mileage-trips`, input),
 
     // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
     listEmployers: async (w: string) =>

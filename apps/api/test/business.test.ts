@@ -340,6 +340,16 @@ describe('invoices (BIZ-05)', () => {
     const after = await pnl();
     // The deposit had been income in another category, so the total differs only by the tax.
     expect(BigInt(after.revenue)).toBe(BigInt(before.revenue) - 1238n);
+    // The statement's spelling is this customer now, once, under their own name.
+    const parties = (await c.get(url(`/parties?entityId=${biz}&kind=customer`))).body.data;
+    expect(parties.filter((p: any) => /ACH CREDIT/.test(p.name))).toEqual([]);
+    expect(parties.find((p: any) => p.id === customer.id).yearTotal).toBe('20100');
+    const report = (await c.get(url(`/reports/parties?entityId=${biz}&kind=customer`))).body;
+    expect(report.rows.find((r: any) => r.name === 'Bluebird Cafe')).toMatchObject({
+      amount: '20100',
+      count: 1,
+    });
+    expect(report.rows.filter((r: any) => /ACH CREDIT/.test(r.name))).toEqual([]);
   });
 
   it('can only be changed through the invoice while linked', async () => {
@@ -862,6 +872,16 @@ describe('estimated tax (BIZ-09, REC-09)', () => {
     expect(e.target).toBe(String((BigInt(e.ytdProfit) * 2500n + 5000n) / 10000n));
     expect(e.toSetAside).toBe(e.target);
     expect(e.periods.filter((p: any) => p.status === 'next').length).toBeLessThanOrEqual(1);
+
+    // A mileage deduction lowers taxable profit, so this agrees with Schedule C.
+    const t = (
+      await c.post(url('/mileage-trips'), { entityId: biz, date: today, purpose: 'Client', miles: '100' })
+    ).body;
+    const withMiles = (await c.get(url(`/tax/estimates?entityId=${biz}`))).body;
+    expect(BigInt(withMiles.ytdProfit)).toBe(BigInt(e.ytdProfit) - BigInt(t.deduction));
+    const schedule = (await c.get(url(`/reports/schedule-c?entityId=${biz}`))).body;
+    expect(withMiles.ytdProfit).toBe(schedule.netProfit);
+    await c.delete(url(`/mileage-trips/${t.id}`));
   });
 
   it('suggests setting aside, and accepting makes the transfer', async () => {

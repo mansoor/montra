@@ -43,7 +43,8 @@ The users are sole proprietors and very small LLCs, who overwhelmingly file Sche
    listed from their postings without a row, so the directory is always current without a background job; a row is created
    when the user adds details or invoices one.
 
-7. **Tax numbers are estimates the user asked for.** The set-aside is `max(0, profit) × the user's own rate`. Deductible
+7. **Tax numbers are estimates the user asked for.** The set-aside is `max(0, profit after mileage) × the user's own
+   rate`, so it agrees with Schedule C. Deductible
    shares (meals at 50%) are hints shown beside a line, and the report doesn't apply them to the total. AI proposes tax
    lines for categories without one (AI-10), and only the user maps them.
 

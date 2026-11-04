@@ -173,13 +173,15 @@ export class BusinessService {
         .where('entity_id', '=', entityId)
         .execute();
       const { rows: activity } = await sql<{
-        key: string;
-        name: string;
+        key: string | null;
+        linked_party: string | null;
+        name: string | null;
         received: string;
         paid: string;
         last: string;
       }>`
-        select t.payee_key as key, max(coalesce(t.payee_raw, t.payee_key)) as name,
+        select t.payee_key as key, coalesce(i.party_id, b.party_id) as linked_party,
+               max(coalesce(t.payee_raw, t.payee_key)) as name,
                coalesce(sum(-p.functional_amount_minor) filter (where a.type = 'income'), 0)::text as received,
                coalesce(sum(p.functional_amount_minor) filter (where a.type = 'expense'), 0)::text as paid,
                max(p.entry_date)::text as last
@@ -187,24 +189,41 @@ export class BusinessService {
           join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
           join app.journal_entry je on je.workspace_id = p.workspace_id and je.id = p.journal_entry_id
           join app.transaction t on t.workspace_id = je.workspace_id and t.id = je.transaction_id
+          left join app.invoice_payment ip on ip.workspace_id = t.workspace_id and ip.transaction_id = t.id
+          left join app.invoice i on i.workspace_id = ip.workspace_id and i.id = ip.invoice_id
+          left join app.bill b on b.workspace_id = t.workspace_id and b.transaction_id = t.id
          where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${entityId}
-           and a.type in ('income', 'expense') and a.is_category and t.payee_key is not null
+           and a.type in ('income', 'expense') and a.is_category
            and p.entry_date between ${`${year}-01-01`} and ${`${year}-12-31`}
-         group by t.payee_key`.execute(trx);
+         group by t.payee_key, coalesce(i.party_id, b.party_id)`.execute(trx);
 
-      const totals = new Map<string, { total: bigint; last: string | null; name: string }>();
+      // Whose money it is: a linked payment says outright. Otherwise a statement name seen on one, or the party's own.
+      const aliases = await this.partyAliases(trx, ctx, entityId);
+      const byKey = new Map(stored.filter((p) => p.payee_key).map((p) => [`${p.kind}:${p.payee_key}`, p.id]));
+      const forParty = new Map<string, { total: bigint; last: string | null }>();
+      const found = new Map<string, { total: bigint; last: string | null; name: string }>();
+      const count = (kind: PartyKind, amount: bigint, a: (typeof activity)[number]) => {
+        if (amount <= 0n) return;
+        const id = a.key ? `${kind}:${a.key}` : null;
+        const party = a.linked_party ?? (id ? (aliases.get(id)?.partyId ?? byKey.get(id)) : undefined);
+        if (party) {
+          const cur = forParty.get(party) ?? { total: 0n, last: null };
+          cur.total += amount;
+          if (!cur.last || a.last > cur.last) cur.last = a.last;
+          forParty.set(party, cur);
+        } else if (id) {
+          found.set(id, { total: amount, last: a.last, name: a.name ?? '' });
+        }
+      };
       for (const a of activity) {
-        if (BigInt(a.received) > 0n)
-          totals.set(`customer:${a.key}`, { total: BigInt(a.received), last: a.last, name: a.name });
-        if (BigInt(a.paid) > 0n)
-          totals.set(`vendor:${a.key}`, { total: BigInt(a.paid), last: a.last, name: a.name });
+        count('customer', BigInt(a.received), a);
+        count('vendor', BigInt(a.paid), a);
       }
       const out: PartyDto[] = stored.map((p) => {
-        const t = p.payee_key ? totals.get(`${p.kind}:${p.payee_key}`) : undefined;
-        if (p.payee_key) totals.delete(`${p.kind}:${p.payee_key}`);
+        const t = forParty.get(p.id);
         return this.partyDto(p, t?.total ?? 0n, t?.last ?? null);
       });
-      for (const [k, t] of totals) {
+      for (const [k, t] of found) {
         const [partyKind, ...rest] = k.split(':');
         out.push({
           id: null,
@@ -227,6 +246,33 @@ export class BusinessService {
         .filter((p) => !kind || p.kind === kind)
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     });
+  }
+
+  /**
+   * Payee names seen on payments linked to a party. A statement rarely spells a customer the way an invoice does, so
+   * linking a payment is the user saying these are the same one; later payments under that name count as theirs too.
+   */
+  async partyAliases(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+  ): Promise<Map<string, { partyId: string; name: string }>> {
+    const { rows } = await sql<{ kind: string; key: string; party_id: string; name: string }>`
+      select 'customer' as kind, t.payee_key as key, py.id as party_id, py.name
+        from app.invoice_payment ip
+        join app.invoice i on i.workspace_id = ip.workspace_id and i.id = ip.invoice_id
+        join app.business_party py on py.workspace_id = i.workspace_id and py.id = i.party_id
+        join app.transaction t on t.workspace_id = ip.workspace_id and t.id = ip.transaction_id
+       where ip.workspace_id = ${ctx.workspaceId} and ip.entity_id = ${entityId} and t.payee_key is not null
+      union all
+      select 'vendor', t.payee_key, py.id, py.name
+        from app.bill b
+        join app.business_party py on py.workspace_id = b.workspace_id and py.id = b.party_id
+        join app.transaction t on t.workspace_id = b.workspace_id and t.id = b.transaction_id
+       where b.workspace_id = ${ctx.workspaceId} and b.entity_id = ${entityId} and t.payee_key is not null`.execute(
+      trx,
+    );
+    return new Map(rows.map((r) => [`${r.kind}:${r.key}`, { partyId: r.party_id, name: r.name }]));
   }
 
   /** Adding the same customer twice returns the first: found from transactions, then invoiced, it's still one. */

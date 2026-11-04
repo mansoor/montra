@@ -29,6 +29,7 @@ import { BusinessService } from './business.service.js';
 import {
   businessEntity,
   dateOf,
+  mileageBetween,
   profitBetween,
   TAX_COUNTRY,
   todayOf,
@@ -121,23 +122,54 @@ export class BusinessReportsService {
       const from = q.from ?? (`${today.slice(0, 4)}-01-01` as CalendarDate);
       const to = q.to ?? today;
       const income = q.kind === 'customer';
-      const { rows } = await sql<{ key: string | null; name: string | null; amount: string; n: number }>`
-        select t.payee_key as key, max(coalesce(t.payee_raw, nullif(t.description, ''))) as name,
+      const { rows } = await sql<{
+        key: string | null;
+        linked_party: string | null;
+        party_name: string | null;
+        name: string | null;
+        amount: string;
+        n: number;
+      }>`
+        select t.payee_key as key, py.id as linked_party, py.name as party_name,
+               max(coalesce(t.payee_raw, nullif(t.description, ''))) as name,
                sum(${income ? sql`-p.functional_amount_minor` : sql`p.functional_amount_minor`})::text as amount,
                count(distinct t.id)::int as n
           from app.posting p
           join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
           join app.journal_entry je on je.workspace_id = p.workspace_id and je.id = p.journal_entry_id
           join app.transaction t on t.workspace_id = je.workspace_id and t.id = je.transaction_id
+          left join app.invoice_payment ip on ip.workspace_id = t.workspace_id and ip.transaction_id = t.id
+          left join app.invoice i on i.workspace_id = ip.workspace_id and i.id = ip.invoice_id
+          left join app.bill b on b.workspace_id = t.workspace_id and b.transaction_id = t.id
+          left join app.business_party py on py.workspace_id = t.workspace_id and py.id = coalesce(i.party_id, b.party_id)
          where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${e.id}
            and a.type = ${income ? 'income' : 'expense'} and p.entry_date between ${from} and ${to}
-         group by t.payee_key
-         order by 3 desc`.execute(trx);
-      const sorted = rows
-        .map((r) => ({ name: r.name ?? '', payeeKey: r.key, amount: r.amount, count: r.n }))
-        .sort((a, b) =>
-          BigInt(b.amount) > BigInt(a.amount) ? 1 : BigInt(b.amount) < BigInt(a.amount) ? -1 : 0,
-        );
+         group by t.payee_key, py.id, py.name`.execute(trx);
+      // A linked payment says whose it is; a statement name seen on one counts as theirs too. One row each, in their name.
+      const aliases = await this.business.partyAliases(trx, ctx, e.id);
+      const merged = new Map<
+        string,
+        { name: string; payeeKey: string | null; amount: bigint; count: number }
+      >();
+      for (const r of rows) {
+        const alias = r.key ? aliases.get(`${q.kind}:${r.key}`) : undefined;
+        const id = r.linked_party ?? alias?.partyId ?? r.key ?? '';
+        const cur = merged.get(id);
+        if (cur) {
+          cur.amount += BigInt(r.amount);
+          cur.count += r.n;
+        } else {
+          merged.set(id, {
+            name: r.party_name ?? alias?.name ?? r.name ?? '',
+            payeeKey: r.key,
+            amount: BigInt(r.amount),
+            count: r.n,
+          });
+        }
+      }
+      const sorted = [...merged.values()]
+        .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
+        .map((r) => ({ ...r, amount: String(r.amount) }));
       return {
         entityId: e.id,
         kind: q.kind,
@@ -329,14 +361,18 @@ export class BusinessReportsService {
     const start = `${y}-01-01` as CalendarDate;
     const yearEnd = `${y}-12-31` as CalendarDate;
     const through = today < yearEnd ? today : yearEnd;
-    const { profit } = await profitBetween(trx, ctx, entityId, start, through);
+    // After mileage, so this agrees with Schedule C: the deduction isn't in the ledger, but it does lower the tax.
+    const taxableProfit = async (to: CalendarDate) =>
+      (await profitBetween(trx, ctx, entityId, start, to)).profit -
+      (await mileageBetween(trx, ctx, entityId, start, to));
+    const profit = await taxableProfit(through);
     const rate = profile.tax_rate_bps;
     const saved = await this.savedSoFar(trx, ctx, profile.tax_savings_account_id, start, through);
     let seenNext = false;
     const periods: TaxEstimateDto['periods'] = [];
     for (const p of estimatedTaxPeriods(y)) {
       const end = p.through < today ? p.through : today;
-      const periodProfit = start <= end ? (await profitBetween(trx, ctx, entityId, start, end)).profit : 0n;
+      const periodProfit = start <= end ? await taxableProfit(end) : 0n;
       let status: 'past' | 'next' | 'later' = 'later';
       if (p.due < today) status = 'past';
       else if (!seenNext) {

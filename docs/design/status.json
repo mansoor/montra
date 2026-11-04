@@ -570,7 +570,7 @@
   ],
   "FLOW-03": [
     "done",
-    "30/60/90-day forecast from schedules, expected income and burn, with low-balance warnings"
+    "30/60/90-day forecast from schedules, expected income, open invoices and bills, and burn, with low-balance warnings"
   ],
   "FLOW-04": [
     "done",
@@ -686,6 +686,62 @@
   ],
   "RPT-01": [
     "partial",
-    "income and spending by family member (Household as its own group); the rest of the catalogue in P10"
+    "by family member, P&L, Schedule C and income and spending by customer and vendor; the rest of the catalogue in P10"
+  ],
+  "BIZ-01": [
+    "done",
+    "several businesses, each with type, fiscal year, currency, default accounts and invoice details"
+  ],
+  "BIZ-02": [
+    "done",
+    "chart mapped to Schedule C; a category can be mapped to any line; other countries are reference data"
+  ],
+  "BIZ-03": [
+    "done",
+    "nightly flags from the payee history and AI; one tap reclassifies, with owner draws and contributions between the two; not run against the real provider"
+  ],
+  "BIZ-04": [
+    "done",
+    "listed from payees with activity; a record is created when details are added or one is invoiced"
+  ],
+  "BIZ-05": [
+    "done",
+    "lines, tax, due date, PDF, email and derived status; exact or quoted payments auto-link. A deposit pays one invoice. PDF prints Latin text only; email not run against a real server"
+  ],
+  "BIZ-06": [
+    "done",
+    "bills in the forecast and calendar; exact payments auto-link. No partial payments"
+  ],
+  "BIZ-07": [
+    "done",
+    "rate by trip date from reference data (IRS table, including mid-year changes); on the web and phone. The admin editor for rates is in P11"
+  ],
+  "BIZ-09": [
+    "done",
+    "set-aside from profit after mileage at the user's rate; IRS periods and due dates on the Taxes page, calendar and suggestions. Reminders go through the notification engine in P10"
+  ],
+  "BIZ-10": [
+    "done",
+    "P&L for any dates, expenses by category and vendor, income by customer, Schedule C summary"
+  ],
+  "BIZ-11": [
+    "done",
+    "category limits and a revenue target per period; a monthly margin note, with AI wording when AI is on"
+  ],
+  "BIZ-12": [
+    "done",
+    "receipts attach to any expense; missing list over a per-business threshold, default $75"
+  ],
+  "BIZ-13": [
+    "done",
+    "invite with read or write per entity; CSV, XLSX, QuickBooks Desktop IIF and Xero journal export. Not yet imported into QuickBooks or Xero themselves"
+  ],
+  "REC-09": [
+    "done",
+    "set-aside suggested when business income arrives; accepting transfers it. Rental income follows in P9"
+  ],
+  "AI-10": [
+    "partial",
+    "business: tax line hints on transactions, AI proposals for unmapped categories. Rental reports in P9; proposals not run against the real provider"
   ]
 }

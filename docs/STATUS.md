@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-04, at the end of Phase 7 (on `claude/phase7-contracts`, PR open). Keep this file current:
+_Last updated 2026-11-04, at the end of Phase 8 (on `claude/phase8-contracts`, PR open). Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -13,12 +13,12 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–6 merged. Last merge was PR #12 at `3cbe477` |
+| **Integration branch** | `develop`: Phases 0–7 merged. Last merge was PR #14 at `b122950` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
-| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 |
+| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 |
 | **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements** | 252 IDs in total: **134 done, 38 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge the Phase 7 PR, tag `v0.8.0-dev.1`, then **Phase 8: small business** |
+| **Requirements** | 252 IDs in total: **147 done, 39 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Next** | Merge the Phase 8 PR, tag `v0.9.0-dev.1`, then **Phase 9: rental properties** |
 
 ### Test suite at the end of Phase 7 (green locally)
 
@@ -63,8 +63,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 5 | Receipts and multi-currency | ✅ done (device checks pending) | Receipts end to end, FX rates and foreign-currency accounts, web and mobile capture; see §7 |
 | 6 | Budgeting, money flow and recommendations | ✅ done (device checks pending) | Budgets, goals, flow, recommendations, read models, web restyle, mobile; see §7a |
 | 7 | Family members and payslips | ✅ done (device checks pending) | Payslip capture and posting, deposit matching, reports by member, privacy; see §7b |
-| **8** | **Small business** | ⏭ **next** | Invoices, bills, mileage, Schedule C, quarterly estimates, accountant export |
-| 9 | Rental properties | not started | Units, leases, rent roll, Schedule E, depreciation, metrics |
+| 8 | Small business | ✅ done (device checks pending) | Invoices, bills, mileage, Schedule C, estimated tax, accountant export; see §7c |
+| **9** | **Rental properties** | ⏭ **next** | Units, leases, rent roll, Schedule E, depreciation, metrics |
 | 10 | Reports, search, notifications, data ownership | not started | Report catalogue, search, notification engine, export, backup/restore |
 | 11 | Hardening and launch | not started | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
 
@@ -546,6 +546,50 @@ Phase 7 leftovers, not blocking:
 - Foreign-currency payslips are refused.
 - After a payslip that took over an imported deposit is deleted, undoing that import no longer removes the deposit if the
   undo already ran. The user deletes it by hand.
+
+---
+
+## 7c. Phase 8, small business (done)
+
+Branch `claude/phase8-contracts`. The design is ADR-0017.
+
+| Step | State | What |
+| --- | --- | --- |
+| 1. Contracts | ✅ | Migration 0018 (business_profile, business_party, invoice, invoice_line, invoice_payment, bill, mileage_trip, `ref.tax_line`, `ref.mileage_rate`), DTOs, `packages/domain/src/business.ts`, ADR-0017 |
+| 2. AI tasks | ✅ | `map_tax_lines` and `flag_separation`: answers limited to what was offered, and the user decides |
+| 3. API | ✅ | `apps/api/src/business/`: profiles, parties, invoices with PDF and email, bills, mileage, reports, export, nightly matching, flags and notes |
+| 4. Web | ✅ | Business: overview, invoices, bills, customers and vendors, mileage, taxes, missing receipts, settings. Budget revenue target; tax hint on a transaction |
+| 5. Mobile | ✅ (device run pending) | More → Business: profit, what's owed, tax to set aside, and logging a trip |
+| 6. Integration | ✅ | `apps/api/test/business.test.ts`, `business-files.test.ts`, RLS test, `apps/web/e2e/business.spec.ts` |
+
+Rules the code depends on (don't undo these):
+
+- **Cash basis.** Nothing posts at invoice or bill date; a payment is what becomes income or expense. An accrual method would
+  be a separate decision (ADR-0017).
+- **One owner check.** `ownerOf(spec)` in `transactions/poster.ts` covers payslips, invoices and bills. Edits, deletes and import
+  undo all go through it. Anything new that changes a transaction must too.
+- **Payments split cumulatively** (`allocatePayment`), so only the latest payment on an invoice can be removed.
+- **Mileage is never in the ledger.** It's added on Schedule C and subtracted in the tax estimate, so those two agree. The P&L is
+  book profit and doesn't include it.
+- **A linked payment says whose it is.** Bank names often normalize to nothing ("ACH CREDIT"), so party totals read the link first
+  and the payee key second.
+- **Rates apply from a date** (`ref.mileage_rate`). IRS rates changed mid-year in 2022 and 2026. Rates were checked against the IRS
+  page on 2026-11-03; update `packages/db/src/reference/tax.ts` when a new notice is published.
+- **Automatic links stay conservative.** Only in the business's own accounts, and only one exact pair or a quoted number. Offering is
+  always safe; a wrong automatic link misstates income.
+
+Phase 8 leftovers, not blocking:
+
+- **Not tried on the real thing:** IIF and Xero files against QuickBooks and Xero themselves; invoice email through a real mail
+  server; `flag_separation` and `map_tax_lines` against the real provider.
+- Invoice PDFs print Latin text only (the standard PDF fonts); other characters print as "?". Embedding a font would fix it.
+- A deposit pays one invoice: one cheque for two invoices needs splitting by hand. Bills can't be part paid.
+- Foreign-currency invoices and bills are refused.
+- Estimated-tax periods assume a calendar tax year, even for a business with another fiscal year.
+- The mileage rate editor is the admin screen in Phase 11; until then a new rate is a reference-data change.
+- Reminders appear on the calendar and as suggestions; push and email reminders come with the notification engine in Phase 10.
+- Mobile: invoices and bills are read-only, and there's no device run yet.
+- BIZ-08, BIZ-14 and BIZ-15 (could-haves) aren't started.
 
 ---
 

@@ -165,6 +165,16 @@ export function InvoiceEditor({
 
       <section className="card space-y-2" aria-label={t('invoices.lines')}>
         <h2 className="text-sm font-semibold">{t('invoices.lines')}</h2>
+        <div
+          aria-hidden
+          className="hidden gap-2 text-xs font-semibold text-muted sm:grid sm:grid-cols-[minmax(0,1fr)_5rem_7rem_5rem_11rem_2.25rem]"
+        >
+          <span>{t('invoices.description')}</span>
+          <span>{t('invoices.quantity')}</span>
+          <span>{t('invoices.price')}</span>
+          <span>{t('invoices.tax_percent')}</span>
+          <span>{t('invoices.category')}</span>
+        </div>
         {rows.map((r) => {
           const name = r.description || t('invoices.this_line');
           const err = (f: string) => errors[`${r.key}.${f}`];
@@ -172,7 +182,7 @@ export function InvoiceEditor({
             <div
               key={r.key}
               data-testid="invoice-line"
-              className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_5rem_7rem_5rem_11rem_auto]"
+              className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_5rem_7rem_5rem_11rem_2.25rem]"
             >
               <Cell label={t('invoices.description')} error={err('description')}>
                 <input

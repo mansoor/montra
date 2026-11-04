@@ -10,7 +10,16 @@ import { API_URL, authHeaders, SESSION_COOKIE } from '@/lib/session';
 export const dynamic = 'force-dynamic';
 
 const FORWARDED_REQUEST_HEADERS = ['accept', 'content-type', 'idempotency-key', 'if-match'];
-const FORWARDED_RESPONSE_HEADERS = ['content-type', 'etag', 'idempotent-replay', 'location', 'retry-after'];
+const FORWARDED_RESPONSE_HEADERS = [
+  'cache-control', // private documents say no-store
+  'content-disposition',
+  'content-type',
+  'etag',
+  'idempotent-replay',
+  'location',
+  'retry-after',
+  'x-content-type-options',
+];
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const { path } = await ctx.params;

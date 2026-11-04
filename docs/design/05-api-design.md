@@ -116,9 +116,14 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `GET/POST /invoices`, `POST /invoices/{id}/send`, `GET /invoices/{id}/pdf` | Invoices | BIZ-05 |
-| `GET/POST /bills`, `GET/POST /mileage-trips` | Bills, mileage | BIZ-06/07 |
-| `GET /tax/estimates?entityId&year` | Quarterly estimate | BIZ-09 |
+| `GET /businesses`, `GET/PATCH /businesses/{entityId}`, `POST /businesses/files` | Business profile, documents | BIZ-01, BIZ-12 |
+| `GET /parties?entityId&kind`, `POST /parties`, `PATCH /parties/{id}` | Customers and vendors; rows with a null `id` come from activity | BIZ-04 |
+| `GET/POST /invoices`, `GET/PATCH/DELETE /invoices/{id}`, `POST /invoices/{id}/send`, `POST /invoices/{id}/void`, `GET /invoices/{id}/pdf`, `GET /invoices/{id}/candidates`, `POST /invoices/{id}/payments` `{ transactionId \| accountId, date, amount }`, `DELETE /invoices/{id}/payments/{paymentId}` | Invoices and their payments (ADR-0017) | BIZ-05 |
+| `GET/POST /bills`, `GET/PATCH /bills/{id}`, `GET /bills/{id}/candidates`, `POST/DELETE /bills/{id}/payment`, `GET /bills/{id}/files/{fileId}` | Bills | BIZ-06 |
+| `GET/POST /mileage-trips`, `PATCH/DELETE /mileage-trips/{id}` | Mileage; the rate is set by the trip's date | BIZ-07 |
+| `GET /tax/estimates?entityId&year`, `GET /tax/lines?form`, `PATCH /categories/{id}/tax-line`, `POST /businesses/{entityId}/tax-lines/suggest` | Estimated tax, tax lines and AI proposals | BIZ-02, BIZ-09, AI-10 |
+| `GET /reports/pnl`, `/reports/parties`, `/reports/schedule-c`, `/reports/missing-receipts` | P&L, by customer or vendor, Schedule C, missing receipts | BIZ-10, BIZ-12 |
+| `GET /exports/accounting?entityId&from&to&format` (`csv`, `xlsx`, `quickbooks_iif`, `xero_csv`; recent sign-in required) | Journal for an accountant | BIZ-13 |
 | `GET/POST /properties`, `/properties/{id}/units`, `/tenants`, `/leases` | Rental master data | RNT-01..03 |
 | `GET /rent-roll?month`, `GET /arrears` | Rent roll and arrears | RNT-04/05 |
 | `GET/POST /allocation-rules`, `POST /transactions/{id}/allocate` | Shared expense allocation | RNT-07 |

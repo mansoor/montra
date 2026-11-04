@@ -119,7 +119,9 @@ test('invoices, bills and mileage reach Schedule C and the export', async ({ pag
   const pnl = page.getByTestId('pnl');
   await expect(pnl.getByRole('row', { name: /Net profit.*\$110\.00/ })).toBeVisible();
   await page.getByRole('link', { name: 'Income by customer' }).click();
-  await expect(page.getByTestId('report-customers').getByText('BLUEBIRD CAFE ACH')).toBeVisible();
+  await expect(
+    page.getByTestId('report-customers').getByRole('row', { name: /Bluebird Cafe.*\$150\.00/ }),
+  ).toBeVisible();
 
   // The journal for an accountant (BIZ-13).
   await sections.getByRole('link', { name: 'Settings' }).click();
