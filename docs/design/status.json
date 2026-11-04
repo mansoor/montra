@@ -918,7 +918,7 @@
   ],
   "BAK-07": [
     "partial",
-    "runbook and scripts; a local restore and reconciliation run. No drill on real infrastructure, so RPO and RTO are unmeasured. Across regions the RPO is up to 24 hours"
+    "runbook and scripts, and a local drill with a small database. No drill on real infrastructure, so RPO and RTO are unmeasured. Across regions the RPO is up to 24 hours"
   ],
   "OPS-01": [
     "done",

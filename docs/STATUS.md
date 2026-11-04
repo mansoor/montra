@@ -24,18 +24,18 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 357, plus 4 perf budgets run alone |
+| `@montra/api` (integration, real Postgres) | 412, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 117 |
+| `@montra/web` unit | 123 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
-| `@montra/domain` | 181 |
+| `@montra/domain` | 194 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
 | `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 73 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals, your data) | 63 |
-| `@montra/db` (ledger triggers, RLS, read models, receipts) | 38 |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals, your data) | 64 |
+| `@montra/db` (ledger triggers, RLS, staff roles, read models, receipts) | 43 |
 | `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 20 tests in 13 spec files |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 28 tests in 15 spec files |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
@@ -737,6 +737,14 @@ Questions for the owner, each blocking something:
 3. **Upgrade Kratos, or accept its findings in writing?** v1.3.1 fails the image scan, and OPS-06 asks for criticals fixed in 72 hours.
 4. **Is an emailed code acceptable for AUTH-05?** The requirement says a link.
 5. **Can the Aurora master create a `BYPASSRLS` role?** Untested. The setup runbook checks first and stops.
+
+Measured locally, on 2026-11-04:
+
+- **Restore drill:** `pg_dump` and `pg_restore` of the dev database into a scratch one, then `infra/db/reconciliation-checks.sql` and
+  `app.reconcile_books()`. 416 workspaces and 2,680 postings came back the same, in about 10 seconds, with no problems found. This shows
+  the checks work. It says nothing about a real restore's size or time, or about RPO and RTO.
+- **A flaky limit:** `lib/colour-guard.test.ts` hit Vitest's 5-second limit once during a parallel `pnpm verify`, and passes in 0.4 s alone.
+  It reads files without waiting, so a slow disk could do it again. The limit hasn't been changed.
 
 Phase 11 leftovers:
 

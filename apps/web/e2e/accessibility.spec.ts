@@ -63,6 +63,22 @@ const WORKSPACE_PAGES = [
   '/settings?tab=support',
 ];
 
+/** PLT-01: usable from 360 px, which means no scrolling sideways. Wide tables scroll inside their own card. */
+test('the main screens fit a 360 px phone', async ({ page }) => {
+  test.setTimeout(240_000);
+  await onboardHousehold(page, `narrow-${Date.now()}@example.com`, 'Joint checking');
+  const base = new URL(page.url()).pathname.split('/').slice(0, 3).join('/');
+  await page.setViewportSize({ width: 360, height: 760 });
+  const wide: { path: string; by: number }[] = [];
+  for (const path of WORKSPACE_PAGES) {
+    await page.goto(`${base}${path}`);
+    await page.waitForLoadState('networkidle');
+    const by = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    if (by > 0) wide.push({ path: path || '/', by });
+  }
+  expect(wide).toEqual([]);
+});
+
 for (const scheme of ['light', 'dark'] as const) {
   test.describe(`in the ${scheme} theme`, () => {
     test.use({ colorScheme: scheme });

@@ -149,7 +149,7 @@ export function AppShell({
         href={homeHref}
         className={`flex items-center gap-3 px-4 pt-4 pb-3 ${rail ? 'justify-center px-0' : ''}`}
         // Only the collapsed rail has no words of its own to be named by (WCAG 2.5.3).
-        aria-label={rail ? `Montra, ${workspaceName}` : undefined}
+        aria-label={rail ? `Montra ${workspaceName}` : undefined}
       >
         <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-m)] bg-brand-600 text-on-brand">
           <ShieldCheck aria-hidden size={20} strokeWidth={1.8} />
@@ -157,7 +157,9 @@ export function AppShell({
         {!rail && (
           <span className="min-w-0">
             <span className="block font-display text-[17px] leading-tight font-semibold">Montra</span>
-            <span className="block truncate text-xs text-muted">{workspaceName}</span>
+            <span className="block truncate text-xs text-muted" data-testid="workspace-name">
+              {workspaceName}
+            </span>
           </span>
         )}
       </Link>
@@ -259,7 +261,10 @@ export function AppShell({
           <div className="ml-auto flex items-center gap-3">
             {tools}
             {status}
-            <ThemeChoiceControl compact />
+            {/* On a phone there isn't room, and it's in the account menu too. */}
+            <div className="hidden sm:block">
+              <ThemeChoiceControl compact />
+            </div>
             <AccountMenu name={userName} email={userEmail} />
           </div>
         </header>
