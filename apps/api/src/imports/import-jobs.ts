@@ -907,6 +907,17 @@ export class ImportJobs {
           kept.push({ transactionId: s.transaction_id, reason: 'reconciled' });
           continue;
         }
+        // ADR-0016: the deposit now carries a payslip's entry. Removing it would take the payslip with it.
+        const owner = await trx
+          .selectFrom('app.payslip')
+          .select('id')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('transaction_id', '=', s.transaction_id)
+          .executeTakeFirst();
+        if (owner) {
+          kept.push({ transactionId: s.transaction_id, reason: 'payslip' });
+          continue;
+        }
         if (s.role === 'created') {
           await this.poster.unpost(trx, ctx, s.transaction_id);
           await trx

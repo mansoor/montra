@@ -19,6 +19,10 @@ import type {
   MeDto,
   ParseQuickAddRequest,
   QuickAddDraftDto,
+  ConfirmPayslipRequest,
+  CreatePayslipRequest,
+  EmployerDto,
+  PayslipDto,
   ReceiptDto,
   ReceiptFileDto,
   ReceiptPageDto,
@@ -209,6 +213,25 @@ export function createApi(opts: ApiOptions) {
       request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/apply`, input),
     matchReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/match`),
     rejectReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/reject`),
+
+    // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
+    listEmployers: async (w: string) =>
+      (await request<{ data: EmployerDto[] }>('GET', `${ws(w)}/employers`)).data,
+    uploadPayslipFile: (w: string, file: UploadFile) => {
+      const form = new FormData();
+      form.append('file', file as unknown as Blob);
+      return request<ReceiptFileDto>('POST', `${ws(w)}/payslips/files`, undefined, form);
+    },
+    createPayslip: (w: string, input: Partial<CreatePayslipRequest> & { employerId: string }) =>
+      request<PayslipDto>('POST', `${ws(w)}/payslips`, input),
+    listPayslips: async (w: string) =>
+      (await request<{ data: PayslipDto[] }>('GET', `${ws(w)}/payslips`)).data,
+    getPayslip: (w: string, id: string) => request<PayslipDto>('GET', `${ws(w)}/payslips/${id}`),
+    /** Path of a payslip's page; load it with the bearer header. */
+    payslipFilePath: (w: string, id: string, fileId: string) => `${ws(w)}/payslips/${id}/files/${fileId}`,
+    confirmPayslip: (w: string, id: string, input: ConfirmPayslipRequest) =>
+      request<PayslipDto>('POST', `${ws(w)}/payslips/${id}/confirm`, input),
+    deletePayslip: (w: string, id: string) => request<void>('DELETE', `${ws(w)}/payslips/${id}`),
 
     registerPushDevice: (req: RegisterPushDeviceRequest) =>
       request<{ id: string }>('POST', '/v1/me/push-devices', req),

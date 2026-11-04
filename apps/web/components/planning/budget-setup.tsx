@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
-import type { DraftBudgetDto, WorkspaceDto } from '@montra/api-client';
+import type { DraftBudgetDto, FamilyMemberDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { parseAmountInput } from '@/lib/money';
 import { useI18n } from '../i18n';
@@ -20,10 +20,13 @@ const PERIODS = ['monthly', 'biweekly', 'weekly'] as const;
 export function BudgetSetup({
   workspace,
   entityId,
+  member = null,
   today,
 }: {
   workspace: WorkspaceDto;
   entityId: string;
+  /** FAM-06: a budget for this member, alongside the household's. */
+  member?: Pick<FamilyMemberDto, 'id' | 'name'> | null;
   today: string;
 }) {
   const router = useRouter();
@@ -31,7 +34,11 @@ export function BudgetSetup({
   const { run, busy, message, setMessage } = useAction();
   const entity = workspace.entities.find((e) => e.id === entityId);
   const [name, setName] = useState(
-    entity?.type === 'personal' ? t('budget.default_name') : (entity?.name ?? ''),
+    member
+      ? t('budget.member_title', { name: member.name })
+      : entity?.type === 'personal'
+        ? t('budget.default_name')
+        : (entity?.name ?? ''),
   );
   const [method, setMethod] = useState<(typeof METHODS)[number]>('zero_based');
   const [periodType, setPeriodType] = useState<(typeof PERIODS)[number]>('monthly');
@@ -54,6 +61,7 @@ export function BudgetSetup({
     await run(async () => {
       const budget = await browserApi.createBudget(workspace.id, {
         entityId,
+        memberId: member?.id ?? null,
         name,
         method,
         periodType,

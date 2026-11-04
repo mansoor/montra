@@ -12,6 +12,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CircleUserRound,
+  FileText,
   FileUp,
   Flag,
   Home,
@@ -27,8 +28,9 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Waves,
+  Users,
   Wand2,
+  Waves,
   X,
 } from 'lucide-react';
 import { ThemeChoiceControl } from '../theme-choice';
@@ -40,6 +42,8 @@ const ICONS = {
   transactions: ArrowLeftRight,
   review: ListChecks,
   receipts: Receipt,
+  payslips: FileText,
+  members: Users,
   upcoming: CalendarClock,
   recurring: Repeat,
   journal: BookOpen,

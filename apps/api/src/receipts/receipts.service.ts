@@ -1106,7 +1106,7 @@ export class ReceiptsService {
       .executeTakeFirst();
     if (!t) throw notFound('Transaction');
     const spec = t.spec as TransactionSpec | null;
-    if (!spec || spec.type !== 'standard' || t.status === 'void') {
+    if (!spec || spec.type !== 'standard' || spec.payslipId || t.status === 'void') {
       throw unprocessable(
         'receipt.not_applicable',
         'A receipt applies to a purchase or refund, not a transfer',

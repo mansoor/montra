@@ -114,6 +114,19 @@ import type {
   TripDto,
   TripInput,
   UpdateReceiptRequest,
+  ConfirmPayslipRequest,
+  DepositCandidateDto,
+  MemberTotalsDto,
+  PayslipLineDto,
+  WithholdingDto,
+  CreateEmployerRequest,
+  CreatePayslipRequest,
+  EmployerDto,
+  MemberReportDto,
+  PayslipDto,
+  PayslipSummaryDto,
+  UpdateEmployerRequest,
+  UpdatePayslipRequest,
 } from '@montra/schemas';
 
 export type CreateWorkspaceInput = z.input<typeof CreateWorkspaceRequest>;
@@ -157,6 +170,11 @@ export type AcceptInsightInput = z.input<typeof AcceptInsightRequest>;
 export type CreateReceiptInput = z.input<typeof CreateReceiptRequest>;
 export type UpdateReceiptInput = z.input<typeof UpdateReceiptRequest>;
 export type ApplyReceiptInput = z.input<typeof ApplyReceiptRequest>;
+export type CreateEmployerInput = z.input<typeof CreateEmployerRequest>;
+export type UpdateEmployerInput = z.input<typeof UpdateEmployerRequest>;
+export type CreatePayslipInput = z.input<typeof CreatePayslipRequest>;
+export type UpdatePayslipInput = z.input<typeof UpdatePayslipRequest>;
+export type ConfirmPayslipInput = z.input<typeof ConfirmPayslipRequest>;
 export interface ReceiptListOptions {
   status?: ReceiptDto['status'];
   /** RCP-10: search merchant and receipt text. */
@@ -301,6 +319,7 @@ export interface TransactionListOptions {
   accountId?: string;
   /** Drill-down filters from the dashboard (FLOW-01/02). */
   entityId?: string;
+  /** A member's id, or `household` for what's tagged to nobody (FAM-08). */
   memberId?: string;
   categoryIds?: string[];
   accountIds?: string[];
@@ -878,6 +897,64 @@ export class ApiClient {
     return this.request<unknown>('POST', this.ws(workspaceId, `/insights/${enc(id)}/dismiss`));
   }
 
+  // ----- Employers and payslips (PAY-01..09), reports by member (FAM-08, RPT-01) ---------------------------
+  listEmployers(workspaceId: string, opts: { memberId?: string } = {}) {
+    return this.request<{ data: EmployerDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/employers${query(opts)}`),
+    ).then((r) => r.data);
+  }
+  createEmployer(workspaceId: string, input: CreateEmployerInput) {
+    return this.request<EmployerDto>('POST', this.ws(workspaceId, '/employers'), input);
+  }
+  updateEmployer(workspaceId: string, id: string, input: UpdateEmployerInput) {
+    return this.request<EmployerDto>('PATCH', this.ws(workspaceId, `/employers/${enc(id)}`), input);
+  }
+  /** Uploads one payslip page (PDF, JPEG, PNG, WebP); the API sniffs the type. */
+  uploadPayslipFile(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<ReceiptFileDto>('POST', this.ws(workspaceId, '/payslips/files'), form);
+  }
+  listPayslips(
+    workspaceId: string,
+    opts: { memberId?: string; employerId?: string; status?: PayslipDto['status'] } = {},
+  ) {
+    return this.request<{ data: PayslipDto[] }>('GET', this.ws(workspaceId, `/payslips${query(opts)}`)).then(
+      (r) => r.data,
+    );
+  }
+  /** From uploaded files (read in the background), from the last payslip, or empty to fill by hand. */
+  createPayslip(workspaceId: string, input: CreatePayslipInput) {
+    return this.request<PayslipDto>('POST', this.ws(workspaceId, '/payslips'), input);
+  }
+  getPayslip(workspaceId: string, id: string) {
+    return this.request<PayslipDto>('GET', this.ws(workspaceId, `/payslips/${enc(id)}`));
+  }
+  /** The path of a payslip's file, for the review screen (through the authenticated proxy). */
+  payslipFilePath(workspaceId: string, id: string, fileId: string) {
+    return this.baseUrl + this.ws(workspaceId, `/payslips/${enc(id)}/files/${enc(fileId)}`);
+  }
+  updatePayslip(workspaceId: string, id: string, input: UpdatePayslipInput) {
+    return this.request<PayslipDto>('PATCH', this.ws(workspaceId, `/payslips/${enc(id)}`), input);
+  }
+  /** Posts it. Comes back unposted, with `matchCandidates`, when several deposits could be this pay. */
+  confirmPayslip(workspaceId: string, id: string, input: ConfirmPayslipInput) {
+    return this.request<PayslipDto>('POST', this.ws(workspaceId, `/payslips/${enc(id)}/confirm`), input);
+  }
+  deletePayslip(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/payslips/${enc(id)}`));
+  }
+  getMemberReport(workspaceId: string, opts: { from?: string; to?: string; entityId?: string } = {}) {
+    return this.request<MemberReportDto>('GET', this.ws(workspaceId, `/reports/by-member${query(opts)}`));
+  }
+  getPayslipSummary(workspaceId: string, memberId: string, opts: { year?: number } = {}) {
+    return this.request<PayslipSummaryDto>(
+      'GET',
+      this.ws(workspaceId, `/reports/payslip-summary${query({ memberId, ...opts })}`),
+    );
+  }
+
   // ----- Receipts (TXN-08, IMP-11, RCP-01..12) -------------------------------------------------------------
   /** Uploads one receipt photo (JPEG, PNG, WebP) or PDF invoice; the API sniffs the type. */
   uploadReceiptFile(workspaceId: string, file: Blob, fileName: string) {
@@ -1166,6 +1243,14 @@ export type {
   FxRateDto,
   OrderImportResultDto,
   ReceiptDto,
+  DepositCandidateDto,
+  EmployerDto,
+  MemberReportDto,
+  MemberTotalsDto,
+  PayslipDto,
+  PayslipLineDto,
+  PayslipSummaryDto,
+  WithholdingDto,
   ReceiptFileDto,
   ReceiptPageDto,
   ReceiptRecommendationDto,

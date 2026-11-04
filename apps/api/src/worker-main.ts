@@ -9,6 +9,7 @@ import { InsightsService } from './categorization/insights.service.js';
 import { FxRatesService } from './fx/fx.service.js';
 import { ReceiptJobs } from './receipts/receipt-jobs.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
+import { PayslipJobs } from './payslips/payslip-jobs.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
 const config = loadConfig();
@@ -20,6 +21,7 @@ app.get(ImportJobs).register();
 app.get(RulesService).register();
 app.get(InsightsService).register();
 app.get(ReceiptJobs).register();
+app.get(PayslipJobs).register();
 const planning = app.get(RecommendationsService);
 planning.register();
 const fx = app.get(FxRatesService);

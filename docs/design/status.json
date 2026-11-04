@@ -530,7 +530,7 @@
   ],
   "BUD-03": [
     "partial",
-    "entered income matched to deposits, with a period override; payslip patterns in P7, rent roll in P9, detection later"
+    "entered income and payslip patterns matched to deposits, with a period override; rent roll in P9, detection later"
   ],
   "BUD-04": [
     "done",
@@ -602,7 +602,7 @@
   ],
   "REC-04": [
     "done",
-    "low balance or late income leads to a bare-bones budget"
+    "low balance, late income or pay more than 10% under its pattern leads to a bare-bones budget"
   ],
   "REC-05": [
     "done",
@@ -621,12 +621,12 @@
     "budget from last month and a one-month buffer target"
   ],
   "FAM-06": [
-    "partial",
-    "API supports member budgets (same activity, filtered); no screen to create one yet"
+    "done",
+    "a budget per member beside the household budget; their spending counts in both"
   ],
   "FAM-07": [
-    "partial",
-    "API supports member goals; no member picker on the goal form yet"
+    "done",
+    "member picker on the goal form"
   ],
   "UP-11": [
     "done",
@@ -639,5 +639,53 @@
   "UP-14": [
     "done",
     "detection (P3), upcoming bills on calendar and dashboard, price-change alerts through insights and REC-06"
+  ],
+  "FAM-08": [
+    "done",
+    "income by earner, spending by member and category, Household as its own group, cost over time"
+  ],
+  "FAM-09": [
+    "done",
+    "Home filter by member; every member total drills to its transactions, Household included"
+  ],
+  "PAY-01": [
+    "done",
+    "employers and other income sources per member, with frequency and deposit account"
+  ],
+  "PAY-02": [
+    "done",
+    "pay date, period, earnings, pre-tax, taxes, post-tax, employer contributions, net and YTD"
+  ],
+  "PAY-03": [
+    "done",
+    "web: PDF or photo, AI draft, prefill from the last one. Mobile: camera or file, check and confirm; amounts corrected on the web. Real-provider accuracy not measured yet"
+  ],
+  "PAY-04": [
+    "done",
+    "exact net in the employer account within 3 days takes the deposit over; several are offered to choose; undoing an import keeps it"
+  ],
+  "PAY-05": [
+    "done",
+    "one balanced entry tagged to the member; retirement codes go to an investment account"
+  ],
+  "PAY-06": [
+    "done",
+    "gross, net, taxes, retirement, employer and effective rate, against the same span last year"
+  ],
+  "PAY-07": [
+    "done",
+    "one expected income per employer at the median of the last three; a payslip deposit fulfils it whatever the statement calls it; REC-04 on pay more than 10% under"
+  ],
+  "PAY-08": [
+    "done",
+    "income tagged to a member counts in their report with no payslip needed"
+  ],
+  "PAY-09": [
+    "done",
+    "RLS: owners and the linked member only; the net-pay line alone is public, so shared balances stay right; kept out of the sync feed and off the phone"
+  ],
+  "RPT-01": [
+    "partial",
+    "income and spending by family member (Household as its own group); the rest of the catalogue in P10"
   ]
 }

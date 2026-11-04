@@ -418,9 +418,11 @@ export class RecommendationsService {
       }
     }
     const late = c.income.occurrences.filter((o) => !o.actual && o.date < addDays(c.today, -3));
+    // PAY-07: a payslip more than 10% under the pattern counts like late income.
+    const short = c.income.occurrences.filter((o) => o.actual && o.actual.amount * 10n < o.item.amount * 9n);
     const fc = current ? await this.flow.forecastIn(trx, ctx, 30, b.entity_id) : null;
     const low = fc?.accounts.find((a) => a.kind === 'cash' && a.lowBalance);
-    if (current && (late.length || low)) {
+    if (current && (late.length || short.length || low)) {
       const bare = rec04BareBones(
         budgetCats.map((cat) => ({
           categoryId: cat.id,
@@ -437,7 +439,9 @@ export class RecommendationsService {
           periodStart: start,
           title: low
             ? `${low.name} may drop below ${fmt(BigInt(low.threshold))} on ${low.lowBalance!.date}`
-            : `Expected income hasn't arrived: ${late.map((o) => o.item.name).join(', ')}`,
+            : late.length
+              ? `Expected income hasn't arrived: ${late.map((o) => o.item.name).join(', ')}`
+              : `Your pay came in lower than expected: ${short.map((o) => o.item.name).join(', ')}`,
           payload: {
             ...base,
             figures: {
@@ -451,6 +455,13 @@ export class RecommendationsService {
               ...(late.length
                 ? { incomeNotYetArrived: String(late.reduce((t, o) => t + o.item.amount, 0n)) }
                 : {}),
+              ...(short.length
+                ? {
+                    payBelowExpectedBy: String(
+                      short.reduce((t, o) => t + o.item.amount - o.actual!.amount, 0n),
+                    ),
+                  }
+                : {}),
             },
             subjects: drivers
               .filter((x) => x.sourceId)
@@ -462,7 +473,12 @@ export class RecommendationsService {
               to: String(x.to),
             })),
           },
-          money: ['budgetCutsWouldFree', 'forecastBalanceThatDay', 'incomeNotYetArrived'],
+          money: [
+            'budgetCutsWouldFree',
+            'forecastBalanceThatDay',
+            'incomeNotYetArrived',
+            'payBelowExpectedBy',
+          ],
         });
       }
     }

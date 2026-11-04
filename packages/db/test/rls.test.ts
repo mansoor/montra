@@ -182,4 +182,57 @@ describe('restricted payslip entries (PAY-09)', () => {
       true,
     );
   });
+
+  it('shows a partner the net pay line of a restricted entry and nothing else (ADR-0016)', async () => {
+    const memberId = newId();
+    const employerId = newId();
+    await withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, async (trx) => {
+      await trx
+        .insertInto('app.family_member')
+        .values({
+          workspace_id: a.workspaceId,
+          id: memberId,
+          name: 'Robin',
+          relationship: 'spouse_partner',
+          linked_user_id: null,
+        })
+        .execute();
+      await trx
+        .insertInto('app.employer')
+        .values({
+          workspace_id: a.workspaceId,
+          id: employerId,
+          member_id: memberId,
+          entity_id: a.personalId,
+          name: 'Private Corp',
+          deposit_account_id: a.accounts.checking,
+        })
+        .execute();
+      await postEntry(
+        trx,
+        a,
+        a.personalId,
+        '2026-10-20',
+        [
+          { account: a.accounts.checking, amount: 70100n, memberId, publicLine: true },
+          { account: a.accounts.groceries, amount: 29900n, memberId },
+          { account: a.accounts.salary, amount: -100000n, memberId },
+        ],
+        { restricted: true, restrictedMemberId: memberId },
+      );
+    });
+    const partner = await visible(a.workspaceId, partnerId);
+    expect(partner.postings.some((p) => p.amount_minor === 70100n)).toBe(true);
+    expect(partner.postings.some((p) => p.amount_minor === 29900n)).toBe(false);
+    expect(partner.postings.some((p) => p.amount_minor === -100000n)).toBe(false);
+    const owner = await visible(a.workspaceId, a.ownerId);
+    expect(owner.postings.filter((p) => [70100n, 29900n, -100000n].includes(p.amount_minor))).toHaveLength(3);
+
+    const employers = (userId: string) =>
+      withContext(db, { workspaceId: a.workspaceId, userId }, (trx) =>
+        trx.selectFrom('app.employer').select('id').where('id', '=', employerId).execute(),
+      );
+    expect(await employers(a.ownerId)).toHaveLength(1);
+    expect(await employers(partnerId)).toHaveLength(0);
+  });
 });

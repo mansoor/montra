@@ -124,7 +124,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET/POST /allocation-rules`, `POST /transactions/{id}/allocate` | Shared expense allocation | RNT-07 |
 | `GET/POST /loans/{accountId}/schedule` | Amortization | RNT-08 |
 | `GET/POST /maintenance` | Maintenance log | RNT-13 |
-| `GET/POST /employers`, `GET/POST /payslips`, `POST /payslips/extract` (202) | Payslips | PAY-01..08 |
+| `GET/POST /employers`, `PATCH /employers/{id}`; `POST /payslips/files` (multipart PDF or photo) → `fileId`; `POST /payslips` `{ employerId, fileIds[], fromLast, payDate? }` (201, reading runs as a job); `GET /payslips?memberId&employerId&status`; `GET/PATCH/DELETE /payslips/{id}`; `GET /payslips/{id}/files/{fileId}`; `POST /payslips/{id}/confirm` `{ version, depositTransactionId? }` | Payslips; a confirm comes back unposted with `matchCandidates` when several deposits fit (ADR-0016) | PAY-01..09 |
 
 ### Reports, search, export, notifications
 

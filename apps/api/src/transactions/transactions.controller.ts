@@ -40,7 +40,8 @@ const ListQuery = z.object({
   accountId: z.uuid().optional(),
   /** Dashboard drill-down (FLOW-01/02): postings in these entities, members, categories or accounts. */
   entityId: z.uuid().optional(),
-  memberId: z.uuid().optional(),
+  /** A member, or "household" for what isn't tagged to anyone (FAM-09). */
+  memberId: z.union([z.uuid(), z.literal('household')]).optional(),
   categoryIds: z
     .string()
     .optional()

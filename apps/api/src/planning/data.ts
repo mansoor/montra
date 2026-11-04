@@ -59,6 +59,8 @@ export interface Deposit {
   payeeKey: string | null;
   accountId: string;
   amount: bigint;
+  /** Set when a payslip owns this deposit (ADR-0016). */
+  employerId: string | null;
 }
 
 export interface IncomeItem {
@@ -72,6 +74,7 @@ export interface IncomeItem {
   nextDate: CalendarDate;
   accountId: string | null;
   payeeKey: string | null;
+  employerId: string | null;
 }
 
 export interface IncomeOccurrence {
@@ -202,6 +205,37 @@ export class PlanningData {
     return out;
   }
 
+  /**
+   * What payslips withheld per period: gross − net, in the viewer's RLS (who sees gross sees this too). Budgets and
+   * the dashboard plan on take-home pay (04 §8), though the ledger's income category holds gross (PAY-05).
+   */
+  async payslipWithheld(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+    periods: readonly Period[],
+    f: ActivityFilter = {},
+  ): Promise<Map<CalendarDate, bigint>> {
+    const out = new Map<CalendarDate, bigint>(periods.map((p) => [p.start, 0n]));
+    if (!periods.length || f.includeRestricted === false) return out;
+    let q = trx
+      .selectFrom('app.payslip')
+      .select(['pay_date', 'gross_minor', 'net_minor'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .where('status', '=', 'posted')
+      .where('pay_date', '>=', periods[0]!.start)
+      .where('pay_date', '<=', periods[periods.length - 1]!.end);
+    if (f.memberId) q = q.where('member_id', '=', f.memberId);
+    const rows = await q.execute();
+    for (const r of rows) {
+      const d = calendarDate(String(r.pay_date));
+      const p = periods.find((x) => d >= x.start && d <= x.end);
+      if (p) out.set(p.start, out.get(p.start)! + BigInt(r.gross_minor) - BigInt(r.net_minor));
+    }
+    return out;
+  }
+
   /** Posted deposits (positive standard transactions) of an entity in [from, to], for income matching. */
   async deposits(
     trx: Trx,
@@ -216,8 +250,10 @@ export class PlanningData {
       payee_key: string | null;
       account_id: string;
       amount: string;
+      employer_id: string | null;
     }>`
-      select t.id, t.txn_date::text as d, t.payee_key, t.spec->>'accountId' as account_id, t.spec->>'amount' as amount
+      select t.id, t.txn_date::text as d, t.payee_key, t.spec->>'accountId' as account_id, t.spec->>'amount' as amount,
+             t.spec->>'employerId' as employer_id
         from app.transaction t
        where t.workspace_id = ${ctx.workspaceId} and t.primary_entity_id = ${entityId}
          and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
@@ -229,6 +265,7 @@ export class PlanningData {
       payeeKey: r.payee_key,
       accountId: r.account_id,
       amount: BigInt(r.amount),
+      employerId: r.employer_id,
     }));
   }
 
@@ -253,13 +290,15 @@ export class PlanningData {
       nextDate: calendarDate(r.next_date),
       accountId: r.account_id,
       payeeKey: r.payee_key,
+      employerId: r.employer_id,
     }));
   }
 
   /**
    * Expected income occurrences in [from, to] with the deposit that fulfilled each one (04 §8: the actual
    * deposit replaces the expectation). A deposit matches within −3/+5 days, into the item's account when set,
-   * from the item's payee when set (any amount), otherwise within ±10% of the expected amount.
+   * from the item's payee when set (any amount), otherwise within ±10% of the expected amount. A payslip's deposit
+   * is its employer's pay whatever the statement calls it, and nobody else's (PAY-07).
    */
   matchIncome(
     items: readonly IncomeItem[],
@@ -280,14 +319,20 @@ export class PlanningData {
         if (used.has(d.transactionId)) continue;
         const gap = diffDays(d.date, o.date);
         if (gap < -3 || gap > 5) continue;
-        if (o.item.accountId && d.accountId !== o.item.accountId) continue;
-        if (o.item.payeeKey) {
-          if (d.payeeKey !== o.item.payeeKey) continue;
-        } else {
-          const diff = d.amount - o.item.amount;
-          if ((diff < 0n ? -diff : diff) * 10n > o.item.amount) continue;
+        const own = d.employerId !== null && d.employerId === o.item.employerId;
+        if (d.employerId !== null && !own) continue;
+        if (!own) {
+          if (o.item.accountId && d.accountId !== o.item.accountId) continue;
+          if (o.item.payeeKey) {
+            if (d.payeeKey !== o.item.payeeKey) continue;
+          } else {
+            const diff = d.amount - o.item.amount;
+            if ((diff < 0n ? -diff : diff) * 10n > o.item.amount) continue;
+          }
         }
-        if (!best || Math.abs(diffDays(d.date, o.date)) < Math.abs(diffDays(best.date, o.date))) best = d;
+        const bestOwn = best !== null && best.employerId !== null;
+        const closer = !best || Math.abs(diffDays(d.date, o.date)) < Math.abs(diffDays(best.date, o.date));
+        if (own ? !bestOwn || closer : !bestOwn && closer) best = d;
       }
       if (best) {
         used.add(best.transactionId);

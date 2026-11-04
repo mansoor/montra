@@ -698,7 +698,8 @@ export class FlowService {
       let pace: DashboardDto['pace'] = [];
       const cats = await this.data.categories(trx, ctx, entityId);
       incomeIds = cats.filter((c) => c.type === 'income').map((c) => c.id);
-      spendIds = cats.filter((c) => c.type === 'expense').map((c) => c.id);
+      // Payroll taxes and deductions are part of pay, not spending (04 §8).
+      spendIds = cats.filter((c) => c.type === 'expense' && c.kind !== 'system').map((c) => c.id);
       if (budget) {
         const c = await this.budgets.compute(trx, ctx, budget.id);
         period = c.period;
@@ -738,6 +739,9 @@ export class FlowService {
           if (incomeIds.includes(c)) income -= v;
           else if (spendIds.includes(c)) spent += v;
         }
+        income -=
+          (await this.data.payslipWithheld(trx, ctx, entityId, [period], { memberId })).get(period.start) ??
+          0n;
       }
 
       const upcoming = (await this.calendarIn(trx, ctx, today, addDays(today, 13), entityId)).items.filter(
