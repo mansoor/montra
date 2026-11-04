@@ -20,22 +20,22 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements** | 252 IDs in total: **134 done, 38 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
 | **Next** | Merge the Phase 7 PR, tag `v0.8.0-dev.1`, then **Phase 8: small business** |
 
-### Test suite at the end of Phase 5 (green locally)
+### Test suite at the end of Phase 7 (green locally)
 
 | Suite | Tests |
 | --- | --- |
-| `@montra/api` (integration, real Postgres) | 128 |
+| `@montra/api` (integration, real Postgres) | 169, plus 4 perf budgets run alone |
 | `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 70 |
+| `@montra/web` unit | 82 |
 | `@montra/doc-worker` (pytest, real Tesseract) | 77 |
-| `@montra/domain` | 86 |
+| `@montra/domain` | 117 |
 | `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
-| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 53 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture) | 35 |
-| `@montra/db` (ledger triggers, RLS, receipts) | 26 |
+| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 60 |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips) | 50 |
+| `@montra/db` (ledger triggers, RLS, read models, receipts) | 34 |
 | `@montra/sync` (against a fake server; receipt upload queue) | 22 |
 | `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 12 tests in 9 spec files (receipts spec: 3, both exit criteria) |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 14 tests in 10 spec files |
 | Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)

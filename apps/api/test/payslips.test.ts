@@ -140,15 +140,31 @@ describe('capture (PAY-03, PAY-09)', () => {
     expect(f.status).toBe(201);
     const p = (await c.post(url('/payslips'), { employerId: employer.id, fileIds: [f.body.fileId] })).body;
     expect(p.status).toBe('processing');
-    const job =
-      await admin.query(`select queue, type, then_job from app.job where payload->>'storageKeys' is not null
-       and created_at > now() - interval '1 minute' order by created_at desc limit 1`);
-    expect(job.rows[0]).toMatchObject({ queue: 'doc', type: 'receipt.ocr' });
-    expect(job.rows[0].then_job).toMatchObject({ type: 'payslip.extract' });
+    const { rows } = await admin.query(
+      `select queue, type, then_job, workspace_id, created_by from app.job
+        where type = 'receipt.ocr' and then_job->'payload'->>'payslipId' = $1`,
+      [p.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ queue: 'doc', type: 'receipt.ocr' });
+    expect(rows[0].then_job).toMatchObject({ queue: 'ai', type: 'payslip.extract' });
     // No doc-worker in this test: it would otherwise sit in the shared queue.
     await admin.query(
       `update app.job set status = 'cancelled' where type = 'receipt.ocr' and status = 'queued'`,
     );
+
+    // What the doc-worker hands on: the extraction reads this text, as there's no image to read.
+    await h.app.get(PayslipJobs).extract({
+      workspace_id: rows[0].workspace_id,
+      created_by: rows[0].created_by,
+      payload: { ...rows[0].then_job.payload, previousResult: { kind: 'receipt_text', pages: [SLIP] } },
+    } as any);
+    expect((await c.get(url(`/payslips/${p.id}`))).body).toMatchObject({
+      status: 'needs_review',
+      gross: '500000',
+      net: '408000',
+      transactionId: null,
+    });
     expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
   });
 
