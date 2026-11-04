@@ -43,6 +43,8 @@ selfservice:
       enabled: true # AUTH-04/06: single-use recovery codes
     code:
       enabled: true # email codes for verification and recovery
+      config:
+        lifespan: 30m # AUTH-05: single-use codes; the emails in templates/ state this number, keep them in step
     oidc:
       enabled: true
       config:
@@ -117,6 +119,7 @@ identity:
       url: file:///etc/config/kratos/identity.schema.json
 
 courier:
+  template_override_path: /etc/config/kratos/templates # recovery and verification emails (AUTH-05)
   smtp:
     connection_uri: smtp://mailpit:1025/?disable_starttls=true
     from_address: no-reply@montra.local
