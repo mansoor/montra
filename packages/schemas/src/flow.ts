@@ -8,9 +8,12 @@ import { MinorDto, PaceDto } from './budgets.js';
 /** A transactions-list filter that reproduces a number (GET /transactions query parameters). */
 export const DrillDto = z.object({
   entityId: Id.optional(),
-  memberId: Id.optional(),
+  memberId: z.union([Id, z.literal('household')]).optional(),
+  propertyId: Id.optional(),
   categoryIds: z.array(Id).optional(),
   accountIds: z.array(Id).optional(),
+  /** The search syntax (RPT-05): a payee or tag behind a report's row. */
+  q: z.string().optional(),
   from: CalendarDateDto.optional(),
   to: CalendarDateDto.optional(),
 });

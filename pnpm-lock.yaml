@@ -53,6 +53,9 @@ importers:
       '@montra/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@montra/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@montra/importers':
         specifier: workspace:*
         version: link:../../packages/importers

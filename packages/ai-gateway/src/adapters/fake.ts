@@ -253,6 +253,8 @@ export class FakeAdapter implements ProviderAdapter {
         return fakeSeparation(input);
       case 'flag_capital':
         return fakeCapital(input);
+      case 'answer_question':
+        return fakeQuestion(input);
       case 'word_summary': {
         // Restates the title and figures verbatim, so it always passes the numbers check.
         const figures = Object.entries((input.figures as Record<string, string> | undefined) ?? {})
@@ -526,6 +528,40 @@ function fakeCapital(input: Json) {
         confidence: 0.9,
         reason: 'This may add value rather than repair something.',
       })),
+  };
+}
+
+/** Enough of a reader for tests: category names it can see, quarters, "last month", otherwise this month. */
+function fakeQuestion(input: Json) {
+  const question = String(input.question ?? '').toLowerCase();
+  const today = String(input.today ?? '2026-01-15');
+  const year = Number(today.slice(0, 4));
+  const categories = ((input.categories as string[] | undefined) ?? []).filter((c) =>
+    question.includes(c.toLowerCase()),
+  );
+  if (!/how much|what did|spent|spend|earn|income|left/.test(question)) {
+    return { understood: false, metric: null, categories: [], payee: null, periods: [] };
+  }
+  const QUARTERS: Record<string, [string, string]> = {
+    q1: ['01-01', '03-31'],
+    q2: ['04-01', '06-30'],
+    q3: ['07-01', '09-30'],
+    q4: ['10-01', '12-31'],
+  };
+  const named = [...new Set(question.match(/\bq[1-4]\b/g) ?? [])].sort();
+  const periods = named.length
+    ? named.map((q) => ({
+        label: q.toUpperCase(),
+        from: `${year}-${QUARTERS[q]![0]}`,
+        to: `${year}-${QUARTERS[q]![1]}`,
+      }))
+    : [{ label: 'this month', from: `${today.slice(0, 7)}-01`, to: today }];
+  return {
+    understood: true,
+    metric: /earn|income/.test(question) ? 'income' : /left/.test(question) ? 'net' : 'spending',
+    categories,
+    payee: null,
+    periods,
   };
 }
 

@@ -6,7 +6,6 @@ import {
   localClock,
   matchSnippet,
   parseSearchQuery,
-  searchAmountToMinor,
   textMatchesTerms,
 } from '../src/index.js';
 
@@ -46,16 +45,6 @@ describe('parseSearchQuery', () => {
 
   it('limits how much it takes', () => {
     expect(parseSearchQuery('a b c d e f g h i j k l').terms).toHaveLength(10);
-  });
-});
-
-describe('searchAmountToMinor', () => {
-  it('scales by the currency, cutting extra places', () => {
-    expect(searchAmountToMinor('500', 2)).toBe(50000n);
-    expect(searchAmountToMinor('12.5', 2)).toBe(1250n);
-    expect(searchAmountToMinor('12.999', 2)).toBe(1299n);
-    expect(searchAmountToMinor('500', 0)).toBe(500n);
-    expect(searchAmountToMinor('1.5', 3)).toBe(1500n);
   });
 });
 

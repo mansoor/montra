@@ -62,13 +62,6 @@ export function parseSearchQuery(input: string): SearchQuery {
   return query;
 }
 
-/** A typed amount in minor units, by the currency's decimal places. Extra places are cut off: `12.999` at two places is 1299. */
-export function searchAmountToMinor(value: string, exponent: number): bigint {
-  const [whole = '0', fraction = ''] = value.split('.');
-  const digits = (fraction + '0'.repeat(exponent)).slice(0, exponent);
-  return BigInt(whole + digits);
-}
-
 /** Whether a piece of text, such as a decrypted note, holds every term. */
 export function textMatchesTerms(text: string, terms: readonly string[]): boolean {
   const haystack = text.toLowerCase();

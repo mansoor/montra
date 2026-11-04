@@ -65,6 +65,9 @@ import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
+import { ReportsController } from './reports/reports.controller.js';
+import { ReportsService } from './reports/reports.service.js';
+import { SearchService } from './reports/search.service.js';
 import { LoansService } from './rentals/loans.service.js';
 import { PropertiesService } from './rentals/properties.service.js';
 import { RentService } from './rentals/rent.service.js';
@@ -113,6 +116,7 @@ export class AppModule {
       PayslipsController,
       BusinessController,
       RentalsController,
+      ReportsController,
     ];
     return {
       module: AppModule,
@@ -173,6 +177,8 @@ export class AppModule {
         RentalOpsService,
         RentalReportsService,
         RentalJobs,
+        ReportsService,
+        SearchService,
         PayslipJobs,
         MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },
