@@ -54,6 +54,8 @@ locals {
     PUSH_MODE                = "expo"
     # The hosted service can't reach a user's own AI endpoint (see apps/api/src/config.ts).
     AI_LOCAL_DIRECT = "false"
+    # Cloudflare, then the load balancer: without this, the API sees the load balancer as every client.
+    TRUST_PROXY_HOPS = "2"
   }, var.extra_environment)
 
   api_secrets = [

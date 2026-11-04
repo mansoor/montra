@@ -51,6 +51,8 @@ const Env = z.object({
   /** ADR-0020: staff and support connect with their own roles. Locally these come from DATABASE_URL's host. */
   ADMIN_DATABASE_URL: z.string().optional(),
   SUPPORT_DATABASE_URL: z.string().optional(),
+  /** How many proxies sit in front of the API (Cloudflare and the load balancer in production), to find the client's address. */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
   /** Plans (OPS-08). `off` turns gating off, as for a self-hosted install, development and tests. */
   BILLING_MODE: z.enum(['off', 'stripe']).default('off'),
   STRIPE_API_URL: z.string().url().default('https://api.stripe.com'),
@@ -107,7 +109,8 @@ const Env = z.object({
 export type AppConfig = z.infer<typeof Env>;
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
-  const config = Env.parse(env);
+  // ECS needs a value in every secret, so one that isn't in use arrives empty, which means not set.
+  const config = Env.parse(Object.fromEntries(Object.entries(env).filter(([, v]) => v !== '')));
   if (config.NODE_ENV === 'production' && config.AUTH_MODE === 'dev') {
     throw new Error('AUTH_MODE=dev is not allowed in production');
   }

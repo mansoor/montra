@@ -10,7 +10,7 @@ import { MetricsService } from './ops/metrics.js';
 export async function createApp(config?: AppConfig): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.forRoot(config),
-    new FastifyAdapter({ bodyLimit: 1_048_576 }),
+    new FastifyAdapter({ bodyLimit: 1_048_576, trustProxy: (config?.TRUST_PROXY_HOPS ?? 0) as never }),
     // The raw body is for checking the payment provider's signature.
     { logger: config?.NODE_ENV === 'test' ? false : ['log', 'warn', 'error'], rawBody: true },
   );

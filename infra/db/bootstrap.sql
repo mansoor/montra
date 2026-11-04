@@ -1,4 +1,5 @@
--- Run once per cluster as a superuser (local dev, CI). Production roles are created by Terraform.
+-- Run once per cluster as a superuser (local dev, CI). Production uses production-roles.sql, kept out of Terraform
+-- so that passwords don't end up in its state.
 --   psql -v db=montra -f infra/db/bootstrap.sql
 \set ON_ERROR_STOP on
 select format('create role montra_owner login password %L bypassrls', 'montra_owner')

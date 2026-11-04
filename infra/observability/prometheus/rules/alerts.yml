@@ -29,6 +29,14 @@ groups:
         annotations:
           summary: Dashboard p95 above 2 s
           description: 'Dashboard p95 is {{ $value | humanizeDuration }} (NFR-07).'
+      - alert: ImportParseSlow
+        expr: montra_import_parse_p95_seconds > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Import parsing p95 is over 10 s, counting queue time
+          description: This is an upper bound on the NFR-07 target. Check queue lag first, then run infra/load/import-parse.js.
       - alert: QueueLagHigh
         expr: montra:job_queue_lag:p95_1h > 30
         for: 10m

@@ -80,6 +80,7 @@ export class LocalStorage implements StoragePort {
   }
 }
 
+/** Encryption is the bucket's default, SSE-KMS in production. Naming a method on a put would override it. */
 @Injectable()
 export class S3Storage implements StoragePort {
   private readonly client: S3Client;
@@ -103,7 +104,6 @@ export class S3Storage implements StoragePort {
         Key: key,
         Body: bytes,
         ContentType: contentType,
-        ServerSideEncryption: 'AES256',
       }),
     );
   }
@@ -124,7 +124,6 @@ export class S3Storage implements StoragePort {
         Body: createReadStream(path),
         ContentLength: size,
         ContentType: contentType,
-        ServerSideEncryption: 'AES256',
       }),
     );
   }

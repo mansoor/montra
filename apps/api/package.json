@@ -33,8 +33,9 @@
     "@sentry/node": "^11.10.0",
     "fastify": "^5.12.7",
     "kysely": "^0.28.18",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^10.0.6",
     "pdf-lib": "1.17.1",
+    "pg": "^8.23.1",
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
@@ -51,7 +52,6 @@
     "@types/yauzl": "^3.4.0",
     "@types/yazl": "^3.3.1",
     "exceljs": "^4.4.0",
-    "pg": "^8.23.1",
     "tsx": "^4.23.15"
   }
 }

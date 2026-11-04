@@ -26,7 +26,7 @@ docker run --rm -v "$PWD/infra/observability/prometheus":/p -w /p/tests --entryp
 | -------------------------------- | ---------------------------------------------------------------------------------- |
 | API availability 99.9%           | `montra_http_requests_total`: share of responses that aren't 5xx                   |
 | Dashboard p95 < 2 s              | `montra_http_request_duration_seconds` on routes ending in `/dashboard`            |
-| Import parse p95 < 10 s, 5k rows | **Not measured in production.** See below                                          |
+| Import parse p95 < 10 s, 5k rows | `montra_import_parse_p95_seconds`, an upper bound. See below                       |
 | Queue lag p95 < 30 s             | `quantile_over_time` over the `montra_job_queue_lag_seconds` gauge, per queue      |
 | AI task error rate < 2%          | `montra_ai_calls_total`: `provider_error` and `invalid_output` over all real calls |
 
@@ -46,8 +46,8 @@ The rules follow the metric names in the Phase 11 brief. These parts of the cont
   live in the worker's memory, the job failure, AI and import metrics will read zero here, and every alert on them will
   stay silent.
 
-## The import parse gap
+## Import parse time
 
-The metrics contract has no histogram for parse time, so the 10-second SLO can't be alerted on. The dashboard shows
-import queue lag and job failures as a proxy, and `infra/load/import-parse.js` measures the real number before a release.
-Adding `montra_import_parse_duration_seconds` with a `rows` bucket would close this gap.
+`montra_import_parse_p95_seconds` is the 95th percentile over 24 hours, read from the job table. It counts time in the queue
+and doesn't separate file sizes, so it's an upper bound on the SLO's "5k rows parse in under 10 s". `infra/load/import-parse.js`
+measures the real number before a release.

@@ -28,5 +28,11 @@
     "typescript-eslint": "^8.72.1",
     "vitest": "^4.1.12"
   },
-  "type": "module"
+  "type": "module",
+  "pnpm": {
+    "overrides": {
+      "fastify": "^5.12.7",
+      "postcss": "^8.5.18"
+    }
+  }
 }

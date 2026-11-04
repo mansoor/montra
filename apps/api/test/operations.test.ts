@@ -829,6 +829,7 @@ describe('metrics and reconciliation (NFR-13, OPS-07)', () => {
       'montra_ai_calls_total',
       'montra_ai_suggestions_accepted_ratio',
       'montra_import_failures_total',
+      'montra_import_parse_p95_seconds',
       'montra_reconciliation_failures',
       'montra_backup_job_failures_total',
     ]) {

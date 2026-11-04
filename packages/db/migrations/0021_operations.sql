@@ -496,6 +496,15 @@ create function app.metrics_import_failures() returns table (institution text, f
 $$;
 grant execute on function app.metrics_import_failures() to montra_app;
 
+-- From when it could start, so it counts time in the queue too. It's an upper bound, and any file size.
+create function app.metrics_import_parse() returns double precision
+  language sql stable security definer set search_path = app, pg_temp as $$
+  select coalesce(percentile_cont(0.95) within group (order by extract(epoch from j.finished_at - j.run_after)), 0)
+    from app.job j
+   where j.type = 'import.parse' and j.status = 'succeeded' and j.finished_at > now() - interval '24 hours'
+$$;
+grant execute on function app.metrics_import_parse() to montra_app;
+
 create function app.metrics_ops() returns table (reconciliation_failures bigint, backup_failures bigint, last_reconciled timestamptz)
   language sql stable security definer set search_path = app, pg_temp as $$
   select coalesce((select r.unbalanced_entries + r.read_model_gaps from app.reconciliation_run r

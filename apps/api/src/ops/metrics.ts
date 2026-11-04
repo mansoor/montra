@@ -65,6 +65,11 @@ export class MetricsService {
     labelNames: ['institution', 'file_type'],
     registers: [this.registry],
   });
+  private readonly importParse = new Gauge({
+    name: 'montra_import_parse_p95_seconds',
+    help: 'Import parse time over 24 hours, 95th percentile, including time in the queue',
+    registers: [this.registry],
+  });
   private readonly reconciliation = new Gauge({
     name: 'montra_reconciliation_failures',
     help: 'Problems found by the last nightly reconciliation',
@@ -132,6 +137,9 @@ export class MetricsService {
       for (const r of imports.rows) {
         this.importFailures.set({ institution: r.institution, file_type: r.file_type }, Number(r.failed));
       }
+
+      const parse = await sql<{ p95: number }>`select app.metrics_import_parse() as p95`.execute(trx);
+      this.importParse.set(Number(parse.rows[0]?.p95 ?? 0));
 
       const ops = await sql<{
         reconciliation_failures: string;

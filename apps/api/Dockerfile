@@ -17,10 +17,9 @@ COPY apps/api ./apps/api
 RUN pnpm install --frozen-lockfile --filter "@montra/api..." --filter .
 RUN pnpm --filter "@montra/api..." run build
 # Reinstall without the root tooling, from the same lockfile. `pnpm deploy --legacy` resolves versions afresh, so
-# the image could differ from what CI tested. This is not `--prod` yet: apps/api imports `pg` at runtime but lists
-# it under devDependencies. Once it moves to dependencies, add `--prod` here and the image gets smaller.
+# the image could differ from what CI tested.
 RUN rm -rf node_modules apps/api/node_modules packages/*/node_modules \
- && pnpm install --frozen-lockfile --filter "@montra/api..." \
+ && pnpm install --frozen-lockfile --prod --filter "@montra/api..." \
  && rm -rf apps/api/src apps/api/test apps/api/tsconfig*.json apps/api/vitest.config.ts \
     packages/*/src packages/*/test packages/*/tsconfig*.json packages/*/vitest.config.ts \
  && test -f apps/api/dist/main.js \
