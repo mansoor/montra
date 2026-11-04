@@ -8,8 +8,8 @@
 The clock starts when a scanner or advisory first reports it, not when somebody reads it. If a high is exploitable in how Montra
 uses it, treat it as critical.
 
-> **Partly exercised.** Trivy has been run locally on the filesystem and on saved images, not through the Docker socket as the
-> workflow does. The workflow hasn't run on GitHub, and the process below hasn't been used for a real finding.
+> **Partly exercised.** Trivy has been run locally on the filesystem and on saved images. Only the Kratos image was scanned through
+> the Docker socket as the workflow does. The workflow hasn't run on GitHub, and the process below hasn't been used for a real finding.
 
 ## Where findings come from
 

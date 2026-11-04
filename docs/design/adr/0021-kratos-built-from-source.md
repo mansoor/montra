@@ -39,6 +39,9 @@ known default for its pagination tokens.
 - SQLite is gone from the binary, so `dsn: memory` no longer starts. Nothing uses it: every environment sets `DSN`.
 - The image has no shell, so debugging needs `docker cp` or a debug sidecar. Nothing in Terraform or Compose runs a command in it.
 - Deploys and the `security.yml` image job get slower, because Kratos compiles on each uncached build (about 4 minutes here).
+- **v1.3.1 can't run on the migrated schema.** v26.2.0 adds 23 migrations, including `NOT NULL identity_id` columns, and on them
+  v1.3.1 fails sign-in and identity changes. Nothing has been deployed, so a first deploy isn't affected. An environment already on
+  v1.3.1 would need Kratos stopped while migrating, and rolling back needs `migrate sql down` first ([deploy](../../runbooks/deploy.md)).
 - **Remove this when Ory ships a release that scans clean:** go back to `FROM oryd/kratos:<version>-distroless` and drop the build
   stage.
 
