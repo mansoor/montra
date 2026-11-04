@@ -13,7 +13,11 @@ export const RECOMMENDATION_TYPES = [
   'REC-05',
   'REC-06',
   'REC-07',
-  'REC-08', 'REC-09', 'BIZ-09', 'BIZ-11'] as const;
+  'REC-08',
+  'REC-09',
+  'BIZ-09',
+  'BIZ-11',
+] as const;
 export const RecommendationType = z.enum(RECOMMENDATION_TYPES);
 export type RecommendationType = z.infer<typeof RecommendationType>;
 
