@@ -65,26 +65,29 @@ export class SearchService {
                 from app.transaction t
                where t.workspace_id = ${ctx.workspaceId} and t.deleted_at is null and t.payee_raw is not null
                  and to_tsvector('simple', t.payee_raw) @@ to_tsquery('simple', ${ts})
+                 and ${filter.where}
                group by t.payee_raw order by count(*) desc limit ${SIDE_LISTS}`.execute(trx)
           ).rows
         : [];
-      const receipts = ts
-        ? (
-            await sql<{
-              id: string;
-              merchant: string | null;
-              d: string | null;
-              total: string | null;
-              currency: string | null;
-              ocr: string | null;
-            }>`
+      // Amounts and tags are about transactions: a receipt can't be held to them, so it isn't listed as if it had been.
+      const receipts =
+        ts && !amounts.length && !tags.length
+          ? (
+              await sql<{
+                id: string;
+                merchant: string | null;
+                d: string | null;
+                total: string | null;
+                currency: string | null;
+                ocr: string | null;
+              }>`
               select r.id, r.merchant, r.receipt_date::text as d, r.total_minor::text as total, r.currency, r.ocr_text as ocr
                 from app.receipt r
                where r.workspace_id = ${ctx.workspaceId} and r.deleted_at is null
                  and r.search @@ to_tsquery('simple', ${ts})
                order by r.receipt_date desc nulls last limit ${SIDE_LISTS}`.execute(trx)
-          ).rows
-        : [];
+            ).rows
+          : [];
       return {
         query: q,
         transactions: rows.slice(0, TRANSACTIONS).map((r) => ({

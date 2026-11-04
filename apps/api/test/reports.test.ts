@@ -402,6 +402,14 @@ describe('search (RPT-05)', () => {
     expect((await search('=30.00')).transactions.map((t: any) => t.payee)).toEqual(['TRADER JOES']);
   });
 
+  it('holds the payee list to the whole query, so it never counts what the search left out', async () => {
+    expect((await search('corner >=25')).payees).toEqual([expect.objectContaining({ name: 'CORNER CAFE' })]);
+    const none = await search('corner >100000');
+    expect(none.transactions).toEqual([]);
+    expect(none.payees).toEqual([]);
+    expect(none.receipts).toEqual([]);
+  });
+
   it('combines words, tags and amounts', async () => {
     expect((await search('tag:weekly >40')).transactions.map((t: any) => t.payee)).toEqual([
       'WHOLE FOODS MARKET',

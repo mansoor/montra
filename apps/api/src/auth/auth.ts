@@ -143,7 +143,10 @@ export class AuthGuard implements CanActivate {
     ) {
       throw new AppError(403, 'email.unverified', 'Verify your email address before adding financial data');
     }
-    if ((await this.isDeleting(user.id)) && !/\/v1\/me\/deletion(\?|$)/.test(req.url)) {
+    // The way back stays open, and so does reading their own profile: the page that explains this needs their language.
+    const stillOpen =
+      /\/v1\/me\/deletion(\?|$)/.test(req.url) || (req.method === 'GET' && /\/v1\/me(\?|$)/.test(req.url));
+    if (!stillOpen && (await this.isDeleting(user.id))) {
       throw new AppError(
         403,
         'account.deleting',

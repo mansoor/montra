@@ -40,6 +40,9 @@ export function GlobalSearchBox({ workspaceId }: { workspaceId: string }) {
   );
 }
 
+/** Tells the bell something was marked read, since that doesn't change the page it's on. */
+export const NOTIFICATIONS_CHANGED = 'montra:notifications-changed';
+
 /** NOT-01: the inbox, with how much is unread. Checked as you move around rather than held open. */
 export function NotificationBell({ workspaceId }: { workspaceId: string }) {
   const { t } = useI18n();
@@ -47,12 +50,16 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
   const [unread, setUnread] = useState(0);
   useEffect(() => {
     let alive = true;
-    browserApi.notificationsUnread(workspaceId).then(
-      (n) => alive && setUnread(n),
-      () => undefined,
-    );
+    const check = () =>
+      void browserApi.notificationsUnread(workspaceId).then(
+        (n) => alive && setUnread(n),
+        () => undefined,
+      );
+    check();
+    window.addEventListener(NOTIFICATIONS_CHANGED, check);
     return () => {
       alive = false;
+      window.removeEventListener(NOTIFICATIONS_CHANGED, check);
     };
   }, [workspaceId, pathname]);
   return (

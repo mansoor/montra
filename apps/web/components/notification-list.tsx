@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { NotificationDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from './i18n';
+import { NOTIFICATIONS_CHANGED } from './shell/header-tools';
 import { useAction } from './use-action';
 
 /** NOT-01: the inbox. Opening one marks it read. */
@@ -11,6 +12,7 @@ export function NotificationList({ workspaceId, items }: { workspaceId: string; 
   const { run, busy, t } = useAction();
   const { locale } = useI18n();
   if (items.length === 0) return <p className="card text-sm text-muted">{t('notifications.empty')}</p>;
+  const changed = () => window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
   const when = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
   return (
     <div className="space-y-3">
@@ -18,7 +20,7 @@ export function NotificationList({ workspaceId, items }: { workspaceId: string; 
         type="button"
         className="btn-secondary"
         disabled={busy || items.every((n) => n.read)}
-        onClick={() => run(() => browserApi.markAllNotificationsRead(workspaceId))}
+        onClick={() => run(() => browserApi.markAllNotificationsRead(workspaceId)).then(changed)}
       >
         {t('notifications.mark_all')}
       </button>
@@ -38,7 +40,7 @@ export function NotificationList({ workspaceId, items }: { workspaceId: string; 
                   href={n.link}
                   onClick={() => {
                     if (!n.read)
-                      void browserApi.markNotificationRead(workspaceId, n.id).catch(() => undefined);
+                      void browserApi.markNotificationRead(workspaceId, n.id).then(changed, () => undefined);
                   }}
                 >
                   {n.title}
@@ -54,7 +56,7 @@ export function NotificationList({ workspaceId, items }: { workspaceId: string; 
                 type="button"
                 className="text-sm underline"
                 disabled={busy}
-                onClick={() => run(() => browserApi.markNotificationRead(workspaceId, n.id))}
+                onClick={() => run(() => browserApi.markNotificationRead(workspaceId, n.id)).then(changed)}
               >
                 {t('notifications.mark_read')}
               </button>

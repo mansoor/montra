@@ -1026,6 +1026,9 @@ describe('leaving (NFR-06, BAK-09)', () => {
     expect(blocked.body.code ?? blocked.body.error?.code).toBe('account.deleting');
     // The way back stays open.
     expect((await leaving.get('/v1/me/deletion')).status).toBe(200);
+    // The page saying so needs their language, and nothing about them can change meanwhile.
+    expect((await leaving.get('/v1/me')).status).toBe(200);
+    expect((await leaving.patch('/v1/me', { displayName: 'Changed' })).status).toBe(403);
     const flagged = await admin.query(`select deleted_at is not null as d from app.workspace where id = $1`, [
       soleOwned,
     ]);
