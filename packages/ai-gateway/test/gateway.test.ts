@@ -801,3 +801,48 @@ describe('flag_separation (BIZ-03)', () => {
     expect(res.ok && res.value).toEqual([]);
   });
 });
+
+describe('flag_capital (RNT-09)', () => {
+  const input = {
+    items: [
+      {
+        id: 'a',
+        payee: 'Acme Roof Replacement',
+        amountMinor: -120000n,
+        currency: 'USD',
+        category: 'Repairs',
+      },
+      { id: 'b', payee: 'Plumber call-out', amountMinor: -60000n, currency: 'USD', category: 'Repairs' },
+    ],
+  };
+
+  it('flags what may be capital, under the real id', async () => {
+    const res = await createGateway().flagCapital(input, ctxOf(new MemoryStore()));
+    expect(res.ok && res.value.map((f) => f.id)).toEqual(['a']);
+  });
+
+  it('drops low confidence and ids it was not given', async () => {
+    const fake = new Scripted('fake', () => ({
+      ok: true as const,
+      json: {
+        flags: [
+          { id: 't1', confidence: 0.4, reason: 'unsure' },
+          { id: 't9', confidence: 0.9, reason: 'made up' },
+          { id: 't2', confidence: 0.9, reason: 'fine' },
+        ],
+      },
+      usage,
+      model: 'fake',
+    }));
+    const res = await createGateway({ adapterFactory: () => fake }).flagCapital(
+      input,
+      ctxOf(new MemoryStore()),
+    );
+    expect(res.ok && res.value).toEqual([{ id: 'b', confidence: 0.9, reason: 'fine' }]);
+  });
+
+  it('does nothing when AI is off', async () => {
+    const res = await createGateway().flagCapital(input, ctxOf(new MemoryStore(), { mode: 'off' }));
+    expect(res).toMatchObject({ ok: false, reason: 'off' });
+  });
+});

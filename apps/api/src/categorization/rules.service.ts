@@ -14,7 +14,7 @@ import type {
 import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { JobQueue, type Job, type JobContext, Worker } from '../jobs/queue.js';
-import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
+import { NOT_OWNED, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { Categorizer, ruleRecord } from './categorizer.service.js';
 
@@ -360,7 +360,7 @@ export class RulesService {
         .where('t.workspace_id', '=', ctx.workspaceId)
         .where('t.status', '=', 'posted')
         .where('t.deleted_at', 'is', null)
-        .where(sql<boolean>`t.spec->>'type' = 'standard' and t.spec->>'payslipId' is null`)
+        .where(sql<boolean>`t.spec->>'type' = 'standard' and ${NOT_OWNED}`)
         .orderBy('t.txn_date', 'desc')
         .orderBy('t.id', 'desc')
         .limit(SCAN_CHUNK);

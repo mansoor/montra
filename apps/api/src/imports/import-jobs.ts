@@ -30,6 +30,7 @@ import { Db } from '../db/database.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
 import { BusinessJobs } from '../business/business-jobs.service.js';
+import { RentalJobs } from '../rentals/rental-jobs.service.js';
 import { ownerOf, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { JobQueue, PermanentJobError, Worker, type Job, type JobContext } from '../jobs/queue.js';
@@ -93,6 +94,7 @@ export class ImportJobs {
     @Inject(AiService) private readonly ai: AiService,
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(BusinessJobs) private readonly business: BusinessJobs,
+    @Inject(RentalJobs) private readonly rentals: RentalJobs,
   ) {}
 
   register(): void {
@@ -746,6 +748,9 @@ export class ImportJobs {
         return { added, matched, skipped, failed };
       });
       // BIZ-05, BIZ-06: a new statement may hold the payment of an open invoice or bill. A failure here isn't the import's.
+      await this.rentals
+        .matchPayments(ctx)
+        .catch((e: Error) => this.logger.warn(`Matching rent: ${e.message}`));
       await this.business
         .matchPayments(ctx)
         .catch((e: Error) => this.logger.warn(`Matching payments: ${e.message}`));

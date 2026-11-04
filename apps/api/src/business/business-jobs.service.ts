@@ -26,6 +26,7 @@ import { BillsService } from './bills.service.js';
 import { BusinessReportsService } from './business-reports.service.js';
 import { BusinessService } from './business.service.js';
 import { InvoicesService } from './invoices.service.js';
+import { NOT_OWNED } from '../transactions/poster.js';
 import { businessEntities, profitBetween, todayOf, type BusinessEntity, type Ctx } from './shared.js';
 
 /** Flags interrupt the user: look only at what's recent, and only at so many a night. */
@@ -153,7 +154,7 @@ export class BusinessJobs {
          and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
          and (t.spec->>'amount')::bigint * ${sign}::bigint > 0
          and t.txn_date between ${from} and ${to}
-         and t.spec->>'payslipId' is null and t.spec->>'invoiceId' is null and t.spec->>'billId' is null
+         and ${NOT_OWNED}
        order by t.txn_date, t.id
        limit 2000`.execute(trx);
     return rows.map((r) => ({
@@ -210,7 +211,7 @@ export class BusinessJobs {
          and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
          and (t.spec->>'amount')::bigint < 0 and jsonb_array_length(t.spec->'splits') = 1
          and t.txn_date >= ${since} and a.is_category and a.system_role is null
-         and t.spec->>'payslipId' is null and t.spec->>'invoiceId' is null and t.spec->>'billId' is null
+         and ${NOT_OWNED}
          and not exists (select 1 from app.insight i where i.workspace_id = t.workspace_id
                           and i.dedupe_key = 'separation:' || t.id::text)
        order by t.txn_date desc, t.id

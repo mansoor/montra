@@ -251,6 +251,8 @@ export class FakeAdapter implements ProviderAdapter {
         return fakeTaxLines(input);
       case 'flag_separation':
         return fakeSeparation(input);
+      case 'flag_capital':
+        return fakeCapital(input);
       case 'word_summary': {
         // Restates the title and figures verbatim, so it always passes the numbers check.
         const figures = Object.entries((input.figures as Record<string, string> | undefined) ?? {})
@@ -509,6 +511,22 @@ function fakeSeparation(input: Json) {
     }
   }
   return { flags };
+}
+
+const CAPITAL_LOOKING = /\b(roof|furnace|hvac|remodel|renovation|water heater|new windows)\b/;
+
+/** Known words are flagged at high confidence. */
+function fakeCapital(input: Json) {
+  const items = (input.items as { id: string; payee: string }[] | undefined) ?? [];
+  return {
+    flags: items
+      .filter((t) => CAPITAL_LOOKING.test(t.payee.toLowerCase()))
+      .map((t) => ({
+        id: t.id,
+        confidence: 0.9,
+        reason: 'This may add value rather than repair something.',
+      })),
+  };
 }
 
 function fakePropose(input: Json) {

@@ -15,6 +15,9 @@ export const UpdateTransactionRequest = z
     categoryId: Id,
     splits: z.array(SplitInput).min(1).max(250),
     memberId: Id.nullable(),
+    /** RNT-06: moves every split to this property, or off any with null. */
+    propertyId: Id.nullable(),
+    unitId: Id.nullable(),
     memo: z.string().max(2000).nullable(),
     tags: z.array(z.string().trim().min(1).max(50)).max(20),
     reviewState: z.enum(['reviewed', 'needs_review']),

@@ -664,6 +664,8 @@ export const ScheduleEDto = z.object({
       yourShare: MinorDto,
     }),
   ),
+  /** In the totals, on no line until the category is mapped. */
+  unmapped: z.array(z.object({ categoryId: Id, name: z.string(), amount: MinorDto })),
   totalIncome: MinorDto,
   totalExpenses: MinorDto,
   totalNet: MinorDto,

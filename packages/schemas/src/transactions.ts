@@ -9,6 +9,9 @@ export const SplitInput = z.object({
   amount: MoneyDto,
   memberId: Id.nullable().optional(),
   memo: z.string().max(500).optional(),
+  /** RNT-06: the property and unit this part belongs to. */
+  propertyId: Id.nullable().optional(),
+  unitId: Id.nullable().optional(),
 });
 
 /**
@@ -25,6 +28,9 @@ export const CreateTransactionRequest = z
     categoryId: Id.optional(),
     splits: z.array(SplitInput).min(1).max(250).optional(),
     memberId: Id.nullable().optional(),
+    /** RNT-06: tags every split, unless a split says otherwise. */
+    propertyId: Id.nullable().optional(),
+    unitId: Id.nullable().optional(),
     memo: z.string().max(2000).optional(),
     tags: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
     /**
@@ -115,6 +121,8 @@ export const TransactionDto = z.object({
         amount: z.string(),
         memberId: z.string().nullable(),
         memo: z.string().nullable(),
+        propertyId: z.string().nullable(),
+        unitId: z.string().nullable(),
       }),
     )
     .nullable(),

@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import { addDays, calendarDate, formatMoney, money, type CalendarDate } from '@montra/domain';
 import { detectAnomalies, detectRecurring, type HistoryTxn, type PayeeSeries } from '@montra/categorize';
+import { RentalOpsService } from '../rentals/rental-ops.service.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import type { AcceptInsightRequest, InsightDto } from '@montra/schemas';
 import { Db } from '../db/database.js';
@@ -23,6 +24,7 @@ export class InsightsService {
     @Inject(Worker) private readonly worker: Worker,
     @Inject(RecurringService) private readonly recurring: RecurringService,
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
+    @Inject(RentalOpsService) private readonly rentalOps: RentalOpsService,
   ) {}
 
   register(): void {
@@ -237,6 +239,16 @@ export class InsightsService {
         startDate: calendarDate(d.nextDate),
         autoCreate: 'scheduled',
       });
+    }
+    if (insight.kind === 'capital_improvement') {
+      // RNT-09: moves it to the property's improvements account and starts depreciating it.
+      const d = insight.data as { propertyId: string | null };
+      const propertyId = req.propertyId ?? d.propertyId;
+      if (!propertyId)
+        throw unprocessable('capital.property', 'Choose which property this improvement belongs to');
+      await this.db.run(ctx, (trx) =>
+        this.rentalOps.capitalize(trx, ctx, insight.transaction_id!, propertyId),
+      );
     }
     if (insight.kind === 'separation') {
       // BIZ-03: one tap moves it to the other side; money between the two is recorded as an owner draw or contribution

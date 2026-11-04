@@ -38,6 +38,9 @@ export interface SplitSpec {
   amount: string;
   memberId: string | null;
   memo?: string | null;
+  /** RNT-06: which property and unit this part belongs to. */
+  propertyId?: string | null;
+  unitId?: string | null;
 }
 
 export type TransactionSpec =
@@ -58,6 +61,10 @@ export type TransactionSpec =
       /** The same for an invoice or bill this pays (ADR-0017). */
       invoiceId?: string;
       billId?: string;
+      /** The same for rent, a security deposit or a mortgage payment (ADR-0018). */
+      leaseId?: string;
+      depositLeaseId?: string;
+      loanId?: string;
       /** The payslip's employer: this deposit is the pay its expected income is waiting for (PAY-07). */
       employerId?: string;
       /**
@@ -80,20 +87,41 @@ export type TransactionSpec =
       fxRateTo?: string;
     };
 
-export type TransactionOwner = 'payslip' | 'invoice' | 'bill';
+export type TransactionOwner = 'payslip' | 'invoice' | 'bill' | 'lease' | 'security_deposit' | 'loan';
 
-/** What owns this transaction, if anything (ADR-0016, ADR-0017). Its ledger side changes only through the owner. */
+const OWNER_FIELDS: readonly (readonly [string, TransactionOwner])[] = [
+  ['payslipId', 'payslip'],
+  ['invoiceId', 'invoice'],
+  ['billId', 'bill'],
+  ['leaseId', 'lease'],
+  ['depositLeaseId', 'security_deposit'],
+  ['loanId', 'loan'],
+];
+
+/** What owns this transaction, if anything (ADR-0016..18). Its ledger side changes only through the owner. */
 export function ownerOf(spec: unknown): TransactionOwner | null {
-  const s = spec as { payslipId?: unknown; invoiceId?: unknown; billId?: unknown } | null | undefined;
-  if (s?.payslipId) return 'payslip';
-  if (s?.invoiceId) return 'invoice';
-  if (s?.billId) return 'bill';
-  return null;
+  const s = spec as Record<string, unknown> | null | undefined;
+  return OWNER_FIELDS.find(([field]) => s?.[field])?.[1] ?? null;
 }
+
+const OWNER_WORDS: Record<TransactionOwner, string> = {
+  payslip: 'a payslip',
+  invoice: 'an invoice',
+  bill: 'a bill',
+  lease: 'a lease',
+  security_deposit: 'a lease',
+  loan: 'a mortgage',
+};
 
 export function assertNotOwned(spec: unknown): void {
   const owner = ownerOf(spec);
-  if (owner) throw unprocessable(`${owner}.managed`, `This comes from a ${owner}: change it on the ${owner}`);
+  if (owner) {
+    const word = OWNER_WORDS[owner];
+    throw unprocessable(
+      `${owner}.managed`,
+      `This comes from ${word}: change it on ${word.replace(/^an? /, 'the ')}`,
+    );
+  }
 }
 
 export interface ForeignSpec {
@@ -143,6 +171,9 @@ export class ReconciledError extends AppError {
     );
   }
 }
+
+/** The same check in SQL, for a transaction aliased `t`: lines free to be linked or changed in bulk. */
+export const NOT_OWNED = sql.raw(OWNER_FIELDS.map(([field]) => `t.spec->>'${field}' is null`).join(' and '));
 
 @Injectable()
 export class TransactionPoster {
@@ -288,7 +319,14 @@ export class TransactionPoster {
       const ref = await this.ledger.accountRef(trx, ctx.workspaceId, s.accountId);
       if (ref.id === account.id)
         throw unprocessable('split.same_account', 'A split cannot target the paying account');
-      splits.push({ account: ref, amount: BigInt(s.amount), memberId: s.memberId, memo: s.memo ?? null });
+      splits.push({
+        account: ref,
+        amount: BigInt(s.amount),
+        memberId: s.memberId,
+        memo: s.memo ?? null,
+        propertyId: s.propertyId ?? null,
+        unitId: s.unitId ?? null,
+      });
     }
     const resolver = await this.ledger.resolver(
       trx,

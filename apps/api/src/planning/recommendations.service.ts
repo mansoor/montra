@@ -46,6 +46,7 @@ import { FlowService } from './flow.service.js';
 import { GoalsService } from './goals.service.js';
 import { PlanningData, type Ctx } from './data.js';
 import { BusinessJobs } from '../business/business-jobs.service.js';
+import { RentalJobs } from '../rentals/rental-jobs.service.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { wordSummary } from './wording.js';
 
@@ -89,6 +90,7 @@ export class RecommendationsService {
     @Inject(RecurringService) private readonly recurring: RecurringService,
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(BusinessJobs) private readonly business: BusinessJobs,
+    @Inject(RentalJobs) private readonly rentals: RentalJobs,
   ) {}
 
   // ----- Jobs (TZ-04) ------------------------------------------------------------------------------------
@@ -110,7 +112,8 @@ export class RecommendationsService {
       const materialized = await this.recurring.materialize(ctx);
       const recs = await this.run(ctx);
       const business = await this.business.nightly(ctx);
-      return { ...materialized, ...recs, business };
+      const rentals = await this.rentals.nightly(ctx);
+      return { ...materialized, ...recs, business, rentals };
     });
     this.worker.register('planning.recommend', async (job: Job) => {
       if (!job.workspace_id || !job.created_by) throw new Error('Job without workspace or user');
