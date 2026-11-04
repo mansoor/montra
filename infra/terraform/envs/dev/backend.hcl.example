@@ -1,0 +1,6 @@
+# Copy to backend.hcl and fill in. See docs/runbooks/first-time-setup.md for creating the bucket.
+bucket         = "REPLACE-terraform-state"
+key            = "montra/dev/terraform.tfstate"
+region         = "us-east-1"
+encrypt        = true
+dynamodb_table = "REPLACE-terraform-locks"

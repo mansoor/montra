@@ -13,3 +13,11 @@ coverage/
 .expo/
 .claude/
 .data/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+infra/terraform/envs/*/backend.hcl
+infra/terraform/envs/*/terraform.tfvars

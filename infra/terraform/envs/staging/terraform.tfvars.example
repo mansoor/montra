@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
+region         = "us-east-1"
+replica_region = "us-west-2"
+backup_account_id = "000000000000"
+
+domain_name        = "montra-staging.example"
+cloudflare_zone_id = "REPLACE"
+bucket_prefix      = "REPLACE-unique-prefix"
+github_repository  = "owner/montra"
+
+alarm_emails         = ["oncall@montra.example"]
+support_email        = "support@montra.example"
+dmarc_report_address = "dmarc@montra.example"
+
+# Stripe price ids are not secret. The API key and webhook secret go in Secrets Manager.
+stripe_price_pro_monthly = ""
+stripe_price_pro_yearly  = ""
