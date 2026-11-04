@@ -41,6 +41,8 @@ FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     PORT=3000 \
     NEXT_TELEMETRY_DISABLED=1
+# npm, npx, corepack and yarn are not used at runtime. Removing them also removes their dependencies from image scans.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 WORKDIR /app
 COPY --from=build --chown=node:node /repo ./
 WORKDIR /app/apps/web

@@ -32,9 +32,11 @@ FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     PORT=4000 \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/rds-global-bundle.pem
-# Aurora requires TLS and its CA is not in Node's trust store. Create the directory first: with --chmod, ADD
-# gives any parent directory it has to create the same mode, which locks non-root users out of /etc/ssl.
-RUN install -d -m 755 /etc/ssl/certs
+# npm, npx, corepack and yarn are not used at runtime. Removing them also removes their dependencies from image scans.
+# Aurora requires TLS and its CA is not in Node's trust store. Create the directory first: with --chmod, ADD gives any
+# parent directory it has to create the same mode, which locks non-root users out of /etc/ssl.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-* \
+ && install -d -m 755 /etc/ssl/certs
 ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
 WORKDIR /app
 COPY --from=build --chown=node:node /repo ./
