@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.11.0-dev.1 — Phase 10: reports, search, notifications, data ownership
+
+- **Reports** (RPT-01..04, RCP-09; ADR-0019): thirteen reports with one shape, filters kept in the URL, saved reports, every row and
+  bar leading to its transactions, and PDF, CSV and Excel export. Consolidated figures use the period-end rate and say when a rate
+  is missing.
+- **Search** (RPT-05): from the header, across payees, descriptions, encrypted notes and receipt text, with `>500` and `tag:travel`.
+- **Ask** (RPT-06): a question in plain words. The AI only works out what's being asked; the figures, the chart and the transactions
+  come from SQL, and no amounts reach the provider.
+- **Notifications** (NOT-01..03, TZ-04): an inbox and bell, email and push per type, quiet hours, a daily cap and a weekly digest,
+  all in your time zone. Push and email carry no figures, apart from the digest's email. One-click unsubscribe (OPS-10).
+- **Backup and restore** (BAK-04..06, NFR-06): a file with JSON, CSV, Excel and your documents, optionally encrypted with a password
+  that isn't stored, on the web and the phone. Scheduled backups email a link. Restore previews first, then adds a new workspace or
+  extra books, all or nothing.
+- **Tax package** (RPT-04, UP-10): a year's reports as PDF and CSV with its receipts, per set of books.
+- **Trash, storage and leaving** (BAK-06, BAK-08, BAK-09): deleted transactions and receipts come back for 30 days; a storage meter
+  and a quota; deleting your account closes it at once, can be undone, and purges inside 30 days.
+- **Settings** (OPS-13, AUTH-12, NFR-05, UP-06): notifications, security activity, backups and your data, and a plain page on privacy
+  per AI mode. On the phone: an inbox, channel switches, back up now, security activity, delete account, and the rest to read.
+- **Not done**: Drive, OneDrive, Dropbox and iCloud backups (BAK-05). SPF, DKIM and DMARC, and ageing out of infrastructure backups,
+  with Phase 11. Editing profile, family and entities on the phone (OPS-13). Password changes, session revocations and support
+  access in the security log (AUTH-12).
+
 ## v0.10.0-dev.1 — Phase 9: rental properties
 
 - **Properties, units, tenants and leases** (RNT-01..03; ADR-0018): a portfolio per rental entity, with lease documents. A unit's

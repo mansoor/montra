@@ -144,17 +144,36 @@ export default async function ReportPage({
       />
       {bars.length > 0 && (
         <section className="card space-y-2" aria-hidden>
-          {bars.map((b) => (
-            <div key={b.key} className="grid grid-cols-[minmax(0,10rem)_1fr] items-center gap-2 text-xs">
-              <span className="truncate">{b.label}</span>
-              <span className="h-3 rounded bg-sunken">
-                <span
-                  className="block h-3 rounded bg-brand-600"
-                  style={{ width: `${barPercent(b.value, largest)}%` }}
-                />
-              </span>
-            </div>
-          ))}
+          {bars.map((b) => {
+            const drill = report.rows.find((r) => r.key === b.key)?.drill;
+            const bar = (
+              <>
+                <span className="truncate">{b.label}</span>
+                <span className="h-3 rounded bg-sunken">
+                  <span
+                    className="block h-3 rounded bg-brand-600"
+                    style={{ width: `${barPercent(b.value, largest)}%` }}
+                  />
+                </span>
+              </>
+            );
+            const row = 'grid grid-cols-[minmax(0,10rem)_1fr] items-center gap-2 text-xs';
+            // RPT-03. Out of the tab order: the table below has the same links for keyboards and screen readers.
+            return drill ? (
+              <Link
+                key={b.key}
+                href={drillHref(base, drill)}
+                tabIndex={-1}
+                className={`${row} hover:underline`}
+              >
+                {bar}
+              </Link>
+            ) : (
+              <div key={b.key} className={row}>
+                {bar}
+              </div>
+            );
+          })}
         </section>
       )}
       {lines && lines.labels.length > 1 && (

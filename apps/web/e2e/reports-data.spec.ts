@@ -73,7 +73,11 @@ test('reports drill down and export, and search and ask find the same money', as
   expect(csv).toContain('Dining out');
   expect(csv).not.toContain('Fresh Mart');
 
-  // The row leads to the transactions behind it.
+  // The bar and the row lead to the transactions behind them.
+  await expect(page.locator('a[tabindex="-1"]', { hasText: 'Dining out' })).toHaveAttribute(
+    'href',
+    /\/transactions/,
+  );
   await rows.filter({ hasText: 'Dining out' }).getByRole('link').click();
   await expect(page.getByRole('link', { name: /Corner Cafe/ }).first()).toBeVisible();
   await expect(page.getByText('Fresh Mart')).toHaveCount(0);
