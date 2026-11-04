@@ -44,16 +44,30 @@ names are in the bank statements.
    flagged in code (the IRS de minimis safe harbor figure), and AI is asked about smaller ones from $500. Payee and category go to
    the provider, and no tenant data. Accepting moves the item to the property's improvements account and adds a depreciation row.
 
-8. **Ownership share applies only to the tax summary.** Reports show the whole property. Schedule E also shows "your share" using
-   `ownership_bps`, so a part owner sees both. Partnerships file differently, and that's for their accountant.
+8. **Ownership share applies to tax and net worth.** Reports show the whole property. Schedule E also shows "your share" using
+   `ownership_bps`, the tax set-aside is worked out on it, and net worth counts that share of the property's value. Partnerships
+   file differently, and that's for their accountant. A loan is the user's own account, so it counts as entered.
 
-9. **One owner check.** `ownerOf` gains `lease`, `securityDeposit` and `loan`: edits, deletes and import undo treat these
-   transactions like a payslip's.
+9. **One owner check.** `ownerOf` gains `lease`, `security_deposit` and `loan`: edits, deletes and import undo treat these
+   transactions like a payslip's. `NOT_OWNED` is the same check in SQL, used wherever lines are matched or changed in bulk, which
+   also closed a Phase 8 gap: applying a rule or attaching a receipt only skipped payslips.
+
+10. **A portfolio is taxed like a business for planning.** It shares the tax rate, set-aside and estimate with businesses (REC-09), on
+    your share of each property after depreciation so far, so it agrees with Schedule E. Estimated-tax dates appear only once its
+    owner sets a rate, because many landlords owe none.
+
+11. **A property's value is in net worth** (FLOW-07), or its purchase price until a value is entered, from the purchase date. It's one
+    figure, so the trend moves only when a property is bought. Without this a mortgage would count with nothing to set against it.
+
+12. **A portfolio ratio needs every property's figure.** Cap rate and cash on cash over the portfolio show nothing while any property
+    lacks its value or cash invested, since dividing all the income by a partial total would overstate them.
 
 ## Consequences
 
 - A charge's status can change when an older payment is removed, because payments re-apply. That's correct, and it can surprise.
 - Rent isn't prorated: a mid-month move-in gets a full charge, which the landlord edits. Common practice varies by lease.
+- A lease and an entered expected-income item for the same rent both count in the forecast. The rent roll doesn't replace entered
+  income, so anyone using leases shouldn't also enter that rent.
 - Extra principal payments and rate changes aren't modeled: the schedule is what the terms say, and the account balance is what
   was actually paid.
 - A property's budget is its own small model (expected rent, planned costs, capex reserve) and doesn't use the household budget engine,

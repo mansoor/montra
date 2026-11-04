@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-04, at the end of Phase 8 (on `claude/phase8-contracts`, PR open). Keep this file current:
+_Last updated 2026-11-04, at the end of Phase 9 (on `claude/phase9-contracts`, PR open). Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -13,14 +13,14 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 | | |
 | --- | --- |
-| **Integration branch** | `develop`: Phases 0–7 merged. Last merge was PR #14 at `b122950` |
+| **Integration branch** | `develop`: Phases 0–8 merged. Last merge was PR #15 at `bd28b3f` |
 | **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
-| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 |
+| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 |
 | **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements** | 252 IDs in total: **147 done, 39 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge the Phase 8 PR, tag `v0.9.0-dev.1`, then **Phase 9: rental properties** |
+| **Requirements** | 252 IDs in total: **162 done, 39 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
+| **Next** | Merge the Phase 9 PR, tag `v0.10.0-dev.1`, then **Phase 10: reports, search, notifications, data ownership** |
 
-### Test suite at the end of Phase 8 (green locally)
+### Test suite at the end of Phase 9 (green locally)
 
 | Suite | Tests |
 | --- | --- |
@@ -64,8 +64,8 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | 6 | Budgeting, money flow and recommendations | ✅ done (device checks pending) | Budgets, goals, flow, recommendations, read models, web restyle, mobile; see §7a |
 | 7 | Family members and payslips | ✅ done (device checks pending) | Payslip capture and posting, deposit matching, reports by member, privacy; see §7b |
 | 8 | Small business | ✅ done (device checks pending) | Invoices, bills, mileage, Schedule C, estimated tax, accountant export; see §7c |
-| **9** | **Rental properties** | ⏭ **next** | Units, leases, rent roll, Schedule E, depreciation, metrics |
-| 10 | Reports, search, notifications, data ownership | not started | Report catalogue, search, notification engine, export, backup/restore |
+| 9 | Rental properties | ✅ done (device checks pending) | Leases, rent roll, deposits, mortgages, Schedule E, depreciation, metrics; see §7d |
+| **10** | **Reports, search, notifications, data ownership** | ⏭ **next** | Report catalogue, search, notification engine, export, backup/restore |
 | 11 | Hardening and launch | not started | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
 
 Scope, deliverables and exit criteria for each phase are in `docs/design/01-phased-plan.md`.
@@ -195,7 +195,7 @@ finished:
 - **Finished by a later phase, as planned:**
   - AIA-01: summaries and Q&A, in Phases 6 and 10.
   - AIA-12 and NFR-14: tax outputs, in Phase 8.
-  - AI-02: property and unit, in Phase 9.
+  - AI-02: AI doesn't suggest a property or unit. They're tagged by hand or by rent, mortgage and capital improvement links.
   - PLT-03 and UP-07: mobile screens arrive with each feature phase.
   - UP-06: the privacy center, in Phase 10.
   - AI-07: logos, via reference data.
@@ -608,6 +608,50 @@ Phase 8 leftovers, not blocking:
 - Reminders appear on the calendar and as suggestions; push and email reminders come with the notification engine in Phase 10.
 - Mobile: invoices and bills are read-only, and there's no device run yet.
 - BIZ-08, BIZ-14 and BIZ-15 (could-haves) aren't started.
+
+## 7d. Phase 9, rental properties (done)
+
+Branch `claude/phase9-contracts`. The design is ADR-0018.
+
+| Step | State | What |
+| --- | --- | --- |
+| 1. Contracts | ✅ | Migration 0019 (property, unit, tenant, lease, rent_charge, rent_payment, security_deposit_event, allocation_rule, loan_schedule, loan_payment, depreciation_schedule, rental_reminder, maintenance_log, property_budget), DTOs, `packages/domain/src/rental.ts` |
+| 2. AI task | ✅ | `flag_capital`: payee, rounded amount and category only, and the owner decides |
+| 3. API | ✅ | `apps/api/src/rentals/`: properties and leases, rent, mortgages, operations, reports, nightly jobs. Property and unit tags on splits. Rent and mortgages in the forecast and calendar; property values in net worth |
+| 4. Web | ✅ | Rentals: overview, properties, tenants, leases, rent roll, arrears, mortgages, maintenance, reminders, Schedule E, settings. Property on the transaction editor, split across properties, capital improvement in insights |
+| 5. Mobile | ✅ (device run pending) | More → Rentals: the month's rent, arrears, and logging a payment |
+| 6. Integration | ✅ | `apps/api/test/rentals.test.ts`, RLS test, `apps/web/e2e/rentals.spec.ts` |
+
+Rules the code depends on (don't undo these):
+
+- **What's paid is derived.** `applyRentPayments` applies a lease's payments to its charges oldest first each time it's read. There are
+  no rows linking a payment to a charge, so removing one re-applies the rest.
+- **Charges are written, and existing ones keep their amounts.** `ensureCharges` runs on lease create and edit, and nightly, through
+  the end of next month. GET never writes. A charge someone edited stays edited, and a waived late fee isn't brought back.
+- **One owner check, in two forms.** `ownerOf(spec)` and `NOT_OWNED` (SQL) in `transactions/poster.ts` cover payslips, invoices, bills,
+  leases, deposits and loans. Anything new that matches lines or changes them in bulk must use them.
+- **Matching stays in code and stays conservative.** No tenant names go to AI (ADR-0018 §3). A name shared by two leases proves nothing,
+  and an exact amount needs nothing competing on either side. Offering is always safe; a wrong link misstates income.
+- **Escrow is an operating expense when paid in.** NOI here includes Taxes and Insurance from escrow and excludes principal and interest.
+  That can differ from the Form 1098 (ADR-0018 §6).
+- **Depreciation is never in the ledger.** It's added on Schedule E and in the set-aside, so those two agree, and reports don't include it.
+- **The category for rent, interest, taxes and insurance is found by tax line**, not name, because the owner may rename it.
+- **A portfolio ratio needs every property's figure** (ADR-0018 §12). A dash is correct while one is missing.
+
+Phase 9 leftovers, not blocking:
+
+- **Not tried on the real thing:** `flag_capital` against the real provider, and the mobile screens on a device.
+- The Schedule E export is CSV or Excel. The one-click tax package (UP-10) comes with the Phase 10 export work, so UP-10 stays partial.
+- A lease and an entered expected-income item for the same rent both count in the forecast. The household budget's expected income
+  still comes from entered items, so BUD-03 stays partial.
+- A mortgage's schedule follows its terms: extra principal and rate changes aren't modeled. Escrow goes straight to Taxes and Insurance
+  rather than through an escrow account.
+- Rent isn't prorated: a mid-month move-in gets a full charge, which the landlord edits.
+- A detected recurring bill for the same payee as a mortgage can show twice on the calendar. Invoices and bills have the same limit.
+- Foreign-currency leases aren't handled separately: a portfolio's rent is in its own currency.
+- Reminders are on a list and the calendar; push and email come with the notification engine in Phase 10.
+- Mobile: only logging rent. Everything else is managed on the web.
+- RNT-15 and RNT-16 (could-haves) aren't started.
 
 ---
 

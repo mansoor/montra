@@ -7,6 +7,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import {
+  PACE_KINDS,
   addDays,
   addMonths,
   burnItems,
@@ -14,15 +15,15 @@ import {
   convert,
   dailyAverage,
   diffDays,
+  divRound,
   endOfMonth,
+  estimatedTaxPeriods,
   forecast as simulate,
   money,
-  estimatedTaxPeriods,
   occurrencesBetween,
   parseDecimal,
   periodContaining,
   spendingPace,
-  PACE_KINDS,
   startOfMonth,
   type CalendarDate,
   type CurrencyCode,
@@ -445,9 +446,37 @@ export class FlowService {
       accounts.map((a) => a.id),
       trendDates,
     );
+    // FLOW-07: your share of what each property is worth, or what it cost until a value's entered. Without it a
+    // mortgage would count with nothing to set against it. One figure, so the trend moves only when one is bought.
+    const properties = await trx
+      .selectFrom('app.property as p')
+      .innerJoin('app.entity as e', (j) =>
+        j.onRef('e.workspace_id', '=', 'p.workspace_id').onRef('e.id', '=', 'p.entity_id'),
+      )
+      .select([
+        'p.id',
+        'p.entity_id',
+        'p.name',
+        'p.purchase_date',
+        'p.ownership_bps',
+        'p.current_value_minor',
+        'p.purchase_price_minor',
+        'e.functional_currency',
+      ])
+      .where('p.workspace_id', '=', ctx.workspaceId)
+      .where('p.archived_at', 'is', null)
+      .$if(!!opts.entityId, (q) => q.where('p.entity_id', '=', opts.entityId!))
+      .orderBy('p.name')
+      .execute();
     const rates = await this.fx.table(
       trx,
-      [...new Set([...accounts.map((a) => a.currency), base])],
+      [
+        ...new Set([
+          ...accounts.map((a) => a.currency),
+          ...properties.map((p) => p.functional_currency),
+          base,
+        ]),
+      ],
       trendDates[0]!,
       date,
     );
@@ -457,8 +486,17 @@ export class FlowService {
       // Without a rate the account is left out of the converted totals rather than guessed.
       return r ? convert(money(balance, a.currency), base, parseDecimal(r.rate)).amount : 0n;
     };
+    const propertyValue = (p: (typeof properties)[number], d: CalendarDate): bigint => {
+      const worth = p.current_value_minor ?? p.purchase_price_minor;
+      if (worth === null) return 0n;
+      if (p.purchase_date && calendarDate(String(p.purchase_date).slice(0, 10)) > d) return 0n;
+      const share = divRound(BigInt(worth) * BigInt(p.ownership_bps), 10_000n);
+      if (p.functional_currency === base) return share;
+      const r = rates.get(p.functional_currency, base, d);
+      return r ? convert(money(share, p.functional_currency), base, parseDecimal(r.rate)).amount : 0n;
+    };
     const point = (d: CalendarDate) => {
-      let assets = 0n;
+      let assets = properties.reduce((t, p) => t + propertyValue(p, d), 0n);
       let liabilities = 0n;
       for (const a of accounts) {
         const v = valueOf(a, d, balances.get(a.id)?.get(d) ?? 0n);
@@ -486,6 +524,14 @@ export class FlowService {
           value: s(valueOf(a, date, balance)),
         };
       }),
+      properties: properties
+        .map((p) => ({
+          propertyId: p.id,
+          entityId: p.entity_id,
+          name: p.name,
+          value: s(propertyValue(p, date)),
+        }))
+        .filter((p) => p.value !== '0'),
       trend: trendDates.map(point),
     };
   }

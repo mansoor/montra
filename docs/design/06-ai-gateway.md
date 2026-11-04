@@ -45,6 +45,7 @@ per environment and per workspace mode.
 | Task | Default model (builtin) | Effort | Batch | Output |
 | --- | --- | --- | --- | --- |
 | `categorize`, `normalize_payees`, `map_columns`, `parse_quick_add` | `claude-haiku-5-5` (small, cheap) | `low` | up to 100 rows per call | JSON schema |
+| `map_tax_lines`, `flag_separation`, `flag_capital` | `claude-haiku-5-5` (small, cheap) | `low` | 1 list per call | JSON schema; answers limited to what was offered, and the user decides |
 | `extract_receipt`, `extract_payslip`, `extract_statement_table` | `claude-sonnet-5-5` (vision) | `medium` | 1 document | JSON schema |
 
 `extract_receipt` (`tasks/extract-receipt/v1.ts`) sends the receipt images in builtin and BYOK modes only,

@@ -214,6 +214,23 @@ export default async function CashFlowPage({
                   </td>
                 </tr>
               ))}
+              {n.properties.map((p) => (
+                <tr key={p.propertyId} data-testid="net-worth-property">
+                  <td className="px-4 py-2">
+                    <Link
+                      href={`${base}/rentals/${p.entityId}/properties/${p.propertyId}`}
+                      className="hover:underline"
+                    >
+                      {p.name}
+                    </Link>
+                    <span className="ml-2 text-xs text-muted">{t('flow.kind_property')}</span>
+                  </td>
+                  <td className="px-2 py-2 text-right" />
+                  <td className="px-4 py-2 text-right">
+                    <Money amount={p.value} currency={n.currency} />
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </section>

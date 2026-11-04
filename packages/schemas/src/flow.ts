@@ -82,6 +82,8 @@ export const NetWorthDto = z.object({
       value: MinorDto,
     }),
   ),
+  /** FLOW-07: your share of each property's value, in the base currency. In `assets`, from its purchase date. */
+  properties: z.array(z.object({ propertyId: Id, entityId: Id, name: z.string(), value: MinorDto })),
   /** Month ends (and today) for the trend chart. */
   trend: z.array(NetWorthPointDto),
 });

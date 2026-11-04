@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.10.0-dev.1 — Phase 9: rental properties
+
+- **Properties, units, tenants and leases** (RNT-01..03; ADR-0018): a portfolio per rental entity, with lease documents. A unit's
+  occupied or vacant status follows from its leases, and overlapping leases are refused.
+- **Rent roll** (RNT-04): charges written a month ahead, paid oldest first, with extra kept as a credit. A statement line naming the
+  tenant, or the exact rent with nothing competing, links by itself and remembers the name it came under. This is matched in code
+  rather than by AI, so tenant names stay local.
+- **Arrears and late fees** (RNT-05): days late, fees from the lease's rule once per period, and waiving a charge.
+- **Security deposits** (RNT-10): a liability, not income. Returned is capped at what's held; forfeited becomes income.
+- **Shared expenses** (RNT-07): split by percent, units or square feet, to the cent, one off or from a saved rule.
+- **Mortgages** (RNT-08): a schedule from the terms. A payment posts principal to the loan, interest to Mortgage interest and escrow
+  to Taxes and Insurance, tagged to the property. A bank line for the exact amount links by itself.
+- **Capital improvements** (RNT-09): large repairs flagged in code, smaller ones by AI, and the owner decides. Accepting moves the
+  item to the property's improvements account and starts a 27.5 or 39 year depreciation helper, which never enters the ledger.
+- **Reports** (RNT-06, RNT-11, UP-10): income, expenses, NOI, debt service, capex, cash flow, cap rate, cash on cash and occupancy
+  per property and portfolio, and Schedule E with your share, as CSV or Excel. The full tax package comes in Phase 10.
+- **Reminders, maintenance and budgets** (RNT-12..14): lease ends and entered dates on a list and the calendar; a maintenance log
+  with photos; a budget per property with a capex reserve per unit.
+- **Everywhere else**: rent and mortgage payments in the forecast and calendar; a tax set-aside for a portfolio (REC-09); your share
+  of property values in net worth (FLOW-07); a property on the transaction editor (TXN-02).
+- **Mobile**: More → Rentals shows the month's rent and arrears, and logs a payment.
+- **Fix from Phase 8**: applying a rule or attaching a receipt only skipped payslip transactions, so one could touch an invoice or
+  bill payment. They now share one check with everything else.
+- **Not done**: RNT-15 and RNT-16 (could-haves). AI doesn't suggest a property for a transaction yet (AI-02).
+
 ## v0.9.0-dev.1 — Phase 8: small business
 
 - **Businesses** (BIZ-01, BIZ-02; ADR-0017): a profile per business, a chart mapped to Schedule C, and any category mappable

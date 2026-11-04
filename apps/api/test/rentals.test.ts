@@ -1172,6 +1172,55 @@ describe('the forecast and calendar (RNT-04, RNT-08, RNT-12)', () => {
   });
 });
 
+describe('net worth (FLOW-07)', () => {
+  it('counts your share of a property against its mortgage, from when it was bought', async () => {
+    const ws2 = (await c.post('/v1/workspaces', { name: 'Worth', baseCurrency: 'USD', template: 'landlord' }))
+      .body;
+    const u = (p: string) => `/v1/workspaces/${ws2.id}${p}`;
+    const entity = (await c.get(u('/entities'))).body.data.find((e: any) => e.type === 'rental').id;
+    const worth = async () => (await c.get(u(`/net-worth?months=3&entityId=${entity}`))).body;
+    const add = (over: object) => c.post(u('/properties'), { entityId: entity, type: 'sfh', ...over });
+    await c.post(u('/accounts'), {
+      name: 'Mortgage',
+      kind: 'mortgage',
+      openingBalance: usd('10000000'),
+      openingDate: `${year - 2}-01-01`,
+      entityId: entity,
+    });
+    expect(await worth()).toMatchObject({ assets: '0', liabilities: '10000000', properties: [] });
+
+    const held = await add({
+      name: 'Half House',
+      currentValue: '30000000',
+      purchasePrice: '20000000',
+      ownershipBps: 5000,
+      purchaseDate: `${year - 3}-01-01`,
+    });
+    // With no value yet, what it cost; with neither, nothing to go on.
+    const cost = await add({ name: 'At Cost', purchasePrice: '5000000', purchaseDate: lastMonth });
+    await add({ name: 'Unknown' });
+    const n = await worth();
+    expect(n.properties.map((p: any) => [p.name, p.value])).toEqual([
+      ['At Cost', '5000000'],
+      ['Half House', '15000000'],
+    ]);
+    expect(n).toMatchObject({ assets: '20000000', netWorth: '10000000' });
+    expect(n.trend.at(-1).netWorth).toBe('10000000');
+    // Not before it was bought.
+    expect(n.trend[0].assets).toBe('15000000');
+
+    await c.patch(u(`/properties/${cost.body.id}`), { archived: true, version: cost.body.version });
+    expect((await worth()).assets).toBe('15000000');
+    expect(held.status).toBe(201);
+  });
+
+  it('is left out for a partner who can not see the portfolio', async () => {
+    const res = await partner.get(url('/net-worth?months=1'));
+    expect(res.status).toBe(200);
+    expect(res.body.properties).toEqual([]);
+  });
+});
+
 describe('tax set-aside for a portfolio (REC-09)', () => {
   it('estimates on your share after depreciation, and notes it only when a rate is set', async () => {
     const entity = (await c.post(url('/entities'), { type: 'rental', name: 'Tax Portfolio' })).body.id;

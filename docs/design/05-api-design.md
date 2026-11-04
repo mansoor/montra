@@ -124,11 +124,17 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET /tax/estimates?entityId&year`, `GET /tax/lines?form`, `PATCH /categories/{id}/tax-line`, `POST /businesses/{entityId}/tax-lines/suggest` | Estimated tax, tax lines and AI proposals | BIZ-02, BIZ-09, AI-10 |
 | `GET /reports/pnl`, `/reports/parties`, `/reports/schedule-c`, `/reports/missing-receipts` | P&L, by customer or vendor, Schedule C, missing receipts | BIZ-10, BIZ-12 |
 | `GET /exports/accounting?entityId&from&to&format` (`csv`, `xlsx`, `quickbooks_iif`, `xero_csv`; recent sign-in required) | Journal for an accountant | BIZ-13 |
-| `GET/POST /properties`, `/properties/{id}/units`, `/tenants`, `/leases` | Rental master data | RNT-01..03 |
-| `GET /rent-roll?month`, `GET /arrears` | Rent roll and arrears | RNT-04/05 |
-| `GET/POST /allocation-rules`, `POST /transactions/{id}/allocate` | Shared expense allocation | RNT-07 |
-| `GET/POST /loans/{accountId}/schedule` | Amortization | RNT-08 |
-| `GET/POST /maintenance` | Maintenance log | RNT-13 |
+| `GET/POST /properties`, `GET/PATCH /properties/{id}`, `POST /properties/{id}/units`, `PATCH /units/{id}`, `GET/POST /tenants`, `PATCH /tenants/{id}`, `GET/POST /leases`, `GET/PATCH /leases/{id}` | Rental master data; a lease writes its charges | RNT-01..03 |
+| `GET /rent-roll?entityId&month`, `GET /arrears?entityId`, `PATCH /rent-charges/{id}` (edit or waive) | Rent roll and arrears | RNT-04/05 |
+| `GET/POST /leases/{id}/payments`, `DELETE /leases/{id}/payments/{paymentId}`, `GET /leases/{id}/candidates` | Rent received: entered, or a bank line taken over and given back on removal | RNT-04 |
+| `POST /leases/{id}/deposit-events`, `DELETE /leases/{id}/deposit-events/{eventId}` | Security deposit received, returned or forfeited | RNT-10 |
+| `GET/POST /allocation-rules`, `DELETE /allocation-rules/{id}`, `POST /transactions/{id}/allocate` | Shared expense allocation | RNT-07 |
+| `GET/POST /loans`, `PATCH /loans/{id}`, `GET /loans/{id}/schedule`, `POST /loans/{id}/payments`, `DELETE /loans/{id}/payments/{number}` | Amortization and split payments | RNT-08 |
+| `GET /properties/{id}/depreciation?year`, `POST /depreciation`, `DELETE /depreciation/{id}` | Depreciation helper; never posted | RNT-09 |
+| `GET/POST /reminders`, `PATCH /reminders/{id}` | Stored reminders, plus lease ends worked out on read | RNT-12 |
+| `GET/POST /maintenance`, `PATCH /maintenance/{id}`, `POST /rentals/files`, `GET /rentals/{leases\|maintenance}/{id}/files/{fileId}` | Maintenance log; a file is served only through a record it's on | RNT-03, RNT-13 |
+| `GET/PUT /properties/{id}/budget?month` | Expected rent, planned expenses, capex reserve, actuals | RNT-14 |
+| `GET /reports/rental?entityId&from&to`, `GET /reports/schedule-e?entityId&year`, `GET /exports/schedule-e?entityId&year&format` (`csv`, `xlsx`; recent sign-in required) | Metrics and Schedule E per property and portfolio | RNT-06, RNT-11, UP-10 |
 | `GET/POST /employers`, `PATCH /employers/{id}`; `POST /payslips/files` (multipart PDF or photo) → `fileId`; `POST /payslips` `{ employerId, fileIds[], fromLast, payDate? }` (201, reading runs as a job); `GET /payslips?memberId&employerId&status`; `GET/PATCH/DELETE /payslips/{id}`; `GET /payslips/{id}/files/{fileId}`; `POST /payslips/{id}/confirm` `{ version, depositTransactionId? }` | Payslips; a confirm comes back unposted with `matchCandidates` when several deposits fit (ADR-0016) | PAY-01..09 |
 
 ### Reports, search, export, notifications
