@@ -27,7 +27,14 @@ import { BusinessReportsService } from './business-reports.service.js';
 import { BusinessService } from './business.service.js';
 import { InvoicesService } from './invoices.service.js';
 import { NOT_OWNED } from '../transactions/poster.js';
-import { businessEntities, profitBetween, todayOf, type BusinessEntity, type Ctx } from './shared.js';
+import {
+  businessEntities,
+  taxedEntities,
+  profitBetween,
+  todayOf,
+  type BusinessEntity,
+  type Ctx,
+} from './shared.js';
 
 /** Flags interrupt the user: look only at what's recent, and only at so many a night. */
 const SEPARATION_DAYS = 30;
@@ -326,7 +333,7 @@ export class BusinessJobs {
   async notes(ctx: Ctx): Promise<number> {
     return this.db.run(ctx, async (trx) => {
       let created = 0;
-      for (const e of await businessEntities(trx, ctx)) {
+      for (const e of await taxedEntities(trx, ctx)) {
         for (const n of await this.notesFor(trx, ctx, e)) {
           if (await this.store(trx, ctx, e, n)) created++;
         }
@@ -369,6 +376,8 @@ export class BusinessJobs {
     }
 
     const next = estimate.periods.find((p) => p.status === 'next');
+    // A portfolio gets only the set-aside, and tax dates once its owner has set a rate.
+    if (e.type === 'rental' && profile.tax_rate_bps === null) return notes;
     if (
       next &&
       next.due >= today &&
@@ -388,6 +397,8 @@ export class BusinessJobs {
         actions: [],
       });
     }
+
+    if (e.type === 'rental') return notes;
 
     // Last month's margin against the month before, once there's a month to talk about.
     const lastStart = startOfMonth(addDays(month, -1));

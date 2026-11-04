@@ -2,6 +2,7 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addDays, startOfMonth, todayIn } from '@montra/domain';
+import { BusinessJobs } from '../src/business/business-jobs.service.js';
 import { ImportJobs } from '../src/imports/import-jobs.js';
 import { RentalJobs } from '../src/rentals/rental-jobs.service.js';
 import { ADMIN_URL } from './env.js';
@@ -1097,5 +1098,113 @@ describe('reminders and maintenance (RNT-12, RNT-13)', () => {
     expect(wrongUnit.status).toBe(422);
     const list = (await c.get(url(`/maintenance?entityId=${rental}&propertyId=${p.id}`))).body.data;
     expect(list.map((m: any) => m.issue)).toEqual(expect.arrayContaining(['Leak under sink', 'Other']));
+  });
+});
+
+describe('the forecast and calendar (RNT-04, RNT-08, RNT-12)', () => {
+  it('shows rent, late rent, mortgage payments, lease ends and reminders', async () => {
+    const entity = (await c.post(url('/entities'), { type: 'rental', name: 'Calendar Portfolio' })).body.id;
+    await account('Calendar checking', entity);
+    const next = startOfMonth(addDays(thisMonth, 32));
+    const end = addDays(startOfMonth(addDays(next, 32)), -1);
+    const { p } = await rented(
+      'Calendar House',
+      'Cal Endar',
+      { startDate: lastMonth, rent: '111100', endDate: addDays(next, 10) },
+      entity,
+    );
+    const loanAccount = await account('Calendar mortgage', entity, 'mortgage', '10000000');
+    await c.post(url('/loans'), {
+      propertyId: p.id,
+      loanAccountId: loanAccount,
+      name: 'Calendar mortgage',
+      principal: '10000000',
+      rateBps: 600,
+      termMonths: 360,
+      firstPaymentDate: next,
+    });
+    await c.post(url('/reminders'), {
+      entityId: entity,
+      propertyId: p.id,
+      kind: 'inspection',
+      title: 'Boiler inspection',
+      dueDate: next,
+    });
+    const items = (await c.get(url(`/calendar?from=${lastMonth}&to=${end}&entityId=${entity}`))).body.items;
+    const of = (kind: string) => items.filter((i: any) => i.kind === kind);
+    expect(of('rent').map((i: any) => [i.date, i.amount, i.status])[0]).toEqual([
+      lastMonth,
+      '111100',
+      'overdue',
+    ]);
+    expect(of('rent').find((i: any) => i.date === next)).toMatchObject({
+      amount: '111100',
+      status: 'upcoming',
+    });
+    expect(of('mortgage')[0]).toMatchObject({ date: next, amount: '-59955', name: 'Calendar mortgage' });
+    expect(of('lease_end')[0]).toMatchObject({ date: addDays(next, 10), name: 'Calendar House · Main' });
+    expect(of('reminder')[0]).toMatchObject({ date: next, name: 'Boiler inspection' });
+    // Overdue rent stays on the month it was due, not every later one.
+    const later = (await c.get(url(`/calendar?from=${next}&to=${end}&entityId=${entity}`))).body.items;
+    expect(later.filter((i: any) => i.kind === 'rent').map((i: any) => i.date)).toEqual([next]);
+
+    const forecast = (await c.get(url(`/flow/forecast?days=90&entityId=${entity}`))).body;
+    const planned = forecast.accounts.flatMap((a: any) => a.items);
+    const rentLines = planned.filter((i: any) => i.name === 'Calendar House · Main');
+    expect(rentLines.some((i: any) => i.kind === 'rent' && i.amount === '111100')).toBe(true);
+    expect(planned.some((i: any) => i.kind === 'mortgage' && i.name === 'Calendar mortgage')).toBe(true);
+  });
+});
+
+describe('tax set-aside for a portfolio (REC-09)', () => {
+  it('estimates on your share after depreciation, and notes it only when a rate is set', async () => {
+    const entity = (await c.post(url('/entities'), { type: 'rental', name: 'Tax Portfolio' })).body.id;
+    const acct = await account('Tax checking', entity);
+    const savings = await account('Tax savings', entity, 'savings', '0');
+    const p = await property('Tax House', { ownershipBps: 5000 }, entity);
+    const t = await tenant('Tess Tax', entity);
+    const l = await lease(p.units[0].id, [t.id], { startDate: thisMonth, rent: '1000000' });
+    await pay(l.id, '1000000', today, acct);
+    const none = (await c.get(url(`/tax/estimates?entityId=${entity}`))).body;
+    expect(none).toMatchObject({ rateBps: null, target: '0' });
+    // Half of 10,000.00.
+    expect(none.ytdProfit).toBe('500000');
+
+    const business = h.app.get(BusinessJobs);
+    const notes = async () =>
+      (await c.get(url('/recommendations?status=open'))).body.data.filter((r: any) => r.entityId === entity);
+    await business.notes(ctx());
+    expect(await notes()).toEqual([]);
+
+    const set = await c.patch(url(`/businesses/${entity}`), {
+      taxRateBps: 2000,
+      defaultDepositAccountId: acct,
+      taxSavingsAccountId: savings,
+    });
+    expect(set.status).toBe(200);
+    const est = (await c.get(url(`/tax/estimates?entityId=${entity}`))).body;
+    expect(est).toMatchObject({ rateBps: 2000, target: '100000', toSetAside: '100000' });
+    await business.notes(ctx());
+    const [note] = await notes();
+    expect(note.title).toBe("Set aside for Tax Portfolio's taxes");
+    const accepted = await c.post(url(`/recommendations/${note.id}/accept`), {});
+    expect(accepted.status).toBe(200);
+    expect(await balance(savings)).toBe('100000');
+    expect((await c.get(url(`/tax/estimates?entityId=${entity}`))).body.toSetAside).toBe('0');
+
+    // Depreciation lowers it, as it does on Schedule E: half of a year's 10,000.00 so far, at most.
+    await c.post(url('/depreciation'), {
+      propertyId: p.id,
+      name: 'Building',
+      basis: '27500000',
+      inServiceDate: `${year - 1}-01-15`,
+      method: 'SL_27_5',
+    });
+    const lower = (await c.get(url(`/tax/estimates?entityId=${entity}`))).body;
+    expect(BigInt(lower.ytdProfit)).toBeLessThanOrEqual(500000n);
+  });
+
+  it('is not offered on personal books', async () => {
+    expect((await c.get(url(`/tax/estimates?entityId=${personal}`))).status).toBe(422);
   });
 });

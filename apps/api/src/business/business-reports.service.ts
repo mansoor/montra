@@ -7,11 +7,16 @@ import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import {
   asCurrencyCode,
+  calendarDate,
+  daysBetween,
+  depreciationForYear,
+  divRound,
   estimatedTaxPeriods,
   marginBps,
   taxSetAside,
   taxSetAsideTarget,
   type CalendarDate,
+  type DepreciationMethod,
 } from '@montra/domain';
 import type {
   MissingReceiptsDto,
@@ -26,7 +31,15 @@ import type {
 import { AiService } from '../ai/ai.service.js';
 import { Db } from '../db/database.js';
 import { BusinessService } from './business.service.js';
-import { businessEntity, dateOf, TAX_COUNTRY, todayOf, type BusinessEntity, type Ctx } from './shared.js';
+import {
+  businessEntity,
+  taxedEntity,
+  dateOf,
+  TAX_COUNTRY,
+  todayOf,
+  type BusinessEntity,
+  type Ctx,
+} from './shared.js';
 
 const SCHEDULE_C = 'schedule_c';
 const CAR_AND_TRUCK = 'US_SCH_C_L9';
@@ -294,7 +307,7 @@ export class BusinessReportsService {
   /** AI-10: categories of this business with no line, and spending that isn't on the form because of it. */
   async suggestTaxLines(ctx: Ctx, entityId: string): Promise<TaxLineSuggestionDto[]> {
     return this.db.run(ctx, async (trx) => {
-      const e = await businessEntity(trx, ctx, entityId);
+      const e = await taxedEntity(trx, ctx, entityId);
       const categories = await trx
         .selectFrom('app.ledger_account as a')
         .leftJoin('app.category_group as g', (j) =>
@@ -313,10 +326,10 @@ export class BusinessReportsService {
         .selectFrom('ref.tax_line')
         .select(['code', 'label'])
         .where('country', '=', TAX_COUNTRY)
-        .where('form', '=', SCHEDULE_C)
+        .where('form', '=', e.type === 'rental' ? 'schedule_e' : SCHEDULE_C)
         .orderBy('sort_order')
         .execute();
-      const runtime = await this.ai.runtime(trx, ctx, { type: 'business', id: e.id });
+      const runtime = await this.ai.runtime(trx, ctx, { type: e.type, id: e.id });
       if (!runtime.available) return [];
       const res = await this.ai.gateway.mapTaxLines(
         {
@@ -345,7 +358,7 @@ export class BusinessReportsService {
   }
 
   async taxEstimateIn(trx: Trx, ctx: Ctx, entityId: string, year?: number): Promise<TaxEstimateDto> {
-    const e = await businessEntity(trx, ctx, entityId);
+    const e = await taxedEntity(trx, ctx, entityId);
     const today = todayOf(e);
     const y = year ?? Number(today.slice(0, 4));
     const profile = await this.business.readProfile(trx, ctx, entityId);
@@ -368,8 +381,10 @@ export class BusinessReportsService {
          where workspace_id = ${ctx.workspaceId} and entity_id = ${entityId}
            and trip_date between ${start} and ${through}
       ) x group by d order by d`.execute(trx);
-    const taxableProfit = (to: CalendarDate) =>
-      days.reduce((t, r) => (r.d <= to ? t + BigInt(r.profit) : t), 0n);
+    const taxableProfit =
+      e.type === 'rental'
+        ? await this.rentalProfit(trx, ctx, entityId, y, start, through)
+        : (to: CalendarDate) => days.reduce((t, r) => (r.d <= to ? t + BigInt(r.profit) : t), 0n);
     const profit = taxableProfit(through);
     const rate = profile.tax_rate_bps;
     const saved = await this.savedSoFar(trx, ctx, profile.tax_savings_account_id, start, through);
@@ -403,6 +418,64 @@ export class BusinessReportsService {
       saved: String(saved),
       toSetAside: String(rate !== null ? taxSetAside(profit, rate, saved) : 0n),
       periods,
+    };
+  }
+
+  /**
+   * A portfolio's taxable profit by date: as on Schedule E, your share of each property, after its depreciation so far
+   * this year. Income and costs on no property count whole.
+   */
+  private async rentalProfit(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+    year: number,
+    start: CalendarDate,
+    through: CalendarDate,
+  ): Promise<(to: CalendarDate) => bigint> {
+    const { rows } = await sql<{ d: string; property_id: string | null; profit: string }>`
+      select p.entry_date::text as d, p.property_id, sum(-p.functional_amount_minor)::text as profit
+        from app.posting p
+        join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
+       where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${entityId}
+         and a.type in ('income', 'expense') and p.entry_date between ${start} and ${through}
+       group by 1, 2`.execute(trx);
+    const properties = await trx
+      .selectFrom('app.property')
+      .select(['id', 'ownership_bps'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .execute();
+    const schedules = await trx
+      .selectFrom('app.depreciation_schedule')
+      .select(['property_id', 'basis_minor', 'in_service_date', 'method'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .execute();
+    const yearDays = BigInt(daysBetween(start, `${year}-12-31` as CalendarDate) + 1);
+    return (to) => {
+      const elapsed = BigInt(daysBetween(start, to) + 1);
+      const sumFor = (id: string | null) =>
+        rows.reduce((t, r) => (r.d <= to && r.property_id === id ? t + BigInt(r.profit) : t), 0n);
+      let total = sumFor(null);
+      for (const p of properties) {
+        const depreciation = schedules
+          .filter((d) => d.property_id === p.id)
+          .reduce(
+            (t, d) =>
+              t +
+              depreciationForYear(
+                BigInt(d.basis_minor),
+                calendarDate(String(d.in_service_date).slice(0, 10)),
+                year,
+                d.method as DepreciationMethod,
+              ),
+            0n,
+          );
+        const net = sumFor(p.id) - divRound(depreciation * elapsed, yearDays);
+        total += divRound(net * BigInt(p.ownership_bps), 10_000n);
+      }
+      return total;
     };
   }
 

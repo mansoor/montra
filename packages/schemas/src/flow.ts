@@ -24,6 +24,10 @@ export const CALENDAR_ITEM_KINDS = [
   'card_due',
   'invoice',
   'tax_due',
+  'rent',
+  'mortgage',
+  'lease_end',
+  'reminder',
 ] as const;
 
 /** FLOW-05 / UP-14: an upcoming bill, payday or due date. */
@@ -149,7 +153,7 @@ export type SankeyDto = z.infer<typeof SankeyDto>;
 /** A forecast driver: one item moving an account's balance on a date. */
 export const ForecastItemDto = z.object({
   date: CalendarDateDto,
-  kind: z.enum(['recurring', 'income', 'card_payment', 'burn', 'invoice', 'bill']),
+  kind: z.enum(['recurring', 'income', 'card_payment', 'burn', 'invoice', 'bill', 'rent', 'mortgage']),
   name: z.string(),
   amount: MinorDto,
   sourceId: Id.nullable(),

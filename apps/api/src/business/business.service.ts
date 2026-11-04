@@ -22,6 +22,7 @@ import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.j
 import {
   businessEntities,
   businessEntity,
+  taxedEntity,
   dateOf,
   TAX_COUNTRY,
   todayOf,
@@ -52,7 +53,7 @@ export class BusinessService {
 
   async profile(ctx: Ctx, entityId: string): Promise<BusinessProfileDto> {
     return this.db.run(ctx, async (trx) => {
-      const e = await businessEntity(trx, ctx, entityId);
+      const e = await taxedEntity(trx, ctx, entityId);
       return this.profileDto(e, await this.readProfile(trx, ctx, entityId));
     });
   }
@@ -63,7 +64,7 @@ export class BusinessService {
     req: UpdateBusinessProfileRequest,
   ): Promise<BusinessProfileDto> {
     return this.db.run(ctx, async (trx) => {
-      const e = await businessEntity(trx, ctx, entityId);
+      const e = await taxedEntity(trx, ctx, entityId);
       await this.ensureProfile(trx, ctx, entityId);
       for (const account of [req.defaultDepositAccountId, req.taxSavingsAccountId]) {
         if (account) await this.requireBankAccount(trx, ctx, account);

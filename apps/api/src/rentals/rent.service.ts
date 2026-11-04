@@ -732,6 +732,7 @@ export class RentService {
     {
       leaseId: string;
       date: CalendarDate;
+      due: CalendarDate;
       amount: bigint;
       name: string;
       accountId: string | null;
@@ -744,6 +745,7 @@ export class RentService {
     const out: {
       leaseId: string;
       date: CalendarDate;
+      due: CalendarDate;
       amount: bigint;
       name: string;
       accountId: string | null;
@@ -760,6 +762,7 @@ export class RentService {
         out.push({
           leaseId: s.lease.id,
           date: c.due < from ? from : c.due,
+          due: c.due,
           amount: c.open,
           name,
           accountId: s.lease.deposit_account_id,
@@ -784,6 +787,7 @@ export class RentService {
           out.push({
             leaseId: s.lease.id,
             date: p.due,
+            due: p.due,
             amount: rent - fromCredit,
             name,
             accountId: s.lease.deposit_account_id,

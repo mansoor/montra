@@ -92,7 +92,16 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'employers.type_': ['employer', 'freelance', 'pension', 'benefits', 'other'],
   'employers.frequency_': ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'yearly'],
   'members_report.range_': ['month', 'ytd', 'last_year'],
-  'imports.kept_reason.': ['bill', 'invoice', 'payslip', 'reconciled', 'reversed_in_open_period'],
+  'imports.kept_reason.': [
+    'bill',
+    'invoice',
+    'lease',
+    'loan',
+    'payslip',
+    'reconciled',
+    'reversed_in_open_period',
+    'security_deposit',
+  ],
   'entities.action.': ['lock', 'unlock', 'relock'],
   'journal.kind.': [
     'standard',

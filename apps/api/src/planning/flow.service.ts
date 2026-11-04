@@ -43,6 +43,9 @@ import { Db } from '../db/database.js';
 import { BillsService } from '../business/bills.service.js';
 import { BusinessReportsService } from '../business/business-reports.service.js';
 import { InvoicesService } from '../business/invoices.service.js';
+import { LoansService } from '../rentals/loans.service.js';
+import { leaseStatus } from '../rentals/properties.service.js';
+import { RentService } from '../rentals/rent.service.js';
 import { FxRatesService } from '../fx/fx.service.js';
 import type { TransactionSpec } from '../transactions/poster.js';
 import { BudgetsService, isBudgetCategory } from './budgets.service.js';
@@ -87,6 +90,8 @@ export class FlowService {
     @Inject(InvoicesService) private readonly invoices: InvoicesService,
     @Inject(BillsService) private readonly bills: BillsService,
     @Inject(BusinessReportsService) private readonly businessReports: BusinessReportsService,
+    @Inject(RentService) private readonly rent: RentService,
+    @Inject(LoansService) private readonly loans: LoansService,
   ) {}
 
   // ----- Accounts ----------------------------------------------------------------------------------------
@@ -283,9 +288,9 @@ export class FlowService {
     }
     const businesses = await trx
       .selectFrom('app.entity')
-      .select('id')
+      .select(['id', 'type'])
       .where('workspace_id', '=', ctx.workspaceId)
-      .where('type', '=', 'business')
+      .where('type', 'in', ['business', 'rental'])
       .where('archived_at', 'is', null)
       .$if(!!entityId, (q) => q.where('id', '=', entityId!))
       .execute();
@@ -295,6 +300,8 @@ export class FlowService {
         // Most views hold no tax date, and the amounts take a scan of the year: look only when there's one to show.
         if (!estimatedTaxPeriods(year).some((p) => inRange(p.due))) continue;
         const estimate = await this.businessReports.taxEstimateIn(trx, ctx, b.id, year);
+        // A landlord may owe no estimated tax at all: dates show once they've set a rate.
+        if (b.type === 'rental' && estimate.rateBps === null) continue;
         for (const p of estimate.periods) {
           if (!inRange(p.due)) continue;
           push({
@@ -308,6 +315,86 @@ export class FlowService {
             status: p.due < today ? 'paid' : 'upcoming',
           });
         }
+      }
+    }
+    // A portfolio's rent, mortgage payments, lease ends and reminders (RNT-04, RNT-08, RNT-12).
+    for (const r of businesses) {
+      if (r.type !== 'rental') continue;
+      const money = (await this.data.entity(trx, ctx, r.id)).currency as Money;
+      for (const x of await this.rent.expectedBetween(trx, ctx, r.id, from, to, today)) {
+        if (!inRange(x.due)) continue;
+        push({
+          date: x.due,
+          kind: 'rent',
+          name: x.name,
+          amount: s(x.amount),
+          currency: money,
+          sourceId: x.leaseId,
+          accountId: x.accountId,
+          status: x.late ? 'overdue' : 'upcoming',
+        });
+      }
+      for (const l of await this.loans.dueBetween(trx, ctx, r.id, from, to)) {
+        push({
+          date: l.date,
+          kind: 'mortgage',
+          name: l.name,
+          amount: s(-l.amount),
+          currency: money,
+          sourceId: l.loanId,
+          accountId: null,
+          status: l.date < today ? 'overdue' : 'upcoming',
+        });
+      }
+      const leases = await trx
+        .selectFrom('app.lease as l')
+        .innerJoin('app.unit as u', (j) =>
+          j.onRef('u.workspace_id', '=', 'l.workspace_id').onRef('u.id', '=', 'l.unit_id'),
+        )
+        .innerJoin('app.property as p', (j) =>
+          j.onRef('p.workspace_id', '=', 'l.workspace_id').onRef('p.id', '=', 'l.property_id'),
+        )
+        .select(['l.id', 'l.start_date', 'l.end_date', 'l.ended_on', 'u.label', 'p.name'])
+        .where('l.workspace_id', '=', ctx.workspaceId)
+        .where('l.entity_id', '=', r.id)
+        .where('l.ended_on', 'is', null)
+        .where('l.end_date', '>=', from)
+        .where('l.end_date', '<=', to)
+        .execute();
+      for (const l of leases) {
+        if (leaseStatus(l, today) !== 'active') continue;
+        push({
+          date: calendarDate(String(l.end_date).slice(0, 10)),
+          kind: 'lease_end',
+          name: `${l.name} · ${l.label}`,
+          amount: '0',
+          currency: money,
+          sourceId: l.id,
+          accountId: null,
+          status: 'upcoming',
+        });
+      }
+      const reminders = await trx
+        .selectFrom('app.rental_reminder')
+        .select(['id', 'title', 'due_date'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('entity_id', '=', r.id)
+        .where('done_at', 'is', null)
+        .where('due_date', '>=', from)
+        .where('due_date', '<=', to)
+        .execute();
+      for (const x of reminders) {
+        const date = calendarDate(String(x.due_date).slice(0, 10));
+        push({
+          date,
+          kind: 'reminder',
+          name: x.title,
+          amount: '0',
+          currency: money,
+          sourceId: x.id,
+          accountId: null,
+          status: date < today ? 'overdue' : 'upcoming',
+        });
       }
     }
     items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.name.localeCompare(b.name)));
@@ -484,6 +571,16 @@ export class FlowService {
 
     // Expected income not yet received, and discretionary burn, per entity.
     const entities = [...new Set(accounts.map((a) => a.entityId))];
+    const rentals = new Set(
+      (
+        await trx
+          .selectFrom('app.entity')
+          .select('id')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('type', '=', 'rental')
+          .execute()
+      ).map((r) => r.id),
+    );
     for (const e of entities) {
       const cash = accounts.filter((a) => a.entityId === e && CASH_KINDS.has(a.kind));
       const primary =
@@ -514,6 +611,29 @@ export class FlowService {
             kind: 'bill',
             name: b.partyName,
             sourceId: b.id,
+          });
+        }
+      }
+      // Rent still to come, overdue rent counting from tomorrow, and mortgage payments (RNT-04, RNT-08).
+      if (primary && rentals.has(e)) {
+        for (const x of await this.rent.expectedBetween(trx, ctx, e, from, last, today)) {
+          add({
+            date: x.date,
+            accountId: accounts.some((a) => a.id === x.accountId) ? x.accountId! : primary.id,
+            amount: x.amount,
+            kind: 'rent',
+            name: x.name,
+            sourceId: x.leaseId,
+          });
+        }
+        for (const l of await this.loans.dueBetween(trx, ctx, e, from, last)) {
+          add({
+            date: l.date,
+            accountId: primary.id,
+            amount: -l.amount,
+            kind: 'mortgage',
+            name: l.name,
+            sourceId: l.loanId,
           });
         }
       }
