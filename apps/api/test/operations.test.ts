@@ -597,7 +597,7 @@ describe('notices, status and the app version (OPS-03, OPS-04)', () => {
     const s = await status();
     expect(s.status).toBe('operational');
     expect(s.notices).toEqual([expect.objectContaining({ title: 'Database upgrade', kind: 'maintenance' })]);
-    await staff.post(`/v1/admin/notices/${ok.body.id}/end`);
+    expect((await staff.post(`/v1/admin/notices/${ok.body.id}/end`)).status).toBe(204);
     expect((await status()).notices).toEqual([]);
   });
 

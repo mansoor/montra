@@ -225,7 +225,11 @@ export class AdminService {
       const done = await trx
         .updateTable('app.system_notice')
         // The database's clock, which is the one the status page reads against.
-        .set({ ends_at: sql<Date>`now()` })
+        .set({
+          ends_at: sql<Date>`now()`,
+          // Called off before it began: it has no start any more, and can't end before it starts.
+          starts_at: sql<Date | null>`case when starts_at > now() then null else starts_at end`,
+        })
         .where('id', '=', id)
         .executeTakeFirst();
       if (!done.numUpdatedRows) throw notFound('Notice');
