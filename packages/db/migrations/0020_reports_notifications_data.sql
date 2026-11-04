@@ -159,6 +159,67 @@ create index app_user_purge on app.app_user (purge_after) where purge_after is n
 create index file_trash on app.file (deleted_at) where deleted_at is not null;
 create index transaction_trash on app.transaction (deleted_at) where deleted_at is not null;
 
+-- One check for every path that stores a file. Exports don't count: a full quota mustn't stop anyone taking their data out.
+create function app.check_storage_quota() returns trigger
+  language plpgsql security definer set search_path = app, pg_temp as $$
+declare used bigint; quota bigint;
+begin
+  select w.storage_quota_bytes into quota from app.workspace w where w.id = new.workspace_id;
+  select coalesce(sum(f.bytes), 0) into used from app.file f where f.workspace_id = new.workspace_id and f.deleted_at is null;
+  if used + new.bytes > quota then
+    raise exception 'storage quota reached' using errcode = 'check_violation', hint = 'storage.quota';
+  end if;
+  return new;
+end $$;
+create trigger file_storage_quota before insert on app.file
+  for each row execute function app.check_storage_quota();
+
+-- BAK-08: the meter counts every file, including ones RLS would hide from this member, because they all use the same quota.
+create function app.workspace_storage(p_workspace uuid)
+  returns table (kind text, bytes text, quota text)
+  language sql stable security definer set search_path = app, pg_temp as $$
+  select coalesce(f.kind, ''), coalesce(sum(f.bytes), 0)::text, w.storage_quota_bytes::text
+    from app.workspace w
+    left join app.file f on f.workspace_id = w.id and f.deleted_at is null
+   where w.id = p_workspace and p_workspace = app.current_workspace_id()
+   group by f.kind, w.storage_quota_bytes
+$$;
+grant execute on function app.workspace_storage(uuid) to montra_app;
+
+-- Workspaces with this user as their only active owner, which go with the account, and who else is in them.
+create function app.sole_owned_workspaces(p_user uuid)
+  returns table (id uuid, name text, others text)
+  language sql stable security definer set search_path = app, pg_temp as $$
+  select w.id, w.name,
+         (select count(*) from app.workspace_member m2 where m2.workspace_id = w.id and m2.status = 'active' and m2.user_id <> p_user)::text
+    from app.workspace w
+    join app.workspace_member m on m.workspace_id = w.id and m.user_id = p_user and m.status = 'active' and m.role = 'owner'
+   where p_user = app.current_user_id()
+     and not exists (select 1 from app.workspace_member o where o.workspace_id = w.id and o.status = 'active'
+                      and o.role = 'owner' and o.user_id <> p_user)
+$$;
+grant execute on function app.sole_owned_workspaces(uuid) to montra_app;
+
+create function app.flag_account_deletion(p_user uuid, p_purge_after timestamptz) returns void
+  language plpgsql volatile security definer set search_path = app, pg_temp as $$
+begin
+  if p_user <> app.current_user_id() then raise exception 'not your account'; end if;
+  update app.workspace w set deleted_at = now(), purge_after = p_purge_after
+    from app.sole_owned_workspaces(p_user) s where w.id = s.id;
+  update app.app_user set deleted_at = now(), purge_after = p_purge_after where id = p_user;
+end $$;
+grant execute on function app.flag_account_deletion(uuid, timestamptz) to montra_app;
+
+create function app.unflag_account_deletion(p_user uuid) returns void
+  language plpgsql volatile security definer set search_path = app, pg_temp as $$
+begin
+  if p_user <> app.current_user_id() then raise exception 'not your account'; end if;
+  update app.workspace w set deleted_at = null, purge_after = null
+    from app.sole_owned_workspaces(p_user) s where w.id = s.id;
+  update app.app_user set deleted_at = null, purge_after = null where id = p_user;
+end $$;
+grant execute on function app.unflag_account_deletion(uuid) to montra_app;
+
 -- -----------------------------------------------------------------------------
 -- Row level security.
 -- -----------------------------------------------------------------------------
@@ -266,6 +327,21 @@ create function app.retention_due()
 $$;
 grant execute on function app.retention_due() to montra_app;
 
+-- A restore has no workspace yet, so its job can't pass the queue's RLS. This queues one for the caller's own restore and nothing else.
+create function app.enqueue_restore(p_restore uuid) returns uuid
+  language plpgsql volatile security definer set search_path = app, pg_temp as $$
+declare job_id uuid;
+begin
+  if not exists (select 1 from app.restore_job r where r.id = p_restore and r.user_id = app.current_user_id()) then
+    raise exception 'not your restore';
+  end if;
+  insert into app.job (queue, type, payload, created_by, max_attempts)
+  values ('report', 'data.restore', jsonb_build_object('restoreId', p_restore), app.current_user_id(), 1)
+  returning id into job_id;
+  return job_id;
+end $$;
+grant execute on function app.enqueue_restore(uuid) to montra_app;
+
 -- An archive past its 7 days, gone from storage.
 create function app.expire_export(p_workspace uuid, p_id uuid) returns void
   language sql volatile security definer set search_path = app, pg_temp as $$
@@ -324,22 +400,40 @@ create function app.workspace_storage_keys(p_workspace uuid) returns setof text
 $$;
 grant execute on function app.workspace_storage_keys(uuid) to montra_app;
 
--- Removes a workspace past its 30 days and everything in it. Deleting the workspace cascades, and the ledger's guards and the
--- feeds already let a cascade through; tables with no foreign key to it are cleared after. Refused for anything not yet due.
+-- Removes a workspace past its 30 days and everything in it. Refused for anything not yet due. Not every table cascades from the
+-- workspace, and their foreign keys run in several directions, so it goes round until nothing's left. Someone's security log
+-- stays theirs: its workspace is simply cleared.
 create function app.purge_workspace(p_workspace uuid) returns void
   language plpgsql volatile security definer set search_path = app, pg_temp as $$
-declare t record;
+declare t record; deleted integer; blocked boolean; total integer; passes integer := 0;
 begin
   if not exists (select 1 from app.workspace w where w.id = p_workspace and w.purge_after < now()) then
     raise exception 'workspace % is not due for purging', p_workspace;
   end if;
   perform set_config('app.allow_locked_edit', 'on', true);
-  delete from app.workspace where id = p_workspace;
-  for t in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
-            join pg_attribute a on a.attrelid = c.oid and a.attname = 'workspace_id' and not a.attisdropped
-           where n.nspname = 'app' and c.relkind = 'r' loop
-    execute format('delete from app.%I where workspace_id = $1', t.relname) using p_workspace;
+  loop
+    passes := passes + 1;
+    total := 0;
+    blocked := false;
+    for t in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+              join pg_attribute a on a.attrelid = c.oid and a.attname = 'workspace_id' and not a.attisdropped
+             where n.nspname = 'app' and c.relkind = 'r' and c.relname <> 'security_event'
+             order by c.relname loop
+      begin
+        execute format('delete from app.%I where workspace_id = $1', t.relname) using p_workspace;
+        get diagnostics deleted = row_count;
+        total := total + deleted;
+      exception when foreign_key_violation then
+        blocked := true;
+      end;
+    end loop;
+    exit when total = 0 and not blocked;
+    if passes > 30 then raise exception 'could not purge workspace %', p_workspace; end if;
   end loop;
+  delete from app.workspace where id = p_workspace;
+  -- Removing the workspace can't write to the feeds, but anything written just before it can linger.
+  delete from app.audit_log where workspace_id = p_workspace;
+  delete from app.change_log where workspace_id = p_workspace;
 end $$;
 grant execute on function app.purge_workspace(uuid) to montra_app;
 

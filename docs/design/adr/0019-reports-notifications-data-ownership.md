@@ -32,7 +32,8 @@ go, or lose data on the way out and back in.
 5. **Notifications are created for each member, under that member's RLS.** A partner without access to a business gets no notification
    about it. A notification is written once (dedupe key per user), then delivered by channel according to preferences, held during quiet
    hours, and kept in-app only once the daily cap is reached (NOT-03). Push and email say what happened and where, with no amounts or
-   balances, because they show on lock screens and pass through third parties. The figures are one tap away, in the app.
+   balances, because they show on lock screens and pass through third parties. The figures are one tap away, in the app. The one
+   exception is the weekly digest's email, which NOT-02 asks to carry last week's spending and which can be turned off.
 
 6. **Email streams and unsubscribing.** Notification email is the non-essential stream and carries `List-Unsubscribe` with a signed
    one-click link (OPS-10). Security and sharing mail isn't affected. SPF, DKIM and DMARC are DNS and SES configuration, done with the
@@ -53,7 +54,7 @@ go, or lose data on the way out and back in.
    works fully or leaves nothing. Checking the result (entries balance, balances match the manifest) happens in that transaction too.
 
 10. **Restoring into an existing workspace adds, and doesn't merge ledgers.** Entities come in as new entities, named "(restored)", so
-    existing books can't change. Shared lists such as tags and members map to an existing row with the same unique key. Duplicate
+    existing books can't change. A workspace has only one set of personal books, so personal books need a new workspace. Shared lists such as tags and members map to an existing row with the same unique key. Duplicate
     transactions, found by dedupe key, are counted in the preview for the owner to judge, and not dropped, because dropping one would
     unbalance what's restored.
 
@@ -65,7 +66,7 @@ go, or lose data on the way out and back in.
     user is the only owner. After 30 days the workspace, its files and everything in it are deleted, and the user row is anonymized,
     since rows in other people's workspaces may still name it. Backups age out within 35 days by their own lifecycle (Phase 11).
 
-13. **Trash keeps 30 days.** Transactions, receipts and files with `deleted_at` can be restored from one list. After 30 days, rows with no
+13. **Trash keeps 30 days.** Transactions and receipts with `deleted_at` can be restored from one list; their files stay until their retention date. After 30 days, rows with no
     remaining ledger entries are deleted. A transaction reversed in a locked period keeps its rows, because the reversal needs them.
 
 14. **Security events are per user.** Sign-ins have no workspace, so `security_event` belongs to the user, separately from `audit_log`.

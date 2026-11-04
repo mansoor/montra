@@ -65,6 +65,10 @@ import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
+import { BackupService } from './data/backup.service.js';
+import { AccountDataController, DataController, RestoresController } from './data/data.controller.js';
+import { OwnershipService } from './data/ownership.service.js';
+import { RestoreService } from './data/restore.service.js';
 import { NotificationJobs } from './notifications/notification-jobs.service.js';
 import {
   NotificationPrefsController,
@@ -126,6 +130,9 @@ export class AppModule {
       RentalsController,
       ReportsController,
       NotificationsController,
+      DataController,
+      RestoresController,
+      AccountDataController,
       NotificationPrefsController,
       UnsubscribeController,
     ];
@@ -188,6 +195,9 @@ export class AppModule {
         RentalOpsService,
         RentalReportsService,
         RentalJobs,
+        BackupService,
+        RestoreService,
+        OwnershipService,
         NotificationsService,
         NotificationJobs,
         pushProvider,

@@ -37,6 +37,12 @@ const Env = z.object({
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
+  /** A backup being restored (BAK-06). */
+  MAX_RESTORE_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1024 * 1024 * 1024),
   MAX_UPLOAD_BYTES: z.coerce
     .number()
     .int()

@@ -8,6 +8,9 @@ import { RulesService } from './categorization/rules.service.js';
 import { InsightsService } from './categorization/insights.service.js';
 import { FxRatesService } from './fx/fx.service.js';
 import { ReceiptJobs } from './receipts/receipt-jobs.js';
+import { BackupService } from './data/backup.service.js';
+import { OwnershipService } from './data/ownership.service.js';
+import { RestoreService } from './data/restore.service.js';
 import { NotificationJobs } from './notifications/notification-jobs.service.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
 import { PayslipJobs } from './payslips/payslip-jobs.js';
@@ -27,6 +30,10 @@ const planning = app.get(RecommendationsService);
 planning.register();
 const notifications = app.get(NotificationJobs);
 notifications.register();
+app.get(BackupService).register();
+app.get(RestoreService).register();
+const retention = app.get(OwnershipService);
+retention.register();
 const fx = app.get(FxRatesService);
 fx.register(app.get(Worker));
 // Catch up at start-up; each daily run queues the next one.
@@ -35,4 +42,6 @@ if (config.FX_DAILY) await fx.schedule();
 await planning.schedule();
 // Sends what's waiting every few minutes (NOT-01), holding it through quiet hours.
 await notifications.schedule();
-await app.get(Worker).start(['import', 'ai', 'schedule']);
+// Hourly: expired archives, files past retention, accounts past their 30 days, and scheduled backups (BAK-05, BAK-09).
+await retention.schedule();
+await app.get(Worker).start(['import', 'ai', 'schedule', 'report']);
