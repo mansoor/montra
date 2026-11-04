@@ -116,6 +116,46 @@ import type {
   UpdateReceiptRequest,
   ConfirmPayslipRequest,
   BillDto,
+  AllocateTransactionRequest,
+  AllocationRuleDto,
+  AmortizationRowDto,
+  ArrearsDto,
+  CreateAllocationRuleRequest,
+  CreateDepreciationRequest,
+  CreateLeaseRequest,
+  CreateLoanRequest,
+  CreateMaintenanceRequest,
+  CreatePropertyRequest,
+  CreateReminderRequest,
+  CreateTenantRequest,
+  CreateUnitRequest,
+  DepositEventRequest,
+  DepreciationDto,
+  LeaseCandidateDto,
+  LeaseDto,
+  LoanDto,
+  LoanPaymentRequest,
+  MaintenanceDto,
+  PortfolioReportDto,
+  PropertyBudgetDto,
+  PropertyDto,
+  ReminderDto,
+  RentChargeDto,
+  RentPaymentDto,
+  RentPaymentRequest,
+  RentRollDto,
+  SavePropertyBudgetRequest,
+  ScheduleEDto,
+  ScheduleEExportFormat,
+  TenantDto,
+  UpdateChargeRequest,
+  UpdateLeaseRequest,
+  UpdateLoanRequest,
+  UpdateMaintenanceRequest,
+  UpdatePropertyRequest,
+  UpdateReminderRequest,
+  UpdateTenantRequest,
+  UpdateUnitRequest,
   BusinessProfileDto,
   InvoiceDto,
   InvoiceLineDto,
@@ -210,6 +250,28 @@ export type UpdateBillInput = z.input<typeof UpdateBillRequest>;
 export type CreateTripInput = z.input<typeof CreateTripRequest>;
 export type UpdateTripInput = z.input<typeof UpdateTripRequest>;
 export type UpdateBusinessInput = z.input<typeof UpdateBusinessProfileRequest>;
+export type CreatePropertyInput = z.input<typeof CreatePropertyRequest>;
+export type UpdatePropertyInput = z.input<typeof UpdatePropertyRequest>;
+export type CreateUnitInput = z.input<typeof CreateUnitRequest>;
+export type UpdateUnitInput = z.input<typeof UpdateUnitRequest>;
+export type CreateTenantInput = z.input<typeof CreateTenantRequest>;
+export type UpdateTenantInput = z.input<typeof UpdateTenantRequest>;
+export type CreateLeaseInput = z.input<typeof CreateLeaseRequest>;
+export type UpdateLeaseInput = z.input<typeof UpdateLeaseRequest>;
+export type UpdateChargeInput = z.input<typeof UpdateChargeRequest>;
+export type RentPaymentInput = z.input<typeof RentPaymentRequest>;
+export type DepositEventInput = z.input<typeof DepositEventRequest>;
+export type CreateAllocationRuleInput = z.input<typeof CreateAllocationRuleRequest>;
+export type AllocateTransactionInput = z.input<typeof AllocateTransactionRequest>;
+export type CreateLoanInput = z.input<typeof CreateLoanRequest>;
+export type UpdateLoanInput = z.input<typeof UpdateLoanRequest>;
+export type LoanPaymentInput = z.input<typeof LoanPaymentRequest>;
+export type CreateDepreciationInput = z.input<typeof CreateDepreciationRequest>;
+export type CreateReminderInput = z.input<typeof CreateReminderRequest>;
+export type UpdateReminderInput = z.input<typeof UpdateReminderRequest>;
+export type CreateMaintenanceInput = z.input<typeof CreateMaintenanceRequest>;
+export type UpdateMaintenanceInput = z.input<typeof UpdateMaintenanceRequest>;
+export type SavePropertyBudgetInput = z.input<typeof SavePropertyBudgetRequest>;
 export type CreateEmployerInput = z.input<typeof CreateEmployerRequest>;
 export type UpdateEmployerInput = z.input<typeof UpdateEmployerRequest>;
 export type CreatePayslipInput = z.input<typeof CreatePayslipRequest>;
@@ -361,6 +423,8 @@ export interface TransactionListOptions {
   entityId?: string;
   /** A member's id, or `household` for what's tagged to nobody (FAM-08). */
   memberId?: string;
+  /** RNT-11: what's on one property. */
+  propertyId?: string;
   categoryIds?: string[];
   accountIds?: string[];
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
@@ -1115,6 +1179,211 @@ export class ApiClient {
     return this.requestFile(this.ws(workspaceId, `/exports/accounting${query(opts)}`));
   }
 
+  // ----- Rental properties (RNT-01..14, UP-10) ------------------------------------------------------------
+  listProperties(workspaceId: string, entityId: string) {
+    return this.request<{ data: PropertyDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/properties${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  getProperty(workspaceId: string, id: string) {
+    return this.request<PropertyDto>('GET', this.ws(workspaceId, `/properties/${enc(id)}`));
+  }
+  createProperty(workspaceId: string, input: CreatePropertyInput) {
+    return this.request<PropertyDto>('POST', this.ws(workspaceId, '/properties'), input);
+  }
+  updateProperty(workspaceId: string, id: string, input: UpdatePropertyInput) {
+    return this.request<PropertyDto>('PATCH', this.ws(workspaceId, `/properties/${enc(id)}`), input);
+  }
+  createUnit(workspaceId: string, propertyId: string, input: CreateUnitInput) {
+    return this.request<PropertyDto>(
+      'POST',
+      this.ws(workspaceId, `/properties/${enc(propertyId)}/units`),
+      input,
+    );
+  }
+  updateUnit(workspaceId: string, id: string, input: UpdateUnitInput) {
+    return this.request<PropertyDto>('PATCH', this.ws(workspaceId, `/units/${enc(id)}`), input);
+  }
+  listTenants(workspaceId: string, entityId: string) {
+    return this.request<{ data: TenantDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/tenants${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createTenant(workspaceId: string, input: CreateTenantInput) {
+    return this.request<TenantDto>('POST', this.ws(workspaceId, '/tenants'), input);
+  }
+  updateTenant(workspaceId: string, id: string, input: UpdateTenantInput) {
+    return this.request<TenantDto>('PATCH', this.ws(workspaceId, `/tenants/${enc(id)}`), input);
+  }
+  listLeases(workspaceId: string, opts: { entityId: string; propertyId?: string }) {
+    return this.request<{ data: LeaseDto[] }>('GET', this.ws(workspaceId, `/leases${query(opts)}`)).then(
+      (r) => r.data,
+    );
+  }
+  getLease(workspaceId: string, id: string) {
+    return this.request<LeaseDto>('GET', this.ws(workspaceId, `/leases/${enc(id)}`));
+  }
+  createLease(workspaceId: string, input: CreateLeaseInput) {
+    return this.request<LeaseDto>('POST', this.ws(workspaceId, '/leases'), input);
+  }
+  updateLease(workspaceId: string, id: string, input: UpdateLeaseInput) {
+    return this.request<LeaseDto>('PATCH', this.ws(workspaceId, `/leases/${enc(id)}`), input);
+  }
+  getRentRoll(workspaceId: string, entityId: string, month?: string) {
+    return this.request<RentRollDto>('GET', this.ws(workspaceId, `/rent-roll${query({ entityId, month })}`));
+  }
+  getArrears(workspaceId: string, entityId: string) {
+    return this.request<ArrearsDto>('GET', this.ws(workspaceId, `/arrears${query({ entityId })}`));
+  }
+  updateRentCharge(workspaceId: string, id: string, input: UpdateChargeInput) {
+    return this.request<RentChargeDto>('PATCH', this.ws(workspaceId, `/rent-charges/${enc(id)}`), input);
+  }
+  listRentPayments(workspaceId: string, leaseId: string) {
+    return this.request<{ data: RentPaymentDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/leases/${enc(leaseId)}/payments`),
+    ).then((r) => r.data);
+  }
+  listLeaseCandidates(workspaceId: string, leaseId: string) {
+    return this.request<{ data: LeaseCandidateDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/leases/${enc(leaseId)}/candidates`),
+    ).then((r) => r.data);
+  }
+  recordRentPayment(workspaceId: string, leaseId: string, input: RentPaymentInput) {
+    return this.request<LeaseDto>('POST', this.ws(workspaceId, `/leases/${enc(leaseId)}/payments`), input);
+  }
+  removeRentPayment(workspaceId: string, leaseId: string, paymentId: string) {
+    return this.request<void>(
+      'DELETE',
+      this.ws(workspaceId, `/leases/${enc(leaseId)}/payments/${enc(paymentId)}`),
+    );
+  }
+  addDepositEvent(workspaceId: string, leaseId: string, input: DepositEventInput) {
+    return this.request<LeaseDto>(
+      'POST',
+      this.ws(workspaceId, `/leases/${enc(leaseId)}/deposit-events`),
+      input,
+    );
+  }
+  removeDepositEvent(workspaceId: string, leaseId: string, eventId: string) {
+    return this.request<LeaseDto>(
+      'DELETE',
+      this.ws(workspaceId, `/leases/${enc(leaseId)}/deposit-events/${enc(eventId)}`),
+    );
+  }
+  listAllocationRules(workspaceId: string, entityId: string) {
+    return this.request<{ data: AllocationRuleDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/allocation-rules${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createAllocationRule(workspaceId: string, input: CreateAllocationRuleInput) {
+    return this.request<{ id: string }>('POST', this.ws(workspaceId, '/allocation-rules'), input);
+  }
+  deleteAllocationRule(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/allocation-rules/${enc(id)}`));
+  }
+  allocateTransaction(workspaceId: string, id: string, input: AllocateTransactionInput) {
+    return this.request<TransactionDto>(
+      'POST',
+      this.ws(workspaceId, `/transactions/${enc(id)}/allocate`),
+      input,
+    );
+  }
+  listLoans(workspaceId: string, entityId: string) {
+    return this.request<{ data: LoanDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/loans${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createLoan(workspaceId: string, input: CreateLoanInput) {
+    return this.request<LoanDto>('POST', this.ws(workspaceId, '/loans'), input);
+  }
+  updateLoan(workspaceId: string, id: string, input: UpdateLoanInput) {
+    return this.request<LoanDto>('PATCH', this.ws(workspaceId, `/loans/${enc(id)}`), input);
+  }
+  getLoanSchedule(workspaceId: string, id: string) {
+    return this.request<{ data: AmortizationRowDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/loans/${enc(id)}/schedule`),
+    ).then((r) => r.data);
+  }
+  recordLoanPayment(workspaceId: string, id: string, input: LoanPaymentInput) {
+    return this.request<LoanDto>('POST', this.ws(workspaceId, `/loans/${enc(id)}/payments`), input);
+  }
+  removeLoanPayment(workspaceId: string, id: string, number: number) {
+    return this.request<LoanDto>('DELETE', this.ws(workspaceId, `/loans/${enc(id)}/payments/${number}`));
+  }
+  listDepreciation(workspaceId: string, propertyId: string, year?: number) {
+    return this.request<{ data: DepreciationDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/properties/${enc(propertyId)}/depreciation${query({ year })}`),
+    ).then((r) => r.data);
+  }
+  createDepreciation(workspaceId: string, input: CreateDepreciationInput) {
+    return this.request<{ id: string }>('POST', this.ws(workspaceId, '/depreciation'), input);
+  }
+  deleteDepreciation(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/depreciation/${enc(id)}`));
+  }
+  listReminders(workspaceId: string, entityId: string) {
+    return this.request<{ data: ReminderDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/reminders${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createReminder(workspaceId: string, input: CreateReminderInput) {
+    return this.request<ReminderDto>('POST', this.ws(workspaceId, '/reminders'), input);
+  }
+  updateReminder(workspaceId: string, id: string, input: UpdateReminderInput) {
+    return this.request<ReminderDto>('PATCH', this.ws(workspaceId, `/reminders/${enc(id)}`), input);
+  }
+  listMaintenance(workspaceId: string, opts: { entityId: string; propertyId?: string }) {
+    return this.request<{ data: MaintenanceDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/maintenance${query(opts)}`),
+    ).then((r) => r.data);
+  }
+  createMaintenance(workspaceId: string, input: CreateMaintenanceInput) {
+    return this.request<MaintenanceDto>('POST', this.ws(workspaceId, '/maintenance'), input);
+  }
+  updateMaintenance(workspaceId: string, id: string, input: UpdateMaintenanceInput) {
+    return this.request<MaintenanceDto>('PATCH', this.ws(workspaceId, `/maintenance/${enc(id)}`), input);
+  }
+  uploadRentalFile(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<{ fileId: string }>('POST', this.ws(workspaceId, '/rentals/files'), form);
+  }
+  getPropertyBudget(workspaceId: string, propertyId: string, month?: string) {
+    return this.request<PropertyBudgetDto>(
+      'GET',
+      this.ws(workspaceId, `/properties/${enc(propertyId)}/budget${query({ month })}`),
+    );
+  }
+  savePropertyBudget(workspaceId: string, propertyId: string, input: SavePropertyBudgetInput) {
+    return this.request<PropertyBudgetDto>(
+      'PUT',
+      this.ws(workspaceId, `/properties/${enc(propertyId)}/budget`),
+      input,
+    );
+  }
+  getRentalReport(workspaceId: string, opts: { entityId: string; from?: string; to?: string }) {
+    return this.request<PortfolioReportDto>('GET', this.ws(workspaceId, `/reports/rental${query(opts)}`));
+  }
+  getScheduleE(workspaceId: string, opts: { entityId: string; year?: number }) {
+    return this.request<ScheduleEDto>('GET', this.ws(workspaceId, `/reports/schedule-e${query(opts)}`));
+  }
+  downloadScheduleE(
+    workspaceId: string,
+    opts: { entityId: string; year?: number; format: ScheduleEExportFormat },
+  ) {
+    return this.requestFile(this.ws(workspaceId, `/exports/schedule-e${query(opts)}`));
+  }
+
   // ----- Employers and payslips (PAY-01..09), reports by member (FAM-08, RPT-01) ---------------------------
   listEmployers(workspaceId: string, opts: { memberId?: string } = {}) {
     return this.request<{ data: EmployerDto[] }>(
@@ -1428,6 +1697,24 @@ function toApiError(status: number, body: unknown): ApiError {
 }
 
 export type {
+  AllocationRuleDto,
+  AmortizationRowDto,
+  ArrearsDto,
+  DepreciationDto,
+  LeaseCandidateDto,
+  LeaseDto,
+  LoanDto,
+  MaintenanceDto,
+  PortfolioReportDto,
+  PropertyBudgetDto,
+  PropertyDto,
+  ReminderDto,
+  RentChargeDto,
+  RentPaymentDto,
+  RentRollDto,
+  ScheduleEDto,
+  ScheduleEExportFormat,
+  TenantDto,
   BillDto,
   BusinessProfileDto,
   InvoiceDto,

@@ -771,7 +771,19 @@ export class TransactionsService {
       req.foreign === undefined ? spec.foreign : req.foreign ? foreignSpec(req.foreign, amount) : undefined;
     if (req.splits || req.categoryId) {
       const tagged = new Set(spec.splits.map((x) => x.propertyId ?? null));
-      const only = tagged.size === 1 ? spec.splits[0] : undefined;
+      let only = tagged.size === 1 ? spec.splits[0] : undefined;
+      // A move to other books leaves the property behind.
+      if (only?.propertyId && req.categoryId) {
+        const row = await trx
+          .selectFrom('app.ledger_account as a')
+          .innerJoin('app.property as p', (j) => j.onRef('p.workspace_id', '=', 'a.workspace_id'))
+          .select(['a.entity_id as account_entity', 'p.entity_id as property_entity'])
+          .where('a.workspace_id', '=', ctx.workspaceId)
+          .where('a.id', '=', req.categoryId)
+          .where('p.id', '=', only.propertyId)
+          .executeTakeFirst();
+        if (row?.account_entity !== row?.property_entity) only = undefined;
+      }
       return this.standardSpec(trx, ctx, {
         accountId,
         amount,
@@ -1015,6 +1027,7 @@ export class TransactionsService {
         amount: specAmount(t.spec as TransactionSpec | null),
         accountId: specAccount(t.spec as TransactionSpec | null),
         splits: specSplits(t.spec as TransactionSpec | null),
+        managedBy: ownerOf(t.spec),
         entries: entries
           .filter((e) => e.transaction_id === t.id)
           .map((e) => ({

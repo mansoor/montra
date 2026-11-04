@@ -594,6 +594,20 @@ describe('tagging a transaction with a property (RNT-06)', () => {
     const moved = await c.patch(url(`/transactions/${created.body.id}`), { categoryId: cat('Repairs') });
     expect(moved.status).toBe(200);
     expect(moved.body.splits[0]).toMatchObject({ accountId: cat('Repairs'), propertyId: p.id });
+    // Moved to other books, the property stays behind rather than refusing the move.
+    const elsewhere = await c.post(url('/transactions'), {
+      date: today,
+      accountId: checking,
+      amount: usd('-300'),
+      payee: 'MOVED',
+      categoryId: cat('Supplies'),
+      propertyId: p.id,
+    });
+    const moves = await c.patch(url(`/transactions/${elsewhere.body.id}`), {
+      categoryId: cats.find((x: any) => x.entityId === personal && x.type === 'expense').id,
+    });
+    expect(moves.status).toBe(200);
+    expect(moves.body.splits[0].propertyId).toBeNull();
     const off = await c.patch(url(`/transactions/${created.body.id}`), { propertyId: null });
     expect(off.body.splits[0].propertyId).toBeNull();
     const other = await c.post(url('/transactions'), {

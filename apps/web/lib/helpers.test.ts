@@ -160,6 +160,7 @@ describe('view models', () => {
       memo: null,
       tags: ['bulk'],
       recurringItemId: null,
+      managedBy: null,
       foreign: null,
       tripId: null,
       localTime: null,

@@ -57,7 +57,7 @@ export default function Calendar() {
             <View key={n} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: th.space(2) }}>
               <Body style={{ flexShrink: 1, color: tone(i.kind) }}>{i.name}</Body>
               <View style={{ alignItems: 'flex-end' }}>
-                <Body>{fmtMoney(i.amount, i.currency)}</Body>
+                {BigInt(i.amount) !== 0n ? <Body>{fmtMoney(i.amount, i.currency)}</Body> : null}
                 {i.status !== 'upcoming' ? (
                   <Small color={i.status === 'paid' ? th.success : th.danger}>
                     {t(`calendar.status_${i.status}`)}

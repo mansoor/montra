@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import type { CategoryDto, WorkspaceDto } from '@montra/api-client';
+import type { CategoryDto, PropertyDto, WorkspaceDto } from '@montra/api-client';
 import type { InsightDto } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
@@ -19,10 +19,13 @@ export function InsightsList({
   workspace,
   initial,
   categories,
+  properties,
 }: {
   workspace: WorkspaceDto;
   initial: InsightDto[];
   categories: CategoryDto[];
+  /** RNT-09: a capital improvement belongs to one of these. */
+  properties?: PropertyDto[];
 }) {
   const { t } = useI18n();
   const [items, setItems] = useState(initial);
@@ -30,6 +33,7 @@ export function InsightsList({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [categoryFor, setCategoryFor] = useState<Record<string, string>>({});
+  const [propertyFor, setPropertyFor] = useState<Record<string, string>>({});
   const groups = groupCategories(workspace, categories, 'expense');
   const base = `/w/${workspace.id}`;
 
@@ -39,13 +43,19 @@ export function InsightsList({
     try {
       if (kind === 'accept') {
         const categoryId = categoryFor[item.id];
-        await browserApi.acceptInsight(workspace.id, item.id, categoryId ? { categoryId } : {});
+        const propertyId = propertyFor[item.id];
+        await browserApi.acceptInsight(workspace.id, item.id, {
+          ...(categoryId ? { categoryId } : {}),
+          ...(propertyId ? { propertyId } : {}),
+        });
         setNotice(
           item.kind === 'recurring'
             ? t('insights.accepted_recurring')
             : item.kind === 'separation'
               ? t('insights.accepted_separation', { category: String(item.data.category ?? '') })
-              : t('insights.accepted'),
+              : item.kind === 'capital_improvement'
+                ? t('insights.accepted_capital')
+                : t('insights.accepted'),
         );
       } else {
         await browserApi.dismissInsight(workspace.id, item.id);
@@ -113,6 +123,33 @@ export function InsightsList({
                           </optgroup>
                         ))}
                       </select>
+                    )}
+                    {item.kind === 'capital_improvement' && !item.data.propertyId && (
+                      <select
+                        className="input w-48"
+                        aria-label={t('insights.property_for', { payee: item.payee ?? '' })}
+                        value={propertyFor[item.id] ?? ''}
+                        onChange={(e) => setPropertyFor({ ...propertyFor, [item.id]: e.target.value })}
+                      >
+                        <option value="">{t('insights.choose_property')}</option>
+                        {(properties ?? [])
+                          .filter((p) => p.entityId === item.entityId)
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                    {item.kind === 'capital_improvement' && (
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={busy === item.id || (!item.data.propertyId && !propertyFor[item.id])}
+                        onClick={() => void act(item, 'accept')}
+                      >
+                        {t('insights.capitalize')}
+                      </button>
                     )}
                     {(item.kind === 'recurring' || item.kind === 'new_subscription') && (
                       <button

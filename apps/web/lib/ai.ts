@@ -140,6 +140,7 @@ export const INSIGHT_KINDS = [
   'unusual_amount',
   'duplicate_charge',
   'separation',
+  'capital_improvement',
 ] as const satisfies readonly InsightDto['kind'][];
 
 export function groupInsights(

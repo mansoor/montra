@@ -14,6 +14,8 @@ export interface SplitLine {
   accountId: string;
   amount: string; // major units as typed
   memo?: string;
+  propertyId?: string | null;
+  unitId?: string | null;
 }
 
 export interface SplitState {
@@ -74,6 +76,8 @@ export function toSplitPayload(lines: SplitLine[], currency: string, direction: 
       accountId: l.accountId,
       amount: { amount: (abs(p.minor) * sign).toString(), currency },
       ...(l.memo ? { memo: l.memo } : {}),
+      // RNT-07: editing a split keeps the property it's on.
+      ...(l.propertyId ? { propertyId: l.propertyId, unitId: l.unitId ?? null } : {}),
     };
   });
 }

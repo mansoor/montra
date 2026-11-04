@@ -105,6 +105,8 @@ export const TransactionDto = z.object({
   memo: z.string().nullable(),
   tags: z.array(z.string()),
   recurringItemId: z.string().nullable(),
+  /** What owns this transaction's money side, if anything: it changes there, not here (ADR-0016..18). */
+  managedBy: z.enum(['payslip', 'invoice', 'bill', 'lease', 'security_deposit', 'loan']).nullable(),
   /** CUR-03: the original foreign amount and rate when the purchase was made in another currency. */
   foreign: ForeignAmountDto.nullable(),
   /** Travel mode (CUR-09). */

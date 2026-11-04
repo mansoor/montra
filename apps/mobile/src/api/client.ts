@@ -20,7 +20,12 @@ import type {
   ParseQuickAddRequest,
   QuickAddDraftDto,
   BillDto,
+  AccountDto,
+  ArrearsDto,
   BusinessProfileDto,
+  LeaseDto,
+  RentPaymentRequest,
+  RentRollDto,
   ConfirmPayslipRequest,
   CreateTripRequest,
   InvoiceDto,
@@ -236,6 +241,20 @@ export function createApi(opts: ApiOptions) {
       request<MileageSummaryDto>('GET', `${ws(w)}/mileage-trips?entityId=${entityId}`),
     createMileageTrip: (w: string, input: CreateTripRequest) =>
       request<MileageTripDto>('POST', `${ws(w)}/mileage-trips`, input),
+
+    // ----- Rentals (08 §3): reads, and logging rent. The rest is managed on the web. ---------------
+    rentalPortfolios: async (w: string) =>
+      (
+        await request<{ data: { id: string; name: string; type: string }[] }>('GET', `${ws(w)}/entities`)
+      ).data.filter((e) => e.type === 'rental'),
+    rentRoll: (w: string, entityId: string) =>
+      request<RentRollDto>('GET', `${ws(w)}/rent-roll?entityId=${entityId}`),
+    arrears: (w: string, entityId: string) =>
+      request<ArrearsDto>('GET', `${ws(w)}/arrears?entityId=${entityId}`),
+    accountList: async (w: string) =>
+      (await request<{ data: AccountDto[] }>('GET', `${ws(w)}/accounts`)).data,
+    recordRent: (w: string, leaseId: string, input: RentPaymentRequest) =>
+      request<LeaseDto>('POST', `${ws(w)}/leases/${leaseId}/payments`, input),
 
     // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
     listEmployers: async (w: string) =>

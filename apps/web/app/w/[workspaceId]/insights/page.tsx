@@ -15,6 +15,16 @@ export default async function InsightsPage({ params }: { params: Promise<{ works
       api.listCategories(workspaceId),
     ]),
   );
+  // RNT-09: which property a capital improvement goes on.
+  const properties = (
+    await load((api) =>
+      Promise.all(
+        workspace.entities
+          .filter((e) => e.type === 'rental')
+          .map((e) => api.listProperties(workspaceId, e.id)),
+      ),
+    )
+  ).flat();
   const { t } = await getI18n();
   return (
     <div className="space-y-4">
@@ -22,7 +32,12 @@ export default async function InsightsPage({ params }: { params: Promise<{ works
         <h1 className="page-title">{t('insights.title')}</h1>
         <p className="text-sm text-muted">{t('insights.intro')}</p>
       </div>
-      <InsightsList workspace={workspace} initial={insights} categories={categories} />
+      <InsightsList
+        workspace={workspace}
+        initial={insights}
+        categories={categories}
+        properties={properties}
+      />
     </div>
   );
 }
