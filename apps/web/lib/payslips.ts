@@ -4,7 +4,7 @@
  */
 import { payslipTotals, type PayslipSection, type PayslipTotals } from '@montra/domain';
 import type { PayslipDto, UpdatePayslipInput } from '@montra/api-client';
-import { parseAmountInput } from './money';
+import { minorToInput, parseAmountInput } from './money';
 import { staticT } from './i18n-static';
 import { amountToInput } from './receipts';
 
@@ -143,4 +143,56 @@ export function buildUpdate(
 /** The default label of a new line: what the code means, so typical payslips need no typing. */
 export function codeLabel(section: PayslipSection, code: string, t: T = staticT): string {
   return code === 'other' ? t(`payslips.section.${section}`) : t(`payslips.code.${code}`);
+}
+
+// ----- Splitting pay across accounts (ADR-0022) --------------------------------------------------------
+
+export interface DepositRow {
+  key: string;
+  accountId: string;
+  amount: string;
+}
+
+export function depositRowsOf(
+  deposits: readonly { accountId: string; amount: string }[],
+  currency: string,
+): DepositRow[] {
+  return deposits.map((d) => ({
+    key: d.accountId,
+    accountId: d.accountId,
+    amount: minorToInput(BigInt(d.amount), currency),
+  }));
+}
+
+/** What's on screen as a request's `deposits`, or what's wrong with it. */
+export function depositsInput(
+  rows: readonly DepositRow[],
+  currency: string,
+  locale?: string,
+  t: T = staticT,
+): { ok: true; deposits: { accountId: string; amount: string }[] } | { ok: false; error: string } {
+  const deposits: { accountId: string; amount: string }[] = [];
+  for (const r of rows) {
+    const p = parseAmountInput(r.amount, currency, locale, t);
+    if (!p.ok) return { ok: false, error: p.error };
+    if (p.minor <= 0n) return { ok: false, error: t('deposits.more_than_zero') };
+    deposits.push({ accountId: r.accountId, amount: p.minor.toString() });
+  }
+  return { ok: true, deposits };
+}
+
+/** What the main account gets, from what's typed so far. An amount that doesn't parse yet counts as nothing. */
+export function depositRest(
+  net: string,
+  rows: readonly DepositRow[],
+  currency: string,
+  locale?: string,
+): bigint {
+  const n = parseAmountInput(net, currency, locale);
+  let rest = n.ok ? n.minor : 0n;
+  for (const r of rows) {
+    const p = parseAmountInput(r.amount, currency, locale);
+    if (p.ok) rest -= p.minor;
+  }
+  return rest;
 }

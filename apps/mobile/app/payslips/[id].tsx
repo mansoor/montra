@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { depositChoices } from '@montra/domain';
 import type { PayslipDto } from '@montra/schemas';
 import { config } from '../../src/config';
 import { canConfirm, linesBySection } from '../../src/features/payslips';
@@ -23,6 +24,8 @@ export default function PayslipReview() {
   const [bearer, setBearer] = useState<string | null>(null);
   const [unshown, setUnshown] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [picks, setPicks] = useState<Record<string, string | null>>({});
+  const [accountNames, setAccountNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -37,7 +40,11 @@ export default function PayslipReview() {
   useEffect(() => {
     void load();
     void token().then(setBearer);
-  }, [load, token]);
+    void api.accountList(ws).then(
+      (list) => setAccountNames(new Map(list.map((a) => [a.id, a.name]))),
+      () => undefined,
+    );
+  }, [load, token, api, ws]);
 
   // While the payslip is being read, check back.
   useEffect(() => {
@@ -46,7 +53,7 @@ export default function PayslipReview() {
     return () => clearInterval(timer);
   }, [payslip?.status, load]);
 
-  const confirm = async (depositTransactionId?: string | null) => {
+  const confirm = async (chosen: Record<string, string | null> = {}) => {
     if (!payslip) return;
     setBusy(true);
     setError(null);
@@ -54,7 +61,10 @@ export default function PayslipReview() {
       setPayslip(
         await api.confirmPayslip(ws, id, {
           version: payslip.version,
-          ...(depositTransactionId !== undefined ? { depositTransactionId } : {}),
+          ...depositChoices(
+            payslip.deposits.map((d) => d.accountId),
+            chosen,
+          ),
         }),
       );
     } catch (err) {
@@ -80,6 +90,14 @@ export default function PayslipReview() {
     return <Screen>{error ? <Banner tone="danger" text={error} /> : <Body muted>…</Body>}</Screen>;
   const ccy = payslip.currency;
   const candidates = payslip.status === 'needs_review' ? payslip.matchCandidates : [];
+  const askedAccounts = [...new Set(candidates.map((c) => c.accountId))];
+  /** Picks one account's deposit, and goes ahead once every account asked about has an answer. */
+  const pick = (accountId: string, transactionId: string | null) => {
+    const next = { ...picks, [accountId]: transactionId };
+    setPicks(next);
+    if (askedAccounts.every((id) => id in next)) void confirm(next);
+  };
+  const nameOf = (id: string) => accountNames.get(id) ?? t('payslips.deposit');
 
   return (
     <Screen testID="payslip-review">
@@ -126,26 +144,53 @@ export default function PayslipReview() {
         </Card>
       ))}
 
+      {payslip.deposits.length > 0 ? (
+        <Card testID="payslip-deposits">
+          <Body>{t('mobile.payslips.deposits')}</Body>
+          <Row
+            title={t('mobile.payslips.main_account')}
+            right={<Small>{fmtMoney(payslip.mainDeposit, ccy)}</Small>}
+          />
+          {payslip.deposits.map((d) => (
+            <Row
+              key={d.accountId}
+              title={nameOf(d.accountId)}
+              right={<Small>{fmtMoney(d.amount, ccy)}</Small>}
+              testID="payslip-deposit"
+            />
+          ))}
+          {payslip.status !== 'posted' ? <Small>{t('mobile.payslips.change_split_on_web')}</Small> : null}
+        </Card>
+      ) : null}
       {candidates.length > 0 ? (
         <Card testID="payslip-candidates">
           <Body>{t('payslips.choose_deposit')}</Body>
           <Small>{t('payslips.choose_deposit_hint')}</Small>
-          {candidates.map((c) => (
-            <Row
-              key={c.transactionId}
-              title={c.payee ?? t('payslips.deposit')}
-              subtitle={fmtDate(c.date)}
-              right={<Small>{fmtMoney(c.amount, ccy)}</Small>}
-              onPress={() => void confirm(c.transactionId)}
-              testID="payslip-candidate"
-            />
+          {askedAccounts.map((accountId) => (
+            <Card key={accountId} testID="payslip-deposit-choice">
+              {askedAccounts.length > 1 || payslip.deposits.length > 0 ? (
+                <Small>{nameOf(accountId)}</Small>
+              ) : null}
+              {candidates
+                .filter((c) => c.accountId === accountId)
+                .map((c) => (
+                  <Row
+                    key={c.transactionId}
+                    title={c.payee ?? t('payslips.deposit')}
+                    subtitle={`${fmtDate(c.date)}${picks[accountId] === c.transactionId ? ' ✓' : ''}`}
+                    right={<Small>{fmtMoney(c.amount, ccy)}</Small>}
+                    onPress={() => pick(accountId, c.transactionId)}
+                    testID="payslip-candidate"
+                  />
+                ))}
+              <Button
+                kind="secondary"
+                label={t('payslips.none_of_these')}
+                busy={busy}
+                onPress={() => pick(accountId, null)}
+              />
+            </Card>
           ))}
-          <Button
-            kind="secondary"
-            label={t('payslips.none_of_these')}
-            busy={busy}
-            onPress={() => void confirm(null)}
-          />
         </Card>
       ) : canConfirm(payslip) ? (
         <Button

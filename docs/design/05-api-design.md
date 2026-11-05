@@ -157,6 +157,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `POST /v1/unsubscribe?token=` (no session) | One-click unsubscribe | OPS-10 |
 | `GET /v1/me/security-activity` | Security log | AUTH-12 |
 | `GET/POST/DELETE /v1/me/deletion` | Delete the account, or cancel within the window. While it's closing, only this and reading `/v1/me` work (403 `account.deleting`) | NFR-06, BAK-09 |
+| `deposits` on `POST/PATCH /employers` and on `PATCH /payslips/{id}` before posting; `otherDeposits` on `POST /payslips/{id}/confirm` | Splitting pay across accounts ([ADR-0022](adr/0022-splitting-pay.md)) | PAY-01, PAY-04 |
 | `GET /ai-events`, `DELETE /ai-events` | AI audit log | AIA-10 |
 | `GET/POST /support-grants`, `DELETE /support-grants/{id}` | Support access: owner only, read-only, 72 h by default | OPS-02 |
 | `GET /billing`, `POST /billing/checkout` `{ interval }`, `POST /billing/portal` | Plan, flags and links to pay; 402 `plan.required` when adding books | UP-12, OPS-08 |

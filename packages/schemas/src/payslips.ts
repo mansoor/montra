@@ -8,6 +8,21 @@ import { Cadence } from './ledger.js';
 export const EmployerType = z.enum(['employer', 'freelance', 'pension', 'benefits', 'other']);
 export type EmployerType = z.infer<typeof EmployerType>;
 
+/** A fixed amount of each pay that goes to another account. Whatever's left goes to the employer's deposit account (ADR-0022). */
+export const DepositSplitInput = z.object({
+  accountId: Id,
+  amount: MinorDto.refine((s) => BigInt(s) > 0n, 'Amount must be more than zero'),
+});
+export type DepositSplitInput = z.output<typeof DepositSplitInput>;
+
+const DepositSplits = z
+  .array(DepositSplitInput)
+  .max(10)
+  .refine(
+    (list) => new Set(list.map((d) => d.accountId)).size === list.length,
+    'Each account can only be listed once',
+  );
+
 export const CreateEmployerRequest = z.object({
   /** Defaults to the Personal entity. */
   entityId: Id.optional(),
@@ -19,6 +34,7 @@ export const CreateEmployerRequest = z.object({
   depositAccountId: Id,
   /** How the pay appears on the statement, for matching the deposit. Defaults to the name. */
   payee: z.string().trim().max(200).nullable().optional(),
+  deposits: DepositSplits.default([]),
 });
 export type CreateEmployerRequest = z.output<typeof CreateEmployerRequest>;
 
@@ -31,6 +47,7 @@ export const UpdateEmployerRequest = z
     payee: z.string().trim().max(200).nullable(),
     retirementAccountId: Id.nullable(),
     archived: z.boolean(),
+    deposits: DepositSplits,
   })
   .partial()
   .extend({ version: z.number().int().positive() });
@@ -44,6 +61,8 @@ export const EmployerDto = z.object({
   type: EmployerType,
   payFrequency: Cadence,
   depositAccountId: Id,
+  /** Fixed amounts to other accounts. The rest goes to `depositAccountId`. */
+  deposits: z.array(z.object({ accountId: Id, amount: MinorDto })),
   payee: z.string().nullable(),
   retirementAccountId: Id.nullable(),
   archived: z.boolean(),
@@ -90,6 +109,8 @@ export type PayslipLineDto = z.infer<typeof PayslipLineDto>;
 
 /** A deposit that could be this pay, when more than one could (PAY-04). */
 export const DepositCandidateDto = z.object({
+  /** The account this could be the deposit for. With a split, each account has its own. */
+  accountId: Id,
   transactionId: Id,
   date: CalendarDateDto,
   amount: MinorDto,
@@ -126,6 +147,17 @@ export const PayslipDto = z.object({
   /** True when it took over an imported deposit, so the deposit isn't counted twice (PAY-04). */
   matchedDeposit: z.boolean(),
   matchCandidates: z.array(DepositCandidateDto),
+  /** What goes to the employer's deposit account: the net, less `deposits`. */
+  mainDeposit: MinorDto,
+  /** Fixed amounts to other accounts (ADR-0022), each its own transaction once posted. */
+  deposits: z.array(
+    z.object({
+      accountId: Id,
+      amount: MinorDto,
+      transactionId: Id.nullable(),
+      matchedDeposit: z.boolean(),
+    }),
+  ),
   version: z.number().int(),
 });
 export type PayslipDto = z.infer<typeof PayslipDto>;
@@ -150,6 +182,8 @@ export const UpdatePayslipRequest = z
     periodEnd: CalendarDateDto.nullable(),
     net: NonNegativeMinor,
     lines: z.array(PayslipLineInput).min(1).max(100),
+    /** Only before posting: this payslip's split. */
+    deposits: DepositSplits,
   })
   .partial()
   .extend({ version: z.number().int().positive() });
@@ -159,6 +193,11 @@ export type UpdatePayslipRequest = z.output<typeof UpdatePayslipRequest>;
 export const ConfirmPayslipRequest = z.object({
   version: z.number().int().positive(),
   depositTransactionId: Id.nullable().optional(),
+  /** The same choice for the other accounts in a split. */
+  otherDeposits: z
+    .array(z.object({ accountId: Id, transactionId: Id.nullable() }))
+    .max(10)
+    .optional(),
 });
 export type ConfirmPayslipRequest = z.output<typeof ConfirmPayslipRequest>;
 
