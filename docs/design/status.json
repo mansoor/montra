@@ -206,7 +206,7 @@
   ],
   "OPS-06": [
     "partial",
-    "Renovate, pnpm audit and Trivy in CI, and a patching runbook. A zod finding in the Expo CLI and Kratos v1.3.1’s findings are open"
+    "Renovate, pnpm audit and Trivy in CI, and a patching runbook. Kratos v1.3.1’s findings are open, and one zod finding in the Expo CLI is accepted with an expiry"
   ],
   "TZ-06": [
     "done",
