@@ -34,6 +34,7 @@ const WORKSPACE_PAGES = [
   '/payslips?tab=employers',
   '/upcoming',
   '/recurring',
+  '/accounts',
   '/accounts/new',
   '/reports',
   '/reports/spending',
