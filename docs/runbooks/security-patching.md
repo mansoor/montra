@@ -11,6 +11,11 @@ uses it, treat it as critical.
 > **Partly exercised.** Trivy has been run locally on the filesystem and on saved images. Only the Kratos image was scanned through
 > the Docker socket as the workflow does. The workflow hasn't run on GitHub, and the process below hasn't been used for a real finding.
 
+> **Renovate and Dependabot don't appear to be running** (checked 2026-11-04). `renovate.json` is in the repo, but Renovate has never opened a
+> PR or a branch, so its GitHub app looks not to be installed, and GitHub's vulnerability alerts endpoint returns 404. Until both are turned on,
+> nothing raises dependencies or base image digests by itself. `security.yml`'s weekly run still finds new fixable findings, and someone has to
+> act on them by hand.
+
 ## Where findings come from
 
 | Source                           | Runs                        | Covers                                                        |
@@ -64,7 +69,9 @@ At expiry, look again rather than extending by habit: see whether Expo has moved
 ## Monthly round
 
 - [ ] Merge outstanding Renovate PRs.
-- [ ] Rebuild and redeploy, even with no code changes, to pick up base image patches.
+- [ ] Check that the base image digests in the four Dockerfiles are moving. They are pinned, so a rebuild alone picks up no patches: a fix only arrives when a Renovate PR raises the digest, or someone does it by hand with
+      `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'`.
+- [ ] Rebuild and redeploy, to pick up the digests merged this month. `apt-get` packages in the doc-worker image are not pinned, so its rebuild can also change them.
 - [ ] Update Aurora minors if the maintenance window hasn't.
 - [ ] Review `.trivyignore`, inline ignores and the accepted findings above for expired reasons. Check for a new Kratos release that scans clean.
 - [ ] Check that a `security.yml` run has happened on schedule, and that it is green.

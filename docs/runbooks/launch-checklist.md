@@ -41,9 +41,11 @@ no data. One short local run put the 5,000-row parse at about 6 to 9 seconds, cl
 
 ## 3. Security
 
-- [ ] **`security.yml` green.** On the last local scan these were open and will fail the workflow: `fastify` 5.11.3 (4 high) and `nodemailer` 8.0.11
-      (3 high) in the API image, and `postcss` 8.4.31 (2 high) in web. Kratos now scans clean, built from source ([ADR-0021](../design/adr/0021-kratos-built-from-source.md)), which
-      still needs the owner's decision and a first run on staging.
+- [ ] **`security.yml` green** on the release commit. It has been on `develop` since PR #21. It accepts a `zod` finding and four Kratos highs until
+      2027-02-04, listed in `security-patching.md`. Kratos is built from source ([ADR-0021](../design/adr/0021-kratos-built-from-source.md)), which still needs
+      a first run on staging.
+- [ ] Install the Renovate GitHub app and turn on Dependabot alerts. Neither appears to be running, and base images are pinned by digest, so
+      without them nothing raises those digests. Then confirm that a first Renovate PR appears.
 - [ ] **External pen test** done, on `staging`, with a written report. Allow for the fixes as well as the test. No Sev-1 or Sev-2 open.
 - [ ] Cross-workspace access tested by the pen tester (RLS), and staff access limited to `support_grant`.
 - [ ] Secrets rotated after the pen test, if testers had any.

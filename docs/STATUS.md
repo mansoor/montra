@@ -750,7 +750,8 @@ Phase 11 leftovers:
 
 - **Passkeys** were tested on 2026-11-04 in Chromium with a virtual authenticator against local Kratos v26.2.0: sign-up and sign-in work, and with the previous CSP they didn't. Security keys as a second factor, other browsers and real devices haven't been tried.
 - **OIDC:** the CSP lists Apple and Google, and a local stand-in showed Chromium blocks the redirect without them. No real provider has been tried.
-- **Base images:** only Kratos is pinned by digest and checksum. The API, web and doc-worker images still use tags, and download the RDS bundle unchecked.
+- **Base images** are pinned by digest in all four Dockerfiles, and the RDS bundle by checksum where it is downloaded. A rebuild no longer picks up base image patches, so they depend on digests being raised: see the monthly round in `docs/runbooks/security-patching.md`.
+- **Renovate and Dependabot don't appear to be running.** Renovate has never opened a PR or branch, and the vulnerability alerts endpoint returns 404. Installing the app and turning on alerts is for the owner, and it's on the launch checklist. Until then, only the weekly `security.yml` run catches new findings.
 
 - **Not tried on the real thing:** Stripe, Sentry, AWS KMS, S3 with KMS, SES, Cloudflare, Grafana, the deploy workflow, and every mobile screen on a device.
 - **`security.yml`:** Kratos no longer fails it (ADR-0021), and a `zod` finding in the Expo CLI is accepted until 2027-02-04.

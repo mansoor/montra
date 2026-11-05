@@ -1,6 +1,6 @@
 # Montra doc worker (XLS, digital PDF and scanned PDF statement extraction). Build from the repository root:
 #   docker build -f apps/doc-worker/Dockerfile -t montra/doc-worker .
-FROM python:3.12-slim AS build
+FROM python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30 AS build
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /src
@@ -9,7 +9,7 @@ COPY apps/doc-worker/src ./src
 RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install .
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30 AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
@@ -21,7 +21,9 @@ RUN apt-get update \
  && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin montra
 # Aurora requires TLS. libpq reads this file through `sslrootcert` in the connection string.
 RUN install -d -m 755 /etc/ssl/certs
-ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+# When AWS changes this bundle the build fails on the checksum, on purpose: check the new one came from AWS, then update it here
+# and in the other Dockerfiles that download it.
+ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
 COPY --from=build /opt/venv /opt/venv
 USER montra
 ENTRYPOINT ["python", "-m", "montra_doc_worker"]

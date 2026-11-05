@@ -39,7 +39,8 @@ COPY --from=build /usr/bin/kratos /usr/bin/kratos
 COPY kratos.yml identity.schema.json /etc/config/kratos/
 COPY templates /etc/config/kratos/templates
 # Aurora requires TLS. `sslrootcert` in the DSN points here. When AWS changes this bundle the build fails on the checksum,
-# on purpose: check the new one came from AWS, then update it here.
+# on purpose: check the new one came from AWS, then update it here
+# and in the other Dockerfiles that download it.
 ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/config/kratos/rds-global-bundle.pem
 USER 10000
 EXPOSE 4433 4434
