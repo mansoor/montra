@@ -15,7 +15,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       {
         paragraphs: [
           'Create a workspace and choose what it’s for: a household, a business or rentals. You can add other kinds of books later.',
-          'Add an account with its current balance, then import a statement from your bank. Montra suggests a category for each line, and you check the ones it isn’t sure about in Review.',
+          'Under Accounts, add one with its current balance, then import a statement from your bank. Montra suggests a category for each line, and you check the ones it isn’t sure about in Review.',
           'After that, Home shows where the month stands, and Budget lets you give every dollar a job.',
         ],
       },
