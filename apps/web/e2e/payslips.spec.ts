@@ -1,6 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { fakeDocumentPng, nav, onboardHousehold } from './phase3-helpers';
 
@@ -161,10 +162,10 @@ test('pay splits across accounts, each deposit in its own account', async ({ pag
   await expect(plan.getByTestId('deposit-rest')).toContainText('The rest goes to Joint checking');
   await plan.getByRole('button', { name: 'Add an account' }).click();
   await plan.getByLabel('Account for amount 1').selectOption({ label: 'College fund' });
-  await plan.getByLabel('Amount 1').fill('200.00');
+  await plan.getByRole('textbox', { name: 'Amount 1' }).fill('200.00');
   await plan.getByRole('button', { name: 'Add an account' }).click();
   await plan.getByLabel('Account for amount 2').selectOption({ label: 'Vacation' });
-  await plan.getByLabel('Amount 2').fill('100.00');
+  await plan.getByRole('textbox', { name: 'Amount 2' }).fill('100.00');
   await plan.getByRole('button', { name: 'Save split' }).click();
   await expect(page.getByText('Split saved.')).toBeVisible();
   await expect(page.getByTestId('employer-split-summary')).toContainText('College fund: $200.00');
@@ -207,10 +208,15 @@ test('pay splits across accounts, each deposit in its own account', async ({ pag
   const where = page.getByTestId('payslip-deposits');
   await expect(where.getByTestId('deposit-rest')).toContainText('$1,200.00');
   // The rest follows what's typed, for this payslip only.
-  await where.getByLabel('Amount 2').fill('1400.00');
+  await where.getByRole('textbox', { name: 'Amount 2' }).fill('1400.00');
   await expect(where.getByRole('alert')).toContainText('has to leave something');
-  await where.getByLabel('Amount 2').fill('100.00');
+  await where.getByRole('textbox', { name: 'Amount 2' }).fill('100.00');
   await expect(where.getByTestId('deposit-rest')).toContainText('$1,200.00');
+
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    .analyze();
+  expect(violations.map((v) => v.id)).toEqual([]);
 
   await page.getByRole('button', { name: 'Confirm' }).click();
   const choice = page.getByTestId('deposit-choice');

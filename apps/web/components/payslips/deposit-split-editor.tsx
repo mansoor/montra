@@ -37,7 +37,7 @@ export function DepositSplitEditor({
     <div className="space-y-2">
       {rows.map((r, i) => (
         <div key={r.key} className="flex flex-wrap items-end gap-2" data-testid="deposit-split-row">
-          <label className="min-w-0 flex-1">
+          <label className="w-full min-w-0 sm:w-auto sm:flex-1">
             <span className="field-label">{t('deposits.account')}</span>
             <select
               className="input"

@@ -1606,7 +1606,7 @@
   "payslips.amount": "Amount",
   "payslips.by_hand": "Enter by hand",
   "payslips.choose_deposit": "Which deposit is this pay?",
-  "payslips.choose_deposit_hint": "More than one deposit matches the net pay and date.",
+  "payslips.choose_deposit_hint": "More than one deposit matches the amount and date.",
   "payslips.code.401k": "401(k)",
   "payslips.code.bonus": "Bonus",
   "payslips.code.commission": "Commission",
