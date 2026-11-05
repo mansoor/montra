@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+      # No cache: nothing is installed here, so there'd be no store to save, and saving it would fail the job.
       - name: pnpm audit
         run: pnpm audit --audit-level=high
 

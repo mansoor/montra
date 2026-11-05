@@ -48,10 +48,23 @@ anything else, add it to `.trivyignore` or as an inline `#trivy:ignore` comment,
 next to it. Two inline ones exist today, in `infra/terraform/modules/network/main.tf`: the ALB is public because it is the origin
 behind Cloudflare, and tasks need outbound internet to reach providers with no fixed addresses.
 
+For npm packages, add the advisory to `pnpm.auditConfig.ignoreGhsas` in the root `package.json`, which skips that one advisory and no
+other. JSON has no comments, so the reason and expiry go in the table below. `pnpm audit` still counts it, as `1 high (1 ignored)`.
+
+### Accepted today
+
+| Advisory | Where | Why it's accepted | Expires | Remove when |
+| --- | --- | --- | --- | --- |
+| [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), high: `zod` below 4.6.6 can run out of memory on oversized collections | `zod` 3.25.76, only through `expo` > `@expo/cli`, which requires `^3.25.76` | The Expo command-line tool uses it on developer machines and in CI, on our own project files. None of it reaches people: the iOS and Android bundles' source maps list only `zod` 4.6.7 (checked 2026-11-04), which is patched, and the API and web use 4.6.7 too. Forcing version 4 on the tool could break builds, so the fix has to come from Expo. | 2027-02-04 | An Expo release moves off `zod` 3. Check at each Expo SDK upgrade |
+| CVE-2026-41567, CVE-2026-42306, CVE-2026-116587 and CVE-2026-32286, high, with no fix from their maintainers | `docker/docker`, `go-jose/v3` and `pgproto3/v2`, in the Kratos image | Checked with `go mod why` and `go list -deps`. See [ADR-0021](../design/adr/0021-kratos-built-from-source.md) for each. `--ignore-unfixed` means the scan doesn't fail on them, so only this table brings them back up. | 2027-02-04 | Their maintainers ship fixes, or Ory ships a release that scans clean |
+
+At expiry, look again rather than extending by habit: see whether Expo has moved, and repeat the source map check with
+`npx expo export --platform android --source-maps` if the bundle has changed.
+
 ## Monthly round
 
 - [ ] Merge outstanding Renovate PRs.
 - [ ] Rebuild and redeploy, even with no code changes, to pick up base image patches.
 - [ ] Update Aurora minors if the maintenance window hasn't.
-- [ ] Review `.trivyignore`, inline ignores and ADR-0021's list for expired reasons. Check for a new Kratos release that scans clean.
+- [ ] Review `.trivyignore`, inline ignores and the accepted findings above for expired reasons. Check for a new Kratos release that scans clean.
 - [ ] Check that a `security.yml` run has happened on schedule, and that it is green.

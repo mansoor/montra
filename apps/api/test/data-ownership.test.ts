@@ -919,6 +919,10 @@ describe('expiry and schedules (BAK-05, BAK-09)', () => {
     await drain();
     const untouched = (await c.get(url('/backups'))).body.data.length;
 
+    // Before the backup runs: a notification written during quiet hours is held until they end, whatever the time of day this runs.
+    expect((await c.patch('/v1/me/notification-prefs', { quietStart: null, quietEnd: null })).status).toBe(
+      200,
+    );
     await admin.query(`update app.backup_schedule set next_run_on = current_date where workspace_id = $1`, [
       wsId,
     ]);
@@ -928,7 +932,6 @@ describe('expiry and schedules (BAK-05, BAK-09)', () => {
     expect((await c.get(url('/backup-schedule'))).body.schedule.nextRunOn).toBe(addDays(today, 7));
     const mail = h.app.get(MAIL_PORT) as MemoryMail;
     mail.outbox.length = 0;
-    await c.patch('/v1/me/notification-prefs', { quietStart: null, quietEnd: null });
     await h.app.get(NotificationsService).deliverWaiting();
     const email = mail.outbox.find((m) => m.subject === 'Your scheduled backup is ready')!;
     expect(email.text).toContain(`/w/${wsId}/settings?tab=data`);

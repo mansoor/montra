@@ -206,7 +206,7 @@
   ],
   "OPS-06": [
     "partial",
-    "Renovate, pnpm audit and Trivy in CI, and a patching runbook. A zod finding in the Expo CLI is open. Kratos scans clean with no critical, built from source (ADR-0021)"
+    "Renovate, pnpm audit and Trivy in CI, and a patching runbook. Kratos passes its scan, built from source (ADR-0021). Four highs in it with no upstream fix, and one zod finding in the Expo CLI, are accepted with an expiry"
   ],
   "TZ-06": [
     "done",
