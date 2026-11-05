@@ -1,6 +1,6 @@
 # ADR-0021: Build Kratos from its release tag with patched dependencies
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-04
 
 ## Context
@@ -38,6 +38,8 @@ known default for its pagination tokens.
   raises the Go image and `KRATOS_VERSION` (and then `KRATOS_COMMIT` needs changing by hand), but not the module list.
 - SQLite is gone from the binary, so `dsn: memory` no longer starts. Nothing uses it: every environment sets `DSN`.
 - The image has no shell, so debugging needs `docker cp` or a debug sidecar. Nothing in Terraform or Compose runs a command in it.
+- Base images are pinned by digest, and the RDS certificate bundle by checksum, because this image handles sign-in. When AWS
+  changes the bundle the build fails until the checksum is updated, on purpose.
 - Deploys and the `security.yml` image job get slower, because Kratos compiles on each uncached build (about 4 minutes here).
 - **v1.3.1 can't run on the migrated schema.** v26.2.0 adds 23 migrations, including `NOT NULL identity_id` columns, and on them
   v1.3.1 fails sign-in and identity changes. Nothing has been deployed, so a first deploy isn't affected. An environment already on
