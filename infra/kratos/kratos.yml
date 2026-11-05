@@ -1,6 +1,6 @@
 # Ory Kratos configuration for Montra (ADR-0006). Local/dev values; production overrides URLs, secrets,
 # SMTP and OIDC client credentials through environment variables (e.g. SECRETS_COOKIE, COURIER_SMTP_CONNECTION_URI).
-version: v1.3.0
+version: v26.2.0
 
 dsn: memory # overridden by DSN env (Postgres database `kratos`, separate from the ledger)
 
@@ -67,7 +67,7 @@ selfservice:
           - hook: revoke_active_sessions # AUTH-05: sign out everywhere after a reset
           - hook: web_hook # tell the API to drop cached sessions immediately
             config:
-              url: http://api:4000/internal/kratos/hooks
+              url: http://host.docker.internal:4000/internal/kratos/hooks # the API runs on the host locally
               method: POST
               body: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncmVjb3ZlcnknLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
               auth:
@@ -127,7 +127,9 @@ courier:
 
 secrets:
   cookie: [CHANGE-ME-local-cookie-secret-32chars-min]
-  cipher: [CHANGE-ME-32-character-cipher-key]
+  cipher: [CHANGE-ME-32-chars-cipher-key-xx] # exactly 32 characters, or Kratos refuses to start
+  # CVE-2026-33503: unset, Kratos falls back to a publicly known default.
+  pagination: [CHANGE-ME-local-pagination-secret]
 
 ciphers:
   algorithm: xchacha20-poly1305

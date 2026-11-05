@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FlowForm } from '@/components/kratos/flow-form';
-import { hostileFlow, KRATOS, loginFlow, settingsFlow } from './kratos-fixtures';
+import { hostileFlow, KRATOS, loginFlow, passedVerificationFlow, settingsFlow } from './kratos-fixtures';
 import { toRenderModel } from './kratos-ui';
 
 describe('Kratos node renderer (ADR-0006)', () => {
@@ -101,6 +101,31 @@ describe('Kratos node renderer (ADR-0006)', () => {
       <FlowForm model={toRenderModel(hostileFlow, { kratosOrigin: KRATOS })} label="x" />,
     );
     expect(html).not.toContain('<form');
+    expect(html).toContain('could not be loaded safely');
+  });
+
+  it('shows a finished flow as its message and a link, with no form', () => {
+    const html = renderToStaticMarkup(
+      <FlowForm model={toRenderModel(passedVerificationFlow, { kratosOrigin: KRATOS })} label="x" />,
+    );
+    expect(html).not.toContain('<form');
+    expect(html).not.toContain('csrf');
+    expect(html).not.toContain('could not be loaded safely');
+    expect(html).toContain('You successfully verified your email address.');
+    expect(html).toContain('href="http://localhost:3000/welcome"');
+  });
+
+  it('still refuses a GET flow when its only link is unsafe', () => {
+    const flow = {
+      ...passedVerificationFlow,
+      nodes: [
+        { ...passedVerificationFlow.nodes[1]!, attributes: { node_type: 'a', href: 'javascript:alert(1)' } },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      <FlowForm model={toRenderModel(flow, { kratosOrigin: KRATOS })} label="x" />,
+    );
+    expect(html).not.toContain('javascript:');
     expect(html).toContain('could not be loaded safely');
   });
 });

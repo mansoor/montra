@@ -155,6 +155,7 @@ Use the same CA path in every Node and Python string. The images ship the file a
 | `KRATOS_DSN`            | `postgres://montra_kratos:<pw>@<writer>:5432/kratos?sslmode=verify-full&sslrootcert=/etc/config/kratos/rds-global-bundle.pem` |
 | `KRATOS_COOKIE_SECRET`  | `openssl rand -hex 32`                                                                                                        |
 | `KRATOS_CIPHER_SECRET`  | `openssl rand -hex 16`. **Exactly 32 characters.** Kratos refuses to start on a longer one                                    |
+| `KRATOS_PAGINATION_SECRET` | `openssl rand -hex 32`. Unset, Kratos uses a publicly known default (CVE-2026-33503)                                   |
 | `KRATOS_WEBHOOK_SECRET` | `openssl rand -hex 32`. Shared by Kratos and the API                                                                          |
 | `KRATOS_SMTP_URL`       | `smtps://<smtp-user>:<url-encoded-smtp-password>@<ses-smtp-endpoint>:465/`                                                    |
 | `MAIL_URL`              | The same SMTP details, in the form the API's mailer takes                                                                     |

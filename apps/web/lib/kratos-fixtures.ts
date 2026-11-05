@@ -248,3 +248,25 @@ export const hostileFlow: UiContainer = {
     { type: 'iframe', group: 'default', attributes: { node_type: 'iframe' }, messages: [], meta: {} },
   ],
 };
+
+/** A verification flow after the right code, as Kratos v26.2.0 and v1.3.1 return it. */
+export const passedVerificationFlow: UiContainer = {
+  action: 'http://localhost:3000/welcome',
+  method: 'GET',
+  messages: [{ id: 1080002, text: 'You successfully verified your email address.', type: 'success' }],
+  nodes: [
+    csrf,
+    {
+      type: 'a',
+      group: 'code',
+      attributes: {
+        id: 'continue',
+        href: 'http://localhost:3000/welcome',
+        title: { id: 1070009, text: 'Continue', type: 'info' },
+        node_type: 'a',
+      },
+      messages: [],
+      meta: {},
+    },
+  ],
+};

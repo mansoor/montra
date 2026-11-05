@@ -3,6 +3,15 @@
   "extends": ["config:recommended"],
   "baseBranches": ["develop"],
   "schedule": ["before 6am on monday"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^infra/kratos/Dockerfile$/"],
+      "matchStrings": ["ARG KRATOS_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "ory/kratos",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
   "packageRules": [{ "matchUpdateTypes": ["minor", "patch"], "groupName": "non-major dependencies" }],
   "vulnerabilityAlerts": { "labels": ["security"], "schedule": ["at any time"] }
 }

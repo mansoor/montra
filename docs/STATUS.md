@@ -734,7 +734,7 @@ Questions for the owner, each blocking something:
 
 1. **BAK-01 or BAK-09?** Monthly snapshots kept 12 months conflict with deleted data ageing out within 35 days, and Vault Lock makes the choice permanent 3 days after apply. Settle before the first production apply.
 2. **Is a 5-minute RPO only within a region acceptable?** Cross-region copies are daily, so losing a region can lose up to 24 hours. Closing that needs Aurora Global Database, at a monthly cost.
-3. **Upgrade Kratos, or accept its findings in writing?** v1.3.1 fails the image scan, and OPS-06 asks for criticals fixed in 72 hours.
+3. **Is building Kratos from source acceptable ([ADR-0021](design/adr/0021-kratos-built-from-source.md))?** Even Ory's newest release, v26.2.0, has criticals in `pgx`, so the image now builds that tag with patched modules. It's proposed, not accepted, and hasn't run on a real environment.
 4. **Is an emailed code acceptable for AUTH-05?** The requirement says a link.
 5. **Can the Aurora master create a `BYPASSRLS` role?** Untested. The setup runbook checks first and stops.
 
@@ -749,8 +749,8 @@ Measured locally, on 2026-11-04:
 Phase 11 leftovers:
 
 - **Not tried on the real thing:** Stripe, Sentry, AWS KMS, S3 with KMS, SES, Cloudflare, Grafana, the deploy workflow, and every mobile screen on a device.
-- **`security.yml` fails until Kratos is upgraded:** v1.3.1's image findings. A `zod` finding in the Expo CLI is accepted until 2027-02-04;
-  the reason is in `docs/runbooks/security-patching.md`.
+- **`security.yml`:** Kratos no longer fails it (ADR-0021), and a `zod` finding in the Expo CLI is accepted until 2027-02-04.
+  Reasons and expiry dates are in `docs/runbooks/security-patching.md`.
 - **PLT-08** (widgets) moves to R1.x. **Store billing** isn't built, so the phone shows the plan and doesn't sell it.
 - **NFR-10:** axe only. No screen reader or manual audit, and nothing on mobile.
 - **PLT-01:** only Chromium runs in e2e.

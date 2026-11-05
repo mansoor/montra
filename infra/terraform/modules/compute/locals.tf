@@ -22,6 +22,7 @@ locals {
     "KRATOS_CIPHER_SECRET",
     "KRATOS_COOKIE_SECRET",
     "KRATOS_DSN",
+    "KRATOS_PAGINATION_SECRET",
     "KRATOS_SMTP_URL",
     "KRATOS_WEBHOOK_SECRET",
     "MAIL_URL",
@@ -108,6 +109,7 @@ locals {
     DSN                                                               = "KRATOS_DSN"
     SECRETS_COOKIE                                                    = "KRATOS_COOKIE_SECRET"
     SECRETS_CIPHER                                                    = "KRATOS_CIPHER_SECRET"
+    SECRETS_PAGINATION                                                = "KRATOS_PAGINATION_SECRET"
     COURIER_SMTP_CONNECTION_URI                                       = "KRATOS_SMTP_URL"
     SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE = "KRATOS_WEBHOOK_SECRET"
   }
@@ -211,7 +213,7 @@ locals {
     }
     kratos-migrate = {
       repository  = "kratos"
-      command     = ["migrate", "sql", "-e", "--yes", "-c", "/etc/config/kratos/kratos.yml"]
+      command     = ["migrate", "sql", "up", "-e", "--yes", "-c", "/etc/config/kratos/kratos.yml"]
       environment = {}
       secrets     = { DSN = "KRATOS_DSN" }
       cpu         = 256

@@ -69,6 +69,10 @@ aws deploy stop-deployment --deployment-id <id> --auto-rollback-enabled
 in the Actions tab, or re-tag if the run has expired. This also reruns migrations, which do nothing if they have already run.
 The old code must work with the current schema. Expand and contract is what guarantees that.
 
+**Kratos' schema isn't expand and contract.** Its migrations are Ory's. From v1.3.1 to v26.2.0, the old version fails sign-in and
+identity changes on the migrated schema, so stop Kratos for that upgrade, and before going back run this from the new image:
+`kratos migrate sql down -e --steps 23 --yes`. Tried on a local database only. Check this again for each new Kratos version.
+
 **Workers, doc worker and Kratos:** the circuit breaker rolls back tasks that won't start. For a bad version that does start,
 deploy the previous tag as above, or point the service at the previous task definition:
 
