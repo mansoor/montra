@@ -14,7 +14,10 @@ export async function onboardHousehold(page: Page, email: string, account: strin
   await page.getByLabel('Time zone').fill('UTC');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page.getByRole('heading', { name: 'Net position' })).toBeVisible();
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Add account' }).click();
+  await nav(page, 'Accounts');
+  // Home has an Add account link too, so wait until this is the page in front.
+  await expect(page.getByRole('heading', { name: 'Accounts', level: 1 })).toBeVisible();
+  await page.getByRole('main').getByRole('link', { name: 'Add account' }).click();
   await page.getByLabel('Name').fill(account);
   await page.getByLabel('Current balance').fill('2,500.00');
   await page.getByLabel('As of').fill('2026-10-01');

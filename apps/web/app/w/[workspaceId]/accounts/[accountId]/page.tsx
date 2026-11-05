@@ -30,6 +30,12 @@ export default async function RegisterPage({
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
+          <Link
+            href={`/w/${workspaceId}/accounts`}
+            className="mb-1 inline-block text-sm text-muted hover:text-ink"
+          >
+            ← {t('nav.accounts')}
+          </Link>
           <h1 className="page-title">{account.name}</h1>
           <p className="text-sm text-muted">
             {account.type === 'liability' ? t('register.owed') : t('register.balance')}:{' '}

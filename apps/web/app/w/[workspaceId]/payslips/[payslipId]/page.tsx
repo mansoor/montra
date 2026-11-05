@@ -14,11 +14,12 @@ export default async function PayslipPage({
   params: Promise<{ workspaceId: string; payslipId: string }>;
 }) {
   const { workspaceId, payslipId } = await params;
-  const [payslip, employers, members] = await load((api) =>
+  const [payslip, employers, members, accounts] = await load((api) =>
     Promise.all([
       api.getPayslip(workspaceId, payslipId),
       api.listEmployers(workspaceId),
       api.listFamilyMembers(workspaceId),
+      api.listAccounts(workspaceId),
     ]),
   );
   const { t } = await getI18n();
@@ -31,7 +32,18 @@ export default async function PayslipPage({
         subtitle={member?.name}
         back={{ href: `/w/${workspaceId}/payslips`, label: t('nav.payslips') }}
       />
-      <PayslipReview workspaceId={workspaceId} payslip={payslip} />
+      <PayslipReview
+        workspaceId={workspaceId}
+        payslip={payslip}
+        mainAccountId={employer?.depositAccountId ?? ''}
+        accounts={accounts.filter(
+          (a) =>
+            a.type === 'asset' &&
+            !a.archived &&
+            a.entityId === payslip.entityId &&
+            a.currency === payslip.currency,
+        )}
+      />
     </div>
   );
 }

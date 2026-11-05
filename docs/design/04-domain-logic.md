@@ -463,3 +463,6 @@ Health insurance (expense)                   +75.00
 Employer contributions (match, HSA) post as memo-only or as `income:employer_benefit` /
 `asset:retirement` pairs when the user opts in. The net-pay posting is matched to the
 imported deposit (§9), so the deposit is not counted twice.
+
+Pay can be split across accounts ([ADR-0022](adr/0022-splitting-pay.md)). Fixed amounts go to other accounts and the rest to the main one. Each deposit is then its own
+transaction with a balanced entry, the deposit against the income it takes, so each matches its own statement line. Income in total is unchanged.

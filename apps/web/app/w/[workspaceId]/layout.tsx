@@ -45,6 +45,7 @@ export default async function WorkspaceLayout({
     {
       label: t('nav.group.money'),
       items: [
+        { href: `${base}/accounts`, label: t('nav.accounts'), icon: 'accounts' },
         { href: `${base}/transactions`, label: t('nav.transactions'), icon: 'transactions' },
         {
           href: `${base}/review`,
@@ -56,7 +57,6 @@ export default async function WorkspaceLayout({
         { href: `${base}/payslips`, label: t('nav.payslips'), icon: 'payslips' },
         { href: `${base}/upcoming`, label: t('nav.upcoming'), icon: 'upcoming' },
         { href: `${base}/recurring`, label: t('nav.recurring'), icon: 'recurring' },
-        { href: `${base}/accounts/new`, label: t('nav.add_account'), icon: 'add' },
       ],
     },
     {

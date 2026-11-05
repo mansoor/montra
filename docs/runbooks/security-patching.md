@@ -33,7 +33,8 @@ uses it, treat it as critical.
    the issue.
 2. **Fix.** Merge the Renovate PR, or update by hand: `pnpm update <package> --recursive`. For a transitive package with no fix
    from its parent, use `pnpm.overrides` in the root `package.json`, with a comment saying when to remove it.
-3. **Base images.** Rebuild picks up new `node:22-bookworm-slim` and `python:3.12-slim` layers.
+3. **Base images.** Rebuild picks up new `node:22-bookworm-slim` and `python:3.12-slim` layers. If Debian has the fix and the
+   image doesn't yet, upgrade that package in the runtime stage, with a comment saying when to delete the line.
 4. **Kratos** is built from Ory's tag with patched modules ([ADR-0021](../design/adr/0021-kratos-built-from-source.md)). For a
    finding in a Go module, raise it in the `go get` list in `infra/kratos/Dockerfile`; for the Go runtime, raise the `golang` image, with its digest.
    Then rebuild, rescan and run the check below, with Mailpit and the API running as the script's header says:

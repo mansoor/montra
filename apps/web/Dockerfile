@@ -41,6 +41,11 @@ FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3
 ENV NODE_ENV=production \
     PORT=3000 \
     NEXT_TELEMETRY_DISABLED=1
+# The base image still has apt 2.6.1 (CVE-2026-109518, fixed in 2.6.2). Nothing here runs apt, but it ships in the image.
+# Delete this once the base image has the fix.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends --only-upgrade apt libapt-pkg6.0 \
+ && rm -rf /var/lib/apt/lists/*
 # npm, npx, corepack and yarn are not used at runtime. Removing them also removes their dependencies from image scans.
 RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 WORKDIR /app

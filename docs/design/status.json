@@ -650,7 +650,7 @@
   ],
   "PAY-01": [
     "done",
-    "employers and other income sources per member, with frequency and deposit account"
+    "employers and other income sources per member, with frequency and deposit account, and fixed amounts split to other accounts (ADR-0022)"
   ],
   "PAY-02": [
     "done",
@@ -662,11 +662,11 @@
   ],
   "PAY-04": [
     "done",
-    "exact net in the employer account within 3 days takes the deposit over; several are offered to choose; undoing an import keeps it"
+    "exact net in the employer account within 3 days takes the deposit over; several are offered to choose; undoing an import keeps it. With a split, each account matches its own deposit"
   ],
   "PAY-05": [
     "done",
-    "one balanced entry tagged to the member; retirement codes go to an investment account"
+    "one balanced entry tagged to the member; retirement codes go to an investment account. A split payslip posts one entry per deposit, and income in total is unchanged (ADR-0022)"
   ],
   "PAY-06": [
     "done",
