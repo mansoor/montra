@@ -213,10 +213,15 @@ test('pay splits across accounts, each deposit in its own account', async ({ pag
   await where.getByRole('textbox', { name: 'Amount 2' }).fill('100.00');
   await expect(where.getByTestId('deposit-rest')).toContainText('$1,200.00');
 
+  // Filling that in scrolled the page, and axe counts a control the sticky header happens to be covering as too small. It's 36 px or more.
+  const add = await page.getByRole('button', { name: 'Add line to Taxes' }).boundingBox();
+  expect(add!.height).toBeGreaterThanOrEqual(24);
+  expect(add!.width).toBeGreaterThanOrEqual(24);
+  await page.evaluate(() => window.scrollTo(0, 0));
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
-  expect(violations.map((v) => v.id)).toEqual([]);
+  expect(violations.map((v) => ({ rule: v.id, nodes: v.nodes.map((n) => n.target.join(' ')) }))).toEqual([]);
 
   await page.getByRole('button', { name: 'Confirm' }).click();
   const choice = page.getByTestId('deposit-choice');
