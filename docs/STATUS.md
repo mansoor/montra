@@ -768,6 +768,12 @@ Phase 11 leftovers:
 
 ---
 
+## 7g. Since Phase 11
+
+- **Accounts page** (`/w/{id}/accounts`, and More → Accounts on the phone): accounts by kind, with totals per kind and for everything, from `summarizeAccounts` in `@montra/domain`, so web and phone agree. "Add account" is a button there, not a menu item. Currencies are totalled apart, not converted, and the net excludes property values, so it can differ from net worth on Home. The phone version hasn't been run on a device.
+
+---
+
 ## 8. Session checklist
 
 1. `git checkout develop && git pull`, then `git checkout -b claude/<topic>` (or continue the open feature

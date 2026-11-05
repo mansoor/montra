@@ -33,6 +33,7 @@ const WORKSPACE_PAGES = [
   '/payslips',
   '/upcoming',
   '/recurring',
+  '/accounts',
   '/accounts/new',
   '/reports',
   '/reports/spending',

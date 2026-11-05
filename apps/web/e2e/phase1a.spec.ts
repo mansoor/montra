@@ -26,7 +26,9 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
   await page.getByLabel('Time zone').fill('UTC');
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await expect(page.getByRole('heading', { name: 'Net position' })).toBeVisible();
-  await nav(page, 'Add account');
+  await nav(page, 'Accounts');
+  await expect(page.getByRole('heading', { name: 'Accounts', level: 1 })).toBeVisible();
+  await page.getByRole('main').getByRole('link', { name: 'Add account' }).click();
   await page.getByLabel('Name').fill('Joint checking');
   await page.getByLabel('Current balance').fill('5000');
   await page.getByRole('button', { name: 'Add account' }).click();

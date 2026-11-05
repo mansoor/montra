@@ -245,9 +245,14 @@ export default async function HomePage({
           <h2 id="accounts-heading" className="text-lg font-semibold">
             {t('home.accounts')}
           </h2>
-          <Link href={`${base}/accounts/new`} className="btn-secondary">
-            {t('nav.add_account')}
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`${base}/accounts`} className="text-sm font-medium text-brand-600 underline">
+              {t('accounts.see_all')}
+            </Link>
+            <Link href={`${base}/accounts/new`} className="btn-secondary">
+              {t('nav.add_account')}
+            </Link>
+          </div>
         </div>
         {groups.length === 0 && (
           <div className="card text-sm">
