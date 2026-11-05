@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import pg from 'pg';
 import { nav, onboardHousehold } from './phase3-helpers';
 
 /** Every account in one place: by kind, with totals for each kind and for everything, and adding one from there. */
@@ -49,6 +50,18 @@ test('the accounts page groups by kind and totals what you have and owe', async 
   await expect(page.getByTestId('accounts-net')).toContainText('$10,700.00');
 
   // Currencies are totalled apart, never added together.
+  // A foreign opening balance needs that day's rate (ACC-04), loaded the way the fx.daily job stores it (ADR-0014).
+  const db = new pg.Client({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://montra_app:montra_app@localhost:5432/montra',
+  });
+  await db.connect();
+  try {
+    await db.query(`select app.upsert_fx_rates('ecb', $1::jsonb)`, [
+      JSON.stringify([{ date: '2026-10-01', base: 'EUR', quote: 'USD', rate: '1.0912' }]),
+    ]);
+  } finally {
+    await db.end();
+  }
   const euro = await page.request.post(`${ws}/accounts`, {
     data: {
       name: 'Euro savings',
