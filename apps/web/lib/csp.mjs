@@ -2,6 +2,7 @@
  * The Content-Security-Policy (NFR-01). A plain script, because next.config.mjs runs before anything is compiled. It's worked out at build
  * time, which is why each environment's web image is built with its own NEXT_PUBLIC_KRATOS_URL.
  */
+import { URL } from 'node:url';
 
 /**
  * Sign in with Apple and Google (AUTH-01). Browsers apply form-action to redirects as well: the sign-in form posts to Kratos, which redirects
