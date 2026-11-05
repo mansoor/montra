@@ -10,6 +10,7 @@ import { newId, type EmployerRow, type PayslipRow, type Trx } from '@montra/db';
 import {
   addDays,
   asCurrencyCode,
+  buildPayslipDepositEntries,
   buildPayslipEntry,
   calendarDate,
   medianMinor,
@@ -23,6 +24,7 @@ import type {
   CreateEmployerRequest,
   CreatePayslipRequest,
   DepositCandidateDto,
+  DepositSplitInput,
   EmployerDto,
   PayslipDto,
   PayslipLineInput,
@@ -42,7 +44,7 @@ type Ctx = { workspaceId: string; userId: string };
 
 /** Payslips are kept as long as receipts: long enough for a tax question. */
 const RETENTION_YEARS = 7;
-/** PAY-04: a deposit is this pay within this many days of the pay date, for exactly the net amount. */
+/** PAY-04: a deposit is this pay within this many days of the pay date, for exactly the amount expected. */
 const MATCH_DAYS = 3;
 const PAYROLL_GROUP = 'Payroll taxes and deductions';
 
@@ -79,6 +81,7 @@ export class PayslipsService {
     return this.db.run(ctx, async (trx) => {
       const entityId = req.entityId ?? (await this.personalEntity(trx, ctx));
       await this.checkDepositAccount(trx, ctx, entityId, req.depositAccountId);
+      await this.checkDeposits(trx, ctx, entityId, req.depositAccountId, req.deposits);
       const row = await trx
         .insertInto('app.employer')
         .values({
@@ -94,7 +97,8 @@ export class PayslipsService {
         })
         .returningAll()
         .executeTakeFirstOrThrow();
-      return this.employerDto(row, null);
+      await this.writeEmployerDeposits(trx, ctx, row.id, req.deposits);
+      return this.employerDto(row, null, req.deposits);
     });
   }
 
@@ -116,7 +120,21 @@ export class PayslipsService {
         .groupBy('employer_id')
         .execute();
       const byEmployer = new Map(last.map((l) => [l.employer_id, l.d ? String(l.d) : null]));
-      return rows.map((r) => this.employerDto(r, byEmployer.get(r.id) ?? null));
+      const plans = await trx
+        .selectFrom('app.employer_deposit')
+        .select(['employer_id', 'account_id', 'amount_minor'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .orderBy('sort_order')
+        .execute();
+      return rows.map((r) =>
+        this.employerDto(
+          r,
+          byEmployer.get(r.id) ?? null,
+          plans
+            .filter((d) => d.employer_id === r.id)
+            .map((d) => ({ accountId: d.account_id, amount: String(d.amount_minor) })),
+        ),
+      );
     });
   }
 
@@ -124,9 +142,12 @@ export class PayslipsService {
     return this.db.run(ctx, async (trx) => {
       const cur = await this.employer(trx, ctx, id);
       if (req.depositAccountId) await this.checkDepositAccount(trx, ctx, cur.entity_id, req.depositAccountId);
+      const plan = req.deposits ?? (await this.employerPlan(trx, ctx, id));
+      await this.checkDeposits(trx, ctx, cur.entity_id, req.depositAccountId ?? cur.deposit_account_id, plan);
       const row = await trx
         .updateTable('app.employer')
         .set({
+          updated_at: new Date(),
           ...(req.name !== undefined ? { name: req.name } : {}),
           ...(req.type !== undefined ? { type: req.type } : {}),
           ...(req.payFrequency !== undefined ? { pay_frequency: req.payFrequency } : {}),
@@ -143,11 +164,127 @@ export class PayslipsService {
         .returningAll()
         .executeTakeFirst();
       if (!row) throw conflict();
-      return this.employerDto(row, null);
+      if (req.deposits) await this.writeEmployerDeposits(trx, ctx, id, req.deposits);
+      return this.employerDto(row, null, plan);
     });
   }
 
-  private employerDto(r: EmployerRow, lastPayDate: string | null): EmployerDto {
+  private async employerPlan(trx: Trx, ctx: Ctx, employerId: string): Promise<DepositSplitInput[]> {
+    const rows = await trx
+      .selectFrom('app.employer_deposit')
+      .select(['account_id', 'amount_minor'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('employer_id', '=', employerId)
+      .orderBy('sort_order')
+      .execute();
+    return rows.map((d) => ({ accountId: d.account_id, amount: String(d.amount_minor) }));
+  }
+
+  private async writeEmployerDeposits(
+    trx: Trx,
+    ctx: Ctx,
+    employerId: string,
+    deposits: readonly DepositSplitInput[],
+  ): Promise<void> {
+    await trx
+      .deleteFrom('app.employer_deposit')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('employer_id', '=', employerId)
+      .execute();
+    if (!deposits.length) return;
+    await trx
+      .insertInto('app.employer_deposit')
+      .values(
+        deposits.map((d, i) => ({
+          workspace_id: ctx.workspaceId,
+          employer_id: employerId,
+          account_id: d.accountId,
+          amount_minor: BigInt(d.amount),
+          sort_order: i,
+        })),
+      )
+      .execute();
+  }
+
+  private async writePayslipDeposits(
+    trx: Trx,
+    ctx: Ctx,
+    payslipId: string,
+    deposits: readonly DepositSplitInput[],
+  ): Promise<void> {
+    await trx
+      .deleteFrom('app.payslip_deposit')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('payslip_id', '=', payslipId)
+      .execute();
+    if (!deposits.length) return;
+    await trx
+      .insertInto('app.payslip_deposit')
+      .values(
+        deposits.map((d, i) => ({
+          workspace_id: ctx.workspaceId,
+          payslip_id: payslipId,
+          account_id: d.accountId,
+          amount_minor: BigInt(d.amount),
+          sort_order: i,
+        })),
+      )
+      .execute();
+  }
+
+  private depositsOf(trx: Trx, ctx: Ctx, payslipId: string) {
+    return trx
+      .selectFrom('app.payslip_deposit')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('payslip_id', '=', payslipId)
+      .orderBy('sort_order')
+      .execute();
+  }
+
+  /** A split goes to other bank accounts in the same books and currency, and never to the account that gets the rest. */
+  private async checkDeposits(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+    mainAccountId: string,
+    deposits: readonly DepositSplitInput[],
+  ): Promise<void> {
+    if (!deposits.length) return;
+    const entity = await trx
+      .selectFrom('app.entity')
+      .select('functional_currency')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', entityId)
+      .executeTakeFirstOrThrow();
+    for (const d of deposits) {
+      if (d.accountId === mainAccountId) {
+        throw unprocessable(
+          'payslip.deposit_main',
+          'The main account gets the rest, so it can’t be in the split too',
+        );
+      }
+      await this.checkDepositAccount(trx, ctx, entityId, d.accountId);
+      const account = await trx
+        .selectFrom('app.ledger_account')
+        .select('currency')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', d.accountId)
+        .executeTakeFirstOrThrow();
+      if (account.currency !== entity.functional_currency) {
+        throw unprocessable(
+          'payslip.deposit_currency',
+          'A split can only go to accounts in the same currency as the pay',
+        );
+      }
+    }
+  }
+
+  private employerDto(
+    r: EmployerRow,
+    lastPayDate: string | null,
+    deposits: readonly DepositSplitInput[] = [],
+  ): EmployerDto {
     return {
       id: r.id,
       entityId: r.entity_id,
@@ -156,6 +293,7 @@ export class PayslipsService {
       type: r.type,
       payFrequency: r.pay_frequency,
       depositAccountId: r.deposit_account_id,
+      deposits: deposits.map((d) => ({ accountId: d.accountId, amount: d.amount })),
       payee: r.payee_key,
       retirementAccountId: r.retirement_account_id,
       archived: r.archived_at !== null,
@@ -277,6 +415,7 @@ export class PayslipsService {
         })
         .returningAll()
         .executeTakeFirstOrThrow();
+      await this.writePayslipDeposits(trx, ctx, row.id, await this.employerPlan(trx, ctx, employer.id));
       if (last) {
         const lines = await this.linesOf(trx, ctx, last.id);
         await this.writeLines(
@@ -391,6 +530,18 @@ export class PayslipsService {
         ...(req.net !== undefined ? { net_minor: req.net } : {}),
       };
       if (req.lines) await this.writeLines(trx, ctx, id, req.lines);
+      if (req.deposits) {
+        // Each is its own transaction by then, perhaps a statement line already taken over.
+        if (cur.status === 'posted') {
+          throw unprocessable(
+            'payslip.deposits_posted',
+            'Delete this payslip and enter it again to change where the pay went',
+          );
+        }
+        const employer = await this.employer(trx, ctx, cur.employer_id);
+        await this.checkDeposits(trx, ctx, cur.entity_id, employer.deposit_account_id, req.deposits);
+        await this.writePayslipDeposits(trx, ctx, id, req.deposits);
+      }
       const lines = await this.linesOf(trx, ctx, id);
       const gross = payslipTotals(lines.map(toAmount)).gross;
       const row = await trx
@@ -441,7 +592,8 @@ export class PayslipsService {
 
   /**
    * Posts the payslip (PAY-05). With one candidate deposit it takes it over (PAY-04). With several it posts nothing
-   * and returns them, so the user chooses and confirms again; `depositTransactionId: null` means none of them.
+   * and returns them, so the user chooses and confirms again; a null choice means none of them. With a split (ADR-0022)
+   * each account goes through this separately: its own deposit, its own transaction.
    */
   async confirm(ctx: Ctx, id: string, req: ConfirmPayslipRequest): Promise<PayslipDto> {
     return this.db.run(ctx, async (trx) => {
@@ -451,80 +603,68 @@ export class PayslipsService {
       if (BigInt(p.version) !== BigInt(req.version)) throw conflict();
       if (!p.pay_date) throw unprocessable('payslip.no_date', 'Enter the pay date first');
       const employer = await this.employer(trx, ctx, p.employer_id);
+      const others = await this.depositsOf(trx, ctx, id);
+      const main = this.mainAmount(p, others);
 
-      let deposit: string | null;
-      if (req.depositTransactionId !== undefined) {
-        deposit = req.depositTransactionId;
-      } else {
-        const candidates = await this.depositCandidates(trx, ctx, p, employer);
-        if (candidates.length > 1) {
-          const row = await trx
-            .updateTable('app.payslip')
-            .set({ match_candidates: JSON.stringify(candidates) })
-            .where('workspace_id', '=', ctx.workspaceId)
-            .where('id', '=', id)
-            .returningAll()
-            .executeTakeFirstOrThrow();
-          return this.dto(trx, ctx, row);
+      const targets = [
+        { accountId: employer.deposit_account_id, amount: main, choice: req.depositTransactionId },
+        ...others.map((d) => ({
+          accountId: d.account_id,
+          amount: BigInt(d.amount_minor),
+          choice: req.otherDeposits?.find((o) => o.accountId === d.account_id)?.transactionId,
+        })),
+      ];
+      const chosen = new Map<string, string | null>();
+      const asks: DepositCandidateDto[] = [];
+      for (const target of targets) {
+        if (target.choice !== undefined) {
+          chosen.set(target.accountId, target.choice);
+          continue;
         }
-        deposit = candidates[0]?.transactionId ?? null;
+        const candidates = await this.depositCandidates(trx, ctx, p, target.accountId, target.amount);
+        if (candidates.length > 1) asks.push(...candidates);
+        else chosen.set(target.accountId, candidates[0]?.transactionId ?? null);
+      }
+      if (asks.length > 0) {
+        const row = await trx
+          .updateTable('app.payslip')
+          .set({ match_candidates: JSON.stringify(asks) })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        return this.dto(trx, ctx, row);
       }
 
-      let depositSpec: unknown = null;
-      let transactionId: string;
-      if (deposit) {
-        const t = await trx
-          .selectFrom('app.transaction')
-          .select(['spec', 'source', 'txn_date'])
-          .where('workspace_id', '=', ctx.workspaceId)
-          .where('id', '=', deposit)
-          .executeTakeFirst();
-        if (!t) throw notFound('Deposit');
-        depositSpec = t.spec;
-        transactionId = deposit;
-        // The entry keeps the deposit's own date: that's the statement's date, and DE-10 relies on it.
-        const entry = await this.entryOf(trx, ctx, p, employer, calendarDate(String(t.txn_date)));
-        const spec = this.specOf(p, employer, entry);
-        await trx
-          .updateTable('app.transaction')
-          .set({ spec: JSON.stringify(spec), review_state: 'reviewed', categorization: null })
-          .where('workspace_id', '=', ctx.workspaceId)
-          .where('id', '=', deposit)
-          .execute();
-        // A statement line stays cleared when the payslip takes it over (DE-08).
-        await this.poster.repost(trx, ctx, deposit, [entry], {
-          ...(t.source === 'import' ? { clearedAccountId: employer.deposit_account_id } : {}),
+      const posted = await this.postDeposit(trx, ctx, p, employer, {
+        accountId: employer.deposit_account_id,
+        amount: main,
+        existing: chosen.get(employer.deposit_account_id) ?? null,
+        entryAt: (date) => this.entryOf(trx, ctx, p, employer, date),
+      });
+      for (const d of others) {
+        const done = await this.postDeposit(trx, ctx, p, employer, {
+          accountId: d.account_id,
+          amount: BigInt(d.amount_minor),
+          existing: chosen.get(d.account_id) ?? null,
+          entryAt: (date) => this.depositEntryOf(trx, ctx, p, employer, d.account_id, date),
         });
-      } else {
-        transactionId = newId();
-        const entry = await this.entryOf(trx, ctx, p, employer, calendarDate(p.pay_date));
-        const spec = this.specOf(p, employer, entry);
         await trx
-          .insertInto('app.transaction')
-          .values({
-            workspace_id: ctx.workspaceId,
-            id: transactionId,
-            primary_entity_id: p.entity_id,
-            txn_date: p.pay_date,
-            payee_raw: employer.name,
-            payee_key: employer.payee_key,
-            description: employer.name,
-            status: 'posted',
-            source: 'payslip',
-            review_state: 'reviewed',
-            spec: JSON.stringify(spec),
-            posted_at: new Date(),
-            created_by: ctx.userId,
+          .updateTable('app.payslip_deposit')
+          .set({
+            transaction_id: done.transactionId,
+            deposit_spec: done.depositSpec ? JSON.stringify(done.depositSpec) : null,
           })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', d.id)
           .execute();
-        await this.poster.repost(trx, ctx, transactionId, [entry], { fresh: true });
       }
       const row = await trx
         .updateTable('app.payslip')
         .set({
           status: 'posted',
-          transaction_id: transactionId,
-          deposit_spec: depositSpec ? JSON.stringify(depositSpec) : null,
+          transaction_id: posted.transactionId,
+          deposit_spec: posted.depositSpec ? JSON.stringify(posted.depositSpec) : null,
           match_candidates: null,
         })
         .where('workspace_id', '=', ctx.workspaceId)
@@ -536,25 +676,126 @@ export class PayslipsService {
     });
   }
 
+  /** What's left for the employer's own account. Something has to be, or there'd be no main transaction to hang the payslip on. */
+  private mainAmount(p: PayslipRow, others: readonly { amount_minor: unknown }[]): bigint {
+    const split = others.reduce((t, d) => t + BigInt(d.amount_minor as bigint), 0n);
+    const main = BigInt(p.net_minor) - split;
+    if (others.length > 0 && main <= 0n) {
+      throw unprocessable(
+        'payslip.deposits_too_big',
+        'The split adds up to all of the net pay or more. It has to leave something for the main account',
+      );
+    }
+    return main;
+  }
+
+  /** One deposit: takes over the imported line if there is one, keeping its date (DE-10), or adds its own transaction. */
+  private async postDeposit(
+    trx: Trx,
+    ctx: Ctx,
+    p: PayslipRow,
+    employer: EmployerRow,
+    target: {
+      accountId: string;
+      amount: bigint;
+      existing: string | null;
+      entryAt: (date: ReturnType<typeof calendarDate>) => Promise<JournalEntryDraft>;
+    },
+  ): Promise<{ transactionId: string; depositSpec: unknown }> {
+    if (target.existing) {
+      const t = await trx
+        .selectFrom('app.transaction')
+        .select(['spec', 'source', 'txn_date'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', target.existing)
+        .executeTakeFirst();
+      if (!t) throw notFound('Deposit');
+      const taken = t.spec as unknown as { accountId?: string };
+      if (taken.accountId !== target.accountId) {
+        throw unprocessable('payslip.deposit_account', 'That deposit went to a different account');
+      }
+      const entry = await target.entryAt(calendarDate(String(t.txn_date)));
+      await trx
+        .updateTable('app.transaction')
+        .set({
+          spec: JSON.stringify(this.specOf(p, employer, entry, target.accountId, target.amount)),
+          review_state: 'reviewed',
+          categorization: null,
+        })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', target.existing)
+        .execute();
+      // A statement line stays cleared when the payslip takes it over (DE-08).
+      await this.poster.repost(trx, ctx, target.existing, [entry], {
+        ...(t.source === 'import' ? { clearedAccountId: target.accountId } : {}),
+      });
+      return { transactionId: target.existing, depositSpec: t.spec };
+    }
+    const transactionId = newId();
+    const entry = await target.entryAt(calendarDate(p.pay_date!));
+    await trx
+      .insertInto('app.transaction')
+      .values({
+        workspace_id: ctx.workspaceId,
+        id: transactionId,
+        primary_entity_id: p.entity_id,
+        txn_date: p.pay_date!,
+        payee_raw: employer.name,
+        payee_key: employer.payee_key,
+        description: employer.name,
+        status: 'posted',
+        source: 'payslip',
+        review_state: 'reviewed',
+        spec: JSON.stringify(this.specOf(p, employer, entry, target.accountId, target.amount)),
+        posted_at: new Date(),
+        created_by: ctx.userId,
+      })
+      .execute();
+    await this.poster.repost(trx, ctx, transactionId, [entry], { fresh: true });
+    return { transactionId, depositSpec: null };
+  }
+
   private async repostPosted(trx: Trx, ctx: Ctx, p: PayslipRow): Promise<void> {
     if (!p.transaction_id || !p.pay_date) return;
     const employer = await this.employer(trx, ctx, p.employer_id);
-    const t = await trx
-      .selectFrom('app.transaction')
-      .select('txn_date')
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('id', '=', p.transaction_id)
-      .executeTakeFirstOrThrow();
-    // A taken-over deposit keeps the statement's date; a payslip's own transaction follows the pay date.
-    const date = calendarDate(p.deposit_spec ? String(t.txn_date) : p.pay_date);
-    const entry = await this.entryOf(trx, ctx, p, employer, date);
-    await trx
-      .updateTable('app.transaction')
-      .set({ spec: JSON.stringify(this.specOf(p, employer, entry)), txn_date: date })
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('id', '=', p.transaction_id)
-      .execute();
-    await this.poster.repost(trx, ctx, p.transaction_id, [entry]);
+    const others = await this.depositsOf(trx, ctx, p.id);
+    const repost = async (
+      transactionId: string,
+      taken: boolean,
+      accountId: string,
+      amount: bigint,
+      entryAt: (date: ReturnType<typeof calendarDate>) => Promise<JournalEntryDraft>,
+    ) => {
+      const t = await trx
+        .selectFrom('app.transaction')
+        .select('txn_date')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', transactionId)
+        .executeTakeFirstOrThrow();
+      // A taken-over deposit keeps the statement's date; a payslip's own transaction follows the pay date.
+      const date = calendarDate(taken ? String(t.txn_date) : p.pay_date!);
+      const entry = await entryAt(date);
+      await trx
+        .updateTable('app.transaction')
+        .set({ spec: JSON.stringify(this.specOf(p, employer, entry, accountId, amount)), txn_date: date })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', transactionId)
+        .execute();
+      await this.poster.repost(trx, ctx, transactionId, [entry]);
+    };
+    await repost(
+      p.transaction_id,
+      Boolean(p.deposit_spec),
+      employer.deposit_account_id,
+      this.mainAmount(p, others),
+      (date) => this.entryOf(trx, ctx, p, employer, date),
+    );
+    for (const d of others) {
+      if (!d.transaction_id) continue;
+      await repost(d.transaction_id, Boolean(d.deposit_spec), d.account_id, BigInt(d.amount_minor), (date) =>
+        this.depositEntryOf(trx, ctx, p, employer, d.account_id, date),
+      );
+    }
     await this.updateIncomePattern(trx, ctx, p, employer);
   }
 
@@ -566,6 +807,29 @@ export class PayslipsService {
     employer: EmployerRow,
     date: ReturnType<typeof calendarDate>,
   ): Promise<JournalEntryDraft> {
+    return buildPayslipEntry(await this.entryInput(trx, ctx, p, employer, date));
+  }
+
+  /** The entry for one other account in a split (ADR-0022). */
+  private async depositEntryOf(
+    trx: Trx,
+    ctx: Ctx,
+    p: PayslipRow,
+    employer: EmployerRow,
+    accountId: string,
+    date: ReturnType<typeof calendarDate>,
+  ): Promise<JournalEntryDraft> {
+    const built = buildPayslipDepositEntries(await this.entryInput(trx, ctx, p, employer, date));
+    return built.find((d) => d.accountId === accountId)!.entry;
+  }
+
+  private async entryInput(
+    trx: Trx,
+    ctx: Ctx,
+    p: PayslipRow,
+    employer: EmployerRow,
+    date: ReturnType<typeof calendarDate>,
+  ) {
     const lines = await this.linesOf(trx, ctx, p.id);
     if (!lines.some((l) => l.section === 'earning')) {
       throw unprocessable('payslip.no_earnings', 'Enter what was earned before confirming');
@@ -590,7 +854,9 @@ export class PayslipsService {
             : (l.ledger_account_id ?? (await this.defaultAccount(trx, ctx, l, employer, p.currency))),
       });
     }
-    return buildPayslipEntry({
+    const others = await this.depositsOf(trx, ctx, p.id);
+    this.mainAmount(p, others);
+    return {
       entityId: p.entity_id,
       currency: asCurrencyCode(p.currency),
       date,
@@ -599,34 +865,42 @@ export class PayslipsService {
       depositAccountId: employer.deposit_account_id,
       net: BigInt(p.net_minor),
       lines: posting,
-    });
+      otherDeposits: others.map((d) => ({ accountId: d.account_id, amount: BigInt(d.amount_minor) })),
+    };
   }
 
   /** The transaction states only the bank fact (ADR-0016): anyone who can read the account can read this. */
-  private specOf(p: PayslipRow, employer: EmployerRow, entry: JournalEntryDraft): TransactionSpec {
+  private specOf(
+    p: PayslipRow,
+    employer: EmployerRow,
+    entry: JournalEntryDraft,
+    accountId: string,
+    amount: bigint,
+  ): TransactionSpec {
     const income = entry.postings.find((x) => x.amount < 0n)?.accountId;
     if (!income) throw unprocessable('payslip.no_earnings', 'Enter what was earned before confirming');
-    const net = String(p.net_minor);
+    const value = String(amount);
     return {
       type: 'standard',
-      accountId: employer.deposit_account_id,
-      amount: net,
+      accountId,
+      amount: value,
       currency: p.currency,
       description: employer.name,
       memberId: p.member_id,
       uncategorized: false,
-      splits: [{ accountId: income, amount: net, memberId: p.member_id }],
+      splits: [{ accountId: income, amount: value, memberId: p.member_id }],
       payslipId: p.id,
       employerId: employer.id,
     };
   }
 
-  /** PAY-04: exactly the net amount, into the employer's account, within ±3 days, and not already a payslip. */
+  /** PAY-04: exactly this amount, into this account, within ±3 days, and not already a payslip. */
   private async depositCandidates(
     trx: Trx,
     ctx: Ctx,
     p: PayslipRow,
-    employer: EmployerRow,
+    accountId: string,
+    amount: bigint,
   ): Promise<DepositCandidateDto[]> {
     const date = calendarDate(p.pay_date!);
     const { rows } = await sql<{ id: string; d: string; payee: string | null; amount: string }>`
@@ -636,11 +910,12 @@ export class PayslipsService {
          and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
          and (t.spec->>'amount')::bigint > 0
          and t.txn_date between ${addDays(date, -MATCH_DAYS)} and ${addDays(date, MATCH_DAYS)}
-         and t.spec->>'accountId' = ${employer.deposit_account_id}
-         and (t.spec->>'amount')::bigint = ${String(p.net_minor)}::bigint
+         and t.spec->>'accountId' = ${accountId}
+         and (t.spec->>'amount')::bigint = ${String(amount)}::bigint
          and ${NOT_OWNED}
        order by abs(t.txn_date - ${date}::date), t.id`.execute(trx);
     return rows.map((r) => ({
+      accountId,
       transactionId: r.id,
       date: calendarDate(r.d),
       amount: r.amount,
@@ -841,28 +1116,38 @@ export class PayslipsService {
 
   // ----- Delete --------------------------------------------------------------------------------------------
 
-  /** Removes the payslip. One that took over a deposit gives the plain deposit back; otherwise its entry goes too. */
+  /** Removes the payslip. Whatever it took over goes back to being a plain deposit; otherwise its entries go too. */
   async remove(ctx: Ctx, id: string): Promise<void> {
     await this.db.run(ctx, async (trx) => {
       const p = await this.row(trx, ctx, id);
-      const transactionId = p.transaction_id;
+      const others = await this.depositsOf(trx, ctx, id);
       await trx
         .updateTable('app.payslip')
         .set({ transaction_id: null })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', id)
         .execute();
-      if (transactionId && p.deposit_spec) {
-        await this.poster.restoreTaken(trx, ctx, transactionId, p.deposit_spec as unknown as TransactionSpec);
-      } else if (transactionId) {
-        await this.poster.unpost(trx, ctx, transactionId);
-        await trx
-          .updateTable('app.transaction')
-          .set({ status: 'void', deleted_at: new Date() })
-          .where('workspace_id', '=', ctx.workspaceId)
-          .where('id', '=', transactionId)
-          .execute();
-      }
+      await trx
+        .updateTable('app.payslip_deposit')
+        .set({ transaction_id: null })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('payslip_id', '=', id)
+        .execute();
+      const release = async (transactionId: string | null, spec: unknown) => {
+        if (transactionId && spec) {
+          await this.poster.restoreTaken(trx, ctx, transactionId, spec as unknown as TransactionSpec);
+        } else if (transactionId) {
+          await this.poster.unpost(trx, ctx, transactionId);
+          await trx
+            .updateTable('app.transaction')
+            .set({ status: 'void', deleted_at: new Date() })
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', '=', transactionId)
+            .execute();
+        }
+      };
+      await release(p.transaction_id, p.deposit_spec);
+      for (const d of others) await release(d.transaction_id, d.deposit_spec);
       await trx
         .deleteFrom('app.payslip')
         .where('workspace_id', '=', ctx.workspaceId)
@@ -908,6 +1193,8 @@ export class PayslipsService {
   async dto(trx: Trx, ctx: Ctx, p: PayslipRow): Promise<PayslipDto> {
     const lines = await this.linesOf(trx, ctx, p.id);
     const totals = payslipTotals(lines.map(toAmount));
+    const others = await this.depositsOf(trx, ctx, p.id);
+    const split = others.reduce((t, d) => t + BigInt(d.amount_minor), 0n);
     const x = (p.extraction ?? null) as {
       provider?: string;
       model?: string;
@@ -948,7 +1235,15 @@ export class PayslipsService {
         : null,
       transactionId: p.transaction_id,
       matchedDeposit: p.deposit_spec !== null,
-      matchCandidates: (p.match_candidates ?? []) as DepositCandidateDto[],
+      // From before splits, a stored list has no accounts. Confirming again asks afresh.
+      matchCandidates: ((p.match_candidates ?? []) as DepositCandidateDto[]).filter((c) => c.accountId),
+      mainDeposit: String(BigInt(p.net_minor) - split),
+      deposits: others.map((d) => ({
+        accountId: d.account_id,
+        amount: String(d.amount_minor),
+        transactionId: d.transaction_id,
+        matchedDeposit: d.deposit_spec !== null,
+      })),
       version: Number(p.version),
     };
   }

@@ -1128,6 +1128,26 @@ export interface PayslipLineTable {
   ledger_account_id: string | null;
 }
 
+export interface EmployerDepositTable {
+  workspace_id: string;
+  id: Generated<string>;
+  employer_id: string;
+  account_id: string;
+  amount_minor: Int8;
+  sort_order: Generated<number>;
+}
+
+export interface PayslipDepositTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payslip_id: string;
+  account_id: string;
+  amount_minor: Int8;
+  sort_order: Generated<number>;
+  transaction_id: string | null;
+  deposit_spec: Json<unknown> | null;
+}
+
 export interface SavedReportTable {
   workspace_id: string;
   id: string;
@@ -1384,6 +1404,8 @@ export interface Database {
   'app.employer': EmployerTable;
   'app.payslip': PayslipTable;
   'app.payslip_line': PayslipLineTable;
+  'app.employer_deposit': EmployerDepositTable;
+  'app.payslip_deposit': PayslipDepositTable;
   'app.business_profile': BusinessProfileTable;
   'app.business_party': BusinessPartyTable;
   'app.invoice': InvoiceTable;

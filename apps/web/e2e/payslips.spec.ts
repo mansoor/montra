@@ -105,3 +105,130 @@ test('a payslip posts against its deposit and shows up by member', async ({ page
   await page.getByRole('navigation', { name: 'Whose budget' }).getByRole('link', { name: 'Sam' }).click();
   await expect(page.getByLabel('Name')).toHaveValue('Budget for Sam');
 });
+
+/**
+ * ADR-0022: a plan on the employer, a payslip that starts from it, and each amount reaching its own account. One account has two possible deposits, so it
+ * asks about that one.
+ */
+test('pay splits across accounts, each deposit in its own account', async ({ page }) => {
+  test.setTimeout(150_000);
+  await onboardHousehold(page, `split-${Date.now()}@example.com`, 'Joint checking');
+  const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  const ws = `/api/v1/workspaces/${workspaceId}`;
+  const balance = async (name: string) =>
+    (
+      (await (await page.request.get(`${ws}/accounts`)).json()).data as {
+        name: string;
+        balance: { amount: string };
+      }[]
+    ).find((a) => a.name === name)!.balance.amount;
+  const addAccount = async (name: string) => {
+    const res = await page.request.post(`${ws}/accounts`, {
+      data: {
+        name,
+        kind: 'savings',
+        openingBalance: { amount: '0', currency: 'USD' },
+        openingDate: '2026-10-01',
+      },
+    });
+    expect(res.status()).toBe(201);
+    return (await res.json()).id as string;
+  };
+  const college = await addAccount('College fund');
+  await addAccount('Vacation');
+  const member = (
+    await (
+      await page.request.post(`${ws}/family-members`, {
+        data: { name: 'Sam', relationship: 'spouse_partner' },
+      })
+    ).json()
+  ).id as string;
+  const accounts = (await (await page.request.get(`${ws}/accounts`)).json()).data as {
+    id: string;
+    name: string;
+  }[];
+  const checking = accounts.find((a) => a.name === 'Joint checking')!.id;
+  const made = await page.request.post(`${ws}/employers`, {
+    data: { memberId: member, name: 'Acme', depositAccountId: checking },
+  });
+  expect(made.status()).toBe(201);
+  const employerId = (await made.json()).id as string;
+
+  // The plan, on the employer.
+  await page.goto(`/w/${workspaceId}/payslips?tab=employers`);
+  await page.getByRole('button', { name: 'Split pay from Acme' }).click();
+  const plan = page.getByRole('form', { name: 'Split pay from Acme' });
+  await expect(plan.getByTestId('deposit-rest')).toContainText('The rest goes to Joint checking');
+  await plan.getByRole('button', { name: 'Add an account' }).click();
+  await plan.getByLabel('Account for amount 1').selectOption({ label: 'College fund' });
+  await plan.getByLabel('Amount 1').fill('200.00');
+  await plan.getByRole('button', { name: 'Add an account' }).click();
+  await plan.getByLabel('Account for amount 2').selectOption({ label: 'Vacation' });
+  await plan.getByLabel('Amount 2').fill('100.00');
+  await plan.getByRole('button', { name: 'Save split' }).click();
+  await expect(page.getByText('Split saved.')).toBeVisible();
+  await expect(page.getByTestId('employer-split-summary')).toContainText('College fund: $200.00');
+
+  // Two deposits could be the College fund's share, so it has to ask about that one.
+  const today = new Date().toISOString().slice(0, 10);
+  const deposit = async () =>
+    (
+      await (
+        await page.request.post(`${ws}/transactions`, {
+          data: {
+            date: today,
+            accountId: college,
+            amount: { amount: '20000', currency: 'USD' },
+            payee: 'ACME PAYROLL',
+          },
+        })
+      ).json()
+    ).id as string;
+  await deposit();
+  await deposit();
+  const collegeBefore = await balance('College fund');
+
+  const p = await (
+    await page.request.post(`${ws}/payslips`, { data: { employerId, payDate: today } })
+  ).json();
+  const filled = await page.request.patch(`${ws}/payslips/${p.id}`, {
+    data: {
+      version: p.version,
+      net: '150000',
+      lines: [
+        { section: 'earning', code: 'salary', label: 'Salary', amount: '200000' },
+        { section: 'tax', code: 'fed_tax', label: 'Federal income tax', amount: '50000' },
+      ],
+    },
+  });
+  expect(filled.status()).toBe(200);
+
+  await page.goto(`/w/${workspaceId}/payslips/${p.id}`);
+  const where = page.getByTestId('payslip-deposits');
+  await expect(where.getByTestId('deposit-rest')).toContainText('$1,200.00');
+  // The rest follows what's typed, for this payslip only.
+  await where.getByLabel('Amount 2').fill('1400.00');
+  await expect(where.getByRole('alert')).toContainText('has to leave something');
+  await where.getByLabel('Amount 2').fill('100.00');
+  await expect(where.getByTestId('deposit-rest')).toContainText('$1,200.00');
+
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  const choice = page.getByTestId('deposit-choice');
+  await expect(choice).toHaveCount(1);
+  await expect(choice).toContainText('College fund');
+  await choice.getByRole('button', { name: 'Use this one' }).first().click();
+
+  await expect(where.getByTestId('payslip-deposit')).toHaveCount(3);
+  await expect(where.getByTestId('payslip-deposit').filter({ hasText: 'Joint checking' })).toContainText(
+    '$1,200.00',
+  );
+  await expect(where.getByTestId('payslip-deposit').filter({ hasText: 'College fund' })).toContainText(
+    'Matched',
+  );
+  await expect(where.getByTestId('payslip-deposit').filter({ hasText: 'Vacation' })).toContainText('$100.00');
+
+  // Joint checking started with $2,500.00. The College fund's deposit was already counted, so it doesn't move.
+  expect(await balance('Joint checking')).toBe('370000');
+  expect(await balance('Vacation')).toBe('10000');
+  expect(await balance('College fund')).toBe(collegeBefore);
+});

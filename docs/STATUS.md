@@ -768,6 +768,12 @@ Phase 11 leftovers:
 
 ---
 
+## 7g. Since Phase 11
+
+- **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md), proposed): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts still expect the whole net in the main account. The phone hasn't been run on a device.
+
+---
+
 ## 8. Session checklist
 
 1. `git checkout develop && git pull`, then `git checkout -b claude/<topic>` (or continue the open feature

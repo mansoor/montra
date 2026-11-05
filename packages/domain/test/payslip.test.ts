@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
   asCurrencyCode,
+  buildPayslipDepositEntries,
+  depositChoices,
   buildPayslipEntry,
   calendarDate,
   payslipGap,
@@ -112,5 +114,135 @@ describe('withholdingSummary (PAY-06)', () => {
     });
     expect(s.effectiveRateBps).toBe(2425);
     expect(withholdingSummary([]).effectiveRateBps).toBeNull();
+  });
+});
+
+describe('splitting pay across accounts (ADR-0022)', () => {
+  const lines: PayslipPostingLine[] = [
+    { section: 'earning', code: 'salary', amount: 500000n, accountId: 'salary', label: 'Salary' },
+    { section: 'earning', code: 'bonus', amount: 100000n, accountId: 'bonus', label: 'Bonus' },
+    { section: 'tax', code: 'federal', amount: 100000n, accountId: 'tax', label: 'Federal tax' },
+  ];
+  const input = {
+    entityId: 'e',
+    currency: asCurrencyCode('USD'),
+    date: calendarDate('2026-10-15'),
+    description: 'Acme',
+    memberId: 'm',
+    depositAccountId: 'checking',
+    net: 500000n,
+    lines,
+  };
+  const others = [
+    { accountId: 'college', amount: 20000n },
+    { accountId: 'vacation', amount: 10000n },
+  ];
+  const posted = (accountId: string, entries: JournalEntryDraft[]) =>
+    entries
+      .flatMap((e) => e.postings)
+      .filter((p) => p.accountId === accountId)
+      .reduce((t, p) => t + p.amount, 0n);
+  const all = (o = others) => [
+    buildPayslipEntry({ ...input, otherDeposits: o }),
+    ...buildPayslipDepositEntries({ ...input, otherDeposits: o }).map((d) => d.entry),
+  ];
+
+  it('sends the rest to the main account, and each amount to its own', () => {
+    const entries = all();
+    expect(posted('checking', entries)).toBe(470000n);
+    expect(posted('college', entries)).toBe(20000n);
+    expect(posted('vacation', entries)).toBe(10000n);
+  });
+
+  it('balances every entry, and keeps income, tax and the total exactly as they were', () => {
+    const entries = all();
+    for (const e of entries) expect(sum(e)).toBe(0n);
+    const whole = [buildPayslipEntry(input)];
+    for (const account of ['salary', 'bonus', 'tax']) {
+      expect(posted(account, entries)).toBe(posted(account, whole));
+    }
+  });
+
+  it('is the same as no split at all when nothing is split off', () => {
+    expect(buildPayslipEntry({ ...input, otherDeposits: [] })).toEqual(buildPayslipEntry(input));
+    expect(buildPayslipDepositEntries(input)).toEqual([]);
+  });
+
+  it('takes from the biggest earning first, and spills over when that runs out', () => {
+    const big = [{ accountId: 'college', amount: 450000n }];
+    const small = buildPayslipEntry({
+      ...input,
+      lines: [
+        { section: 'earning', code: 'salary', amount: 300000n, accountId: 'salary', label: 'Salary' },
+        { section: 'earning', code: 'bonus', amount: 300000n, accountId: 'bonus', label: 'Bonus' },
+        lines[2]!,
+      ],
+      otherDeposits: big,
+    });
+    expect(sum(small)).toBe(0n);
+    const [deposit] = buildPayslipDepositEntries({
+      ...input,
+      lines: [
+        { section: 'earning', code: 'salary', amount: 300000n, accountId: 'salary', label: 'Salary' },
+        { section: 'earning', code: 'bonus', amount: 300000n, accountId: 'bonus', label: 'Bonus' },
+        lines[2]!,
+      ],
+      otherDeposits: big,
+    });
+    expect(deposit!.entry.postings.map((p) => [p.accountId, p.amount])).toEqual([
+      ['college', 450000n],
+      ['salary', -300000n],
+      ['bonus', -150000n],
+    ]);
+  });
+
+  it('shows only the deposit line of each, like the main entry (PAY-09)', () => {
+    const [deposit] = buildPayslipDepositEntries({ ...input, otherDeposits: others });
+    expect(deposit!.entry.restricted).toBe(true);
+    expect(deposit!.entry.restrictedMemberId).toBe('m');
+    expect(deposit!.entry.postings.map((p) => p.publicLine)).toEqual([true, false]);
+    expect(deposit!.entry.postings.every((p) => p.memberId === 'm')).toBe(true);
+  });
+
+  it('has to leave something for the main account', () => {
+    expect(() =>
+      buildPayslipEntry({ ...input, otherDeposits: [{ accountId: 'college', amount: 500000n }] }),
+    ).toThrow(/main account/);
+    expect(() =>
+      buildPayslipEntry({ ...input, otherDeposits: [{ accountId: 'college', amount: 600000n }] }),
+    ).toThrow(/main account/);
+  });
+
+  it('holds for any split that leaves something', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.bigInt({ min: 1n, max: 100000n }), { minLength: 1, maxLength: 4 }),
+        (amounts) => {
+          const split = amounts.map((amount, i) => ({ accountId: `goal${i}`, amount }));
+          const entries = all(split);
+          for (const e of entries) expect(sum(e)).toBe(0n);
+          const total = amounts.reduce((t, a) => t + a, 0n);
+          expect(posted('checking', entries)).toBe(500000n - total);
+          expect(posted('salary', entries) + posted('bonus', entries)).toBe(-600000n);
+        },
+      ),
+    );
+  });
+});
+
+describe('depositChoices', () => {
+  it('sends the main account’s pick and the others’ separately', () => {
+    expect(depositChoices(['college'], { checking: 't1', college: 't2' })).toEqual({
+      depositTransactionId: 't1',
+      otherDeposits: [{ accountId: 'college', transactionId: 't2' }],
+    });
+  });
+
+  it('sends only what was asked about', () => {
+    expect(depositChoices(['college'], { college: null })).toEqual({
+      otherDeposits: [{ accountId: 'college', transactionId: null }],
+    });
+    expect(depositChoices([], { checking: null })).toEqual({ depositTransactionId: null });
+    expect(depositChoices(['college'], {})).toEqual({});
   });
 });

@@ -588,3 +588,363 @@ describe('budgets and reports (PAY-06, PAY-07, FAM-08, FAM-09)', () => {
     ]);
   });
 });
+
+describe('splitting pay across accounts (ADR-0022)', () => {
+  // Pays 150,000 net. Amounts here are unlike the rest of this file, so nothing else could be taken for its deposit.
+  const SPLIT_LINES = [
+    { section: 'earning', code: 'salary', label: 'Salary', amount: '200000' },
+    { section: 'tax', code: 'fed_tax', label: 'Federal income tax', amount: '50000' },
+  ];
+  const SPLIT_NET = '150000';
+  let splitCo: any;
+  let college: string;
+  let vacation: string;
+  const when = addDays(payDate, 14);
+
+  const account = async (name: string, kind = 'savings', currency = 'USD') =>
+    (
+      await c.post(url('/accounts'), {
+        name,
+        kind,
+        ...(currency !== 'USD' ? { currency } : {}),
+        openingBalance: { amount: '0', currency },
+        openingDate: addDays(payDate, -40),
+      })
+    ).body.id as string;
+
+  const slip = async (date = when, net = SPLIT_NET, lines: object[] = SPLIT_LINES) => {
+    const p = (await c.post(url('/payslips'), { employerId: splitCo.id, payDate: date })).body;
+    const res = await c.patch(url(`/payslips/${p.id}`), { lines, net, version: p.version });
+    expect(res.status).toBe(200);
+    return res.body;
+  };
+
+  const confirm = (p: any, extra: object = {}) =>
+    c.post(url(`/payslips/${p.id}/confirm`), { version: p.version, ...extra });
+
+  const incomeOf = async (payslipId: string, version?: number) => {
+    const { rows } = await admin.query(
+      `select coalesce(sum(p.amount_minor), 0)::text as total
+         from app.posting p
+         join app.journal_entry e on e.workspace_id = p.workspace_id and e.id = p.journal_entry_id
+         join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
+         join app.transaction t on t.workspace_id = e.workspace_id and t.id = e.transaction_id
+        where a.type = 'income' and t.spec->>'payslipId' = $1`,
+      [payslipId],
+    );
+    expect(version).toBeUndefined();
+    return rows[0].total as string;
+  };
+
+  beforeAll(async () => {
+    college = await account('College fund');
+    vacation = await account('Vacation');
+    const res = await c.post(url('/employers'), {
+      memberId: sam,
+      name: 'Split Co',
+      depositAccountId: checking,
+      deposits: [
+        { accountId: college, amount: '20000' },
+        { accountId: vacation, amount: '10000' },
+      ],
+    });
+    expect(res.status).toBe(201);
+    splitCo = res.body;
+  });
+
+  it('keeps the plan on the employer', async () => {
+    expect(splitCo.deposits).toEqual([
+      { accountId: college, amount: '20000' },
+      { accountId: vacation, amount: '10000' },
+    ]);
+    const listed = (await c.get(url('/employers'))).body.data.find((e: any) => e.id === splitCo.id);
+    expect(listed.deposits).toEqual(splitCo.deposits);
+    // An employer with no split is as before.
+    expect(
+      (await c.get(url('/employers'))).body.data.find((e: any) => e.id === employer.id).deposits,
+    ).toEqual([]);
+  });
+
+  it('refuses a split that couldn’t work', async () => {
+    const plan = (deposits: object[]) =>
+      c.patch(url(`/employers/${splitCo.id}`), { deposits, version: splitCo.version });
+    const code = async (deposits: object[]) => {
+      const res = await plan(deposits);
+      return [res.status, res.body.code];
+    };
+    expect(await code([{ accountId: checking, amount: '100' }])).toEqual([422, 'payslip.deposit_main']);
+    expect(await code([{ accountId: cat('Salary'), amount: '100' }])).toEqual([422, 'employer.account']);
+    expect((await plan([{ accountId: college, amount: '0' }])).status).toBe(400);
+    expect((await plan([{ accountId: college, amount: '-5' }])).status).toBe(400);
+    expect(
+      (
+        await plan([
+          { accountId: college, amount: '1' },
+          { accountId: college, amount: '2' },
+        ])
+      ).status,
+    ).toBe(400);
+    const euro = await account('Euro savings', 'savings', 'EUR');
+    expect(await code([{ accountId: euro, amount: '100' }])).toEqual([422, 'payslip.deposit_currency']);
+  });
+
+  it('changes a plan, and moving the main account into the split is refused', async () => {
+    const res = await c.patch(url(`/employers/${splitCo.id}`), {
+      deposits: [{ accountId: college, amount: '20000' }],
+      version: splitCo.version,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.deposits).toEqual([{ accountId: college, amount: '20000' }]);
+    const moved = await c.patch(url(`/employers/${splitCo.id}`), {
+      depositAccountId: college,
+      version: res.body.version,
+    });
+    expect(moved.body.code).toBe('payslip.deposit_main');
+    const back = await c.patch(url(`/employers/${splitCo.id}`), {
+      deposits: [
+        { accountId: college, amount: '20000' },
+        { accountId: vacation, amount: '10000' },
+      ],
+      version: res.body.version,
+    });
+    expect(back.status).toBe(200);
+    splitCo = back.body;
+  });
+
+  it('starts a payslip from the plan, and shows what’s left for the main account', async () => {
+    const p = await slip();
+    expect(p.deposits).toEqual([
+      { accountId: college, amount: '20000', transactionId: null, matchedDeposit: false },
+      { accountId: vacation, amount: '10000', transactionId: null, matchedDeposit: false },
+    ]);
+    expect(p.mainDeposit).toBe('120000');
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+  });
+
+  it('lets this one payslip differ, without touching the plan', async () => {
+    const p = await slip();
+    const res = await c.patch(url(`/payslips/${p.id}`), {
+      deposits: [{ accountId: vacation, amount: '50000' }],
+      version: p.version,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.mainDeposit).toBe('100000');
+    expect(res.body.deposits.map((d: any) => d.accountId)).toEqual([vacation]);
+    const listed = (await c.get(url('/employers'))).body.data.find((e: any) => e.id === splitCo.id);
+    expect(listed.deposits).toHaveLength(2);
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+  });
+
+  it('posts each amount to its account, with total income exactly what it was', async () => {
+    const before = {
+      checking: BigInt(await balance(c, checking)),
+      college: BigInt(await balance(c, college)),
+      vacation: BigInt(await balance(c, vacation)),
+    };
+    const p = await slip();
+    const res = await confirm(p);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('posted');
+    expect(BigInt(await balance(c, checking))).toBe(before.checking + 120000n);
+    expect(BigInt(await balance(c, college))).toBe(before.college + 20000n);
+    expect(BigInt(await balance(c, vacation))).toBe(before.vacation + 10000n);
+    // Credits are negative: 200,000 of salary in all, over three entries.
+    expect(await incomeOf(p.id)).toBe('-200000');
+
+    const [one, two] = res.body.deposits;
+    expect(one.transactionId).toBeTruthy();
+    expect(two.transactionId).toBeTruthy();
+    expect(new Set([res.body.transactionId, one.transactionId, two.transactionId]).size).toBe(3);
+    const t = (await c.get(url(`/transactions/${one.transactionId}`))).body;
+    expect(t.amount).toEqual(usd('20000'));
+    expect(t.date).toBe(when);
+
+    // Each entry balances by itself.
+    const { rows } = await admin.query(
+      `select e.id, sum(p.functional_amount_minor)::text as total
+         from app.journal_entry e join app.posting p on p.workspace_id = e.workspace_id and p.journal_entry_id = e.id
+         join app.transaction t on t.workspace_id = e.workspace_id and t.id = e.transaction_id
+        where t.spec->>'payslipId' = $1 group by e.id`,
+      [p.id],
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r: any) => r.total === '0')).toBe(true);
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+  });
+
+  it('takes over each account’s own statement line, so nothing is counted twice (PAY-04)', async () => {
+    const date = addDays(when, 1);
+    const line = async (accountId: string, amount: string) =>
+      (
+        await c.post(url('/transactions'), {
+          date: addDays(date, 1),
+          accountId,
+          amount: usd(amount),
+          payee: 'SPLIT CO',
+          categoryId: cat('Other income'),
+        })
+      ).body;
+    const main = await line(checking, '120000');
+    const one = await line(college, '20000');
+    const two = await line(vacation, '10000');
+    const before = [await balance(c, checking), await balance(c, college), await balance(c, vacation)];
+
+    const p = await slip(date);
+    const res = await confirm(p);
+    expect(res.body).toMatchObject({ status: 'posted', transactionId: main.id, matchedDeposit: true });
+    expect(res.body.deposits).toEqual([
+      { accountId: college, amount: '20000', transactionId: one.id, matchedDeposit: true },
+      { accountId: vacation, amount: '10000', transactionId: two.id, matchedDeposit: true },
+    ]);
+    expect([await balance(c, checking), await balance(c, college), await balance(c, vacation)]).toEqual(
+      before,
+    );
+    // The statement's date stays.
+    expect((await c.get(url(`/transactions/${one.id}`))).body.date).toBe(addDays(date, 1));
+    expect(await incomeOf(p.id)).toBe('-200000');
+
+    // Deleting gives all three plain deposits back, with the same money where it was.
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+    expect([await balance(c, checking), await balance(c, college), await balance(c, vacation)]).toEqual(
+      before,
+    );
+    expect((await c.get(url(`/transactions/${one.id}`))).body.amount).toEqual(usd('20000'));
+    for (const t of [main, one, two])
+      expect((await c.delete(url(`/transactions/${t.id}`))).status).toBeLessThan(300);
+  });
+
+  it('asks when an account has more than one possible deposit, and only about that account', async () => {
+    const date = addDays(when, 2);
+    const line = async (accountId: string, amount: string, on = date) =>
+      (
+        await c.post(url('/transactions'), {
+          date: on,
+          accountId,
+          amount: usd(amount),
+          payee: 'SPLIT CO',
+          categoryId: cat('Other income'),
+        })
+      ).body;
+    const a = await line(college, '20000');
+    const b = await line(college, '20000', addDays(date, 1));
+    const p = await slip(date);
+    const asked = (await confirm(p)).body;
+    expect(asked.status).toBe('needs_review');
+    expect(asked.matchCandidates.map((x: any) => [x.accountId, x.transactionId])).toEqual([
+      [college, a.id],
+      [college, b.id],
+    ]);
+    // Nothing has posted yet.
+    expect(asked.deposits.every((d: any) => d.transactionId === null)).toBe(true);
+
+    // A deposit from another account can't stand in.
+    const wrong = await confirm(asked, {
+      otherDeposits: [
+        { accountId: college, transactionId: b.id },
+        { accountId: vacation, transactionId: a.id },
+      ],
+    });
+    expect(wrong.body.code).toBe('payslip.deposit_account');
+    // That all rolled back: still nothing posted.
+    expect((await c.get(url(`/payslips/${p.id}`))).body.status).toBe('needs_review');
+    expect((await c.get(url(`/transactions/${b.id}`))).body.amount).toEqual(usd('20000'));
+
+    const done = (await confirm(asked, { otherDeposits: [{ accountId: college, transactionId: b.id }] }))
+      .body;
+    expect(done.status).toBe('posted');
+    expect(done.deposits[0]).toMatchObject({ transactionId: b.id, matchedDeposit: true });
+    expect(done.deposits[1]).toMatchObject({ matchedDeposit: false });
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+    for (const t of [a, b]) expect((await c.delete(url(`/transactions/${t.id}`))).status).toBeLessThan(300);
+  });
+
+  it('has to leave something for the main account', async () => {
+    const p = await slip();
+    const res = await c.patch(url(`/payslips/${p.id}`), {
+      deposits: [{ accountId: college, amount: SPLIT_NET }],
+      version: p.version,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.mainDeposit).toBe('0');
+    const refused = await confirm(res.body);
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe('payslip.deposits_too_big');
+    expect((await c.get(url(`/payslips/${p.id}`))).body.status).toBe('needs_review');
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+  });
+
+  it('won’t change the split after posting, but a corrected net still lands on the main account', async () => {
+    const before = BigInt(await balance(c, checking));
+    const p = await slip();
+    const posted = (await confirm(p)).body;
+    const changed = await c.patch(url(`/payslips/${p.id}`), {
+      deposits: [{ accountId: college, amount: '1' }],
+      version: posted.version,
+    });
+    expect(changed.body.code).toBe('payslip.deposits_posted');
+
+    const collegeBefore = await balance(c, college);
+    const lines = [SPLIT_LINES[0], { ...SPLIT_LINES[1], amount: '60000' }];
+    const fixed = await c.patch(url(`/payslips/${p.id}`), { lines, net: '140000', version: posted.version });
+    expect(fixed.status).toBe(200);
+    expect(fixed.body.mainDeposit).toBe('110000');
+    expect(BigInt(await balance(c, checking))).toBe(before + 110000n);
+    expect(await balance(c, college)).toBe(collegeBefore);
+    expect(await incomeOf(p.id)).toBe('-200000');
+
+    // Too small a net for the split is refused, and changes nothing.
+    const small = await c.patch(url(`/payslips/${p.id}`), {
+      lines: [SPLIT_LINES[0], { ...SPLIT_LINES[1], amount: '180000' }],
+      net: '20000',
+      version: fixed.body.version,
+    });
+    expect(small.status).toBe(422);
+    expect(BigInt(await balance(c, checking))).toBe(before + 110000n);
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+    expect(BigInt(await balance(c, checking))).toBe(before);
+  });
+
+  it('removes all of it when the payslip goes, and leaves the other accounts as they were', async () => {
+    const before = [await balance(c, checking), await balance(c, college), await balance(c, vacation)];
+    const p = await slip();
+    const posted = (await confirm(p)).body;
+    const ids = [posted.transactionId, ...posted.deposits.map((d: any) => d.transactionId)];
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+    expect([await balance(c, checking), await balance(c, college), await balance(c, vacation)]).toEqual(
+      before,
+    );
+    for (const id of ids) expect((await c.get(url(`/transactions/${id}`))).body.status).toBe('void');
+    const left = await admin.query(`select 1 from app.payslip_deposit where payslip_id = $1`, [p.id]);
+    expect(left.rows).toEqual([]);
+  });
+
+  it('only changes through the payslip, like the main deposit', async () => {
+    const p = await slip();
+    const posted = (await confirm(p)).body;
+    const id = posted.deposits[0].transactionId;
+    const t = (await c.get(url(`/transactions/${id}`))).body;
+    const edit = await c.patch(url(`/transactions/${id}`), { amount: usd('1'), version: t.version });
+    expect(edit.status).toBeGreaterThanOrEqual(400);
+    expect((await c.delete(url(`/transactions/${id}`))).status).toBeGreaterThanOrEqual(400);
+    expect((await c.get(url(`/transactions/${id}`))).body.amount).toEqual(usd('20000'));
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+  });
+
+  it('shows others the bank fact on each account, and none of the pay (PAY-09)', async () => {
+    const p = await slip();
+    const posted = (await confirm(p)).body;
+    const id = posted.deposits[0].transactionId;
+    const seen = await partner.get(url(`/transactions/${id}`));
+    expect(seen.status).toBe(200);
+    expect(seen.body.amount).toEqual(usd('20000'));
+    expect(JSON.stringify(seen.body)).not.toContain('Federal');
+    expect((await partner.get(url(`/payslips/${p.id}`))).status).toBe(404);
+    // Who can see a payslip is who can see its split.
+    const { rows } = await admin.query(
+      `select count(*)::int as n from app.payslip_deposit where payslip_id = $1`,
+      [p.id],
+    );
+    expect(rows[0].n).toBe(2);
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
+  });
+});

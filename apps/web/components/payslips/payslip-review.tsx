@@ -4,7 +4,8 @@ import { Plus, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import type { PayslipDto } from '@montra/api-client';
+import { depositChoices } from '@montra/domain';
+import type { AccountDto, PayslipDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import {
   buildUpdate,
@@ -16,8 +17,12 @@ import {
   STATUS_CHIP,
   type PayslipFields,
   type PayslipRow,
+  depositRowsOf,
+  depositsInput,
+  type DepositRow,
 } from '@/lib/payslips';
 import { DateText, useI18n } from '../i18n';
+import { DepositSplitEditor } from './deposit-split-editor';
 import { Money } from '../money';
 import { ReceiptViewer } from '../receipts/receipt-viewer';
 import { StatusLine, useAction } from '../use-action';
@@ -27,19 +32,36 @@ import { StatusLine, useAction } from '../use-action';
  * user confirms, and it confirms only when the lines add up to the printed net pay. Several deposits that could
  * be this pay are offered to choose from (PAY-04).
  */
-export function PayslipReview({ workspaceId, payslip }: { workspaceId: string; payslip: PayslipDto }) {
+export function PayslipReview({
+  workspaceId,
+  payslip,
+  mainAccountId,
+  accounts,
+}: {
+  workspaceId: string;
+  payslip: PayslipDto;
+  mainAccountId: string;
+  accounts: AccountDto[];
+}) {
   const router = useRouter();
   const { run, busy, message, setMessage, t } = useAction();
+  const { locale } = useI18n();
   const initial = useMemo(() => rowsOf(payslip), [payslip]);
   const [fields, setFields] = useState<PayslipFields>(initial.fields);
   const [rows, setRows] = useState<PayslipRow[]>(initial.rows);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [nextKey, setNextKey] = useState(0);
+  const [splitRows, setSplitRows] = useState<DepositRow[]>(() =>
+    depositRowsOf(payslip.deposits, payslip.currency),
+  );
+  const [picks, setPicks] = useState<Record<string, string | null>>({});
   useEffect(() => {
     setFields(initial.fields);
     setRows(initial.rows);
-  }, [initial]);
+    setSplitRows(depositRowsOf(payslip.deposits, payslip.currency));
+    setPicks({});
+  }, [initial, payslip.deposits, payslip.currency]);
 
   // While the payslip is being read, check back every couple of seconds.
   useEffect(() => {
@@ -54,6 +76,14 @@ export function PayslipReview({ workspaceId, payslip }: { workspaceId: string; p
   const setRow = (key: string, patch: Partial<PayslipRow>) =>
     setRows((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const candidates = payslip.status === 'needs_review' ? payslip.matchCandidates : [];
+  const askedAccounts = [...new Set(candidates.map((c) => c.accountId))];
+  const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
+  /** Picks one account's deposit, and goes ahead once every account asked about has an answer. */
+  function pick(accountId: string, transactionId: string | null) {
+    const next = { ...picks, [accountId]: transactionId };
+    setPicks(next);
+    if (askedAccounts.every((a) => a in next)) void confirm(next);
+  }
 
   function addRow(section: PayslipRow['section']) {
     const code = LINE_CODES[section][0]!;
@@ -80,8 +110,18 @@ export function PayslipReview({ workspaceId, payslip }: { workspaceId: string; p
       setMessage({ tone: 'bad', text: res.errors.lines ?? t('payslips.fix_fields') });
       return null;
     }
+    // Where the pay went can't change once it's posted.
+    if (posted) {
+      setErrors({});
+      return res.input;
+    }
+    const split = depositsInput(splitRows, ccy, locale, t);
+    if (!split.ok) {
+      setMessage({ tone: 'bad', text: split.error });
+      return null;
+    }
     setErrors({});
-    return res.input;
+    return { ...res.input, deposits: split.deposits };
   }
 
   async function saveOnly() {
@@ -90,7 +130,7 @@ export function PayslipReview({ workspaceId, payslip }: { workspaceId: string; p
     await run(() => browserApi.updatePayslip(workspaceId, payslip.id, input), t('payslips.saved'));
   }
 
-  async function confirm(depositTransactionId?: string | null) {
+  async function confirm(chosen: Record<string, string | null> = {}) {
     const input = prepare();
     if (!input) return;
     await run(
@@ -98,7 +138,10 @@ export function PayslipReview({ workspaceId, payslip }: { workspaceId: string; p
         const saved = await browserApi.updatePayslip(workspaceId, payslip.id, input);
         return browserApi.confirmPayslip(workspaceId, payslip.id, {
           version: saved.version,
-          ...(depositTransactionId !== undefined ? { depositTransactionId } : {}),
+          ...depositChoices(
+            payslip.deposits.map((d) => d.accountId),
+            chosen,
+          ),
         });
       },
       (r) =>
@@ -238,31 +281,89 @@ export function PayslipReview({ workspaceId, payslip }: { workspaceId: string; p
           )}
         </section>
 
+        <section className="card space-y-2" aria-labelledby="deposits-title" data-testid="payslip-deposits">
+          <h2 id="deposits-title" className="text-sm font-semibold">
+            {t('deposits.title')}
+          </h2>
+          {posted ? (
+            <ul className="divide-y divide-line text-sm">
+              <li className="flex justify-between gap-2 py-1.5" data-testid="payslip-deposit">
+                <span>{accountName(mainAccountId)}</span>
+                <Money amount={payslip.mainDeposit} currency={ccy} />
+              </li>
+              {payslip.deposits.map((d) => (
+                <li
+                  key={d.accountId}
+                  className="flex justify-between gap-2 py-1.5"
+                  data-testid="payslip-deposit"
+                >
+                  <span>
+                    {accountName(d.accountId)}
+                    {d.matchedDeposit && <span className="chip ml-2">{t('payslips.matched_chip')}</span>}
+                  </span>
+                  <Money amount={d.amount} currency={ccy} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <>
+              <p className="text-sm text-muted">{t('deposits.hint')}</p>
+              <DepositSplitEditor
+                rows={splitRows}
+                onChange={setSplitRows}
+                accounts={accounts}
+                mainAccountId={mainAccountId}
+                currency={ccy}
+                net={fields.net}
+              />
+            </>
+          )}
+        </section>
+
         {candidates.length > 0 && (
           <section className="card space-y-2" aria-label={t('payslips.choose_deposit')}>
             <h2 className="text-sm font-semibold">{t('payslips.choose_deposit')}</h2>
             <p className="text-sm text-muted">{t('payslips.choose_deposit_hint')}</p>
-            <ul className="divide-y divide-line">
-              {candidates.map((c) => (
-                <li key={c.transactionId} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span className="text-sm">
-                    <DateText date={c.date} /> · {c.payee ?? t('payslips.deposit')} ·{' '}
-                    <Money amount={c.amount} currency={ccy} />
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={busy}
-                    onClick={() => confirm(c.transactionId)}
-                  >
-                    {t('payslips.use_this_deposit')}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button type="button" className="btn-secondary" disabled={busy} onClick={() => confirm(null)}>
-              {t('payslips.none_of_these')}
-            </button>
+            {askedAccounts.map((accountId) => (
+              <div key={accountId} className="space-y-1" data-testid="deposit-choice">
+                {askedAccounts.length > 1 || payslip.deposits.length > 0 ? (
+                  <h3 className="text-sm font-medium">{accountName(accountId)}</h3>
+                ) : null}
+                <ul className="divide-y divide-line">
+                  {candidates
+                    .filter((c) => c.accountId === accountId)
+                    .map((c) => (
+                      <li
+                        key={c.transactionId}
+                        className="flex flex-wrap items-center justify-between gap-2 py-2"
+                      >
+                        <span className="text-sm">
+                          <DateText date={c.date} /> · {c.payee ?? t('payslips.deposit')} ·{' '}
+                          <Money amount={c.amount} currency={ccy} />
+                        </span>
+                        <button
+                          type="button"
+                          className={picks[accountId] === c.transactionId ? 'btn-primary' : 'btn-secondary'}
+                          aria-pressed={picks[accountId] === c.transactionId}
+                          disabled={busy}
+                          onClick={() => pick(accountId, c.transactionId)}
+                        >
+                          {t('payslips.use_this_deposit')}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+                <button
+                  type="button"
+                  className={picks[accountId] === null ? 'btn-primary' : 'btn-secondary'}
+                  aria-pressed={picks[accountId] === null}
+                  disabled={busy}
+                  onClick={() => pick(accountId, null)}
+                >
+                  {t('payslips.none_of_these')}
+                </button>
+              </div>
+            ))}
           </section>
         )}
 

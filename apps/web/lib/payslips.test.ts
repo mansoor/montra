@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { calendarDate } from '@montra/domain';
 import type { PayslipDto } from '@montra/api-client';
-import { buildUpdate, liveTotals, rowsOf, type PayslipRow } from './payslips';
+import {
+  buildUpdate,
+  depositRest,
+  depositRowsOf,
+  depositsInput,
+  liveTotals,
+  rowsOf,
+  type PayslipRow,
+} from './payslips';
 
 const slip: PayslipDto = {
   id: 'p1',
@@ -38,6 +46,8 @@ const slip: PayslipDto = {
       accountId: null,
     },
   ],
+  mainDeposit: '341250',
+  deposits: [],
   fileIds: [],
   extraction: null,
   transactionId: null,
@@ -124,5 +134,35 @@ describe('buildUpdate', () => {
   it('refuses a payslip with no lines', () => {
     const res = buildUpdate(3, fields, [], 'USD');
     expect(res.ok === false && res.errors.lines).toBeTruthy();
+  });
+});
+
+describe('splitting pay (ADR-0022)', () => {
+  const row = (accountId: string, amount: string) => ({ key: accountId, accountId, amount });
+
+  it('shows what goes to the main account as it’s typed', () => {
+    expect(depositRest('1,500.00', [row('a', '200.00'), row('b', '100.00')], 'USD')).toBe(120000n);
+    expect(depositRest('1,500.00', [row('a', '')], 'USD')).toBe(150000n);
+    expect(depositRest('1,500.00', [row('a', 'oops')], 'USD')).toBe(150000n);
+    expect(depositRest('100.00', [row('a', '200.00')], 'USD')).toBe(-10000n);
+  });
+
+  it('builds the request in minor units', () => {
+    expect(depositsInput([row('a', '200.00')], 'USD')).toEqual({
+      ok: true,
+      deposits: [{ accountId: 'a', amount: '20000' }],
+    });
+    expect(depositsInput([], 'USD')).toEqual({ ok: true, deposits: [] });
+  });
+
+  it('refuses an amount that can’t be split off', () => {
+    expect(depositsInput([row('a', 'oops')], 'USD').ok).toBe(false);
+    expect(depositsInput([row('a', '0')], 'USD').ok).toBe(false);
+    expect(depositsInput([row('a', '-5')], 'USD').ok).toBe(false);
+  });
+
+  it('round-trips what the server sends', () => {
+    const rows = depositRowsOf([{ accountId: 'a', amount: '20050' }], 'USD');
+    expect(depositsInput(rows, 'USD')).toEqual({ ok: true, deposits: [{ accountId: 'a', amount: '20050' }] });
   });
 });

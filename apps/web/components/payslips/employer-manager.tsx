@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import type { AccountDto, EmployerDto, FamilyMemberDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { depositRowsOf, depositsInput, type DepositRow } from '@/lib/payslips';
 import { DateText } from '../i18n';
+import { Money } from '../money';
+import { DepositSplitEditor } from './deposit-split-editor';
 import { StatusLine, useAction } from '../use-action';
 
 const TYPES = ['employer', 'freelance', 'pension', 'benefits', 'other'] as const;
@@ -21,7 +24,7 @@ export function EmployerManager({
   members: FamilyMemberDto[];
   accounts: AccountDto[];
 }) {
-  const { run, busy, message, t } = useAction();
+  const { run, busy, message, setMessage, t } = useAction();
   const deposit = accounts.filter((a) => !a.archived);
   const [memberId, setMemberId] = useState(members[0]?.id ?? '');
   const [name, setName] = useState('');
@@ -29,6 +32,17 @@ export function EmployerManager({
   const [payFrequency, setPayFrequency] = useState<(typeof FREQUENCIES)[number]>('monthly');
   const [depositAccountId, setDepositAccountId] = useState(deposit[0]?.id ?? '');
   const [payee, setPayee] = useState('');
+  const [newSplit, setNewSplit] = useState<DepositRow[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editRows, setEditRows] = useState<DepositRow[]>([]);
+  const currencyOf = (id: string) => accounts.find((a) => a.id === id)?.currency ?? 'USD';
+  /** Where a split can go: bank accounts in the same books and currency as the account that gets the rest. */
+  const splitAccounts = (mainId: string) => {
+    const main = accounts.find((a) => a.id === mainId);
+    return deposit.filter(
+      (a) => a.type === 'asset' && a.entityId === main?.entityId && a.currency === main?.currency,
+    );
+  };
   const memberName = new Map(members.map((m) => [m.id, m.name]));
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
 
@@ -56,11 +70,34 @@ export function EmployerManager({
                   </td>
                   <td className="px-2 py-2">{memberName.get(e.memberId) ?? ''}</td>
                   <td className="px-2 py-2">{t(`employers.frequency_${e.payFrequency}`)}</td>
-                  <td className="px-2 py-2">{accountName.get(e.depositAccountId) ?? ''}</td>
+                  <td className="px-2 py-2">
+                    {accountName.get(e.depositAccountId) ?? ''}
+                    {e.deposits.length > 0 && (
+                      <span className="block text-xs text-muted" data-testid="employer-split-summary">
+                        {e.deposits.map((d) => (
+                          <span key={d.accountId} className="block">
+                            {accountName.get(d.accountId) ?? ''}:{' '}
+                            <Money amount={d.amount} currency={currencyOf(e.depositAccountId)} />
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-2">
                     {e.lastPayDate ? <DateText date={e.lastPayDate} /> : t('employers.none_yet')}
                   </td>
                   <td className="px-4 py-2 text-right">
+                    <button
+                      type="button"
+                      className="mr-3 text-sm underline"
+                      aria-label={t('deposits.split_named', { name: e.name })}
+                      onClick={() => {
+                        setEditing(e.id);
+                        setEditRows(depositRowsOf(e.deposits, currencyOf(e.depositAccountId)));
+                      }}
+                    >
+                      {t('deposits.split')}
+                    </button>
                     <button
                       type="button"
                       className="text-sm underline"
@@ -86,11 +123,56 @@ export function EmployerManager({
         </section>
       )}
 
+      {employers
+        .filter((e) => e.id === editing)
+        .map((e) => (
+          <form
+            key={e.id}
+            className="card space-y-3"
+            aria-label={t('deposits.split_named', { name: e.name })}
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              const split = depositsInput(editRows, currencyOf(e.depositAccountId));
+              if (!split.ok) return setMessage({ tone: 'bad', text: split.error });
+              void run(
+                () =>
+                  browserApi.updateEmployer(workspaceId, e.id, {
+                    deposits: split.deposits,
+                    version: e.version,
+                  }),
+                t('deposits.saved'),
+              ).then((r) => {
+                if (r) setEditing(null);
+              });
+            }}
+          >
+            <h2 className="text-base font-semibold">{t('deposits.split_named', { name: e.name })}</h2>
+            <p className="text-sm text-muted">{t('deposits.plan_hint')}</p>
+            <DepositSplitEditor
+              rows={editRows}
+              onChange={setEditRows}
+              accounts={splitAccounts(e.depositAccountId)}
+              mainAccountId={e.depositAccountId}
+              currency={currencyOf(e.depositAccountId)}
+            />
+            <div className="flex gap-2">
+              <button type="submit" className="btn-primary" disabled={busy}>
+                {t('deposits.save')}
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setEditing(null)}>
+                {t('common.cancel')}
+              </button>
+            </div>
+          </form>
+        ))}
+
       <form
         className="card space-y-3"
         aria-label={t('employers.add')}
         onSubmit={(e) => {
           e.preventDefault();
+          const split = depositsInput(newSplit, currencyOf(depositAccountId));
+          if (!split.ok) return setMessage({ tone: 'bad', text: split.error });
           void run(
             () =>
               browserApi.createEmployer(workspaceId, {
@@ -100,12 +182,14 @@ export function EmployerManager({
                 payFrequency,
                 depositAccountId,
                 payee: payee.trim() || null,
+                deposits: split.deposits,
               }),
             t('employers.added', { name }),
           ).then((r) => {
             if (r) {
               setName('');
               setPayee('');
+              setNewSplit([]);
             }
           });
         }}
@@ -189,6 +273,18 @@ export function EmployerManager({
               />
             </label>
           </div>
+        )}
+        {members.length > 0 && depositAccountId && (
+          <fieldset className="space-y-2">
+            <legend className="field-label">{t('deposits.title')}</legend>
+            <DepositSplitEditor
+              rows={newSplit}
+              onChange={setNewSplit}
+              accounts={splitAccounts(depositAccountId)}
+              mainAccountId={depositAccountId}
+              currency={currencyOf(depositAccountId)}
+            />
+          </fieldset>
         )}
         {members.length > 0 && (
           <button type="submit" className="btn-primary" disabled={busy || !depositAccountId}>

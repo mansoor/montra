@@ -74,8 +74,42 @@ export interface PayslipEntryInput {
   memberId: string;
   depositAccountId: string;
   net: bigint;
+  /** Fixed amounts to other accounts (ADR-0022). The rest of the net goes to `depositAccountId`. */
+  otherDeposits?: readonly PayslipOtherDeposit[];
   lines: readonly PayslipPostingLine[];
 }
+
+export interface PayslipOtherDeposit {
+  accountId: string;
+  amount: bigint;
+}
+
+/**
+ * Which earnings each other deposit is paid out of, and what's left of each earning. A deposit is income arriving somewhere, so it takes
+ * its share of the income with it, biggest earning first, and income in total is exactly what it was. No clearing account is needed.
+ */
+function allocateEarnings(lines: readonly PayslipPostingLine[], deposits: readonly PayslipOtherDeposit[]) {
+  const earnings = lines
+    .filter((l) => l.section === 'earning' && l.amount > 0n)
+    .map((line) => ({ line, left: line.amount }))
+    .sort((a, b) => (a.left === b.left ? 0 : a.left > b.left ? -1 : 1));
+  const portions = deposits.map((deposit) => {
+    let due = deposit.amount;
+    const taken: { line: PayslipPostingLine; amount: bigint }[] = [];
+    for (const e of earnings) {
+      if (due === 0n) break;
+      const amount = e.left < due ? e.left : due;
+      if (amount === 0n) continue;
+      e.left -= amount;
+      due -= amount;
+      taken.push({ line: e.line, amount });
+    }
+    return { deposit, taken };
+  });
+  return { portions, left: new Map(earnings.map((e) => [e.line, e.left])) };
+}
+
+const sumDeposits = (deposits: readonly PayslipOtherDeposit[]) => deposits.reduce((t, d) => t + d.amount, 0n);
 
 /**
  * PAY-05: one journal entry, tagged to the member. Earnings are credits; net pay, taxes and deductions are debits,
@@ -93,6 +127,12 @@ export function buildPayslipEntry(input: PayslipEntryInput): JournalEntryDraft {
     );
   }
   if (net < 0n) throw new LedgerError('ledger.unbalanced', 'Net pay cannot be negative');
+  const others = input.otherDeposits ?? [];
+  const main = net - sumDeposits(others);
+  if (others.length > 0 && main <= 0n) {
+    throw new LedgerError('ledger.unbalanced', 'The split has to leave something for the main account');
+  }
+  const { left } = allocateEarnings(lines, others);
   const posting = (
     accountId: string,
     amount: bigint,
@@ -110,10 +150,11 @@ export function buildPayslipEntry(input: PayslipEntryInput): JournalEntryDraft {
     publicLine,
   });
   const postings = [
-    ...(net > 0n ? [posting(input.depositAccountId, net, input.description, true)] : []),
+    ...(main > 0n ? [posting(input.depositAccountId, main, input.description, true)] : []),
     ...lines
-      .filter((l) => l.section !== 'employer' && l.amount !== 0n)
-      .map((l) => posting(l.accountId, l.section === 'earning' ? -l.amount : l.amount, l.label, false)),
+      .map((l) => ({ l, amount: l.section === 'earning' ? -(left.get(l) ?? l.amount) : l.amount }))
+      .filter(({ l, amount }) => l.section !== 'employer' && amount !== 0n)
+      .map(({ l, amount }) => posting(l.accountId, amount, l.label, false)),
   ].map((p, i) => ({ ...p, lineNo: i + 1 }));
   const entry: JournalEntryDraft = {
     entityId: input.entityId,
@@ -127,6 +168,46 @@ export function buildPayslipEntry(input: PayslipEntryInput): JournalEntryDraft {
   };
   validateEntry(entry);
   return entry;
+}
+
+/**
+ * The entries for a split's other accounts (ADR-0022), in the order given. Each is a deposit against the income it takes, restricted like the
+ * main entry with only the deposit line showing, so anyone who can read that account sees the bank fact and nothing about the pay.
+ */
+export function buildPayslipDepositEntries(input: PayslipEntryInput): {
+  accountId: string;
+  amount: bigint;
+  entry: JournalEntryDraft;
+}[] {
+  const { portions } = allocateEarnings(input.lines, input.otherDeposits ?? []);
+  const posting = (accountId: string, amount: bigint, memo: string, publicLine: boolean) => ({
+    accountId,
+    accountEntityId: input.entityId,
+    currency: input.currency,
+    amount,
+    functionalAmount: amount,
+    fxRate: null,
+    memberId: input.memberId,
+    memo,
+    publicLine,
+  });
+  return portions.map(({ deposit, taken }) => {
+    const entry: JournalEntryDraft = {
+      entityId: input.entityId,
+      functionalCurrency: input.currency,
+      entryDate: input.date,
+      kind: 'standard',
+      description: input.description,
+      postings: [
+        posting(deposit.accountId, deposit.amount, input.description, true),
+        ...taken.map((t) => posting(t.line.accountId, -t.amount, t.line.label, false)),
+      ].map((p, i) => ({ ...p, lineNo: i + 1 })),
+      restricted: true,
+      restrictedMemberId: input.memberId,
+    };
+    validateEntry(entry);
+    return { accountId: deposit.accountId, amount: deposit.amount, entry };
+  });
 }
 
 export interface WithholdingSummary extends PayslipTotals {
@@ -151,5 +232,28 @@ export function withholdingSummary(
     net: slips.reduce((t, s) => t + s.net, 0n),
     retirement,
     effectiveRateBps: totals.gross > 0n ? Number(divRound(totals.taxes * 10_000n, totals.gross)) : null,
+  };
+}
+
+/**
+ * Turns what someone picked per account into a confirm request's fields (PAY-04, ADR-0022). `otherAccountIds` are the split's accounts; any
+ * other account is the main one. A null pick means none of the deposits offered.
+ */
+export function depositChoices(
+  otherAccountIds: readonly string[],
+  picks: Readonly<Record<string, string | null>>,
+): {
+  depositTransactionId?: string | null;
+  otherDeposits?: { accountId: string; transactionId: string | null }[];
+} {
+  const others = new Set(otherAccountIds);
+  const entries = Object.entries(picks);
+  const main = entries.find(([accountId]) => !others.has(accountId));
+  const rest = entries
+    .filter(([accountId]) => others.has(accountId))
+    .map(([accountId, transactionId]) => ({ accountId, transactionId }));
+  return {
+    ...(main ? { depositTransactionId: main[1] } : {}),
+    ...(rest.length ? { otherDeposits: rest } : {}),
   };
 }
