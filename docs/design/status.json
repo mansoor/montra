@@ -666,7 +666,7 @@
   ],
   "PAY-05": [
     "done",
-    "one balanced entry tagged to the member; retirement codes go to an investment account"
+    "one balanced entry tagged to the member; retirement codes go to an investment account. A split payslip posts one entry per deposit, and income in total is unchanged (ADR-0022)"
   ],
   "PAY-06": [
     "done",

@@ -1,6 +1,6 @@
 # ADR-0022: Splitting pay across accounts
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-04
 
 ## Context
