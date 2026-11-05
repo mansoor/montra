@@ -717,6 +717,7 @@ Rules this phase depends on:
 
 - **Staff roles.** `packages/db/test/rls.test.ts` pins what `montra_admin` and `montra_support` can reach. Don't widen it to make something pass.
 - **Clocks.** Compare a time written from JS with `now()` in SQL carefully: the database clock and this machine's differ. Write `now()` from SQL if SQL reads it.
+- **The web CSP lives in `apps/web/lib/csp.mjs`, and is fixed at build time.** Each environment's web image needs its own `NEXT_PUBLIC_KRATOS_URL`. Browsers apply `form-action` to redirects too, so **a new OIDC provider has to be added to its list**, or sign-in with it is blocked.
 - **`BILLING_MODE=off` is the default**, and is what e2e runs on. Paying is covered in `apps/api/test/operations.test.ts`, with Stripe stubbed.
 - **Public pages use `getPublicI18n`.** `getI18n` needs a session, and redirects to sign-in without one.
 - **The tour never opens by itself**, so it can't sit over someone's work or over a test's click.
@@ -734,9 +735,8 @@ Questions for the owner, each blocking something:
 
 1. **BAK-01 or BAK-09?** Monthly snapshots kept 12 months conflict with deleted data ageing out within 35 days, and Vault Lock makes the choice permanent 3 days after apply. Settle before the first production apply.
 2. **Is a 5-minute RPO only within a region acceptable?** Cross-region copies are daily, so losing a region can lose up to 24 hours. Closing that needs Aurora Global Database, at a monthly cost.
-3. **Is building Kratos from source acceptable ([ADR-0021](design/adr/0021-kratos-built-from-source.md))?** Even Ory's newest release, v26.2.0, has criticals in `pgx`, so the image now builds that tag with patched modules. It's proposed, not accepted, and hasn't run on a real environment.
-4. **Is an emailed code acceptable for AUTH-05?** The requirement says a link.
-5. **Can the Aurora master create a `BYPASSRLS` role?** Untested. The setup runbook checks first and stops.
+3. **Is an emailed code acceptable for AUTH-05?** The requirement says a link.
+4. **Can the Aurora master create a `BYPASSRLS` role?** Untested. The setup runbook checks first and stops.
 
 Measured locally, on 2026-11-04:
 
@@ -747,6 +747,10 @@ Measured locally, on 2026-11-04:
   It reads files without waiting, so a slow disk could do it again. The limit hasn't been changed.
 
 Phase 11 leftovers:
+
+- **Passkeys** were tested on 2026-11-04 in Chromium with a virtual authenticator against local Kratos v26.2.0: sign-up and sign-in work, and with the previous CSP they didn't. Security keys as a second factor, other browsers and real devices haven't been tried.
+- **OIDC:** the CSP lists Apple and Google, and a local stand-in showed Chromium blocks the redirect without them. No real provider has been tried.
+- **Base images:** only Kratos is pinned by digest and checksum. The API, web and doc-worker images still use tags, and download the RDS bundle unchecked.
 
 - **Not tried on the real thing:** Stripe, Sentry, AWS KMS, S3 with KMS, SES, Cloudflare, Grafana, the deploy workflow, and every mobile screen on a device.
 - **`security.yml`:** Kratos no longer fails it (ADR-0021), and a `zod` finding in the Expo CLI is accepted until 2027-02-04.

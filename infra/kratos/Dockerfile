@@ -1,12 +1,12 @@
 # Production Kratos: the local config and templates baked in, with environment-specific values set through
-# environment variables by Terraform (infra/terraform/modules/compute/kratos.tf).
+# environment variables by Terraform (infra/terraform/modules/compute/locals.tf).
 # Build from this directory:
 #   docker build -t montra/kratos infra/kratos
 #
 # Built from Ory's release tag, not `FROM oryd/kratos`: the newest release's image still has critical findings
 # (pgx, the Go runtime), and its fixes are only on untagged master. See ADR-0021. When Ory ships a release that scans
 # clean, go back to their image and delete the build stage.
-FROM golang:1.26.10-alpine AS build
+FROM golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS build
 ARG KRATOS_VERSION=v26.2.0
 ARG KRATOS_COMMIT=9d7085948039ffb8960160d4979f71527b5cf4d5
 RUN apk add --no-cache git
@@ -34,12 +34,13 @@ RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false \
   -ldflags="-s -w -X github.com/ory/kratos/driver/config.Version=${KRATOS_VERSION} -X github.com/ory/kratos/driver/config.Commit=${KRATOS_COMMIT}" \
   -o /usr/bin/kratos .
 
-FROM gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
 COPY --from=build /usr/bin/kratos /usr/bin/kratos
 COPY kratos.yml identity.schema.json /etc/config/kratos/
 COPY templates /etc/config/kratos/templates
-# Aurora requires TLS. `sslrootcert` in the DSN points here.
-ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/config/kratos/rds-global-bundle.pem
+# Aurora requires TLS. `sslrootcert` in the DSN points here. When AWS changes this bundle the build fails on the checksum,
+# on purpose: check the new one came from AWS, then update it here.
+ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/config/kratos/rds-global-bundle.pem
 USER 10000
 EXPOSE 4433 4434
 ENTRYPOINT ["kratos"]

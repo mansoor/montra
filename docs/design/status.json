@@ -134,7 +134,7 @@
   ],
   "AUTH-01": [
     "partial",
-    "Kratos password/passkey/OIDC + web sign-in/sign-up flows; not yet run against a live Kratos"
+    "Kratos password, passkey and OIDC, with web sign-in and sign-up. Passkey sign-up and sign-in tested in Chromium with a virtual authenticator against local Kratos; no live Kratos, real device or real OIDC provider yet"
   ],
   "AUTH-02": [
     "done",
