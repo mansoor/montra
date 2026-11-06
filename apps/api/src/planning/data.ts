@@ -11,12 +11,14 @@ import {
   calendarDate,
   diffDays,
   endOfMonth,
+  incomeLegs,
   occurrencesBetween,
   startOfMonth,
   todayIn,
   type CalendarDate,
   type Cadence,
   type GroupKind,
+  type IncomeLeg,
   type Period,
 } from '@montra/domain';
 import { notFound } from '../common/errors.js';
@@ -75,13 +77,22 @@ export interface IncomeItem {
   accountId: string | null;
   payeeKey: string | null;
   employerId: string | null;
+  /** Where it lands: all of it in one account, or split by the employer's plan (ADR-0022). */
+  legs: IncomeLeg[];
 }
 
 export interface IncomeOccurrence {
   item: IncomeItem;
   date: CalendarDate;
+  /** What has arrived so far, as one amount. */
   actual: Deposit | null;
+  /** The shares still to come. Empty once it has all arrived. */
+  pending: IncomeLeg[];
 }
+
+/** What this occurrence comes to: what arrived, and what's still expected. */
+export const occurrenceTotal = (o: IncomeOccurrence): bigint =>
+  o.pending.reduce((t, l) => t + l.amount, o.actual?.amount ?? 0n);
 
 const isMonth = (p: Period) => p.start === startOfMonth(p.start) && p.end === endOfMonth(p.start);
 
@@ -236,7 +247,10 @@ export class PlanningData {
     return out;
   }
 
-  /** Posted deposits (positive standard transactions) of an entity in [from, to], for income matching. */
+  /**
+   * Posted deposits (positive standard transactions) of an entity in [from, to], for income matching. A split payslip's
+   * deposits come back as one (ADR-0022): together they are the pay, and the budget must see all of it.
+   */
   async deposits(
     trx: Trx,
     ctx: Ctx,
@@ -251,22 +265,35 @@ export class PlanningData {
       account_id: string;
       amount: string;
       employer_id: string | null;
+      payslip_id: string | null;
     }>`
       select t.id, t.txn_date::text as d, t.payee_key, t.spec->>'accountId' as account_id, t.spec->>'amount' as amount,
-             t.spec->>'employerId' as employer_id
+             t.spec->>'employerId' as employer_id, t.spec->>'payslipId' as payslip_id
         from app.transaction t
        where t.workspace_id = ${ctx.workspaceId} and t.primary_entity_id = ${entityId}
          and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
          and (t.spec->>'amount')::bigint > 0 and t.txn_date between ${from} and ${to}
        order by t.txn_date, t.id`.execute(trx);
-    return rows.map((r) => ({
-      transactionId: r.id,
-      date: calendarDate(r.d),
-      payeeKey: r.payee_key,
-      accountId: r.account_id,
-      amount: BigInt(r.amount),
-      employerId: r.employer_id,
-    }));
+    const out: Deposit[] = [];
+    const ofPayslip = new Map<string, Deposit>();
+    for (const r of rows) {
+      const seen = r.payslip_id ? ofPayslip.get(r.payslip_id) : undefined;
+      if (seen) {
+        seen.amount += BigInt(r.amount);
+        continue;
+      }
+      const deposit: Deposit = {
+        transactionId: r.id,
+        date: calendarDate(r.d),
+        payeeKey: r.payee_key,
+        accountId: r.account_id,
+        amount: BigInt(r.amount),
+        employerId: r.employer_id,
+      };
+      out.push(deposit);
+      if (r.payslip_id) ofPayslip.set(r.payslip_id, deposit);
+    }
+    return out;
   }
 
   async incomeItems(trx: Trx, ctx: Ctx, entityId: string, memberId?: string | null): Promise<IncomeItem[]> {
@@ -279,7 +306,24 @@ export class PlanningData {
       .orderBy('next_date')
       .orderBy('id');
     if (memberId) q = q.where('member_id', '=', memberId);
-    return (await q.execute()).map((r) => ({
+    const rows = await q.execute();
+    const employerIds = rows.flatMap((r) => (r.employer_id ? [r.employer_id] : []));
+    const plans = new Map<string, { accountId: string; amount: bigint }[]>();
+    if (employerIds.length) {
+      const deposits = await trx
+        .selectFrom('app.employer_deposit')
+        .select(['employer_id', 'account_id', 'amount_minor'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('employer_id', 'in', employerIds)
+        .orderBy('sort_order')
+        .execute();
+      for (const d of deposits) {
+        const plan = plans.get(d.employer_id) ?? [];
+        plan.push({ accountId: d.account_id, amount: BigInt(d.amount_minor) });
+        plans.set(d.employer_id, plan);
+      }
+    }
+    return rows.map((r) => ({
       id: r.id,
       name: r.name,
       memberId: r.member_id,
@@ -291,6 +335,11 @@ export class PlanningData {
       accountId: r.account_id,
       payeeKey: r.payee_key,
       employerId: r.employer_id,
+      legs: incomeLegs(
+        BigInt(r.amount_minor),
+        r.account_id,
+        (r.employer_id && plans.get(r.employer_id)) || [],
+      ),
     }));
   }
 
@@ -298,7 +347,8 @@ export class PlanningData {
    * Expected income occurrences in [from, to] with the deposit that fulfilled each one (04 §8: the actual
    * deposit replaces the expectation). A deposit matches within −3/+5 days, into the item's account when set,
    * from the item's payee when set (any amount), otherwise within ±10% of the expected amount. A payslip's deposit
-   * is its employer's pay whatever the statement calls it, and nobody else's (PAY-07).
+   * is its employer's pay whatever the statement calls it, and nobody else's (PAY-07). When pay is split, each account's
+   * share waits for its own deposit, and is what the amount is compared with (ADR-0022).
    */
   matchIncome(
     items: readonly IncomeItem[],
@@ -310,34 +360,40 @@ export class PlanningData {
     const occ: IncomeOccurrence[] = [];
     for (const item of items) {
       for (const date of occurrencesBetween(item.nextDate, item.cadence, from, to))
-        occ.push({ item, date, actual: null });
+        occ.push({ item, date, actual: null, pending: item.legs });
     }
     occ.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.item.id < b.item.id ? -1 : 1));
     for (const o of occ) {
-      let best: Deposit | null = null;
-      for (const d of deposits) {
-        if (used.has(d.transactionId)) continue;
-        const gap = diffDays(d.date, o.date);
-        if (gap < -3 || gap > 5) continue;
-        const own = d.employerId !== null && d.employerId === o.item.employerId;
-        if (d.employerId !== null && !own) continue;
-        if (!own) {
-          if (o.item.accountId && d.accountId !== o.item.accountId) continue;
-          if (o.item.payeeKey) {
-            if (d.payeeKey !== o.item.payeeKey) continue;
-          } else {
-            const diff = d.amount - o.item.amount;
-            if ((diff < 0n ? -diff : diff) * 10n > o.item.amount) continue;
-          }
+      const closest = (matches: (d: Deposit) => boolean): Deposit | null => {
+        let best: Deposit | null = null;
+        for (const d of deposits) {
+          if (used.has(d.transactionId)) continue;
+          const gap = diffDays(d.date, o.date);
+          if (gap < -3 || gap > 5 || !matches(d)) continue;
+          if (!best || Math.abs(gap) < Math.abs(diffDays(best.date, o.date))) best = d;
         }
-        const bestOwn = best !== null && best.employerId !== null;
-        const closer = !best || Math.abs(diffDays(d.date, o.date)) < Math.abs(diffDays(best.date, o.date));
-        if (own ? !bestOwn || closer : !bestOwn && closer) best = d;
+        if (best) used.add(best.transactionId);
+        return best;
+      };
+      const own = closest((d) => d.employerId !== null && d.employerId === o.item.employerId);
+      if (own) {
+        o.actual = own;
+        o.pending = [];
+        continue;
       }
-      if (best) {
-        used.add(best.transactionId);
-        o.actual = best;
-      }
+      const arrived: Deposit[] = [];
+      o.pending = o.item.legs.filter((leg) => {
+        const line = closest((d) => {
+          if (d.employerId !== null) return false;
+          if (leg.accountId && d.accountId !== leg.accountId) return false;
+          if (o.item.payeeKey) return d.payeeKey === o.item.payeeKey;
+          const diff = d.amount - leg.amount;
+          return (diff < 0n ? -diff : diff) * 10n <= leg.amount;
+        });
+        if (line) arrived.push(line);
+        return !line;
+      });
+      if (arrived.length) o.actual = { ...arrived[0]!, amount: arrived.reduce((t, d) => t + d.amount, 0n) };
     }
     return occ;
   }

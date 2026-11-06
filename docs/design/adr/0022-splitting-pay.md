@@ -29,8 +29,9 @@ The ledger has rules this has to fit: one journal entry per entity per transacti
 
 ## Consequences
 
-- A forecast still expects the whole net in the main account (`expected_income`), so per-account forecasts overstate it and understate the others, and a low-balance warning on the main
-  account can come late. Total income in the budget stays right.
+- `expected_income` holds the whole net, and readers split it by the employer's plan when they need it by account. A forecast expects each account's share on payday, and each share waits for
+  its own deposit. Budgets and recommendations see all of a split payslip's deposits as one pay, and a calendar shows one payday for the whole amount.
+- Someone who can't read an employer can't read its plan, so their forecast still shows that pay arriving in the main account.
 - Payslip privacy is unchanged: each deposit shows only the bank fact, and the split's rows are behind the same policies as the payslip.
 - A journal view shows two or more entries for a split payslip, and income is spread across them.
 

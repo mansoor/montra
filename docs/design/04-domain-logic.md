@@ -393,6 +393,8 @@ first seen within 45 days.
 
 ## 11. Forecast (FLOW-03)
 
+Expected pay with a split lands by the employer's plan ([ADR-0022](adr/0022-splitting-pay.md)): the fixed amounts on their accounts and the rest on the main one, each until its own deposit arrives.
+
 A day-by-day simulation for 90 days per cash account:
 
 ```

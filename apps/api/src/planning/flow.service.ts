@@ -50,7 +50,7 @@ import { RentService } from '../rentals/rent.service.js';
 import { FxRatesService } from '../fx/fx.service.js';
 import type { TransactionSpec } from '../transactions/poster.js';
 import { BudgetsService, isBudgetCategory } from './budgets.service.js';
-import { PlanningData, previousMonths, type Ctx } from './data.js';
+import { occurrenceTotal, PlanningData, previousMonths, type Ctx } from './data.js';
 
 type Money = CalendarItemDto['currency'];
 
@@ -225,11 +225,11 @@ export class FlowService {
           date: o.date,
           kind: 'payday',
           name: o.item.name,
-          amount: s(o.actual?.amount ?? o.item.amount),
+          amount: s(occurrenceTotal(o)),
           currency: o.item.currency as Money,
           sourceId: o.item.id,
           accountId: o.item.accountId,
-          status: o.actual ? 'paid' : o.date < today ? 'overdue' : 'upcoming',
+          status: !o.pending.length ? 'paid' : o.date < today ? 'overdue' : 'upcoming',
         });
       }
     }
@@ -687,17 +687,18 @@ export class FlowService {
       if (incomeItems.length) {
         const deposits = await this.data.deposits(trx, ctx, e, addDays(today, -8), last);
         for (const o of this.data.matchIncome(incomeItems, deposits, from, last)) {
-          if (o.actual) continue;
-          const accountId = o.item.accountId ?? primary?.id;
-          if (accountId)
-            add({
-              date: o.date,
-              accountId,
-              amount: o.item.amount,
-              kind: 'income',
-              name: o.item.name,
-              sourceId: o.item.id,
-            });
+          for (const leg of o.pending) {
+            const accountId = leg.accountId ?? primary?.id;
+            if (accountId)
+              add({
+                date: o.date,
+                accountId,
+                amount: leg.amount,
+                kind: 'income',
+                name: o.item.name,
+                sourceId: o.item.id,
+              });
+          }
         }
       }
       if (!primary) continue;

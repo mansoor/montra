@@ -45,6 +45,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { AiService } from '../ai/ai.service.js';
 import {
+  occurrenceTotal,
   PlanningData,
   previousMonths,
   type ActivityFilter,
@@ -482,7 +483,7 @@ export class BudgetsService {
         override !== null && override !== undefined
           ? BigInt(override)
           : occ.length
-            ? occ.reduce((s, o) => s + (o.actual?.amount ?? o.item.amount), 0n)
+            ? occ.reduce((s, o) => s + occurrenceTotal(o), 0n)
             : actual;
       return { expected, actual, budgeted, occurrences: occ };
     };
