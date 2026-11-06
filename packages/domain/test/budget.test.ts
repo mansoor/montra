@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
+  incomeLegs,
   burnItems,
   calendarDate as d,
   carryForward,
@@ -346,6 +347,55 @@ describe('draft and copy (BUD-02, BUD-09) and 50/30/20', () => {
       ]),
     );
     expect(s.percents).toEqual({ needs: 50, wants: 30, savings: 20 });
+  });
+});
+
+describe('incomeLegs (ADR-0022)', () => {
+  const plan = [
+    { accountId: 'college', amount: 20000n },
+    { accountId: 'vacation', amount: 10000n },
+  ];
+
+  it('is the whole amount to the main account with no plan', () => {
+    expect(incomeLegs(150000n, 'main', [])).toEqual([{ accountId: 'main', amount: 150000n }]);
+    expect(incomeLegs(150000n, null, [])).toEqual([{ accountId: null, amount: 150000n }]);
+  });
+
+  it('takes the plan out and leaves the rest for the main account', () => {
+    expect(incomeLegs(150000n, 'main', plan)).toEqual([
+      { accountId: 'main', amount: 120000n },
+      { accountId: 'college', amount: 20000n },
+      { accountId: 'vacation', amount: 10000n },
+    ]);
+  });
+
+  it('gives the plan what there is when the expectation is less than the plan', () => {
+    expect(incomeLegs(25000n, 'main', plan)).toEqual([
+      { accountId: 'college', amount: 20000n },
+      { accountId: 'vacation', amount: 5000n },
+    ]);
+    expect(incomeLegs(30000n, 'main', plan)).toEqual([
+      { accountId: 'college', amount: 20000n },
+      { accountId: 'vacation', amount: 10000n },
+    ]);
+  });
+
+  it('never changes the total or makes a share negative', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 0n, max: 10n ** 15n }),
+        fc.array(fc.bigInt({ min: 1n, max: 10n ** 15n }), { maxLength: 5 }),
+        (amount, amounts) => {
+          const legs = incomeLegs(
+            amount,
+            'main',
+            amounts.map((a, i) => ({ accountId: `a${i}`, amount: a })),
+          );
+          expect(legs.reduce((t, l) => t + l.amount, 0n)).toBe(amount);
+          expect(legs.every((l) => l.amount > 0n)).toBe(true);
+        },
+      ),
+    );
   });
 });
 

@@ -570,7 +570,7 @@
   ],
   "FLOW-03": [
     "done",
-    "30/60/90-day forecast from schedules, expected income, open invoices and bills, and burn, with low-balance warnings"
+    "30/60/90-day forecast from schedules, expected income, open invoices and bills, and burn, with low-balance warnings. Split pay lands by the employer's plan (ADR-0022)"
   ],
   "FLOW-04": [
     "done",

@@ -947,4 +947,97 @@ describe('splitting pay across accounts (ADR-0022)', () => {
     expect(rows[0].n).toBe(2);
     expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
   });
+
+  describe('budgets and forecasts', () => {
+    const payFrom = async (name: string, date: string, payFrequency = 'monthly') => {
+      const res = await c.post(url('/employers'), {
+        memberId: sam,
+        name,
+        payFrequency,
+        depositAccountId: checking,
+        deposits: [
+          { accountId: college, amount: '20000' },
+          { accountId: vacation, amount: '10000' },
+        ],
+      });
+      expect(res.status).toBe(201);
+      const p = (await c.post(url('/payslips'), { employerId: res.body.id, payDate: date })).body;
+      const edited = await c.patch(url(`/payslips/${p.id}`), {
+        lines: SPLIT_LINES,
+        net: SPLIT_NET,
+        version: p.version,
+      });
+      expect((await confirm(edited.body)).status).toBe(200);
+      return res.body;
+    };
+
+    const forecastFor = async (who: Client, name: string, date: string) => {
+      const f = (await who.get(url('/flow/forecast?days=30'))).body;
+      const amountIn = (accountId: string) =>
+        f.accounts
+          .find((a: any) => a.accountId === accountId)
+          ?.items.filter((i: any) => i.name === name && i.kind === 'income' && i.date === date)
+          .map((i: any) => i.amount);
+      return { checking: amountIn(checking), college: amountIn(college), vacation: amountIn(vacation) };
+    };
+
+    it('counts all of a split payslip as the pay that arrived', async () => {
+      await payFrom('Whole Co', payDate);
+      const budget = (await c.get(url('/budgets'))).body.data[0];
+      const period = (await c.get(url(`/budgets/${budget.id}/periods/current`))).body;
+      expect(period.income.items.find((i: any) => i.name === 'Whole Co')).toMatchObject({
+        expected: SPLIT_NET,
+        actual: SPLIT_NET,
+      });
+      const cal = (await c.get(url(`/calendar?from=${payDate}&to=${payDate}`))).body;
+      expect(cal.items.find((i: any) => i.name === 'Whole Co')).toMatchObject({
+        amount: SPLIT_NET,
+        status: 'paid',
+      });
+      // Pay in the main account alone is less than expected, but the pay itself isn't short.
+      expect((await c.post(url('/recommendations/refresh'))).status).toBeLessThan(300);
+      const recs = (await c.get(url('/recommendations?status=open'))).body.data;
+      expect(recs.filter((r: any) => r.payload?.figures?.payBelowExpectedBy)).toEqual([]);
+    });
+
+    it('expects each account’s share on the next payday, until its statement line arrives', async () => {
+      const name = 'Even Co';
+      const next = addDays(today, 2);
+      await payFrom(name, addDays(today, -12), 'biweekly');
+      expect(await forecastFor(c, name, next)).toEqual({
+        checking: ['120000'],
+        college: ['20000'],
+        vacation: ['10000'],
+      });
+
+      // Each statement line replaces only its own account's share, and the main one is its share, not the whole pay.
+      const line = async (accountId: string, amount: string) =>
+        c.post(url('/transactions'), {
+          date: today,
+          accountId,
+          amount: usd(amount),
+          payee: name,
+          categoryId: cat('Other income'),
+        });
+      expect((await line(checking, '120000')).status).toBe(201);
+      expect(await forecastFor(c, name, next)).toEqual({
+        checking: [],
+        college: ['20000'],
+        vacation: ['10000'],
+      });
+      expect((await line(college, '20000')).status).toBe(201);
+      expect(await forecastFor(c, name, next)).toEqual({ checking: [], college: [], vacation: ['10000'] });
+    });
+
+    it('shows someone who can’t see the plan the pay in the main account (PAY-09)', async () => {
+      const name = 'Private Co';
+      const next = addDays(today, 3);
+      await payFrom(name, addDays(today, -11), 'biweekly');
+      expect(await forecastFor(partner, name, next)).toEqual({
+        checking: [SPLIT_NET],
+        college: [],
+        vacation: [],
+      });
+    });
+  });
 });

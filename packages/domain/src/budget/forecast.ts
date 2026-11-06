@@ -28,6 +28,32 @@ export interface AccountForecast {
   lowBalance: { date: CalendarDate; balance: bigint; drivers: ForecastItem[] } | null;
 }
 
+/** One account's share of an expected pay. A null account means wherever the forecast puts income by default. */
+export interface IncomeLeg {
+  accountId: string | null;
+  amount: bigint;
+}
+
+/**
+ * Where an expected pay lands (ADR-0022): the plan's fixed amounts in order, and the rest to the main account. The
+ * expectation is a median, so it can be less than the plan. The plan then gets what there is, and the total never changes.
+ */
+export function incomeLegs(
+  amount: bigint,
+  mainAccountId: string | null,
+  plan: readonly { accountId: string; amount: bigint }[],
+): IncomeLeg[] {
+  let left = amount;
+  const others: IncomeLeg[] = [];
+  for (const d of plan) {
+    const share = d.amount < left ? d.amount : left;
+    if (share <= 0n) break;
+    others.push({ accountId: d.accountId, amount: share });
+    left -= share;
+  }
+  return left > 0n ? [{ accountId: mainAccountId, amount: left }, ...others] : others;
+}
+
 /**
  * Discretionary burn (04 §11): what's left of the variable categories' budgets, spread evenly over the
  * remaining days of the period (falling back to the 3-month daily average when there is no budget).

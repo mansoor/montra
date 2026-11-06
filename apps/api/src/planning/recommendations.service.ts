@@ -368,7 +368,7 @@ export class RecommendationsService {
     }
 
     // REC-03 / REC-04: income that arrived higher, or that is late.
-    const arrived = c.income.occurrences.filter((o) => o.actual);
+    const arrived = c.income.occurrences.filter((o) => o.actual && !o.pending.length);
     const actualSum = arrived.reduce((t, o) => t + o.actual!.amount, 0n);
     const expectedSum = arrived.reduce((t, o) => t + o.item.amount, 0n);
     if (actualSum > expectedSum) {
@@ -436,9 +436,9 @@ export class RecommendationsService {
         });
       }
     }
-    const late = c.income.occurrences.filter((o) => !o.actual && o.date < addDays(c.today, -3));
+    const late = c.income.occurrences.filter((o) => o.pending.length && o.date < addDays(c.today, -3));
     // PAY-07: a payslip more than 10% under the pattern counts like late income.
-    const short = c.income.occurrences.filter((o) => o.actual && o.actual.amount * 10n < o.item.amount * 9n);
+    const short = arrived.filter((o) => o.actual!.amount * 10n < o.item.amount * 9n);
     const fc = current ? await this.flow.forecastIn(trx, ctx, 30, b.entity_id) : null;
     const low = fc?.accounts.find((a) => a.kind === 'cash' && a.lowBalance);
     if (current && (late.length || short.length || low)) {
@@ -472,7 +472,11 @@ export class RecommendationsService {
                   }
                 : {}),
               ...(late.length
-                ? { incomeNotYetArrived: String(late.reduce((t, o) => t + o.item.amount, 0n)) }
+                ? {
+                    incomeNotYetArrived: String(
+                      late.reduce((t, o) => o.pending.reduce((u, l) => u + l.amount, t), 0n),
+                    ),
+                  }
                 : {}),
               ...(short.length
                 ? {
