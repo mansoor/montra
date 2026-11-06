@@ -206,7 +206,7 @@
   ],
   "OPS-06": [
     "partial",
-    "Renovate, pnpm audit and Trivy in CI, and a patching runbook. Kratos passes its scan, built from source (ADR-0021). Four highs in it with no upstream fix, and one zod finding in the Expo CLI, are accepted with an expiry"
+    "pnpm audit and Trivy in CI, weekly and on PRs, and a patching runbook. Renovate is configured but does not appear to be running, and Dependabot alerts are off. Kratos passes its scan, built from source (ADR-0021). Four highs in it with no upstream fix, and one zod finding in the Expo CLI, are accepted with an expiry"
   ],
   "TZ-06": [
     "done",

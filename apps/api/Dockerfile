@@ -4,7 +4,7 @@
 #   Migrations:     node node_modules/@montra/db/dist/cli.js migrate   (needs DATABASE_ADMIN_URL)
 # Build from the repository root:
 #   docker build -f apps/api/Dockerfile -t montra/api .
-FROM node:22-bookworm-slim AS build
+FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS build
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true
@@ -27,7 +27,7 @@ RUN rm -rf node_modules apps/api/node_modules packages/*/node_modules \
  && test -f packages/db/dist/cli.js \
  && test -d packages/db/migrations
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS runtime
 ENV NODE_ENV=production \
     PORT=4000 \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/rds-global-bundle.pem
@@ -41,7 +41,9 @@ RUN apt-get update \
 # parent directory it has to create the same mode, which locks non-root users out of /etc/ssl.
 RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-* \
  && install -d -m 755 /etc/ssl/certs
-ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+# When AWS changes this bundle the build fails on the checksum, on purpose: check the new one came from AWS, then update it here
+# and in the other Dockerfiles that download it.
+ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
 WORKDIR /app
 COPY --from=build --chown=node:node /repo ./
 WORKDIR /app/apps/api
