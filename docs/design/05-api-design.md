@@ -45,6 +45,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET/POST /accounts`, `GET/PATCH /accounts/{id}`, `POST /accounts/{id}/archive` | Bank/card/loan/asset accounts | ACC-02..06 |
 | `POST /accounts/{id}/balance-adjustments` | Audited adjustment | ACC-05 |
 | `GET /accounts/{id}/register?view=ledger|simple` | Date, description, debit, credit, running balance | DE-06 |
+| `GET /accounts/{id}/balance-history?range=3m|6m|1y|all` | Natural balance over time, for the account's chart ([ADR-0023](adr/0023-account-type-profiles.md)) | ACC-02 |
 | `GET/POST /categories`, `PATCH /categories/{id}`, `GET/POST /category-groups` | Category ledger accounts and groups | DE-02, BUD-04 |
 | `GET /ledger-accounts` | Full chart of accounts | DE-02 |
 | `GET /journal-entries/{id}`, `POST /journal-entries` | Journal view; manual journals (accountant/advanced) | DE-07 |

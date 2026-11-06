@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { accountProfile, bpsToPercent, percentToBps } from '@montra/domain';
 import type { AccountDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { minorToInput, parseAmountInput } from '@/lib/money';
@@ -15,16 +16,18 @@ export function AccountPlanning({ workspaceId, account }: { workspaceId: string;
   const ccy = account.currency;
   const show = (v: string | null) => (v === null ? '' : minorToInput(BigInt(v), ccy));
   const [limit, setLimit] = useState(show(p.creditLimit));
-  const [apr, setApr] = useState(p.interestRateBps === null ? '' : (p.interestRateBps / 100).toFixed(2));
+  const [apr, setApr] = useState(p.interestRateBps === null ? '' : bpsToPercent(p.interestRateBps));
   const [minPay, setMinPay] = useState(show(p.minPayment));
   const [low, setLow] = useState(show(p.lowBalance));
-  const debt = account.type === 'liability';
+  const { details } = accountProfile(account.kind);
 
   function amount(raw: string, allowNegative = false): string | null | undefined {
     if (!raw.trim()) return null;
     const r = parseAmountInput(raw, ccy, locale);
     return r.ok && (allowNegative || r.minor >= 0n) ? String(r.minor) : undefined;
   }
+
+  if (details.length === 0) return null;
 
   return (
     <details>
@@ -36,12 +39,12 @@ export function AccountPlanning({ workspaceId, account }: { workspaceId: string;
           const creditLimit = amount(limit);
           const minPayment = amount(minPay);
           const lowBalance = amount(low, true);
-          const bps = apr.trim() === '' ? null : Number(apr.replace(',', '.')) * 100;
+          const bps = apr.trim() === '' ? null : percentToBps(apr);
           if (
             creditLimit === undefined ||
             minPayment === undefined ||
             lowBalance === undefined ||
-            (bps !== null && (!Number.isFinite(bps) || bps < 0 || bps > 10_000))
+            (apr.trim() !== '' && bps === null)
           ) {
             setMessage({ tone: 'bad', text: t('budget.amount_invalid') });
             return;
@@ -49,49 +52,51 @@ export function AccountPlanning({ workspaceId, account }: { workspaceId: string;
           void run(
             () =>
               browserApi.updateAccount(workspaceId, account.id, {
-                ...(debt
-                  ? { creditLimit, minPayment, interestRateBps: bps === null ? null : Math.trunc(bps) }
-                  : {}),
-                lowBalance: lowBalance ?? '0',
+                ...(details.includes('creditLimit') ? { creditLimit } : {}),
+                ...(details.includes('interestRate') ? { interestRateBps: bps } : {}),
+                ...(details.includes('minPayment') ? { minPayment } : {}),
+                ...(details.includes('lowBalance') ? { lowBalance: lowBalance ?? '0' } : {}),
               }),
             t('common.saved'),
           );
         }}
       >
-        {debt && (
-          <>
-            {account.kind === 'credit_card' && (
-              <label>
-                <span className="field-label">{t('accounts.credit_limit')}</span>
-                <input
-                  className="input num w-32"
-                  inputMode="decimal"
-                  value={limit}
-                  onChange={(e) => setLimit(e.target.value)}
-                />
-              </label>
-            )}
-            <label>
-              <span className="field-label">{t('accounts.apr')}</span>
-              <input
-                className="input num w-24"
-                inputMode="decimal"
-                value={apr}
-                onChange={(e) => setApr(e.target.value)}
-              />
-            </label>
-            <label>
-              <span className="field-label">{t('accounts.min_payment')}</span>
-              <input
-                className="input num w-32"
-                inputMode="decimal"
-                value={minPay}
-                onChange={(e) => setMinPay(e.target.value)}
-              />
-            </label>
-          </>
+        {details.includes('creditLimit') && (
+          <label>
+            <span className="field-label">{t('accounts.credit_limit')}</span>
+            <input
+              className="input num w-32"
+              inputMode="decimal"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+            />
+          </label>
         )}
-        {!debt && (
+        {details.includes('interestRate') && (
+          <label>
+            <span className="field-label">
+              {t(account.kind === 'credit_card' ? 'accounts.apr' : 'accounts.interest_rate')}
+            </span>
+            <input
+              className="input num w-24"
+              inputMode="decimal"
+              value={apr}
+              onChange={(e) => setApr(e.target.value)}
+            />
+          </label>
+        )}
+        {details.includes('minPayment') && (
+          <label>
+            <span className="field-label">{t('accounts.min_payment')}</span>
+            <input
+              className="input num w-32"
+              inputMode="decimal"
+              value={minPay}
+              onChange={(e) => setMinPay(e.target.value)}
+            />
+          </label>
+        )}
+        {details.includes('lowBalance') && (
           <label>
             <span className="field-label">{t('accounts.low_balance')}</span>
             <input

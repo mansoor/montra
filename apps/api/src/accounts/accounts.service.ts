@@ -2,20 +2,26 @@ import { Inject, Injectable } from '@nestjs/common';
 import { newId } from '@montra/db';
 import { sql } from 'kysely';
 import {
+  accountProfile,
   asCurrencyCode,
+  balanceHistoryDates,
+  balanceRangeStart,
+  balancesOn,
   buildOpeningBalanceEntry,
+  calendarDate,
   convert,
   decimalToString,
   naturalBalance,
   todayIn,
   valueAtCarrying,
+  type BalanceRange,
   type CalendarDate,
   type JournalEntryDraft,
 } from '@montra/domain';
 import type {
+  AccountBalanceHistoryDto,
   AccountDto,
   BalanceAdjustmentRequest,
-  BankAccountKind,
   CategoryDto,
   CreateAccountRequest,
   LedgerAccountDto,
@@ -25,14 +31,6 @@ import { Db } from '../db/database.js';
 import { FxRatesService } from '../fx/fx.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { notFound, unprocessable } from '../common/errors.js';
-
-const LIABILITY_KINDS: ReadonlySet<BankAccountKind> = new Set([
-  'credit_card',
-  'loan',
-  'mortgage',
-  'line_of_credit',
-  'liability',
-]);
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -65,7 +63,7 @@ export class AccountsService {
       if (req.openingBalance && req.openingBalance.currency !== currency) {
         throw unprocessable('currency.mismatch', 'Opening balance currency must match the account currency');
       }
-      const type = LIABILITY_KINDS.has(req.kind) ? 'liability' : 'asset';
+      const type = accountProfile(req.kind).side;
       await trx
         .insertInto('app.ledger_account')
         .values({
@@ -96,6 +94,10 @@ export class AccountsService {
           opening_balance_minor: natural,
           opening_date: openingDate,
           default_member_id: req.defaultMemberId ?? null,
+          credit_limit_minor: req.creditLimit ?? null,
+          interest_rate_bps: req.interestRateBps ?? null,
+          min_payment_minor: req.minPayment ?? null,
+          ...(req.lowBalance !== undefined ? { low_balance_minor: req.lowBalance } : {}),
         })
         .execute();
       if (natural !== 0n) {
@@ -211,6 +213,47 @@ export class AccountsService {
   }
 
   /** Rename, re-default, archive (ACC-06, history kept) or hide (per-user preference) an account. */
+  /** An account's balance over time. Reads the same restricted-aware rows as every other balance, so it shows what this user may see. */
+  async balanceHistory(ctx: Ctx, accountId: string, range: BalanceRange): Promise<AccountBalanceHistoryDto> {
+    return this.db.run(ctx, async (trx) => {
+      const account = await trx
+        .selectFrom('app.bank_account as b')
+        .innerJoin('app.ledger_account as a', (j) =>
+          j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+        )
+        .select(['a.type', 'a.currency'])
+        .where('b.workspace_id', '=', ctx.workspaceId)
+        .where('b.ledger_account_id', '=', accountId)
+        .executeTakeFirst();
+      if (!account) throw notFound('Account');
+      const workspace = await trx
+        .selectFrom('app.workspace')
+        .select('time_zone')
+        .where('id', '=', ctx.workspaceId)
+        .executeTakeFirstOrThrow();
+      const today = todayIn(workspace.time_zone) as CalendarDate;
+      const { rows } = await sql<{ d: string; v: string }>`
+        select date::text as d, sum(delta_minor)::text as v
+          from app.account_balance_daily
+         where workspace_id = ${ctx.workspaceId} and ledger_account_id = ${accountId} and date <= ${today}
+         group by 1
+         order by 1`.execute(trx);
+      const changes = rows.map((r) => ({ date: calendarDate(r.d), delta: BigInt(r.v) }));
+      const dates = changes.length
+        ? balanceHistoryDates(balanceRangeStart(range, today, changes[0]!.date), today)
+        : [];
+      return {
+        accountId,
+        currency: account.currency,
+        range,
+        points: balancesOn(account.type as 'asset' | 'liability', changes, dates).map((p) => ({
+          date: p.date,
+          balance: String(p.balance),
+        })),
+      };
+    });
+  }
+
   async update(ctx: Ctx, accountId: string, req: UpdateAccountRequest): Promise<AccountDto> {
     await this.db.run(ctx, async (trx) => {
       await this.ledger.accountRef(trx, ctx.workspaceId, accountId);

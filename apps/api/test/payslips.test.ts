@@ -446,6 +446,19 @@ describe('privacy (PAY-09, ADR-0016)', () => {
     expect(JSON.stringify(boot)).not.toContain('"payslipId"');
   });
 
+  it('shows others no private amounts in an account’s balance history (ADR-0023)', async () => {
+    const accounts = (await c.get(url('/accounts'))).body.data;
+    const retirement = accounts.find((a: any) => a.name.endsWith('retirement'));
+    expect(retirement).toBeDefined();
+    const last = async (who: Client) => {
+      const { points } = (await who.get(url(`/accounts/${retirement.id}/balance-history`))).body;
+      return points.length ? points[points.length - 1].balance : '0';
+    };
+    expect(await last(c)).toBe(await balance(c, retirement.id));
+    expect(await last(partner)).toBe(await balance(partner, retirement.id));
+    expect(BigInt(await last(partner))).toBeLessThan(BigInt(await last(c)));
+  });
+
   it('shows a member their own payslips once linked to their login', async () => {
     const me = (await partner.get('/v1/me')).body;
     const member = (await c.get(url('/family-members'))).body.data.find((m: any) => m.id === sam);

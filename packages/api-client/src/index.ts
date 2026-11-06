@@ -58,7 +58,9 @@ import type {
   TestAiProviderResponse,
   UpdateAiSettingsRequest,
   UpdateRuleRequest,
+  AccountBalanceHistoryDto,
   AccountDto,
+  BalanceRangeDto,
   ColumnMappingDto,
   CreateImportRequest,
   ImportBatchDto,
@@ -869,6 +871,13 @@ export class ApiClient {
       this.ws(workspaceId, `/categories${query({ entityId })}`),
     ).then((r) => r.data);
   }
+  accountBalanceHistory(workspaceId: string, accountId: string, range: BalanceRangeDto = '1y') {
+    return this.request<AccountBalanceHistoryDto>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/balance-history${query({ range })}`),
+    );
+  }
+
   register(workspaceId: string, accountId: string, view: RegisterView = 'ledger') {
     return this.request<RegisterResponse>(
       'GET',
@@ -2092,6 +2101,7 @@ export type {
   UndoResultDto,
   UploadDto,
   LedgerAccountDto,
+  AccountBalanceHistoryDto,
   AccountDto,
   BulkEditResult,
   CategoryDto,

@@ -114,3 +114,87 @@ test('a workspace with no accounts says so, and offers to add one', async ({ pag
   await expect(page.getByRole('main').getByRole('link', { name: 'Add account' })).toBeVisible();
   await expect(page.getByTestId('accounts-summary')).toHaveCount(0);
 });
+
+/** ADR-0023: the form asks what a type has, and the page shows it, with its balance over time. */
+test('each account type asks for and shows what it has', async ({ page }) => {
+  test.setTimeout(120_000);
+  await onboardHousehold(page, `account-types-${Date.now()}@example.com`, 'Joint checking');
+  const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  await page.goto(`/w/${workspaceId}/accounts/new`);
+  const type = page.getByLabel('Account type');
+
+  await expect(page.getByLabel('Bank (optional)')).toBeVisible();
+  await expect(page.getByLabel('Current balance')).toBeVisible();
+
+  await type.selectOption('cash');
+  await expect(page.getByText('Cash you keep on hand.')).toBeVisible();
+  await expect(page.getByLabel('Bank (optional)')).toHaveCount(0);
+  await expect(page.getByLabel('Last 4 digits')).toHaveCount(0);
+
+  await type.selectOption('asset');
+  await expect(page.getByLabel('Current value')).toBeVisible();
+  await expect(page.getByTestId('account-details')).toHaveCount(0);
+
+  await type.selectOption('mortgage');
+  await expect(page.getByLabel('Lender (optional)')).toBeVisible();
+  await expect(page.getByLabel('Amount owed')).toBeVisible();
+
+  await type.selectOption('credit_card');
+  await expect(page.getByLabel('Card issuer (optional)')).toBeVisible();
+
+  // A wrong rate opens the section it's in and says so.
+  await page.getByLabel('Name').fill('Visa');
+  await page.getByText('More details (optional)').click();
+  await page.getByLabel('APR %').fill('nineteen');
+  await page.getByRole('button', { name: 'Add account' }).click();
+  await expect(page.getByText('Enter a rate from 0 to 100')).toBeVisible();
+
+  const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  await page.getByLabel('Card issuer (optional)').fill('Chase');
+  await page.getByLabel('Last 4 digits').fill('4242');
+  await page.getByLabel('Amount owed').fill('300.00');
+  await page.getByLabel('As of').fill(monthAgo);
+  await page.getByLabel('Credit limit').fill('5000');
+  await page.getByLabel('APR %').fill('19.99');
+  await page.getByLabel('Minimum payment').fill('35');
+  await page.getByRole('button', { name: 'Add account' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Visa' })).toBeVisible();
+  await expect(page.getByTestId('account-about')).toHaveText('Credit card · Chase · ···· 4242');
+  await expect(page.getByTestId('fact-limit')).toContainText('$5,000.00');
+  await expect(page.getByTestId('fact-available')).toContainText('$4,700.00');
+  // 19.99 * 100 in floating point truncates to 19.98.
+  await expect(page.getByTestId('fact-rate')).toContainText('19.99%');
+  await expect(page.getByTestId('fact-min-payment')).toContainText('$35.00');
+
+  // Balance over time, and the period stays when the register view changes.
+  const history = page.getByTestId('balance-history');
+  await expect(history.getByRole('heading', { name: 'Amount owed over time' })).toBeVisible();
+  await expect(history.locator('svg')).toBeVisible();
+  await expect(history.getByRole('link', { name: '1Y' })).toHaveAttribute('aria-current', 'true');
+  await history.getByRole('link', { name: '3M' }).click();
+  await expect(history.getByRole('link', { name: '3M' })).toHaveAttribute('aria-current', 'true');
+  await page.getByRole('link', { name: '+ / −' }).click();
+  await expect(page).toHaveURL(/view=simple/);
+  await expect(history.getByRole('link', { name: '3M' })).toHaveAttribute('aria-current', 'true');
+
+  // Settings saves the rate exactly too.
+  await page.getByTestId('account-facts').getByRole('link', { name: 'Edit details' }).click();
+  const planning = page.locator('details', { hasText: 'APR %' });
+  await planning.locator('summary').click();
+  await planning.getByLabel('APR %').fill('18.99');
+  await planning.getByRole('button', { name: 'Save' }).click();
+  await expect(planning.getByText('Saved')).toBeVisible();
+  await page.goBack();
+  await page.reload();
+  await expect(page.getByTestId('fact-rate')).toContainText('18.99%');
+
+  // A new account has nothing to draw yet, and says so rather than showing an empty chart.
+  await page.goto(`/w/${workspaceId}/accounts/new`);
+  await type.selectOption('cash');
+  await page.getByLabel('Name').fill('Wallet');
+  await page.getByRole('button', { name: 'Add account' }).click();
+  await expect(page.getByRole('heading', { name: 'Wallet' })).toBeVisible();
+  await expect(page.getByTestId('balance-history')).toContainText('more than one day of history');
+  await expect(page.getByTestId('account-facts')).toContainText('low-balance warning');
+});

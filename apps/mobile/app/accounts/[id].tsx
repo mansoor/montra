@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import { FlatList, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { accountProfile } from '@montra/domain';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useLocal } from '../../src/sync/SyncProvider';
 import { Body, Row, Small, Title } from '../../src/ui/components';
@@ -31,7 +32,12 @@ export default function Register() {
     <View style={{ flex: 1, backgroundColor: th.bg }}>
       <View style={{ padding: th.space(4), gap: th.space(1) }}>
         <Title>{account?.name ?? ''}</Title>
-        {account ? <Body>{fmtMoney(account.balance.amount, account.balance.currency)}</Body> : null}
+        {account ? <Small>{t(`account.kind.${account.kind}`)}</Small> : null}
+        {account ? (
+          <Body>
+            {`${t(`register.${accountProfile(account.kind).balanceWord}`)}: ${fmtMoney(account.balance.amount, account.balance.currency)}`}
+          </Body>
+        ) : null}
       </View>
       <FlatList
         data={lines}

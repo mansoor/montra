@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ACCOUNT_KINDS, BALANCE_RANGES } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -36,6 +37,16 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'asset',
     'liability',
   ],
+  'account.add_kind.': ACCOUNT_KINDS,
+  'account.kind_help.': ACCOUNT_KINDS,
+  'account.kind_example.': ACCOUNT_KINDS,
+  'account.holder.': ['bank', 'issuer', 'lender', 'provider'],
+  'account.balance_word.': ['balance', 'value', 'owed'],
+  'account.details_empty.': ['creditLimit', 'interestRate', 'lowBalance'],
+  'account.history.': ['balance', 'value', 'owed'],
+  'account.history.range_': BALANCE_RANGES,
+  'account.history.title_': ['balance', 'value', 'owed'],
+  'register.': ['balance', 'value', 'owed'],
   'account.type.': ['asset', 'liability', 'equity', 'income', 'expense'],
   'account.type_plural.': ['asset', 'liability', 'equity', 'income', 'expense'],
   'entity.type.': ['personal', 'business', 'rental'],

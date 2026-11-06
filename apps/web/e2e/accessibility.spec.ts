@@ -117,11 +117,28 @@ for (const scheme of ['light', 'dark'] as const) {
       });
       const entity = async (type: string, name: string) =>
         (await (await page.request.post(`${ws}/entities`, { data: { type, name } })).json()).id as string;
+      const visa = (
+        await (
+          await page.request.post(`${ws}/accounts`, {
+            data: {
+              name: 'Visa',
+              kind: 'credit_card',
+              openingBalance: { amount: '30000', currency: 'USD' },
+              openingDate: new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10),
+              creditLimit: '500000',
+              interestRateBps: 1999,
+              minPayment: '3500',
+            },
+          })
+        ).json()
+      ).id as string;
       const business = await entity('business', 'Side work');
       const rental = await entity('rental', 'Elm Rentals');
       const found = [];
       for (const path of [
         ...WORKSPACE_PAGES,
+        `/accounts/${accounts[0]!.id}`,
+        `/accounts/${visa}`,
         '/business',
         `/business/${business}`,
         `/business/${business}/invoices`,
