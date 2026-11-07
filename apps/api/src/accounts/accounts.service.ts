@@ -87,6 +87,60 @@ export class AccountsService {
     }
   }
 
+  /**
+   * A cycle is for a card or line of credit. A rule pays from a bank account in the same books and currency, and a fixed
+   * rule needs its amount (ADR-0026).
+   */
+  private async checkCycle(
+    trx: Trx,
+    ctx: Ctx,
+    kind: string,
+    entityId: string,
+    currency: string,
+    c: {
+      statementDay?: number | null;
+      dueDay?: number | null;
+      payFromAccountId?: string | null;
+      payRule?: string | null;
+      payFixed?: string | null;
+    },
+  ): Promise<void> {
+    const any = [c.statementDay, c.dueDay, c.payFromAccountId, c.payRule, c.payFixed].some(
+      (v) => v !== undefined && v !== null,
+    );
+    if (any && !accountProfile(kind).statement) {
+      throw unprocessable('card.kind', 'Only a card or line of credit has a statement cycle');
+    }
+    if (c.payRule && !c.payFromAccountId) {
+      throw unprocessable('card.pay_from', 'Choose the account the payment comes from');
+    }
+    if (c.payRule === 'fixed' && !c.payFixed) {
+      throw unprocessable('card.pay_fixed', 'Enter the amount to pay each month');
+    }
+    if (c.payRule !== 'fixed' && c.payFixed) {
+      throw unprocessable('card.pay_fixed', 'A set amount is only for paying a set amount');
+    }
+    if (c.payFromAccountId) {
+      const from = await trx
+        .selectFrom('app.bank_account as b')
+        .innerJoin('app.ledger_account as a', (j) =>
+          j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+        )
+        .select(['b.kind', 'a.entity_id', 'a.currency'])
+        .where('b.workspace_id', '=', ctx.workspaceId)
+        .where('b.ledger_account_id', '=', c.payFromAccountId)
+        .executeTakeFirst();
+      if (
+        !from ||
+        accountProfile(from.kind).forecast !== 'cash' ||
+        from.entity_id !== entityId ||
+        from.currency !== currency
+      ) {
+        throw unprocessable('card.pay_from', 'Choose a bank account in the same books and currency');
+      }
+    }
+  }
+
   /** The same inside a caller's transaction, for a loan added together with its account. */
   async createIn(trx: Trx, ctx: Ctx, req: CreateAccountRequest): Promise<string> {
     const id = newId();
@@ -110,6 +164,7 @@ export class AccountsService {
       }
       const type = accountProfile(req.kind).side;
       await this.checkPlan(trx, ctx, req.kind, entity.id, req);
+      await this.checkCycle(trx, ctx, req.kind, entity.id, currency, req);
       await trx
         .insertInto('app.ledger_account')
         .values({
@@ -140,6 +195,11 @@ export class AccountsService {
           opening_balance_minor: natural,
           opening_date: openingDate,
           default_member_id: req.defaultMemberId ?? null,
+          statement_day: req.statementDay ?? null,
+          due_day: req.dueDay ?? null,
+          pay_from_account_id: req.payFromAccountId ?? null,
+          pay_rule: req.payRule ?? null,
+          pay_fixed_minor: req.payFixed ?? null,
           plan_type: req.planType ?? null,
           employer_id: req.employerId ?? null,
           employer_contributions: req.employerContributions ?? false,
@@ -202,6 +262,11 @@ export class AccountsService {
           'b.min_payment_minor',
           'b.low_balance_minor',
           'b.plan_type',
+          'b.statement_day',
+          'b.due_day',
+          'b.pay_from_account_id',
+          'b.pay_rule',
+          'b.pay_fixed_minor',
           'b.employer_id',
           'b.employer_contributions',
           'v.hidden',
@@ -238,6 +303,13 @@ export class AccountsService {
         planType: r.plan_type as AccountDto['planType'],
         employerId: r.employer_id,
         employerContributions: r.employer_contributions,
+        cycle: {
+          statementDay: r.statement_day,
+          dueDay: r.due_day,
+          payFromAccountId: r.pay_from_account_id,
+          payRule: r.pay_rule as AccountDto['cycle']['payRule'],
+          payFixed: r.pay_fixed_minor !== null ? String(r.pay_fixed_minor) : null,
+        },
         planning: {
           creditLimit: r.credit_limit_minor !== null ? String(r.credit_limit_minor) : null,
           interestRateBps: r.interest_rate_bps,
@@ -359,7 +431,46 @@ export class AccountsService {
         ...(req.employerContributions !== undefined
           ? { employer_contributions: req.employerContributions }
           : {}),
+        ...(req.statementDay !== undefined ? { statement_day: req.statementDay } : {}),
+        ...(req.dueDay !== undefined ? { due_day: req.dueDay } : {}),
+        ...(req.payFromAccountId !== undefined ? { pay_from_account_id: req.payFromAccountId } : {}),
+        ...(req.payRule !== undefined ? { pay_rule: req.payRule } : {}),
+        ...(req.payFixed !== undefined ? { pay_fixed_minor: req.payFixed } : {}),
       };
+      if (
+        req.statementDay !== undefined ||
+        req.dueDay !== undefined ||
+        req.payFromAccountId !== undefined ||
+        req.payRule !== undefined ||
+        req.payFixed !== undefined
+      ) {
+        const now = await trx
+          .selectFrom('app.bank_account as b')
+          .innerJoin('app.ledger_account as a', (j) =>
+            j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+          )
+          .select([
+            'b.kind',
+            'a.entity_id',
+            'a.currency',
+            'b.statement_day',
+            'b.due_day',
+            'b.pay_from_account_id',
+            'b.pay_rule',
+            'b.pay_fixed_minor',
+          ])
+          .where('b.workspace_id', '=', ctx.workspaceId)
+          .where('b.ledger_account_id', '=', accountId)
+          .executeTakeFirstOrThrow();
+        const pick = <T>(next: T | undefined, current: T) => (next !== undefined ? next : current);
+        await this.checkCycle(trx, ctx, now.kind, now.entity_id, now.currency, {
+          statementDay: pick(req.statementDay, now.statement_day),
+          dueDay: pick(req.dueDay, now.due_day),
+          payFromAccountId: pick(req.payFromAccountId, now.pay_from_account_id),
+          payRule: pick(req.payRule, now.pay_rule),
+          payFixed: pick(req.payFixed, now.pay_fixed_minor === null ? null : String(now.pay_fixed_minor)),
+        });
+      }
       if (
         req.planType !== undefined ||
         req.employerId !== undefined ||

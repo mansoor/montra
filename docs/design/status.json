@@ -14,7 +14,7 @@
   ],
   "ACC-02": [
     "done",
-    "Each type asks for and shows what it has, from one definition per type, with its balance over time (ADR-0023). A mortgage or loan can track payments as well as its balance (ADR-0024)"
+    "Each type asks for and shows what it has, from one definition per type, with its balance over time (ADR-0023). A mortgage or loan can track payments as well as its balance (ADR-0024). A card or line of credit shows its statement, what is due and utilization (ADR-0026)"
   ],
   "ACC-03": [
     "done",
@@ -574,7 +574,7 @@
   ],
   "FLOW-03": [
     "done",
-    "30/60/90-day forecast from schedules, expected income, open invoices and bills, and burn, with low-balance warnings. Split pay lands by the employer's plan (ADR-0022)"
+    "30/60/90-day forecast from schedules, expected income, open invoices and bills, and burn, with low-balance warnings. Split pay lands by the employer's plan (ADR-0022). Cards and lines of credit pay by their rule on the due date (ADR-0026)"
   ],
   "FLOW-04": [
     "done",

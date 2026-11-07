@@ -14,6 +14,7 @@ import { WorkspacesService } from './workspaces/workspaces.service.js';
 import { WorkspacesController } from './workspaces/workspaces.controller.js';
 import { AccountsService } from './accounts/accounts.service.js';
 import { ValuationsService } from './accounts/valuations.service.js';
+import { CardsService } from './accounts/cards.service.js';
 import { AccountsController } from './accounts/accounts.controller.js';
 import { TransactionsService } from './transactions/transactions.service.js';
 import { TransactionsController } from './transactions/transactions.controller.js';
@@ -174,6 +175,7 @@ export class AppModule {
         WorkspacesService,
         AccountsService,
         ValuationsService,
+        CardsService,
         TransactionsService,
         TransactionPoster,
         RecurringService,

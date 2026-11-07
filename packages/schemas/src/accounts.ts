@@ -1,9 +1,11 @@
 import { z } from 'zod';
-import { ACCOUNT_KINDS, BALANCE_RANGES, PLAN_TYPES } from '@montra/domain';
+import { ACCOUNT_KINDS, BALANCE_RANGES, PAY_RULES, PLAN_TYPES } from '@montra/domain';
 import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
 
 export const BankAccountKind = z.enum(ACCOUNT_KINDS);
 export const PlanTypeDto = z.enum(PLAN_TYPES);
+export const PayRuleDto = z.enum(PAY_RULES);
+const DayOfMonth = z.number().int().min(1).max(31);
 export type BankAccountKind = z.infer<typeof BankAccountKind>;
 
 export const CreateAccountRequest = z.object({
@@ -40,6 +42,15 @@ export const CreateAccountRequest = z.object({
   employerId: Id.optional(),
   /** Post the employer's contributions here too. */
   employerContributions: z.boolean().optional(),
+  /** A card or line of credit's cycle and how it's paid (ADR-0026). */
+  statementDay: DayOfMonth.optional(),
+  dueDay: DayOfMonth.optional(),
+  payFromAccountId: Id.optional(),
+  payRule: PayRuleDto.optional(),
+  payFixed: z
+    .string()
+    .regex(/^\d{1,19}$/)
+    .optional(),
 });
 export type CreateAccountRequest = z.output<typeof CreateAccountRequest>;
 
@@ -64,6 +75,14 @@ export const AccountDto = z.object({
   planType: PlanTypeDto.nullable(),
   employerId: z.string().nullable(),
   employerContributions: z.boolean(),
+  /** A card or line of credit's cycle and how it's paid (ADR-0026). */
+  cycle: z.object({
+    statementDay: z.number().int().nullable(),
+    dueDay: z.number().int().nullable(),
+    payFromAccountId: z.string().nullable(),
+    payRule: PayRuleDto.nullable(),
+    payFixed: z.string().nullable(),
+  }),
   /** Planning inputs (Phase 6): debt payoff and forecast warnings. Minor units in the account currency. */
   planning: z.object({
     creditLimit: z.string().nullable(),
@@ -141,6 +160,30 @@ export const InvestmentPerformanceDto = z.object({
   periods: z.array(z.object({ from: CalendarDateDto, to: CalendarDateDto, ...PerformanceFigures })),
 });
 export type InvestmentPerformanceDto = z.infer<typeof InvestmentPerformanceDto>;
+
+/** The latest statement of a card or line of credit, and what's still due on it (ADR-0026). Natural amounts: owed is positive. */
+export const CardStatementDto = z.object({
+  accountId: z.string(),
+  name: z.string(),
+  currency: z.string(),
+  lastClose: CalendarDateDto,
+  dueDate: CalendarDateDto,
+  nextClose: CalendarDateDto,
+  nextDueDate: CalendarDateDto,
+  statementBalance: z.string(),
+  paidSince: z.string(),
+  due: z.string(),
+  minimumDue: z.string(),
+  owed: z.string(),
+  /** Charged since the statement closed: what the next one will hold if nothing else changes. */
+  sinceStatement: z.string(),
+  limit: z.string().nullable(),
+  available: z.string().nullable(),
+  utilizationBps: z.number().int().nullable(),
+  /** What the payment rule will pay on the due date, and from where. Null without a rule. */
+  planned: z.object({ date: CalendarDateDto, amount: z.string(), fromAccountId: z.string() }).nullable(),
+});
+export type CardStatementDto = z.infer<typeof CardStatementDto>;
 
 export const CategoryDto = z.object({
   id: z.string(),

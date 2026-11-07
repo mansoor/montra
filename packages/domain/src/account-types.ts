@@ -46,6 +46,8 @@ export interface AccountProfile {
   schedule: boolean;
   /** Whether adding one offers full payment tracking: a fixed term, repaid in level payments. */
   installment: boolean;
+  /** Whether it's billed by monthly statement, with a due date: cards and lines of credit (ADR-0026). */
+  statement: boolean;
 }
 
 const CASH_DETAILS: readonly AccountDetail[] = ['lowBalance'];
@@ -62,6 +64,7 @@ const bank = {
   moneyFlow: null,
   schedule: false,
   installment: false,
+  statement: false,
 } as const;
 
 const debt = {
@@ -74,6 +77,7 @@ const debt = {
   moneyFlow: 'debt',
   schedule: true,
   installment: true,
+  statement: false,
 } as const;
 
 export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
@@ -104,8 +108,16 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     moneyFlow: null,
     schedule: false,
     installment: false,
+    statement: true,
   },
-  line_of_credit: { ...debt, details: REVOLVING_DETAILS, installment: false },
+  // Revolving like a card: forecast down to its limit, billed by statement. Rental loans could already hold a schedule on one.
+  line_of_credit: {
+    ...debt,
+    details: REVOLVING_DETAILS,
+    installment: false,
+    statement: true,
+    forecast: 'card',
+  },
   loan: debt,
   mortgage: debt,
   liability: {

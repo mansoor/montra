@@ -153,6 +153,10 @@ export interface BankAccountTable {
   credit_limit_minor: Int8 | null;
   interest_rate_bps: number | null;
   statement_day: number | null;
+  due_day: number | null;
+  pay_from_account_id: string | null;
+  pay_rule: string | null;
+  pay_fixed_minor: Int8 | null;
   /** Debt payoff (BUD-08): the minimum monthly payment. */
   min_payment_minor: Int8 | null;
   /** FLOW-03: the forecast warns below this balance (migration 0015). */

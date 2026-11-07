@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { parse } from '../common/zod.js';
 import { AccountsService } from './accounts.service.js';
+import { CardsService } from './cards.service.js';
 import { ValuationsService } from './valuations.service.js';
 
 @Controller('v1/workspaces/:workspaceId')
@@ -24,6 +25,7 @@ export class AccountsController {
   constructor(
     @Inject(AccountsService) private readonly accounts: AccountsService,
     @Inject(ValuationsService) private readonly valuationsService: ValuationsService,
+    @Inject(CardsService) private readonly cards: CardsService,
   ) {}
 
   @Post('accounts')
@@ -117,6 +119,18 @@ export class AccountsController {
       parse(z.uuid(), accountId),
       parse(BalanceRangeDto.default('1y'), range),
     );
+  }
+
+  /** Every card and line of credit's latest statement (ADR-0026). */
+  @Get('card-statements')
+  async cardStatements(@Ctx() ctx: RequestContext) {
+    return { data: await this.cards.statements(dbCtx(ctx)) };
+  }
+
+  @Get('accounts/:accountId/statement')
+  async cardStatement(@Ctx() ctx: RequestContext, @Param('accountId') accountId: string) {
+    const [statement] = await this.cards.statements(dbCtx(ctx), parse(z.uuid(), accountId));
+    return { data: statement ?? null };
   }
 
   @Get('accounts/:accountId/register')

@@ -130,6 +130,7 @@ export function NewAccountForm({
     const creditLimit = minor('creditLimit');
     const minPayment = minor('minPayment');
     const lowBalance = minor('lowBalance', true);
+    const dayOf = (name: string) => (get(name) ? Number(get(name)) : undefined);
     const rate = get('interestRate');
     const interestRateBps = rate ? percentToBps(rate) : undefined;
     if (interestRateBps === null) fields.interestRate = t('account.rate_invalid');
@@ -154,6 +155,7 @@ export function NewAccountForm({
         interestRateBps: interestRateBps ?? undefined,
         minPayment,
         lowBalance,
+        ...(type.statement ? { statementDay: dayOf('statementDay'), dueDay: dayOf('dueDay') } : {}),
         ...(kind === 'investment' && plan ? { planType: plan } : {}),
         ...(workplace && employerId ? { employerId, employerContributions: contributions } : {}),
       });
@@ -371,6 +373,34 @@ export function NewAccountForm({
               >
                 {(p) => <input {...p} name="interestRate" className="input num" inputMode="decimal" />}
               </Field>
+            )}
+            {type.statement && (
+              <>
+                <Field id="statementDay" label={t('card.statement_day')} error={errors.fields.statementDay}>
+                  {(p) => (
+                    <select {...p} name="statementDay" className="input" defaultValue="">
+                      <option value="">{t('account.plan.unset')}</option>
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          {i + 1}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+                <Field id="dueDay" label={t('card.due_day')} error={errors.fields.dueDay}>
+                  {(p) => (
+                    <select {...p} name="dueDay" className="input" defaultValue="">
+                      <option value="">{t('account.plan.unset')}</option>
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          {i + 1}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+              </>
             )}
             {type.details.includes('minPayment') && (
               <Field id="minPayment" label={t('accounts.min_payment')} error={errors.fields.minPayment}>
