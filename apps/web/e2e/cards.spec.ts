@@ -42,7 +42,7 @@ test('a card shows its statement, what’s due, and pays it', async ({ page }) =
   await expect(due).toContainText('minimum');
   await expect(page.getByTestId('card-statement')).toContainText('$500.00');
   await expect(page.getByTestId('card-since')).toContainText('$70.00');
-  await expect(page.getByTestId('card-available')).toContainText('$4,430.00');
+  await expect(page.getByTestId('fact-available')).toContainText('$4,430.00');
   await expect(page.getByTestId('card-utilization')).toContainText('11.40%');
 
   // A rule for the forecast.

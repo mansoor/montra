@@ -169,12 +169,6 @@ export function CardPanel({
                   <DateText date={s.nextClose} />
                 </dd>
               </div>
-              {s.available !== null && (
-                <div data-testid="card-available">
-                  <dt className="text-muted">{t('account.available')}</dt>
-                  <dd className="font-medium">{money(s.available)}</dd>
-                </div>
-              )}
               {s.utilizationBps !== null && (
                 <div data-testid="card-utilization">
                   <dt className="text-muted">{t('card.utilization')}</dt>
