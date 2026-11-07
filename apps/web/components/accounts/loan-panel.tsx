@@ -40,7 +40,9 @@ export function LoanPanel({
   const money = (amount: string) => <Money amount={amount} currency={ccy} />;
   const next = loan.next;
   const [from, setFrom] = useState(loan.payingAccountId ?? paying[0]?.id ?? '');
-  const [date, setDate] = useState(next && next.date < today ? next.date : (next?.date ?? today));
+  // Paid today unless it's overdue, when it's more likely paid on its date. Follows the next payment until edited.
+  const [dateInput, setDateInput] = useState<string | null>(null);
+  const date = dateInput ?? (next && next.date < today ? next.date : today);
   const [extra, setExtra] = useState('');
   const paidFrom = accounts.find((a) => a.id === loan.payingAccountId);
 
@@ -88,7 +90,8 @@ export function LoanPanel({
   );
 
   const table = (body: readonly AmortizationRowDto[], testId: string) => (
-    <div className="overflow-x-auto" data-testid={testId}>
+    // Relative, so the screen-reader-only header stays inside this scroll area rather than widening the page.
+    <div className="relative overflow-x-auto" data-testid={testId}>
       <table className="tbl min-w-[40rem] text-sm">
         <caption className="sr-only">{t('account.loan.schedule_caption', { name: loan.name })}</caption>
         <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
@@ -182,7 +185,10 @@ export function LoanPanel({
                         ...(extraPrincipal ? { extraPrincipal } : {}),
                       }),
                     t('account.loan.recorded'),
-                  ).then(() => setExtra(''));
+                  ).then(() => {
+                    setExtra('');
+                    setDateInput(null);
+                  });
                 }}
               >
                 <label>
@@ -201,7 +207,7 @@ export function LoanPanel({
                     type="date"
                     className="input"
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(e) => setDateInput(e.target.value)}
                   />
                 </label>
                 <label>

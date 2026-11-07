@@ -50,6 +50,13 @@ test('a tracked mortgage works out its payments and follows the balance', async 
 
   const accountPath = new URL(page.url()).pathname;
 
+  // The schedule scrolls on a phone. The page doesn't.
+  await page.setViewportSize({ width: 360, height: 760 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+  ).toBeLessThanOrEqual(0);
+  await page.setViewportSize({ width: 1280, height: 800 });
+
   // It shows where upcoming payments are, linked back to the loan.
   for (const path of ['recurring', 'upcoming']) {
     await page.goto(`/w/${workspaceId}/${path}`);
@@ -63,6 +70,8 @@ test('a tracked mortgage works out its payments and follows the balance', async 
 
   // Recording it reduces what's owed, with $1,000.00 extra on principal.
   const form = page.getByRole('form', { name: 'Record payment' });
+  // Due in three days and being recorded now: it's dated today, not the due date.
+  await expect(form.getByLabel('Date')).not.toHaveValue(inDays(3));
   await form.getByLabel('Extra to principal').fill('1000');
   await form.getByRole('button', { name: 'Record payment' }).click();
   await expect(page.getByText('Payment recorded.')).toBeVisible();
