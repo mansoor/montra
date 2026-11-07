@@ -144,6 +144,12 @@ export const UpdateAccountRequest = z
       .regex(/^\d{1,19}$/)
       .nullable(),
     lowBalance: z.string().regex(/^-?\d{1,19}$/),
+    /** ADR-0025. Null clears them. */
+    planType: z
+      .enum(['brokerage', '401k', 'roth_401k', '403b', 'ira', 'roth_ira', 'hsa', '529', 'pension', 'other'])
+      .nullable(),
+    employerId: Id.nullable(),
+    employerContributions: z.boolean(),
   })
   .partial();
 export type UpdateAccountRequest = z.output<typeof UpdateAccountRequest>;

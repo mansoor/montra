@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { accountProfile, BALANCE_RANGES, todayIn, type BalanceRange } from '@montra/domain';
 import { AccountFacts, BalanceHistory } from '@/components/accounts/account-overview';
+import { InvestmentPerformance, PlanSettings, ValueUpdates } from '@/components/accounts/investment-panel';
 import { LoanPanel } from '@/components/accounts/loan-panel';
 import { TrackLoanForm } from '@/components/accounts/loan-tracking';
 import { load } from '@/lib/server-api';
@@ -47,6 +48,17 @@ export default async function RegisterPage({
       )
     : [[], []];
   const loan = loans.find((l) => l.id === loanId);
+  const valued = type.balanceWord === 'value';
+  const investment = account.kind === 'investment';
+  const [perf, values, employers] = valued
+    ? await load((api) =>
+        Promise.all([
+          investment ? api.accountPerformance(workspaceId, accountId, range) : Promise.resolve(null),
+          api.listValuations(workspaceId, accountId),
+          investment ? api.listEmployers(workspaceId).catch(() => []) : Promise.resolve([]),
+        ]),
+      )
+    : [null, [], []];
   const about = [
     t(`account.kind.${account.kind}`),
     type.holder ? account.institution : null,
@@ -112,12 +124,30 @@ export default async function RegisterPage({
       {!loan && type.installment && (
         <TrackLoanForm workspaceId={workspaceId} account={account} accounts={accounts} today={today} />
       )}
-      <BalanceHistory
-        account={account}
-        history={history}
-        href={(r) => `${base}?view=${view}&range=${r}`}
-        t={t}
-      />
+      {perf ? (
+        <InvestmentPerformance
+          account={account}
+          perf={perf}
+          href={(r) => `${base}?view=${view}&range=${r}`}
+        />
+      ) : (
+        <BalanceHistory
+          account={account}
+          history={history}
+          href={(r) => `${base}?view=${view}&range=${r}`}
+          t={t}
+        />
+      )}
+      {valued && (
+        <ValueUpdates
+          workspaceId={workspaceId}
+          account={account}
+          values={values}
+          today={today}
+          hidden={perf?.hidden ?? false}
+        />
+      )}
+      {investment && <PlanSettings workspaceId={workspaceId} account={account} employers={employers} />}
 
       {lines.length === 0 ? (
         <p className="card text-sm text-muted">{t('register.empty')}</p>

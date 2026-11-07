@@ -892,7 +892,13 @@ export class FlowService {
         }
         // Savings and debt paydown: net money into savings accounts and onto loans in the window.
         const { rows } = await sql<{ id: string; name: string; kind: string; v: string }>`
-          select a.id, a.name, b.kind, coalesce(sum(d.functional_delta_minor), 0)::text as v
+          select a.id, a.name, b.kind,
+                 (coalesce(sum(d.functional_delta_minor), 0)
+                  - coalesce((select sum(p.functional_amount_minor)
+                                from app.posting p
+                                join app.journal_entry je on je.workspace_id = p.workspace_id and je.id = p.journal_entry_id
+                               where p.workspace_id = a.workspace_id and p.ledger_account_id = a.id
+                                 and je.kind = 'valuation' and p.entry_date between ${from} and ${to}), 0))::text as v
             from app.bank_account b
             join app.ledger_account a on a.id = b.ledger_account_id
             left join app.account_balance_daily d on d.ledger_account_id = a.id and d.date between ${from} and ${to}
