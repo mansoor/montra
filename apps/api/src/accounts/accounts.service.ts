@@ -2,6 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { newId, type Trx } from '@montra/db';
 import { sql } from 'kysely';
 import {
+  WORKPLACE_PLANS,
+  type PlanType,
   accountProfile,
   asCurrencyCode,
   balanceHistoryDates,
@@ -48,6 +50,43 @@ export class AccountsService {
     return (await this.list(ctx)).find((a) => a.id === id)!;
   }
 
+  /**
+   * A plan is for an investment, and only a workplace plan takes payslips. The employer must be in the same books, and
+   * taking its contributions needs one (ADR-0025).
+   */
+  private async checkPlan(
+    trx: Trx,
+    ctx: Ctx,
+    kind: string,
+    entityId: string,
+    p: { planType?: string | null; employerId?: string | null; employerContributions?: boolean },
+  ): Promise<void> {
+    if ((p.planType ?? null) !== null && kind !== 'investment') {
+      throw unprocessable('account.plan_kind', 'Only an investment account has a plan type');
+    }
+    if (p.employerId) {
+      if (!p.planType || !WORKPLACE_PLANS.has(p.planType as PlanType)) {
+        throw unprocessable(
+          'account.plan_employer',
+          'Only a workplace plan, such as a 401(k), takes money from payslips',
+        );
+      }
+      const employer = await trx
+        .selectFrom('app.employer')
+        .select('entity_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', p.employerId)
+        .executeTakeFirst();
+      if (!employer) throw notFound('Employer');
+      if (employer.entity_id !== entityId) {
+        throw unprocessable('account.plan_employer', 'The employer must be in the same books as the account');
+      }
+    }
+    if (p.employerContributions && !p.employerId) {
+      throw unprocessable('account.plan_contributions', 'Choose the employer whose contributions it takes');
+    }
+  }
+
   /** The same inside a caller's transaction, for a loan added together with its account. */
   async createIn(trx: Trx, ctx: Ctx, req: CreateAccountRequest): Promise<string> {
     const id = newId();
@@ -70,6 +109,7 @@ export class AccountsService {
         throw unprocessable('currency.mismatch', 'Opening balance currency must match the account currency');
       }
       const type = accountProfile(req.kind).side;
+      await this.checkPlan(trx, ctx, req.kind, entity.id, req);
       await trx
         .insertInto('app.ledger_account')
         .values({
@@ -100,6 +140,9 @@ export class AccountsService {
           opening_balance_minor: natural,
           opening_date: openingDate,
           default_member_id: req.defaultMemberId ?? null,
+          plan_type: req.planType ?? null,
+          employer_id: req.employerId ?? null,
+          employer_contributions: req.employerContributions ?? false,
           credit_limit_minor: req.creditLimit ?? null,
           interest_rate_bps: req.interestRateBps ?? null,
           min_payment_minor: req.minPayment ?? null,
@@ -158,6 +201,9 @@ export class AccountsService {
           'b.interest_rate_bps',
           'b.min_payment_minor',
           'b.low_balance_minor',
+          'b.plan_type',
+          'b.employer_id',
+          'b.employer_contributions',
           'v.hidden',
         ])
         .where('b.workspace_id', '=', ctx.workspaceId)
@@ -189,6 +235,9 @@ export class AccountsService {
         hidden: r.hidden ?? false,
         defaultMemberId: r.default_member_id,
         loanId: r.loan_id,
+        planType: r.plan_type as AccountDto['planType'],
+        employerId: r.employer_id,
+        employerContributions: r.employer_contributions,
         planning: {
           creditLimit: r.credit_limit_minor !== null ? String(r.credit_limit_minor) : null,
           interestRateBps: r.interest_rate_bps,
@@ -305,7 +354,33 @@ export class AccountsService {
         ...(req.interestRateBps !== undefined ? { interest_rate_bps: req.interestRateBps } : {}),
         ...(req.minPayment !== undefined ? { min_payment_minor: req.minPayment } : {}),
         ...(req.lowBalance !== undefined ? { low_balance_minor: req.lowBalance } : {}),
+        ...(req.planType !== undefined ? { plan_type: req.planType } : {}),
+        ...(req.employerId !== undefined ? { employer_id: req.employerId } : {}),
+        ...(req.employerContributions !== undefined
+          ? { employer_contributions: req.employerContributions }
+          : {}),
       };
+      if (
+        req.planType !== undefined ||
+        req.employerId !== undefined ||
+        req.employerContributions !== undefined
+      ) {
+        const now = await trx
+          .selectFrom('app.bank_account as b')
+          .innerJoin('app.ledger_account as a', (j) =>
+            j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+          )
+          .select(['b.kind', 'b.plan_type', 'b.employer_id', 'b.employer_contributions', 'a.entity_id'])
+          .where('b.workspace_id', '=', ctx.workspaceId)
+          .where('b.ledger_account_id', '=', accountId)
+          .executeTakeFirstOrThrow();
+        await this.checkPlan(trx, ctx, now.kind, now.entity_id, {
+          planType: req.planType !== undefined ? req.planType : now.plan_type,
+          employerId: req.employerId !== undefined ? req.employerId : now.employer_id,
+          employerContributions:
+            req.employerContributions !== undefined ? req.employerContributions : now.employer_contributions,
+        });
+      }
       if (Object.keys(bank).length) {
         await trx
           .updateTable('app.bank_account')

@@ -16,6 +16,11 @@ import {
   medianMinor,
   payslipTotals,
   SAVINGS_CODES,
+  EMPLOYER_PLAN_ROUTES,
+  employerPosted,
+  PAYSLIP_PLAN_ROUTES,
+  routeToPlan,
+  type PlanType,
   type JournalEntryDraft,
   type PayslipPostingLine,
 } from '@montra/domain';
@@ -659,10 +664,14 @@ export class PayslipsService {
           .where('id', '=', d.id)
           .execute();
       }
+      const employerMoney = employerPosted(
+        (await this.entryInput(trx, ctx, p, employer, calendarDate(p.pay_date!))).lines,
+      );
       const row = await trx
         .updateTable('app.payslip')
         .set({
           status: 'posted',
+          employer_posted_minor: employerMoney,
           transaction_id: posted.transactionId,
           deposit_spec: posted.depositSpec ? JSON.stringify(posted.depositSpec) : null,
           match_candidates: null,
@@ -845,13 +854,23 @@ export class PayslipsService {
     }
     const posting: PayslipPostingLine[] = [];
     for (const l of lines) {
+      if (l.section === 'employer') {
+        // Stays on the payslip unless an account takes the employer's contributions (ADR-0025).
+        const into = await this.employerAccount(trx, ctx, employer, l.code);
+        posting.push({
+          ...toAmount(l),
+          label: l.label,
+          accountId: into ?? employer.deposit_account_id,
+          ...(into
+            ? { contraAccountId: await this.employerIncome(trx, ctx, employer.entity_id, p.currency) }
+            : {}),
+        });
+        continue;
+      }
       posting.push({
         ...toAmount(l),
         label: l.label,
-        accountId:
-          l.section === 'employer'
-            ? employer.deposit_account_id // never posted: employer contributions stay on the payslip
-            : (l.ledger_account_id ?? (await this.defaultAccount(trx, ctx, l, employer, p.currency))),
+        accountId: l.ledger_account_id ?? (await this.defaultAccount(trx, ctx, l, employer, p.currency)),
       });
     }
     const others = await this.depositsOf(trx, ctx, p.id);
@@ -935,8 +954,69 @@ export class PayslipsService {
     currency: string,
   ): Promise<string> {
     if (line.section === 'earning') return this.incomeCategory(trx, ctx, employer.entity_id, currency);
-    if (SAVINGS_CODES.has(line.code)) return this.savingsAccount(trx, ctx, employer, currency);
+    if (SAVINGS_CODES.has(line.code)) {
+      const plan = routeToPlan(PAYSLIP_PLAN_ROUTES[line.code], await this.planAccounts(trx, ctx, employer));
+      return plan?.id ?? this.savingsAccount(trx, ctx, employer, currency);
+    }
     return this.payrollCategory(trx, ctx, employer.entity_id, currency, line.code);
+  }
+
+  /** The investment accounts this employer's payslips pay into, by plan (ADR-0025). */
+  private async planAccounts(trx: Trx, ctx: Ctx, employer: EmployerRow) {
+    const rows = await trx
+      .selectFrom('app.bank_account as b')
+      .innerJoin('app.ledger_account as a', (j) =>
+        j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+      )
+      .select(['a.id', 'b.plan_type', 'b.employer_contributions'])
+      .where('b.workspace_id', '=', ctx.workspaceId)
+      .where('b.employer_id', '=', employer.id)
+      .where('a.archived_at', 'is', null)
+      .orderBy('a.created_at')
+      .execute();
+    return rows.map((r) => ({
+      id: r.id,
+      planType: r.plan_type as PlanType | null,
+      employerContributions: r.employer_contributions,
+    }));
+  }
+
+  /** Where an employer contribution posts: an account of a fitting plan that takes them, or nowhere. */
+  private async employerAccount(
+    trx: Trx,
+    ctx: Ctx,
+    employer: EmployerRow,
+    code: string,
+  ): Promise<string | null> {
+    const accounts = (await this.planAccounts(trx, ctx, employer)).filter((a) => a.employerContributions);
+    return routeToPlan(EMPLOYER_PLAN_ROUTES[code], accounts)?.id ?? null;
+  }
+
+  /** The income an employer's contributions are credited to. Budgets leave it out of take-home pay (ADR-0025). */
+  private async employerIncome(trx: Trx, ctx: Ctx, entityId: string, currency: string): Promise<string> {
+    const existing = await trx
+      .selectFrom('app.ledger_account')
+      .select('id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .where('subtype', '=', 'payroll:employer')
+      .executeTakeFirst();
+    if (existing) return existing.id;
+    const id = newId();
+    await trx
+      .insertInto('app.ledger_account')
+      .values({
+        workspace_id: ctx.workspaceId,
+        id,
+        entity_id: entityId,
+        type: 'income',
+        subtype: 'payroll:employer',
+        name: 'Employer contributions',
+        currency,
+        is_category: true,
+      })
+      .execute();
+    return id;
   }
 
   private async incomeCategory(trx: Trx, ctx: Ctx, entityId: string, currency: string): Promise<string> {
@@ -1028,6 +1108,18 @@ export class PayslipsService {
 
   private async savingsAccount(trx: Trx, ctx: Ctx, employer: EmployerRow, currency: string): Promise<string> {
     if (employer.retirement_account_id) return employer.retirement_account_id;
+    // The caller's copy can be older than this transaction: one payslip builds its entries more than once, and the
+    // first build may already have made the account.
+    const current = await trx
+      .selectFrom('app.employer')
+      .select('retirement_account_id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', employer.id)
+      .executeTakeFirst();
+    if (current?.retirement_account_id) {
+      employer.retirement_account_id = current.retirement_account_id;
+      return current.retirement_account_id;
+    }
     const id = newId();
     await trx
       .insertInto('app.ledger_account')
@@ -1056,6 +1148,7 @@ export class PayslipsService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('id', '=', employer.id)
       .execute();
+    employer.retirement_account_id = id;
     return id;
   }
 

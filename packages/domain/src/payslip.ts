@@ -62,6 +62,11 @@ export const SAVINGS_CODES: ReadonlySet<string> = new Set([
 export interface PayslipPostingLine extends PayslipLineAmount {
   /** Where the line posts: an income category, an expense category or an asset account. */
   accountId: string;
+  /**
+   * An employer contribution posts only with this: the income it's credited to (ADR-0025). Without it, the line stays
+   * on the payslip and posts nothing.
+   */
+  contraAccountId?: string;
   /** Short text kept on the posting. */
   label: string;
 }
@@ -155,6 +160,12 @@ export function buildPayslipEntry(input: PayslipEntryInput): JournalEntryDraft {
       .map((l) => ({ l, amount: l.section === 'earning' ? -(left.get(l) ?? l.amount) : l.amount }))
       .filter(({ l, amount }) => l.section !== 'employer' && amount !== 0n)
       .map(({ l, amount }) => posting(l.accountId, amount, l.label, false)),
+    ...lines
+      .filter((l) => l.section === 'employer' && l.contraAccountId && l.amount !== 0n)
+      .flatMap((l) => [
+        posting(l.accountId, l.amount, l.label, false),
+        posting(l.contraAccountId!, -l.amount, l.label, false),
+      ]),
   ].map((p, i) => ({ ...p, lineNo: i + 1 }));
   const entry: JournalEntryDraft = {
     entityId: input.entityId,
@@ -257,3 +268,7 @@ export function depositChoices(
     ...(rest.length ? { otherDeposits: rest } : {}),
   };
 }
+
+/** What a payslip's entry posts for the employer: kept out of take-home pay in budgets (ADR-0025). */
+export const employerPosted = (lines: readonly PayslipPostingLine[]): bigint =>
+  lines.reduce((t, l) => (l.section === 'employer' && l.contraAccountId ? t + l.amount : t), 0n);
