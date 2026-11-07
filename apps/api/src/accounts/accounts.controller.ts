@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   BalanceAdjustmentRequest,
+  BalanceRangeDto,
   CreateAccountRequest,
   RegisterView,
   UpdateAccountRequest,
+  type AccountBalanceHistoryDto,
   type AccountDto,
   type CategoryDto,
   type LedgerAccountDto,
@@ -47,6 +49,19 @@ export class AccountsController {
       dbCtx(ctx),
       parse(z.uuid(), accountId),
       parse(BalanceAdjustmentRequest, body),
+    );
+  }
+
+  @Get('accounts/:accountId/balance-history')
+  balanceHistory(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Query('range') range?: string,
+  ): Promise<AccountBalanceHistoryDto> {
+    return this.accounts.balanceHistory(
+      dbCtx(ctx),
+      parse(z.uuid(), accountId),
+      parse(BalanceRangeDto.default('1y'), range),
     );
   }
 

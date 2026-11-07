@@ -49,6 +49,7 @@ export function LineChart({
   const y = (v: number) => PAD.t + (1 - (v - min) / (max - min)) * (H - PAD.t - PAD.b);
   const ticks = [max, (max + min) / 2, min];
   const every = Math.max(1, Math.ceil(labels.length / (compact ? 3 : 6)));
+  const last = labels.length - 1;
   return (
     <figure className="w-full">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title} className="h-auto w-full">
@@ -90,9 +91,17 @@ export function LineChart({
             points={s.values.map((v, i) => `${x(i)},${y(Number(v))}`).join(' ')}
           />
         ))}
+        {/* The last label ends at the edge so it isn't cut off, and one too close to it gives way. */}
         {labels.map((l, i) =>
-          i % every === 0 || i === labels.length - 1 ? (
-            <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="var(--ink-muted)">
+          i === last || (i % every === 0 && last - i >= every / 2) ? (
+            <text
+              key={i}
+              x={x(i)}
+              y={H - 8}
+              textAnchor={i === last && last > 0 ? 'end' : 'middle'}
+              fontSize="10"
+              fill="var(--ink-muted)"
+            >
               {/^\d{4}-\d{2}-\d{2}$/.test(l) ? date(l) : l}
             </text>
           ) : null,

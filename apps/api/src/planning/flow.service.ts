@@ -8,6 +8,7 @@ import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import {
   PACE_KINDS,
+  accountProfile,
   addDays,
   addMonths,
   burnItems,
@@ -19,6 +20,7 @@ import {
   endOfMonth,
   estimatedTaxPeriods,
   forecast as simulate,
+  kindsWhere,
   money,
   occurrencesBetween,
   parseDecimal,
@@ -65,9 +67,6 @@ interface CashAccount {
   creditLimit: bigint | null;
 }
 
-const CASH_KINDS = new Set(['checking', 'savings', 'cash']);
-const SAVINGS_KINDS = new Set(['savings', 'investment']);
-const DEBT_KINDS = new Set(['loan', 'mortgage', 'line_of_credit']);
 const BURN_KINDS = new Set(['daily', 'fun']);
 const s = (v: bigint) => String(v);
 
@@ -547,7 +546,7 @@ export class FlowService {
     const from = addDays(today, 1);
     const last = addDays(today, days);
     const accounts = (await this.accounts(trx, ctx, entityId)).filter(
-      (a) => CASH_KINDS.has(a.kind) || a.kind === 'credit_card',
+      (a) => accountProfile(a.kind).forecast !== null,
     );
     const ids = new Set(accounts.map((a) => a.id));
     const balances = await this.data.balances(trx, ctx, [...ids], [today]);
@@ -628,7 +627,7 @@ export class FlowService {
       ).map((r) => r.id),
     );
     for (const e of entities) {
-      const cash = accounts.filter((a) => a.entityId === e && CASH_KINDS.has(a.kind));
+      const cash = accounts.filter((a) => a.entityId === e && accountProfile(a.kind).forecast === 'cash');
       const primary =
         cash
           .filter((a) => a.kind === 'checking')
@@ -887,13 +886,13 @@ export class FlowService {
             join app.ledger_account a on a.id = b.ledger_account_id
             left join app.account_balance_daily d on d.ledger_account_id = a.id and d.date between ${from} and ${to}
            where a.workspace_id = ${ctx.workspaceId} and a.entity_id = ${e.id}
-             and b.kind in ('savings', 'investment', 'loan', 'mortgage', 'line_of_credit')
+             and b.kind = any(${sql.val(kindsWhere((t) => t.moneyFlow !== null))}::text[])
            group by 1, 2, 3`.execute(trx);
         let moved = 0n;
         for (const r of rows) {
           const v = BigInt(r.v);
           if (v <= 0n) continue;
-          const kind = SAVINGS_KINDS.has(r.kind) ? 'savings' : DEBT_KINDS.has(r.kind) ? 'debt' : null;
+          const kind = accountProfile(r.kind).moneyFlow;
           if (!kind) continue;
           node(`${kind}:${r.id}`, kind, r.name, { entityId: e.id, accountIds: [r.id], from, to });
           link(entityNode, `${kind}:${r.id}`, v);

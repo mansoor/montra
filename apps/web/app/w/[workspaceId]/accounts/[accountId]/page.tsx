@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { accountProfile, BALANCE_RANGES, type BalanceRange } from '@montra/domain';
+import { AccountFacts, BalanceHistory } from '@/components/accounts/account-overview';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
 import { DateText } from '@/components/i18n';
@@ -12,17 +14,35 @@ export default async function RegisterPage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string; accountId: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; range?: string }>;
 }) {
   const { workspaceId, accountId } = await params;
-  const view = (await searchParams).view === 'simple' ? 'simple' : 'ledger';
-  const [[accounts, register], { t }] = await Promise.all([
-    load((api) => Promise.all([api.listAccounts(workspaceId), api.register(workspaceId, accountId, view)])),
+  const query = await searchParams;
+  const view = query.view === 'simple' ? 'simple' : 'ledger';
+  const range = (BALANCE_RANGES as readonly string[]).includes(query.range ?? '')
+    ? (query.range as BalanceRange)
+    : '1y';
+  const [[accounts, register, history], { t }] = await Promise.all([
+    load((api) =>
+      Promise.all([
+        api.listAccounts(workspaceId),
+        api.register(workspaceId, accountId, view),
+        api.accountBalanceHistory(workspaceId, accountId, range),
+      ]),
+    ),
     getI18n(),
   ]);
   const account = accounts.find((a) => a.id === accountId);
   if (!account) notFound();
   const base = `/w/${workspaceId}/accounts/${accountId}`;
+  const type = accountProfile(account.kind);
+  const about = [
+    t(`account.kind.${account.kind}`),
+    type.holder ? account.institution : null,
+    type.hasNumber && account.last4 ? `···· ${account.last4}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   // Newest first for reading; running balances were computed oldest-first by the API.
   const lines = [...register.data].reverse();
 
@@ -37,8 +57,11 @@ export default async function RegisterPage({
             ← {t('nav.accounts')}
           </Link>
           <h1 className="page-title">{account.name}</h1>
+          <p className="text-sm text-muted" data-testid="account-about">
+            {about}
+          </p>
           <p className="text-sm text-muted">
-            {account.type === 'liability' ? t('register.owed') : t('register.balance')}:{' '}
+            {t(`register.${type.balanceWord}`)}:{' '}
             <Money
               amount={account.balance.amount}
               currency={account.currency}
@@ -59,12 +82,24 @@ export default async function RegisterPage({
         </div>
         <div role="group" aria-label={t('register.view')} className="segmented segmented-md">
           {(['ledger', 'simple'] as const).map((v) => (
-            <Link key={v} href={`${base}?view=${v}`} aria-current={view === v ? 'true' : undefined}>
+            <Link
+              key={v}
+              href={`${base}?view=${v}&range=${range}`}
+              aria-current={view === v ? 'true' : undefined}
+            >
               {v === 'ledger' ? t('register.view_ledger') : t('register.view_simple')}
             </Link>
           ))}
         </div>
       </div>
+
+      <AccountFacts account={account} workspaceId={workspaceId} t={t} />
+      <BalanceHistory
+        account={account}
+        history={history}
+        href={(r) => `${base}?view=${view}&range=${r}`}
+        t={t}
+      />
 
       {lines.length === 0 ? (
         <p className="card text-sm text-muted">{t('register.empty')}</p>

@@ -6,6 +6,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { newId, type LoanRow, type Trx } from '@montra/db';
 import {
+  accountProfile,
   amortize,
   asCurrencyCode,
   calendarDate,
@@ -83,7 +84,7 @@ export class LoansService {
         .where('b.workspace_id', '=', ctx.workspaceId)
         .where('b.ledger_account_id', '=', req.loanAccountId)
         .executeTakeFirst();
-      if (!bank || !['loan', 'mortgage', 'line_of_credit'].includes(bank.kind)) {
+      if (!bank || !accountProfile(bank.kind).schedule) {
         throw unprocessable('loan.account', 'Choose a loan or mortgage account');
       }
       if (bank.entity_id !== p.entity_id) {

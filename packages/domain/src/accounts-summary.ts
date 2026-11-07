@@ -2,6 +2,7 @@
  * The accounts list, grouped by kind with totals, for web and phone. Currencies are never added together: each stays on its own line, as on
  * Home, so nothing here depends on a rate.
  */
+import { ACCOUNT_KINDS } from './account-types.js';
 
 export interface SummarizableAccount {
   name: string;
@@ -37,23 +38,9 @@ export interface AccountsSummary<T> {
   net: CurrencyTotal[];
 }
 
-/** What you have first, then what you owe, most everyday first. */
-const KIND_ORDER = [
-  'checking',
-  'savings',
-  'cash',
-  'investment',
-  'asset',
-  'credit_card',
-  'line_of_credit',
-  'loan',
-  'mortgage',
-  'liability',
-];
-
 const rank = (kind: string) => {
-  const i = KIND_ORDER.indexOf(kind);
-  return i === -1 ? KIND_ORDER.length : i;
+  const i = (ACCOUNT_KINDS as readonly string[]).indexOf(kind);
+  return i === -1 ? ACCOUNT_KINDS.length : i;
 };
 
 function totalsOf(entries: { currency: string; amount: bigint }[]): CurrencyTotal[] {

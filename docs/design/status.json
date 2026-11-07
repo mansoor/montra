@@ -14,7 +14,7 @@
   ],
   "ACC-02": [
     "done",
-    ""
+    "Each type asks for and shows what it has, from one definition per type, with its balance over time (ADR-0023)"
   ],
   "ACC-03": [
     "done",

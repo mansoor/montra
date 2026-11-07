@@ -1,18 +1,8 @@
 import { z } from 'zod';
+import { ACCOUNT_KINDS, BALANCE_RANGES } from '@montra/domain';
 import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
 
-export const BankAccountKind = z.enum([
-  'checking',
-  'savings',
-  'credit_card',
-  'cash',
-  'loan',
-  'mortgage',
-  'line_of_credit',
-  'investment',
-  'asset',
-  'liability',
-]);
+export const BankAccountKind = z.enum(ACCOUNT_KINDS);
 export type BankAccountKind = z.infer<typeof BankAccountKind>;
 
 export const CreateAccountRequest = z.object({
@@ -30,6 +20,20 @@ export const CreateAccountRequest = z.object({
   openingBalance: MoneyDto.optional(),
   openingDate: CalendarDateDto.optional(),
   defaultMemberId: Id.optional(),
+  /** The optional facts its type can hold (ADR-0023). Minor units in the account currency. */
+  creditLimit: z
+    .string()
+    .regex(/^\d{1,19}$/)
+    .optional(),
+  interestRateBps: z.number().int().min(0).max(10_000).optional(),
+  minPayment: z
+    .string()
+    .regex(/^\d{1,19}$/)
+    .optional(),
+  lowBalance: z
+    .string()
+    .regex(/^-?\d{1,19}$/)
+    .optional(),
 });
 export type CreateAccountRequest = z.output<typeof CreateAccountRequest>;
 
@@ -58,6 +62,19 @@ export const AccountDto = z.object({
   }),
 });
 export type AccountDto = z.infer<typeof AccountDto>;
+
+export const BalanceRangeDto = z.enum(BALANCE_RANGES);
+export type BalanceRangeDto = z.infer<typeof BalanceRangeDto>;
+
+/** An account's balance over time, for its chart (ADR-0023). Only what this user may see. */
+export const AccountBalanceHistoryDto = z.object({
+  accountId: z.string(),
+  currency: z.string(),
+  range: BalanceRangeDto,
+  /** Natural balance at the end of each date, oldest first: held for assets, owed for liabilities. */
+  points: z.array(z.object({ date: CalendarDateDto, balance: z.string() })),
+});
+export type AccountBalanceHistoryDto = z.infer<typeof AccountBalanceHistoryDto>;
 
 export const CategoryDto = z.object({
   id: z.string(),
