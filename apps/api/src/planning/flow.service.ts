@@ -254,6 +254,44 @@ export class FlowService {
       }
     }
 
+    // Other money owed, on the date it's due, while any of it is (ADR-0027).
+    const owedOn = await trx
+      .selectFrom('app.bank_account as b')
+      .innerJoin('app.ledger_account as a', (j) =>
+        j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+      )
+      .select(['a.id', 'a.name', 'a.currency', 'b.due_date'])
+      .where('b.workspace_id', '=', ctx.workspaceId)
+      .where('b.due_date', 'is not', null)
+      .where('b.due_date', '>=', from)
+      .where('b.due_date', '<=', to)
+      .where('a.archived_at', 'is', null)
+      .$if(!!entityId, (q) => q.where('a.entity_id', '=', entityId!))
+      .execute();
+    if (owedOn.length) {
+      const balances = await this.data.balances(
+        trx,
+        ctx,
+        owedOn.map((a) => a.id),
+        [today],
+      );
+      for (const a of owedOn) {
+        const owed = -(balances.get(a.id)?.get(today) ?? 0n);
+        if (owed <= 0n) continue;
+        const date = calendarDate(String(a.due_date).slice(0, 10));
+        push({
+          date,
+          kind: 'bill',
+          name: a.name,
+          amount: s(-owed),
+          currency: a.currency as Money,
+          sourceId: a.id,
+          accountId: a.id,
+          status: date < today ? 'overdue' : 'upcoming',
+        });
+      }
+    }
+
     // Card and line-of-credit payments due: this statement's, and the next one from what's been charged since (ADR-0026).
     for (const c of await this.cards.statementsIn(trx, ctx, { entityId })) {
       const dues = [

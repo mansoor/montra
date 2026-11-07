@@ -36,6 +36,7 @@ describe('account types (ADR-0023)', () => {
     expect(kindsWhere((t) => t.schedule).sort()).toEqual(['line_of_credit', 'loan', 'mortgage']);
     expect(kindsWhere((t) => t.installment).sort()).toEqual(['loan', 'mortgage']);
     expect(kindsWhere((t) => t.statement).sort()).toEqual(['credit_card', 'line_of_credit']);
+    expect(kindsWhere((t) => !t.imports).sort()).toEqual(['asset', 'cash', 'liability']);
   });
 
   it('only asks about a low balance where a forecast can warn about one', () => {

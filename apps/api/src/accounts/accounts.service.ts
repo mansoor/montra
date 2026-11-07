@@ -28,6 +28,7 @@ import type {
   CreateAccountRequest,
   LedgerAccountDto,
   UpdateAccountRequest,
+  InterestEarnedDto,
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { FxRatesService } from '../fx/fx.service.js';
@@ -141,6 +142,88 @@ export class AccountsService {
     }
   }
 
+  /**
+   * A purchase and a loan are for a home or car, and the loan must be money owed in the same books. A due date is for
+   * other money owed (ADR-0027). Only what the request sets is checked.
+   */
+  private async checkDetails(
+    trx: Trx,
+    ctx: Ctx,
+    kind: string,
+    entityId: string,
+    accountId: string,
+    d: {
+      purchasePrice?: string | null;
+      purchaseDate?: string | null;
+      loanAccountId?: string | null;
+      dueDate?: string | null;
+    },
+  ): Promise<void> {
+    const { details } = accountProfile(kind);
+    const set = (v: unknown) => v !== undefined && v !== null;
+    if (
+      (set(d.purchasePrice) || set(d.purchaseDate) || set(d.loanAccountId)) &&
+      !details.includes('purchase')
+    ) {
+      throw unprocessable('account.detail_kind', 'Only a home, car or other asset has a purchase and a loan');
+    }
+    if (set(d.dueDate) && !details.includes('dueDate')) {
+      throw unprocessable('account.detail_kind', 'Only other money owed has a due date here');
+    }
+    if (d.loanAccountId) {
+      const loan = await trx
+        .selectFrom('app.bank_account as b')
+        .innerJoin('app.ledger_account as a', (j) =>
+          j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+        )
+        .select(['b.kind', 'a.entity_id'])
+        .where('b.workspace_id', '=', ctx.workspaceId)
+        .where('b.ledger_account_id', '=', d.loanAccountId)
+        .executeTakeFirst();
+      if (
+        !loan ||
+        accountProfile(loan.kind).side !== 'liability' ||
+        loan.entity_id !== entityId ||
+        d.loanAccountId === accountId
+      ) {
+        throw unprocessable('account.loan', 'Choose a loan or mortgage in the same books');
+      }
+    }
+  }
+
+  /** Interest paid into an account this year: what came in against an interest income category (ADR-0027). */
+  async interestEarned(ctx: Ctx, accountId: string): Promise<InterestEarnedDto> {
+    return this.db.run(ctx, async (trx) => {
+      const account = await trx
+        .selectFrom('app.bank_account as b')
+        .innerJoin('app.ledger_account as a', (j) =>
+          j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+        )
+        .select(['a.currency'])
+        .where('b.workspace_id', '=', ctx.workspaceId)
+        .where('b.ledger_account_id', '=', accountId)
+        .executeTakeFirst();
+      if (!account) throw notFound('Account');
+      const workspace = await trx
+        .selectFrom('app.workspace')
+        .select('time_zone')
+        .where('id', '=', ctx.workspaceId)
+        .executeTakeFirstOrThrow();
+      const to = todayIn(workspace.time_zone) as CalendarDate;
+      const from = `${to.slice(0, 4)}-01-01` as CalendarDate;
+      const { rows } = await sql<{ amount: string }>`
+        select coalesce(-sum(i.amount_minor), 0)::text as amount
+          from app.posting i
+          join app.ledger_account c on c.workspace_id = i.workspace_id and c.id = i.ledger_account_id
+         where i.workspace_id = ${ctx.workspaceId} and i.entry_date between ${from} and ${to}
+           and c.type = 'income' and c.is_category and c.name ilike '%interest%'
+           and exists (select 1 from app.posting p
+                        where p.workspace_id = i.workspace_id and p.journal_entry_id = i.journal_entry_id
+                          and p.ledger_account_id = ${accountId} and p.amount_minor > 0)`.execute(trx);
+      return { accountId, from, to, amount: rows[0]?.amount ?? '0', currency: account.currency };
+    });
+  }
+
   /** The same inside a caller's transaction, for a loan added together with its account. */
   async createIn(trx: Trx, ctx: Ctx, req: CreateAccountRequest): Promise<string> {
     const id = newId();
@@ -165,6 +248,7 @@ export class AccountsService {
       const type = accountProfile(req.kind).side;
       await this.checkPlan(trx, ctx, req.kind, entity.id, req);
       await this.checkCycle(trx, ctx, req.kind, entity.id, currency, req);
+      await this.checkDetails(trx, ctx, req.kind, entity.id, id, req);
       await trx
         .insertInto('app.ledger_account')
         .values({
@@ -195,6 +279,10 @@ export class AccountsService {
           opening_balance_minor: natural,
           opening_date: openingDate,
           default_member_id: req.defaultMemberId ?? null,
+          purchase_price_minor: req.purchasePrice ?? null,
+          purchase_date: req.purchaseDate ?? null,
+          loan_account_id: req.loanAccountId ?? null,
+          due_date: req.dueDate ?? null,
           statement_day: req.statementDay ?? null,
           due_day: req.dueDay ?? null,
           pay_from_account_id: req.payFromAccountId ?? null,
@@ -263,6 +351,10 @@ export class AccountsService {
           'b.low_balance_minor',
           'b.plan_type',
           'b.statement_day',
+          'b.purchase_price_minor',
+          'b.purchase_date',
+          'b.loan_account_id',
+          'b.due_date',
           'b.due_day',
           'b.pay_from_account_id',
           'b.pay_rule',
@@ -303,6 +395,10 @@ export class AccountsService {
         planType: r.plan_type as AccountDto['planType'],
         employerId: r.employer_id,
         employerContributions: r.employer_contributions,
+        purchasePrice: r.purchase_price_minor !== null ? String(r.purchase_price_minor) : null,
+        purchaseDate: r.purchase_date ? calendarDate(String(r.purchase_date).slice(0, 10)) : null,
+        loanAccountId: r.loan_account_id,
+        dueDate: r.due_date ? calendarDate(String(r.due_date).slice(0, 10)) : null,
         cycle: {
           statementDay: r.statement_day,
           dueDay: r.due_day,
@@ -432,11 +528,32 @@ export class AccountsService {
           ? { employer_contributions: req.employerContributions }
           : {}),
         ...(req.statementDay !== undefined ? { statement_day: req.statementDay } : {}),
+        ...(req.purchasePrice !== undefined ? { purchase_price_minor: req.purchasePrice } : {}),
+        ...(req.purchaseDate !== undefined ? { purchase_date: req.purchaseDate } : {}),
+        ...(req.loanAccountId !== undefined ? { loan_account_id: req.loanAccountId } : {}),
+        ...(req.dueDate !== undefined ? { due_date: req.dueDate } : {}),
         ...(req.dueDay !== undefined ? { due_day: req.dueDay } : {}),
         ...(req.payFromAccountId !== undefined ? { pay_from_account_id: req.payFromAccountId } : {}),
         ...(req.payRule !== undefined ? { pay_rule: req.payRule } : {}),
         ...(req.payFixed !== undefined ? { pay_fixed_minor: req.payFixed } : {}),
       };
+      if (
+        req.purchasePrice !== undefined ||
+        req.purchaseDate !== undefined ||
+        req.loanAccountId !== undefined ||
+        req.dueDate !== undefined
+      ) {
+        const now = await trx
+          .selectFrom('app.bank_account as b')
+          .innerJoin('app.ledger_account as a', (j) =>
+            j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
+          )
+          .select(['b.kind', 'a.entity_id'])
+          .where('b.workspace_id', '=', ctx.workspaceId)
+          .where('b.ledger_account_id', '=', accountId)
+          .executeTakeFirstOrThrow();
+        await this.checkDetails(trx, ctx, now.kind, now.entity_id, accountId, req);
+      }
       if (
         req.statementDay !== undefined ||
         req.dueDay !== undefined ||

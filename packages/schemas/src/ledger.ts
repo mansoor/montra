@@ -159,6 +159,14 @@ export const UpdateAccountRequest = z
       .string()
       .regex(/^\d{1,19}$/)
       .nullable(),
+    /** ADR-0027. Null clears them. */
+    purchasePrice: z
+      .string()
+      .regex(/^\d{1,19}$/)
+      .nullable(),
+    purchaseDate: CalendarDateDto.nullable(),
+    loanAccountId: Id.nullable(),
+    dueDate: CalendarDateDto.nullable(),
   })
   .partial();
 export type UpdateAccountRequest = z.output<typeof UpdateAccountRequest>;

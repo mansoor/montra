@@ -4,6 +4,7 @@ import { accountProfile, BALANCE_RANGES, todayIn, type BalanceRange } from '@mon
 import { AccountFacts, BalanceHistory } from '@/components/accounts/account-overview';
 import { InvestmentPerformance, PlanSettings, ValueUpdates } from '@/components/accounts/investment-panel';
 import { CardPanel } from '@/components/accounts/card-panel';
+import { AssetPanel, CashCount, DebtPanel } from '@/components/accounts/other-panels';
 import { LoanPanel } from '@/components/accounts/loan-panel';
 import { TrackLoanForm } from '@/components/accounts/loan-tracking';
 import { load } from '@/lib/server-api';
@@ -50,6 +51,10 @@ export default async function RegisterPage({
     : [[], []];
   const loan = loans.find((l) => l.id === loanId);
   const statement = type.statement ? await load((api) => api.cardStatement(workspaceId, accountId)) : null;
+  const interest =
+    account.kind === 'savings'
+      ? (await load((api) => api.interestEarned(workspaceId, accountId))).amount
+      : null;
   const valued = type.balanceWord === 'value';
   const investment = account.kind === 'investment';
   const [perf, values, employers] = valued
@@ -95,15 +100,19 @@ export default async function RegisterPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/w/${workspaceId}/import?account=${accountId}`} className="btn-primary">
-            {t('register.import')}
-          </Link>
-          <Link href={`${base}/reconcile`} className="btn-secondary">
-            {t('register.reconcile')}
-          </Link>
-          <Link href={`/w/${workspaceId}/imports?account=${accountId}`} className="btn-secondary">
-            {t('register.imports')}
-          </Link>
+          {type.imports && (
+            <>
+              <Link href={`/w/${workspaceId}/import?account=${accountId}`} className="btn-primary">
+                {t('register.import')}
+              </Link>
+              <Link href={`${base}/reconcile`} className="btn-secondary">
+                {t('register.reconcile')}
+              </Link>
+              <Link href={`/w/${workspaceId}/imports?account=${accountId}`} className="btn-secondary">
+                {t('register.imports')}
+              </Link>
+            </>
+          )}
         </div>
         <div role="group" aria-label={t('register.view')} className="segmented segmented-md">
           {(['ledger', 'simple'] as const).map((v) => (
@@ -118,6 +127,13 @@ export default async function RegisterPage({
         </div>
       </div>
 
+      {type.details.includes('purchase') && (
+        <AssetPanel workspaceId={workspaceId} account={account} accounts={accounts} />
+      )}
+      {type.details.includes('dueDate') && (
+        <DebtPanel workspaceId={workspaceId} account={account} today={today} />
+      )}
+      {account.kind === 'cash' && <CashCount workspaceId={workspaceId} account={account} today={today} />}
       {type.statement && (
         <CardPanel
           workspaceId={workspaceId}
@@ -130,7 +146,7 @@ export default async function RegisterPage({
       {loan ? (
         <LoanPanel workspaceId={workspaceId} loan={loan} rows={schedule} accounts={accounts} today={today} />
       ) : (
-        <AccountFacts account={account} workspaceId={workspaceId} t={t} />
+        <AccountFacts account={account} workspaceId={workspaceId} t={t} interestEarned={interest} />
       )}
       {!loan && type.installment && (
         <TrackLoanForm workspaceId={workspaceId} account={account} accounts={accounts} today={today} />

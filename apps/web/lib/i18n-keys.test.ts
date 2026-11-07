@@ -40,7 +40,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'account.add_kind.': ACCOUNT_KINDS,
   'account.kind_help.': ACCOUNT_KINDS,
   'account.kind_example.': ACCOUNT_KINDS,
-  'account.holder.': ['bank', 'issuer', 'lender', 'provider'],
+  'account.holder.': ['bank', 'issuer', 'lender', 'provider', 'creditor'],
   'account.plan.': PLAN_TYPES,
   'card.rule_': PAY_RULES,
   'card.choice_': ['due', 'minimum', 'other'],
