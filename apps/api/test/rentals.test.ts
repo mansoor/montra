@@ -351,7 +351,8 @@ describe('arrears and late fees (RNT-05)', () => {
       { startDate: lastMonth, lateFeeFlat: '2500' },
       entity,
     );
-    await pay(l.id, '150000', today, acct);
+    // Last month's rent and this month's: paying only one fails once this month's is past its grace period.
+    await pay(l.id, '300000', today, acct);
     await jobs.assessFees(ctx());
     const res = (await c.get(url(`/arrears?entityId=${entity}`))).body;
     expect(res.rows).toEqual([]);
