@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addDays, startOfMonth, todayIn } from '@montra/domain';
+import { addDays, JOURNAL_KINDS, startOfMonth, SYSTEM_ROLES, todayIn } from '@montra/domain';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
@@ -85,6 +85,21 @@ beforeAll(async () => {
 afterAll(async () => {
   await admin.end();
   await h.close();
+});
+
+describe('the database allows what the code writes', () => {
+  // A constraint rewritten from an old copy of its list would quietly drop values a later migration added.
+  it.each([
+    ['ledger_account_system_role_check', SYSTEM_ROLES],
+    ['journal_entry_kind_check', JOURNAL_KINDS],
+  ] as const)('%s lists exactly the values in the code', async (name, values) => {
+    const { rows } = await admin.query(
+      `select pg_get_constraintdef(oid) as def from pg_constraint where conname = $1`,
+      [name],
+    );
+    const allowed = [...(rows[0].def as string).matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]).sort();
+    expect(allowed).toEqual([...values].sort());
+  });
 });
 
 describe('adding a retirement account', () => {

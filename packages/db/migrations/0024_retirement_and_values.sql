@@ -24,7 +24,8 @@ alter table app.ledger_account drop constraint ledger_account_system_role_check;
 alter table app.ledger_account add constraint ledger_account_system_role_check
   check (system_role in ('opening_balance_equity', 'uncategorized_income', 'uncategorized_expense', 'owner_contribution',
                          'owner_draw', 'inter_entity_clearing', 'due_to_entity', 'due_from_entity', 'fx_gain_loss',
-                         'fx_rounding', 'security_deposits_held', 'bank_fees', 'investment_gains'));
+                         'fx_rounding', 'security_deposits_held', 'bank_fees', 'sales_tax_payable',
+                         'investment_gains'));
 
 insert into app.ledger_account (workspace_id, entity_id, type, subtype, name, currency, system_role)
 select e.workspace_id, e.id, 'equity', 'system', 'Investment gains and losses', e.functional_currency, 'investment_gains'
