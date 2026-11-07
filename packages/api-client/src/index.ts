@@ -62,6 +62,7 @@ import type {
   AccountDto,
   AccountValuationDto,
   AddValuationsRequest,
+  CardStatementDto,
   BalanceRangeDto,
   InvestmentPerformanceDto,
   ColumnMappingDto,
@@ -872,6 +873,17 @@ export class ApiClient {
     return this.request<{ data: CategoryDto[] }>(
       'GET',
       this.ws(workspaceId, `/categories${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  cardStatements(workspaceId: string) {
+    return this.request<{ data: CardStatementDto[] }>('GET', this.ws(workspaceId, '/card-statements')).then(
+      (r) => r.data,
+    );
+  }
+  cardStatement(workspaceId: string, accountId: string) {
+    return this.request<{ data: CardStatementDto | null }>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/statement`),
     ).then((r) => r.data);
   }
   accountPerformance(workspaceId: string, accountId: string, range: BalanceRangeDto = '1y') {
@@ -2132,6 +2144,7 @@ export type {
   AccountBalanceHistoryDto,
   AccountDto,
   AccountValuationDto,
+  CardStatementDto,
   InvestmentPerformanceDto,
   BulkEditResult,
   CategoryDto,

@@ -393,6 +393,8 @@ first seen within 45 days.
 
 ## 11. Forecast (FLOW-03)
 
+A card or line of credit with a payment rule pays this statement's balance, its minimum or a set amount from its account on the due date, then the next from what's been charged since ([ADR-0026](adr/0026-card-statements.md)).
+
 A tracked loan's payments come out of the account it's paid from, recomputed from what's owed ([ADR-0024](adr/0024-loan-tracking.md)).
 
 Expected pay with a split lands by the employer's plan ([ADR-0022](adr/0022-splitting-pay.md)): the fixed amounts on their accounts and the rest on the main one, each until its own deposit arrives.

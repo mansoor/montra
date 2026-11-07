@@ -96,6 +96,7 @@ describe('view models', () => {
     planType: null,
     employerId: null,
     employerContributions: false,
+    cycle: { statementDay: null, dueDay: null, payFromAccountId: null, payRule: null, payFixed: null },
     planning: { creditLimit: null, interestRateBps: null, minPayment: null, lowBalance: '0' },
   });
 

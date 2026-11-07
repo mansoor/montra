@@ -150,6 +150,15 @@ export const UpdateAccountRequest = z
       .nullable(),
     employerId: Id.nullable(),
     employerContributions: z.boolean(),
+    /** ADR-0026. Null clears them. */
+    statementDay: z.number().int().min(1).max(31).nullable(),
+    dueDay: z.number().int().min(1).max(31).nullable(),
+    payFromAccountId: Id.nullable(),
+    payRule: z.enum(['statement', 'minimum', 'fixed']).nullable(),
+    payFixed: z
+      .string()
+      .regex(/^\d{1,19}$/)
+      .nullable(),
   })
   .partial();
 export type UpdateAccountRequest = z.output<typeof UpdateAccountRequest>;

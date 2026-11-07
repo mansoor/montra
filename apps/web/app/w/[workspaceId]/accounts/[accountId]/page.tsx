@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { accountProfile, BALANCE_RANGES, todayIn, type BalanceRange } from '@montra/domain';
 import { AccountFacts, BalanceHistory } from '@/components/accounts/account-overview';
 import { InvestmentPerformance, PlanSettings, ValueUpdates } from '@/components/accounts/investment-panel';
+import { CardPanel } from '@/components/accounts/card-panel';
 import { LoanPanel } from '@/components/accounts/loan-panel';
 import { TrackLoanForm } from '@/components/accounts/loan-tracking';
 import { load } from '@/lib/server-api';
@@ -48,6 +49,7 @@ export default async function RegisterPage({
       )
     : [[], []];
   const loan = loans.find((l) => l.id === loanId);
+  const statement = type.statement ? await load((api) => api.cardStatement(workspaceId, accountId)) : null;
   const valued = type.balanceWord === 'value';
   const investment = account.kind === 'investment';
   const [perf, values, employers] = valued
@@ -116,6 +118,15 @@ export default async function RegisterPage({
         </div>
       </div>
 
+      {type.statement && (
+        <CardPanel
+          workspaceId={workspaceId}
+          account={account}
+          statement={statement}
+          accounts={accounts}
+          today={today}
+        />
+      )}
       {loan ? (
         <LoanPanel workspaceId={workspaceId} loan={loan} rows={schedule} accounts={accounts} today={today} />
       ) : (

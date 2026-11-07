@@ -47,6 +47,7 @@ import { BillsService } from '../business/bills.service.js';
 import { BusinessReportsService } from '../business/business-reports.service.js';
 import { InvoicesService } from '../business/invoices.service.js';
 import { LoansService } from '../rentals/loans.service.js';
+import { CardsService } from '../accounts/cards.service.js';
 import { leaseStatus } from '../rentals/properties.service.js';
 import { RentService } from '../rentals/rent.service.js';
 import { FxRatesService } from '../fx/fx.service.js';
@@ -92,6 +93,7 @@ export class FlowService {
     @Inject(BusinessReportsService) private readonly businessReports: BusinessReportsService,
     @Inject(RentService) private readonly rent: RentService,
     @Inject(LoansService) private readonly loans: LoansService,
+    @Inject(CardsService) private readonly cards: CardsService,
   ) {}
 
   // ----- Accounts ----------------------------------------------------------------------------------------
@@ -248,6 +250,27 @@ export class FlowService {
           sourceId: l.loanId,
           accountId: l.payingAccountId,
           status: l.date < today ? 'overdue' : 'upcoming',
+        });
+      }
+    }
+
+    // Card and line-of-credit payments due: this statement's, and the next one from what's been charged since (ADR-0026).
+    for (const c of await this.cards.statementsIn(trx, ctx, { entityId })) {
+      const dues = [
+        { date: c.dueDate, amount: BigInt(c.due), estimate: false },
+        { date: c.nextDueDate, amount: BigInt(c.sinceStatement), estimate: true },
+      ];
+      for (const d of dues) {
+        if (d.amount <= 0n || d.date < from || d.date > to) continue;
+        push({
+          date: d.date,
+          kind: 'card_due',
+          name: c.name,
+          amount: s(-d.amount),
+          currency: c.currency as Money,
+          sourceId: c.accountId,
+          accountId: c.accountId,
+          status: d.date < today ? 'overdue' : 'upcoming',
         });
       }
     }
@@ -621,6 +644,41 @@ export class FlowService {
       }
     }
 
+    // What each card's payment rule pays, from its account to the card: this statement, then the next (ADR-0026).
+    for (const c of await this.cards.statementsIn(trx, ctx, { entityId })) {
+      if (!c.planned || !ids.has(c.planned.fromAccountId) || !ids.has(c.accountId)) continue;
+      const card = await trx
+        .selectFrom('app.bank_account')
+        .select(['pay_rule', 'pay_fixed_minor', 'min_payment_minor'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('ledger_account_id', '=', c.accountId)
+        .executeTakeFirstOrThrow();
+      const since = BigInt(c.sinceStatement);
+      const next =
+        card.pay_rule === 'statement'
+          ? since
+          : card.pay_rule === 'minimum'
+            ? card.min_payment_minor !== null && BigInt(card.min_payment_minor) < since
+              ? BigInt(card.min_payment_minor)
+              : since
+            : card.pay_fixed_minor !== null
+              ? BigInt(card.pay_fixed_minor)
+              : 0n;
+      const payments = [
+        { date: c.planned.date < from ? from : c.planned.date, amount: BigInt(c.planned.amount) },
+        { date: c.nextDueDate, amount: next },
+      ];
+      for (const p of payments) {
+        if (p.amount <= 0n || p.date > last) continue;
+        for (const [accountId, amount] of [
+          [c.planned.fromAccountId, -p.amount],
+          [c.accountId, p.amount],
+        ] as const) {
+          add({ date: p.date, accountId, amount, kind: 'card_payment', name: c.name, sourceId: c.accountId });
+        }
+      }
+    }
+
     // Expected income not yet received, and discretionary burn, per entity.
     const entities = [...new Set(accounts.map((a) => a.entityId))];
     const rentals = new Set(
@@ -722,7 +780,11 @@ export class FlowService {
         accountId: a.id,
         start: balances.get(a.id)?.get(today) ?? 0n,
         threshold:
-          a.kind === 'credit_card' ? (a.creditLimit !== null ? -a.creditLimit : -(10n ** 15n)) : a.lowBalance,
+          accountProfile(a.kind).forecast === 'card'
+            ? a.creditLimit !== null
+              ? -a.creditLimit
+              : -(10n ** 15n)
+            : a.lowBalance,
       })),
       items,
       from,
@@ -743,10 +805,14 @@ export class FlowService {
         return {
           accountId: a.id,
           name: a.name,
-          kind: a.kind === 'credit_card' ? ('card' as const) : ('cash' as const),
+          kind: accountProfile(a.kind).forecast === 'card' ? ('card' as const) : ('cash' as const),
           currency: a.currency as Money,
           threshold: s(
-            a.kind === 'credit_card' ? (a.creditLimit !== null ? -a.creditLimit : 0n) : a.lowBalance,
+            accountProfile(a.kind).forecast === 'card'
+              ? a.creditLimit !== null
+                ? -a.creditLimit
+                : 0n
+              : a.lowBalance,
           ),
           start: s(balances.get(a.id)?.get(today) ?? 0n),
           balances: r.balances.map(s),

@@ -47,6 +47,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET /accounts/{id}/register?view=ledger|simple` | Date, description, debit, credit, running balance | DE-06 |
 | `GET/POST /loans`, `PATCH /loans/{id}`, `GET /loans/{id}/schedule`, `POST /loans/{id}/payments`, `DELETE /loans/{id}/payments/{number}` | Tracked loans on any account, from the real balance ([ADR-0024](adr/0024-loan-tracking.md)) | RNT-08, ACC-02 |
 | `GET/POST /accounts/{id}/valuations`, `DELETE /accounts/{id}/valuations/{id}` (latest only), `GET /accounts/{id}/performance?range=` | Statement values and gain over time ([ADR-0025](adr/0025-retirement-and-gains.md)) | ACC-07 |
+| `GET /accounts/{id}/statement`, `GET /card-statements` | A card or line of credit's latest statement, what's due and the planned payment ([ADR-0026](adr/0026-card-statements.md)) | ACC-02, FLOW-03 |
 | `GET /accounts/{id}/balance-history?range=3m|6m|1y|all` | Natural balance over time, for the account's chart ([ADR-0023](adr/0023-account-type-profiles.md)) | ACC-02 |
 | `GET/POST /categories`, `PATCH /categories/{id}`, `GET/POST /category-groups` | Category ledger accounts and groups | DE-02, BUD-04 |
 | `GET /ledger-accounts` | Full chart of accounts | DE-02 |
