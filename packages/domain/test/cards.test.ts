@@ -1,4 +1,3 @@
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   calendarDate,
@@ -41,23 +40,40 @@ describe('statementCycle (ADR-0026)', () => {
     expect(statementCycle(d('2026-02-20'), 10, 31).dueDate).toBe(d('2026-02-28'));
   });
 
-  it('always has the statement closed by today, due after it, and the next one after that', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: 3000 }),
-        fc.integer({ min: 1, max: 31 }),
-        fc.integer({ min: 1, max: 31 }),
-        (n, statementDay, dueDay) => {
-          const today = d(new Date(Date.UTC(2024, 0, 1 + n)).toISOString().slice(0, 10));
+  it('gives each statement its own due date when a short month has no day after the close', () => {
+    // Closing the 28th, due the 29th: February 2031 has no 29th, so it's due 1 March, ahead of March's own on the 29th.
+    expect(statementCycle(d('2031-02-28'), 28, 29)).toEqual({
+      lastClose: d('2031-02-28'),
+      dueDate: d('2031-03-01'),
+      nextClose: d('2031-03-28'),
+      nextDueDate: d('2031-03-29'),
+    });
+  });
+
+  // Every statement day, due day and date through months of every length: 31 days, February of 28 and of 29, and 30.
+  // A random sample missed the February case above, so this checks them all.
+  it('always has the statement closed by today, due after it, and the next one due later', () => {
+    const bad: string[] = [];
+    const days = [
+      ...Array.from({ length: 120 }, (_, n) => Date.UTC(2027, 0, 1 + n)),
+      ...Array.from({ length: 60 }, (_, n) => Date.UTC(2028, 1, 1 + n)),
+    ];
+    for (const t of days) {
+      const today = d(new Date(t).toISOString().slice(0, 10));
+      for (let statementDay = 1; statementDay <= 31; statementDay++) {
+        for (let dueDay = 1; dueDay <= 31; dueDay++) {
           const c = statementCycle(today, statementDay, dueDay);
-          expect(compareDates(c.lastClose, today)).toBeLessThanOrEqual(0);
-          expect(compareDates(c.nextClose, today)).toBeGreaterThan(0);
-          expect(compareDates(c.dueDate, c.lastClose)).toBeGreaterThan(0);
-          expect(compareDates(c.nextDueDate, c.nextClose)).toBeGreaterThan(0);
-          expect(compareDates(c.nextDueDate, c.dueDate)).toBeGreaterThan(0);
-        },
-      ),
-    );
+          const ok =
+            compareDates(c.lastClose, today) <= 0 &&
+            compareDates(c.nextClose, today) > 0 &&
+            compareDates(c.dueDate, c.lastClose) > 0 &&
+            compareDates(c.nextDueDate, c.nextClose) > 0 &&
+            compareDates(c.nextDueDate, c.dueDate) > 0;
+          if (!ok && bad.length < 5) bad.push(`${today} ${statementDay} ${dueDay}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
   });
 });
 

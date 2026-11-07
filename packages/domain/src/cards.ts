@@ -37,6 +37,17 @@ function nextDay(date: CalendarDate, day: number): CalendarDate {
   return on(ny, nm, day);
 }
 
+/**
+ * When a statement that closed on `close` is due. The due day falls in the closing month when it comes after the
+ * statement day, otherwise in the month after, so each statement keeps its own due date. A short month can leave no such
+ * day after the close (closing the 28th, due the 29th, in February): then it's due the day after.
+ */
+function dueAfter(close: CalendarDate, statementDay: number, dueDay: number): CalendarDate {
+  const [y, m] = shift(Number(close.slice(0, 4)), Number(close.slice(5, 7)), dueDay > statementDay ? 0 : 1);
+  const due = on(y, m, dueDay);
+  return compareDates(due, close) > 0 ? due : addDays(close, 1);
+}
+
 export function statementCycle(today: CalendarDate, statementDay: number, dueDay: number): StatementCycle {
   const y = Number(today.slice(0, 4));
   const m = Number(today.slice(5, 7));
@@ -45,9 +56,9 @@ export function statementCycle(today: CalendarDate, statementDay: number, dueDay
   const nextClose = nextDay(lastClose, statementDay);
   return {
     lastClose,
-    dueDate: nextDay(lastClose, dueDay),
+    dueDate: dueAfter(lastClose, statementDay, dueDay),
     nextClose,
-    nextDueDate: nextDay(nextClose, dueDay),
+    nextDueDate: dueAfter(nextClose, statementDay, dueDay),
   };
 }
 
