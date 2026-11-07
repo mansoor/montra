@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { newId } from '@montra/db';
+import { newId, type Trx } from '@montra/db';
 import { sql } from 'kysely';
 import {
   accountProfile,
@@ -44,8 +44,14 @@ export class AccountsService {
 
   /** Creates a bank/card/loan/asset account and posts its opening balance (ACC-02, ACC-05). */
   async create(ctx: Ctx, req: CreateAccountRequest): Promise<AccountDto> {
+    const id = await this.db.run(ctx, (trx) => this.createIn(trx, ctx, req));
+    return (await this.list(ctx)).find((a) => a.id === id)!;
+  }
+
+  /** The same inside a caller's transaction, for a loan added together with its account. */
+  async createIn(trx: Trx, ctx: Ctx, req: CreateAccountRequest): Promise<string> {
     const id = newId();
-    await this.db.run(ctx, async (trx) => {
+    {
       const entity = req.entityId
         ? await trx
             .selectFrom('app.entity')
@@ -113,8 +119,8 @@ export class AccountsService {
         const draft = buildOpeningBalanceEntry(ref, debitPositive, openingDate, resolver, rate);
         await this.ledger.post(trx, ctx, null, [draft]);
       }
-    });
-    return (await this.list(ctx)).find((a) => a.id === id)!;
+    }
+    return id;
   }
 
   async list(
@@ -130,7 +136,14 @@ export class AccountsService {
         .leftJoin('app.account_visibility as v', (j) =>
           j.onRef('v.ledger_account_id', '=', 'a.id').on('v.user_id', '=', ctx.userId),
         )
+        .leftJoin('app.loan_schedule as l', (j) =>
+          j
+            .onRef('l.workspace_id', '=', 'a.workspace_id')
+            .onRef('l.loan_account_id', '=', 'a.id')
+            .on('l.archived_at', 'is', null),
+        )
         .select([
+          'l.id as loan_id',
           'a.id',
           'a.entity_id',
           'a.name',
@@ -175,6 +188,7 @@ export class AccountsService {
         archived: r.archived_at !== null,
         hidden: r.hidden ?? false,
         defaultMemberId: r.default_member_id,
+        loanId: r.loan_id,
         planning: {
           creditLimit: r.credit_limit_minor !== null ? String(r.credit_limit_minor) : null,
           interestRateBps: r.interest_rate_bps,
@@ -257,6 +271,21 @@ export class AccountsService {
   async update(ctx: Ctx, accountId: string, req: UpdateAccountRequest): Promise<AccountDto> {
     await this.db.run(ctx, async (trx) => {
       await this.ledger.accountRef(trx, ctx.workspaceId, accountId);
+      if (req.interestRateBps !== undefined || req.minPayment !== undefined) {
+        const tracked = await trx
+          .selectFrom('app.loan_schedule')
+          .select('id')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('loan_account_id', '=', accountId)
+          .where('archived_at', 'is', null)
+          .executeTakeFirst();
+        if (tracked) {
+          throw unprocessable(
+            'loan.tracked',
+            'This loan’s payments are tracked: change its rate on the account page',
+          );
+        }
+      }
       if (req.name !== undefined || req.archived !== undefined) {
         await trx
           .updateTable('app.ledger_account')

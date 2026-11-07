@@ -52,6 +52,8 @@ export const AccountDto = z.object({
   /** Hidden from the current user's lists (preference, UP-04). */
   hidden: z.boolean(),
   defaultMemberId: z.string().nullable(),
+  /** Set when its payments are tracked (ADR-0024). */
+  loanId: z.string().nullable(),
   /** Planning inputs (Phase 6): debt payoff and forecast warnings. Minor units in the account currency. */
   planning: z.object({
     creditLimit: z.string().nullable(),

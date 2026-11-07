@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function NewAccountPage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
-  const workspace = await load((api) => api.getWorkspace(workspaceId));
+  const [workspace, accounts] = await load((api) =>
+    Promise.all([api.getWorkspace(workspaceId), api.listAccounts(workspaceId)]),
+  );
   const { t } = await getI18n();
   return (
     <div className="space-y-4">
@@ -18,7 +20,7 @@ export default async function NewAccountPage({ params }: { params: Promise<{ wor
         title="Add an account"
         back={{ href: `/w/${workspaceId}/accounts`, label: t('nav.accounts') }}
       />
-      <NewAccountForm workspace={workspace} today={todayIn(workspace.timeZone)} />
+      <NewAccountForm workspace={workspace} accounts={accounts} today={todayIn(workspace.timeZone)} />
     </div>
   );
 }

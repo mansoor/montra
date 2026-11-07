@@ -14,7 +14,7 @@
   ],
   "ACC-02": [
     "done",
-    "Each type asks for and shows what it has, from one definition per type, with its balance over time (ADR-0023)"
+    "Each type asks for and shows what it has, from one definition per type, with its balance over time (ADR-0023). A mortgage or loan can track payments as well as its balance (ADR-0024)"
   ],
   "ACC-03": [
     "done",
@@ -774,7 +774,7 @@
   ],
   "RNT-08": [
     "done",
-    "schedule from the terms; a payment posts principal, interest and escrow, and an exact bank line links by itself. Escrow counts when paid in, not paid out (ADR-0018 §6)"
+    "the schedule follows what's owed, so extra payments and rate changes show by themselves; a payment posts principal, interest and escrow, and an exact bank line links by itself (ADR-0024). Escrow counts when paid in, not paid out (ADR-0018 §6)"
   ],
   "RNT-09": [
     "done",

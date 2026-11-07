@@ -132,6 +132,22 @@ for (const scheme of ['light', 'dark'] as const) {
           })
         ).json()
       ).id as string;
+      const mortgage = (
+        await (
+          await page.request.post(`${ws}/loans`, {
+            data: {
+              name: 'Home mortgage',
+              newAccount: { kind: 'mortgage' },
+              principal: '20000000',
+              rateBps: 600,
+              termMonths: 360,
+              firstPaymentDate: new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10),
+              escrowInsurance: '10000',
+              payingAccountId: accounts[0]!.id,
+            },
+          })
+        ).json()
+      ).loanAccountId as string;
       const business = await entity('business', 'Side work');
       const rental = await entity('rental', 'Elm Rentals');
       const found = [];
@@ -139,6 +155,7 @@ for (const scheme of ['light', 'dark'] as const) {
         ...WORKSPACE_PAGES,
         `/accounts/${accounts[0]!.id}`,
         `/accounts/${visa}`,
+        `/accounts/${mortgage}`,
         '/business',
         `/business/${business}`,
         `/business/${business}/invoices`,

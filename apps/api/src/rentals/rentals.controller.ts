@@ -238,7 +238,7 @@ export class RentalsController {
 
   @Get('loans')
   async listLoans(@Ctx() ctx: RequestContext, @Query() q: unknown) {
-    const { entityId } = parse(EntityQuery, q);
+    const { entityId } = parse(EntityQuery.partial(), q);
     return { data: await this.loans.list(dbCtx(ctx), entityId) };
   }
 

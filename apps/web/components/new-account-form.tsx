@@ -2,18 +2,27 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { ACCOUNT_PROFILES, kindsWhere, percentToBps, type AccountKind } from '@montra/domain';
-import type { WorkspaceDto } from '@montra/api-client';
+import { ACCOUNT_PROFILES, accountProfile, kindsWhere, percentToBps, type AccountKind } from '@montra/domain';
+import type { AccountDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { toFormErrors, type FormErrors } from '@/lib/errors';
 import { parseAmountInput } from '@/lib/money';
+import { initialLoanTerms, LoanTermsFields, readLoanTerms } from './accounts/loan-tracking';
 import { Field, FormError } from './field';
 import { useI18n } from './i18n';
 
 const HAVE = kindsWhere((k) => k.side === 'asset');
 const OWE = kindsWhere((k) => k.side === 'liability');
 
-export function NewAccountForm({ workspace, today }: { workspace: WorkspaceDto; today: string }) {
+export function NewAccountForm({
+  workspace,
+  accounts,
+  today,
+}: {
+  workspace: WorkspaceDto;
+  accounts: readonly AccountDto[];
+  today: string;
+}) {
   const router = useRouter();
   const { t, locale } = useI18n();
   const [kind, setKind] = useState<AccountKind>('checking');
@@ -21,10 +30,77 @@ export function NewAccountForm({ workspace, today }: { workspace: WorkspaceDto; 
   const [busy, setBusy] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const type = ACCOUNT_PROFILES[kind];
+  const [entityId, setEntityId] = useState(workspace.entities[0]?.id ?? '');
+  const [track, setTrack] = useState(false);
+  const [terms, setTerms] = useState(() => initialLoanTerms('mortgage', today));
+  const tracking = type.installment && track;
+  const entity = workspace.entities.find((e) => e.id === entityId);
+  const loanCurrency = entity?.functionalCurrency ?? workspace.baseCurrency;
+  const payingAccounts = accounts.filter(
+    (a) =>
+      !a.archived &&
+      a.entityId === entityId &&
+      a.currency === loanCurrency &&
+      accountProfile(a.kind).forecast === 'cash',
+  );
+
+  function changeKind(next: AccountKind) {
+    setKind(next);
+    if (ACCOUNT_PROFILES[next].installment) setTerms(initialLoanTerms(next, today));
+  }
+
+  async function submitTracked(f: FormData) {
+    const get = (k: string) => String(f.get(k) ?? '').trim();
+    const read = readLoanTerms(terms, loanCurrency, locale, t);
+    const fields: Record<string, string> = read.ok ? {} : { ...read.fields };
+    let owed: string | undefined;
+    const owedInput = get('openingBalance');
+    if (owedInput) {
+      const parsed = parseAmountInput(owedInput, loanCurrency, locale);
+      if (!parsed.ok) fields.openingBalance = parsed.error;
+      else if (parsed.minor <= 0n) fields.openingBalance = t('budget.amount_invalid');
+      else owed = parsed.minor.toString();
+    }
+    if (!read.ok || Object.keys(fields).length) {
+      setErrors({ fields });
+      return;
+    }
+    setBusy(true);
+    setErrors({ fields: {} });
+    try {
+      const loan = await browserApi.createLoan(workspace.id, {
+        name: get('name'),
+        newAccount: {
+          kind: kind as 'loan' | 'mortgage',
+          entityId,
+          institution: get('institution') || undefined,
+          last4: get('last4') || undefined,
+          owed,
+        },
+        balanceAsOf: (get('openingDate') || today) as never,
+        ...read.value,
+        startDate: read.value.startDate as never,
+        firstPaymentDate: read.value.firstPaymentDate as never,
+      });
+      router.push(`/w/${workspace.id}/accounts/${loan.loanAccountId}`);
+      router.refresh();
+    } catch (err) {
+      setErrors(
+        toFormErrors(err, {
+          'newAccount.owed': 'openingBalance',
+          'newAccount.last4': 'last4',
+          rateBps: 'rate',
+          termMonths: 'term',
+        }),
+      );
+      setBusy(false);
+    }
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    if (tracking) return submitTracked(f);
     const get = (k: string) => String(f.get(k) ?? '').trim();
     const currency = get('currency').toUpperCase() || workspace.baseCurrency;
     const fields: Record<string, string> = {};
@@ -107,7 +183,7 @@ export function NewAccountForm({ workspace, today }: { workspace: WorkspaceDto; 
               name="kind"
               className="input"
               value={kind}
-              onChange={(e) => setKind(e.target.value as AccountKind)}
+              onChange={(e) => changeKind(e.target.value as AccountKind)}
             >
               <optgroup label={t('accounts.total_assets')}>{HAVE.map(option)}</optgroup>
               <optgroup label={t('accounts.total_liabilities')}>{OWE.map(option)}</optgroup>
@@ -116,7 +192,13 @@ export function NewAccountForm({ workspace, today }: { workspace: WorkspaceDto; 
         </Field>
         <Field id="entityId" label={t('account.field.belongs_to')} error={errors.fields.entityId}>
           {(p) => (
-            <select {...p} name="entityId" className="input" defaultValue={workspace.entities[0]?.id}>
+            <select
+              {...p}
+              name="entityId"
+              className="input"
+              value={entityId}
+              onChange={(e) => setEntityId(e.target.value)}
+            >
               {workspace.entities.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.name}
@@ -126,6 +208,39 @@ export function NewAccountForm({ workspace, today }: { workspace: WorkspaceDto; 
           )}
         </Field>
       </div>
+      {type.installment && (
+        <fieldset data-testid="loan-track-choice">
+          <legend className="field-label">{t('account.loan.how')}</legend>
+          <div className="mt-1 grid gap-2 sm:grid-cols-2">
+            <label className="flex items-start gap-2 rounded-lg border border-line p-3 text-sm">
+              <input
+                type="radio"
+                name="track"
+                className="mt-1"
+                checked={!track}
+                onChange={() => setTrack(false)}
+              />
+              <span>
+                <span className="font-medium">{t('account.loan.how_balance')}</span>
+                <span className="block text-muted">{t('account.loan.how_balance_help')}</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-lg border border-line p-3 text-sm">
+              <input
+                type="radio"
+                name="track"
+                className="mt-1"
+                checked={track}
+                onChange={() => setTrack(true)}
+              />
+              <span>
+                <span className="font-medium">{t('account.loan.how_payments')}</span>
+                <span className="block text-muted">{t('account.loan.how_payments_help')}</span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+      )}
       <Field id="name" label={t('account.field.name')} error={errors.fields.name}>
         {(p) => (
           <input
@@ -171,7 +286,11 @@ export function NewAccountForm({ workspace, today }: { workspace: WorkspaceDto; 
           id="openingBalance"
           label={t(`account.balance_word.${type.balanceWord}`)}
           error={errors.fields.openingBalance}
-          hint={t(type.balanceWord === 'owed' ? 'account.balance_hint_owed' : 'account.balance_hint')}
+          hint={
+            tracking
+              ? t('account.loan.owed_hint')
+              : t(type.balanceWord === 'owed' ? 'account.balance_hint_owed' : 'account.balance_hint')
+          }
         >
           {(p) => (
             <input
@@ -183,22 +302,34 @@ export function NewAccountForm({ workspace, today }: { workspace: WorkspaceDto; 
             />
           )}
         </Field>
-        <Field id="currency" label={t('account.field.currency')} error={errors.fields.currency}>
-          {(p) => (
-            <input
-              {...p}
-              name="currency"
-              className="input uppercase"
-              defaultValue={workspace.baseCurrency}
-              maxLength={3}
-            />
-          )}
-        </Field>
+        {!tracking && (
+          <Field id="currency" label={t('account.field.currency')} error={errors.fields.currency}>
+            {(p) => (
+              <input
+                {...p}
+                name="currency"
+                className="input uppercase"
+                defaultValue={workspace.baseCurrency}
+                maxLength={3}
+              />
+            )}
+          </Field>
+        )}
         <Field id="openingDate" label={t('account.field.as_of')} error={errors.fields.openingDate}>
           {(p) => <input {...p} name="openingDate" type="date" className="input" defaultValue={today} />}
         </Field>
       </div>
-      {type.details.length > 0 && (
+      {tracking && (
+        <LoanTermsFields
+          kind={kind}
+          value={terms}
+          onChange={setTerms}
+          currency={loanCurrency}
+          payingAccounts={payingAccounts}
+          errors={errors.fields}
+        />
+      )}
+      {!tracking && type.details.length > 0 && (
         <details
           open={detailsOpen}
           onToggle={(e) => setDetailsOpen(e.currentTarget.open)}

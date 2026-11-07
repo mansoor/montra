@@ -59,6 +59,7 @@ export class InsightsService {
         from app.transaction t
        where t.workspace_id = ${ctx.workspaceId} and t.status = 'posted' and t.deleted_at is null
          and t.spec->>'type' = 'standard' and t.payee_key is not null
+         and t.spec->>'loanId' is null
          and t.txn_date >= ${from}
        order by t.txn_date`.execute(trx);
     const series = new Map<string, PayeeSeries & { txns: HistoryTxn[] }>();
@@ -81,7 +82,17 @@ export class InsightsService {
       if (r.category_id) s.categoryId = r.category_id;
       series.set(k, s);
     }
-    const proposals = detectRecurring([...series.values()], today);
+    const loanPayments = await sql<{ total: string }>`
+      select (b.min_payment_minor + l.escrow_taxes_minor + l.escrow_insurance_minor)::text as total
+        from app.loan_schedule l
+        join app.bank_account b on b.workspace_id = l.workspace_id and b.ledger_account_id = l.loan_account_id
+       where l.workspace_id = ${ctx.workspaceId} and l.archived_at is null and b.min_payment_minor is not null`.execute(
+      trx,
+    );
+    const expected = new Set(loanPayments.rows.map((r) => BigInt(r.total)));
+    const proposals = detectRecurring([...series.values()], today).filter(
+      (p) => !expected.has(-p.amountMinor),
+    );
 
     // Payees already covered by a recurring template on the same account are not proposed again.
     const templates = await trx

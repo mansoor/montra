@@ -233,6 +233,25 @@ export class FlowService {
       }
     }
 
+    // Loan payments due (RNT-08, ADR-0024).
+    for (const e of entities) {
+      const dues = await this.loans.dueBetween(trx, ctx, e, from, to);
+      if (!dues.length) continue;
+      const money = (await this.data.entity(trx, ctx, e)).currency as Money;
+      for (const l of dues) {
+        push({
+          date: l.date,
+          kind: 'mortgage',
+          name: l.name,
+          amount: s(-l.amount),
+          currency: money,
+          sourceId: l.loanId,
+          accountId: l.payingAccountId,
+          status: l.date < today ? 'overdue' : 'upcoming',
+        });
+      }
+    }
+
     // Goal due dates.
     const goals = await trx
       .selectFrom('app.goal as g')
@@ -332,18 +351,6 @@ export class FlowService {
           sourceId: x.leaseId,
           accountId: x.accountId,
           status: x.late ? 'overdue' : 'upcoming',
-        });
-      }
-      for (const l of await this.loans.dueBetween(trx, ctx, r.id, from, to)) {
-        push({
-          date: l.date,
-          kind: 'mortgage',
-          name: l.name,
-          amount: s(-l.amount),
-          currency: money,
-          sourceId: l.loanId,
-          accountId: null,
-          status: l.date < today ? 'overdue' : 'upcoming',
         });
       }
       const leases = await trx
@@ -671,10 +678,14 @@ export class FlowService {
             sourceId: x.leaseId,
           });
         }
-        for (const l of await this.loans.dueBetween(trx, ctx, e, from, last)) {
+      }
+      // Loan payments, from the account each is paid from (ADR-0024).
+      for (const l of await this.loans.dueBetween(trx, ctx, e, from, last)) {
+        const accountId = l.payingAccountId && ids.has(l.payingAccountId) ? l.payingAccountId : primary?.id;
+        if (accountId) {
           add({
             date: l.date,
-            accountId: primary.id,
+            accountId,
             amount: -l.amount,
             kind: 'mortgage',
             name: l.name,

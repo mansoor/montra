@@ -388,9 +388,11 @@ export type AllocateTransactionRequest = z.output<typeof AllocateTransactionRequ
 export const LoanDto = z.object({
   id: Id,
   entityId: Id,
-  propertyId: Id,
+  propertyId: Id.nullable(),
   loanAccountId: Id,
   name: z.string(),
+  startDate: CalendarDateDto.nullable(),
+  /** The original amount. */
   principal: MinorDto,
   rateBps: z.number().int(),
   termMonths: z.number().int(),
@@ -401,25 +403,71 @@ export const LoanDto = z.object({
   payment: MinorDto,
   /** With escrow: what leaves the bank. */
   totalPayment: MinorDto,
-  /** The schedule's balance after the last linked payment. */
+  /** What's owed now, from the ledger. */
   scheduledBalance: MinorDto,
   paymentsMade: z.number().int(),
+  /** Where the payment comes from, and whether it records itself on its due date. */
+  payingAccountId: Id.nullable(),
+  autoRecord: z.boolean(),
+  /** The next unrecorded payment, null once it's paid off. */
+  next: z
+    .object({
+      number: z.number().int(),
+      date: CalendarDateDto,
+      total: MinorDto,
+      interest: MinorDto,
+      principal: MinorDto,
+      escrow: MinorDto,
+    })
+    .nullable(),
+  /** When it's paid off at this rate and payment. */
+  payoffDate: CalendarDateDto.nullable(),
+  interestRemaining: MinorDto,
+  /** Recorded here. Payments made before tracking began aren't known. */
+  interestPaid: MinorDto,
   currency: CurrencyCodeDto,
   version: z.number().int(),
 });
 export type LoanDto = z.infer<typeof LoanDto>;
 
-export const CreateLoanRequest = z.object({
-  propertyId: Id,
-  loanAccountId: Id,
-  name: Text(200).min(1),
-  principal: PositiveMinor,
-  rateBps: z.number().int().min(0).max(5000),
-  termMonths: z.number().int().min(1).max(600),
-  firstPaymentDate: CalendarDateDto,
-  escrowTaxes: NonNegativeMinor.default('0'),
-  escrowInsurance: NonNegativeMinor.default('0'),
-});
+export const CreateLoanRequest = z
+  .object({
+    /** Only on a rental portfolio. */
+    propertyId: Id.optional(),
+    /** An account that already exists, or `newAccount` to add it in the same step. */
+    loanAccountId: Id.optional(),
+    newAccount: z
+      .object({
+        kind: z.enum(['loan', 'mortgage']),
+        entityId: Id.optional(),
+        institution: Text(200).optional(),
+        last4: z
+          .string()
+          .regex(/^\d{4}$/)
+          .optional(),
+        /** Leave out to estimate it from the terms. */
+        owed: PositiveMinor.optional(),
+      })
+      .optional(),
+    name: Text(200).min(1),
+    startDate: CalendarDateDto.optional(),
+    principal: PositiveMinor,
+    rateBps: z.number().int().min(0).max(5000),
+    termMonths: z.number().int().min(1).max(600),
+    firstPaymentDate: CalendarDateDto,
+    escrowTaxes: NonNegativeMinor.default('0'),
+    escrowInsurance: NonNegativeMinor.default('0'),
+    /** Payments scheduled on or before this date are already in the balance, so they aren't asked for. */
+    balanceAsOf: CalendarDateDto.optional(),
+    payingAccountId: Id.optional(),
+    /** The lender's principal and interest, when it differs from the calculated one. */
+    paymentAmount: PositiveMinor.optional(),
+    autoRecord: z.boolean().default(false),
+  })
+  .refine((r) => (r.loanAccountId === undefined) !== (r.newAccount === undefined), {
+    message: 'Choose a loan account, or add a new one',
+    path: ['loanAccountId'],
+  });
 export type CreateLoanRequest = z.output<typeof CreateLoanRequest>;
 
 export const UpdateLoanRequest = z
@@ -428,6 +476,12 @@ export const UpdateLoanRequest = z
     escrowTaxes: NonNegativeMinor,
     escrowInsurance: NonNegativeMinor,
     archived: z.boolean(),
+    /** Applies from the next payment. The payment is recalculated over the time left, unless `paymentAmount` says otherwise. */
+    rateBps: z.number().int().min(0).max(5000),
+    /** Null goes back to the calculated payment. */
+    paymentAmount: PositiveMinor.nullable(),
+    payingAccountId: Id.nullable(),
+    autoRecord: z.boolean(),
   })
   .partial()
   .extend({ version: Version });
@@ -447,8 +501,19 @@ export const AmortizationRowDto = z.object({
 export type AmortizationRowDto = z.infer<typeof AmortizationRowDto>;
 
 export const LoanPaymentRequest = z.union([
-  z.object({ number: z.number().int().positive(), transactionId: Id }),
-  z.object({ number: z.number().int().positive(), accountId: Id, date: CalendarDateDto }),
+  z.object({
+    number: z.number().int().positive(),
+    transactionId: Id,
+    /** Accept a line for a different amount: principal takes the difference. */
+    adjustPrincipal: z.boolean().optional(),
+  }),
+  z.object({
+    number: z.number().int().positive(),
+    accountId: Id,
+    date: CalendarDateDto,
+    /** Paid on top of the scheduled payment, all of it to principal. */
+    extraPrincipal: NonNegativeMinor.optional(),
+  }),
 ]);
 export type LoanPaymentRequest = z.output<typeof LoanPaymentRequest>;
 
