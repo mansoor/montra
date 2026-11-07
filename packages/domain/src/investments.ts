@@ -125,17 +125,24 @@ export function annualizedBps(returnBps: number | null, from: CalendarDate, to: 
   return Number((((1 + returnBps / 10_000) ** (365 / days) - 1) * 10_000).toFixed(0));
 }
 
-/** The months, or years for a long span, that a table of performance breaks into. The ends are clipped to the span. */
+/**
+ * The months, quarters or years that a table of performance breaks into, so it stays short however long the span. The ends
+ * are clipped to the span.
+ */
 export function performancePeriods(
   from: CalendarDate,
   to: CalendarDate,
 ): { from: CalendarDate; to: CalendarDate }[] {
   if (compareDates(from, to) > 0) return [];
-  const yearly = diffDays(to, from) > 731;
+  const span = diffDays(to, from);
+  const step = span > 1100 ? 12 : span > 400 ? 3 : 1;
   const out: { from: CalendarDate; to: CalendarDate }[] = [];
   let start = from;
   while (compareDates(start, to) <= 0) {
-    const close = yearly ? (`${start.slice(0, 4)}-12-31` as CalendarDate) : endOfMonth(start);
+    // The last month of the calendar month, quarter or year that `start` is in.
+    const month = Number(start.slice(5, 7));
+    const lastMonth = Math.ceil(month / step) * step;
+    const close = endOfMonth(`${start.slice(0, 4)}-${String(lastMonth).padStart(2, '0')}-01` as CalendarDate);
     const end = compareDates(close, to) > 0 ? to : close;
     out.push({ from: start, to: end });
     start = addDays(end, 1);

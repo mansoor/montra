@@ -29,11 +29,12 @@ export function percentOf(bps: number): string {
 export function InvestmentPerformance({
   account,
   perf,
-  href,
+  rangeHref,
 }: {
   account: AccountDto;
   perf: InvestmentPerformanceDto;
-  href: (range: (typeof RANGES)[number]) => string;
+  /** The page's address up to the range, such as `…?view=ledger&range=`. Plain text: a function can't cross to the client. */
+  rangeHref: string;
 }) {
   const { t } = useI18n();
   const money = (amount: string) => <Money amount={amount} currency={perf.currency} />;
@@ -44,7 +45,12 @@ export function InvestmentPerformance({
         <h2 className="text-sm font-semibold">{t('account.invest.title')}</h2>
         <nav aria-label={t('account.history.range')} className="segmented segmented-md">
           {RANGES.map((r) => (
-            <Link key={r} href={href(r)} aria-current={perf.range === r ? 'true' : undefined} scroll={false}>
+            <Link
+              key={r}
+              href={`${rangeHref}${r}`}
+              aria-current={perf.range === r ? 'true' : undefined}
+              scroll={false}
+            >
               {t(`account.history.range_${r}`)}
             </Link>
           ))}
@@ -97,6 +103,7 @@ export function InvestmentPerformance({
               ]}
               labels={perf.points.map((p) => p.date)}
               currency={perf.currency}
+              fromZero={false}
             />
           )}
           <div className="relative overflow-x-auto" data-testid="performance-table">

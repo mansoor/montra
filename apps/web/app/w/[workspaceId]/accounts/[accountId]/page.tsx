@@ -125,11 +125,7 @@ export default async function RegisterPage({
         <TrackLoanForm workspaceId={workspaceId} account={account} accounts={accounts} today={today} />
       )}
       {perf ? (
-        <InvestmentPerformance
-          account={account}
-          perf={perf}
-          href={(r) => `${base}?view=${view}&range=${r}`}
-        />
+        <InvestmentPerformance account={account} perf={perf} rangeHref={`${base}?view=${view}&range=`} />
       ) : (
         <BalanceHistory
           account={account}

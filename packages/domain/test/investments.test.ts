@@ -143,6 +143,14 @@ describe('performancePeriods', () => {
     ]);
   });
 
+  it('is quarters for a year or two', () => {
+    const p = performancePeriods(d('2025-06-25'), d('2026-11-07'));
+    expect(p[0]).toEqual({ from: d('2025-06-25'), to: d('2025-06-30') });
+    expect(p[1]).toEqual({ from: d('2025-07-01'), to: d('2025-09-30') });
+    expect(p[p.length - 1]).toEqual({ from: d('2026-10-01'), to: d('2026-11-07') });
+    expect(p).toHaveLength(7);
+  });
+
   it('is years for a long span', () => {
     const p = performancePeriods(d('2020-06-01'), d('2026-11-07'));
     expect(p[0]).toEqual({ from: d('2020-06-01'), to: d('2020-12-31') });
