@@ -28,6 +28,10 @@
     "done",
     "archive keeps history; per-user hide"
   ],
+  "ACC-07": [
+    "done",
+    "plan types, payslip routing and optional employer contributions, statement values against Investment gains and losses, gain and return by period; the phone and PDF statements are not done (ADR-0025)"
+  ],
   "TXN-01": [
     "done",
     "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"
@@ -654,7 +658,7 @@
   ],
   "PAY-02": [
     "done",
-    "pay date, period, earnings, pre-tax, taxes, post-tax, employer contributions, net and YTD"
+    "pay date, period, earnings, pre-tax, taxes, post-tax, employer contributions, net and YTD. Savings lines go to the linked plan that fits, and the employer match posts when an account takes it (ADR-0025)"
   ],
   "PAY-03": [
     "done",

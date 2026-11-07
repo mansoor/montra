@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
+  AddValuationsRequest,
   BalanceAdjustmentRequest,
   BalanceRangeDto,
   CreateAccountRequest,
   RegisterView,
   UpdateAccountRequest,
   type AccountBalanceHistoryDto,
+  type InvestmentPerformanceDto,
   type AccountDto,
   type CategoryDto,
   type LedgerAccountDto,
@@ -14,11 +16,15 @@ import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { parse } from '../common/zod.js';
 import { AccountsService } from './accounts.service.js';
+import { ValuationsService } from './valuations.service.js';
 
 @Controller('v1/workspaces/:workspaceId')
 @UseGuards(AuthGuard, WorkspaceGuard)
 export class AccountsController {
-  constructor(@Inject(AccountsService) private readonly accounts: AccountsService) {}
+  constructor(
+    @Inject(AccountsService) private readonly accounts: AccountsService,
+    @Inject(ValuationsService) private readonly valuationsService: ValuationsService,
+  ) {}
 
   @Post('accounts')
   create(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<AccountDto> {
@@ -59,6 +65,54 @@ export class AccountsController {
     @Query('range') range?: string,
   ): Promise<AccountBalanceHistoryDto> {
     return this.accounts.balanceHistory(
+      dbCtx(ctx),
+      parse(z.uuid(), accountId),
+      parse(BalanceRangeDto.default('1y'), range),
+    );
+  }
+
+  @Get('accounts/:accountId/valuations')
+  async valuations(@Ctx() ctx: RequestContext, @Param('accountId') accountId: string) {
+    return { data: await this.valuationsService.list(dbCtx(ctx), parse(z.uuid(), accountId)) };
+  }
+
+  @Post('accounts/:accountId/valuations')
+  async addValuations(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Body() body: unknown,
+  ) {
+    return {
+      data: await this.valuationsService.add(
+        dbCtx(ctx),
+        parse(z.uuid(), accountId),
+        parse(AddValuationsRequest, body),
+      ),
+    };
+  }
+
+  @Delete('accounts/:accountId/valuations/:valuationId')
+  async removeValuation(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Param('valuationId') valuationId: string,
+  ) {
+    return {
+      data: await this.valuationsService.removeLatest(
+        dbCtx(ctx),
+        parse(z.uuid(), accountId),
+        parse(z.uuid(), valuationId),
+      ),
+    };
+  }
+
+  @Get('accounts/:accountId/performance')
+  performance(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Query('range') range?: string,
+  ): Promise<InvestmentPerformanceDto> {
+    return this.valuationsService.performance(
       dbCtx(ctx),
       parse(z.uuid(), accountId),
       parse(BalanceRangeDto.default('1y'), range),

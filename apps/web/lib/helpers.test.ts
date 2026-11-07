@@ -93,6 +93,9 @@ describe('view models', () => {
     hidden: false,
     defaultMemberId: null,
     loanId: null,
+    planType: null,
+    employerId: null,
+    employerContributions: false,
     planning: { creditLimit: null, interestRateBps: null, minPayment: null, lowBalance: '0' },
   });
 

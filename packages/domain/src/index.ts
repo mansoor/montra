@@ -16,3 +16,4 @@ export * from './recurrence.js';
 export * from './ledger/index.js';
 export * from './budget/index.js';
 export * from './account-types.js';
+export * from './investments.js';

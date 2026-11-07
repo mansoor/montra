@@ -157,6 +157,9 @@ export interface BankAccountTable {
   min_payment_minor: Int8 | null;
   /** FLOW-03: the forecast warns below this balance (migration 0015). */
   low_balance_minor: Int8Default;
+  plan_type: string | null;
+  employer_id: string | null;
+  employer_contributions: ColumnType<boolean, boolean | undefined, boolean>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -1098,6 +1101,7 @@ export interface PayslipTable {
   currency: string;
   gross_minor: Int8Default;
   net_minor: Int8Default;
+  employer_posted_minor: Int8Default;
   attachment_ids: Generated<string[]>;
   /** { provider, model, confidence, warnings[], mode } */
   extraction: Json<Record<string, unknown>> | null;
@@ -1423,6 +1427,7 @@ export interface Database {
   'app.security_deposit_event': SecurityDepositEventTable;
   'app.allocation_rule': AllocationRuleTable;
   'app.loan_schedule': LoanScheduleTable;
+  'app.account_valuation': AccountValuationTable;
   'app.loan_payment': LoanPaymentTable;
   'app.depreciation_schedule': DepreciationScheduleTable;
   'app.rental_reminder': RentalReminderTable;
@@ -1740,6 +1745,19 @@ export interface AllocationRuleTable {
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+export interface AccountValuationTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  account_id: string;
+  value_date: string;
+  value_minor: Int8;
+  change_minor: Int8;
+  entry_id: string | null;
+  note: string | null;
+  created_at: Generated<Date>;
 }
 
 export interface LoanScheduleTable {

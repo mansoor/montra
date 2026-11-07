@@ -148,6 +148,24 @@ for (const scheme of ['light', 'dark'] as const) {
           })
         ).json()
       ).loanAccountId as string;
+      const ira = (
+        await (
+          await page.request.post(`${ws}/accounts`, {
+            data: {
+              name: 'IRA',
+              kind: 'investment',
+              planType: 'ira',
+              openingBalance: { amount: '1000000', currency: 'USD' },
+              openingDate: new Date(Date.now() - 200 * 86_400_000).toISOString().slice(0, 10),
+            },
+          })
+        ).json()
+      ).id as string;
+      await page.request.post(`${ws}/accounts/${ira}/valuations`, {
+        data: {
+          values: [{ date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), value: '1080000' }],
+        },
+      });
       const business = await entity('business', 'Side work');
       const rental = await entity('rental', 'Elm Rentals');
       const found = [];
@@ -156,6 +174,7 @@ for (const scheme of ['light', 'dark'] as const) {
         `/accounts/${accounts[0]!.id}`,
         `/accounts/${visa}`,
         `/accounts/${mortgage}`,
+        `/accounts/${ira}?range=all`,
         '/business',
         `/business/${business}`,
         `/business/${business}/invoices`,

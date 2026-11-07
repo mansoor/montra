@@ -140,6 +140,7 @@ const COMMON_SYSTEM: SystemAccountTemplate[] = [
   { role: 'fx_gain_loss', name: 'FX gain/loss', type: 'expense' },
   { role: 'fx_rounding', name: 'FX rounding', type: 'expense' },
   { role: 'bank_fees', name: 'Bank fees', type: 'expense' },
+  { role: 'investment_gains', name: 'Investment gains and losses', type: 'equity' },
 ];
 
 export function groupTemplates(type: EntityType): GroupTemplate[] {

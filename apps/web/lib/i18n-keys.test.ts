@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ACCOUNT_KINDS, BALANCE_RANGES } from '@montra/domain';
+import { ACCOUNT_KINDS, BALANCE_RANGES, PLAN_TYPES } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -41,6 +41,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'account.kind_help.': ACCOUNT_KINDS,
   'account.kind_example.': ACCOUNT_KINDS,
   'account.holder.': ['bank', 'issuer', 'lender', 'provider'],
+  'account.plan.': PLAN_TYPES,
   'account.balance_word.': ['balance', 'value', 'owed'],
   'account.details_empty.': ['creditLimit', 'interestRate', 'lowBalance'],
   'account.history.': ['balance', 'value', 'owed'],

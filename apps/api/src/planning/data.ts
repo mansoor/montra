@@ -231,7 +231,7 @@ export class PlanningData {
     if (!periods.length || f.includeRestricted === false) return out;
     let q = trx
       .selectFrom('app.payslip')
-      .select(['pay_date', 'gross_minor', 'net_minor'])
+      .select(['pay_date', 'gross_minor', 'net_minor', 'employer_posted_minor'])
       .where('workspace_id', '=', ctx.workspaceId)
       .where('entity_id', '=', entityId)
       .where('status', '=', 'posted')
@@ -242,7 +242,10 @@ export class PlanningData {
     for (const r of rows) {
       const d = calendarDate(String(r.pay_date));
       const p = periods.find((x) => d >= x.start && d <= x.end);
-      if (p) out.set(p.start, out.get(p.start)! + BigInt(r.gross_minor) - BigInt(r.net_minor));
+      if (p) {
+        const withheld = BigInt(r.gross_minor) - BigInt(r.net_minor) + BigInt(r.employer_posted_minor);
+        out.set(p.start, out.get(p.start)! + withheld);
+      }
     }
     return out;
   }

@@ -60,7 +60,10 @@ import type {
   UpdateRuleRequest,
   AccountBalanceHistoryDto,
   AccountDto,
+  AccountValuationDto,
+  AddValuationsRequest,
   BalanceRangeDto,
+  InvestmentPerformanceDto,
   ColumnMappingDto,
   CreateImportRequest,
   ImportBatchDto,
@@ -869,6 +872,31 @@ export class ApiClient {
     return this.request<{ data: CategoryDto[] }>(
       'GET',
       this.ws(workspaceId, `/categories${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  accountPerformance(workspaceId: string, accountId: string, range: BalanceRangeDto = '1y') {
+    return this.request<InvestmentPerformanceDto>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/performance${query({ range })}`),
+    );
+  }
+  listValuations(workspaceId: string, accountId: string) {
+    return this.request<{ data: AccountValuationDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/valuations`),
+    ).then((r) => r.data);
+  }
+  addValuations(workspaceId: string, accountId: string, input: z.input<typeof AddValuationsRequest>) {
+    return this.request<{ data: AccountValuationDto[] }>(
+      'POST',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/valuations`),
+      input,
+    ).then((r) => r.data);
+  }
+  removeValuation(workspaceId: string, accountId: string, valuationId: string) {
+    return this.request<{ data: AccountValuationDto[] }>(
+      'DELETE',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/valuations/${enc(valuationId)}`),
     ).then((r) => r.data);
   }
   accountBalanceHistory(workspaceId: string, accountId: string, range: BalanceRangeDto = '1y') {
@@ -2103,6 +2131,8 @@ export type {
   LedgerAccountDto,
   AccountBalanceHistoryDto,
   AccountDto,
+  AccountValuationDto,
+  InvestmentPerformanceDto,
   BulkEditResult,
   CategoryDto,
   ChangeDto,

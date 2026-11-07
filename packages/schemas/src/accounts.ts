@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import { ACCOUNT_KINDS, BALANCE_RANGES } from '@montra/domain';
+import { ACCOUNT_KINDS, BALANCE_RANGES, PLAN_TYPES } from '@montra/domain';
 import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
 
 export const BankAccountKind = z.enum(ACCOUNT_KINDS);
+export const PlanTypeDto = z.enum(PLAN_TYPES);
 export type BankAccountKind = z.infer<typeof BankAccountKind>;
 
 export const CreateAccountRequest = z.object({
@@ -34,6 +35,11 @@ export const CreateAccountRequest = z.object({
     .string()
     .regex(/^-?\d{1,19}$/)
     .optional(),
+  /** An investment account's plan, and the employer whose payslips pay into it (ADR-0025). */
+  planType: PlanTypeDto.optional(),
+  employerId: Id.optional(),
+  /** Post the employer's contributions here too. */
+  employerContributions: z.boolean().optional(),
 });
 export type CreateAccountRequest = z.output<typeof CreateAccountRequest>;
 
@@ -54,6 +60,10 @@ export const AccountDto = z.object({
   defaultMemberId: z.string().nullable(),
   /** Set when its payments are tracked (ADR-0024). */
   loanId: z.string().nullable(),
+  /** An investment account's plan and payslip link (ADR-0025). */
+  planType: PlanTypeDto.nullable(),
+  employerId: z.string().nullable(),
+  employerContributions: z.boolean(),
   /** Planning inputs (Phase 6): debt payoff and forecast warnings. Minor units in the account currency. */
   planning: z.object({
     creditLimit: z.string().nullable(),
@@ -77,6 +87,60 @@ export const AccountBalanceHistoryDto = z.object({
   points: z.array(z.object({ date: CalendarDateDto, balance: z.string() })),
 });
 export type AccountBalanceHistoryDto = z.infer<typeof AccountBalanceHistoryDto>;
+
+export const AccountValuationDto = z.object({
+  id: Id,
+  date: CalendarDateDto,
+  /** What the account was worth, in its currency. */
+  value: z.string(),
+  /** The change in market value this posted: the value less what the ledger had that day. */
+  change: z.string(),
+  note: z.string().nullable(),
+});
+export type AccountValuationDto = z.infer<typeof AccountValuationDto>;
+
+export const AddValuationsRequest = z.object({
+  /** Oldest first. Each is checked against the ledger as it stood that day, after the ones before it. */
+  values: z
+    .array(
+      z.object({
+        date: CalendarDateDto,
+        value: z.string().regex(/^\d{1,19}$/),
+        note: z.string().trim().max(500).optional(),
+      }),
+    )
+    .min(1)
+    .max(600),
+});
+export type AddValuationsRequest = z.output<typeof AddValuationsRequest>;
+
+const PerformanceFigures = {
+  start: z.string(),
+  end: z.string(),
+  moneyIn: z.string(),
+  moneyOut: z.string(),
+  gain: z.string(),
+  /** Basis points; null when nothing was at work, so a percentage would mean nothing. */
+  returnBps: z.number().int().nullable(),
+};
+
+/** An investment account's gain over a period (ADR-0025). Account-level figures, never advice. */
+export const InvestmentPerformanceDto = z.object({
+  accountId: z.string(),
+  currency: z.string(),
+  range: BalanceRangeDto,
+  /**
+   * True when the account has private payslip money this user can't see. A gain worked out from the rest would be wrong,
+   * so there are no figures.
+   */
+  hidden: z.boolean(),
+  from: CalendarDateDto.nullable(),
+  to: CalendarDateDto.nullable(),
+  summary: z.object({ ...PerformanceFigures, annualizedBps: z.number().int().nullable() }).nullable(),
+  points: z.array(z.object({ date: CalendarDateDto, value: z.string(), invested: z.string() })),
+  periods: z.array(z.object({ from: CalendarDateDto, to: CalendarDateDto, ...PerformanceFigures })),
+});
+export type InvestmentPerformanceDto = z.infer<typeof InvestmentPerformanceDto>;
 
 export const CategoryDto = z.object({
   id: z.string(),

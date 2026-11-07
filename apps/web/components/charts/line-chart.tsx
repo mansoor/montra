@@ -23,6 +23,7 @@ export function LineChart({
   threshold,
   title,
   compact = false,
+  fromZero = true,
 }: {
   series: readonly LineSeries[];
   /** One label per x position (dates); only a few are drawn. */
@@ -32,14 +33,16 @@ export function LineChart({
   title: string;
   /** For narrow cards such as the Home net position. */
   compact?: boolean;
+  /** Scale from zero. Off for a value that only moves within a band, like an investment, so the movement shows. */
+  fromZero?: boolean;
 }) {
   const { money, date } = useI18n();
   const { w: W, h: H } = SIZES[compact ? 'compact' : 'full'];
   const all = series.flatMap((s) => s.values.map(Number));
   if (threshold != null) all.push(Number(threshold));
   if (all.length === 0) return null;
-  let min = Math.min(...all, 0);
-  let max = Math.max(...all, 0);
+  let min = fromZero ? Math.min(...all, 0) : Math.min(...all);
+  let max = fromZero ? Math.max(...all, 0) : Math.max(...all);
   if (min === max) {
     min -= 1;
     max += 1;
@@ -93,7 +96,7 @@ export function LineChart({
         ))}
         {/* The last label ends at the edge so it isn't cut off, and one too close to it gives way. */}
         {labels.map((l, i) =>
-          i === last || (i % every === 0 && last - i >= every / 2) ? (
+          i === last || (i % every === 0 && last - i >= every) ? (
             <text
               key={i}
               x={x(i)}

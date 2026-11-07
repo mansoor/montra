@@ -3,10 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { ACCOUNT_PROFILES, accountProfile, kindsWhere, percentToBps, type AccountKind } from '@montra/domain';
-import type { AccountDto, WorkspaceDto } from '@montra/api-client';
+import type { AccountDto, EmployerDto, WorkspaceDto } from '@montra/api-client';
+import { WORKPLACE_PLANS, type PlanType } from '@montra/domain';
 import { browserApi } from '@/lib/browser-api';
 import { toFormErrors, type FormErrors } from '@/lib/errors';
 import { parseAmountInput } from '@/lib/money';
+import { PlanFields } from './accounts/investment-panel';
 import { initialLoanTerms, LoanTermsFields, readLoanTerms } from './accounts/loan-tracking';
 import { Field, FormError } from './field';
 import { useI18n } from './i18n';
@@ -17,10 +19,12 @@ const OWE = kindsWhere((k) => k.side === 'liability');
 export function NewAccountForm({
   workspace,
   accounts,
+  employers,
   today,
 }: {
   workspace: WorkspaceDto;
   accounts: readonly AccountDto[];
+  employers: readonly EmployerDto[];
   today: string;
 }) {
   const router = useRouter();
@@ -34,6 +38,10 @@ export function NewAccountForm({
   const [track, setTrack] = useState(false);
   const [terms, setTerms] = useState(() => initialLoanTerms('mortgage', today));
   const tracking = type.installment && track;
+  const [plan, setPlan] = useState<PlanType | ''>('');
+  const [employerId, setEmployerId] = useState('');
+  const [contributions, setContributions] = useState(false);
+  const workplace = kind === 'investment' && plan !== '' && WORKPLACE_PLANS.has(plan);
   const entity = workspace.entities.find((e) => e.id === entityId);
   const loanCurrency = entity?.functionalCurrency ?? workspace.baseCurrency;
   const payingAccounts = accounts.filter(
@@ -146,6 +154,8 @@ export function NewAccountForm({
         interestRateBps: interestRateBps ?? undefined,
         minPayment,
         lowBalance,
+        ...(kind === 'investment' && plan ? { planType: plan } : {}),
+        ...(workplace && employerId ? { employerId, employerContributions: contributions } : {}),
       });
       router.push(`/w/${workspace.id}/accounts/${account.id}`);
       router.refresh();
@@ -319,6 +329,17 @@ export function NewAccountForm({
           {(p) => <input {...p} name="openingDate" type="date" className="input" defaultValue={today} />}
         </Field>
       </div>
+      {kind === 'investment' && (
+        <PlanFields
+          plan={plan}
+          onPlan={setPlan}
+          employerId={employerId}
+          onEmployer={setEmployerId}
+          contributions={contributions}
+          onContributions={setContributions}
+          employers={employers.filter((e) => e.entityId === entityId)}
+        />
+      )}
       {tracking && (
         <LoanTermsFields
           kind={kind}

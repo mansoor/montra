@@ -90,6 +90,7 @@ Priority key: **M** = must for R1, **S** = should for R1, **C** = could / later.
 | ACC-04 | Multi-currency accounts and foreign-currency spending, with conversion to the home currency (see 13.3). | M |
 | ACC-05 | Opening balance and balance adjustments, with an audit trail. | M |
 | ACC-06 | Archive closed accounts while keeping history. | M |
+| ACC-07 | Retirement and investment accounts: a plan type (401(k), IRA, HSA…), linked to an employer's payslips with its contributions optional; values from statements; gain over time at account level as a chart and a table. No holdings, prices or advice. Added 2026-11-06. | S |
 
 ### 3.2 Manual entry and camera capture
 
@@ -576,7 +577,8 @@ R1 ships every **M** requirement. **S** items that slip move to R1.x. R2 adds li
 
 ### 14.2 Out of scope for R1
 
-- Live bank or brokerage connections; investment performance analysis.
+- Live bank or brokerage connections; investment performance by holding or security. (Gain at account level moved into scope
+  on 2026-11-06: ACC-07, ADR-0025.)
 - Tax filing, payroll processing, sales tax filing.
 - Tenant-facing portal, online rent collection, tenant screening.
 - Bill pay or moving real money.
