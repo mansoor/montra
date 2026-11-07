@@ -44,6 +44,8 @@ export interface AccountProfile {
   moneyFlow: 'savings' | 'debt' | null;
   /** Whether it can follow a repayment schedule. */
   schedule: boolean;
+  /** Whether adding one offers full payment tracking: a fixed term, repaid in level payments. */
+  installment: boolean;
 }
 
 const CASH_DETAILS: readonly AccountDetail[] = ['lowBalance'];
@@ -59,6 +61,7 @@ const bank = {
   forecast: 'cash',
   moneyFlow: null,
   schedule: false,
+  installment: false,
 } as const;
 
 const debt = {
@@ -70,6 +73,7 @@ const debt = {
   forecast: null,
   moneyFlow: 'debt',
   schedule: true,
+  installment: true,
 } as const;
 
 export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
@@ -99,11 +103,19 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     forecast: 'card',
     moneyFlow: null,
     schedule: false,
+    installment: false,
   },
-  line_of_credit: { ...debt, details: REVOLVING_DETAILS },
+  line_of_credit: { ...debt, details: REVOLVING_DETAILS, installment: false },
   loan: debt,
   mortgage: debt,
-  liability: { ...debt, holder: null, hasNumber: false, moneyFlow: null, schedule: false },
+  liability: {
+    ...debt,
+    holder: null,
+    hasNumber: false,
+    moneyFlow: null,
+    schedule: false,
+    installment: false,
+  },
 };
 
 /** The type of a stored kind. The database only allows the kinds above. */

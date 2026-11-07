@@ -47,11 +47,15 @@ export class RentalJobs {
   ) {}
 
   /** The nightly run for one workspace. A failure in one part doesn't stop the rest. */
-  async nightly(ctx: Ctx): Promise<{ charges: number; fees: number; linked: number; flagged: number }> {
-    const out = { charges: 0, fees: 0, linked: 0, flagged: 0 };
+  async nightly(
+    ctx: Ctx,
+  ): Promise<{ charges: number; fees: number; linked: number; recorded: number; flagged: number }> {
+    const out = { charges: 0, fees: 0, linked: 0, recorded: 0, flagged: 0 };
     for (const [key, fn] of [
       ['charges', () => this.writeCharges(ctx)],
       ['linked', () => this.matchPayments(ctx)],
+      // After matching, so a statement line wins over recording the payment by itself.
+      ['recorded', () => this.loans.autoRecord(ctx)],
       ['fees', () => this.assessFees(ctx)],
       ['flagged', () => this.flagCapital(ctx)],
     ] as const) {
@@ -123,13 +127,10 @@ export class RentalJobs {
         this.logger.warn(`Could not link ${p.kind} to lease ${p.leaseId}: ${(e as Error).message}`);
       }
     }
-    const entities = await this.db.run(ctx, (trx) => rentalEntities(trx, ctx));
-    for (const e of entities) {
-      try {
-        linked += await this.loans.autoMatch(ctx, e.id);
-      } catch (err) {
-        this.logger.warn(`Could not link mortgage payments: ${(err as Error).message}`);
-      }
+    try {
+      linked += await this.loans.autoMatch(ctx);
+    } catch (err) {
+      this.logger.warn(`Could not link loan payments: ${(err as Error).message}`);
     }
     return linked;
   }

@@ -27,7 +27,7 @@ export function AccountPlanning({ workspaceId, account }: { workspaceId: string;
     return r.ok && (allowNegative || r.minor >= 0n) ? String(r.minor) : undefined;
   }
 
-  if (details.length === 0) return null;
+  if (details.length === 0 || account.loanId) return null;
 
   return (
     <details>

@@ -643,8 +643,7 @@ Phase 9 leftovers, not blocking:
 - The Schedule E export is CSV or Excel. The one-click tax package (UP-10) came in Phase 10.
 - A lease and an entered expected-income item for the same rent both count in the forecast. The household budget's expected income
   still comes from entered items, so BUD-03 stays partial.
-- A mortgage's schedule follows its terms: extra principal and rate changes aren't modeled. Escrow goes straight to Taxes and Insurance
-  rather than through an escrow account.
+- Escrow goes straight to Taxes and Insurance rather than through an escrow account.
 - Rent isn't prorated: a mid-month move-in gets a full charge, which the landlord edits.
 - A detected recurring bill for the same payee as a mortgage can show twice on the calendar. Invoices and bills have the same limit.
 - Foreign-currency leases aren't handled separately: a portfolio's rent is in its own currency.
@@ -772,7 +771,8 @@ Phase 11 leftovers:
 ## 7g. Since Phase 11
 
 - **Accounts page** (`/w/{id}/accounts`, and More → Accounts on the phone): accounts by kind, with totals per kind and for everything, from `summarizeAccounts` in `@montra/domain`, so web and phone agree. "Add account" is a button there, not a menu item. Currencies are totalled apart, not converted, and the net excludes property values, so it can differ from net worth on Home. The phone version hasn't been run on a device.
-- **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. This is the foundation for the planned per-type work: loans next, then 401(k) and gains, cards and lines of credit, then the rest. The phone shows the type and balance word, but no chart yet.
+- **Loan tracking** ([ADR-0024](design/adr/0024-loan-tracking.md)): adding a mortgage or loan offers tracking only the balance or payments too, and an existing account can start later. Payments are worked out from what's owed, split into principal and interest, and shown on the calendar, forecast, Recurring and Upcoming. They link to a statement line, take one click to record, or record themselves if asked. Rental loans use the same engine. The phone doesn't show loan payments yet, and a budget doesn't count principal as money going out.
+- **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. This is the foundation for the planned per-type work: 401(k) and gains next, then cards and lines of credit, then the rest. The phone shows the type and balance word, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.
 
 ---

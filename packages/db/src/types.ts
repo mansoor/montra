@@ -1746,7 +1746,7 @@ export interface LoanScheduleTable {
   workspace_id: string;
   id: Generated<string>;
   entity_id: string;
-  property_id: string;
+  property_id: string | null;
   loan_account_id: string;
   name: string;
   principal_minor: Int8;
@@ -1755,6 +1755,11 @@ export interface LoanScheduleTable {
   first_payment_date: string;
   escrow_taxes_minor: Int8Default;
   escrow_insurance_minor: Int8Default;
+  start_date: string | null;
+  paying_account_id: string | null;
+  payment_minor: Int8 | null;
+  payments_before: ColumnType<number, number | undefined, number>;
+  auto_record: ColumnType<boolean, boolean | undefined, boolean>;
   archived_at: Date | null;
   version: Int8Default;
   created_at: Generated<Date>;
@@ -1770,6 +1775,9 @@ export interface LoanPaymentTable {
   transaction_id: string;
   source: 'auto' | 'manual';
   deposit_spec: unknown;
+  interest_minor: Int8 | null;
+  principal_minor: Int8 | null;
+  escrow_minor: Int8 | null;
   created_at: Generated<Date>;
 }
 

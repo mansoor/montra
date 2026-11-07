@@ -1,5 +1,9 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  type CalendarDate,
+  paymentsOnOrBefore,
+  projectLoan,
   allocateShared,
   amortize,
   applyRentPayments,
@@ -363,5 +367,86 @@ describe('leaseExpiryWindow', () => {
     expect(leaseExpiryWindow(d('2026-03-31'), today)).toBe(30);
     expect(leaseExpiryWindow(d('2026-03-01'), today)).toBe(30);
     expect(leaseExpiryWindow(d('2026-02-28'), today)).toBeNull();
+  });
+});
+
+describe('projectLoan (ADR-0024)', () => {
+  const first = '2026-01-15' as CalendarDate;
+  const terms = { principal: 20000000n, rateBps: 600, termMonths: 360 };
+  const base = {
+    balance: terms.principal,
+    rateBps: 600,
+    payment: monthlyPayment(terms),
+    firstPayment: first,
+    termMonths: 360,
+  };
+
+  it('is the same as amortizing when the balance is what the terms say', () => {
+    expect(projectLoan(base)).toEqual(amortize(terms, first));
+  });
+
+  it('ends sooner after an extra payment, with less interest', () => {
+    const extra = projectLoan({ ...base, balance: 19000000n });
+    const plain = projectLoan(base);
+    expect(extra.length).toBeLessThan(plain.length);
+    const interest = (rows: typeof plain) => rows.reduce((t, r) => t + r.interest, 0n);
+    expect(interest(extra)).toBeLessThan(interest(plain));
+    expect(extra[extra.length - 1]!.balance).toBe(0n);
+  });
+
+  it('takes up where tracking began, skipping what’s recorded', () => {
+    const rows = projectLoan({ ...base, before: 24, recorded: new Set([25, 26]) });
+    expect(rows[0]!.number).toBe(27);
+    expect(rows[0]!.date).toBe('2028-03-15');
+  });
+
+  it('clears what’s left at the end of the term, even past it', () => {
+    const late = projectLoan({ ...base, before: 400 });
+    expect(late).toHaveLength(1);
+    expect(late[0]!.number).toBe(401);
+    expect(late[0]!.principal).toBe(terms.principal);
+    expect(late[0]!.balance).toBe(0n);
+  });
+
+  it('repays nothing on a payment under the interest, then clears at the term', () => {
+    const rows = projectLoan({ ...base, payment: 1000n });
+    expect(rows[0]!.principal).toBe(0n);
+    expect(rows).toHaveLength(360);
+    expect(rows[359]!.balance).toBe(0n);
+  });
+
+  it('is nothing once paid off', () => {
+    expect(projectLoan({ ...base, balance: 0n })).toEqual([]);
+  });
+
+  it('always pays exactly what’s owed, and ends', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 1n, max: 10n ** 12n }),
+        fc.integer({ min: 0, max: 5000 }),
+        fc.integer({ min: 1, max: 600 }),
+        fc.bigInt({ min: 1n, max: 10n ** 11n }),
+        fc.integer({ min: 0, max: 700 }),
+        (balance, rateBps, termMonths, payment, before) => {
+          const rows = projectLoan({ balance, rateBps, payment, firstPayment: first, termMonths, before });
+          expect(rows.reduce((t, r) => t + r.principal, 0n)).toBe(balance);
+          expect(rows[rows.length - 1]!.balance).toBe(0n);
+          expect(rows.every((r) => r.principal >= 0n && r.interest >= 0n)).toBe(true);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+});
+
+describe('paymentsOnOrBefore', () => {
+  const first = '2026-01-31' as CalendarDate;
+  it('counts the payment on the day itself', () => {
+    expect(paymentsOnOrBefore(first, 360, '2026-01-30' as CalendarDate)).toBe(0);
+    expect(paymentsOnOrBefore(first, 360, '2026-01-31' as CalendarDate)).toBe(1);
+    expect(paymentsOnOrBefore(first, 360, '2026-02-28' as CalendarDate)).toBe(2);
+  });
+  it('stops at the term', () => {
+    expect(paymentsOnOrBefore(first, 12, '2040-01-01' as CalendarDate)).toBe(12);
   });
 });

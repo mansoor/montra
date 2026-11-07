@@ -3,7 +3,7 @@
  * such as depreciation and returns are helpers for the owner, never tax or investment advice.
  */
 import { allocate } from './allocate.js';
-import { addDays, type CalendarDate } from './calendar-date.js';
+import { addDays, compareDates, type CalendarDate } from './calendar-date.js';
 import { divRound } from './rounding.js';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -320,19 +320,49 @@ export function loanPaymentDate(first: CalendarDate, n: number): CalendarDate {
   return day(year, month, Math.min(d, daysInMonth(year, month)));
 }
 
-/** The schedule. The last payment clears whatever rounding has left. */
+/** The schedule from the terms alone. The last payment clears whatever rounding has left. */
 export function amortize(l: LoanTerms, firstPayment: CalendarDate): AmortizationRow[] {
-  const payment = monthlyPayment(l);
+  return projectLoan({
+    balance: l.principal,
+    rateBps: l.rateBps,
+    payment: monthlyPayment(l),
+    firstPayment,
+    termMonths: l.termMonths,
+  });
+}
+
+export interface LoanProjection {
+  /** What's owed now. */
+  balance: bigint;
+  rateBps: number;
+  /** Principal and interest each month. */
+  payment: bigint;
+  firstPayment: CalendarDate;
+  termMonths: number;
+  /** Payments already in the balance when tracking began. */
+  before?: number;
+  /** Payment numbers already recorded, so they're skipped. */
+  recorded?: ReadonlySet<number>;
+}
+
+/**
+ * The payments still to come, from what's actually owed (ADR-0024). So an extra payment or a changed rate shows up by itself:
+ * interest follows the balance, and the loan ends early or late. The payment on or after the last month of the term clears
+ * what's left. A payment too small to cover the interest repays nothing until then.
+ */
+export function projectLoan(l: LoanProjection): AmortizationRow[] {
   const rows: AmortizationRow[] = [];
-  let balance = l.principal;
-  for (let n = 1; n <= l.termMonths && balance > 0n; n++) {
+  let balance = l.balance;
+  for (let n = (l.before ?? 0) + 1; balance > 0n; n++) {
+    if (l.recorded?.has(n)) continue;
     const interest = divRound(balance * BigInt(l.rateBps), RATE_DENOMINATOR);
-    let principal = payment - interest;
-    if (principal > balance || n === l.termMonths) principal = balance;
+    let principal = l.payment - interest;
+    if (principal < 0n) principal = 0n;
+    if (principal > balance || n >= l.termMonths) principal = balance;
     balance -= principal;
     rows.push({
       number: n,
-      date: loanPaymentDate(firstPayment, n),
+      date: loanPaymentDate(l.firstPayment, n),
       payment: principal + interest,
       interest,
       principal,
@@ -340,6 +370,13 @@ export function amortize(l: LoanTerms, firstPayment: CalendarDate): Amortization
     });
   }
   return rows;
+}
+
+/** How many scheduled payments fall on or before a date, up to the term: these are already in a balance as of that date. */
+export function paymentsOnOrBefore(first: CalendarDate, termMonths: number, date: CalendarDate): number {
+  let n = 0;
+  while (n < termMonths && compareDates(loanPaymentDate(first, n + 1), date) <= 0) n++;
+  return n;
 }
 
 // ----- Depreciation (RNT-09) ----------------------------------------------------------------------------------

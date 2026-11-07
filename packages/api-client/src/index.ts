@@ -1494,7 +1494,7 @@ export class ApiClient {
       input,
     );
   }
-  listLoans(workspaceId: string, entityId: string) {
+  listLoans(workspaceId: string, entityId?: string) {
     return this.request<{ data: LoanDto[] }>(
       'GET',
       this.ws(workspaceId, `/loans${query({ entityId })}`),

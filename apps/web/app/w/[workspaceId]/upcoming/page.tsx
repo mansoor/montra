@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/server-api';
+import { LoanPaymentsList } from '@/components/accounts/loan-panel';
 import { UpcomingList } from '@/components/upcoming-list';
 
 export const metadata: Metadata = { title: 'Upcoming' };
@@ -9,11 +10,12 @@ export const dynamic = 'force-dynamic';
 /** Scheduled occurrences from recurring templates, waiting for confirmation (TXN-05). */
 export default async function UpcomingPage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
-  const [scheduled, recurring, accounts] = await load((api) =>
+  const [scheduled, recurring, accounts, loans] = await load((api) =>
     Promise.all([
       api.listTransactions(workspaceId, { status: 'scheduled', limit: 200 }),
       api.listRecurring(workspaceId),
       api.listAccounts(workspaceId, { include: 'all' }),
+      api.listLoans(workspaceId),
     ]),
   );
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
@@ -40,6 +42,7 @@ export default async function UpcomingPage({ params }: { params: Promise<{ works
           Manage recurring
         </Link>
       </div>
+      <LoanPaymentsList workspaceId={workspaceId} loans={loans} accounts={accounts} />
       <UpcomingList workspaceId={workspaceId} items={items} />
     </div>
   );

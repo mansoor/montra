@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { accountProfile, BALANCE_RANGES, type BalanceRange } from '@montra/domain';
+import { accountProfile, BALANCE_RANGES, todayIn, type BalanceRange } from '@montra/domain';
 import { AccountFacts, BalanceHistory } from '@/components/accounts/account-overview';
+import { LoanPanel } from '@/components/accounts/loan-panel';
+import { TrackLoanForm } from '@/components/accounts/loan-tracking';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
 import { DateText } from '@/components/i18n';
@@ -22,9 +24,10 @@ export default async function RegisterPage({
   const range = (BALANCE_RANGES as readonly string[]).includes(query.range ?? '')
     ? (query.range as BalanceRange)
     : '1y';
-  const [[accounts, register, history], { t }] = await Promise.all([
+  const [[workspace, accounts, register, history], { t }] = await Promise.all([
     load((api) =>
       Promise.all([
+        api.getWorkspace(workspaceId),
         api.listAccounts(workspaceId),
         api.register(workspaceId, accountId, view),
         api.accountBalanceHistory(workspaceId, accountId, range),
@@ -36,6 +39,14 @@ export default async function RegisterPage({
   if (!account) notFound();
   const base = `/w/${workspaceId}/accounts/${accountId}`;
   const type = accountProfile(account.kind);
+  const today = todayIn(workspace.timeZone);
+  const loanId = account.loanId;
+  const [loans, schedule] = loanId
+    ? await load((api) =>
+        Promise.all([api.listLoans(workspaceId, account.entityId), api.getLoanSchedule(workspaceId, loanId)]),
+      )
+    : [[], []];
+  const loan = loans.find((l) => l.id === loanId);
   const about = [
     t(`account.kind.${account.kind}`),
     type.holder ? account.institution : null,
@@ -93,7 +104,14 @@ export default async function RegisterPage({
         </div>
       </div>
 
-      <AccountFacts account={account} workspaceId={workspaceId} t={t} />
+      {loan ? (
+        <LoanPanel workspaceId={workspaceId} loan={loan} rows={schedule} accounts={accounts} today={today} />
+      ) : (
+        <AccountFacts account={account} workspaceId={workspaceId} t={t} />
+      )}
+      {!loan && type.installment && (
+        <TrackLoanForm workspaceId={workspaceId} account={account} accounts={accounts} today={today} />
+      )}
       <BalanceHistory
         account={account}
         history={history}
