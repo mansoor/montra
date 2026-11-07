@@ -15,9 +15,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/opt/venv/bin:$PATH \
     STORAGE_MODE=s3
 # Tesseract reads scanned statements (ADR-0012 §9).
-# The upgrade: the base image still has apt 3.0.3 (CVE-2026-109518, fixed in 3.0.4). Delete it once the base image has the fix.
+# The upgrade: the pinned base image still has apt 3.0.3 (CVE-2026-109518, fixed in 3.0.4) and zlib1g 1.3.1-1+b1
+# (CVE-2026-76844, CVE-2026-85091, fixed in 1.3.1-1+deb13u1). Delete each once the base image has its fix.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends --only-upgrade apt libapt-pkg7.0 \
+ && apt-get install -y --no-install-recommends --only-upgrade apt libapt-pkg7.0 zlib1g \
  && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin montra
