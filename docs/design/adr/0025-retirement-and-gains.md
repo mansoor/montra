@@ -47,7 +47,7 @@ no holdings, no prices and no advice (NFR-14).
 - An HSA line reaches an HSA only once one is linked. Until then it goes to the employer's retirement account as before.
 - Money put into an IRA or brokerage account by transfer counts as money in. Money that was never recorded counts as gain until it
   is. The account page explains this.
-- The phone doesn't show plans, values or gain yet.
+- The phone shows the gain, return and money in (or the hidden message) but not plans or value updates; those are set on the web.
 - PDF statements aren't read. Values are entered or pasted as date and value lines.
 - **A bug in posting payslips is fixed here:** one payslip builds its entries more than once, and the employer's retirement account,
   made on first use, could be made twice. It was reachable from split pay (ADR-0022) and became certain with recording employer

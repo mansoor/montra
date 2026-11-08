@@ -1,7 +1,13 @@
-/** Accounts from the offline store with their last-synced balances, by kind, with the same totals as the web. */
+/**
+ * Accounts from the offline store with their last-synced balances, by kind, with the same totals as the web. Your share of
+ * rental properties comes from net worth (read live, kept for offline) and counts in what you have, as on the web (ADR-0027).
+ */
 import { useRouter } from 'expo-router';
-import { summarizeAccounts, type CurrencyTotal } from '@montra/domain';
+import { type CurrencyTotal } from '@montra/domain';
+import { accountsWithProperties, countedProperties } from '../../src/features/accounts';
+import { useCached } from '../../src/features/use-cached';
 import { fmtMoney, t } from '../../src/i18n';
+import { useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import { Body, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 
@@ -10,7 +16,12 @@ const line = (totals: CurrencyTotal[]) =>
 
 export default function Accounts() {
   const router = useRouter();
-  const summary = summarizeAccounts(useLocal((s) => s.getReference('accounts')) ?? []);
+  const { state: session, api } = useSession();
+  const ws = session.status === 'signed_in' ? session.workspace.id : '';
+  const worth = useCached(ws, 'net-worth-now', () => api.netWorth(ws, 1), Boolean(ws));
+  const summary = accountsWithProperties(useLocal((s) => s.getReference('accounts')) ?? [], worth.data);
+  const properties = countedProperties(worth.data);
+  const ccy = worth.data?.currency;
   return (
     <Screen testID="accounts">
       {summary.groups.length === 0 ? <Small>{t('mobile.accounts.empty')}</Small> : null}
@@ -34,6 +45,25 @@ export default function Accounts() {
           ))}
         </Card>
       ))}
+      {properties.length > 0 ? (
+        <Card testID="accounts-properties">
+          <Title>{t('accounts.properties')}</Title>
+          <Body>
+            {fmtMoney(
+              properties.reduce((sum, p) => sum + BigInt(p.value), 0n),
+              ccy,
+            )}
+          </Body>
+          {properties.map((p) => (
+            <Row
+              key={p.propertyId}
+              title={p.name}
+              right={<Body>{fmtMoney(p.value, ccy)}</Body>}
+              onPress={() => router.push('/rentals')}
+            />
+          ))}
+        </Card>
+      ) : null}
       {summary.groups.length > 0 ? (
         <Card testID="accounts-summary">
           <Title>{t('accounts.all')}</Title>

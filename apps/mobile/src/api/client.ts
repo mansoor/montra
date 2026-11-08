@@ -21,6 +21,12 @@ import type {
   QuickAddDraftDto,
   BillDto,
   AccountDto,
+  AmortizationRowDto,
+  CardStatementDto,
+  InterestEarnedDto,
+  InvestmentPerformanceDto,
+  LoanDto,
+  LoanPaymentRequest,
   ArrearsDto,
   BillingDto,
   StatusDto,
@@ -194,7 +200,7 @@ export function createApi(opts: ApiOptions) {
     forecast: (w: string, days: number) => request<ForecastDto>('GET', `${ws(w)}/flow/forecast?days=${days}`),
     calendar: (w: string, from: string, to: string) =>
       request<CalendarDto>('GET', `${ws(w)}/calendar?from=${from}&to=${to}`),
-    netWorth: (w: string) => request<NetWorthDto>('GET', `${ws(w)}/net-worth?months=12`),
+    netWorth: (w: string, months = 12) => request<NetWorthDto>('GET', `${ws(w)}/net-worth?months=${months}`),
     recommendations: async (w: string) =>
       (await request<{ data: RecommendationDto[] }>('GET', `${ws(w)}/recommendations?status=open`)).data,
     refreshRecommendations: (w: string) =>
@@ -281,6 +287,20 @@ export function createApi(opts: ApiOptions) {
       (await request<{ data: AccountDto[] }>('GET', `${ws(w)}/accounts`)).data,
     recordRent: (w: string, leaseId: string, input: RentPaymentRequest) =>
       request<LeaseDto>('POST', `${ws(w)}/leases/${leaseId}/payments`, input),
+
+    // ----- Account details by type (ADR-0024…0027): read live; recording a loan payment needs a connection. ------
+    loans: async (w: string, entityId: string) =>
+      (await request<{ data: LoanDto[] }>('GET', `${ws(w)}/loans?entityId=${entityId}`)).data,
+    loanSchedule: async (w: string, id: string) =>
+      (await request<{ data: AmortizationRowDto[] }>('GET', `${ws(w)}/loans/${id}/schedule`)).data,
+    recordLoanPayment: (w: string, id: string, input: LoanPaymentRequest) =>
+      request<LoanDto>('POST', `${ws(w)}/loans/${id}/payments`, input),
+    accountPerformance: (w: string, id: string, range = '1y') =>
+      request<InvestmentPerformanceDto>('GET', `${ws(w)}/accounts/${id}/performance?range=${range}`),
+    cardStatement: async (w: string, id: string) =>
+      (await request<{ data: CardStatementDto | null }>('GET', `${ws(w)}/accounts/${id}/statement`)).data,
+    interestEarned: (w: string, id: string) =>
+      request<InterestEarnedDto>('GET', `${ws(w)}/accounts/${id}/interest-earned`),
 
     // ----- Notifications and your data (OPS-13): read live, nothing is kept on the device. ---------
     status: () => request<StatusDto>('GET', '/v1/status'),
