@@ -1,0 +1,52 @@
+name: Android APK
+
+# A standalone Android app for a phone on a local network: debug-signed, never for a store. Pushing a branch under
+# `android-apk/` builds it with the settings in `.github/android-apk.env` on that branch, and attaches the APK to the run.
+# See docs/runbooks/android-apk.md.
+on:
+  push:
+    branches: ['android-apk/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: pnpm install --frozen-lockfile
+      - name: Read the build's settings
+        run: |
+          if [ ! -f .github/android-apk.env ]; then
+            echo "::error::Add .github/android-apk.env with MONTRA_API_URL (see docs/runbooks/android-apk.md)"
+            exit 1
+          fi
+          grep -E '^(MONTRA_API_URL|MONTRA_WEB_URL|MONTRA_AUTH_MODE)=' .github/android-apk.env | tee -a "$GITHUB_ENV"
+          grep -q '^MONTRA_API_URL=' .github/android-apk.env || { echo "::error::MONTRA_API_URL is missing"; exit 1; }
+      - name: Generate the Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --no-install --clean
+      - name: Build the APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: montra-android-${{ github.sha }}
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14

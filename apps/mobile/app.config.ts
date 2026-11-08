@@ -9,6 +9,7 @@ import type { ExpoConfig } from 'expo/config';
  *   EAS_PROJECT_ID     EAS project (push tokens, updates); optional in development
  */
 const projectId = process.env.EAS_PROJECT_ID;
+const apiUrl = process.env.MONTRA_API_URL ?? 'http://localhost:4000';
 
 const config: ExpoConfig = {
   name: 'Montra',
@@ -47,7 +48,11 @@ const config: ExpoConfig = {
     [
       'expo-build-properties',
       // Minimum OS versions (PLT-02): iOS 17+, Android 11+ (API 30).
-      { ios: { deploymentTarget: '17.0' }, android: { minSdkVersion: 30 } },
+      // Plain http only when the API is (a computer on a local network, docs/runbooks/android-apk.md).
+      {
+        ios: { deploymentTarget: '17.0' },
+        android: { minSdkVersion: 30, usesCleartextTraffic: apiUrl.startsWith('http://') },
+      },
     ],
     [
       'expo-share-intent',
@@ -65,7 +70,7 @@ const config: ExpoConfig = {
   ],
   experiments: { typedRoutes: false },
   extra: {
-    apiUrl: process.env.MONTRA_API_URL ?? 'http://localhost:4000',
+    apiUrl,
     kratosUrl: process.env.MONTRA_KRATOS_URL ?? null,
     webUrl: process.env.MONTRA_WEB_URL ?? 'http://localhost:3000',
     authMode: process.env.MONTRA_AUTH_MODE ?? 'dev',
