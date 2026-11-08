@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { summarizeAccounts, type CurrencyTotal } from '@montra/domain';
+import { summarizeAccounts, withOtherAssets, type CurrencyTotal } from '@montra/domain';
 import { getI18n } from '@/lib/i18n-server';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
@@ -28,13 +28,19 @@ function Totals({ totals }: { totals: CurrencyTotal[] }) {
 /** Every account by kind, with totals for each kind and for everything. */
 export default async function AccountsPage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
-  const [workspace, accounts, { t }] = await Promise.all([
+  const [workspace, accounts, worth, { t }] = await Promise.all([
     load((api) => api.getWorkspace(workspaceId)),
     load((api) => api.listAccounts(workspaceId)),
+    load((api) => api.getNetWorth(workspaceId, { months: 1 })),
     getI18n(),
   ]);
   const base = `/w/${workspaceId}`;
-  const summary = summarizeAccounts(accounts);
+  // Rental properties aren't accounts, but net worth on Home counts your share of them, so this does too (ADR-0027).
+  const properties = worth.properties.filter((p) => BigInt(p.value) !== 0n);
+  const summary = withOtherAssets(
+    summarizeAccounts(accounts),
+    properties.map((p) => ({ currency: worth.currency, amount: BigInt(p.value) })),
+  );
   // Only worth saying which books an account is in when there's more than one set.
   const books = workspace.entities.length > 1 ? new Map(workspace.entities.map((e) => [e.id, e.name])) : null;
   return (
@@ -96,6 +102,35 @@ export default async function AccountsPage({ params }: { params: Promise<{ works
           </ul>
         </section>
       ))}
+      {properties.length > 0 && (
+        <section className="card-flush" aria-labelledby="kind-properties" data-testid="accounts-properties">
+          <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
+            <h2 id="kind-properties" className="text-base font-semibold">
+              {t('accounts.properties')}
+            </h2>
+            <span className="text-right font-semibold" data-testid="accounts-properties-total">
+              <Money
+                amount={String(properties.reduce((sum, p) => sum + BigInt(p.value), 0n))}
+                currency={worth.currency}
+              />
+            </span>
+          </header>
+          <ul className="divide-y divide-line">
+            {properties.map((p) => (
+              <li key={p.propertyId}>
+                <Link
+                  href={`${base}/rentals/${p.entityId}`}
+                  className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-brand-50"
+                  data-testid="accounts-property"
+                >
+                  <span className="font-medium">{p.name}</span>
+                  <Money amount={p.value} currency={worth.currency} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {summary.groups.length > 0 && (
         <section className="card space-y-2" aria-labelledby="accounts-all" data-testid="accounts-summary">
           <h2 id="accounts-all" className="text-base font-semibold">

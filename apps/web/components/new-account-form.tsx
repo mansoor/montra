@@ -131,6 +131,7 @@ export function NewAccountForm({
     const minPayment = minor('minPayment');
     const lowBalance = minor('lowBalance', true);
     const dayOf = (name: string) => (get(name) ? Number(get(name)) : undefined);
+    const purchasePrice = minor('purchasePrice');
     const rate = get('interestRate');
     const interestRateBps = rate ? percentToBps(rate) : undefined;
     if (interestRateBps === null) fields.interestRate = t('account.rate_invalid');
@@ -156,6 +157,10 @@ export function NewAccountForm({
         minPayment,
         lowBalance,
         ...(type.statement ? { statementDay: dayOf('statementDay'), dueDay: dayOf('dueDay') } : {}),
+        ...(type.details.includes('purchase')
+          ? { purchasePrice, purchaseDate: (get('purchaseDate') || undefined) as never }
+          : {}),
+        ...(type.details.includes('dueDate') ? { dueDate: (get('dueDate') || undefined) as never } : {}),
         ...(kind === 'investment' && plan ? { planType: plan } : {}),
         ...(workplace && employerId ? { employerId, employerContributions: contributions } : {}),
       });
@@ -401,6 +406,21 @@ export function NewAccountForm({
                   )}
                 </Field>
               </>
+            )}
+            {type.details.includes('purchase') && (
+              <>
+                <Field id="purchasePrice" label={t('asset.paid')} error={errors.fields.purchasePrice}>
+                  {(p) => <input {...p} name="purchasePrice" className="input num" inputMode="decimal" />}
+                </Field>
+                <Field id="purchaseDate" label={t('asset.bought_on')} error={errors.fields.purchaseDate}>
+                  {(p) => <input {...p} name="purchaseDate" type="date" className="input" />}
+                </Field>
+              </>
+            )}
+            {type.details.includes('dueDate') && (
+              <Field id="dueDate" label={t('debt.due_date')} error={errors.fields.dueDate}>
+                {(p) => <input {...p} name="dueDate" type="date" className="input" />}
+              </Field>
             )}
             {type.details.includes('minPayment') && (
               <Field id="minPayment" label={t('accounts.min_payment')} error={errors.fields.minPayment}>

@@ -14,7 +14,7 @@
   ],
   "ACC-02": [
     "done",
-    "Each type asks for and shows what it has, from one definition per type, with its balance over time (ADR-0023). A mortgage or loan can track payments as well as its balance (ADR-0024). A card or line of credit shows its statement, what is due and utilization (ADR-0026)"
+    "Each type asks for and shows what it has, from one definition per type, with its balance over time (ADR-0023). A mortgage or loan can track payments as well as its balance (ADR-0024). A card or line of credit shows its statement, what is due and utilization (ADR-0026). Savings shows interest earned, a home or car its equity, cash is counted, and other money owed can be due on a date (ADR-0027)"
   ],
   "ACC-03": [
     "done",

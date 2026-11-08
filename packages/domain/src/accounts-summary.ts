@@ -51,6 +51,19 @@ function totalsOf(entries: { currency: string; amount: bigint }[]): CurrencyTota
     .map(([currency, amount]) => ({ currency, amount }));
 }
 
+/**
+ * Adds things that are owned but aren't accounts, such as your share of a rental property, to what you have and to the net
+ * (ADR-0027), so the total matches net worth on Home.
+ */
+export function withOtherAssets<T>(
+  summary: AccountsSummary<T>,
+  others: readonly { currency: string; amount: bigint }[],
+): AccountsSummary<T> {
+  if (!others.length) return summary;
+  const add = (totals: CurrencyTotal[]) => totalsOf([...totals, ...others]);
+  return { ...summary, assets: add(summary.assets), net: add(summary.net) };
+}
+
 export function summarizeAccounts<T extends SummarizableAccount>(accounts: readonly T[]): AccountsSummary<T> {
   const shown = accounts.filter((a) => !a.archived && !a.hidden);
   const entry = (a: T, sign = 1n) => ({ currency: a.currency, amount: sign * BigInt(a.balance.amount) });

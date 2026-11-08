@@ -121,6 +121,11 @@ export class AccountsController {
     );
   }
 
+  @Get('accounts/:accountId/interest-earned')
+  interestEarned(@Ctx() ctx: RequestContext, @Param('accountId') accountId: string) {
+    return this.accounts.interestEarned(dbCtx(ctx), parse(z.uuid(), accountId));
+  }
+
   /** Every card and line of credit's latest statement (ADR-0026). */
   @Get('card-statements')
   async cardStatements(@Ctx() ctx: RequestContext) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeAccounts, type SummarizableAccount } from '../src/accounts-summary.js';
+import { summarizeAccounts, withOtherAssets, type SummarizableAccount } from '../src/accounts-summary.js';
 
 const account = (
   name: string,
@@ -97,5 +97,49 @@ describe('summarizeAccounts', () => {
   it('still shows a kind it doesn’t know, last', () => {
     const s = summarizeAccounts([account('New', 'crypto', '5'), account('Card', 'credit_card', '1')]);
     expect(s.groups.map((g) => g.kind)).toEqual(['credit_card', 'crypto']);
+  });
+});
+
+describe('withOtherAssets (ADR-0027)', () => {
+  const base = summarizeAccounts([
+    {
+      name: 'Checking',
+      kind: 'checking',
+      type: 'asset' as const,
+      currency: 'USD',
+      archived: false,
+      hidden: false,
+      balance: { amount: '100000' },
+    },
+    {
+      name: 'Card',
+      kind: 'credit_card',
+      type: 'liability' as const,
+      currency: 'USD',
+      archived: false,
+      hidden: false,
+      balance: { amount: '30000' },
+    },
+  ]);
+
+  it('adds what you own outside accounts to what you have and the net, by currency', () => {
+    const s = withOtherAssets(base, [
+      { currency: 'USD', amount: 30000000n },
+      { currency: 'EUR', amount: 500n },
+    ]);
+    expect(s.assets).toEqual([
+      { currency: 'EUR', amount: 500n },
+      { currency: 'USD', amount: 30100000n },
+    ]);
+    expect(s.net).toEqual([
+      { currency: 'EUR', amount: 500n },
+      { currency: 'USD', amount: 30070000n },
+    ]);
+    expect(s.liabilities).toEqual(base.liabilities);
+    expect(s.groups).toEqual(base.groups);
+  });
+
+  it('changes nothing without any', () => {
+    expect(withOtherAssets(base, [])).toBe(base);
   });
 });

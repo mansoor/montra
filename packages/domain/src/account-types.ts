@@ -27,14 +27,22 @@ export const ACCOUNT_KINDS = [
 export type AccountKind = (typeof ACCOUNT_KINDS)[number];
 
 /** Optional facts an account of this type can hold. */
-export type AccountDetail = 'creditLimit' | 'interestRate' | 'minPayment' | 'lowBalance';
+export type AccountDetail =
+  | 'creditLimit'
+  | 'interestRate'
+  | 'minPayment'
+  | 'lowBalance'
+  /** What it cost and when: a home or a car (ADR-0027). */
+  | 'purchase'
+  /** When an informal debt is due. */
+  | 'dueDate';
 
 export interface AccountProfile {
   side: 'asset' | 'liability';
   /** How the balance is described. */
   balanceWord: 'balance' | 'value' | 'owed';
   /** Who holds the account, which names the field. Null when nobody does, so the form doesn't ask. */
-  holder: 'bank' | 'issuer' | 'lender' | 'provider' | null;
+  holder: 'bank' | 'issuer' | 'lender' | 'provider' | 'creditor' | null;
   /** Whether it has an account or card number worth recognizing it by. */
   hasNumber: boolean;
   details: readonly AccountDetail[];
@@ -48,6 +56,8 @@ export interface AccountProfile {
   installment: boolean;
   /** Whether it's billed by monthly statement, with a due date: cards and lines of credit (ADR-0026). */
   statement: boolean;
+  /** Whether it has statements to import and reconcile. Cash doesn't (ADR-0027). */
+  imports: boolean;
 }
 
 const CASH_DETAILS: readonly AccountDetail[] = ['lowBalance'];
@@ -65,6 +75,7 @@ const bank = {
   schedule: false,
   installment: false,
   statement: false,
+  imports: true,
 } as const;
 
 const debt = {
@@ -78,12 +89,13 @@ const debt = {
   schedule: true,
   installment: true,
   statement: false,
+  imports: true,
 } as const;
 
 export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
   checking: bank,
-  savings: { ...bank, moneyFlow: 'savings' },
-  cash: { ...bank, holder: null, hasNumber: false },
+  savings: { ...bank, moneyFlow: 'savings', details: ['interestRate', 'lowBalance'] },
+  cash: { ...bank, holder: null, hasNumber: false, imports: false },
   investment: {
     ...bank,
     balanceWord: 'value',
@@ -97,8 +109,9 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     balanceWord: 'value',
     holder: null,
     hasNumber: false,
-    details: [],
+    details: ['purchase'],
     forecast: null,
+    imports: false,
   },
   credit_card: {
     ...debt,
@@ -122,8 +135,10 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
   mortgage: debt,
   liability: {
     ...debt,
-    holder: null,
+    holder: 'creditor',
+    details: ['dueDate'],
     hasNumber: false,
+    imports: false,
     moneyFlow: null,
     schedule: false,
     installment: false,

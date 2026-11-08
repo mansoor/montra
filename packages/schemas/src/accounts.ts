@@ -51,6 +51,15 @@ export const CreateAccountRequest = z.object({
     .string()
     .regex(/^\d{1,19}$/)
     .optional(),
+  /** A home or car: what it cost and when, and the loan against it (ADR-0027). */
+  purchasePrice: z
+    .string()
+    .regex(/^\d{1,19}$/)
+    .optional(),
+  purchaseDate: CalendarDateDto.optional(),
+  loanAccountId: Id.optional(),
+  /** When an informal debt is due. */
+  dueDate: CalendarDateDto.optional(),
 });
 export type CreateAccountRequest = z.output<typeof CreateAccountRequest>;
 
@@ -83,6 +92,11 @@ export const AccountDto = z.object({
     payRule: PayRuleDto.nullable(),
     payFixed: z.string().nullable(),
   }),
+  /** A home or car's purchase and the loan against it, and when an informal debt is due (ADR-0027). */
+  purchasePrice: z.string().nullable(),
+  purchaseDate: CalendarDateDto.nullable(),
+  loanAccountId: z.string().nullable(),
+  dueDate: CalendarDateDto.nullable(),
   /** Planning inputs (Phase 6): debt payoff and forecast warnings. Minor units in the account currency. */
   planning: z.object({
     creditLimit: z.string().nullable(),
@@ -184,6 +198,16 @@ export const CardStatementDto = z.object({
   planned: z.object({ date: CalendarDateDto, amount: z.string(), fromAccountId: z.string() }).nullable(),
 });
 export type CardStatementDto = z.infer<typeof CardStatementDto>;
+
+/** Interest paid into a savings account from 1 January to today (ADR-0027). */
+export const InterestEarnedDto = z.object({
+  accountId: z.string(),
+  from: CalendarDateDto,
+  to: CalendarDateDto,
+  amount: z.string(),
+  currency: z.string(),
+});
+export type InterestEarnedDto = z.infer<typeof InterestEarnedDto>;
 
 export const CategoryDto = z.object({
   id: z.string(),

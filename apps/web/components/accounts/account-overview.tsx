@@ -8,16 +8,21 @@ import type { getI18n } from '@/lib/i18n-server';
 type T = Awaited<ReturnType<typeof getI18n>>['t'];
 
 /** The facts this account's type holds, such as a card's limit and what's still available. */
+const PLANNING = new Set(['creditLimit', 'interestRate', 'minPayment', 'lowBalance']);
+
 export function AccountFacts({
   account,
   workspaceId,
   t,
+  interestEarned,
 }: {
   account: AccountDto;
   workspaceId: string;
   t: T;
+  /** Interest paid in this year, for savings (ADR-0027). */
+  interestEarned?: string | null;
 }) {
-  const { details } = accountProfile(account.kind);
+  const details = accountProfile(account.kind).details.filter((d) => PLANNING.has(d));
   if (details.length === 0) return null;
   const { creditLimit, interestRateBps, minPayment, lowBalance } = account.planning;
   const money = (amount: string) => <Money amount={amount} currency={account.currency} />;
@@ -39,6 +44,13 @@ export function AccountFacts({
   }
   if (details.includes('minPayment') && minPayment !== null) {
     facts.push({ label: t('accounts.min_payment'), value: money(minPayment), testId: 'fact-min-payment' });
+  }
+  if (interestEarned != null && BigInt(interestEarned) > 0n) {
+    facts.push({
+      label: t('account.interest_earned'),
+      value: money(interestEarned),
+      testId: 'fact-interest-earned',
+    });
   }
   if (details.includes('lowBalance') && BigInt(lowBalance) !== 0n) {
     facts.push({ label: t('accounts.low_balance'), value: money(lowBalance), testId: 'fact-low-balance' });
@@ -105,6 +117,7 @@ export function BalanceHistory({
           series={[{ label: account.name, values: history.points.map((p) => p.balance) }]}
           labels={history.points.map((p) => p.date)}
           currency={history.currency}
+          fromZero={word !== 'value'}
         />
       ) : (
         <p className="text-sm text-muted">{t('account.history.too_little')}</p>

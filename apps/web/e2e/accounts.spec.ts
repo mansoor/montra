@@ -133,7 +133,13 @@ test('each account type asks for and shows what it has', async ({ page }) => {
 
   await type.selectOption('asset');
   await expect(page.getByLabel('Current value')).toBeVisible();
-  await expect(page.getByTestId('account-details')).toHaveCount(0);
+  // A home or car asks what it cost (ADR-0027), and nothing a bank account has.
+  const assetDetails = page.getByTestId('account-details');
+  await assetDetails.locator('summary').click();
+  await expect(assetDetails.getByLabel('Purchase price')).toBeVisible();
+  await expect(assetDetails.getByLabel('Credit limit')).toHaveCount(0);
+  await expect(assetDetails.getByLabel('Warn below')).toHaveCount(0);
+  await assetDetails.locator('summary').click();
 
   await type.selectOption('mortgage');
   await expect(page.getByLabel('Lender (optional)')).toBeVisible();
