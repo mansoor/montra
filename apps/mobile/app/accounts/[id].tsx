@@ -70,7 +70,12 @@ export default function Register() {
         ListHeaderComponent={
           account && sections ? (
             <View style={{ gap: th.space(3), paddingBottom: th.space(2) }}>
-              {details.stale ? <Banner tone="warning" text={t('mobile.plan.offline')} /> : null}
+              {details.stale ? (
+                <Banner
+                  tone="warning"
+                  text={t(details.data ? 'mobile.plan.offline' : 'mobile.plan.offline_empty')}
+                />
+              ) : null}
               {details.error ? <Banner tone="danger" text={details.error} /> : null}
               <AccountDetails
                 api={api}
