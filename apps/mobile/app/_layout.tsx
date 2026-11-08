@@ -1,7 +1,7 @@
 /** Root: providers (session, app lock, toasts, share intent, sync) and the auth gate. */
 import { useEffect } from 'react';
 import { View } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
 import { SessionProvider, useSession } from '../src/session/SessionProvider';
 import { AppLock } from '../src/lock/AppLock';
 import { SyncProvider } from '../src/sync/SyncProvider';
-import { Body, Title, ToastHost } from '../src/ui/components';
+import { Body, Button, Title, ToastHost } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 import { t } from '../src/i18n';
 
@@ -91,6 +91,30 @@ function Gate() {
     </Stack>
   );
   return signedIn ? <SyncProvider workspaceId={state.workspace.id}>{stack}</SyncProvider> : stack;
+}
+
+/**
+ * Anything that fails while the app renders shows here, with what went wrong, instead of a blank screen. A release build
+ * has no other way to say.
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  const th = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        justifyContent: 'center',
+        padding: th.space(4),
+        gap: th.space(2),
+        backgroundColor: th.bg,
+      }}
+      testID="app-error"
+    >
+      <Title>{t('mobile.error.title')}</Title>
+      <Body muted>{error.message}</Body>
+      <Button label={t('mobile.error.retry')} onPress={() => void retry()} />
+    </View>
+  );
 }
 
 export default function RootLayout() {
