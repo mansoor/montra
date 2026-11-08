@@ -11,10 +11,8 @@ import * as SecureStore from 'expo-secure-store';
 import { t } from '../i18n';
 import { Body, Button, Title } from '../ui/components';
 import { useTheme } from '../ui/theme';
-import { parseTimeout, shouldLock, type LockTimeout } from './policy';
-
-const ENABLED_KEY = 'montra.lock.enabled';
-const TIMEOUT_KEY = 'montra.lock.timeout';
+import { shouldLock, type LockTimeout } from './policy';
+import { ENABLED_KEY, lockStartup, TIMEOUT_KEY } from './startup';
 
 interface LockSettings {
   enabled: boolean;
@@ -58,16 +56,19 @@ export function AppLock({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void (async () => {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = hasHardware && (await LocalAuthentication.isEnrolledAsync());
-      const level = await LocalAuthentication.getEnrolledLevelAsync();
-      const usable = enrolled || level !== LocalAuthentication.SecurityLevel.NONE;
-      const on = (await SecureStore.getItemAsync(ENABLED_KEY)) !== 'false' && usable;
-      setAvailable(usable);
-      setEnabledState(on);
-      setTimeoutState(parseTimeout(await SecureStore.getItemAsync(TIMEOUT_KEY)));
+      // Bounded: a check that throws or never answers can't leave the app on a blank screen.
+      const s = await lockStartup({
+        hasHardware: () => LocalAuthentication.hasHardwareAsync(),
+        isEnrolled: () => LocalAuthentication.isEnrolledAsync(),
+        hasAnySecurity: async () =>
+          (await LocalAuthentication.getEnrolledLevelAsync()) !== LocalAuthentication.SecurityLevel.NONE,
+        read: (key) => SecureStore.getItemAsync(key),
+      });
+      setAvailable(s.available);
+      setEnabledState(s.enabled);
+      setTimeoutState(s.timeout);
       const lock = shouldLock({
-        enabled: on,
+        enabled: s.enabled,
         coldStart: true,
         lastActiveAt: null,
         now: Date.now(),
@@ -75,7 +76,8 @@ export function AppLock({ children }: { children: ReactNode }) {
       });
       setLocked(lock);
       setReady(true);
-      if (lock) void unlock();
+      if (s.error) setError(s.error);
+      else if (lock) void unlock();
     })();
   }, [unlock]);
 
@@ -121,7 +123,16 @@ export function AppLock({ children }: { children: ReactNode }) {
     },
   };
 
-  if (!ready) return <View style={{ flex: 1, backgroundColor: th.bg }} />;
+  if (!ready) {
+    return (
+      <View
+        style={{ flex: 1, backgroundColor: th.bg, alignItems: 'center', justifyContent: 'center' }}
+        testID="starting"
+      >
+        <Body muted>{t('mobile.starting')}</Body>
+      </View>
+    );
+  }
   return (
     <Ctx.Provider value={settings}>
       {children}
