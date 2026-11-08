@@ -33,4 +33,4 @@ counts only accounts.
   clearly, and the categorizer files it under Interest income.
 - **One loan per asset.** A home with a mortgage and a home-equity line shows equity against the first only.
 - **Currencies:** properties are in the base currency, as on Home. Accounts in other currencies are still totalled per currency.
-- **The phone** shows none of this yet. Its Accounts list doesn't include properties.
+- **The phone** shows interest earned, equity and the due date, read-only, and its Accounts list counts properties too. Setting them up stays on the web.

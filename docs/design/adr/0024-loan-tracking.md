@@ -53,7 +53,7 @@ that payments shouldn't post by themselves by default.
 - **A recurring template for the same payment still doubles** on the calendar and forecast. Nothing removes one the user made.
 - Line-of-credit accounts can still hold a schedule through the rental screen (ADR-0023), but aren't offered it: they're
   revolving, and get their own handling with cards.
-- The phone doesn't show or record loan payments yet, because loans aren't in its offline store.
+- Loans aren't in the phone's offline store. The phone reads a tracked loan live (kept for offline viewing) and records a payment only when online.
 
 ## Alternatives
 

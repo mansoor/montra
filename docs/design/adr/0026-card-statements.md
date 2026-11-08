@@ -42,7 +42,7 @@ any of them.
 
 - Reminders already sent for `bill` items now come for cards too, through the existing `card_due` path, once the days are set.
 - Utilization over 30% is shown in the warning color. That's a common guide, not advice.
-- The phone doesn't show statements yet.
+- The phone shows the statement read live; paying it and the cycle settings stay on the web.
 - A card in another currency than its books can still have days and a statement, but its rule can only pay from an account in
   the same currency.
 
