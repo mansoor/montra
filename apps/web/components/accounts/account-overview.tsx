@@ -117,6 +117,7 @@ export function BalanceHistory({
           series={[{ label: account.name, values: history.points.map((p) => p.balance) }]}
           labels={history.points.map((p) => p.date)}
           currency={history.currency}
+          fromZero={word !== 'value'}
         />
       ) : (
         <p className="text-sm text-muted">{t('account.history.too_little')}</p>

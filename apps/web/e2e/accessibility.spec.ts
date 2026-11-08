@@ -166,6 +166,33 @@ for (const scheme of ['light', 'dark'] as const) {
           values: [{ date: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), value: '1080000' }],
         },
       });
+      const home = (
+        await (
+          await page.request.post(`${ws}/accounts`, {
+            data: {
+              name: 'Our home',
+              kind: 'asset',
+              openingBalance: { amount: '42000000', currency: 'USD' },
+              openingDate: new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10),
+              purchasePrice: '35000000',
+            },
+          })
+        ).json()
+      ).id as string;
+      const owed = (
+        await (
+          await page.request.post(`${ws}/accounts`, {
+            data: {
+              name: 'Owed to Sam',
+              kind: 'liability',
+              dueDate: new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10),
+            },
+          })
+        ).json()
+      ).id as string;
+      const wallet = (
+        await (await page.request.post(`${ws}/accounts`, { data: { name: 'Wallet', kind: 'cash' } })).json()
+      ).id as string;
       const business = await entity('business', 'Side work');
       const rental = await entity('rental', 'Elm Rentals');
       const found = [];
@@ -175,6 +202,9 @@ for (const scheme of ['light', 'dark'] as const) {
         `/accounts/${visa}`,
         `/accounts/${mortgage}`,
         `/accounts/${ira}?range=all`,
+        `/accounts/${home}`,
+        `/accounts/${owed}`,
+        `/accounts/${wallet}`,
         '/business',
         `/business/${business}`,
         `/business/${business}/invoices`,

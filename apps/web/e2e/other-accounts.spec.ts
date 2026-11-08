@@ -31,6 +31,7 @@ test('each remaining account type does its own thing', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Family car' })).toBeVisible();
   const asset = page.getByTestId('asset-panel');
   await expect(asset.getByTestId('asset-change')).toContainText('-$7,000.00');
+  await asset.getByText('Purchase and loan').click();
   await asset.getByLabel('Loan against it').selectOption({ label: 'Car loan' });
   await asset.getByRole('button', { name: 'Save' }).click();
   await expect(asset.getByText('Saved')).toBeVisible();
