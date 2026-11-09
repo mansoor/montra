@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calendarDate } from '@montra/domain';
 import { catalogs, createTranslator, formatCalendarDate, weekdayName } from '../src/index.js';
+import { pluralRules } from '../src/messages.js';
 
 describe('messages (TZ-06)', () => {
   const t = createTranslator('en-US', { ...catalogs, de: { 'common.save': 'Speichern' } });
@@ -19,6 +20,24 @@ describe('messages (TZ-06)', () => {
     expect(de.t('common.save')).toBe('Speichern');
     expect(de.t('common.cancel')).toBe('Cancel');
     expect(de.t('nope.missing')).toBe('nope.missing');
+  });
+
+  // Hermes on Android has no Intl.PluralRules: the app showed a gray screen because creating the translator threw.
+  it('works without Intl.PluralRules, as on Android', () => {
+    const fallback = pluralRules('en-US', {});
+    expect([0, 1, 2, 1200].map((n) => fallback.select(n))).toEqual(['other', 'one', 'other', 'other']);
+    const real = new Intl.PluralRules('en-US');
+    for (const n of [0, 1, 2, 5, 21, 1200]) expect(fallback.select(n)).toBe(real.select(n));
+
+    const saved = Intl.PluralRules;
+    try {
+      (Intl as { PluralRules?: unknown }).PluralRules = undefined;
+      const noRules = createTranslator('en-US', catalogs);
+      expect(noRules.t('transactions.review_count', { count: 1 })).toBe('1 transaction to review');
+      expect(noRules.t('transactions.review_count', { count: 3 })).toBe('3 transactions to review');
+    } finally {
+      (Intl as { PluralRules?: unknown }).PluralRules = saved;
+    }
   });
 
   it('keeps every English message parseable', () => {
