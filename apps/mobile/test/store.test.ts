@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { MemoryStore, type LocalTransaction, type OutboxItem, type SyncStore } from '@montra/sync';
 import { SqliteStore } from '../src/store/sqlite-store';
-import { keyPragma, listQuery, type SqlDriver, type SqlParam } from '../src/store/sql';
+import { keyPragma, listQuery, MIGRATIONS, type SqlDriver, type SqlParam } from '../src/store/sql';
 import { deleteKey, getOrCreateKey, keyName, type SecretPort } from '../src/store/key';
 
 /** node:sqlite stands in for expo-sqlite (same SQLite engine, minus SQLCipher). */
@@ -76,6 +76,23 @@ describe.each(stores)('%s (SyncStore contract)', (_name, make) => {
     ]);
     expect((await s.listTransactions({})).map((t) => t.id)).toEqual(['c', 'b', 'a', 'd']);
     expect((await s.listTransactions({ accountId: 'acct-2' })).map((t) => t.id)).toEqual(['b']);
+    expect((await s.listTransactions({ accountIds: ['acct-2'] })).map((t) => t.id)).toEqual(['b']);
+    expect((await s.listTransactions({ accountIds: ['acct-1', 'acct-2'] })).map((t) => t.id)).toEqual([
+      'c',
+      'b',
+      'a',
+      'd',
+    ]);
+    expect((await s.listTransactions({ accountIds: [] })).map((t) => t.id)).toEqual(['c', 'b', 'a', 'd']);
+    expect((await s.listTransactions({ accountIds: ['acct-9'] })).map((t) => t.id)).toEqual([]);
+    expect((await s.listTransactions({ accountIds: ['acct-1'], search: 'blue' })).map((t) => t.id)).toEqual([
+      'a',
+    ]);
+    expect((await s.listTransactions({ from: '2026-10-01', to: '2026-10-02' })).map((t) => t.id)).toEqual([
+      'a',
+    ]);
+    expect((await s.listTransactions({ from: '2026-10-03' })).map((t) => t.id)).toEqual(['c', 'b']);
+    expect((await s.listTransactions({ to: '2026-09-30' })).map((t) => t.id)).toEqual(['d']);
     expect((await s.listTransactions({ reviewState: 'needs_review' })).map((t) => t.id)).toEqual(['c']);
     expect((await s.listTransactions({ search: 'shell' })).map((t) => t.id)).toEqual(['b']);
     expect((await s.listTransactions({ search: ' BLUE ' })).map((t) => t.id)).toEqual(['a']);
@@ -142,14 +159,60 @@ describe.each(stores)('%s (SyncStore contract)', (_name, make) => {
   });
 });
 
+describe.each(stores)('%s member filter', (_name, make) => {
+  it('matches members, and the household as null', async () => {
+    const s = await make();
+    await s.putTransactions([
+      txn('a', '2026-10-01', { memberId: 'm-1' }),
+      txn('b', '2026-10-02', { memberId: 'm-2' }),
+      txn('c', '2026-10-03', { memberId: null }),
+    ]);
+    const ids = async (memberIds: (string | null)[]) =>
+      (await s.listTransactions({ memberIds })).map((t) => t.id);
+    expect(await ids(['m-1'])).toEqual(['a']);
+    expect(await ids([null])).toEqual(['c']);
+    expect(await ids(['m-2', null])).toEqual(['c', 'b']);
+    expect(await ids([])).toEqual(['c', 'b', 'a']);
+    // Changing the member moves the row between filters.
+    await s.putTransactions([txn('a', '2026-10-01', { memberId: 'm-2' })]);
+    expect(await ids(['m-2'])).toEqual(['b', 'a']);
+  });
+});
+
 describe('SqliteStore specifics', () => {
+  it('fills the member column for rows stored before it existed', async () => {
+    const d = nodeDriver();
+    await d.exec(MIGRATIONS[0]!);
+    await d.exec('pragma user_version = 1');
+    const old = (t: LocalTransaction) => [
+      t.id,
+      t.date,
+      t.accountId,
+      t.reviewState,
+      '',
+      '',
+      JSON.stringify(t),
+    ];
+    for (const t of [txn('a', '2026-10-01', { memberId: 'm-1' }), txn('b', '2026-10-02')])
+      await d.run(
+        'insert into txn (id, date, account_id, review_state, search_payee, search_desc, data) values (?, ?, ?, ?, ?, ?, ?)',
+        old(t),
+      );
+    const s = await SqliteStore.open(d);
+    expect(await d.all('pragma user_version')).toEqual([{ user_version: MIGRATIONS.length }]);
+    expect((await s.listTransactions({ memberIds: ['m-1'] })).map((t) => t.id)).toEqual(['a']);
+    expect((await s.listTransactions({ memberIds: [null] })).map((t) => t.id)).toEqual(['b']);
+  });
+
   it('migrates once and wipes the file and the key on sign-out (BAK-10)', async () => {
     const d = nodeDriver();
     let keyDeleted = false;
     const s = await SqliteStore.open(d, async () => {
       keyDeleted = true;
     });
-    expect(await d.all<{ user_version: number }>('pragma user_version')).toEqual([{ user_version: 1 }]);
+    expect(await d.all<{ user_version: number }>('pragma user_version')).toEqual([
+      { user_version: MIGRATIONS.length },
+    ]);
     await s.wipe();
     expect(d.destroyed).toBe(true);
     expect(keyDeleted).toBe(true);
