@@ -54,7 +54,7 @@ export default function Register() {
 
   return (
     <View style={{ flex: 1, backgroundColor: th.bg }}>
-      <View style={{ padding: th.space(4), gap: th.space(1) }}>
+      <View style={{ padding: th.pad, gap: th.space(1) }}>
         <Title>{account?.name ?? ''}</Title>
         {account ? <Small>{t(`account.kind.${account.kind}`)}</Small> : null}
         {account ? (
@@ -66,7 +66,7 @@ export default function Register() {
       <FlatList
         data={lines}
         keyExtractor={(l) => l.row.id}
-        contentContainerStyle={{ paddingHorizontal: th.space(4) }}
+        contentContainerStyle={{ paddingHorizontal: th.pad }}
         ListHeaderComponent={
           account && sections ? (
             <View style={{ gap: th.space(3), paddingBottom: th.space(2) }}>
