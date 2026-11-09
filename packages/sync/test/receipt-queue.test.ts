@@ -66,6 +66,7 @@ describe('ReceiptUploadQueue', () => {
     const [waiting] = await q.list();
     expect(waiting!.pages.map((p) => p.fileId)).toEqual(['file-page-1.jpg', null, null]);
     expect(waiting!.attempts).toBe(0); // offline is not a failed attempt
+    expect(waiting!.error).toBe('network request failed'); // but the screen can say why it waits
 
     // Back online, from a fresh queue over the same store (the app restarted).
     const again = new ReceiptUploadQueue({ store, uploader: api.uploader, classify });

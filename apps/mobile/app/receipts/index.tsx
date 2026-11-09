@@ -9,10 +9,13 @@ import type { ReceiptDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
+import { queuedStatus } from '../../src/features/receipt-capture';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
+import { useTheme } from '../../src/ui/theme';
 
 export default function Receipts() {
   const router = useRouter();
+  const th = useTheme();
   const { queued } = useLocalSearchParams<{ queued?: string }>();
   const { state: session, api } = useSession();
   const { receipts, state, version, refresh, touch } = useSync();
@@ -63,35 +66,43 @@ export default function Receipts() {
         onPress={() => void refresh().then(load)}
       />
       {waiting.length ? <Title>{t('mobile.receipts.waiting')}</Title> : null}
-      {waiting.map((w) => (
-        <Card key={w.id} testID="queued-receipt">
-          <Body>{t('mobile.receipts.pages', { count: w.pages.length })}</Body>
-          <Small>
-            {w.state === 'failed'
-              ? t('mobile.receipts.failed', { error: w.error ?? '' })
-              : state?.online
-                ? t('mobile.receipts.uploading')
-                : t('mobile.receipts.offline')}
-          </Small>
-          {w.state === 'failed' ? (
+      {waiting.map((w) => {
+        const status = queuedStatus(w, Boolean(state?.online), new Date());
+        return (
+          <Card key={w.id} testID="queued-receipt">
+            <Body>{t('mobile.receipts.pages', { count: w.pages.length })}</Body>
+            <Small color={status.kind === 'failed' || status.kind === 'retrying' ? th.danger : undefined}>
+              {status.kind === 'failed'
+                ? t('mobile.receipts.failed', { error: status.error })
+                : status.kind === 'retrying'
+                  ? t('mobile.receipts.retrying', {
+                      error: status.error,
+                      time: status.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+                    })
+                  : status.kind === 'uploading'
+                    ? t('mobile.receipts.uploading')
+                    : t('mobile.receipts.offline')}
+            </Small>
+            {status.kind === 'failed' || status.kind === 'retrying' ? (
+              <Button
+                kind="secondary"
+                label={t(status.kind === 'failed' ? 'mobile.common.retry' : 'mobile.receipts.try_now')}
+                onPress={() =>
+                  void receipts
+                    .retry(w.id)
+                    .then(() => receipts.process())
+                    .finally(touch)
+                }
+              />
+            ) : null}
             <Button
-              kind="secondary"
-              label={t('mobile.common.retry')}
-              onPress={() =>
-                void receipts
-                  .retry(w.id)
-                  .then(() => receipts.process())
-                  .finally(touch)
-              }
+              kind="danger"
+              label={t('mobile.receipts.discard')}
+              onPress={() => void receipts.discard(w.id).finally(touch)}
             />
-          ) : null}
-          <Button
-            kind="danger"
-            label={t('mobile.receipts.discard')}
-            onPress={() => void receipts.discard(w.id).finally(touch)}
-          />
-        </Card>
-      ))}
+          </Card>
+        );
+      })}
       <Title>{t('mobile.receipts.title')}</Title>
       {error && !state?.online ? <Body muted>{t('mobile.receipts.list_offline')}</Body> : null}
       {error && state?.online ? <Banner tone="danger" text={error} /> : null}

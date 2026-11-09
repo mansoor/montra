@@ -158,6 +158,8 @@ export class ReceiptUploadQueue {
         const kind = this.classify(err);
         const message = err instanceof Error ? err.message : String(err);
         if (kind === 'offline') {
+          // Not a failed attempt, but keep why, so the screen can say.
+          await this.patch(item.id, { error: message });
           result.offline = true;
           break;
         }

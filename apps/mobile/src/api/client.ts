@@ -98,10 +98,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Sends a device file as multipart/form-data (field `file`) natively, and resolves with any HTTP response; it rejects
+ * only when the request couldn't be made. React Native's FormData is the fallback.
+ */
+export type FileUploader = (
+  url: string,
+  file: UploadFile,
+  headers: Record<string, string>,
+) => Promise<{ status: number; body: string }>;
+
 export interface ApiOptions {
   baseUrl: string;
   token: () => Promise<string | null>;
   fetch?: typeof fetch;
+  /** For pages the app holds (`file:` URIs): receipt and payslip photos. */
+  uploadFile?: FileUploader;
   /** OPS-04: sent with every request, so the server can turn away a version too old to be safe. */
   app?: { version: string; platform: string };
   onUpdateRequired?: () => void;
@@ -125,7 +137,7 @@ export function createApi(opts: ApiOptions) {
     return token ? { authorization: `Bearer ${token}` } : {};
   }
 
-  async function request<T>(method: string, path: string, body?: unknown, raw?: FormData): Promise<T> {
+  async function baseHeaders(): Promise<Record<string, string>> {
     const token = await opts.token();
     const headers: Record<string, string> = { accept: 'application/json' };
     if (token) headers.authorization = `Bearer ${token}`;
@@ -133,6 +145,42 @@ export function createApi(opts: ApiOptions) {
       headers['x-app-version'] = opts.app.version;
       headers['x-app-platform'] = opts.app.platform;
     }
+    return headers;
+  }
+
+  function parse<T>(status: number, text: string): T {
+    if (status === 204) return undefined as T;
+    const json = text ? (JSON.parse(text) as unknown) : undefined;
+    if (status < 200 || status >= 300) {
+      if (status === 426) opts.onUpdateRequired?.();
+      const p = (json ?? {}) as { code?: string; title?: string; detail?: string };
+      throw new ApiError(status, p.code ?? `http_${status}`, p.detail ?? p.title ?? `HTTP ${status}`);
+    }
+    return json as T;
+  }
+
+  /**
+   * Uploads a device file to `path`: natively for a page the app saved, else with FormData. Statements stay on
+   * FormData: the native upload names the part after the file on disk, and the picker's copy has a generated name.
+   */
+  async function sendFile<T>(path: string, file: UploadFile, native = true): Promise<T> {
+    if (native && opts.uploadFile && file.uri.startsWith('file:')) {
+      let res: { status: number; body: string };
+      try {
+        res = await opts.uploadFile(`${opts.baseUrl}${path}`, file, await baseHeaders());
+      } catch (err) {
+        throw new ApiError(0, 'network', (err as Error).message || 'The upload failed');
+      }
+      return parse<T>(res.status, res.body);
+    }
+    const form = new FormData();
+    // React Native's FormData accepts { uri, name, type } for files.
+    form.append('file', file as unknown as Blob);
+    return request<T>('POST', path, undefined, form);
+  }
+
+  async function request<T>(method: string, path: string, body?: unknown, raw?: FormData): Promise<T> {
+    const headers = await baseHeaders();
     if (body !== undefined) headers['content-type'] = 'application/json';
     let res: Response;
     try {
@@ -145,18 +193,7 @@ export function createApi(opts: ApiOptions) {
       throw new ApiError(0, 'network', (err as Error).message || 'Network request failed');
     }
     if (res.status === 204) return undefined as T;
-    const text = await res.text();
-    const json = text ? (JSON.parse(text) as unknown) : undefined;
-    if (!res.ok) {
-      if (res.status === 426) opts.onUpdateRequired?.();
-      const p = (json ?? {}) as { code?: string; title?: string; detail?: string };
-      throw new ApiError(
-        res.status,
-        p.code ?? `http_${res.status}`,
-        p.detail ?? p.title ?? `HTTP ${res.status}`,
-      );
-    }
-    return json as T;
+    return parse<T>(res.status, await res.text());
   }
 
   const ws = (id: string) => `/v1/workspaces/${encodeURIComponent(id)}`;
@@ -214,12 +251,7 @@ export function createApi(opts: ApiOptions) {
     parseQuickAdd: (w: string, req: ParseQuickAddRequest) =>
       request<QuickAddDraftDto>('POST', `${ws(w)}/transactions/parse`, req),
 
-    upload: (w: string, file: UploadFile) => {
-      const form = new FormData();
-      // React Native's FormData accepts { uri, name, type } for files.
-      form.append('file', file as unknown as Blob);
-      return request<UploadDto>('POST', `${ws(w)}/uploads`, undefined, form);
-    },
+    upload: (w: string, file: UploadFile) => sendFile<UploadDto>(`${ws(w)}/uploads`, file, false),
     createImport: (w: string, fileId: string, accountId: string) =>
       request<ImportBatchDto>('POST', `${ws(w)}/imports`, { fileId, accountId }),
     getImport: (w: string, id: string) => request<ImportBatchDto>('GET', `${ws(w)}/imports/${id}`),
@@ -234,11 +266,8 @@ export function createApi(opts: ApiOptions) {
       request<CategoryProposalsResponse>('GET', `${ws(w)}/imports/${id}/category-proposals`),
 
     // ----- Receipts (TXN-08/09, RCP-06) -----
-    uploadReceiptFile: (w: string, file: UploadFile) => {
-      const form = new FormData();
-      form.append('file', file as unknown as Blob);
-      return request<ReceiptFileDto>('POST', `${ws(w)}/receipts/files`, undefined, form);
-    },
+    uploadReceiptFile: (w: string, file: UploadFile) =>
+      sendFile<ReceiptFileDto>(`${ws(w)}/receipts/files`, file),
     /** Idempotent with a client id: a replayed offline capture returns the existing receipt. */
     createReceipt: (w: string, input: { id: string; fileIds: string[]; transactionId?: string | null }) =>
       request<ReceiptDto>('POST', `${ws(w)}/receipts`, {
@@ -330,11 +359,8 @@ export function createApi(opts: ApiOptions) {
     // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
     listEmployers: async (w: string) =>
       (await request<{ data: EmployerDto[] }>('GET', `${ws(w)}/employers`)).data,
-    uploadPayslipFile: (w: string, file: UploadFile) => {
-      const form = new FormData();
-      form.append('file', file as unknown as Blob);
-      return request<ReceiptFileDto>('POST', `${ws(w)}/payslips/files`, undefined, form);
-    },
+    uploadPayslipFile: (w: string, file: UploadFile) =>
+      sendFile<ReceiptFileDto>(`${ws(w)}/payslips/files`, file),
     createPayslip: (w: string, input: Partial<CreatePayslipRequest> & { employerId: string }) =>
       request<PayslipDto>('POST', `${ws(w)}/payslips`, input),
     listPayslips: async (w: string) =>
