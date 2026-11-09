@@ -3,7 +3,7 @@
  * keyset paging and swipe actions. Works offline.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -22,7 +22,9 @@ import {
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
-import { Field, FilterChip, FilterIcon, Monogram, Small } from '../../src/ui/components';
+import { Field, FilterChip, Monogram, Small } from '../../src/ui/components';
+import { haptic } from '../../src/ui/haptics';
+import { Icon } from '../../src/ui/icons';
 import { dateSummary, memberName, TransactionFilters } from '../../src/ui/TransactionFilters';
 import { useTheme } from '../../src/ui/theme';
 
@@ -119,6 +121,7 @@ export default function Transactions() {
     return (
       <Swipeable
         friction={2}
+        onSwipeableWillOpen={() => haptic.select()}
         renderRightActions={() => (
           <View style={{ flexDirection: 'row' }}>
             <Action label={t('mobile.txn.categorize')} color={th.primary} onPress={() => setPicking(item)} />
@@ -172,10 +175,12 @@ export default function Transactions() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: th.bg }} edges={['top']}>
       <View style={{ padding: th.pad, gap: th.space(2) }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: th.space(2) }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: th.space(2) }}>
           <View style={{ flex: 1 }}>
             <Field
               label={t('mobile.txn.search')}
+              icon="search"
+              hideLabel
               value={search}
               onChangeText={setSearch}
               returnKeyType="search"
@@ -183,7 +188,10 @@ export default function Transactions() {
             />
           </View>
           <Pressable
-            onPress={() => setFiltering(true)}
+            onPress={() => {
+              haptic.tap();
+              setFiltering(true);
+            }}
             accessibilityRole="button"
             accessibilityLabel={t('mobile.filters.button', { count })}
             testID="txn-filter"
@@ -193,13 +201,11 @@ export default function Transactions() {
               borderRadius: th.radius,
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: count ? th.primary : th.surface,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: count ? th.primary : th.border,
+              backgroundColor: count ? th.primary : th.surfaceAlt,
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <FilterIcon color={count ? th.onPrimary : th.text} />
+            <Icon name="filter" size={20} color={count ? th.onPrimary : th.text} />
             {count ? (
               <View
                 importantForAccessibility="no"

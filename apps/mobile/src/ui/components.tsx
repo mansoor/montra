@@ -1,7 +1,18 @@
 /** Small accessible building blocks shared by the screens (Dynamic Type friendly: no fixed heights on text). */
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +24,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { sparkline, thin } from '../features/planning';
+import { haptic } from './haptics';
+import { Icon, type IconName } from './icons';
 import { useTheme } from './theme';
 
 export function Screen({
@@ -83,11 +96,10 @@ export function Card({
       style={[
         {
           backgroundColor: th.surface,
-          borderRadius: th.radius,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: th.border,
+          borderRadius: th.radiusLg,
           padding: th.space(3),
           gap: th.space(2),
+          ...th.raised,
         },
         style,
       ]}
@@ -101,6 +113,7 @@ export function Button({
   label,
   onPress,
   kind = 'primary',
+  icon,
   disabled,
   busy,
   testID,
@@ -109,69 +122,114 @@ export function Button({
   label: string;
   onPress: () => void;
   kind?: 'primary' | 'secondary' | 'danger';
+  icon?: IconName;
   disabled?: boolean;
   busy?: boolean;
   testID?: string;
   hint?: string;
 }) {
   const th = useTheme();
-  const bg = kind === 'primary' ? th.primary : kind === 'danger' ? th.danger : th.surface;
+  const scale = useRef(new Animated.Value(1)).current;
+  const springTo = (v: number) =>
+    Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
+  const bg = kind === 'primary' ? th.primary : kind === 'danger' ? th.danger : th.surfaceAlt;
   const fg = kind === 'secondary' ? th.text : th.onPrimary;
   return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}
-      accessibilityState={{ disabled: Boolean(disabled || busy), busy: Boolean(busy) }}
-      disabled={disabled || busy}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        backgroundColor: bg,
-        opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
-        borderRadius: th.radius,
-        borderWidth: kind === 'secondary' ? StyleSheet.hairlineWidth : 0,
-        borderColor: th.border,
-        paddingVertical: th.space(2),
-        paddingHorizontal: th.space(3),
-        minHeight: th.tap,
-        alignItems: 'center',
-        justifyContent: 'center',
-      })}
-    >
-      {busy ? (
-        <ActivityIndicator color={fg} />
-      ) : (
-        <Text style={{ color: fg, fontSize: th.font.body, fontWeight: '600' }}>{label}</Text>
-      )}
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={hint}
+        accessibilityState={{ disabled: Boolean(disabled || busy), busy: Boolean(busy) }}
+        disabled={disabled || busy}
+        onPressIn={() => springTo(0.97)}
+        onPressOut={() => springTo(1)}
+        onPress={() => {
+          haptic.tap();
+          onPress();
+        }}
+        style={{
+          backgroundColor: bg,
+          opacity: disabled ? 0.45 : 1,
+          borderRadius: th.radius,
+          paddingVertical: th.space(2),
+          paddingHorizontal: th.space(4),
+          minHeight: th.tap,
+          flexDirection: 'row',
+          gap: th.space(2),
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {busy ? (
+          <ActivityIndicator color={fg} />
+        ) : (
+          <>
+            {icon ? <Icon name={icon} size={18} color={fg} /> : null}
+            <Text style={{ color: fg, fontSize: th.font.body, fontWeight: '600' }}>{label}</Text>
+          </>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
-export function Field({ label, ...props }: TextInputProps & { label: string }) {
+export function Field({
+  label,
+  icon,
+  hideLabel,
+  ...props
+}: TextInputProps & {
+  label: string;
+  /** A leading icon inside the box, such as search. */
+  icon?: IconName;
+  /** For a box whose purpose is plain from its icon: the label becomes the placeholder (still read out). */
+  hideLabel?: boolean;
+}) {
   const th = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: th.space(1) }}>
-      <Text style={{ color: th.muted, fontSize: th.font.small }}>{label}</Text>
-      <TextInput
-        accessibilityLabel={label}
-        placeholderTextColor={th.muted}
-        {...props}
-        style={[
-          {
-            color: th.text,
-            backgroundColor: th.surface,
-            borderColor: th.border,
-            borderWidth: StyleSheet.hairlineWidth,
-            borderRadius: th.radius,
-            paddingHorizontal: th.space(3),
-            paddingVertical: th.space(2),
-            fontSize: th.font.body,
-            minHeight: th.tap,
-          },
-          props.style,
-        ]}
-      />
+      {hideLabel ? null : <Text style={{ color: th.muted, fontSize: th.font.small }}>{label}</Text>}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: th.space(2),
+          backgroundColor: th.surfaceAlt,
+          borderRadius: th.radius,
+          borderWidth: 1.5,
+          borderColor: focused ? th.primary : 'transparent',
+          paddingHorizontal: th.space(3),
+          minHeight: th.tap,
+        }}
+      >
+        {icon ? <Icon name={icon} size={18} color={th.muted} /> : null}
+        <TextInput
+          accessibilityLabel={label}
+          placeholderTextColor={th.muted}
+          {...(hideLabel && !props.placeholder ? { placeholder: label } : {})}
+          {...props}
+          onFocus={(e) => {
+            setFocused(true);
+            props.onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            props.onBlur?.(e);
+          }}
+          style={[
+            {
+              flex: 1,
+              color: th.text,
+              paddingVertical: th.space(2),
+              fontSize: th.font.body,
+            },
+            props.style,
+          ]}
+        />
+      </View>
     </View>
   );
 }
@@ -180,6 +238,8 @@ export function Row({
   title,
   subtitle,
   right,
+  icon,
+  last,
   onPress,
   testID,
   accessibilityLabel,
@@ -187,6 +247,10 @@ export function Row({
   title: string;
   subtitle?: string;
   right?: ReactNode;
+  /** A leading icon in a tinted circle. */
+  icon?: IconName;
+  /** The last row of a group: no rule under it. */
+  last?: boolean;
   onPress?: () => void;
   testID?: string;
   accessibilityLabel?: string;
@@ -204,12 +268,13 @@ export function Row({
         alignItems: 'center',
         gap: th.space(3),
         paddingVertical: th.space(2),
-        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
         borderColor: th.border,
-        opacity: pressed ? 0.7 : 1,
+        opacity: pressed ? 0.6 : 1,
         minHeight: th.tap,
       })}
     >
+      {icon ? <IconBadge name={icon} /> : null}
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={{ color: th.text, fontSize: th.font.body }} numberOfLines={1}>
           {title}
@@ -217,7 +282,62 @@ export function Row({
         {subtitle ? <Small>{subtitle}</Small> : null}
       </View>
       {right}
+      {onPress && !right ? <Icon name="next" size={18} color={th.muted} /> : null}
     </Pressable>
+  );
+}
+
+/** An icon in a tinted circle: leads a row, or marks a section. */
+export function IconBadge({
+  name,
+  tone = 'primary',
+}: {
+  name: IconName;
+  tone?: 'primary' | 'warning' | 'danger';
+}) {
+  const th = useTheme();
+  const [bg, fg] =
+    tone === 'danger'
+      ? [th.dangerSoft, th.danger]
+      : tone === 'warning'
+        ? [th.warningSoft, th.warning]
+        : [th.primarySoft, th.primary];
+  return (
+    <View
+      importantForAccessibility="no"
+      accessibilityElementsHidden
+      style={{
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: bg,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Icon name={name} size={18} color={fg} />
+    </View>
+  );
+}
+
+/** A quiet heading over a group of rows. */
+export function SectionLabel({ children }: { children: string }) {
+  const th = useTheme();
+  return (
+    <Text
+      accessibilityRole="header"
+      style={{
+        color: th.muted,
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        marginTop: th.space(3),
+        marginBottom: th.space(1),
+      }}
+    >
+      {children}
+    </Text>
   );
 }
 
@@ -231,23 +351,32 @@ export function Banner({
   onPress?: () => void;
 }) {
   const th = useTheme();
-  const color = tone === 'danger' ? th.danger : tone === 'warning' ? th.warning : th.primary;
+  const [bg, fg, icon]: [string, string, IconName] =
+    tone === 'danger'
+      ? [th.dangerSoft, th.danger, 'warning']
+      : tone === 'warning'
+        ? [th.warningSoft, th.warning, 'warning']
+        : [th.primarySoft, th.primary, 'info'];
   return (
     <Pressable
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : 'text'}
       accessibilityLiveRegion="polite"
-      style={{
-        borderLeftWidth: 4,
-        borderColor: color,
-        backgroundColor: th.surface,
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: th.space(2),
+        backgroundColor: bg,
         paddingVertical: th.space(2),
         paddingHorizontal: th.space(3),
-        borderRadius: 6,
-      }}
+        borderRadius: th.radius,
+        opacity: pressed ? 0.7 : 1,
+      })}
     >
-      <Text style={{ color: th.text, fontSize: th.font.small }}>{text}</Text>
+      <Icon name={icon} size={18} color={fg} />
+      <Text style={{ flex: 1, color: th.text, fontSize: th.font.small }}>{text}</Text>
+      {onPress ? <Icon name="next" size={16} color={fg} /> : null}
     </Pressable>
   );
 }
@@ -346,10 +475,10 @@ export function Segmented<T extends string>({
       accessibilityLabel={label}
       style={{
         flexDirection: 'row',
-        backgroundColor: th.border,
+        backgroundColor: th.surfaceAlt,
         borderRadius: th.radius,
-        padding: 2,
-        gap: 2,
+        padding: 3,
+        gap: 3,
       }}
     >
       {options.map((o) => {
@@ -359,14 +488,19 @@ export function Segmented<T extends string>({
             key={o.value}
             accessibilityRole="radio"
             accessibilityState={{ checked: on }}
-            onPress={() => onChange(o.value)}
+            onPress={() => {
+              if (!on) haptic.select();
+              onChange(o.value);
+            }}
             style={{
               flex: 1,
-              minHeight: 40,
+              minHeight: 38,
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: th.radius - 2,
-              backgroundColor: on ? th.surface : 'transparent',
+              borderRadius: th.radius - 3,
+              // Raised above the track: lighter than it in both themes.
+              backgroundColor: on ? (th.dark ? th.border : th.surface) : 'transparent',
+              ...(on ? th.raised : {}),
             }}
           >
             <Text style={{ color: on ? th.text : th.muted, fontWeight: '600', fontSize: th.font.small }}>
@@ -395,12 +529,12 @@ export function Monogram({ name }: { name: string }) {
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: th.border,
+        backgroundColor: th.primarySoft,
         alignItems: 'center',
         justifyContent: 'center',
       }}
     >
-      <Text style={{ color: th.text, fontWeight: '700' }}>{letters || '·'}</Text>
+      <Text style={{ color: th.primary, fontWeight: '700' }}>{letters || '·'}</Text>
     </View>
   );
 }
@@ -424,10 +558,10 @@ export function Checkbox({ checked, mixed }: { checked: boolean; mixed?: boolean
         justifyContent: 'center',
       }}
     >
-      {on ? (
-        <Text style={{ color: th.onPrimary, fontSize: 14, fontWeight: '800', lineHeight: 16 }}>
-          {mixed ? '–' : '✓'}
-        </Text>
+      {mixed ? (
+        <View style={{ width: 10, height: 2, borderRadius: 1, backgroundColor: th.onPrimary }} />
+      ) : checked ? (
+        <Icon name="check" size={15} color={th.onPrimary} strokeWidth={3} />
       ) : null}
     </View>
   );
@@ -455,7 +589,10 @@ export function CheckRow({
   const th = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        haptic.select();
+        onPress();
+      }}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: mixed ? 'mixed' : checked }}
       accessibilityLabel={[title, subtitle].filter(Boolean).join(', ')}
@@ -520,22 +657,11 @@ export function Disclosure({
           <Text style={{ color: th.text, fontSize: th.font.body, fontWeight: '600' }}>{title}</Text>
           <Small color={summary ? th.primary : undefined}>{summary}</Small>
         </View>
-        <Text style={{ color: th.muted, fontSize: 18, transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
-          ›
-        </Text>
+        <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+          <Icon name="next" size={18} color={th.muted} />
+        </View>
       </Pressable>
       {open ? <View style={{ paddingBottom: th.space(2) }}>{children}</View> : null}
-    </View>
-  );
-}
-
-/** The filter icon: three bars narrowing like a funnel. Drawn, so it needs no icon font. */
-export function FilterIcon({ color }: { color: string }) {
-  return (
-    <View importantForAccessibility="no" accessibilityElementsHidden style={{ alignItems: 'center', gap: 3 }}>
-      {[18, 12, 6].map((w) => (
-        <View key={w} style={{ width: w, height: 2, borderRadius: 1, backgroundColor: color }} />
-      ))}
     </View>
   );
 }
@@ -565,16 +691,14 @@ export function FilterChip({
         paddingRight: th.space(2),
         paddingVertical: th.space(1),
         borderRadius: 16,
-        backgroundColor: th.surface,
-        borderWidth: 1,
-        borderColor: th.primary,
+        backgroundColor: th.primarySoft,
         opacity: pressed ? 0.7 : 1,
       })}
     >
-      <Text style={{ color: th.text, fontSize: th.font.small }} numberOfLines={1}>
+      <Text style={{ color: th.text, fontSize: th.font.small, fontWeight: '500' }} numberOfLines={1}>
         {label}
       </Text>
-      <Text style={{ color: th.muted, fontSize: th.font.body }}>×</Text>
+      <Icon name="close" size={14} color={th.primary} strokeWidth={2.5} />
     </Pressable>
   );
 }
@@ -611,13 +735,102 @@ export function ToastHost({ children }: { children: ReactNode }) {
             right: th.space(4),
             bottom: th.space(24),
             backgroundColor: th.text,
-            padding: th.space(3),
-            borderRadius: th.radius,
+            paddingVertical: th.space(3),
+            paddingHorizontal: th.space(4),
+            borderRadius: th.radiusLg,
           }}
         >
           <Text style={{ color: th.bg, fontSize: th.font.body }}>{text}</Text>
         </View>
       ) : null}
     </ToastContext.Provider>
+  );
+}
+
+/**
+ * The moment something is saved: a check that springs in over the screen, holds, and fades, with a success pulse.
+ * Shown while `label` is set; calls `onDone` when it has faded so the caller can clear it.
+ */
+export function SuccessBurst({ label, onDone }: { label: string | null; onDone: () => void }) {
+  const th = useTheme();
+  const scale = useRef(new Animated.Value(0.6)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!label) return;
+    haptic.success();
+    scale.setValue(0.6);
+    opacity.setValue(0);
+    const run = Animated.sequence([
+      Animated.parallel([
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 10 }),
+        Animated.timing(opacity, { toValue: 1, duration: 140, useNativeDriver: true }),
+      ]),
+      Animated.delay(650),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]);
+    run.start(({ finished }) => finished && onDone());
+    return () => run.stop();
+  }, [label]);
+  if (!label) return null;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      accessibilityLiveRegion="assertive"
+      accessibilityRole="alert"
+      accessibilityLabel={label}
+      style={{
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity,
+      }}
+    >
+      <Animated.View
+        style={{
+          alignItems: 'center',
+          gap: th.space(3),
+          paddingVertical: th.space(6),
+          paddingHorizontal: th.space(8),
+          borderRadius: th.radiusLg * 1.5,
+          backgroundColor: th.surface,
+          transform: [{ scale }],
+          ...th.raised,
+          elevation: 8,
+        }}
+      >
+        <View
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: 36,
+            backgroundColor: th.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Icon name="check" size={40} color={th.onPrimary} strokeWidth={3} />
+        </View>
+        <Text
+          style={{
+            color: th.text,
+            fontSize: th.font.body,
+            fontWeight: '600',
+            maxWidth: 220,
+            textAlign: 'center',
+          }}
+        >
+          {label}
+        </Text>
+      </Animated.View>
+    </Animated.View>
   );
 }
