@@ -6,6 +6,7 @@ import {
   classifyUploadError,
   frameVerdict,
   pageName,
+  queuedStatus,
   reviewEdits,
   uncategorizedLines,
 } from '../src/features/receipt-capture';
@@ -64,6 +65,40 @@ describe('upload errors (TXN-09)', () => {
     );
     expect(classifyUploadError(new Error('file missing'))).toBe('retry');
     expect(pageName(3)).toBe('page-03.jpg');
+  });
+
+  // The receipts that sat at "Uploading…": a request that never reached the server, on a phone with a connection,
+  // was treated as offline, so it waited quietly with no error and no backoff.
+  it('counts not reaching the server as a failure when the phone has a connection', () => {
+    const unreachable = new ApiError(0, 'network', 'Network request failed');
+    expect(classifyUploadError(unreachable, false)).toBe('offline');
+    expect(classifyUploadError(unreachable, true)).toBe('retry');
+    expect(classifyUploadError(new ApiError(415, 'x', 'no'), true)).toBe('permanent');
+  });
+
+  it('says what a waiting capture is doing, never "uploading" while it waits to retry', () => {
+    const now = new Date('2026-11-09T12:00:00Z');
+    const later = '2026-11-09T12:05:00Z';
+    const base = { state: 'queued' as const, error: null, nextAttemptAt: null };
+    expect(queuedStatus(base, true, now)).toEqual({ kind: 'uploading' });
+    expect(queuedStatus(base, false, now)).toEqual({ kind: 'offline' });
+    expect(
+      queuedStatus({ ...base, error: 'Network request failed', nextAttemptAt: later }, true, now),
+    ).toEqual({
+      kind: 'retrying',
+      error: 'Network request failed',
+      at: new Date(later),
+    });
+    // Due again: it's being tried now.
+    expect(queuedStatus({ ...base, error: 'x', nextAttemptAt: '2026-11-09T11:59:00Z' }, true, now)).toEqual({
+      kind: 'uploading',
+    });
+    expect(queuedStatus({ state: 'failed', error: 'Upload a JPEG', nextAttemptAt: null }, true, now)).toEqual(
+      {
+        kind: 'failed',
+        error: 'Upload a JPEG',
+      },
+    );
   });
 });
 
