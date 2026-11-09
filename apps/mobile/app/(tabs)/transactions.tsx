@@ -128,7 +128,7 @@ export default function Transactions() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: th.bg }} edges={['top']}>
-      <View style={{ padding: th.space(4), gap: th.space(2) }}>
+      <View style={{ padding: th.pad, gap: th.space(2) }}>
         <Field
           label={t('mobile.txn.search')}
           value={search}
@@ -168,7 +168,7 @@ export default function Transactions() {
           <RefreshControl refreshing={Boolean(state?.syncing)} onRefresh={() => void refresh()} />
         }
         ListEmptyComponent={
-          <View style={{ padding: th.space(4) }}>
+          <View style={{ padding: th.pad }}>
             <Small>{t('mobile.txn.empty')}</Small>
           </View>
         }

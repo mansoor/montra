@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { calendarDate } from '@montra/domain';
 import type { LocalTransaction } from '@montra/sync';
-import { buildCreateRequest, digitsToDisplay, payeeSuggestions, pressKey } from '../src/features/quick-add';
+import {
+  buildCreateRequest,
+  digitsToDisplay,
+  payeeSuggestions,
+  pressKey,
+  previousStep,
+} from '../src/features/quick-add';
 import { effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
 import { monthSummary } from '../src/features/home';
 import {
@@ -103,6 +109,20 @@ describe('quick add (≤ 3 taps)', () => {
         date: '2026-10-31',
       }),
     ).toThrow();
+  });
+});
+
+describe('quick add: back and cancel', () => {
+  it('goes back one step, the way the entry came', () => {
+    expect(previousStep('payee', 'keypad')).toBe('amount');
+    expect(previousStep('confirm', 'keypad')).toBe('payee');
+    expect(previousStep('confirm', 'sentence')).toBe('sentence');
+    expect(previousStep('sentence', 'sentence')).toBe('amount');
+  });
+
+  it('has nothing to go back to from the amount, so Back leaves the screen', () => {
+    expect(previousStep('amount', 'keypad')).toBeNull();
+    expect(previousStep('amount', 'sentence')).toBeNull();
   });
 });
 

@@ -2,10 +2,12 @@
  * Quick add in ≤ 3 taps (TXN-01, 08 §3): type the amount on the keypad → tap Next → tap a suggested payee → tap
  * Save with the suggested category. Works offline (outbox); online it asks the pipeline for a category, offline it
  * reuses the last category for that payee. "Type a sentence" uses natural-language parsing when online (TXN-06).
+ * Every step after the amount has Back and Cancel, Android's back button goes back a step, and leaving the tab
+ * discards an unsaved entry, so + always starts fresh.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'expo-router';
-import { Pressable, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { BackHandler, Pressable, Text, View } from 'react-native';
 import type { CategoryDto, SuggestionDto } from '@montra/schemas';
 import { asCurrencyCode, minorUnits } from '@montra/domain';
 import { fmtMoney, t } from '../../src/i18n';
@@ -16,6 +18,8 @@ import {
   digitsToDisplay,
   payeeSuggestions,
   pressKey,
+  previousStep,
+  type CaptureStep,
   type KeypadKey,
 } from '../../src/features/quick-add';
 import { todayLocal } from '../../src/features/home';
@@ -34,9 +38,38 @@ import {
 } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
-type Step = 'amount' | 'payee' | 'confirm' | 'sentence';
 const KEYS: KeypadKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'back'];
 const LAST_ACCOUNT = 'mobile.lastAccount';
+
+/** A quiet text action for the step bar, still a full-height tap target. */
+function TextButton({
+  label,
+  arrow,
+  onPress,
+  testID,
+}: {
+  label: string;
+  /** A leading ‹, shown but not read out. */
+  arrow?: boolean;
+  onPress: () => void;
+  testID?: string;
+}) {
+  const th = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      testID={testID}
+      hitSlop={8}
+      style={({ pressed }) => ({ minHeight: th.tap, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+    >
+      <Text style={{ color: th.primary, fontSize: th.font.body, fontWeight: '600' }}>
+        {arrow ? `‹ ${label}` : label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function Capture() {
   const th = useTheme();
@@ -51,7 +84,8 @@ export default function Capture() {
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
   const history = useLocal((s) => s.listTransactions({ limit: 500 })) ?? [];
 
-  const [step, setStep] = useState<Step>('amount');
+  const [step, setStep] = useState<CaptureStep>('amount');
+  const [via, setVia] = useState<'keypad' | 'sentence'>('keypad');
   const [digits, setDigits] = useState('');
   const [direction, setDirection] = useState<'expense' | 'income'>('expense');
   const [accountId, setAccountId] = useState<string>('');
@@ -77,19 +111,41 @@ export default function Capture() {
   const suggestions = useMemo(() => payeeSuggestions(history, payee), [history, payee]);
   const byId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setStep('amount');
+    setVia('keypad');
     setDigits('');
     setPayee('');
     setCategory(null);
     setSuggestion(null);
     setSentence('');
     setError(null);
-  };
+    setPicking(false);
+  }, []);
+
+  const back = useCallback(() => {
+    const prev = previousStep(step, via);
+    if (prev) {
+      setError(null);
+      setStep(prev);
+    }
+    return prev !== null;
+  }, [step, via]);
+
+  // Android's back button steps back through the entry before it leaves the screen.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', back);
+      return () => sub.remove();
+    }, [back]),
+  );
+  // Leaving the tab discards the unsaved entry: + always starts a new one.
+  useFocusEffect(useCallback(() => reset, [reset]));
 
   /** Tap 2: payee chosen → look up a category (online: pipeline; offline: last one used locally). */
   const choosePayee = async (name: string, localCategoryId: string | null) => {
     setPayee(name);
+    setVia('keypad');
     setStep('confirm');
     setCategory(localCategoryId ? (byId.get(localCategoryId) ?? null) : null);
     if (!state?.online || !account) return;
@@ -143,6 +199,7 @@ export default function Capture() {
       if (d.accountId && accounts.some((a) => a.id === d.accountId)) setAccountId(d.accountId);
       setPayee(d.payee ?? '');
       setCategory(d.categoryId ? (byId.get(d.categoryId) ?? null) : null);
+      setVia('sentence');
       setStep('confirm');
     } catch (e) {
       setError((e as Error).message);
@@ -169,7 +226,19 @@ export default function Capture() {
           testID="capture-receipt"
         />
       ) : null}
+      {step !== 'amount' ? (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <TextButton label={t('mobile.common.back')} arrow onPress={back} testID="qa-back" />
+          <TextButton label={t('mobile.common.cancel')} onPress={reset} testID="qa-cancel" />
+        </View>
+      ) : null}
       <Title>{t('mobile.capture.title')}</Title>
+      {step === 'payee' ? (
+        <Small>
+          {fmtMoney(direction === 'expense' ? `-${digits || '0'}` : digits || '0', currency)}
+          {account ? ` · ${account.name}` : ''}
+        </Small>
+      ) : null}
       {error ? <Banner tone="danger" text={error} /> : null}
 
       {step === 'sentence' ? (
@@ -191,7 +260,6 @@ export default function Capture() {
             disabled={!sentence.trim() || !state?.online}
             onPress={() => void parseSentence()}
           />
-          <Button kind="secondary" label={t('mobile.capture.keypad')} onPress={() => setStep('amount')} />
         </>
       ) : null}
 
@@ -249,7 +317,7 @@ export default function Capture() {
                 testID={`key-${k}`}
                 style={({ pressed }) => ({
                   width: '31%',
-                  paddingVertical: th.space(4),
+                  paddingVertical: th.space(3),
                   borderRadius: th.radius,
                   alignItems: 'center',
                   backgroundColor: pressed ? th.border : th.surface,
@@ -330,7 +398,6 @@ export default function Capture() {
             testID="qa-category"
           />
           <Button label={t('mobile.capture.confirm')} onPress={() => void save()} testID="qa-save" />
-          <Button kind="secondary" label={t('mobile.common.cancel')} onPress={reset} />
         </Card>
       ) : null}
 
