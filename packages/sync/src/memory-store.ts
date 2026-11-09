@@ -79,6 +79,9 @@ export class MemoryStore implements SyncStore {
     const search = q.search?.trim().toLowerCase();
     const rows = [...this.s.transactions.values()]
       .filter((t) => (q.accountId ? t.accountId === q.accountId : true))
+      .filter((t) => (q.accountIds?.length ? q.accountIds.includes(t.accountId ?? '') : true))
+      .filter((t) => (q.memberIds?.length ? q.memberIds.includes(t.memberId) : true))
+      .filter((t) => (q.from ? t.date >= q.from : true) && (q.to ? t.date <= q.to : true))
       .filter((t) => (q.reviewState ? t.reviewState === q.reviewState : true))
       .filter((t) =>
         search

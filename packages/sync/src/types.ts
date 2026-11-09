@@ -83,6 +83,13 @@ export interface ReferenceRows {
 
 export interface TransactionQuery {
   accountId?: string;
+  /** Any of these accounts. Empty or absent: all accounts. */
+  accountIds?: readonly string[];
+  /** Any of these family members; `null` is the household (no member). Empty or absent: everyone. */
+  memberIds?: readonly (string | null)[];
+  /** Inclusive date range (`YYYY-MM-DD`); either end may be open. */
+  from?: string;
+  to?: string;
   reviewState?: string;
   search?: string;
   limit?: number;

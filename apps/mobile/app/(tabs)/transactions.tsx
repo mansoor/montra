@@ -1,15 +1,29 @@
-/** Transactions (08 §3): local list with search, account filter, keyset paging and swipe actions. Works offline. */
+/**
+ * Transactions (08 §3): local list with search, filters (accounts, family members, dates: FAM-09) in a side panel,
+ * keyset paging and swipe actions. Works offline.
+ */
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { CategoryDto } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
+import { todayLocal } from '../../src/features/home';
+import {
+  activeCount,
+  dateRange,
+  HOUSEHOLD,
+  memberChoices,
+  NO_FILTERS,
+  queryFor,
+  type TxnFilters,
+} from '../../src/features/txn-filters';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
-import { Field, Monogram, Small } from '../../src/ui/components';
+import { Field, FilterChip, FilterIcon, Monogram, Small } from '../../src/ui/components';
+import { dateSummary, memberName, TransactionFilters } from '../../src/ui/TransactionFilters';
 import { useTheme } from '../../src/ui/theme';
 
 const PAGE = 50;
@@ -19,33 +33,62 @@ export default function Transactions() {
   const router = useRouter();
   const { store, engine, version, state, refresh, touch } = useSync();
   const [search, setSearch] = useState('');
-  const [accountId, setAccountId] = useState<string | undefined>();
+  const [filters, setFilters] = useState<TxnFilters>(NO_FILTERS);
+  const [filtering, setFiltering] = useState(false);
   const [rows, setRows] = useState<LocalTransaction[]>([]);
   const [done, setDone] = useState(false);
   const [picking, setPicking] = useState<LocalTransaction | null>(null);
   const accounts = useLocal((s) => s.getReference('accounts')) ?? [];
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
+  const members = useLocal((s) => s.getReference('members')) ?? [];
+  const count = activeCount(filters);
 
   const load = useCallback(
     async (more: boolean) => {
       const last = more ? rows.at(-1) : undefined;
       const page = await store.listTransactions({
-        search: search || undefined,
-        accountId,
+        ...queryFor(filters, search, todayLocal()),
         limit: PAGE,
         ...(last ? { before: { date: last.date, id: last.id } } : {}),
       });
       setRows((r) => (more ? [...r, ...page] : page));
       setDone(page.length < PAGE);
     },
-    [store, search, accountId, rows],
+    [store, search, filters, rows],
   );
 
   // Reload the first page when filters change or the store changes.
   useEffect(() => {
     void load(false);
     // `load` changes with `rows`; the first page only depends on the filters and the store version.
-  }, [search, accountId, version]);
+  }, [search, filters, version]);
+
+  // One chip per active choice under the search box; tapping one removes it.
+  const chips = [
+    ...(dateRange(filters, todayLocal()).from || dateRange(filters, todayLocal()).to
+      ? [
+          {
+            key: 'date',
+            label: dateSummary(filters),
+            remove: () => setFilters({ ...filters, date: 'any', from: null, to: null }),
+          },
+        ]
+      : []),
+    ...accounts
+      .filter((a) => filters.accountIds.includes(a.id))
+      .map((a) => ({
+        key: a.id,
+        label: a.name,
+        remove: () => setFilters({ ...filters, accountIds: filters.accountIds.filter((x) => x !== a.id) }),
+      })),
+    ...memberChoices(members)
+      .filter((m) => filters.memberKeys.includes(m.key))
+      .map((m) => ({
+        key: m.key === HOUSEHOLD ? HOUSEHOLD : `m-${m.key}`,
+        label: memberName(m.name),
+        remove: () => setFilters({ ...filters, memberKeys: filters.memberKeys.filter((x) => x !== m.key) }),
+      })),
+  ];
 
   const remove = (row: LocalTransaction) =>
     Alert.alert(t('mobile.txn.delete_confirm'), row.payee ?? row.description, [
@@ -129,34 +172,72 @@ export default function Transactions() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: th.bg }} edges={['top']}>
       <View style={{ padding: th.pad, gap: th.space(2) }}>
-        <Field
-          label={t('mobile.txn.search')}
-          value={search}
-          onChangeText={setSearch}
-          returnKeyType="search"
-          testID="txn-search"
-        />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: th.space(2) }}
-        >
-          <Chip
-            label={t('mobile.txn.all_accounts')}
-            active={!accountId}
-            onPress={() => setAccountId(undefined)}
-          />
-          {accounts
-            .filter((a) => !a.archived && !a.hidden)
-            .map((a) => (
-              <Chip
-                key={a.id}
-                label={a.name}
-                active={accountId === a.id}
-                onPress={() => setAccountId(a.id)}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: th.space(2) }}>
+          <View style={{ flex: 1 }}>
+            <Field
+              label={t('mobile.txn.search')}
+              value={search}
+              onChangeText={setSearch}
+              returnKeyType="search"
+              testID="txn-search"
+            />
+          </View>
+          <Pressable
+            onPress={() => setFiltering(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.filters.button', { count })}
+            testID="txn-filter"
+            style={({ pressed }) => ({
+              width: th.tap,
+              height: th.tap,
+              borderRadius: th.radius,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: count ? th.primary : th.surface,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: count ? th.primary : th.border,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <FilterIcon color={count ? th.onPrimary : th.text} />
+            {count ? (
+              <View
+                importantForAccessibility="no"
+                accessibilityElementsHidden
+                style={{
+                  position: 'absolute',
+                  top: -6,
+                  right: -6,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  paddingHorizontal: 4,
+                  backgroundColor: th.text,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ color: th.bg, fontSize: 11, fontWeight: '700' }}>{count}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
+        {chips.length ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: th.space(2) }}
+          >
+            {chips.map((c) => (
+              <FilterChip
+                key={c.key}
+                label={c.label}
+                onRemove={c.remove}
+                removeLabel={t('mobile.filters.remove', { name: c.label })}
               />
             ))}
-        </ScrollView>
+          </ScrollView>
+        ) : null}
       </View>
       <FlatList
         data={rows}
@@ -172,6 +253,14 @@ export default function Transactions() {
             <Small>{t('mobile.txn.empty')}</Small>
           </View>
         }
+      />
+      <TransactionFilters
+        visible={filtering}
+        filters={filters}
+        onChange={setFilters}
+        onClose={() => setFiltering(false)}
+        accounts={accounts}
+        members={members}
       />
       <CategoryPicker
         visible={picking !== null}
@@ -193,27 +282,6 @@ function Action({ label, color, onPress }: { label: string; color: string; onPre
       style={{ backgroundColor: color, justifyContent: 'center', paddingHorizontal: 16 }}
     >
       <Text style={{ color: '#fff', fontWeight: '600' }}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  const th = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      style={{
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 16,
-        backgroundColor: active ? th.primary : th.surface,
-        borderWidth: 0.5,
-        borderColor: th.border,
-      }}
-    >
-      <Text style={{ color: active ? th.onPrimary : th.text }}>{label}</Text>
     </Pressable>
   );
 }

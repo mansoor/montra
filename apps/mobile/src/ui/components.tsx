@@ -405,6 +405,180 @@ export function Monogram({ name }: { name: string }) {
   );
 }
 
+/** A checkbox mark. The row around it carries the role and state for screen readers. */
+export function Checkbox({ checked, mixed }: { checked: boolean; mixed?: boolean }) {
+  const th = useTheme();
+  const on = checked || mixed;
+  return (
+    <View
+      importantForAccessibility="no"
+      accessibilityElementsHidden
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: on ? th.primary : th.muted,
+        backgroundColor: on ? th.primary : 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {on ? (
+        <Text style={{ color: th.onPrimary, fontSize: 14, fontWeight: '800', lineHeight: 16 }}>
+          {mixed ? '–' : '✓'}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** A tappable row with a checkbox: one choice in a multi-select list. */
+export function CheckRow({
+  title,
+  subtitle,
+  checked,
+  mixed,
+  onPress,
+  strong,
+  testID,
+}: {
+  title: string;
+  subtitle?: string;
+  checked: boolean;
+  mixed?: boolean;
+  onPress: () => void;
+  /** A group heading that selects everything under it. */
+  strong?: boolean;
+  testID?: string;
+}) {
+  const th = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: mixed ? 'mixed' : checked }}
+      accessibilityLabel={[title, subtitle].filter(Boolean).join(', ')}
+      testID={testID}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: th.space(3),
+        minHeight: th.tap,
+        paddingVertical: th.space(1),
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <Checkbox checked={checked} mixed={mixed} />
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{ color: th.text, fontSize: th.font.body, fontWeight: strong ? '600' : '400' }}
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        {subtitle ? <Small>{subtitle}</Small> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/** A section that opens and closes, with a one-line summary of what's chosen inside it. */
+export function Disclosure({
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+  testID,
+}: {
+  title: string;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  testID?: string;
+}) {
+  const th = useTheme();
+  return (
+    <View style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: th.border }}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${title}, ${summary}`}
+        testID={testID}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          minHeight: th.tap + 8,
+          gap: th.space(2),
+          opacity: pressed ? 0.7 : 1,
+        })}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: th.text, fontSize: th.font.body, fontWeight: '600' }}>{title}</Text>
+          <Small color={summary ? th.primary : undefined}>{summary}</Small>
+        </View>
+        <Text style={{ color: th.muted, fontSize: 18, transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+          ›
+        </Text>
+      </Pressable>
+      {open ? <View style={{ paddingBottom: th.space(2) }}>{children}</View> : null}
+    </View>
+  );
+}
+
+/** The filter icon: three bars narrowing like a funnel. Drawn, so it needs no icon font. */
+export function FilterIcon({ color }: { color: string }) {
+  return (
+    <View importantForAccessibility="no" accessibilityElementsHidden style={{ alignItems: 'center', gap: 3 }}>
+      {[18, 12, 6].map((w) => (
+        <View key={w} style={{ width: w, height: 2, borderRadius: 1, backgroundColor: color }} />
+      ))}
+    </View>
+  );
+}
+
+/** A removable chip for an active filter. */
+export function FilterChip({
+  label,
+  onRemove,
+  removeLabel,
+}: {
+  label: string;
+  onRemove: () => void;
+  removeLabel: string;
+}) {
+  const th = useTheme();
+  return (
+    <Pressable
+      onPress={onRemove}
+      accessibilityRole="button"
+      accessibilityLabel={removeLabel}
+      hitSlop={4}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: th.space(1),
+        paddingLeft: th.space(3),
+        paddingRight: th.space(2),
+        paddingVertical: th.space(1),
+        borderRadius: 16,
+        backgroundColor: th.surface,
+        borderWidth: 1,
+        borderColor: th.primary,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <Text style={{ color: th.text, fontSize: th.font.small }} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text style={{ color: th.muted, fontSize: th.font.body }}>×</Text>
+    </Pressable>
+  );
+}
+
 // ----- Toasts --------------------------------------------------------------------------------------------
 
 interface ToastCtx {
