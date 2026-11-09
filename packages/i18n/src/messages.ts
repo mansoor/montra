@@ -19,7 +19,7 @@ export function createTranslator(
   fallback = 'en',
 ): Translator {
   const chain = [locale, locale.split('-')[0]!, fallback].filter((l, i, a) => a.indexOf(l) === i);
-  const plural = new Intl.PluralRules(locale);
+  const plural = pluralRules(locale);
   const lookup = (key: string) => {
     for (const l of chain) {
       const m = catalogs[l]?.[key];
@@ -38,7 +38,18 @@ export function createTranslator(
   };
 }
 
-function format(message: string, values: Values, plural: Intl.PluralRules, locale: string): string {
+type Plural = Pick<Intl.PluralRules, 'select'>;
+
+/**
+ * Hermes on Android has no Intl.PluralRules, and constructing it there threw before the app's first screen. Without it,
+ * one/other is what English (and German) need; a catalog for a language with more forms needs the real rules.
+ */
+export function pluralRules(locale: string, intl: { PluralRules?: typeof Intl.PluralRules } = Intl): Plural {
+  if (typeof intl.PluralRules === 'function') return new intl.PluralRules(locale);
+  return { select: (n) => (n === 1 ? 'one' : 'other') };
+}
+
+function format(message: string, values: Values, plural: Plural, locale: string): string {
   let out = '';
   let i = 0;
   while (i < message.length) {
@@ -65,7 +76,7 @@ function matchingBrace(s: string, open: number): number {
   throw new SyntaxError(`Unbalanced braces in message: ${s}`);
 }
 
-function renderArgument(body: string, values: Values, plural: Intl.PluralRules, locale: string): string {
+function renderArgument(body: string, values: Values, plural: Plural, locale: string): string {
   const [name = '', kind, ...rest] = splitTopLevel(body);
   const value = values[name.trim()];
   if (kind === undefined) return value === undefined ? `{${name}}` : String(value);
