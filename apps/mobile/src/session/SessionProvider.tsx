@@ -8,6 +8,7 @@ import type { MeDto, WorkspaceDto } from '@montra/schemas';
 import { Platform } from 'react-native';
 import { config } from '../config';
 import { createApi, type Api } from '../api/client';
+import { nativeUpload } from '../api/file-upload';
 import { KratosClient, devToken, type LoginResult } from '../auth/kratos';
 
 const TOKEN_KEY = 'montra.session.v1';
@@ -61,6 +62,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         baseUrl: config.apiUrl,
         token,
         app: { version: config.version, platform: Platform.OS },
+        uploadFile: nativeUpload,
         onUpdateRequired: () => setUpdateRequired(true),
       }),
     [token],

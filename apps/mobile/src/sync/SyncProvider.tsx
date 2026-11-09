@@ -67,6 +67,7 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
   useEffect(() => {
     let cancelled = false;
     let realtime: RealtimeClient | null = null;
+    let connected = false;
     const subs: Array<() => void> = [];
     void (async () => {
       const store = await openDeviceStore(workspaceId);
@@ -94,7 +95,8 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
             ).fileId,
           createReceipt: async (input) => void (await session.api.createReceipt(workspaceId, input)),
         },
-        classify: classifyUploadError,
+        // Whether the phone has a connection decides if "couldn't reach the server" waits or counts as a failure.
+        classify: (err) => classifyUploadError(err, connected),
         removeFile: removePage,
       });
       if (cancelled) return;
@@ -108,7 +110,8 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
       });
 
       const net = await NetInfo.fetch();
-      engine.setOnline(Boolean(net.isConnected));
+      connected = Boolean(net.isConnected);
+      engine.setOnline(connected);
       // Receipts upload alongside every sync: on start, reconnect, foreground and pull-to-refresh.
       const sync = () =>
         void engine
@@ -124,7 +127,8 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
 
       subs.push(
         NetInfo.addEventListener((s) => {
-          engine.setOnline(Boolean(s.isConnected));
+          connected = Boolean(s.isConnected);
+          engine.setOnline(connected);
           if (s.isConnected) sync();
         }),
       );

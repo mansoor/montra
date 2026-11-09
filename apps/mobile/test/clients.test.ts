@@ -16,6 +16,55 @@ const fakeFetch = (respond: (c: Call) => { status: number; body?: unknown }) => 
 };
 
 describe('API client', () => {
+  it('uploads device files natively, and FormData only for other URIs', async () => {
+    const { f, calls } = fakeFetch(() => ({ status: 201, body: { fileId: 'via-fetch' } }));
+    const sent: Array<{ url: string; name: string; headers: Record<string, string> }> = [];
+    let next: 'ok' | 'reject' | 'fail' = 'ok';
+    const api = createApi({
+      baseUrl: 'http://api',
+      token: async () => 'dev:a@b.co',
+      fetch: f,
+      uploadFile: async (url, file, headers) => {
+        sent.push({ url, name: file.name, headers });
+        if (next === 'fail') throw new Error('Socket closed');
+        return next === 'ok'
+          ? { status: 201, body: JSON.stringify({ fileId: 'f1' }) }
+          : {
+              status: 415,
+              body: JSON.stringify({ code: 'receipt.unsupported_type', detail: 'Upload a JPEG' }),
+            };
+      },
+    });
+    const page = { uri: 'file:///data/receipts/r1/page-01.jpg', name: 'page-01.jpg', type: 'image/jpeg' };
+    expect(await api.uploadReceiptFile('w1', page)).toEqual({ fileId: 'f1' });
+    expect(sent[0]).toMatchObject({ url: 'http://api/v1/workspaces/w1/receipts/files', name: 'page-01.jpg' });
+    expect(sent[0]!.headers.authorization).toBe('Bearer dev:a@b.co');
+
+    next = 'reject';
+    await expect(api.uploadPayslipFile('w1', page)).rejects.toMatchObject({
+      status: 415,
+      code: 'receipt.unsupported_type',
+      message: 'Upload a JPEG',
+    });
+    next = 'fail';
+    await expect(api.uploadReceiptFile('w1', page)).rejects.toMatchObject({
+      status: 0,
+      message: 'Socket closed',
+    });
+
+    // Statements keep FormData, which sends their own name, as does a content: URI from another app.
+    expect(await api.upload('w1', { ...page, name: 'statement.csv' })).toEqual({ fileId: 'via-fetch' });
+    expect(await api.uploadReceiptFile('w1', { ...page, uri: 'content://docs/scan.jpg' })).toEqual({
+      fileId: 'via-fetch',
+    });
+    expect(calls.map((c) => c.url)).toEqual([
+      'http://api/v1/workspaces/w1/uploads',
+      'http://api/v1/workspaces/w1/receipts/files',
+    ]);
+    expect(calls[0]!.init.body).toBeInstanceOf(FormData);
+    expect(sent).toHaveLength(3);
+  });
+
   it('sends the bearer token and maps problem responses', async () => {
     const { f, calls } = fakeFetch((c) =>
       c.url.endsWith('/v1/workspaces')
