@@ -12,6 +12,7 @@ import type {
   TransactionQuery,
 } from '@montra/sync';
 import {
+  MEMBER_COLUMN_VERSION,
   MIGRATIONS,
   UPSERT_TXN,
   listQuery,
@@ -22,6 +23,14 @@ import {
 } from './sql';
 
 const TABLES: readonly ReferenceTable[] = ['accounts', 'categories', 'members', 'entities'];
+
+async function fillMemberColumn(db: SqlDriver): Promise<void> {
+  const rows = await db.all<{ id: string; data: string }>('select id, data from txn');
+  for (const r of rows) {
+    const memberId = (JSON.parse(r.data) as { memberId?: string | null }).memberId ?? null;
+    if (memberId) await db.run('update txn set member_id = ? where id = ?', [memberId, r.id]);
+  }
+}
 
 export class SqliteStore implements SyncStore {
   private depth = 0;
@@ -36,8 +45,17 @@ export class SqliteStore implements SyncStore {
     const [row] = await db.all<{ user_version: number }>('pragma user_version');
     const version = row?.user_version ?? 0;
     for (let v = version; v < MIGRATIONS.length; v++) {
-      await db.exec(MIGRATIONS[v]!);
-      await db.exec(`pragma user_version = ${v + 1}`);
+      await db.exec('begin');
+      try {
+        await db.exec(MIGRATIONS[v]!);
+        // Filled here rather than with SQLite's JSON functions, which a device's build might leave out.
+        if (v + 1 === MEMBER_COLUMN_VERSION) await fillMemberColumn(db);
+        await db.exec(`pragma user_version = ${v + 1}`);
+        await db.exec('commit');
+      } catch (e) {
+        await db.exec('rollback');
+        throw e;
+      }
     }
     return new SqliteStore(db, onWipe);
   }

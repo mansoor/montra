@@ -13,6 +13,8 @@ export interface Theme {
   danger: string;
   success: string;
   warning: string;
+  /** Dims the screen behind a panel. */
+  scrim: string;
   space: (n: number) => number;
   /** The smallest tappable height: compact, but no smaller than a finger needs (44 pt, Apple's minimum). */
   tap: number;
@@ -43,6 +45,7 @@ export const light: Theme = {
   danger: '#962d2d',
   success: '#1f6a3f',
   warning: '#8a4b08',
+  scrim: 'rgba(28, 26, 23, 0.45)',
 };
 
 export const dark: Theme = {
@@ -58,6 +61,7 @@ export const dark: Theme = {
   danger: '#f2a0a0',
   success: '#7ccf9b',
   warning: '#f0b46b',
+  scrim: 'rgba(0, 0, 0, 0.55)',
 };
 
 export const useTheme = (): Theme => (useColorScheme() === 'dark' ? dark : light);

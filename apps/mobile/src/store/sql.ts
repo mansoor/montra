@@ -50,7 +50,14 @@ export const MIGRATIONS: readonly string[] = [
     data text not null
   );
   `,
+  // 2: the family member as a column, for the transaction filters. `SqliteStore.open` fills it for existing rows.
+  `
+  alter table txn add column member_id text;
+  `,
 ];
+
+/** The version that added `txn.member_id`, whose existing rows are filled from their JSON when upgrading. */
+export const MEMBER_COLUMN_VERSION = 2;
 
 export interface TxnRow {
   data: string;
@@ -65,12 +72,13 @@ export function txnParams(t: LocalTransaction): SqlParam[] {
     t.reviewState,
     (t.payee ?? '').toLowerCase(),
     t.description.toLowerCase(),
+    t.memberId,
     JSON.stringify(t),
   ];
 }
 
 export const UPSERT_TXN =
-  'insert or replace into txn (id, date, account_id, review_state, search_payee, search_desc, data) values (?, ?, ?, ?, ?, ?, ?)';
+  'insert or replace into txn (id, date, account_id, review_state, search_payee, search_desc, member_id, data) values (?, ?, ?, ?, ?, ?, ?, ?)';
 
 /** SELECT for `listTransactions` with the same filters and order as MemoryStore. */
 export function listQuery(q: TransactionQuery): { sql: string; params: SqlParam[] } {
@@ -79,6 +87,27 @@ export function listQuery(q: TransactionQuery): { sql: string; params: SqlParam[
   if (q.accountId) {
     where.push('account_id = ?');
     params.push(q.accountId);
+  }
+  if (q.accountIds?.length) {
+    where.push(`account_id in (${placeholders(q.accountIds.length)})`);
+    params.push(...q.accountIds);
+  }
+  if (q.memberIds?.length) {
+    const ids = q.memberIds.filter((m): m is string => m !== null);
+    const either = [
+      ...(ids.length ? [`member_id in (${placeholders(ids.length)})`] : []),
+      ...(q.memberIds.includes(null) ? ['member_id is null'] : []),
+    ];
+    where.push(`(${either.join(' or ')})`);
+    params.push(...ids);
+  }
+  if (q.from) {
+    where.push('date >= ?');
+    params.push(q.from);
+  }
+  if (q.to) {
+    where.push('date <= ?');
+    params.push(q.to);
   }
   if (q.reviewState) {
     where.push('review_state = ?');
