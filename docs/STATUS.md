@@ -11,32 +11,32 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 ## 1. Snapshot
 
-| | |
-| --- | --- |
-| **Integration branch** | `develop`: Phases 0–10 merged. Last merge was PR #17 at `4d5e62c` |
-| **Release branch** | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11 |
-| **Tags** | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10 |
-| **Pull requests** | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements** | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md` |
-| **Next** | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready |
+|                        |                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Integration branch** | `develop`: Phases 0–10 merged. Last merge was PR #17 at `4d5e62c`                                                                                                                                                                                                                                                                                   |
+| **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
+| **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
+| **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
+| **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
 ### Test suite at the end of Phase 11 (green locally)
 
-| Suite | Tests |
-| --- | --- |
-| `@montra/api` (integration, real Postgres) | 412, plus 4 perf budgets run alone |
-| `@montra/categorize` | 70 (69, plus the perf budget run alone) |
-| `@montra/web` unit | 123 |
-| `@montra/doc-worker` (pytest, real Tesseract) | 77 |
-| `@montra/domain` | 194 |
-| `@montra/importers` (incl. a 22-file golden corpus, receipt matching) | 72 |
-| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus) | 73 |
-| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals, your data, account types) | 73 |
-| `@montra/db` (ledger triggers, RLS, staff roles, read models, receipts) | 43 |
-| `@montra/sync` (against a fake server; receipt upload queue) | 22 |
-| `@montra/api-client` · `@montra/i18n` | 10 · 5 |
-| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`) | 29 tests in 15 spec files |
-| Mobile bundles | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
+| Suite                                                                                                                                               | Tests                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `@montra/api` (integration, real Postgres)                                                                                                          | 412, plus 4 perf budgets run alone                                  |
+| `@montra/categorize`                                                                                                                                | 70 (69, plus the perf budget run alone)                             |
+| `@montra/web` unit                                                                                                                                  | 123                                                                 |
+| `@montra/doc-worker` (pytest, real Tesseract)                                                                                                       | 77                                                                  |
+| `@montra/domain`                                                                                                                                    | 194                                                                 |
+| `@montra/importers` (incl. a 22-file golden corpus, receipt matching)                                                                               | 72                                                                  |
+| `@montra/ai-gateway` (offline; fake and mocked providers; receipt corpus)                                                                           | 73                                                                  |
+| `@montra/mobile` (pure modules; MemoryStore and SqliteStore contract tests; receipt capture, payslips, business, rentals, your data, account types) | 73                                                                  |
+| `@montra/db` (ledger triggers, RLS, staff roles, read models, receipts)                                                                             | 43                                                                  |
+| `@montra/sync` (against a fake server; receipt upload queue)                                                                                        | 22                                                                  |
+| `@montra/api-client` · `@montra/i18n`                                                                                                               | 10 · 5                                                              |
+| Playwright e2e (API + worker + web, `AI_PROVIDER=fake`)                                                                                             | 29 tests in 15 spec files                                           |
+| Mobile bundles                                                                                                                                      | `expo export` for iOS and Android: about 5.2 MB Hermes bundles each |
 
 ### CI (`.github/workflows/`)
 
@@ -53,20 +53,20 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 ## 2. Phase status
 
-| Phase | Title | State | Notes |
-| --- | --- | --- | --- |
-| 0 | Foundations and walking skeleton | ✅ done | Monorepo, CI, design docs (01–11), ADR-0001…0011, money/date domain |
-| 1 | Core ledger and manual capture | ✅ done | Double-entry ledger, RLS, Kratos adapter, web app, recurring, sharing |
-| 2 | Import pipeline | ✅ done | CSV/XLSX/XLS/PDF import, dedupe/matching, undo, reconciliation, Postgres job queue |
-| 3 | AI gateway and categorization | ✅ done | Gateway, rules, six-step pipeline, review queue, learning, insights, OCR scans |
-| 4 | Mobile foundation and offline sync | ✅ done (device checks pending) | Expo app, encrypted store, outbox sync with field-group LWW |
-| 5 | Receipts and multi-currency | ✅ done (device checks pending) | Receipts end to end, FX rates and foreign-currency accounts, web and mobile capture; see §7 |
-| 6 | Budgeting, money flow and recommendations | ✅ done (device checks pending) | Budgets, goals, flow, recommendations, read models, web restyle, mobile; see §7a |
-| 7 | Family members and payslips | ✅ done (device checks pending) | Payslip capture and posting, deposit matching, reports by member, privacy; see §7b |
-| 8 | Small business | ✅ done (device checks pending) | Invoices, bills, mileage, Schedule C, estimated tax, accountant export; see §7c |
-| 9 | Rental properties | ✅ done (device checks pending) | Leases, rent roll, deposits, mortgages, Schedule E, depreciation, metrics; see §7d |
-| 10 | Reports, search, notifications, data ownership | ✅ done (device checks pending) | Report catalogue, search, ask, notifications, backup and restore, trash, account deletion; see §7e |
-| **11** | **Hardening and launch** | 🟡 **code complete, not launched** | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main` |
+| Phase  | Title                                          | State                              | Notes                                                                                              |
+| ------ | ---------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 0      | Foundations and walking skeleton               | ✅ done                            | Monorepo, CI, design docs (01–11), ADR-0001…0011, money/date domain                                |
+| 1      | Core ledger and manual capture                 | ✅ done                            | Double-entry ledger, RLS, Kratos adapter, web app, recurring, sharing                              |
+| 2      | Import pipeline                                | ✅ done                            | CSV/XLSX/XLS/PDF import, dedupe/matching, undo, reconciliation, Postgres job queue                 |
+| 3      | AI gateway and categorization                  | ✅ done                            | Gateway, rules, six-step pipeline, review queue, learning, insights, OCR scans                     |
+| 4      | Mobile foundation and offline sync             | ✅ done (device checks pending)    | Expo app, encrypted store, outbox sync with field-group LWW                                        |
+| 5      | Receipts and multi-currency                    | ✅ done (device checks pending)    | Receipts end to end, FX rates and foreign-currency accounts, web and mobile capture; see §7        |
+| 6      | Budgeting, money flow and recommendations      | ✅ done (device checks pending)    | Budgets, goals, flow, recommendations, read models, web restyle, mobile; see §7a                   |
+| 7      | Family members and payslips                    | ✅ done (device checks pending)    | Payslip capture and posting, deposit matching, reports by member, privacy; see §7b                 |
+| 8      | Small business                                 | ✅ done (device checks pending)    | Invoices, bills, mileage, Schedule C, estimated tax, accountant export; see §7c                    |
+| 9      | Rental properties                              | ✅ done (device checks pending)    | Leases, rent roll, deposits, mortgages, Schedule E, depreciation, metrics; see §7d                 |
+| 10     | Reports, search, notifications, data ownership | ✅ done (device checks pending)    | Report catalogue, search, ask, notifications, backup and restore, trash, account deletion; see §7e |
+| **11** | **Hardening and launch**                       | 🟡 **code complete, not launched** | Terraform, observability, billing, WCAG, pen test → `v1.0.0` on `main`                             |
 
 Scope, deliverables and exit criteria for each phase are in `docs/design/01-phased-plan.md`.
 
@@ -226,7 +226,7 @@ finished:
    Phase 6.
 8. **Camera library:** the camera spike uses `expo-camera`. Moving to `react-native-vision-camera`
    (frame processors, ML Kit / VisionKit edge detection) is the Phase 5 option, decided by the spike. ADR-0009
-   stays *proposed* until the spike runs on devices.
+   stays _proposed_ until the spike runs on devices.
 9. **Commit speed:** an import commit takes about 11 ms per row, so 5,000 rows take about a minute
    (with a progress bar). Bulk posting would speed it up later.
 10. **Account-only transfer candidates:** transfer detection only pairs existing transactions, so a card
@@ -236,53 +236,53 @@ finished:
 
 ## 5. Issues already solved, and their workarounds (don't undo these)
 
-| Area | Issue | Fix in place |
-| --- | --- | --- |
-| DB | `citext` not found inside `SECURITY DEFINER` functions (restricted `search_path`) | Use qualified names (`public.citext`) and `set search_path = app, pg_temp` |
-| DB | Commit cost 59 ms per row; RLS helper functions dominated | Migration 0009 caches the helpers per transaction (GUCs plus `app.cache_gen`, bumped on membership or grant changes); 0008 runs one balance check per entry; the change log takes one seq per transaction; a ledger `UnitCache` per transaction. Now about 11 ms per row |
-| DB | The audit trail recorded `field_clock` changes | `audit_row` excludes `field_clock` (redefined in 0011) |
-| DB | The batch's `job_id` pointed at the doc job, so a failure in the chained parse job left the batch on "parsing" | `ImportsService.get` reads the latest job for the batch (`payload->>'batchId'`) |
-| Tests | Vitest `globalSetup` ignores the custom export condition `@montra/source` | `vitest.shared.ts` `sourceAliases` maps every workspace package to its TS source. **Add new packages there** |
-| Tests | API test data | `test/global-setup.ts` recreates `montra_test_api` and loads reference data. Tests need Postgres running |
-| Tests | `@montra/categorize` perf budget (5,000 × 100 rules < 2 s) failed on 2-vCPU CI runners under parallel turbo load | Excluded from the default run; `test:perf` runs it alone (best of three) in CI and in `pnpm verify`. The budget is unchanged |
-| Tests | Fake-provider AI auto-categorizes manual entries in e2e, which broke specs that assumed "uncategorized" | Specs set the review threshold to 99% (`setAi(page, { threshold: 99 })`) or pick categories the fake provider wouldn't choose |
-| Lint | `no-restricted-properties` bans `Math.round` (money safety) | Non-money values use `Number(x.toFixed(n))` or `Math.trunc` |
-| Kysely | `onConflict(...).doUpdateSet({ col: eb => eb.ref('excluded.col') })` doesn't type-check on JSON columns | Use `` sql`excluded.col` `` |
-| Importers | `SP *` prefix stripping ate "SP" from SPOTIFY; Amazon/Apple variants | Prefix patterns require the `*`; Amazon and Apple use name synonyms instead of stripping |
-| Importers | Chase's "Details" column was appended to descriptions | A second description column must contain real text (average length ≥ 10, ≥ 60% distinct values) |
-| Importers | PDF statements with ambiguous dates and 2-row balance checks | The statement period disambiguates the date format; the running-balance fit returns NaN below 3 rows |
-| Imports | Re-importing duplicated a manual entry that had been matched earlier | Transactions with a `transaction_source` count as imported candidates |
-| Imports | The AI column mapping replaced the heuristic warnings even when not confident | The AI mapping is adopted only if its confidence × parse rate ≥ `MAPPING_OK` (0.75) |
-| Sync | `hasMore` was wrong after the per-transaction seq change | It's computed with an existence query after the page's last seq; pages never end inside a seq group |
-| Sync | A `duplicate` replay result carries no transaction, which left the local row pending forever | The engine drops `pending` when no other ops remain for that id; the next pull brings the server copy |
-| Web | The editor treated the uncategorized system account as a chosen category, so it never asked for a suggestion | `toEditState` maps `uncategorized_*` postings to an empty category |
-| Web | Fixtures broke whenever DTO fields were added | Update `apps/web/lib/*.test.ts` fixtures in the same change as the DTO |
-| CI | Prettier failures (for example `infra/kratos/kratos.yml`) | `pnpm verify` runs `format:check` first. Run `pnpm format` before pushing |
-| Mobile | `react-native-vision-camera` setup on SDK 58 | Used `expo-camera` for the spike. Swipe review uses `PanResponder`; transaction rows use `ReanimatedSwipeable` |
-| Mobile | Hermes on Android has no `Intl.PluralRules`: the translator threw while the root layout loaded, so the release APK showed only a gray screen (no error screen can render that early) | `pluralRules()` in `@montra/i18n` falls back to one/other when it's missing. Don't call `new Intl.PluralRules` (or `RelativeTimeFormat`, `ListFormat`, `DisplayNames`, `Segmenter`) directly in code the phone loads |
-| Mobile | Metro with pnpm workspaces and the `@montra/source` condition | `apps/mobile/metro.config.js` sets watch folders and resolves workspace packages to their sources |
-| Windows | With `core.autocrlf=true` every file was checked out CRLF: the Postgres init script failed in the container ("required file not found") and `format:check` failed | `.gitattributes` forces LF. In a clone made before it, run `git config core.autocrlf false` and re-check out (or strip CR from tracked files) |
-| Windows | `LocalStorage` rejected every key (`path.normalize` turns `/` into `\`), failing 17 upload tests | Keys are checked with `posix.normalize`; containment with `path.relative`. `test/storage.test.ts` covers it |
-| Windows | `PERF=1 vitest run` (categorize `test:perf`) fails in cmd.exe, pnpm's script shell on Windows | `vitest run --mode perf`; the config selects the perf test by mode. Keep scripts free of `VAR=x` prefixes |
-| Local | Host ports 5432/1025/8025/9000 taken by other stacks | Compose ports read `MONTRA_PG_PORT` etc. (defaults unchanged; put them in the gitignored `infra/.env`). Point `DATABASE_URL`, `DATABASE_ADMIN_URL` (montra_test) and `API_DATABASE_URL`, `API_DATABASE_ADMIN_URL` (montra_test_api) at that port; turbo passes all four to tests |
-| Local | `minio/minio` on Docker Hub is no longer pullable, which aborted `docker compose up` | Compose uses `quay.io/minio/minio` |
-| Tests | `perf-commit.test.ts` (300-row commit < 9 s) took 9.4–11.8 s under full parallel `pnpm verify` here, and about 5.7 s for the commit run alone (with or without the Phase 6 read-model triggers, which cost nothing measurable) | Moved to `@montra/api` `test:perf` (`vitest run --mode perf`), run alone after `turbo test` in CI and `pnpm verify`. The budget is unchanged |
-| Process (cloud) | The cloud sandbox couldn't push tags | Not an issue locally: tag from your machine |
-| Process (cloud) | Container restarts killed Postgres and in-flight workers | Locally, run Postgres in Docker. Commit early and often in long tasks |
+| Area            | Issue                                                                                                                                                                                                                          | Fix in place                                                                                                                                                                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DB              | `citext` not found inside `SECURITY DEFINER` functions (restricted `search_path`)                                                                                                                                              | Use qualified names (`public.citext`) and `set search_path = app, pg_temp`                                                                                                                                                                                                       |
+| DB              | Commit cost 59 ms per row; RLS helper functions dominated                                                                                                                                                                      | Migration 0009 caches the helpers per transaction (GUCs plus `app.cache_gen`, bumped on membership or grant changes); 0008 runs one balance check per entry; the change log takes one seq per transaction; a ledger `UnitCache` per transaction. Now about 11 ms per row         |
+| DB              | The audit trail recorded `field_clock` changes                                                                                                                                                                                 | `audit_row` excludes `field_clock` (redefined in 0011)                                                                                                                                                                                                                           |
+| DB              | The batch's `job_id` pointed at the doc job, so a failure in the chained parse job left the batch on "parsing"                                                                                                                 | `ImportsService.get` reads the latest job for the batch (`payload->>'batchId'`)                                                                                                                                                                                                  |
+| Tests           | Vitest `globalSetup` ignores the custom export condition `@montra/source`                                                                                                                                                      | `vitest.shared.ts` `sourceAliases` maps every workspace package to its TS source. **Add new packages there**                                                                                                                                                                     |
+| Tests           | API test data                                                                                                                                                                                                                  | `test/global-setup.ts` recreates `montra_test_api` and loads reference data. Tests need Postgres running                                                                                                                                                                         |
+| Tests           | `@montra/categorize` perf budget (5,000 × 100 rules < 2 s) failed on 2-vCPU CI runners under parallel turbo load                                                                                                               | Excluded from the default run; `test:perf` runs it alone (best of three) in CI and in `pnpm verify`. The budget is unchanged                                                                                                                                                     |
+| Tests           | Fake-provider AI auto-categorizes manual entries in e2e, which broke specs that assumed "uncategorized"                                                                                                                        | Specs set the review threshold to 99% (`setAi(page, { threshold: 99 })`) or pick categories the fake provider wouldn't choose                                                                                                                                                    |
+| Lint            | `no-restricted-properties` bans `Math.round` (money safety)                                                                                                                                                                    | Non-money values use `Number(x.toFixed(n))` or `Math.trunc`                                                                                                                                                                                                                      |
+| Kysely          | `onConflict(...).doUpdateSet({ col: eb => eb.ref('excluded.col') })` doesn't type-check on JSON columns                                                                                                                        | Use `` sql`excluded.col` ``                                                                                                                                                                                                                                                      |
+| Importers       | `SP *` prefix stripping ate "SP" from SPOTIFY; Amazon/Apple variants                                                                                                                                                           | Prefix patterns require the `*`; Amazon and Apple use name synonyms instead of stripping                                                                                                                                                                                         |
+| Importers       | Chase's "Details" column was appended to descriptions                                                                                                                                                                          | A second description column must contain real text (average length ≥ 10, ≥ 60% distinct values)                                                                                                                                                                                  |
+| Importers       | PDF statements with ambiguous dates and 2-row balance checks                                                                                                                                                                   | The statement period disambiguates the date format; the running-balance fit returns NaN below 3 rows                                                                                                                                                                             |
+| Imports         | Re-importing duplicated a manual entry that had been matched earlier                                                                                                                                                           | Transactions with a `transaction_source` count as imported candidates                                                                                                                                                                                                            |
+| Imports         | The AI column mapping replaced the heuristic warnings even when not confident                                                                                                                                                  | The AI mapping is adopted only if its confidence × parse rate ≥ `MAPPING_OK` (0.75)                                                                                                                                                                                              |
+| Sync            | `hasMore` was wrong after the per-transaction seq change                                                                                                                                                                       | It's computed with an existence query after the page's last seq; pages never end inside a seq group                                                                                                                                                                              |
+| Sync            | A `duplicate` replay result carries no transaction, which left the local row pending forever                                                                                                                                   | The engine drops `pending` when no other ops remain for that id; the next pull brings the server copy                                                                                                                                                                            |
+| Web             | The editor treated the uncategorized system account as a chosen category, so it never asked for a suggestion                                                                                                                   | `toEditState` maps `uncategorized_*` postings to an empty category                                                                                                                                                                                                               |
+| Web             | Fixtures broke whenever DTO fields were added                                                                                                                                                                                  | Update `apps/web/lib/*.test.ts` fixtures in the same change as the DTO                                                                                                                                                                                                           |
+| CI              | Prettier failures (for example `infra/kratos/kratos.yml`)                                                                                                                                                                      | `pnpm verify` runs `format:check` first. Run `pnpm format` before pushing                                                                                                                                                                                                        |
+| Mobile          | `react-native-vision-camera` setup on SDK 58                                                                                                                                                                                   | Used `expo-camera` for the spike. Swipe review uses `PanResponder`; transaction rows use `ReanimatedSwipeable`                                                                                                                                                                   |
+| Mobile          | Hermes on Android has no `Intl.PluralRules`: the translator threw while the root layout loaded, so the release APK showed only a gray screen (no error screen can render that early)                                           | `pluralRules()` in `@montra/i18n` falls back to one/other when it's missing. Don't call `new Intl.PluralRules` (or `RelativeTimeFormat`, `ListFormat`, `DisplayNames`, `Segmenter`) directly in code the phone loads                                                             |
+| Mobile          | Metro with pnpm workspaces and the `@montra/source` condition                                                                                                                                                                  | `apps/mobile/metro.config.js` sets watch folders and resolves workspace packages to their sources                                                                                                                                                                                |
+| Windows         | With `core.autocrlf=true` every file was checked out CRLF: the Postgres init script failed in the container ("required file not found") and `format:check` failed                                                              | `.gitattributes` forces LF. In a clone made before it, run `git config core.autocrlf false` and re-check out (or strip CR from tracked files)                                                                                                                                    |
+| Windows         | `LocalStorage` rejected every key (`path.normalize` turns `/` into `\`), failing 17 upload tests                                                                                                                               | Keys are checked with `posix.normalize`; containment with `path.relative`. `test/storage.test.ts` covers it                                                                                                                                                                      |
+| Windows         | `PERF=1 vitest run` (categorize `test:perf`) fails in cmd.exe, pnpm's script shell on Windows                                                                                                                                  | `vitest run --mode perf`; the config selects the perf test by mode. Keep scripts free of `VAR=x` prefixes                                                                                                                                                                        |
+| Local           | Host ports 5432/1025/8025/9000 taken by other stacks                                                                                                                                                                           | Compose ports read `MONTRA_PG_PORT` etc. (defaults unchanged; put them in the gitignored `infra/.env`). Point `DATABASE_URL`, `DATABASE_ADMIN_URL` (montra_test) and `API_DATABASE_URL`, `API_DATABASE_ADMIN_URL` (montra_test_api) at that port; turbo passes all four to tests |
+| Local           | `minio/minio` on Docker Hub is no longer pullable, which aborted `docker compose up`                                                                                                                                           | Compose uses `quay.io/minio/minio`                                                                                                                                                                                                                                               |
+| Tests           | `perf-commit.test.ts` (300-row commit < 9 s) took 9.4–11.8 s under full parallel `pnpm verify` here, and about 5.7 s for the commit run alone (with or without the Phase 6 read-model triggers, which cost nothing measurable) | Moved to `@montra/api` `test:perf` (`vitest run --mode perf`), run alone after `turbo test` in CI and `pnpm verify`. The budget is unchanged                                                                                                                                     |
+| Process (cloud) | The cloud sandbox couldn't push tags                                                                                                                                                                                           | Not an issue locally: tag from your machine                                                                                                                                                                                                                                      |
+| Process (cloud) | Container restarts killed Postgres and in-flight workers                                                                                                                                                                       | Locally, run Postgres in Docker. Commit early and often in long tasks                                                                                                                                                                                                            |
 
 ---
 
 ## 6. What is and isn't verified
 
-| Verified (automated) | Not yet verified |
-| --- | --- |
-| Ledger invariants, RLS isolation, the DE-10 edit rules | A live Kratos server (sign-up, MFA, recovery emails) |
-| Import corpus (22 layouts), dedupe, undo, reconciliation | S3/MinIO storage |
-| AI pipeline with the fake provider, rules, learning, review, insights | **Real-provider accuracy (≥ 85%) and latency** |
-| Scanned-PDF OCR with real Tesseract | Real scanned statements end to end through both workers *(the parts are tested separately)* |
-| Offline sync: server, engine, and two simulated devices against the real API | **Mobile on devices**: SQLCipher, biometrics, camera, share sheet, push, gestures, Maestro |
-| Mobile iOS/Android bundles build; store contract tests | The camera spike (ADR-0009 go/no-go) |
-| Web e2e: 9 flows (happy path, import, reconcile, mapping, review, rules, AI off, quick add, Phase 1a) | Production infrastructure (Phase 11) |
+| Verified (automated)                                                                                  | Not yet verified                                                                            |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Ledger invariants, RLS isolation, the DE-10 edit rules                                                | A live Kratos server (sign-up, MFA, recovery emails)                                        |
+| Import corpus (22 layouts), dedupe, undo, reconciliation                                              | S3/MinIO storage                                                                            |
+| AI pipeline with the fake provider, rules, learning, review, insights                                 | **Real-provider accuracy (≥ 85%) and latency**                                              |
+| Scanned-PDF OCR with real Tesseract                                                                   | Real scanned statements end to end through both workers _(the parts are tested separately)_ |
+| Offline sync: server, engine, and two simulated devices against the real API                          | **Mobile on devices**: SQLCipher, biometrics, camera, share sheet, push, gestures, Maestro  |
+| Mobile iOS/Android bundles build; store contract tests                                                | The camera spike (ADR-0009 go/no-go)                                                        |
+| Web e2e: 9 flows (happy path, import, reconcile, mapping, review, rules, AI off, quick add, Phase 1a) | Production infrastructure (Phase 11)                                                        |
 
 ---
 
@@ -292,6 +292,7 @@ finished:
 CUR-03..09; TZ-03; UP-09; and the receipt vault that BIZ-12 will use.
 
 **Design references:**
+
 - `04-domain-logic.md` §7 (the receipt pipeline, steps 1–8, including the worked Walmart example) and §1
   (money and FX);
 - `03-data-model.md` (`receipt`, `receipt_line`, `ref.fx_rate`, and the posting `fx_rate` and
@@ -303,6 +304,7 @@ CUR-03..09; TZ-03; UP-09; and the receipt vault that BIZ-12 will use.
 - `08-clients.md` §3 (camera capture).
 
 **Exit criteria:**
+
 1. The requirements' Walmart example (§3.5) produces exactly **Groceries $5.10, Electronics $13.91,
    Clothing $9.70 = $28.71**. Taxable subtotal 21.86, tax 1.75, split 1.03 / 0.72 with
    `allocate(…, 'largest')`. Make it a unit test.
@@ -331,6 +333,7 @@ integration):
    - the FX implied rate and conversion with `fx_rounding`.
 
    Use property tests (fast-check), as `allocate` does.
+
 3. **FX rates service:**
    - an ECB daily and historical loader (free; no key);
    - Open Exchange Rates as an optional second source (`OXR_APP_ID`);
@@ -342,6 +345,7 @@ integration):
    - the carrying-value rules from ADR-0010 (CUR-06/07).
 
    Test with recorded ECB XML fixtures.
+
 4. **AI gateway:**
    - the `extract_receipt` task, with a vision prompt, a schema, a FakeAdapter branch and minimization
      (images only in builtin/BYOK mode);
@@ -350,13 +354,14 @@ integration):
    - a local path: Tesseract OCR in the doc-worker, then a local LLM for structure.
 
    Build a receipt fixture corpus (images plus expected JSON), as was done for the import corpus.
+
 5. **API:**
    - receipt upload (images, multi-shot ordered pages, PDF invoices);
    - an extract job;
    - the receipt inbox;
    - matching on create and after every import, with automatic linking at a score ≥ 0.8;
    - apply: replace the transaction's splits with the receipt groups, which must sum to the
-     *transaction* amount;
+     _transaction_ amount;
    - the review endpoint;
    - item-rule learning from line corrections (RCP-06);
    - Amazon order-history import (RCP-12);
@@ -373,15 +378,17 @@ integration):
    - the inbox and review stack.
 
    Decide `expo-camera` versus `vision-camera` here, using the spike results if you have them.
+
 8. **Integration:** e2e specs for upload, then match, then apply splits, and for a foreign receipt; the
    Walmart and FX exit tests; `status.json`, the changelog and this file; then a PR into `develop`.
 
 **Progress (PR #6 merged; matcher on `claude/phase5-receipt-matching`):**
+
 - ✅ **Step 1, contracts:** migration `0012_receipts_fx.sql` (receipt, receipt_line, trip, `ref.currency`,
   `ref.fx_rate` with `app.upsert_fx_rates`, transaction `trip_id`/`local_time`/`fx_rate_source`,
   `posting.receipt_line_id`, file retention, OCR `tsvector`); Kysely types; `schemas/fx.ts` and
   `schemas/receipts.ts`; `TransactionDto.foreign/tripId/localTime`; currencies in reference data; ADR-0014
-  (*proposed*); DB tests for RLS and constraints.
+  (_proposed_); DB tests for RLS and constraints.
 - 🟡 **Step 2, domain and matching:** `packages/domain/src/receipt.ts` has validation, grouping and allocation, returns,
   fitting to the charged amount (tip tolerance), conversion at the implied rate and the ±3% deviation. Both
   exit criteria are unit tests there. The IMP-11 matcher is `packages/importers/src/receipt-match.ts`
@@ -404,9 +411,10 @@ integration):
     - `fxRate` overrides on create and update, and 422 `fx.no_rate` when there is no rate (CUR-05);
     - the four values plus the fee to `bank_fees` on a home-currency card (CUR-03);
     - transfers between currencies with `amountIn` (CUR-08).
-    
+
     `test/foreign-currency.test.ts` covers them against the real database. Step 3 is done for the
     API. The web and mobile screens (rate field, FX cost display, travel mode) are step 6.
+
   - **Known limitations:** carrying balances count all same-day postings as earlier, and a back-dated
     transaction doesn't revalue later ones (ADR-0010 note). Imports into a foreign-currency account
     need a reference rate for every row's date. Cross-entity splits and transfers stay single-currency.
@@ -439,7 +447,7 @@ integration):
     foreign-currency accounts, "Paid in another currency?" with a fee for CUR-03) and "Add a receipt".
   - The transfer form asks for the amount received across currencies (CUR-08).
   - `e2e/receipts.spec.ts` covers the Walmart receipt through the UI and the CUR-03 entry. The foreign
-    *receipt* match is covered by the API tests only: e2e runs against the dev database, which has no FX
+    _receipt_ match is covered by the API tests only: e2e runs against the dev database, which has no FX
     rates unless `fx:load` has fetched them.
 - ✅ **Step 7, mobile** (`expo-camera`, decided by the product owner; ADR-0009 amendment):
   - Receipt capture: multi-shot, with a blur/glare verdict and retake after each shot, or a photo or
@@ -458,6 +466,7 @@ integration):
   the charge). CHANGELOG `v0.6.0-dev.1`.
 
 **Decisions and inputs:**
+
 - **OXR app id** provided on 2026-11-03 and kept in the local `.env` (never committed). Live ECB and OXR
   loads were verified, and the two sources agree on cross rates.
 - **Receipt images** go to the AI only with the new `allowReceiptImagesToLlm` setting (off by default);
@@ -479,15 +488,15 @@ integration):
 
 Branch `claude/phase6-contracts` (PR #12), with the restyle in `claude/web-shell` (PR #13).
 
-| Step | State | What |
-| --- | --- | --- |
-| 1. Contracts | ✅ | Migration 0015 (budget, budget_period, budget_line, budget_move, goal, expected_income, recommendation; bank_account min payment and low-balance threshold; `posting.restricted_member_id`), Kysely types, DTOs (`budgets.ts`, `flow.ts`, `recommendations.ts`), ADR-0015 |
-| 2. Read models | ✅ | `category_activity_monthly` and `account_balance_daily`, maintained by statement-level posting triggers (transition tables) in the same transaction; restricted rows follow the payslip rule. `packages/db/test/read-models.test.ts` reconciles them with postings through random writes |
-| 3. Domain engine | ✅ | `packages/domain/src/budget/`: periods, carried-in / available / left to assign (money conserved), pace, sinking funds, goal projection, snowball/avalanche, draft/copy, 50/30/20, forecast, REC-01..08 rules. Property tests |
-| 4. API | ✅ | `apps/api/src/planning/`: budgets (periods, assign, move, copy, income override, draft), goals (sinking-fund category, payoff), expected income, dashboard with drill filters, Sankey, forecast, calendar, net worth, recommendations (REC-01..08, `word_summary` AI wording, accept/dismiss, settings), nightly per-workspace run (TZ-04). `apps/api/test/planning.test.ts` |
-| 5. Web | ✅ | On the restyled shell (PR #13). Home is the dashboard (tiles drill to transactions, pace, next 14 days, net position trend, suggestions). A Plan group: Budget (plan, income, moves tabs; setup with history draft; assign, move, copy, rollover, 50/30/20, light mode), Goals (progress, payoff plans), Cash flow (Sankey, 30/60/90 forecast, net worth), Calendar, Suggestions. Settings gains Planning (priorities, high-interest threshold) and per-account planning fields. SVG charts are in `components/charts` (no chart library). `e2e/planning.spec.ts` |
-| 6. Mobile | ✅ (device run pending) | Budget tab (period view, assign, move, copy, pace; creates a monthly zero-based budget), Home planning cards, Goals, Cash flow (flow as a list, forecast, net worth), Calendar agenda, Suggestions. Palette matches the web app. Review moved from a tab to Home and More, as 08 §3 lays out; its count shows on the More tab. Planning data comes from the API and is cached in the encrypted store for offline reading (`useCached`); budget writes need a connection. `apps/mobile/test/planning.test.ts`; both bundles build |
-| 7. Perf and integration | ✅ | `apps/api/test/perf-dashboard.test.ts` seeds 50k transactions (`perf-seed.ts`) and budgets the API work behind Home at 1.5 s (measured 0.69 s). In a browser against a production build: Home visible p95 1.0 s, median 0.81 s; Budget, Goals, Cash flow, Forecast, Calendar and Transactions all p95 under 0.65 s. Single user, on a development machine: k6 load testing stays in P11 |
+| Step                    | State                   | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Contracts            | ✅                      | Migration 0015 (budget, budget_period, budget_line, budget_move, goal, expected_income, recommendation; bank_account min payment and low-balance threshold; `posting.restricted_member_id`), Kysely types, DTOs (`budgets.ts`, `flow.ts`, `recommendations.ts`), ADR-0015                                                                                                                                                                                                                                                                                         |
+| 2. Read models          | ✅                      | `category_activity_monthly` and `account_balance_daily`, maintained by statement-level posting triggers (transition tables) in the same transaction; restricted rows follow the payslip rule. `packages/db/test/read-models.test.ts` reconciles them with postings through random writes                                                                                                                                                                                                                                                                          |
+| 3. Domain engine        | ✅                      | `packages/domain/src/budget/`: periods, carried-in / available / left to assign (money conserved), pace, sinking funds, goal projection, snowball/avalanche, draft/copy, 50/30/20, forecast, REC-01..08 rules. Property tests                                                                                                                                                                                                                                                                                                                                     |
+| 4. API                  | ✅                      | `apps/api/src/planning/`: budgets (periods, assign, move, copy, income override, draft), goals (sinking-fund category, payoff), expected income, dashboard with drill filters, Sankey, forecast, calendar, net worth, recommendations (REC-01..08, `word_summary` AI wording, accept/dismiss, settings), nightly per-workspace run (TZ-04). `apps/api/test/planning.test.ts`                                                                                                                                                                                      |
+| 5. Web                  | ✅                      | On the restyled shell (PR #13). Home is the dashboard (tiles drill to transactions, pace, next 14 days, net position trend, suggestions). A Plan group: Budget (plan, income, moves tabs; setup with history draft; assign, move, copy, rollover, 50/30/20, light mode), Goals (progress, payoff plans), Cash flow (Sankey, 30/60/90 forecast, net worth), Calendar, Suggestions. Settings gains Planning (priorities, high-interest threshold) and per-account planning fields. SVG charts are in `components/charts` (no chart library). `e2e/planning.spec.ts` |
+| 6. Mobile               | ✅ (device run pending) | Budget tab (period view, assign, move, copy, pace; creates a monthly zero-based budget), Home planning cards, Goals, Cash flow (flow as a list, forecast, net worth), Calendar agenda, Suggestions. Palette matches the web app. Review moved from a tab to Home and More, as 08 §3 lays out; its count shows on the More tab. Planning data comes from the API and is cached in the encrypted store for offline reading (`useCached`); budget writes need a connection. `apps/mobile/test/planning.test.ts`; both bundles build                                  |
+| 7. Perf and integration | ✅                      | `apps/api/test/perf-dashboard.test.ts` seeds 50k transactions (`perf-seed.ts`) and budgets the API work behind Home at 1.5 s (measured 0.69 s). In a browser against a production build: Home visible p95 1.0 s, median 0.81 s; Budget, Goals, Cash flow, Forecast, Calendar and Transactions all p95 under 0.65 s. Single user, on a development machine: k6 load testing stays in P11                                                                                                                                                                           |
 
 Pace applies only to variable spending (`PACE_KINDS`: daily, fun) and only once a fifth of the period has
 passed: fixed bills paid on the 1st, or one big shop on day 3, are not overspending.
@@ -518,14 +527,14 @@ Design notes that the API relies on:
 
 Branch `claude/phase7-contracts`. The design is ADR-0016.
 
-| Step | State | What |
-| --- | --- | --- |
-| 1. Contracts | ✅ | Migration 0017 (employer, payslip, payslip_line, `posting.public_line`, `expected_income.employer_id`, posting read rule), DTOs, `packages/domain/src/payslip.ts`, ADR-0016 |
-| 2. AI task | ✅ | `extract_payslip` with masked text (SSNs, account numbers, member pseudonyms); image only with `allowDocumentsToLlm` |
-| 3. API | ✅ | `apps/api/src/payslips/`: employers, capture jobs, confirm and re-post, deposit matching, expected income, reports by member |
-| 4. Web | ✅ | Payslips (capture, employers, side-by-side review), By member, Home filter, member budgets and goals |
-| 5. Mobile | ✅ (device run pending) | More → Payslips: camera or file, check, confirm, choose a deposit. Live reads only, nothing stored |
-| 6. Integration | ✅ | `apps/api/test/payslips.test.ts`, public-line RLS test, `apps/web/e2e/payslips.spec.ts` |
+| Step           | State                   | What                                                                                                                                                                        |
+| -------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Contracts   | ✅                      | Migration 0017 (employer, payslip, payslip_line, `posting.public_line`, `expected_income.employer_id`, posting read rule), DTOs, `packages/domain/src/payslip.ts`, ADR-0016 |
+| 2. AI task     | ✅                      | `extract_payslip` with masked text (SSNs, account numbers, member pseudonyms); image only with `allowDocumentsToLlm`                                                        |
+| 3. API         | ✅                      | `apps/api/src/payslips/`: employers, capture jobs, confirm and re-post, deposit matching, expected income, reports by member                                                |
+| 4. Web         | ✅                      | Payslips (capture, employers, side-by-side review), By member, Home filter, member budgets and goals                                                                        |
+| 5. Mobile      | ✅ (device run pending) | More → Payslips: camera or file, check, confirm, choose a deposit. Live reads only, nothing stored                                                                          |
+| 6. Integration | ✅                      | `apps/api/test/payslips.test.ts`, public-line RLS test, `apps/web/e2e/payslips.spec.ts`                                                                                     |
 
 Rules the code depends on (don't undo these):
 
@@ -553,14 +562,14 @@ Phase 7 leftovers, not blocking:
 
 Branch `claude/phase8-contracts`. The design is ADR-0017.
 
-| Step | State | What |
-| --- | --- | --- |
-| 1. Contracts | ✅ | Migration 0018 (business_profile, business_party, invoice, invoice_line, invoice_payment, bill, mileage_trip, `ref.tax_line`, `ref.mileage_rate`), DTOs, `packages/domain/src/business.ts`, ADR-0017 |
-| 2. AI tasks | ✅ | `map_tax_lines` and `flag_separation`: answers limited to what was offered, and the user decides |
-| 3. API | ✅ | `apps/api/src/business/`: profiles, parties, invoices with PDF and email, bills, mileage, reports, export, nightly matching, flags and notes |
-| 4. Web | ✅ | Business: overview, invoices, bills, customers and vendors, mileage, taxes, missing receipts, settings. Budget revenue target; tax hint on a transaction |
-| 5. Mobile | ✅ (device run pending) | More → Business: profit, what's owed, tax to set aside, and logging a trip |
-| 6. Integration | ✅ | `apps/api/test/business.test.ts`, `business-files.test.ts`, RLS test, `apps/web/e2e/business.spec.ts` |
+| Step           | State                   | What                                                                                                                                                                                                 |
+| -------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Contracts   | ✅                      | Migration 0018 (business_profile, business_party, invoice, invoice_line, invoice_payment, bill, mileage_trip, `ref.tax_line`, `ref.mileage_rate`), DTOs, `packages/domain/src/business.ts`, ADR-0017 |
+| 2. AI tasks    | ✅                      | `map_tax_lines` and `flag_separation`: answers limited to what was offered, and the user decides                                                                                                     |
+| 3. API         | ✅                      | `apps/api/src/business/`: profiles, parties, invoices with PDF and email, bills, mileage, reports, export, nightly matching, flags and notes                                                         |
+| 4. Web         | ✅                      | Business: overview, invoices, bills, customers and vendors, mileage, taxes, missing receipts, settings. Budget revenue target; tax hint on a transaction                                             |
+| 5. Mobile      | ✅ (device run pending) | More → Business: profit, what's owed, tax to set aside, and logging a trip                                                                                                                           |
+| 6. Integration | ✅                      | `apps/api/test/business.test.ts`, `business-files.test.ts`, RLS test, `apps/web/e2e/business.spec.ts`                                                                                                |
 
 Rules the code depends on (don't undo these):
 
@@ -613,14 +622,14 @@ Phase 8 leftovers, not blocking:
 
 Branch `claude/phase9-contracts`. The design is ADR-0018.
 
-| Step | State | What |
-| --- | --- | --- |
-| 1. Contracts | ✅ | Migration 0019 (property, unit, tenant, lease, rent_charge, rent_payment, security_deposit_event, allocation_rule, loan_schedule, loan_payment, depreciation_schedule, rental_reminder, maintenance_log, property_budget), DTOs, `packages/domain/src/rental.ts` |
-| 2. AI task | ✅ | `flag_capital`: payee, rounded amount and category only, and the owner decides |
-| 3. API | ✅ | `apps/api/src/rentals/`: properties and leases, rent, mortgages, operations, reports, nightly jobs. Property and unit tags on splits. Rent and mortgages in the forecast and calendar; property values in net worth |
-| 4. Web | ✅ | Rentals: overview, properties, tenants, leases, rent roll, arrears, mortgages, maintenance, reminders, Schedule E, settings. Property on the transaction editor, split across properties, capital improvement in insights |
-| 5. Mobile | ✅ (device run pending) | More → Rentals: the month's rent, arrears, and logging a payment |
-| 6. Integration | ✅ | `apps/api/test/rentals.test.ts`, RLS test, `apps/web/e2e/rentals.spec.ts` |
+| Step           | State                   | What                                                                                                                                                                                                                                                             |
+| -------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Contracts   | ✅                      | Migration 0019 (property, unit, tenant, lease, rent_charge, rent_payment, security_deposit_event, allocation_rule, loan_schedule, loan_payment, depreciation_schedule, rental_reminder, maintenance_log, property_budget), DTOs, `packages/domain/src/rental.ts` |
+| 2. AI task     | ✅                      | `flag_capital`: payee, rounded amount and category only, and the owner decides                                                                                                                                                                                   |
+| 3. API         | ✅                      | `apps/api/src/rentals/`: properties and leases, rent, mortgages, operations, reports, nightly jobs. Property and unit tags on splits. Rent and mortgages in the forecast and calendar; property values in net worth                                              |
+| 4. Web         | ✅                      | Rentals: overview, properties, tenants, leases, rent roll, arrears, mortgages, maintenance, reminders, Schedule E, settings. Property on the transaction editor, split across properties, capital improvement in insights                                        |
+| 5. Mobile      | ✅ (device run pending) | More → Rentals: the month's rent, arrears, and logging a payment                                                                                                                                                                                                 |
+| 6. Integration | ✅                      | `apps/api/test/rentals.test.ts`, RLS test, `apps/web/e2e/rentals.spec.ts`                                                                                                                                                                                        |
 
 Rules the code depends on (don't undo these):
 
@@ -658,14 +667,14 @@ Phase 9 leftovers, not blocking:
 
 Branch `claude/phase10-contracts`. The design is ADR-0019.
 
-| Step | State | What |
-| --- | --- | --- |
-| 1. Contracts | ✅ | Migration 0020 (saved_report, notification, notification_pref, security_event, export_job, backup_schedule, restore_job, `transaction.search`, quota trigger, purge functions), DTOs, the search parser and notification timing in `@montra/domain` |
-| 2. Reports and questions | ✅ | `apps/api/src/reports/`: one `ReportDto`, PDF, CSV and Excel from it, search, and `answer_question` returning a plan |
-| 3. Notifications | ✅ | `apps/api/src/notifications/`: written nightly, delivered every 5 minutes with quiet hours and the cap, through Expo push and mail |
-| 4. Your data | ✅ | `apps/api/src/data/`: archive from the DB catalog, restore with new ids, tax package, trash, storage, deletion and the hourly retention job |
-| 5. Screens | ✅ | Web: reports, search, ask, inbox and bell, trash, four settings sections. Phone: inbox, channel switches, your data, settings to read |
-| 6. Tests | ✅ | `reports.test.ts`, `notifications.test.ts`, `data-ownership.test.ts`, RLS additions, `e2e/reports-data.spec.ts` |
+| Step                     | State | What                                                                                                                                                                                                                                                |
+| ------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Contracts             | ✅    | Migration 0020 (saved_report, notification, notification_pref, security_event, export_job, backup_schedule, restore_job, `transaction.search`, quota trigger, purge functions), DTOs, the search parser and notification timing in `@montra/domain` |
+| 2. Reports and questions | ✅    | `apps/api/src/reports/`: one `ReportDto`, PDF, CSV and Excel from it, search, and `answer_question` returning a plan                                                                                                                                |
+| 3. Notifications         | ✅    | `apps/api/src/notifications/`: written nightly, delivered every 5 minutes with quiet hours and the cap, through Expo push and mail                                                                                                                  |
+| 4. Your data             | ✅    | `apps/api/src/data/`: archive from the DB catalog, restore with new ids, tax package, trash, storage, deletion and the hourly retention job                                                                                                         |
+| 5. Screens               | ✅    | Web: reports, search, ask, inbox and bell, trash, four settings sections. Phone: inbox, channel switches, your data, settings to read                                                                                                               |
+| 6. Tests                 | ✅    | `reports.test.ts`, `notifications.test.ts`, `data-ownership.test.ts`, RLS additions, `e2e/reports-data.spec.ts`                                                                                                                                     |
 
 Rules this phase depends on:
 
@@ -703,15 +712,15 @@ Phase 10 leftovers, not blocking:
 
 Branch `claude/phase11-contracts`. The design is ADR-0020. **Nothing has been deployed**, and `validate` is as far as the Terraform has been.
 
-| Step | State | What |
-| --- | --- | --- |
-| 1. Contracts | ✅ | Migration 0021, DTOs, entitlements and version checks in `@montra/domain` |
-| 2. API | ✅ | `apps/api/src/ops/`: billing, staff console, support access, notices, metrics, reconciliation |
-| 3. Web | ✅ | Plan and support access in Settings, notices, `/status`, `/help`, `/legal/*`, `/admin`, a tour, error reporting |
-| 4. Mobile | ✅ | Update screen on 426, notices on Home, plan and help links in Settings |
-| 5. Infrastructure | ✅ written | `infra/terraform`, images, `security.yml`, `terraform.yml`, `deploy.yml`, `infra/observability`, `infra/load`, `docs/runbooks` |
-| 6. Audit | ✅ automated only | `e2e/accessibility.spec.ts` |
-| 7. Launch | ❌ | See below |
+| Step              | State             | What                                                                                                                           |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1. Contracts      | ✅                | Migration 0021, DTOs, entitlements and version checks in `@montra/domain`                                                      |
+| 2. API            | ✅                | `apps/api/src/ops/`: billing, staff console, support access, notices, metrics, reconciliation                                  |
+| 3. Web            | ✅                | Plan and support access in Settings, notices, `/status`, `/help`, `/legal/*`, `/admin`, a tour, error reporting                |
+| 4. Mobile         | ✅                | Update screen on 426, notices on Home, plan and help links in Settings                                                         |
+| 5. Infrastructure | ✅ written        | `infra/terraform`, images, `security.yml`, `terraform.yml`, `deploy.yml`, `infra/observability`, `infra/load`, `docs/runbooks` |
+| 6. Audit          | ✅ automated only | `e2e/accessibility.spec.ts`                                                                                                    |
+| 7. Launch         | ❌                | See below                                                                                                                      |
 
 Rules this phase depends on:
 
@@ -771,6 +780,7 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Phone: look and feel**: Lucide icons by meaning (`src/ui/icons.tsx`), tinted fills (`primarySoft`, `dangerSoft`, `warningSoft`, `surfaceAlt` in `src/ui/palette.ts`, with an AA contrast test for every text-on-fill pair), cards with soft depth, filled fields, banners with icons, rows with leading icons, a tab bar with icons and a raised Add button, More grouped into sections, haptics (`src/ui/haptics.ts`: tap, select, success) and a check animation when quick add saves (`SuccessBurst`).
 - **Phone: transaction filters** (FAM-09): a filter button beside search opens a side panel with a date range (presets or custom, with the native date picker), accounts (a whole kind at once) and family members (the household too). The list updates as you choose; active choices show as removable chips. The device store gained `txn.member_id` (local schema version 2, filled from each row's JSON on upgrade) and `accountIds`, `memberIds`, `from` and `to` on `TransactionQuery`.
 - **Phone: a tighter layout, and leaving quick add**: screens, cards, rows, buttons and fields use less padding (`th.pad` 12, tappable items at least `th.tap` 44 pt), with slightly smaller title and amount text. Adding a transaction has Back and Cancel on every step after the amount, Android's back button goes back a step, and leaving the + tab discards an unsaved entry (`previousStep` in `src/features/quick-add.ts`).
 - **Android startup** (#37 and this fix): the app lock's startup checks have a time limit, an app-wide error screen shows what failed, and the translator no longer needs `Intl.PluralRules`, which Hermes on Android lacks. That was the gray screen on the APK from `android-apk/**` builds ([runbook](runbooks/android-apk.md)).

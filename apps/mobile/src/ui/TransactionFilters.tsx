@@ -22,6 +22,8 @@ import {
 import { todayLocal } from '../features/home';
 import { fmtDate, t } from '../i18n';
 import { Button, CheckRow, Disclosure, Small } from './components';
+import { haptic } from './haptics';
+import { Icon } from './icons';
 import { SidePanel } from './SidePanel';
 import { useTheme } from './theme';
 
@@ -215,7 +217,10 @@ function Radio({ label, on, onPress }: { label: string; on: boolean; onPress: ()
   const th = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        if (!on) haptic.select();
+        onPress();
+      }}
       accessibilityRole="radio"
       accessibilityState={{ checked: on }}
       style={({ pressed }) => ({
@@ -287,7 +292,7 @@ function DateBox({
           hitSlop={6}
           style={{ minWidth: th.tap, minHeight: th.tap, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Text style={{ color: th.muted, fontSize: th.font.body }}>×</Text>
+          <Icon name="close" size={16} color={th.muted} />
         </Pressable>
       ) : null}
     </View>

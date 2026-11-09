@@ -1,66 +1,104 @@
-/** More (08 §3): review, planning, accounts and registers, import, sync activity, settings. */
-import { useRouter } from 'expo-router';
+/** More (08 §3): review, planning, accounts and registers, import, sync activity, settings, grouped by what they're for. */
+import { useRouter, type Href } from 'expo-router';
 import { t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
-import { Row, Screen, Small, Title } from '../../src/ui/components';
+import { Card, Row, Screen, SectionLabel, Small, Title } from '../../src/ui/components';
+import type { IconName } from '../../src/ui/icons';
+
+interface Item {
+  title: string;
+  icon: IconName;
+  href: Href;
+  testID: string;
+  subtitle?: string;
+}
 
 export default function More() {
   const router = useRouter();
   const { state } = useSession();
   const { state: sync } = useSync();
+  const queued = sync ? sync.pending + sync.drafts : 0;
+  const sections: Array<{ label: string; items: Item[] }> = [
+    {
+      label: t('mobile.more.section.everyday'),
+      items: [
+        {
+          title: t('mobile.tab.review'),
+          icon: 'review',
+          href: '/review',
+          testID: 'more-review',
+          ...(sync?.reviewCount
+            ? { subtitle: t('mobile.more.review_count', { count: sync.reviewCount }) }
+            : {}),
+        },
+        { title: t('mobile.more.accounts'), icon: 'accounts', href: '/accounts', testID: 'more-accounts' },
+        { title: t('mobile.more.receipts'), icon: 'receipt', href: '/receipts', testID: 'more-receipts' },
+        { title: t('nav.payslips'), icon: 'payslips', href: '/payslips', testID: 'more-payslips' },
+        { title: t('mobile.more.import'), icon: 'import', href: '/import', testID: 'more-import' },
+      ],
+    },
+    {
+      label: t('mobile.more.section.planning'),
+      items: [
+        { title: t('nav.goals'), icon: 'goals', href: '/goals', testID: 'more-goals' },
+        { title: t('nav.cash_flow'), icon: 'cashFlow', href: '/cash-flow', testID: 'more-cash-flow' },
+        { title: t('nav.calendar'), icon: 'calendar', href: '/calendar', testID: 'more-calendar' },
+        {
+          title: t('nav.suggestions'),
+          icon: 'suggestions',
+          href: '/suggestions',
+          testID: 'more-suggestions',
+        },
+      ],
+    },
+    {
+      label: t('mobile.more.section.property'),
+      items: [
+        { title: t('nav.business'), icon: 'business', href: '/business', testID: 'more-business' },
+        { title: t('nav.rentals'), icon: 'rentals', href: '/rentals', testID: 'more-rentals' },
+      ],
+    },
+    {
+      label: t('mobile.more.section.app'),
+      items: [
+        {
+          title: t('notifications.title'),
+          icon: 'notifications',
+          href: '/notifications',
+          testID: 'more-notifications',
+        },
+        {
+          title: t('mobile.more.activity'),
+          icon: 'activity',
+          href: '/activity',
+          testID: 'more-activity',
+          ...(queued > 0 ? { subtitle: t('mobile.activity.queue', { count: queued }) } : {}),
+        },
+        { title: t('settings.tab.data'), icon: 'data', href: '/your-data', testID: 'more-your-data' },
+        { title: t('mobile.more.settings'), icon: 'settings', href: '/settings', testID: 'more-settings' },
+      ],
+    },
+  ];
   return (
     <Screen testID="more">
       <Title>{t('mobile.tab.more')}</Title>
-      <Row
-        title={t('mobile.tab.review')}
-        subtitle={sync?.reviewCount ? t('mobile.more.review_count', { count: sync.reviewCount }) : undefined}
-        onPress={() => router.push('/review')}
-        testID="more-review"
-      />
-      <Row title={t('nav.goals')} onPress={() => router.push('/goals')} testID="more-goals" />
-      <Row title={t('nav.cash_flow')} onPress={() => router.push('/cash-flow')} testID="more-cash-flow" />
-      <Row title={t('nav.calendar')} onPress={() => router.push('/calendar')} testID="more-calendar" />
-      <Row
-        title={t('nav.suggestions')}
-        onPress={() => router.push('/suggestions')}
-        testID="more-suggestions"
-      />
-      <Row
-        title={t('mobile.more.accounts')}
-        onPress={() => router.push('/accounts')}
-        testID="more-accounts"
-      />
-      <Row
-        title={t('mobile.more.receipts')}
-        onPress={() => router.push('/receipts')}
-        testID="more-receipts"
-      />
-      <Row title={t('nav.business')} onPress={() => router.push('/business')} testID="more-business" />
-      <Row
-        title={t('notifications.title')}
-        onPress={() => router.push('/notifications')}
-        testID="more-notifications"
-      />
-      <Row title={t('settings.tab.data')} onPress={() => router.push('/your-data')} testID="more-your-data" />
-      <Row title={t('nav.rentals')} onPress={() => router.push('/rentals')} testID="more-rentals" />
-      <Row title={t('nav.payslips')} onPress={() => router.push('/payslips')} testID="more-payslips" />
-      <Row title={t('mobile.more.import')} onPress={() => router.push('/import')} testID="more-import" />
-      <Row
-        title={t('mobile.more.activity')}
-        subtitle={
-          sync && sync.pending + sync.drafts > 0
-            ? t('mobile.activity.queue', { count: sync.pending + sync.drafts })
-            : undefined
-        }
-        onPress={() => router.push('/activity')}
-        testID="more-activity"
-      />
-      <Row
-        title={t('mobile.more.settings')}
-        onPress={() => router.push('/settings')}
-        testID="more-settings"
-      />
+      {sections.map((s) => (
+        <Card key={s.label} style={{ paddingVertical: 0, gap: 0 }}>
+          <SectionLabel>{s.label}</SectionLabel>
+          {s.items.map((i, n) => (
+            <Row
+              key={i.testID}
+              title={i.title}
+              subtitle={i.subtitle}
+              icon={i.icon}
+              onPress={() => router.push(i.href)}
+              testID={i.testID}
+              last={n === s.items.length - 1}
+            />
+          ))}
+        </Card>
+      ))}
       {state.status === 'signed_in' ? (
         <Small>{t('mobile.more.signed_in_as', { email: state.me.email })}</Small>
       ) : null}

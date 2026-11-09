@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Icon } from './icons';
 import { useTheme } from './theme';
 
 export function SidePanel({
@@ -123,7 +124,7 @@ export function SidePanel({
               hitSlop={8}
               style={{ minWidth: th.tap, minHeight: th.tap, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={{ color: th.muted, fontSize: 24 }}>×</Text>
+              <Icon name="close" size={22} color={th.muted} />
             </Pressable>
           </View>
           <ScrollView

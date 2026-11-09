@@ -1,18 +1,9 @@
 /** Design tokens (08 §1): the web app's palette (app/globals.css), light and dark, AA contrast on surfaces. */
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme, type ViewStyle } from 'react-native';
+import { darkPalette, lightPalette, type Palette } from './palette';
 
-export interface Theme {
+export interface Theme extends Palette {
   dark: boolean;
-  bg: string;
-  surface: string;
-  border: string;
-  text: string;
-  muted: string;
-  primary: string;
-  onPrimary: string;
-  danger: string;
-  success: string;
-  warning: string;
   /** Dims the screen behind a panel. */
   scrim: string;
   space: (n: number) => number;
@@ -20,48 +11,48 @@ export interface Theme {
   tap: number;
   /** Edge padding of a screen. */
   pad: number;
+  /** Controls: buttons, fields, chips. */
   radius: number;
-  font: { body: number; small: number; title: number; amount: number };
+  /** Cards and panels. */
+  radiusLg: number;
+  font: { body: number; small: number; title: number; amount: number; display: number };
+  /** Soft depth for cards in light mode; dark mode separates with a hairline instead, as shadows don't show. */
+  raised: ViewStyle;
 }
 
 const base = {
   space: (n: number) => n * 4,
   tap: 44,
   pad: 12,
-  radius: 10,
-  font: { body: 15, small: 13, title: 20, amount: 34 },
+  radius: 12,
+  radiusLg: 16,
+  font: { body: 15, small: 13, title: 20, amount: 34, display: 28 },
 };
+
+const shadow: ViewStyle = Platform.select({
+  android: { elevation: 2 },
+  default: {
+    shadowColor: '#000',
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+  },
+});
 
 export const light: Theme = {
   ...base,
+  ...lightPalette,
   dark: false,
-  bg: '#faf8f4',
-  surface: '#ffffff',
-  border: '#e6e0d6',
-  text: '#1c1a17',
-  muted: '#5e574e',
-  primary: '#1f5d4c',
-  onPrimary: '#ffffff',
-  danger: '#962d2d',
-  success: '#1f6a3f',
-  warning: '#8a4b08',
   scrim: 'rgba(28, 26, 23, 0.45)',
+  raised: shadow,
 };
 
 export const dark: Theme = {
   ...base,
+  ...darkPalette,
   dark: true,
-  bg: '#1e2633',
-  surface: '#263142',
-  border: '#3a4759',
-  text: '#e8edf4',
-  muted: '#a3afc0',
-  primary: '#6db89e',
-  onPrimary: '#0f2620',
-  danger: '#f2a0a0',
-  success: '#7ccf9b',
-  warning: '#f0b46b',
   scrim: 'rgba(0, 0, 0, 0.55)',
+  raised: { borderWidth: 1, borderColor: '#33405280' },
 };
 
 export const useTheme = (): Theme => (useColorScheme() === 'dark' ? dark : light);

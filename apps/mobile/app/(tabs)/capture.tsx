@@ -33,8 +33,8 @@ import {
   Row,
   Screen,
   Small,
+  SuccessBurst,
   Title,
-  useToast,
 } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
@@ -74,7 +74,6 @@ function TextButton({
 export default function Capture() {
   const th = useTheme();
   const router = useRouter();
-  const toast = useToast();
   const { state: session, api } = useSession();
   const { engine, store, state, touch } = useSync();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
@@ -95,6 +94,8 @@ export default function Capture() {
   const [picking, setPicking] = useState(false);
   const [sentence, setSentence] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Set right after a save: the check animation shows it. */
+  const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -182,7 +183,7 @@ export default function Capture() {
       await engine.createTransaction(req);
       await store.setMeta(LAST_ACCOUNT, accountId);
       touch();
-      toast.show(t('mobile.capture.saved', { payee: payee || fmtMoney(req.amount.amount, currency) }));
+      setSaved(t('mobile.capture.saved', { payee: payee || fmtMoney(req.amount.amount, currency) }));
       reset();
     } catch (e) {
       setError((e as Error).message);
@@ -401,6 +402,7 @@ export default function Capture() {
         </Card>
       ) : null}
 
+      <SuccessBurst label={saved} onDone={() => setSaved(null)} />
       <CategoryPicker
         visible={picking}
         categories={categories}
