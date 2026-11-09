@@ -26,7 +26,10 @@ export default function SignIn() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen testID="sign-in">
         <Title>{t('mobile.signin.title')}</Title>
-        {st.status === 'needs_totp' ? (
+        {st.status === 'loading' ? (
+          // A saved session is still being checked: don't flash the form at someone already signed in.
+          <Body muted>{t('mobile.starting')}</Body>
+        ) : st.status === 'needs_totp' ? (
           <>
             <Body muted>{t('mobile.signin.totp_hint')}</Body>
             {st.error ? <Banner tone="danger" text={st.error} /> : null}
@@ -87,7 +90,7 @@ export default function SignIn() {
             )}
             <Button
               label={t('mobile.signin.submit')}
-              busy={busy || st.status === 'loading'}
+              busy={busy}
               disabled={!email.trim()}
               onPress={() => void run(() => s.signIn(email, password))}
               testID="sign-in-submit"
