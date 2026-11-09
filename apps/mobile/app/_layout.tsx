@@ -1,7 +1,7 @@
 /** Root: providers (session, app lock, toasts, share intent, sync) and the auth gate. */
 import { useEffect } from 'react';
 import { View } from 'react-native';
-import { Stack, useRouter, useSegments, type ErrorBoundaryProps } from 'expo-router';
+import { Stack, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -15,18 +15,10 @@ import { t } from '../src/i18n';
 
 function Gate() {
   const { state, updateRequired } = useSession();
-  const segments = useSegments();
   const router = useRouter();
   const th = useTheme();
   const share = useShareIntentContext();
   const signedIn = state.status === 'signed_in';
-
-  useEffect(() => {
-    if (state.status === 'loading') return;
-    const onSignIn = segments[0] === 'sign-in';
-    if (!signedIn && !onSignIn) router.replace('/sign-in');
-    else if (signedIn && onSignIn) router.replace('/');
-  }, [state.status, signedIn, segments, router]);
 
   // Files shared from another app (or "Open in Montra") go straight to the import flow (PLT-04, IMP-02).
   useEffect(() => {
@@ -61,33 +53,39 @@ function Gate() {
         headerBackTitle: t('mobile.common.back'),
       }}
     >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-      <Stack.Screen name="transaction/[id]" options={{ title: t('mobile.txn.detail') }} />
-      <Stack.Screen name="accounts/index" options={{ title: t('mobile.more.accounts') }} />
-      <Stack.Screen name="accounts/[id]" options={{ title: t('mobile.accounts.register') }} />
-      <Stack.Screen name="import" options={{ title: t('mobile.import.title') }} />
-      <Stack.Screen name="receipt-capture" options={{ title: t('mobile.receipts.capture_title') }} />
-      <Stack.Screen name="receipts/index" options={{ title: t('mobile.receipts.title') }} />
-      <Stack.Screen name="receipts/[id]" options={{ title: t('mobile.receipts.review_title') }} />
-      <Stack.Screen name="business/index" options={{ title: t('nav.business') }} />
-      <Stack.Screen name="business/mileage" options={{ title: t('business.tab_mileage') }} />
-      <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
-      <Stack.Screen name="notification-settings" options={{ title: t('notifications.settings') }} />
-      <Stack.Screen name="your-data" options={{ title: t('settings.tab.data') }} />
-      <Stack.Screen name="rentals/index" options={{ title: t('nav.rentals') }} />
-      <Stack.Screen name="rentals/log" options={{ title: t('rentals.record_payment') }} />
-      <Stack.Screen name="payslips/index" options={{ title: t('nav.payslips') }} />
-      <Stack.Screen name="payslips/capture" options={{ title: t('mobile.payslips.capture_title') }} />
-      <Stack.Screen name="payslips/[id]" options={{ title: t('mobile.payslips.review_title') }} />
-      <Stack.Screen name="review" options={{ title: t('mobile.tab.review') }} />
-      <Stack.Screen name="goals" options={{ title: t('nav.goals') }} />
-      <Stack.Screen name="cash-flow" options={{ title: t('nav.cash_flow') }} />
-      <Stack.Screen name="calendar" options={{ title: t('nav.calendar') }} />
-      <Stack.Screen name="suggestions" options={{ title: t('nav.suggestions') }} />
-      <Stack.Screen name="activity" options={{ title: t('mobile.activity.title') }} />
-      <Stack.Screen name="settings" options={{ title: t('mobile.settings.title') }} />
-      <Stack.Screen name="developer/camera" options={{ title: t('mobile.spike.title') }} />
+      {/* Signed-in screens need the sync engine, which exists only after sign-in. Guarded, the router never draws
+          them signed out (a fresh install started on Home and threw "useSync outside SyncProvider"). */}
+      <Stack.Protected guard={signedIn}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="transaction/[id]" options={{ title: t('mobile.txn.detail') }} />
+        <Stack.Screen name="accounts/index" options={{ title: t('mobile.more.accounts') }} />
+        <Stack.Screen name="accounts/[id]" options={{ title: t('mobile.accounts.register') }} />
+        <Stack.Screen name="import" options={{ title: t('mobile.import.title') }} />
+        <Stack.Screen name="receipt-capture" options={{ title: t('mobile.receipts.capture_title') }} />
+        <Stack.Screen name="receipts/index" options={{ title: t('mobile.receipts.title') }} />
+        <Stack.Screen name="receipts/[id]" options={{ title: t('mobile.receipts.review_title') }} />
+        <Stack.Screen name="business/index" options={{ title: t('nav.business') }} />
+        <Stack.Screen name="business/mileage" options={{ title: t('business.tab_mileage') }} />
+        <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
+        <Stack.Screen name="notification-settings" options={{ title: t('notifications.settings') }} />
+        <Stack.Screen name="your-data" options={{ title: t('settings.tab.data') }} />
+        <Stack.Screen name="rentals/index" options={{ title: t('nav.rentals') }} />
+        <Stack.Screen name="rentals/log" options={{ title: t('rentals.record_payment') }} />
+        <Stack.Screen name="payslips/index" options={{ title: t('nav.payslips') }} />
+        <Stack.Screen name="payslips/capture" options={{ title: t('mobile.payslips.capture_title') }} />
+        <Stack.Screen name="payslips/[id]" options={{ title: t('mobile.payslips.review_title') }} />
+        <Stack.Screen name="review" options={{ title: t('mobile.tab.review') }} />
+        <Stack.Screen name="goals" options={{ title: t('nav.goals') }} />
+        <Stack.Screen name="cash-flow" options={{ title: t('nav.cash_flow') }} />
+        <Stack.Screen name="calendar" options={{ title: t('nav.calendar') }} />
+        <Stack.Screen name="suggestions" options={{ title: t('nav.suggestions') }} />
+        <Stack.Screen name="activity" options={{ title: t('mobile.activity.title') }} />
+        <Stack.Screen name="settings" options={{ title: t('mobile.settings.title') }} />
+        <Stack.Screen name="developer/camera" options={{ title: t('mobile.spike.title') }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!signedIn}>
+        <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+      </Stack.Protected>
     </Stack>
   );
   return signedIn ? <SyncProvider workspaceId={state.workspace.id}>{stack}</SyncProvider> : stack;
