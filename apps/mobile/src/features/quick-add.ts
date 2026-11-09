@@ -5,6 +5,18 @@
 import type { CreateTransactionRequest } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
 
+export type CaptureStep = 'amount' | 'payee' | 'confirm' | 'sentence';
+
+/**
+ * Where Back goes: one step, the way the user came (keypad → payee → confirm, or sentence → confirm). Null on the
+ * amount step, the start: there Back leaves the screen as usual.
+ */
+export function previousStep(step: CaptureStep, via: 'keypad' | 'sentence'): CaptureStep | null {
+  if (step === 'confirm') return via === 'sentence' ? 'sentence' : 'payee';
+  if (step === 'payee' || step === 'sentence') return 'amount';
+  return null;
+}
+
 export type KeypadKey = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '00' | 'back' | 'clear';
 
 const MAX_DIGITS = 12;

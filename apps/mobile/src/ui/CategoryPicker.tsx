@@ -30,7 +30,7 @@ export function CategoryPicker({
   }, [categories, q, kind]);
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
-      <View style={{ flex: 1, backgroundColor: th.bg, padding: th.space(4), gap: th.space(3) }}>
+      <View style={{ flex: 1, backgroundColor: th.bg, padding: th.pad, gap: th.space(2) }}>
         <Field
           label={t('mobile.txn.category')}
           value={q}

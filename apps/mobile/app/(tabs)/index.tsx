@@ -30,7 +30,7 @@ export default function Home() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: th.bg }} edges={['top']}>
       <ScrollView
-        contentContainerStyle={{ padding: th.space(4), gap: th.space(3) }}
+        contentContainerStyle={{ padding: th.pad, gap: th.space(2) }}
         refreshControl={
           <RefreshControl refreshing={Boolean(state?.syncing)} onRefresh={() => void refresh()} />
         }

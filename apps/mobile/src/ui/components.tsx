@@ -27,13 +27,13 @@ export function Screen({
   const th = useTheme();
   const body = scroll ? (
     <ScrollView
-      contentContainerStyle={{ padding: th.space(4), gap: th.space(3) }}
+      contentContainerStyle={{ padding: th.pad, gap: th.space(2) }}
       keyboardShouldPersistTaps="handled"
     >
       {children}
     </ScrollView>
   ) : (
-    <View style={{ flex: 1, padding: th.space(4), gap: th.space(3) }}>{children}</View>
+    <View style={{ flex: 1, padding: th.pad, gap: th.space(2) }}>{children}</View>
   );
   return (
     <SafeAreaView
@@ -86,7 +86,7 @@ export function Card({
           borderRadius: th.radius,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: th.border,
-          padding: th.space(4),
+          padding: th.space(3),
           gap: th.space(2),
         },
         style,
@@ -132,9 +132,9 @@ export function Button({
         borderRadius: th.radius,
         borderWidth: kind === 'secondary' ? StyleSheet.hairlineWidth : 0,
         borderColor: th.border,
-        paddingVertical: th.space(3),
-        paddingHorizontal: th.space(4),
-        minHeight: 48,
+        paddingVertical: th.space(2),
+        paddingHorizontal: th.space(3),
+        minHeight: th.tap,
         alignItems: 'center',
         justifyContent: 'center',
       })}
@@ -165,9 +165,9 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
             borderWidth: StyleSheet.hairlineWidth,
             borderRadius: th.radius,
             paddingHorizontal: th.space(3),
-            paddingVertical: th.space(3),
+            paddingVertical: th.space(2),
             fontSize: th.font.body,
-            minHeight: 48,
+            minHeight: th.tap,
           },
           props.style,
         ]}
@@ -203,11 +203,11 @@ export function Row({
         flexDirection: 'row',
         alignItems: 'center',
         gap: th.space(3),
-        paddingVertical: th.space(3),
+        paddingVertical: th.space(2),
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderColor: th.border,
         opacity: pressed ? 0.7 : 1,
-        minHeight: 48,
+        minHeight: th.tap,
       })}
     >
       <View style={{ flex: 1, gap: 2 }}>
@@ -242,7 +242,8 @@ export function Banner({
         borderLeftWidth: 4,
         borderColor: color,
         backgroundColor: th.surface,
-        padding: th.space(3),
+        paddingVertical: th.space(2),
+        paddingHorizontal: th.space(3),
         borderRadius: 6,
       }}
     >

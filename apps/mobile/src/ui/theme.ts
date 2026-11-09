@@ -14,14 +14,20 @@ export interface Theme {
   success: string;
   warning: string;
   space: (n: number) => number;
+  /** The smallest tappable height: compact, but no smaller than a finger needs (44 pt, Apple's minimum). */
+  tap: number;
+  /** Edge padding of a screen. */
+  pad: number;
   radius: number;
   font: { body: number; small: number; title: number; amount: number };
 }
 
 const base = {
   space: (n: number) => n * 4,
-  radius: 12,
-  font: { body: 16, small: 13, title: 22, amount: 40 },
+  tap: 44,
+  pad: 12,
+  radius: 10,
+  font: { body: 15, small: 13, title: 20, amount: 34 },
 };
 
 export const light: Theme = {
