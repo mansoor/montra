@@ -123,3 +123,48 @@ describe('Explore spending (FLOW-01)', () => {
     expect((await c.get(url('/spending/explore?months=5'))).status).toBe(400);
   });
 });
+
+describe('Explore spending: make this my budget (FLOW-01, BUD-01)', () => {
+  it('creates the budget when there is none, then updates the line and says what it replaced', async () => {
+    const before = (await c.get(url(`/spending/explore?categoryIds=${cat('Groceries')}`))).body;
+    expect(before.categories[0].assigned).toBeNull();
+
+    const first = await c.post(url('/budgets/set-category'), {
+      categoryId: cat('Groceries'),
+      assigned: '24000',
+    });
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({
+      categoryId: cat('Groceries'),
+      previous: null,
+      assigned: '24000',
+      created: before.budget === null,
+    });
+    expect(first.body.period.start <= today && today <= first.body.period.end).toBe(true);
+
+    const second = (
+      await c.post(url('/budgets/set-category'), { categoryId: cat('Groceries'), assigned: '21000' })
+    ).body;
+    expect(second).toMatchObject({
+      budgetId: first.body.budgetId,
+      previous: '24000',
+      assigned: '21000',
+      created: false,
+    });
+
+    const after = (await c.get(url(`/spending/explore?categoryIds=${cat('Groceries')}`))).body;
+    expect(after.budget).toEqual({ budgetId: first.body.budgetId, period: first.body.period });
+    expect(after.categories[0].assigned).toBe('21000');
+    const period = (await c.get(url(`/budgets/${first.body.budgetId}/periods/${first.body.period.start}`)))
+      .body;
+    const line = period.groups
+      .flatMap((g: any) => g.lines)
+      .find((l: any) => l.categoryId === cat('Groceries'));
+    expect(line.assigned).toBe('21000');
+  });
+
+  it('refuses a negative amount', async () => {
+    const r = await c.post(url('/budgets/set-category'), { categoryId: cat('Groceries'), assigned: '-1' });
+    expect(r.status).toBe(400);
+  });
+});

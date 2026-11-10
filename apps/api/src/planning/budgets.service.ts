@@ -40,7 +40,9 @@ import type {
   MoveRequest,
   UpdateBudgetPeriodRequest,
   UpdateBudgetRequest,
+  SetCategoryBudgetDto,
 } from '@montra/schemas';
+import { CreateBudgetRequest as CreateBudget, type SetCategoryBudgetRequest } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { AiService } from '../ai/ai.service.js';
@@ -174,6 +176,50 @@ export class BudgetsService {
       if (!row) throw conflict();
       return this.toDto(trx, ctx, row);
     });
+  }
+
+  /**
+   * Sets one category's budget for the current period (Explore spending's "Make this my budget"): updates the
+   * entity's (or member's) budget, or creates one when there is none. Returns what it replaced.
+   */
+  async setCategory(ctx: Ctx, req: SetCategoryBudgetRequest): Promise<SetCategoryBudgetDto> {
+    const entityId =
+      req.entityId ??
+      (await this.db.run(ctx, async (trx) => {
+        const e = await trx
+          .selectFrom('app.entity')
+          .select('id')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('archived_at', 'is', null)
+          .orderBy(sql`case when type = 'personal' then 0 else 1 end`)
+          .orderBy('created_at')
+          .executeTakeFirst();
+        if (!e) throw notFound('Entity');
+        return e.id;
+      }));
+    let budget = (await this.list(ctx, entityId)).find(
+      (b) => !b.archived && b.entityId === entityId && b.memberId === req.memberId,
+    );
+    const created = !budget;
+    if (!budget)
+      budget = await this.create(
+        ctx,
+        CreateBudget.parse({ entityId, memberId: req.memberId, name: 'Household' }),
+      );
+    const before = await this.period(ctx, budget.id);
+    const line = before.groups.flatMap((g) => g.lines).find((l) => l.categoryId === req.categoryId);
+    const after = await this.assign(ctx, budget.id, before.start, req.categoryId, {
+      assigned: req.assigned,
+      version: budget.version,
+    });
+    return {
+      budgetId: budget.id,
+      period: { start: after.start, end: after.end },
+      categoryId: req.categoryId,
+      previous: line && BigInt(line.assigned) !== 0n ? line.assigned : null,
+      assigned: req.assigned,
+      created,
+    };
   }
 
   // ----- Periods ---------------------------------------------------------------------------------------

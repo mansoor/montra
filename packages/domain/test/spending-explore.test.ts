@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categoryStats, whatIf } from '../src/spending-explore.js';
+import { categoryStats, whatIf, whatIfTarget } from '../src/spending-explore.js';
 
 const b = (...xs: number[]) => xs.map(BigInt);
 
@@ -28,6 +28,16 @@ describe('Explore spending: a category’s habits (FLOW-01)', () => {
     expect(s.changePercent).toBeNull();
     expect(s.average).toBe(6000n);
     expect(categoryStats(b(0, 0), [0, 0], b(0, 0))).toMatchObject({ highest: null, typical: null, share: 0 });
+  });
+});
+
+describe('Explore spending: the budget a what-if aims at', () => {
+  it('is the average less the cut, or the cap itself', () => {
+    const monthly = b(14000, 15000, 16000, 2000); // average 15000 over full months
+    expect(whatIfTarget(monthly, { categoryId: 'x', cutPercent: 20 })).toBe(12000n);
+    expect(whatIfTarget(monthly, { categoryId: 'x', cutPercent: 0 })).toBe(15000n);
+    expect(whatIfTarget(monthly, { categoryId: 'x', capMinor: 10000n })).toBe(10000n);
+    expect(whatIfTarget(monthly, { categoryId: 'x', capMinor: -5n })).toBe(0n);
   });
 });
 

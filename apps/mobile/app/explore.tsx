@@ -3,14 +3,14 @@
  * in a chart and a table, what each says, and what-ifs worked out on the phone (nothing is saved).
  */
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
-import { categoryStats, parseMoney, whatIf, type WhatIfChange } from '@montra/domain';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { categoryStats, parseMoney, whatIf, whatIfTarget, type WhatIfChange } from '@montra/domain';
 import { CHART_MONTHS, EXPLORE_MAX_CATEGORIES } from '@montra/schemas';
 import { useCached } from '../src/features/use-cached';
 import { currentLocale, fmtMoney, t } from '../src/i18n';
 import { useSession } from '../src/session/SessionProvider';
 import { MiniLineChart } from '../src/ui/charts';
-import { Body, Card, Field, Row, Screen, Segmented, Small } from '../src/ui/components';
+import { Body, Button, Card, Field, Row, Screen, Segmented, Small, useToast } from '../src/ui/components';
 import { haptic } from '../src/ui/haptics';
 import { Icon } from '../src/ui/icons';
 import { SidePanel } from '../src/ui/SidePanel';
@@ -36,7 +36,10 @@ export default function Explore() {
   const [adding, setAdding] = useState(false);
   const [plans, setPlans] = useState<Record<string, Plan>>({});
   const key = `explore-${months}-${(picked ?? []).join(',')}`;
-  const d = useCached(ws, key, () => api.spendingExplore(ws, months, picked ?? []), Boolean(ws)).data;
+  const explore = useCached(ws, key, () => api.spendingExplore(ws, months, picked ?? []), Boolean(ws));
+  const d = explore.data;
+  const toast = useToast();
+  const [saving, setSaving] = useState<string | null>(null);
   const goals = useCached(ws, 'goals', () => api.goals(ws), Boolean(ws)).data ?? [];
   const monthName = useMemo(() => {
     try {
@@ -73,6 +76,52 @@ export default function Explore() {
       .map((g) => ({ id: g.id, name: g.name, remaining: BigInt(g.target!) - BigInt(g.progress.saved) })),
   });
   const unpicked = d.choices.filter((c) => !ids.includes(c.categoryId));
+  // "Make this my budget": this period's budget for the category becomes the what-if's monthly amount, after a
+  // confirmation that names the month and what it replaces.
+  const budgetMonth = label(d.budget?.period.start ?? d.periods[d.periods.length - 1]!.start);
+  const makeBudget = (c: (typeof d.categories)[number], target: bigint) =>
+    Alert.alert(
+      t('explore.make_budget'),
+      `${t('explore.make_budget_confirm', { name: c.name, month: budgetMonth, amount: fmtMoney(target, ccy) })} ${
+        c.assigned === null
+          ? t('explore.make_budget_none')
+          : t('explore.make_budget_was', { amount: fmtMoney(c.assigned, ccy) })
+      }`,
+      [
+        { text: t('mobile.common.cancel'), style: 'cancel' },
+        {
+          text: t('explore.make_budget_yes'),
+          onPress: () => {
+            setSaving(c.categoryId);
+            api
+              .setCategoryBudget(ws, {
+                entityId: d.entityId,
+                memberId: d.memberId,
+                categoryId: c.categoryId,
+                assigned: String(target),
+              })
+              .then(
+                (r) => {
+                  haptic.success();
+                  const args = {
+                    name: c.name,
+                    month: label(r.period.start),
+                    amount: fmtMoney(r.assigned, ccy),
+                  };
+                  toast.show(
+                    r.previous === null
+                      ? t('explore.make_budget_done_new', args)
+                      : t('explore.make_budget_done', { ...args, previous: fmtMoney(r.previous, ccy) }),
+                  );
+                  void explore.reload();
+                },
+                () => Alert.alert(t('explore.make_budget'), t('explore.make_budget_failed')),
+              )
+              .finally(() => setSaving(null));
+          },
+        },
+      ],
+    );
   const chip = (active: boolean) => ({
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -245,6 +294,8 @@ export default function Explore() {
             {d.categories.map((c) => {
               const p = plans[c.categoryId] ?? { kind: 'none' };
               const saved = result.perCategory.find((x) => x.categoryId === c.categoryId)?.monthly;
+              const change = changes.find((x) => x.categoryId === c.categoryId);
+              const target = change ? whatIfTarget(c.monthly.map(big), change) : null;
               const set = (next: Plan) => {
                 haptic.select();
                 setPlans((all) => ({ ...all, [c.categoryId]: next }));
@@ -260,6 +311,11 @@ export default function Explore() {
                       </Text>
                     ) : null}
                   </Text>
+                  <Small>
+                    {c.assigned === null
+                      ? t('explore.no_budget')
+                      : t('explore.budget_now', { amount: fmtMoney(c.assigned, ccy) })}
+                  </Small>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                     <View style={{ flexDirection: 'row', gap: th.space(2) }}>
                       {[
@@ -298,6 +354,15 @@ export default function Explore() {
                       onChangeText={(amount) =>
                         setPlans((all) => ({ ...all, [c.categoryId]: { kind: 'cap', amount } }))
                       }
+                    />
+                  ) : null}
+                  {target !== null ? (
+                    <Button
+                      kind="secondary"
+                      label={t('explore.make_budget')}
+                      busy={saving === c.categoryId}
+                      disabled={saving !== null || explore.stale}
+                      onPress={() => makeBudget(c, target)}
                     />
                   ) : null}
                 </View>
