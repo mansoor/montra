@@ -265,8 +265,14 @@ export const SpendingExploreDto = z.object({
       topPlaces: z.array(z.object({ name: z.string(), amount: MinorDto, count: z.number().int() })),
       /** All of this category's transactions in the period. */
       drill: DrillDto,
+      /** Its budget this period, or null when it has none (or there's no budget). */
+      assigned: MinorDto.nullable(),
     }),
   ),
+  /** The budget the picked categories belong to this period (entity and member), or null when there is none. */
+  budget: z
+    .object({ budgetId: Id, period: z.object({ start: CalendarDateDto, end: CalendarDateDto }) })
+    .nullable(),
   /** Every spending category with spending in the period, biggest first: the ones to pick from. */
   choices: z.array(
     z.object({ categoryId: Id, name: z.string(), group: z.string().nullable(), total: MinorDto }),

@@ -28,6 +28,7 @@ import {
   MoveRequest,
   PlanningSettingsDto,
   RecommendationStatus,
+  SetCategoryBudgetRequest,
   UpdateBudgetPeriodRequest,
   UpdateBudgetRequest,
   UpdateExpectedIncomeRequest,
@@ -66,6 +67,13 @@ export class PlanningController {
   @Get('budgets')
   async listBudgets(@Ctx() ctx: RequestContext, @Query() q: unknown) {
     return { data: await this.budgets.list(dbCtx(ctx), parse(EntityQuery, q).entityId) };
+  }
+
+  /** Explore spending's "Make this my budget": one category, this period, budget created when there is none. */
+  @Post('budgets/set-category')
+  @HttpCode(200)
+  setCategory(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.budgets.setCategory(dbCtx(ctx), parse(SetCategoryBudgetRequest, body));
   }
 
   @Post('budgets')

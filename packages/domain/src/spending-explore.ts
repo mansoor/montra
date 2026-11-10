@@ -78,6 +78,18 @@ export interface WhatIfResult {
   goals: Array<{ id: string; name: string; monthsBefore: number | null; monthsAfter: number | null }>;
 }
 
+/**
+ * The monthly amount a change aims at, for "Make this my budget": the average less the cut, or the cap itself.
+ */
+export function whatIfTarget(monthly: readonly bigint[], change: WhatIfChange): bigint {
+  const average = avg(full(monthly));
+  if ('cutPercent' in change) {
+    const p = Math.max(0, Math.min(100, Math.trunc(change.cutPercent)));
+    return average - divRound(average * BigInt(p), 100n);
+  }
+  return change.capMinor < 0n ? 0n : change.capMinor;
+}
+
 const months = (remaining: bigint, perMonth: bigint): number | null =>
   remaining <= 0n ? 0 : perMonth > 0n ? Number((remaining + perMonth - 1n) / perMonth) : null;
 

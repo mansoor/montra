@@ -189,6 +189,30 @@ export const AssignRequest = z.object({
 });
 export type AssignRequest = z.output<typeof AssignRequest>;
 
+/**
+ * POST /budgets/set-category — sets one category's budget for the current period, from Explore spending's what-if:
+ * the budget of the entity (and member) is updated, or created when there is none. No version: it's one deliberate
+ * action, confirmed by the user, and the result says what it replaced.
+ */
+export const SetCategoryBudgetRequest = z.object({
+  entityId: Id.optional(),
+  memberId: Id.nullable().default(null),
+  categoryId: Id,
+  assigned: NonNegativeMinor,
+});
+export type SetCategoryBudgetRequest = z.output<typeof SetCategoryBudgetRequest>;
+export const SetCategoryBudgetDto = z.object({
+  budgetId: Id,
+  period: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+  categoryId: Id,
+  /** What the category had this period before; null when it had nothing. */
+  previous: MinorDto.nullable(),
+  assigned: MinorDto,
+  /** A budget was created for this. */
+  created: z.boolean(),
+});
+export type SetCategoryBudgetDto = z.infer<typeof SetCategoryBudgetDto>;
+
 /** POST /budgets/{id}/periods/{start}/moves — null = "left to assign" (BUD-10). */
 export const MoveRequest = z
   .object({

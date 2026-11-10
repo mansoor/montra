@@ -1415,6 +1415,17 @@ export class FlowService {
         : { rows: [] };
       const memberDrill = memberId ? { memberId } : {};
       const byId = new Map(cats.map((c) => [c.id, c]));
+      // This period's budget, so "Make this my budget" can say what it replaces.
+      const budgetRow = await trx
+        .selectFrom('app.budget')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('entity_id', '=', entityId)
+        .where('archived_at', 'is', null)
+        .where((eb) => (memberId ? eb('member_id', '=', memberId) : eb('member_id', 'is', null)))
+        .executeTakeFirst();
+      const computed = budgetRow ? await this.budgets.compute(trx, ctx, budgetRow.id) : null;
+      const lines = computed ? computed.results[computed.results.length - 1]!.lines : null;
       const categories = picked.map((id) => {
         const c = byId.get(id)!;
         const mine = rows.filter((r) => r.cat === id);
@@ -1438,6 +1449,7 @@ export class FlowService {
             .slice(0, 3)
             .map(([name, v]) => ({ name, amount: s(v.amount), count: v.count })),
           drill: { entityId, ...memberDrill, categoryIds: [id], from: first, to: last },
+          assigned: lines?.get(id) && lines.get(id)!.assigned !== 0n ? s(lines.get(id)!.assigned) : null,
         };
       });
 
@@ -1450,6 +1462,10 @@ export class FlowService {
         spending: spending.map(s),
         income: income.map(s),
         categories,
+        budget:
+          budgetRow && computed
+            ? { budgetId: budgetRow.id, period: { start: computed.period.start, end: computed.period.end } }
+            : null,
         choices: totals.map(({ c, total }) => ({
           categoryId: c.id,
           name: c.name,
