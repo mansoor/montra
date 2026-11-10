@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { categoryStats, parseMoney, whatIf, type WhatIfChange } from '@montra/domain';
+import { categoryStats, parseMoney, whatIf, whatIfTarget, type WhatIfChange } from '@montra/domain';
 import { CHART_MONTHS, EXPLORE_MAX_CATEGORIES, type SpendingExploreDto } from '@montra/schemas';
+import { browserApi } from '@/lib/browser-api';
 import { drillHref } from '@/lib/planning';
 import { LineChart } from '@/components/charts/line-chart';
 import { useI18n } from '../i18n';
@@ -18,16 +19,20 @@ const RANGES: Record<(typeof CHART_MONTHS)[number], { label: string }> = {
 const CUTS = [10, 20, 30, 50];
 
 type Plan = { kind: 'none' } | { kind: 'cut'; percent: number } | { kind: 'cap'; amount: string };
+/** What "Make this my budget" did for a category: the new amount and what it replaced, or that it failed. */
+type Made = { assigned: string; previous: string | null; month: string } | 'error';
 
 /**
  * Explore spending (FLOW-01): the categories picked, month by month, as a chart and a table, what each says, and
  * what-ifs worked out here from the same numbers (nothing is saved).
  */
 export function ExploreView({
+  workspaceId,
   base,
   data: d,
   goals,
 }: {
+  workspaceId: string;
   base: string;
   data: SpendingExploreDto;
   /** Goals with a target: what's left to save. */
@@ -70,6 +75,38 @@ export function ExploreView({
     changes,
     goals: goals.map((g) => ({ ...g, remaining: big(g.remaining) })),
   });
+  // "Make this my budget": this period's budget for the category becomes the what-if's monthly amount, after a
+  // confirmation that names the month and what it replaces.
+  const budgetMonth = label(d.budget?.period.start ?? d.periods[d.periods.length - 1]!.start);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [made, setMade] = useState<Record<string, Made>>({});
+  const targetFor = (categoryId: string) => {
+    const change = changes.find((x) => x.categoryId === categoryId);
+    const c = d.categories.find((x) => x.categoryId === categoryId);
+    return change && c ? whatIfTarget(c.monthly.map(big), change) : null;
+  };
+  const makeBudget = async (categoryId: string, target: bigint) => {
+    setSaving(true);
+    try {
+      const r = await browserApi.setCategoryBudget(workspaceId, {
+        entityId: d.entityId,
+        memberId: d.memberId,
+        categoryId,
+        assigned: String(target),
+      });
+      setMade((all) => ({
+        ...all,
+        [categoryId]: { assigned: r.assigned, previous: r.previous, month: label(r.period.start) },
+      }));
+      setConfirming(null);
+      router.refresh();
+    } catch {
+      setMade((all) => ({ ...all, [categoryId]: 'error' }));
+    } finally {
+      setSaving(false);
+    }
+  };
   const unpicked = d.choices.filter((c) => !ids.includes(c.categoryId));
   const monthDrill = (categoryId: string, i: number) =>
     drillHref(base, {
@@ -298,53 +335,130 @@ export function ExploreView({
             {d.categories.map((c) => {
               const p = plans[c.categoryId] ?? { kind: 'none' };
               const saved = result.perCategory.find((x) => x.categoryId === c.categoryId)?.monthly;
+              const target = targetFor(c.categoryId);
+              const done = made[c.categoryId];
               return (
-                <li key={c.categoryId} className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="w-40 truncate font-medium">{c.name}</span>
-                  <select
-                    className="input w-auto"
-                    aria-label={t('explore.change_for', { name: c.name })}
-                    value={p.kind === 'cut' ? `cut-${p.percent}` : p.kind}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setPlans((all) => ({
-                        ...all,
-                        [c.categoryId]: v.startsWith('cut-')
-                          ? { kind: 'cut', percent: Number(v.slice(4)) }
-                          : v === 'cap'
-                            ? { kind: 'cap', amount: '' }
-                            : { kind: 'none' },
-                      }));
-                    }}
-                  >
-                    <option value="none">{t('explore.no_change')}</option>
-                    {CUTS.map((n) => (
-                      <option key={n} value={`cut-${n}`}>
-                        {t('explore.cut', { percent: n })}
-                      </option>
-                    ))}
-                    <option value="cap">{t('explore.cap')}</option>
-                  </select>
-                  {p.kind === 'cap' && (
-                    <label className="flex items-center gap-1">
-                      <input
-                        className="input num w-24"
-                        inputMode="decimal"
-                        aria-label={t('explore.cap_amount', { name: c.name })}
-                        value={p.amount}
-                        onChange={(e) =>
-                          setPlans((all) => ({
-                            ...all,
-                            [c.categoryId]: { kind: 'cap', amount: e.target.value },
-                          }))
-                        }
-                      />
-                      <span className="text-muted">{t('explore.per_month')}</span>
-                    </label>
+                <li key={c.categoryId} className="space-y-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="w-40 truncate font-medium">
+                      {c.name}
+                      <span className="block text-xs font-normal text-muted">
+                        {c.assigned === null
+                          ? t('explore.no_budget')
+                          : t('explore.budget_now', { amount: money(big(c.assigned), ccy) })}
+                      </span>
+                    </span>
+                    <select
+                      className="input w-auto"
+                      aria-label={t('explore.change_for', { name: c.name })}
+                      value={p.kind === 'cut' ? `cut-${p.percent}` : p.kind}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setPlans((all) => ({
+                          ...all,
+                          [c.categoryId]: v.startsWith('cut-')
+                            ? { kind: 'cut', percent: Number(v.slice(4)) }
+                            : v === 'cap'
+                              ? { kind: 'cap', amount: '' }
+                              : { kind: 'none' },
+                        }));
+                      }}
+                    >
+                      <option value="none">{t('explore.no_change')}</option>
+                      {CUTS.map((n) => (
+                        <option key={n} value={`cut-${n}`}>
+                          {t('explore.cut', { percent: n })}
+                        </option>
+                      ))}
+                      <option value="cap">{t('explore.cap')}</option>
+                    </select>
+                    {p.kind === 'cap' && (
+                      <label className="flex items-center gap-1">
+                        <input
+                          className="input num w-24"
+                          inputMode="decimal"
+                          aria-label={t('explore.cap_amount', { name: c.name })}
+                          value={p.amount}
+                          onChange={(e) =>
+                            setPlans((all) => ({
+                              ...all,
+                              [c.categoryId]: { kind: 'cap', amount: e.target.value },
+                            }))
+                          }
+                        />
+                        <span className="text-muted">{t('explore.per_month')}</span>
+                      </label>
+                    )}
+                    {saved !== undefined && saved > 0n && (
+                      <span className="text-good">{t('explore.saves', { amount: money(saved, ccy) })}</span>
+                    )}
+                    {target !== null && confirming !== c.categoryId && (
+                      <button
+                        type="button"
+                        className="btn-secondary ml-auto"
+                        onClick={() => {
+                          setConfirming(c.categoryId);
+                          setMade(({ [c.categoryId]: _, ...rest }) => rest);
+                        }}
+                      >
+                        {t('explore.make_budget')}
+                      </button>
+                    )}
+                  </div>
+                  {target !== null && confirming === c.categoryId && (
+                    <div
+                      role="group"
+                      aria-label={t('explore.make_budget')}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-600 p-3"
+                    >
+                      <p className="grow">
+                        {t('explore.make_budget_confirm', {
+                          name: c.name,
+                          month: budgetMonth,
+                          amount: money(target, ccy),
+                        })}{' '}
+                        <span className="text-muted">
+                          {c.assigned === null
+                            ? t('explore.make_budget_none')
+                            : t('explore.make_budget_was', { amount: money(big(c.assigned), ccy) })}
+                        </span>
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={saving}
+                        onClick={() => makeBudget(c.categoryId, target)}
+                      >
+                        {t('explore.make_budget_yes')}
+                      </button>
+                      <button type="button" className="btn-secondary" onClick={() => setConfirming(null)}>
+                        {t('common.cancel')}
+                      </button>
+                    </div>
                   )}
-                  {saved !== undefined && saved > 0n && (
-                    <span className="text-good">{t('explore.saves', { amount: money(saved, ccy) })}</span>
-                  )}
+                  {done === 'error' ? (
+                    <p role="alert" className="text-bad">
+                      {t('explore.make_budget_failed')}
+                    </p>
+                  ) : done ? (
+                    <p role="status" className="text-good">
+                      {done.previous === null
+                        ? t('explore.make_budget_done_new', {
+                            name: c.name,
+                            month: done.month,
+                            amount: money(big(done.assigned), ccy),
+                          })
+                        : t('explore.make_budget_done', {
+                            name: c.name,
+                            month: done.month,
+                            amount: money(big(done.assigned), ccy),
+                            previous: money(big(done.previous), ccy),
+                          })}{' '}
+                      <Link href={`${base}/budget`} className="font-medium text-brand-600 underline">
+                        {t('explore.open_budget')}
+                      </Link>
+                    </p>
+                  ) : null}
                 </li>
               );
             })}

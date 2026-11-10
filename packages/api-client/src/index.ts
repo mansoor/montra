@@ -18,6 +18,8 @@ import type {
   DraftBudgetDto,
   DraftBudgetRequest,
   DashboardChartsDto,
+  SetCategoryBudgetDto,
+  SetCategoryBudgetRequest,
   SpendingExploreDto,
   ExpectedIncomeDto,
   ForecastDto,
@@ -1957,6 +1959,10 @@ export class ApiClient {
   ) {
     return this.request<DashboardChartsDto>('GET', this.ws(workspaceId, `/dashboard/charts${query(opts)}`));
   }
+  /** Explore spending's "Make this my budget": one category, this period (the budget is created if needed). */
+  setCategoryBudget(workspaceId: string, input: SetCategoryBudgetRequest) {
+    return this.request<SetCategoryBudgetDto>('POST', this.ws(workspaceId, '/budgets/set-category'), input);
+  }
   /** Explore spending: the picked categories month by month (SpendingExploreDto). */
   getSpendingExplore(
     workspaceId: string,
@@ -2215,6 +2221,8 @@ export type {
   DraftBudgetDto,
   ExpectedIncomeDto,
   DashboardChartsDto,
+  SetCategoryBudgetDto,
+  SetCategoryBudgetRequest,
   SpendingExploreDto,
   ForecastDto,
   GoalDto,

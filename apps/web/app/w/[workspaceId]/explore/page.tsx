@@ -36,6 +36,7 @@ export default async function ExplorePage({
     <div className="space-y-6">
       <PageHeader title={t('explore.title')} subtitle={t('explore.subtitle')} />
       <ExploreView
+        workspaceId={workspaceId}
         base={`/w/${workspaceId}`}
         data={data}
         goals={goals
