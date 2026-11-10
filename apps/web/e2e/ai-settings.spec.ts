@@ -17,6 +17,11 @@ test('turns AI off and still categorizes imports with rules', async ({ page }) =
   for (const mode of ['builtin', 'byok', 'local', 'off'])
     await expect(page.getByTestId(`ai-disclosure-${mode}`)).toBeVisible();
   await expect(page.getByTestId('disclaimer-financial')).toContainText('not financial advice');
+  // "Your own API key" won't save without a key: AI would quietly answer "off" everywhere.
+  await page.getByRole('radio', { name: /^Your own API key/ }).check();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Enter your API key, or choose another mode.')).toBeVisible();
+  await expect(page.getByText('AI settings saved.')).toHaveCount(0);
   // The local option asks for an endpoint; switching to it shows the field.
   await page.getByRole('radio', { name: /^Local model/ }).check();
   await expect(page.getByLabel('Local model URL')).toBeVisible();

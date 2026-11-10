@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReceiptDto } from '@montra/api-client';
-import { amountToInput, buildUpdate, receiptFileProblem, rowsOf } from './receipts';
+import { amountToInput, buildUpdate, receiptFileProblem, rowsOf, stalledReasons } from './receipts';
+import { delayedWorkers } from './status';
 
 const receipt: ReceiptDto = {
   id: 'r1',
@@ -47,6 +48,7 @@ const receipt: ReceiptDto = {
   tripId: null,
   orderRef: null,
   extraction: null,
+  stalled: null,
   retainUntil: '2033-11-02',
   createdAt: '2026-11-02T10:00:00.000Z',
   version: '3',
@@ -132,5 +134,35 @@ describe('receipt helpers (RCP-06)', () => {
       ok: false,
       errors: { currency: expect.any(String) },
     });
+  });
+});
+
+describe('receipts nothing is reading', () => {
+  const since = '2026-11-09T10:00:00.000Z';
+  const reading = (stalled: ReceiptDto['stalled'], status: ReceiptDto['status'] = 'processing') => ({
+    status,
+    stalled,
+  });
+
+  it('names each reason once, only for receipts still being read', () => {
+    expect(stalledReasons([])).toEqual([]);
+    expect(stalledReasons([reading(null)])).toEqual([]);
+    expect(
+      stalledReasons([
+        reading({ worker: 'documents', reason: 'waiting', since }),
+        reading({ worker: 'documents', reason: 'waiting', since }),
+        reading({ worker: 'jobs', reason: 'failed', since }),
+        reading({ worker: 'jobs', reason: 'waiting', since }, 'inbox'),
+      ]),
+    ).toEqual(['documents_waiting', 'jobs_failed']);
+  });
+
+  it('says which background workers aren’t picking up work', () => {
+    expect(delayedWorkers({ workers: { documents: 'ok', jobs: 'ok' } })).toEqual([]);
+    expect(delayedWorkers({ workers: { documents: 'delayed', jobs: 'ok' } })).toEqual(['documents']);
+    expect(delayedWorkers({ workers: { documents: 'delayed', jobs: 'delayed' } })).toEqual([
+      'documents',
+      'jobs',
+    ]);
   });
 });

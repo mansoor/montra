@@ -154,6 +154,17 @@ export const STATUS_CHIP: Record<ReceiptDto['status'], string> = {
   rejected: 'chip chip-bad',
 };
 
+/**
+ * The different reasons nothing is reading these receipts (`documents_waiting`, `jobs_failed`, …), once each,
+ * for the banner over the receipts being read. Message keys are `receipts.stalled.<reason>`.
+ */
+export function stalledReasons(receipts: Pick<ReceiptDto, 'status' | 'stalled'>[]): string[] {
+  const out = new Set<string>();
+  for (const r of receipts)
+    if (r.status === 'processing' && r.stalled) out.add(`${r.stalled.worker}_${r.stalled.reason}`);
+  return [...out];
+}
+
 /** The receipt's printed total in the user's currency format, for list rows. */
 export function receiptTotal(
   r: Pick<ReceiptDto, 'total' | 'currency'>,
