@@ -11,9 +11,13 @@ export function swipeOutcome(dx: number, vx: number, width: number): SwipeOutcom
   return dx > 0 ? 'accept' : 'edit';
 }
 
+/** A suggestion to accept: a category, or a transfer to another account. */
+export const hasSuggestion = (t: LocalTransaction): boolean =>
+  Boolean(t.suggestedCategoryId || t.suggestedTransferAccountId);
+
 /** Accept needs a suggestion; without one a right swipe opens the picker instead. */
 export const effectiveOutcome = (o: SwipeOutcome, t: LocalTransaction): SwipeOutcome =>
-  o === 'accept' && !t.suggestedCategoryId ? 'edit' : o;
+  o === 'accept' && !hasSuggestion(t) ? 'edit' : o;
 
 /** Items needing review, most confident suggestions first (fast wins), then newest. */
 export function reviewQueue(rows: readonly LocalTransaction[]): LocalTransaction[] {

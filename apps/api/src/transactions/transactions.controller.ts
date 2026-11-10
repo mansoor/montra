@@ -21,6 +21,7 @@ import {
   ConfirmOccurrenceRequest,
   CreateTransactionRequest,
   CreateTransferRequest,
+  MakeTransferRequest,
   UpdateTransactionRequest,
   type BulkEditResult,
   type TransactionDto,
@@ -78,6 +79,13 @@ export class TransactionsController {
   @Post('transfer')
   transfer(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<TransactionDto> {
     return this.transactions.transfer(dbCtx(ctx), parse(CreateTransferRequest, body));
+  }
+
+  /** A plain transaction becomes a transfer (a card payment, a move between accounts), absorbing the other side. */
+  @Post(':id/make-transfer')
+  @HttpCode(200)
+  makeTransfer(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.transactions.makeTransfer(dbCtx(ctx), id, parse(MakeTransferRequest, body));
   }
 
   @Post('bulk')

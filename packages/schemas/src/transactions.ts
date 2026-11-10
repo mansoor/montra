@@ -66,6 +66,18 @@ export const CreateTransferRequest = z.object({
 });
 export type CreateTransferRequest = z.output<typeof CreateTransferRequest>;
 
+/**
+ * POST /transactions/:id/make-transfer — a plain transaction becomes a transfer to or from another account (a card
+ * payment, a move between accounts). The other side, when it was recorded separately, is absorbed: its statement line
+ * moves to the transfer and it goes to the trash. `counterpartId`: that other side; omitted, the closest one with the
+ * opposite amount within 3 days on that account is used; null, none.
+ */
+export const MakeTransferRequest = z.object({
+  accountId: Id,
+  counterpartId: Id.nullable().optional(),
+});
+export type MakeTransferRequest = z.output<typeof MakeTransferRequest>;
+
 export const PostingDto = z.object({
   lineNo: z.number().int(),
   accountId: z.string(),
@@ -134,3 +146,10 @@ export const TransactionDto = z.object({
   entries: z.array(JournalEntryDto),
 });
 export type TransactionDto = z.infer<typeof TransactionDto>;
+
+export const MakeTransferDto = z.object({
+  transaction: TransactionDto,
+  /** The other side that was absorbed into the transfer (now in the trash), if any. */
+  absorbedId: Id.nullable(),
+});
+export type MakeTransferDto = z.infer<typeof MakeTransferDto>;

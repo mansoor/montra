@@ -6,7 +6,8 @@
  * - probable duplicate (flagged, never skipped): same amount within ±3 days, description similarity ≥ 0.6,
  *   inside a date range an earlier import of this account covered;
  * - match: a manual / camera / scheduled entry with the same amount within ±3 days and similar description
- *   (≥ 0.5) or the same payee, assigned one-to-one.
+ *   (≥ 0.5) or the same payee, assigned one-to-one. A transfer's other side matches on amount and date alone: its
+ *   text is the other account's (or "Transfer").
  */
 import { diffDays, type CalendarDate } from '@montra/domain';
 import { createHash } from 'node:crypto';
@@ -32,6 +33,8 @@ export interface ManualCandidate {
   amount: bigint;
   /** Normalized payee or description of the manual entry. */
   normalizedDescription: string;
+  /** Match on amount and date alone (a transfer whose text came from the other account). */
+  anyDescription?: boolean;
 }
 
 export interface Classification {
@@ -128,9 +131,10 @@ export function classifyRows(
         c.normalizedDescription && r.normalizedDescription
           ? similarity(c.normalizedDescription, r.normalizedDescription)
           : 0;
-      if (sim < 0.5) continue;
+      if (sim < 0.5 && !c.anyDescription) continue;
       const days = Math.abs(diffDays(c.date, r.date));
-      pairs.push({ i, c, score: round(0.6 * sim + 0.4 * (1 - days / (MATCH_WINDOW_DAYS + 1))) });
+      const s = Math.max(sim, c.anyDescription ? 0.5 : 0);
+      pairs.push({ i, c, score: round(0.6 * s + 0.4 * (1 - days / (MATCH_WINDOW_DAYS + 1))) });
     }
   });
   pairs.sort((a, b) => b.score - a.score);

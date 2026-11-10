@@ -338,11 +338,17 @@ export class ImportJobs {
       amount: bigint | null;
       spec: TransactionSpec | null;
       matched: boolean;
+      lines: { key: string | null; text: string | null; date: string | null }[];
     }>`
       select distinct on (t.id) t.id, t.txn_date, t.source, t.status, t.dedupe_key, t.spec,
              coalesce(t.raw_description, nullif(t.payee_raw, ''), t.description) as text,
              p.amount_minor as amount,
-             exists (select 1 from app.transaction_source s where s.workspace_id = t.workspace_id and s.transaction_id = t.id) as matched
+             exists (select 1 from app.transaction_source s where s.workspace_id = t.workspace_id and s.transaction_id = t.id) as matched,
+             coalesce((select jsonb_agg(jsonb_build_object('key', r.dedupe_key, 'text', r.normalized_desc, 'date', r.txn_date::text))
+                         from app.transaction_source s
+                         join app.import_row r on r.workspace_id = s.workspace_id and r.id = s.import_row_id
+                        where s.workspace_id = t.workspace_id and s.transaction_id = t.id
+                          and s.ledger_account_id = ${accountId}), '[]'::jsonb) as lines
         from app.transaction t
         left join app.journal_entry je on je.workspace_id = t.workspace_id and je.transaction_id = t.id
         left join app.posting p on p.workspace_id = je.workspace_id and p.journal_entry_id = je.id and p.ledger_account_id = ${accountId}
@@ -357,9 +363,23 @@ export class ImportJobs {
     for (const r of rows.rows) {
       const date = calendarDate(r.txn_date);
       const key = normalizeDescription(r.text ?? '');
-      // Imported transactions, and manual ones an earlier import already confirmed (they carry its dedupe key),
-      // are duplicate candidates; everything else may be matched.
-      if (r.source === 'import' || r.source === 'feed' || r.matched) {
+      // Statement lines an import of this account already brought in (created, matched, or the other side a transfer
+      // absorbed) are duplicate candidates, one per line, by that line's own key. A transfer made from another
+      // account's statement has no line here yet, so it may be matched.
+      if (r.lines.length > 0) {
+        if (r.amount !== null)
+          for (const l of r.lines)
+            imported.push({
+              transactionId: r.id,
+              date: l.date ? calendarDate(l.date) : date,
+              amount: BigInt(r.amount),
+              normalizedDescription: l.text ?? key,
+              dedupeKey: l.key,
+            });
+        continue;
+      }
+      // Older imports without source lines: their own key.
+      if ((r.source === 'import' || r.source === 'feed') && !r.matched) {
         if (r.amount !== null)
           imported.push({
             transactionId: r.id,
@@ -375,7 +395,14 @@ export class ImportJobs {
         if (r.spec.type === 'standard') amount = BigInt(r.spec.amount);
         else amount = r.spec.fromAccountId === accountId ? -BigInt(r.spec.amount) : BigInt(r.spec.amount);
       }
-      if (amount !== null) manual.push({ transactionId: r.id, date, amount, normalizedDescription: key });
+      if (amount !== null)
+        manual.push({
+          transactionId: r.id,
+          date,
+          amount,
+          normalizedDescription: key,
+          ...(r.spec?.type === 'transfer' ? { anyDescription: true } : {}),
+        });
     }
     const covered = await trx
       .selectFrom('app.import_batch')
@@ -811,12 +838,14 @@ export class ImportJobs {
         date: calendarDate(row.txn_date!),
       });
     }
-    await trx
-      .updateTable('app.transaction')
-      .set({ statement_date: row.txn_date, raw_description: row.description, dedupe_key: row.dedupe_key })
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('id', '=', id)
-      .execute();
+    // A transfer keeps the statement details of the side that came first; this side's line is recorded below.
+    if ((t.spec as TransactionSpec | null)?.type !== 'transfer' || !t.statement_date)
+      await trx
+        .updateTable('app.transaction')
+        .set({ statement_date: row.txn_date, raw_description: row.description, dedupe_key: row.dedupe_key })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', id)
+        .execute();
     await this.markCleared(trx, ctx, id, accountId);
     await trx
       .insertInto('app.transaction_source')
@@ -935,6 +964,21 @@ export class ImportJobs {
         if (owner) {
           kept.push({ transactionId: s.transaction_id, reason: owner });
           continue;
+        }
+        // A transfer that absorbed another statement's line: voiding it would take that line with it.
+        if (s.role === 'created' && (current?.spec as TransactionSpec | null)?.type === 'transfer') {
+          const otherLine = await trx
+            .selectFrom('app.transaction_source')
+            .select('import_row_id')
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('transaction_id', '=', s.transaction_id)
+            .where('role', '=', 'second_leg')
+            .where('import_batch_id', '<>', batchId)
+            .executeTakeFirst();
+          if (otherLine) {
+            kept.push({ transactionId: s.transaction_id, reason: 'transfer' });
+            continue;
+          }
         }
         if (s.role === 'created') {
           await this.poster.unpost(trx, ctx, s.transaction_id);

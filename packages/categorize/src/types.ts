@@ -79,6 +79,7 @@ export interface HistoryEntry {
 
 /** Another account's transaction that could be the other side of a transfer (step 3). */
 export interface TransferCandidate {
+  /** Null: no other side yet, the candidate stands for the account (named by its last 4 digits in the text). */
   transactionId: string | null;
   accountId: string;
   accountName: string;

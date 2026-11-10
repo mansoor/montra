@@ -211,8 +211,9 @@ finished:
 
 ### Cross-phase backlog (known gaps not tied to one requirement)
 
-1. **Transfers.** Pipeline step 3 detects a likely transfer and explains it in review, but doesn't yet
-   **convert** the pair into a transfer between the two accounts. Matching the other side is manual.
+1. ~~**Transfers.**~~ Done: accepting a suggested transfer in review (web or phone, one at a time or "accept all
+   above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import doesn't
+   convert pairs on its own yet, even at 0.95: they wait in review.
 2. **Local-mode AI tasks.** Results the client posts to `POST /ai/tasks/:id/result` are stored but not
    yet applied to rows or review suggestions.
 3. **More bring-your-own-key adapters:** OpenAI, Gemini and Azure. Only Anthropic and OpenAI-compatible
@@ -222,15 +223,14 @@ finished:
    import's preview.
 6. **Mobile has no React Native Testing Library screen tests.** Pure modules have unit tests; screens rely
    on the export builds and on the Maestro flows, which haven't been run.
-7. **Mobile Home** shows money spent and received this month, not "left to spend", until budgets arrive in
-   Phase 6.
+7. ~~**Mobile Home**~~ now shows left to spend and left to assign, like the web.
 8. **Camera library:** the camera spike uses `expo-camera`. Moving to `react-native-vision-camera`
    (frame processors, ML Kit / VisionKit edge detection) is the Phase 5 option, decided by the spike. ADR-0009
    stays _proposed_ until the spike runs on devices.
 9. **Commit speed:** an import commit takes about 11 ms per row, so 5,000 rows take about a minute
    (with a progress bar). Bulk posting would speed it up later.
-10. **Account-only transfer candidates:** transfer detection only pairs existing transactions, so a card
-    payment whose bank side hasn't been imported yet gets no transfer suggestion.
+10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
+    suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
 
 ---
 
@@ -782,8 +782,9 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
-- **Explore spending, web and phone** (FLOW-01): Plan → Explore spending on the web, More → Explore spending on the phone. Pick up to 8 categories and 3, 6, 12 or 24 months; see them month by month in a chart and a table (cells drill to transactions), a card per category (trend, average, share of spending, purchases and typical size, biggest month, the pace for 12 months, top places), and what-ifs (cut by a percent or cap a month: the saving, the share of income kept, and months to each goal). Nothing is saved. `GET /spending/explore`; the arithmetic is `categoryStats` and `whatIf` in `@montra/domain`.
+- **Explore spending, web and phone** (FLOW-01): Plan → Explore spending on the web, More → Explore spending on the phone. Pick up to 8 categories and 3, 6, 12 or 24 months; see them month by month in a chart and a table (cells drill to transactions), a card per category (trend, average, share of spending, purchases and typical size, biggest month, the pace for 12 months, top places), and what-ifs (cut by a percent or cap a month: the saving, the share of income kept, and months to each goal). Nothing is saved, except through **Make this my budget**: a row with a change shows this month's budget for the category, and the button sets it to the what-if's monthly amount (the average less the cut, or the cap) after a confirmation naming the month, the new amount and what it replaces. It updates the entity's (or member's) budget, or creates one when there is none. `GET /spending/explore` (now with each category's `assigned` and the `budget`), `POST /budgets/set-category`; the arithmetic is `categoryStats`, `whatIf` and `whatIfTarget` in `@montra/domain`.
 - **Home's numbers for another period, web and phone** (FLOW-01): ← and → beside the period move the four tiles (income, spent, left to spend, left to assign) a budget period (else a month) at a time. Away from the current period it's hard to miss: the tiles sit in a warning-coloured box saying "You're looking at September 2026, not the current period", with **Back to today** and a note that everything else on Home is as of today. It's never remembered: on the web it lives only in the URL (`?period=`), and the phone resets it when you leave Home. The charts keep their own period. `GET /dashboard?period=`.
+- **Transfers made real, web and phone** (TXN-04, AI-01): a card payment or move between accounts that was detected as a transfer becomes one when you accept it in review (Make transfer). The other side, when it was recorded separately, is absorbed: both statement lines stay on the transfer and stay cleared, the other side goes to the trash, re-importing either statement finds nothing new, and undoing the import that created the transfer keeps it (reason `transfer`). It stops counting as spending and income. A payment that names another account's last 4 digits is suggested before that account's statement arrives, and that statement later matches the transfer on amount and date. Import dedupe now keys statement lines per account (from `transaction_source`), so a transfer is recognised on both accounts' statements. `POST /transactions/:id/make-transfer`, ADR-0028.
 - **Receipts worth keeping** (UP-09, RCP-11): `/receipts/recommended` now also lists deductible business spending (above the business's threshold) and, when set, everyday spending above the planning settings' reminder amount, cards and imports included. Bills, debt and savings never. Each row has a `reason`. `GET /receipts/habit` gives the week's receipts kept and missing and a streak (`receiptHabit` in `@montra/domain`: the week in progress never breaks it). The phone's Home shows a small card only when something is waiting (three at most, Add or Not needed), or one quiet line when all are kept. The Receipts screen lists them all, and Settings (phone) and Planning settings (web) set the reminder amount. No push notifications.
 - **Phone: quick add fits one screen, and asks for the receipt**: the three ways in (scan, type, say) are one row at the top, Expense/Income is a switch, the keypad is slimmer, and the account row shows the three most recently used (the chosen one always among them) with … for the rest (`recentAccountIds`), so nothing needs scrolling. After saving spending, a "Got the receipt?" card opens the camera for that transaction; the photo uploads linked to it (`offersReceipt` in `src/features/quick-add.ts`).
 - **Phone: voice entry** (TXN-07): quick add has **Say it** and a microphone beside the sentence box. The phone's speech service (`expo-speech-recognition`) fills the sentence as you speak, and the same parser as typing reads it. No audio is kept. Pure parts in `src/features/voice.ts`.

@@ -148,6 +148,26 @@ describe('dedupe and matching (IMP-07)', () => {
     expect(more.map((c) => c.status)).toEqual(['duplicate', 'duplicate', 'new']);
   });
 
+  it('matches a transfer’s other side on amount and date alone', () => {
+    const transfer = {
+      transactionId: 'tr',
+      date: d('2026-10-05'),
+      amount: 50000n,
+      normalizedDescription: 'ONLINE PAYMENT TO CARD',
+    };
+    const rows = [row('2026-10-06', 50000n, 'PAYMENT THANK YOU')];
+    expect(classifyRows('card', rows, [], [transfer], [])[0]!.status).toBe('new');
+    expect(classifyRows('card', rows, [], [{ ...transfer, anyDescription: true }], [])[0]).toMatchObject({
+      status: 'match',
+      transactionId: 'tr',
+    });
+    // Still the same amount within 3 days.
+    const late = [row('2026-10-10', 50000n, 'PAYMENT THANK YOU')];
+    expect(classifyRows('card', late, [], [{ ...transfer, anyDescription: true }], [])[0]!.status).toBe(
+      'new',
+    );
+  });
+
   it('only flags probable duplicates inside covered ranges, and never skips them', () => {
     const imported = [
       {

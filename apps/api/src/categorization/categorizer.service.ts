@@ -67,6 +67,7 @@ export const toDto = (c: StoredCategorization | null | undefined): Categorizatio
         explanation: c.explanation,
         ruleId: c.ruleId ?? null,
         suggested: c.suggested ?? null,
+        transfer: c.transfer ?? null,
       }
     : null;
 
@@ -221,6 +222,19 @@ export class Categorizer {
     }));
   }
 
+  /** The workspace's other open bank and card accounts that have last 4 digits (step 3, no other side yet). */
+  private async otherAccounts(trx: Trx, ctx: Ctx, accountId: string) {
+    const rows = await sql<{ id: string; name: string; last4: string }>`
+      select la.id, la.name, ba.last4
+        from app.ledger_account la
+        join app.bank_account ba on ba.ledger_account_id = la.id
+       where la.workspace_id = ${ctx.workspaceId}
+         and la.type in ('asset', 'liability') and not la.is_category and la.system_role is null
+         and la.archived_at is null and la.id <> ${accountId}
+         and coalesce(ba.last4, '') <> ''`.execute(trx);
+    return rows.rows;
+  }
+
   /**
    * Categorizes items that all belong to one account (an import batch, or a single manual entry). The AI
    * step runs only when the workspace's mode allows it and `useAi` is set.
@@ -245,6 +259,8 @@ export class Categorizer {
       from: addDays(dates[0]!, -3),
       to: addDays(dates.at(-1)!, 3),
     });
+    // The other bank and card accounts, for a payment whose other side isn't in yet (named by its last 4 digits).
+    const others = await this.otherAccounts(trx, ctx, account.id);
     let aiUsed = false;
     const ai =
       opts.useAi && runtime.available
@@ -282,13 +298,22 @@ export class Categorizer {
     const decisions = await runPipeline(items, {
       rules: prepared.rules,
       history: (key) => history.get(key) ?? [],
-      transferCandidates: (item) =>
-        candidates.filter(
+      transferCandidates: (item) => [
+        ...candidates.filter(
           (c) =>
             c.amountMinor === -item.amountMinor &&
             Math.abs(daysBetween(c.date, item.date)) <= 3 &&
             c.accountId !== item.accountId,
         ),
+        ...others.map((a) => ({
+          transactionId: null,
+          accountId: a.id,
+          accountName: a.name,
+          accountLast4: a.last4,
+          amountMinor: -item.amountMinor,
+          date: item.date,
+        })),
+      ],
       ai,
       threshold: runtime.threshold,
       entityOfCategory: (id) => prepared.categoryById.get(id)?.entityId ?? null,
