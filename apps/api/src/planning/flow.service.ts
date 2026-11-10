@@ -37,6 +37,7 @@ import type {
   CalendarItemDto,
   DashboardDto,
   DrillDto,
+  DashboardChartsDto,
   ForecastDto,
   NetWorthDto,
   SankeyDto,
@@ -1161,6 +1162,179 @@ export class FlowService {
             balance: a.lowBalance!.balance,
           })),
         openRecommendations: Number(open.n),
+      };
+    });
+  }
+
+  /**
+   * What the Home charts show (DashboardChartsDto): money in and out and net worth per month, the budget so far, where the
+   * money went this month and the biggest changes from usual. Income and spending count the way the dashboard's
+   * unbudgeted figures do, so the charts agree with the tiles.
+   */
+  async dashboardCharts(
+    ctx: Ctx,
+    opts: { entityId?: string | null; memberId?: string | null; months: number },
+  ): Promise<DashboardChartsDto> {
+    return this.db.run(ctx, async (trx) => {
+      const entityId = opts.entityId ?? (await this.defaultEntity(trx, ctx));
+      const memberId = opts.memberId ?? null;
+      const entity = await this.data.entity(trx, ctx, entityId);
+      const today = await this.data.today(trx, ctx);
+      const n = opts.months;
+      // At least five months: the changes compare last month with the three before it.
+      const count = Math.max(n, 5);
+      const thisMonth = startOfMonth(today);
+      const periods: Period[] = Array.from({ length: count }, (_, i) => {
+        const start = addMonths(thisMonth, -(count - 1 - i));
+        return { start, end: endOfMonth(start) };
+      });
+
+      const cats = await this.data.categories(trx, ctx, entityId);
+      const incomeIds = new Set(cats.filter((c) => c.type === 'income').map((c) => c.id));
+      // Payroll taxes and deductions are part of pay, not spending (04 §8).
+      const spendIds = new Set(
+        cats.filter((c) => c.type === 'expense' && c.kind !== 'system').map((c) => c.id),
+      );
+      const names = new Map(cats.map((c) => [c.id, c.name]));
+      const filter = memberId ? { memberId } : {};
+      const act = await this.data.activity(trx, ctx, entityId, periods, filter);
+      const withheld = await this.data.payslipWithheld(trx, ctx, entityId, periods, filter);
+      const flows = periods.map((p) => {
+        let income = 0n;
+        let spending = 0n;
+        const bySpend = new Map<string, bigint>();
+        for (const [c, v] of act.get(p.start) ?? []) {
+          if (incomeIds.has(c)) income -= v;
+          else if (spendIds.has(c)) {
+            spending += v;
+            bySpend.set(c, v);
+          }
+        }
+        income -= withheld.get(p.start) ?? 0n;
+        return { p, income, spending, bySpend };
+      });
+
+      // n − 1 month ends, then today: one point per month shown.
+      const nw = await this.netWorthIn(trx, ctx, { date: today, months: n - 1 });
+      const monthly = flows.slice(count - n).map((f, i) => ({
+        start: f.p.start,
+        end: f.p.end,
+        income: s(f.income),
+        spending: s(f.spending),
+        net: s(f.income - f.spending),
+        netWorth: nw.trend[i]?.netWorth ?? nw.netWorth,
+      }));
+
+      const memberDrill = memberId ? { memberId } : {};
+      const drill = (categoryId: string, p: Period): DrillDto => ({
+        entityId,
+        ...memberDrill,
+        categoryIds: [categoryId],
+        from: p.start,
+        to: p.end,
+      });
+      const abs = (v: bigint) => (v < 0n ? -v : v);
+      const byDistance = <T extends { d: bigint }>(a: T, b: T) =>
+        abs(b.d) > abs(a.d) ? 1 : abs(b.d) < abs(a.d) ? -1 : 0;
+
+      const current = flows[count - 1]!;
+      const topSpending = {
+        period: { start: current.p.start, end: current.p.end },
+        total: s(current.spending),
+        rows: [...current.bySpend]
+          .filter(([, v]) => v > 0n)
+          .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
+          .slice(0, 5)
+          .map(([categoryId, v]) => ({
+            categoryId,
+            name: names.get(categoryId) ?? '',
+            amount: s(v),
+            drill: drill(categoryId, current.p),
+          })),
+      };
+
+      const last = flows[count - 2]!;
+      const before = flows.slice(count - 5, count - 2);
+      const changed = new Set([...last.bySpend.keys(), ...before.flatMap((f) => [...f.bySpend.keys()])]);
+      const changes = {
+        period: { start: last.p.start, end: last.p.end },
+        rows: [...changed]
+          .map((categoryId) => {
+            const amount = last.bySpend.get(categoryId) ?? 0n;
+            const usual = divRound(
+              before.reduce((t, f) => t + (f.bySpend.get(categoryId) ?? 0n), 0n),
+              BigInt(before.length),
+            );
+            return { categoryId, amount, usual, d: amount - usual };
+          })
+          .filter((r) => r.d !== 0n)
+          .sort(byDistance)
+          .slice(0, 5)
+          .map((r) => ({
+            categoryId: r.categoryId,
+            name: names.get(r.categoryId) ?? '',
+            amount: s(r.amount),
+            usual: s(r.usual),
+            difference: s(r.d),
+            drill: drill(r.categoryId, last.p),
+          })),
+      };
+
+      const budgetRow = await trx
+        .selectFrom('app.budget')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('entity_id', '=', entityId)
+        .where('archived_at', 'is', null)
+        .where((eb) => (memberId ? eb('member_id', '=', memberId) : eb('member_id', 'is', null)))
+        .executeTakeFirst();
+      let budget: DashboardChartsDto['budget'] = null;
+      if (budgetRow) {
+        const c = await this.budgets.compute(trx, ctx, budgetRow.id);
+        const r = c.results[c.results.length - 1]!;
+        const rows = c.categories
+          .filter(isBudgetCategory)
+          .filter((cat) => cat.kind !== 'savings')
+          .flatMap((cat) => {
+            const l = r.lines.get(cat.id);
+            if (!l) return [];
+            const assigned = l.available + l.activity;
+            const spent = l.activity;
+            let expected: bigint;
+            if (PACE_KINDS.has(cat.kind!)) {
+              // Day-to-day spending: where the budget expects it by today.
+              expected = spendingPace(c.period, today, assigned, spent)?.expectedByToday ?? assigned;
+            } else {
+              // A bill is paid once: it only counts when it's over.
+              if (spent <= assigned) return [];
+              expected = assigned;
+            }
+            const d = spent - expected;
+            return d === 0n ? [] : [{ cat, assigned, spent, expected, d }];
+          })
+          .sort(byDistance)
+          .slice(0, 5)
+          .map(({ cat, assigned, spent, expected, d }) => ({
+            categoryId: cat.id,
+            name: cat.name,
+            assigned: s(assigned),
+            spent: s(spent),
+            expected: s(expected),
+            difference: s(d),
+            drill: drill(cat.id, c.period),
+          }));
+        budget = { budgetId: budgetRow.id, period: { start: c.period.start, end: c.period.end }, rows };
+      }
+
+      return {
+        entityId,
+        memberId,
+        currency: entity.currency as Money,
+        months: n,
+        monthly,
+        budget,
+        topSpending,
+        changes,
       };
     });
   }
