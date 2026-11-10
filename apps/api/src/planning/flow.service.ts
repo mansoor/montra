@@ -38,6 +38,7 @@ import type {
   DashboardDto,
   DrillDto,
   DashboardChartsDto,
+  SpendingExploreDto,
   ForecastDto,
   NetWorthDto,
   SankeyDto,
@@ -1335,6 +1336,115 @@ export class FlowService {
         budget,
         topSpending,
         changes,
+      };
+    });
+  }
+
+  /**
+   * Explore spending (SpendingExploreDto): the picked categories month by month, with purchase counts and the top
+   * places, plus all spending and income per month for context. Counts the way the dashboard does.
+   */
+  async spendingExplore(
+    ctx: Ctx,
+    opts: { entityId?: string | null; memberId?: string | null; months: number; categoryIds?: string[] },
+  ): Promise<SpendingExploreDto> {
+    return this.db.run(ctx, async (trx) => {
+      const entityId = opts.entityId ?? (await this.defaultEntity(trx, ctx));
+      const memberId = opts.memberId ?? null;
+      const entity = await this.data.entity(trx, ctx, entityId);
+      const today = await this.data.today(trx, ctx);
+      const thisMonth = startOfMonth(today);
+      const periods: Period[] = Array.from({ length: opts.months }, (_, i) => {
+        const start = addMonths(thisMonth, -(opts.months - 1 - i));
+        return { start, end: endOfMonth(start) };
+      });
+      const cats = await this.data.categories(trx, ctx, entityId);
+      const incomeIds = new Set(cats.filter((c) => c.type === 'income').map((c) => c.id));
+      const spend = cats.filter((c) => c.type === 'expense' && c.kind !== 'system');
+      const spendIds = new Set(spend.map((c) => c.id));
+      const filter = memberId ? { memberId } : {};
+      const act = await this.data.activity(trx, ctx, entityId, periods, filter);
+      const withheld = await this.data.payslipWithheld(trx, ctx, entityId, periods, filter);
+      const of = (p: Period, id: string) => act.get(p.start)?.get(id) ?? 0n;
+      const spending = periods.map((p) => [...spendIds].reduce((t, id) => t + of(p, id), 0n));
+      const income = periods.map(
+        (p) => -[...incomeIds].reduce((t, id) => t + of(p, id), 0n) - (withheld.get(p.start) ?? 0n),
+      );
+
+      const totals = spend
+        .map((c) => ({ c, total: periods.reduce((t, p) => t + of(p, c.id), 0n) }))
+        .filter((x) => x.total !== 0n)
+        .sort((a, b) => (b.total > a.total ? 1 : b.total < a.total ? -1 : 0));
+      const asked = (opts.categoryIds ?? []).filter((id) => spendIds.has(id));
+      // By default the three biggest everyday categories: bills, debt and savings aren't habits to explore.
+      const habits = totals.filter((x) => !['fixed', 'debt', 'savings'].includes(x.c.kind ?? ''));
+      const picked = asked.length ? asked : habits.slice(0, 3).map((x) => x.c.id);
+
+      // Purchases and places from the postings: reversed entries (voided transactions) don't count.
+      const first = periods[0]!.start;
+      const last = periods[periods.length - 1]!.end;
+      const { rows } = picked.length
+        ? await sql<{ cat: string; m: string; place: string; n: string; v: string }>`
+            select p.ledger_account_id as cat, date_trunc('month', p.entry_date)::date::text as m,
+                   coalesce(py.display_name, t.payee_raw, nullif(t.description, ''), '') as place,
+                   count(*) filter (where p.functional_amount_minor > 0)::text as n,
+                   sum(p.functional_amount_minor)::text as v
+              from app.posting p
+              join app.journal_entry j on j.id = p.journal_entry_id
+              left join app.transaction t on t.id = j.transaction_id
+              left join app.payee py on py.id = t.payee_id
+             where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${entityId}
+               and p.ledger_account_id = any(${picked}::uuid[])
+               and p.entry_date between ${first} and ${last}
+               and j.reverses_entry_id is null
+               and not exists (select 1 from app.journal_entry r
+                                where r.workspace_id = j.workspace_id and r.reverses_entry_id = j.id)
+               ${memberId ? sql`and p.member_id = ${memberId}` : sql``}
+             group by 1, 2, 3`.execute(trx)
+        : { rows: [] };
+      const memberDrill = memberId ? { memberId } : {};
+      const byId = new Map(cats.map((c) => [c.id, c]));
+      const categories = picked.map((id) => {
+        const c = byId.get(id)!;
+        const mine = rows.filter((r) => r.cat === id);
+        const places = new Map<string, { amount: bigint; count: number }>();
+        for (const r of mine) {
+          const k = r.place.trim() || '—';
+          const cur = places.get(k) ?? { amount: 0n, count: 0 };
+          places.set(k, { amount: cur.amount + BigInt(r.v), count: cur.count + Number(r.n) });
+        }
+        return {
+          categoryId: id,
+          name: c.name,
+          group: c.groupName ?? null,
+          monthly: periods.map((p) => s(of(p, id))),
+          counts: periods.map((p) =>
+            mine.filter((r) => r.m === p.start).reduce((t, r) => t + Number(r.n), 0),
+          ),
+          topPlaces: [...places]
+            .filter(([, v]) => v.amount > 0n)
+            .sort((a, b) => (b[1].amount > a[1].amount ? 1 : b[1].amount < a[1].amount ? -1 : 0))
+            .slice(0, 3)
+            .map(([name, v]) => ({ name, amount: s(v.amount), count: v.count })),
+          drill: { entityId, ...memberDrill, categoryIds: [id], from: first, to: last },
+        };
+      });
+
+      return {
+        entityId,
+        memberId,
+        currency: entity.currency as Money,
+        months: opts.months,
+        periods: periods.map((p) => ({ start: p.start, end: p.end })),
+        spending: spending.map(s),
+        income: income.map(s),
+        categories,
+        choices: totals.map(({ c, total }) => ({
+          categoryId: c.id,
+          name: c.name,
+          group: c.groupName ?? null,
+          total: s(total),
+        })),
       };
     });
   }
