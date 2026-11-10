@@ -782,6 +782,7 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Home charts, web and phone** (FLOW-01): `GET /dashboard/charts` feeds a money-over-time card (3, 6, 12 or 24 months: in, out and left over, plus net worth, with a summary sentence), the budget so far (ahead or behind its pace), where the money went this month, and last month's biggest changes from usual. The phone's Home has the same tiles and cards and a settings button. Shared arithmetic is `summarizeMonths`, `barShares` and `sharePercent` in `@montra/domain`. The web's "on pace to overspend" card and the small net-worth line are replaced by these.
 - **Receipts nothing is reading, and AI that can't run** (2026-11-09): two failures that used to be silent now say why and what fixes it.
   - A receipt whose images may not go to the AI (or in local mode) waits for the doc-worker's `receipt.ocr`. With no doc-worker running it said "Reading" forever. `ReceiptDto.stalled` is now set when a `processing` receipt's latest job has waited in its queue past `JOB_STALL_MS` (3 minutes, `apps/api/src/jobs/queue.ts`) or failed, naming the worker it needs (`documents` or `jobs`). The web lists receipts being read above the tabs, with the reason and a link to Settings → AI; the receipt page and the phone say the same ("Not being read").
   - `/v1/status` has `workers.documents` and `workers.jobs`, `delayed` when that worker's queues lag past the same limit (`app.metrics_queue()`). The workspace layout and `/status` show a line for each delayed worker.

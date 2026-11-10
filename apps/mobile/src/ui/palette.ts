@@ -19,6 +19,10 @@ export interface Palette {
   success: string;
   warning: string;
   warningSoft: string;
+  /** Chart lines, in order: money in, money out, left over (and the first for a single line). */
+  chart1: string;
+  chart2: string;
+  chart3: string;
 }
 
 export const lightPalette: Palette = {
@@ -36,6 +40,9 @@ export const lightPalette: Palette = {
   success: '#1f6a3f',
   warning: '#8a4b08',
   warningSoft: '#f8ecda',
+  chart1: '#1f5d4c',
+  chart2: '#a85a12',
+  chart3: '#3f5bb5',
 };
 
 export const darkPalette: Palette = {
@@ -53,4 +60,7 @@ export const darkPalette: Palette = {
   success: '#7ccf9b',
   warning: '#f0b46b',
   warningSoft: '#47392a',
+  chart1: '#6db89e',
+  chart2: '#f0b46b',
+  chart3: '#9db0ff',
 };

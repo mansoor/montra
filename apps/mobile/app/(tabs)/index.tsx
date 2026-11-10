@@ -1,22 +1,47 @@
-/** Home (08 §3): spent and income this month, review count, upcoming bills, sync status and attention banners. */
-import { RefreshControl, ScrollView, View } from 'react-native';
+/**
+ * Home (08 §3, FLOW-01): the same cards as the web dashboard. The month's numbers, money in and out with net worth
+ * over a chosen period, the budget so far, where the money went and last month's changes; then what's coming up.
+ * Charts come from the server (cached for offline); the local store covers the month when they haven't loaded yet.
+ */
+import { useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { summarizeMonths } from '@montra/domain';
+import { CHART_MONTHS } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { monthSummary, todayLocal } from '../../src/features/home';
 import { useCached } from '../../src/features/use-cached';
-import { Banner, Body, Card, Row, Small, Sparkline, Title } from '../../src/ui/components';
+import { BarList, DeviationBars, MiniLineChart } from '../../src/ui/charts';
+import { Banner, Body, Card, Row, Segmented, Small, Title } from '../../src/ui/components';
+import { haptic } from '../../src/ui/haptics';
+import { Icon } from '../../src/ui/icons';
 import { useTheme } from '../../src/ui/theme';
+
+type Months = (typeof CHART_MONTHS)[number];
+const RANGE_LABELS: Record<Months, string> = {
+  3: 'home.charts.range_3',
+  6: 'home.charts.range_6',
+  12: 'home.charts.range_12',
+  24: 'home.charts.range_24',
+};
 
 export default function Home() {
   const th = useTheme();
   const router = useRouter();
   const { state: session, api } = useSession();
   const { state, refresh } = useSync();
+  const [months, setMonths] = useState<Months>(6);
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const dash = useCached(ws, 'dashboard', () => api.dashboard(ws), Boolean(ws)).data;
+  const charts = useCached(
+    ws,
+    `dashboard-charts-${months}`,
+    () => api.dashboardCharts(ws, months),
+    Boolean(ws),
+  ).data;
   const notices = useCached(ws, 'status', () => api.status(), Boolean(ws)).data?.notices ?? [];
   const currency = session.status === 'signed_in' ? session.workspace.baseCurrency : 'USD';
   const summary = useLocal(
@@ -25,6 +50,17 @@ export default function Home() {
   );
   const attention = useLocal(
     async (s) => (await s.conflicts()).length + (await s.outbox()).filter((o) => o.status === 'draft').length,
+  );
+  const ccy = dash?.currency ?? currency;
+  const sum = charts ? summarizeMonths(charts.monthly) : null;
+
+  const tile = (label: string, amount: string | bigint | null, bad = false) => (
+    <Card style={{ flexBasis: '47%', flexGrow: 1, gap: 2 }}>
+      <Small>{label}</Small>
+      <Body style={{ fontSize: th.font.title, fontWeight: '700', color: bad ? th.danger : th.text }}>
+        {amount === null ? '—' : fmtMoney(amount, ccy)}
+      </Body>
+    </Card>
   );
 
   return (
@@ -36,7 +72,38 @@ export default function Home() {
         }
         testID="home"
       >
-        <Title>{session.status === 'signed_in' ? session.workspace.name : ''}</Title>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: th.space(2) }}>
+          <View style={{ flex: 1 }}>
+            <Title>{session.status === 'signed_in' ? session.workspace.name : ''}</Title>
+            {dash ? (
+              <Small>
+                {fmtDate(dash.period.start)} – {fmtDate(dash.period.end)}
+              </Small>
+            ) : null}
+          </View>
+          <Pressable
+            onPress={() => {
+              haptic.tap();
+              router.push('/settings');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.settings.title')}
+            hitSlop={6}
+            testID="home-settings"
+            style={({ pressed }) => ({
+              width: th.tap,
+              height: th.tap,
+              borderRadius: th.tap / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: th.surfaceAlt,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Icon name="settings" size={20} />
+          </Pressable>
+        </View>
+
         {notices.map((n) => (
           <Banner key={n.id} tone="warning" text={n.body ? `${n.title}. ${n.body}` : n.title} />
         ))}
@@ -51,15 +118,22 @@ export default function Home() {
         {state && state.pending > 0 ? (
           <Banner text={t('mobile.home.pending', { count: state.pending })} />
         ) : null}
-        <Card>
-          <Small>{t('mobile.home.spent')}</Small>
-          <Body style={{ fontSize: th.font.amount, fontWeight: '700' }}>
-            {fmtMoney(summary?.spent ?? 0n, currency)}
-          </Body>
-          <Small>
-            {t('mobile.home.income')}: {fmtMoney(summary?.income ?? 0n, currency)}
-          </Small>
-        </Card>
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(2) }} testID="home-tiles">
+          {tile(t('home.income'), dash?.income.amount ?? summary?.income ?? 0n)}
+          {tile(t('home.spent'), dash?.spent.amount ?? summary?.spent ?? 0n)}
+          {tile(
+            t('home.left_to_spend'),
+            dash?.leftToSpend ?? null,
+            dash?.leftToSpend != null && BigInt(dash.leftToSpend) < 0n,
+          )}
+          {tile(
+            t('budget.lta_label'),
+            dash?.leftToAssign ?? null,
+            dash?.leftToAssign != null && BigInt(dash.leftToAssign) < 0n,
+          )}
+        </View>
+
         {dash?.lowBalance.map((l) => (
           <Banner
             key={l.accountId}
@@ -68,71 +142,183 @@ export default function Home() {
             onPress={() => router.push('/cash-flow?tab=forecast')}
           />
         ))}
-        {dash && dash.budgetId ? (
-          <Card testID="home-budget">
-            <Small>{t('home.left_to_spend')}</Small>
-            <Body style={{ fontSize: th.font.amount, fontWeight: '700' }}>
-              {fmtMoney(dash.leftToSpend, dash.currency)}
-            </Body>
-            {dash.leftToAssign !== null ? (
-              <Small color={BigInt(dash.leftToAssign) < 0n ? th.danger : undefined}>
-                {t('budget.lta_label')}: {fmtMoney(dash.leftToAssign, dash.currency)}
-              </Small>
-            ) : null}
-          </Card>
-        ) : null}
-        {dash && dash.openRecommendations > 0 ? (
-          <Banner
-            text={t('home.all_suggestions', { count: dash.openRecommendations })}
-            onPress={() => router.push('/suggestions')}
-          />
-        ) : null}
-        {dash?.pace.map((p) => (
-          <Banner
-            key={p.categoryId}
-            tone="warning"
-            text={t('mobile.home.over_pace', { name: p.name })}
-            onPress={() => router.push('/budget')}
-          />
-        ))}
         {summary && summary.needsReview > 0 ? (
           <Banner
             text={t('mobile.home.review', { count: summary.needsReview })}
             onPress={() => router.push('/review')}
           />
         ) : null}
+
+        <Card testID="home-over-time">
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <Body style={{ fontWeight: '700' }}>{t('home.charts.title')}</Body>
+            {dash ? <Small>{fmtMoney(dash.netWorth.current, currency)}</Small> : null}
+          </View>
+          <Segmented
+            label={t('home.charts.range')}
+            value={String(months)}
+            onChange={(v) => setMonths(Number(v) as Months)}
+            options={CHART_MONTHS.map((n) => ({ value: String(n), label: t(RANGE_LABELS[n]) }))}
+          />
+          {charts && sum ? (
+            <>
+              {sum.months > 0 ? (
+                <Small>
+                  {sum.keptPercent === null
+                    ? t('home.charts.summary_no_income', {
+                        months: sum.months,
+                        spending: fmtMoney(sum.spending, charts.currency),
+                      })
+                    : t('home.charts.summary', {
+                        months: sum.months,
+                        income: fmtMoney(sum.income, charts.currency),
+                        spending: fmtMoney(sum.spending, charts.currency),
+                        kept: sum.keptPercent,
+                      })}
+                </Small>
+              ) : null}
+              <MiniLineChart
+                title={t('home.charts.in_out')}
+                summary={t('home.charts.current_month_note')}
+                currency={charts.currency}
+                months={charts.monthly.map((m) => m.start)}
+                series={[
+                  { label: t('home.charts.income'), values: charts.monthly.map((m) => m.income) },
+                  { label: t('home.charts.spending'), values: charts.monthly.map((m) => m.spending) },
+                  { label: t('home.charts.net'), values: charts.monthly.map((m) => m.net) },
+                ]}
+              />
+              <MiniLineChart
+                title={t('home.charts.net_worth')}
+                summary={
+                  sum.netWorthChange === 0n
+                    ? t('home.charts.current_month_note')
+                    : t(sum.netWorthChange > 0n ? 'home.charts.worth_up' : 'home.charts.worth_down', {
+                        amount: fmtMoney(
+                          sum.netWorthChange < 0n ? -sum.netWorthChange : sum.netWorthChange,
+                          currency,
+                        ),
+                      })
+                }
+                currency={currency}
+                fromZero={false}
+                months={charts.monthly.map((m) => m.start)}
+                series={[
+                  { label: t('home.charts.net_worth'), values: charts.monthly.map((m) => m.netWorth) },
+                ]}
+              />
+              <Small>{t('home.charts.current_month_note')}</Small>
+            </>
+          ) : (
+            <Small>{t('mobile.common.loading')}</Small>
+          )}
+        </Card>
+
+        {charts ? (
+          <>
+            <Card testID="home-budget-so-far">
+              <Body style={{ fontWeight: '700' }}>{t('home.budget_so_far')}</Body>
+              <Small>{t('home.budget_so_far_hint')}</Small>
+              {!charts.budget ? (
+                <Row title={t('home.start_budget')} onPress={() => router.push('/budget')} last />
+              ) : charts.budget.rows.length === 0 ? (
+                <Small>{t('home.budget_on_track')}</Small>
+              ) : (
+                <DeviationBars
+                  currency={charts.currency}
+                  overKey="home.ahead"
+                  underKey="home.behind"
+                  rows={charts.budget.rows.map((r) => ({
+                    key: r.categoryId,
+                    label: r.name,
+                    amount: r.spent,
+                    difference: r.difference,
+                    detail: t('home.spent_of', {
+                      spent: fmtMoney(r.spent, charts.currency),
+                      assigned: fmtMoney(r.assigned, charts.currency),
+                    }),
+                    onPress: () => router.push('/budget'),
+                  }))}
+                />
+              )}
+            </Card>
+
+            <Card testID="home-where">
+              <Body style={{ fontWeight: '700' }}>{t('home.where_it_went')}</Body>
+              <Small>
+                {t('home.where_total', { amount: fmtMoney(charts.topSpending.total, charts.currency) })}
+              </Small>
+              {charts.topSpending.rows.length === 0 ? (
+                <Small>{t('home.no_spending')}</Small>
+              ) : (
+                <BarList
+                  currency={charts.currency}
+                  total={charts.topSpending.total}
+                  rows={charts.topSpending.rows.map((r) => ({
+                    key: r.categoryId,
+                    label: r.name,
+                    amount: r.amount,
+                  }))}
+                />
+              )}
+            </Card>
+
+            <Card testID="home-changes">
+              <Body style={{ fontWeight: '700' }}>{t('home.changes')}</Body>
+              <Small>{t('home.changes_hint')}</Small>
+              {charts.changes.rows.length === 0 ? (
+                <Small>{t('home.changes_none')}</Small>
+              ) : (
+                <DeviationBars
+                  currency={charts.currency}
+                  overKey="home.more"
+                  underKey="home.less"
+                  rows={charts.changes.rows.map((r) => ({
+                    key: r.categoryId,
+                    label: r.name,
+                    amount: r.amount,
+                    difference: r.difference,
+                    detail: t('home.usual', {
+                      amount: fmtMoney(r.amount, charts.currency),
+                      usual: fmtMoney(r.usual, charts.currency),
+                    }),
+                  }))}
+                />
+              )}
+            </Card>
+          </>
+        ) : null}
+
         <Card>
-          <Small>{t('mobile.home.upcoming')}</Small>
+          <Body style={{ fontWeight: '700' }}>{t('mobile.home.upcoming')}</Body>
           {summary?.upcoming.length ? (
-            summary.upcoming.map((u) => (
+            summary.upcoming.map((u, i) => (
               <Row
                 key={u.id}
                 title={u.payee ?? u.description}
                 subtitle={fmtDate(u.date)}
                 right={<Body>{fmtMoney(u.amount, u.currency)}</Body>}
                 onPress={() => router.push(`/transaction/${u.id}`)}
+                last={i === summary.upcoming.length - 1}
               />
             ))
           ) : (
-            <Body muted>{t('mobile.home.none_upcoming')}</Body>
+            <Small>{t('mobile.home.none_upcoming')}</Small>
           )}
         </Card>
-        {dash ? (
-          <Card testID="home-net-worth">
-            <Small>{t('home.net_position')}</Small>
-            <Body style={{ fontWeight: '700' }}>
-              {fmtMoney(dash.netWorth.current, session.status === 'signed_in' ? currency : dash.currency)}
-            </Body>
-            <Sparkline values={dash.netWorth.trend.map((p) => p.netWorth)} label={t('home.net_position')} />
-          </Card>
+
+        {dash && dash.openRecommendations > 0 ? (
+          <Banner
+            text={t('home.all_suggestions', { count: dash.openRecommendations })}
+            onPress={() => router.push('/suggestions')}
+          />
         ) : null}
-        <View>
-          <Small>
-            {state?.lastSyncedAt
-              ? t('mobile.home.synced', { time: new Date(state.lastSyncedAt).toLocaleTimeString() })
-              : t('mobile.home.never_synced')}
-          </Small>
-        </View>
+
+        <Small>
+          {state?.lastSyncedAt
+            ? t('mobile.home.synced', { time: new Date(state.lastSyncedAt).toLocaleTimeString() })
+            : t('mobile.home.never_synced')}
+        </Small>
       </ScrollView>
     </SafeAreaView>
   );

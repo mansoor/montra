@@ -6,9 +6,10 @@ import { Money } from '@/components/money';
 import { TransactionList } from '@/components/transaction-list';
 import { DateText } from '@/components/i18n';
 import { PageHeader, StatTile } from '@/components/ui/page-header';
-import { LineChart, ProgressBar } from '@/components/charts/line-chart';
 import { RecommendationList } from '@/components/planning/recommendations';
-import { drillHref, percentOf } from '@/lib/planning';
+import { drillHref } from '@/lib/planning';
+import { CHART_MONTHS } from '@montra/schemas';
+import { HomeCharts } from './home-charts';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,12 +18,13 @@ export default async function HomePage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ memberId?: string }>;
+  searchParams: Promise<{ memberId?: string; months?: string }>;
 }) {
   const { workspaceId } = await params;
-  const { memberId } = await searchParams;
+  const { memberId, months: m } = await searchParams;
   const only = memberId ? { memberId } : {};
-  const [[workspace, accounts, transactions, dashboard, recs, categories, members], { t }] =
+  const months = (CHART_MONTHS as readonly number[]).includes(Number(m)) ? Number(m) : 6;
+  const [[workspace, accounts, transactions, dashboard, recs, categories, members, charts], { t }] =
     await Promise.all([
       load((api) =>
         Promise.all([
@@ -33,6 +35,7 @@ export default async function HomePage({
           api.listRecommendations(workspaceId, { status: 'open' }),
           api.listCategories(workspaceId),
           api.listFamilyMembers(workspaceId),
+          api.getDashboardCharts(workspaceId, { months, ...only }),
         ]),
       ),
       getI18n(),
@@ -123,34 +126,10 @@ export default async function HomePage({
         </section>
       )}
 
+      <HomeCharts charts={charts} base={base} memberId={memberId} baseCurrency={workspace.baseCurrency} />
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-6">
-          {d.pace.length > 0 && (
-            <section aria-labelledby="pace-heading" className="card space-y-3">
-              <h2 id="pace-heading" className="font-semibold">
-                {t('home.pace')}
-              </h2>
-              {d.pace.map((p) => (
-                <div key={p.categoryId}>
-                  <div className="flex justify-between text-sm">
-                    <Link href={drillHref(base, p.drill)} className="font-medium hover:underline">
-                      {p.name}
-                    </Link>
-                    <span className="text-muted">
-                      <Money amount={p.activity} currency={ccy} /> /{' '}
-                      <Money amount={p.assigned} currency={ccy} />
-                    </span>
-                  </div>
-                  <ProgressBar
-                    label={t('budget.pace_for', { name: p.name })}
-                    percent={percentOf(BigInt(p.activity), BigInt(p.assigned))}
-                    marker={percentOf(BigInt(p.pace.expectedByToday), BigInt(p.assigned))}
-                    tone="bad"
-                  />
-                </div>
-              ))}
-            </section>
-          )}
           <section aria-labelledby="upcoming-heading" className="card">
             <div className="mb-2 flex items-center justify-between">
               <h2 id="upcoming-heading" className="font-semibold">
@@ -209,15 +188,6 @@ export default async function HomePage({
               </ul>
             )}
             <p className="mt-0.5 text-xs text-muted">{t('home.net_position_hint')}</p>
-            {d.netWorth.trend.length > 1 && (
-              <LineChart
-                compact
-                title={t('home.net_worth')}
-                series={[{ label: t('home.net_worth'), values: d.netWorth.trend.map((p) => p.netWorth) }]}
-                labels={d.netWorth.trend.map((p) => p.date)}
-                currency={workspace.baseCurrency}
-              />
-            )}
           </section>
           {recs.length > 0 && (
             <section aria-labelledby="recs-heading" className="space-y-2">

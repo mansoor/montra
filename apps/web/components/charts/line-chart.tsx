@@ -24,6 +24,7 @@ export function LineChart({
   title,
   compact = false,
   fromZero = true,
+  months = false,
 }: {
   series: readonly LineSeries[];
   /** One label per x position (dates); only a few are drawn. */
@@ -35,8 +36,17 @@ export function LineChart({
   compact?: boolean;
   /** Scale from zero. Off for a value that only moves within a band, like an investment, so the movement shows. */
   fromZero?: boolean;
+  /** Labels are month starts: show them as "Oct 26". */
+  months?: boolean;
 }) {
-  const { money, date } = useI18n();
+  const { money, date, locale } = useI18n();
+  const monthName = new Intl.DateTimeFormat(locale, { month: 'short', year: '2-digit', timeZone: 'UTC' });
+  const label = (l: string) =>
+    months && /^\d{4}-\d{2}-\d{2}$/.test(l)
+      ? monthName.format(new Date(`${l}T00:00:00Z`))
+      : /^\d{4}-\d{2}-\d{2}$/.test(l)
+        ? date(l)
+        : l;
   const { w: W, h: H } = SIZES[compact ? 'compact' : 'full'];
   const all = series.flatMap((s) => s.values.map(Number));
   if (threshold != null) all.push(Number(threshold));
@@ -105,7 +115,7 @@ export function LineChart({
               fontSize="10"
               fill="var(--ink-muted)"
             >
-              {/^\d{4}-\d{2}-\d{2}$/.test(l) ? date(l) : l}
+              {label(l)}
             </text>
           ) : null,
         )}
