@@ -4,9 +4,11 @@ import type { LocalTransaction } from '@montra/sync';
 import {
   buildCreateRequest,
   digitsToDisplay,
+  offersReceipt,
   payeeSuggestions,
   pressKey,
   previousStep,
+  recentAccountIds,
 } from '../src/features/quick-add';
 import { effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
 import { monthSummary } from '../src/features/home';
@@ -118,6 +120,24 @@ describe('quick add: back and cancel', () => {
     expect(previousStep('confirm', 'keypad')).toBe('payee');
     expect(previousStep('confirm', 'sentence')).toBe('sentence');
     expect(previousStep('sentence', 'sentence')).toBe('amount');
+  });
+
+  it('shows the most recently used accounts, keeping the chosen one without moving the others', () => {
+    const h = (...ids: (string | null)[]) => ids.map((accountId) => ({ accountId }));
+    const all = ['chk', 'card', 'sav', 'cash'];
+    expect(recentAccountIds(h('card', 'chk', 'card', null, 'gone'), all, 'card')).toEqual([
+      'card',
+      'chk',
+      'sav',
+    ]);
+    expect(recentAccountIds(h('card', 'chk', 'sav'), all, 'cash')).toEqual(['card', 'chk', 'cash']);
+    expect(recentAccountIds(h(), all, '')).toEqual(['chk', 'card', 'sav']);
+    expect(recentAccountIds(h('chk'), ['chk'], 'chk')).toEqual(['chk']);
+  });
+
+  it('offers a receipt photo after saving spending, not income (TXN-08)', () => {
+    expect(offersReceipt('expense')).toBe(true);
+    expect(offersReceipt('income')).toBe(false);
   });
 
   it('has nothing to go back to from the amount, so Back leaves the screen', () => {
