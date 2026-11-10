@@ -16,9 +16,11 @@ import {
   CircleCheck,
   FileText,
   Inbox,
+  Keyboard,
   Info,
   LayoutGrid,
   Lightbulb,
+  Mic,
   List,
   type LucideIcon,
   House,
@@ -28,6 +30,7 @@ import {
   ScanLine,
   Search,
   Settings,
+  Square,
   ShieldCheck,
   SlidersHorizontal,
   Tag,
@@ -76,6 +79,9 @@ const ICONS = {
   delete: Trash2,
   category: Tag,
   document: FileText,
+  mic: Mic,
+  stop: Square,
+  keyboard: Keyboard,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
