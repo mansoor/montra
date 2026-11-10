@@ -71,6 +71,87 @@ export function displayName(key: string): string {
     .join(' ');
 }
 
+const ACTIONS: Record<string, string> = {
+  PAYMENT: 'payment',
+  PMT: 'payment',
+  PYMT: 'payment',
+  TRANSFER: 'transfer',
+  XFER: 'transfer',
+  DEPOSIT: 'deposit',
+  WITHDRAWAL: 'withdrawal',
+  WIRE: 'wire',
+  DEBIT: 'debit',
+  CREDIT: 'credit',
+};
+/** Banking-channel words that say how the money moved, not to whom ("ONLINE BANKING transfer"). */
+const CHANNELS = new Set([
+  'ONLINE',
+  'INTERNET',
+  'MOBILE',
+  'BANKING',
+  'WEB',
+  'ACH',
+  'ELECTRONIC',
+  'RECURRING',
+  'PREAUTHORIZED',
+  'AUTOMATIC',
+  'POS',
+]);
+const ACCOUNT_WORDS = /^(CARD|ACCT|ACCOUNT|CHK|CHECKING|SAV|SAVINGS|LOAN|IN)$/;
+/** "<lead> <action> TO|FROM <counterparty>", e.g. "ZELLE PAYMENT TO JOHN SMITH". */
+const PAYMENT_LINE = new RegExp(`^(.*?)\\b(${Object.keys(ACTIONS).join('|')}) (TO|FROM) (.+)$`);
+
+/** "CARD XXXX4321 CONFIRMATION# 99" → "Card ••4321": masked and account numbers kept as their last four digits. */
+function counterparty(text: string): string {
+  const tokens = text
+    .replace(/\b(CONFIRMATION|CONF|REF|REFERENCE|TRACE|TRANSACTION|TXN|ID|ON \d{1,2}\/\d{1,2})\b.*$/, '')
+    .split(' ')
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const [i, raw] of tokens.entries()) {
+    const masked = /^(?:X{2,}|\*{2,}|•+|\.{2,})(\d{2,})$/.exec(raw);
+    if (masked) out.push(`••${masked[1]!.slice(-4)}`);
+    else if (/^\d{3,4}$/.test(raw) && i > 0 && ACCOUNT_WORDS.test(tokens[i - 1]!)) out.push(`••${raw}`);
+    else if (!/\d/.test(raw)) {
+      const word = raw.replace(/[^\p{L}&+]/gu, '');
+      if (word) out.push(word);
+    }
+  }
+  return displayName(out.slice(0, 5).join(' '));
+}
+
+/**
+ * Display name for a statement line without a payee column. Ordinary merchants keep displayName(key); payment and
+ * transfer lines are named from the raw text, because the key loses their meaning ("ONLINE PAYMENT TO CARD XXXX4321"
+ * has the key "TO"): "Payment to Card ••4321", "Zelle payment to John Smith". The key itself is not changed.
+ */
+export function payeeDisplayName(raw: string, key = normalizeDescription(raw)): string {
+  const s = raw
+    .toUpperCase()
+    .normalize('NFKC')
+    .replace(/[“”"']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const m = PAYMENT_LINE.exec(s);
+  if (!m) {
+    // A key of only connectors ("TO" from "TO CARD XXXX4321") still names the other side, from the raw text.
+    if (!/^((TO|FROM)( |$))+$/.test(key)) return displayName(key);
+    const to = /\b(TO|FROM) (.+)$/.exec(s);
+    const name = to ? counterparty(to[2]!) : '';
+    return name ? `${displayName(to![1]!)} ${name}` : displayName(key);
+  }
+  const [, before, action, connector, rest] = m;
+  const lead = displayName(
+    before!
+      .split(' ')
+      .filter((w) => w && !CHANNELS.has(w) && !/\d/.test(w))
+      .join(' '),
+  );
+  const to = counterparty(rest!);
+  const head = lead ? `${lead} ${ACTIONS[action!]}` : displayName(ACTIONS[action!]!);
+  return to ? `${head} ${connector!.toLowerCase()} ${to}` : head;
+}
+
 /** Trigram set similarity (Jaccard), the same measure Postgres pg_trgm uses, for fuzzy payee matching. */
 export function similarity(a: string, b: string): number {
   if (a === b) return 1;

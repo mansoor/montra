@@ -238,6 +238,34 @@ describe('other file types and mapping', () => {
     ]);
   });
 
+  it('names payment lines by where the money went, keeping the payee key (IMP-10)', async () => {
+    const w = await setup();
+    const acct = (await c.post(w.url('/accounts'), { name: 'Checking', kind: 'checking' })).body.id;
+    const csv = Buffer.from(
+      'Date,Description,Amount\n' +
+        '2026-10-02,ONLINE PAYMENT TO VISA,-120.00\n' +
+        '2026-10-03,ONLINE PAYMENT TO CARD XXXX4321,-500.00\n' +
+        '2026-10-04,CORNER DELI #12 OAKLAND CA,-6.50\n',
+    );
+    const up = await upload(w.ws.id, 'payments.csv', csv);
+    const batch = (await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId: acct })).body;
+    await worker.drain();
+    await c.post(w.url(`/imports/${batch.id}/commit`));
+    await worker.drain();
+    const txns = (await c.get(w.url(`/transactions?accountId=${acct}&limit=50`))).body.data;
+    expect(txns.map((t: any) => t.payee).sort()).toEqual([
+      'Corner Deli',
+      'Payment to Card ••4321',
+      'Payment to Visa',
+    ]);
+    const keys = await h.app
+      .get(Db)
+      .run({ workspaceId: w.ws.id, userId: (await c.get('/v1/me')).body.id }, (trx) =>
+        trx.selectFrom('app.payee').select('normalized_key').orderBy('normalized_key').execute(),
+      );
+    expect(keys.map((k) => k.normalized_key)).toEqual(['CORNER DELI', 'TO', 'TO VISA']);
+  });
+
   it('asks for a mapping when inference is unsure, then re-parses with it (IMP-03)', async () => {
     const w = await setup();
     const acct = (await c.post(w.url('/accounts'), { name: 'Cash', kind: 'cash' })).body.id;
