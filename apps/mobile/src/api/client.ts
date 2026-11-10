@@ -7,6 +7,7 @@ import type {
   BudgetPeriodDto,
   CalendarDto,
   DashboardChartsDto,
+  SpendingExploreDto,
   DashboardDto,
   ForecastDto,
   GoalDto,
@@ -210,6 +211,12 @@ export function createApi(opts: ApiOptions) {
 
     // Planning (Phase 6): online reads (cached on the device by useCached) and online-only budget writes.
     dashboard: (w: string) => request<DashboardDto>('GET', `${ws(w)}/dashboard`),
+    /** Explore spending: the picked categories (none: the three biggest everyday ones) over `months` months. */
+    spendingExplore: (w: string, months: number, categoryIds: readonly string[]) =>
+      request<SpendingExploreDto>(
+        'GET',
+        `${ws(w)}/spending/explore?months=${months}${categoryIds.length ? `&categoryIds=${categoryIds.join(',')}` : ''}`,
+      ),
     /** The Home charts for the last `months` months (3, 6, 12 or 24). */
     dashboardCharts: (w: string, months: number) =>
       request<DashboardChartsDto>('GET', `${ws(w)}/dashboard/charts?months=${months}`),

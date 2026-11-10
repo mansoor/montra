@@ -77,6 +77,7 @@ function Gate() {
         <Stack.Screen name="review" options={{ title: t('mobile.tab.review') }} />
         <Stack.Screen name="goals" options={{ title: t('nav.goals') }} />
         <Stack.Screen name="cash-flow" options={{ title: t('nav.cash_flow') }} />
+        <Stack.Screen name="explore" options={{ title: t('nav.explore') }} />
         <Stack.Screen name="calendar" options={{ title: t('nav.calendar') }} />
         <Stack.Screen name="suggestions" options={{ title: t('nav.suggestions') }} />
         <Stack.Screen name="activity" options={{ title: t('mobile.activity.title') }} />

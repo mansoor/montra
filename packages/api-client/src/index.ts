@@ -18,6 +18,7 @@ import type {
   DraftBudgetDto,
   DraftBudgetRequest,
   DashboardChartsDto,
+  SpendingExploreDto,
   ExpectedIncomeDto,
   ForecastDto,
   GoalDto,
@@ -1956,6 +1957,20 @@ export class ApiClient {
   ) {
     return this.request<DashboardChartsDto>('GET', this.ws(workspaceId, `/dashboard/charts${query(opts)}`));
   }
+  /** Explore spending: the picked categories month by month (SpendingExploreDto). */
+  getSpendingExplore(
+    workspaceId: string,
+    opts: { months?: number; categoryIds?: string[]; entityId?: string; memberId?: string } = {},
+  ) {
+    const { categoryIds, ...rest } = opts;
+    return this.request<SpendingExploreDto>(
+      'GET',
+      this.ws(
+        workspaceId,
+        `/spending/explore${query({ ...rest, ...(categoryIds?.length ? { categoryIds: categoryIds.join(',') } : {}) })}`,
+      ),
+    );
+  }
   getSankey(workspaceId: string, opts: { from?: string; to?: string; entityId?: string } = {}) {
     return this.request<SankeyDto>('GET', this.ws(workspaceId, `/flow/sankey${query(opts)}`));
   }
@@ -2200,6 +2215,7 @@ export type {
   DraftBudgetDto,
   ExpectedIncomeDto,
   DashboardChartsDto,
+  SpendingExploreDto,
   ForecastDto,
   GoalDto,
   NetWorthDto,
