@@ -155,6 +155,10 @@ describe('swipe review', () => {
     expect(swipeOutcome(40, -1200, 400)).toBe('cancel');
     expect(effectiveOutcome('accept', t('x', '2026-10-01'))).toBe('edit');
     expect(effectiveOutcome('accept', t('x', '2026-10-01', { suggestedCategoryId: 'c' }))).toBe('accept');
+    // A suggested transfer can be accepted too.
+    expect(effectiveOutcome('accept', t('x', '2026-10-01', { suggestedTransferAccountId: 'card' }))).toBe(
+      'accept',
+    );
   });
 
   it('orders the stack by confidence, then date', () => {

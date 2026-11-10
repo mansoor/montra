@@ -49,6 +49,8 @@ export function projectTransaction(
     reviewState: dto.reviewState,
     status: dto.status,
     suggestedCategoryId: dto.categorization?.suggested?.categoryId ?? null,
+    suggestedTransferAccountId:
+      dto.categorization?.step === 'transfer' ? (dto.categorization.transfer?.accountId ?? null) : null,
     confidence: dto.categorization?.confidence ?? null,
     explanation: dto.categorization?.explanation ?? null,
     merchantName: dto.merchant?.name ?? null,
@@ -194,6 +196,9 @@ export function replayOp(
     case 'transaction.delete':
       return null;
     case 'review.accept':
+      // A suggested transfer is made on the server; the next pull brings it (and drops the absorbed other side).
+      if (!local.suggestedCategoryId && local.suggestedTransferAccountId)
+        return { ...local, reviewState: 'reviewed' };
       return {
         ...local,
         reviewState: 'reviewed',

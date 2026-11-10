@@ -16,7 +16,7 @@ import type {
   SuggestionDto,
   SuggestRequest,
 } from '@montra/schemas';
-import { notFound, unprocessable } from '../common/errors.js';
+import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { AiService } from '../ai/ai.service.js';
 import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
@@ -140,10 +140,30 @@ export class ReviewService {
     const rows = await q.limit(5000).execute();
     let accepted = 0;
     let skipped = 0;
+    let transfers = 0;
+    // The other sides absorbed by transfers made here (they may be in the same batch).
+    const absorbed = new Set<string>();
     for (const r of rows) {
+      if (absorbed.has(r.id)) continue;
       const c = r.categorization as StoredCategorization | null;
       const spec = r.spec as TransactionSpec | null;
       const categoryId = c?.suggested?.categoryId;
+      // A suggested transfer becomes one, with whichever other side is there now (it may have arrived since).
+      if (!categoryId && c?.step === 'transfer' && c.transfer && spec?.type === 'standard') {
+        try {
+          const other = await this.transactions.makeTransferInTrx(trx, ctx, r.id, {
+            accountId: c.transfer.accountId,
+          });
+          if (other) absorbed.add(other);
+          accepted++;
+          transfers++;
+        } catch (e) {
+          // Checks run before anything is written, so a refusal leaves this item as it was.
+          if (!(e instanceof AppError)) throw e;
+          skipped++;
+        }
+        continue;
+      }
       if (!categoryId || spec?.type !== 'standard' || spec.splits.length !== 1) {
         skipped++;
         continue;
@@ -159,7 +179,7 @@ export class ReviewService {
       });
       accepted++;
     }
-    return { accepted, skipped };
+    return { accepted, skipped, transfers };
   }
 
   /** A different category than suggested: a correction the app learns from (AI-05). */

@@ -10,6 +10,7 @@ import {
   mergePatches,
   projectCreate,
   projectTransaction,
+  replayOp,
 } from '../src/index.js';
 import { ACCOUNT, CATEGORIES, makeDto } from './fake-server.js';
 
@@ -30,6 +31,31 @@ describe('projection', () => {
       reviewState: 'needs_review',
       suggestedCategoryId: 'cat-groceries',
       confidence: 0.7,
+    });
+  });
+
+  it('carries a suggested transfer, and accepting it only marks it reviewed until the server answers', () => {
+    const dto = makeDto({ id: 't' });
+    const local = projectTransaction(
+      {
+        ...dto,
+        categorization: {
+          step: 'transfer',
+          confidence: 0.95,
+          explanation: 'Looks like the payment to Visa ••4321',
+          ruleId: null,
+          suggested: null,
+          transfer: { accountId: 'acct-card', transactionId: 'x' },
+        },
+      },
+      CATEGORIES,
+    );
+    expect(local).toMatchObject({ suggestedTransferAccountId: 'acct-card', suggestedCategoryId: null });
+    const op = { kind: 'review.accept', opId: 'o', changedAt: '2026-10-30T00:00:00Z', id: 't' } as const;
+    expect(replayOp(local, op, CATEGORIES)).toMatchObject({
+      reviewState: 'reviewed',
+      categoryId: local.categoryId,
+      categoryName: local.categoryName,
     });
   });
 

@@ -50,6 +50,29 @@ describe('runPipeline', () => {
     expect(aiFn).not.toHaveBeenCalled();
   });
 
+  it('suggests a card payment whose other side isn’t in yet, only when the text names the card', async () => {
+    const card = {
+      transactionId: null,
+      accountId: 'acct-card',
+      accountName: 'Visa',
+      accountLast4: '4321',
+      amountMinor: 4200n,
+      date: d('2026-10-14'),
+    };
+    const paid = item({ id: 'a', payee: null, payeeKey: null, description: 'PAYMENT TO CARD XXXX4321' });
+    const vague = item({ id: 'b', payee: null, payeeKey: null, description: 'ONLINE PAYMENT' });
+    const named = item({ id: 'c', payee: 'Shop 4321', payeeKey: 'SHOP 4321', description: 'Shop 4321' });
+    const [a, b, c] = await runPipeline([paid, vague, named], deps({ transferCandidates: () => [card] }));
+    expect(a).toMatchObject({ step: 'transfer', transfer: card, confidence: 0.8, categoryId: null });
+    expect(b?.step).not.toBe('transfer');
+    expect(c?.step).not.toBe('transfer');
+
+    // A recorded other side on the same card wins over the account itself.
+    const real = { ...card, transactionId: 't9', date: d('2026-10-13') };
+    const [again] = await runPipeline([paid], deps({ transferCandidates: () => [card, real] }));
+    expect(again).toMatchObject({ transfer: real, confidence: 0.95 });
+  });
+
   it('history closes at the threshold, otherwise the AI gets a chance', async () => {
     const strong = item({ id: 'strong', payeeKey: 'SHELL OIL' });
     const weak = item({ id: 'weak', payeeKey: 'WEAK' });

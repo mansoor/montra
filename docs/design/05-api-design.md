@@ -64,6 +64,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET /transactions` | Search and filter (RPT-05 syntax: `q=coffee >20 tag:travel`) | TXN, RPT-05 |
 | `POST /transactions` | Create: `{ date, accountId, payee, amount, splits[], memo, tags, attachments[] }` | TXN-01..03 |
 | `POST /transactions/transfer` | Transfer between accounts (including FX) | TXN-04, CUR-08 |
+| `POST /transactions/:id/make-transfer` | A plain transaction becomes a transfer to or from `accountId` (`MakeTransferRequest`). The other side (`counterpartId`; omitted: the closest opposite amount on that account within 3 days; null: none) is absorbed: its statement line moves to the transfer, stays cleared and is still recognised on re-import, and it goes to the trash. Review's accept does this for suggested transfers. Refused when either side is reconciled, split or owned by a payslip, invoice or bill ([ADR-0028](adr/0028-making-detected-transfers.md)) | TXN-04, AI-01 |
 | `PATCH /transactions/{id}`, `DELETE /transactions/{id}` | Edit (with automatic reversal when locked), delete to trash | DE-10, BAK-06 |
 | `POST /transactions/bulk` | Bulk edit category, entity, tags, member | TXN-10 |
 | `POST /transactions/parse` | Natural-language quick add → prefilled draft | TXN-06 |

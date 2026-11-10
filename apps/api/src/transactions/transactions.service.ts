@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { newId, type TransactionRow, type Trx } from '@montra/db';
-import { calendarDate } from '@montra/domain';
+import { addDays, calendarDate, type CalendarDate } from '@montra/domain';
 import type {
   BulkEditRequest,
   BulkEditResult,
@@ -8,6 +9,8 @@ import type {
   CreateTransactionRequest,
   CreateTransferRequest,
   ForeignAmountInput,
+  MakeTransferDto,
+  MakeTransferRequest,
   TransactionDto,
   UpdateTransactionRequest,
 } from '@montra/schemas';
@@ -308,6 +311,236 @@ export class TransactionsService {
       await this.poster.post(trx, ctx, id, built);
     }
     return id;
+  }
+
+  /**
+   * A plain transaction becomes a transfer to or from another account (TXN-04): a card payment or a move between
+   * accounts that was recorded as spending or income. The other side, when it was recorded separately, is absorbed.
+   */
+  async makeTransfer(ctx: Ctx, id: string, req: MakeTransferRequest): Promise<MakeTransferDto> {
+    const absorbedId = await this.db.run(ctx, (trx) => this.makeTransferInTrx(trx, ctx, id, req));
+    return { transaction: await this.getOrThrow(ctx, id), absorbedId };
+  }
+
+  /**
+   * The same, inside the caller's transaction. Returns the absorbed other side, if any. That side's statement line
+   * moves to the transfer: the line stays cleared, and its import's source row moves too (as a second leg), so
+   * re-importing that statement still recognises it and undoing that import only unclears the line. The other side
+   * goes to the trash. A reconciled line can't be rewritten this way, so either side being reconciled is refused.
+   */
+  async makeTransferInTrx(trx: Trx, ctx: Ctx, id: string, req: MakeTransferRequest): Promise<string | null> {
+    const row = await this.lockRow(trx, ctx, id);
+    const spec = row.spec as TransactionSpec | null;
+    if (row.status !== 'posted' || row.deleted_at)
+      throw unprocessable('transfer.not_posted', 'Only a posted transaction can become a transfer');
+    if (!spec || spec.type !== 'standard')
+      throw unprocessable('transfer.not_standard', 'This is already a transfer, or not a plain transaction');
+    assertNotOwned(spec);
+    if (spec.splits.length !== 1)
+      throw unprocessable(
+        'transfer.split',
+        'A split transaction can’t become a transfer; undo the split first',
+      );
+    if (req.accountId === spec.accountId)
+      throw unprocessable('transfer.same_account', 'Pick the other account of the transfer');
+    const amount = BigInt(spec.amount);
+    const date = calendarDate(row.txn_date);
+    if ((await this.poster.protection(trx, ctx, id)) === 'reconciled')
+      throw unprocessable('transfer.reconciled', 'This transaction is reconciled; unreconcile it first');
+
+    const otherId =
+      req.counterpartId === undefined
+        ? await this.findCounterpart(trx, ctx, id, req.accountId, amount, spec.currency, date)
+        : req.counterpartId;
+    let other: { row: TransactionRow; spec: Extract<TransactionSpec, { type: 'standard' }> } | null = null;
+    if (otherId) {
+      const b = await this.lockRow(trx, ctx, otherId);
+      const bSpec = b.spec as TransactionSpec | null;
+      const bAmount = bSpec?.type === 'standard' ? BigInt(bSpec.amount) : 0n;
+      if (
+        b.id === id ||
+        b.status !== 'posted' ||
+        b.deleted_at ||
+        bSpec?.type !== 'standard' ||
+        bSpec.accountId !== req.accountId ||
+        bSpec.splits.length !== 1 ||
+        ownerOf(bSpec) !== null ||
+        bAmount < 0n === amount < 0n ||
+        (bSpec.currency === spec.currency && bAmount !== -amount)
+      )
+        throw unprocessable('transfer.counterpart', 'That isn’t the other side of this transfer');
+      if ((await this.poster.protection(trx, ctx, b.id)) === 'reconciled')
+        throw unprocessable(
+          'transfer.counterpart_reconciled',
+          'The other side is reconciled; unreconcile it first, or make the transfer without it',
+        );
+      other = { row: b, spec: bSpec };
+    }
+
+    // Money leaves the account whose side is negative. The amount is in the source account's currency; the arriving
+    // amount is the other side's when the currencies differ.
+    const out = amount < 0n;
+    const mine = { amount: out ? -amount : amount, currency: spec.currency };
+    const theirs = other ? { amount: BigInt(other.spec.amount), currency: other.spec.currency } : null;
+    const theirsAbs = theirs
+      ? { ...theirs, amount: theirs.amount < 0n ? -theirs.amount : theirs.amount }
+      : null;
+    const from = out ? mine : (theirsAbs ?? mine);
+    const to = out ? (theirsAbs ?? mine) : mine;
+    const next: TransactionSpec = {
+      type: 'transfer',
+      fromAccountId: out ? spec.accountId : req.accountId,
+      toAccountId: out ? req.accountId : spec.accountId,
+      amount: from.amount.toString(),
+      currency: from.currency,
+      description: row.description || row.payee_raw || 'Transfer',
+      ...(to.currency !== from.currency ? { amountIn: to.amount.toString() } : {}),
+    };
+
+    // Built before anything is written: a refusal here (e.g. no arriving amount between currencies) changes nothing.
+    const built = await this.poster.build(trx, ctx, next, date, id);
+    // Cleared state of both statement lines, to carry over.
+    const mineCleared = await this.clearedOn(trx, ctx, id, spec.accountId);
+    const theirsCleared = other ? await this.clearedOn(trx, ctx, other.row.id, req.accountId) : 'uncleared';
+    if (other) {
+      await this.poster.unpost(trx, ctx, other.row.id);
+      await trx
+        .updateTable('app.transaction')
+        .set({ status: 'void', deleted_at: new Date(), review_state: 'reviewed' })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', other.row.id)
+        .execute();
+    }
+    await this.poster.post(trx, ctx, id, built);
+    if (mineCleared !== 'uncleared') await this.setCleared(trx, ctx, id, spec.accountId, mineCleared);
+    if (theirsCleared !== 'uncleared') await this.setCleared(trx, ctx, id, req.accountId, theirsCleared);
+    if (other) {
+      // Undoing the other side's import unclears its line on the transfer (a "matched"-style before image).
+      const theirLine = await trx
+        .selectFrom('app.posting as p')
+        .innerJoin('app.journal_entry as je', (j) =>
+          j.onRef('je.workspace_id', '=', 'p.workspace_id').onRef('je.id', '=', 'p.journal_entry_id'),
+        )
+        .select('p.id')
+        .where('p.workspace_id', '=', ctx.workspaceId)
+        .where('je.transaction_id', '=', id)
+        .where('p.ledger_account_id', '=', req.accountId)
+        .execute();
+      await trx
+        .updateTable('app.transaction_source')
+        .set({
+          transaction_id: id,
+          role: 'second_leg',
+          before_image: JSON.stringify({
+            status: 'posted',
+            txnDate: row.txn_date,
+            spec: next,
+            statementDate: row.statement_date,
+            rawDescription: row.raw_description,
+            dedupeKey: row.dedupe_key,
+            cleared: theirLine.map((p) => ({ id: p.id, cleared: 'uncleared' })),
+          }),
+        })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('transaction_id', '=', other.row.id)
+        .execute();
+    }
+
+    const before = row.categorization as StoredCategorization | null;
+    const confirmed = before?.transfer?.accountId === req.accountId;
+    const categorization: StoredCategorization = {
+      step: confirmed ? 'transfer' : 'user',
+      confidence: confirmed ? before!.confidence : 1,
+      explanation: confirmed ? before!.explanation : 'Made a transfer by you',
+      ruleId: null,
+      suggested: before?.suggested ?? null,
+      transfer: { accountId: req.accountId, transactionId: other?.row.id ?? null },
+    };
+    await trx
+      .updateTable('app.transaction')
+      .set({
+        spec: JSON.stringify(next),
+        review_state: 'reviewed',
+        categorization: JSON.stringify(categorization),
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
+    return other?.row.id ?? null;
+  }
+
+  /** The other side of a transfer: on `accountId`, the opposite amount in the same currency, within 3 days, closest. */
+  private async findCounterpart(
+    trx: Trx,
+    ctx: Ctx,
+    id: string,
+    accountId: string,
+    amount: bigint,
+    currency: string,
+    date: CalendarDate,
+  ): Promise<string | null> {
+    const hit = await trx
+      .selectFrom('app.transaction')
+      .select('id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '<>', id)
+      .where('status', '=', 'posted')
+      .where('deleted_at', 'is', null)
+      .where('txn_date', '>=', addDays(date, -3))
+      .where('txn_date', '<=', addDays(date, 3))
+      .where(sql<boolean>`spec->>'type' = 'standard'`)
+      .where(sql<boolean>`spec->>'accountId' = ${accountId}`)
+      .where(sql<boolean>`spec->>'amount' = ${(-amount).toString()}`)
+      .where(sql<boolean>`spec->>'currency' = ${currency}`)
+      .where(sql<boolean>`jsonb_array_length(spec->'splits') = 1`)
+      .orderBy(sql`abs(txn_date - ${date}::date)`)
+      .orderBy('id')
+      .executeTakeFirst();
+    return hit?.id ?? null;
+  }
+
+  private async clearedOn(
+    trx: Trx,
+    ctx: Ctx,
+    transactionId: string,
+    accountId: string,
+  ): Promise<'uncleared' | 'cleared' | 'reconciled'> {
+    const rows = await trx
+      .selectFrom('app.posting as p')
+      .innerJoin('app.journal_entry as je', (j) =>
+        j.onRef('je.workspace_id', '=', 'p.workspace_id').onRef('je.id', '=', 'p.journal_entry_id'),
+      )
+      .select('p.cleared')
+      .where('p.workspace_id', '=', ctx.workspaceId)
+      .where('je.transaction_id', '=', transactionId)
+      .where('p.ledger_account_id', '=', accountId)
+      .execute();
+    return rows.some((r) => r.cleared !== 'uncleared') ? 'cleared' : 'uncleared';
+  }
+
+  private async setCleared(
+    trx: Trx,
+    ctx: Ctx,
+    transactionId: string,
+    accountId: string,
+    state: 'cleared' | 'reconciled',
+  ): Promise<void> {
+    await trx
+      .updateTable('app.posting')
+      .set({ cleared: state })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('ledger_account_id', '=', accountId)
+      .where('cleared', '=', 'uncleared')
+      .where(
+        'journal_entry_id',
+        'in',
+        trx
+          .selectFrom('app.journal_entry')
+          .select('id')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('transaction_id', '=', transactionId),
+      )
+      .execute();
   }
 
   /**
