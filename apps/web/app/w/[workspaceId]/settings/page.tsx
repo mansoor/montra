@@ -111,7 +111,14 @@ export default async function SettingsPage({
     const [settings, categories] = await load((api) =>
       Promise.all([api.getPlanningSettings(workspaceId), api.listCategories(workspaceId)]),
     );
-    body = <PlanningSettings workspaceId={workspaceId} initial={settings} categories={categories} />;
+    body = (
+      <PlanningSettings
+        workspaceId={workspaceId}
+        initial={settings}
+        categories={categories}
+        currency={workspace.baseCurrency}
+      />
+    );
   } else if (tab === 'ai-activity') {
     body = <AiActivity workspaceId={workspaceId} />;
   } else if (tab === 'notifications') {

@@ -24,7 +24,8 @@ import {
   type ReceiptDto,
   type ReceiptFileDto,
   type ReceiptPageDto,
-  type ReceiptRecommendationDto,
+  type ReceiptHabitDto,
+  ReceiptRecommendationDto,
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
@@ -71,6 +72,12 @@ export class ReceiptsController {
   @Get('recommended')
   async recommended(@Ctx() ctx: RequestContext): Promise<{ data: ReceiptRecommendationDto[] }> {
     return { data: await this.receipts.recommended(dbCtx(ctx)) };
+  }
+
+  /** UP-09: this week's receipts kept and missing, the streak, and the latest still waiting. */
+  @Get('habit')
+  async habit(@Ctx() ctx: RequestContext): Promise<ReceiptHabitDto> {
+    return this.receipts.habit(dbCtx(ctx));
   }
 
   @Post('recommended/:transactionId/dismiss')

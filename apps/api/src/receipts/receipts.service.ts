@@ -20,6 +20,7 @@ import {
   isCurrencyCode,
   minorUnits,
   parseMoney,
+  receiptHabit,
   todayIn,
   validateReceipt,
   type CalendarDate,
@@ -45,6 +46,7 @@ import type {
   ReceiptLineDto,
   ReceiptListQuery,
   ReceiptPageDto,
+  ReceiptHabitDto,
   ReceiptRecommendationDto,
   ReceiptStalledDto,
   UpdateReceiptRequest,
@@ -76,6 +78,10 @@ const MATCH_WINDOW_DAYS = 5;
 /** RCP-11: multi-department stores where a receipt is worth keeping above the threshold. */
 const MULTI_DEPARTMENT = ['walmart', 'target', 'costco', 'amazon'];
 const RECOMMEND_THRESHOLD_MAJOR = 50n;
+/** The business profile's own default (migration 0018), for a business without a profile yet. */
+const DEDUCTIBLE_DEFAULT_MINOR = 7500;
+/** Category kinds that don't come with a receipt: never reminded about. */
+const NO_RECEIPT_KINDS: ReadonlySet<string> = new Set(['fixed', 'debt', 'savings', 'system', 'income']);
 
 export type ReceiptMediaType = ReceiptFileDto['mediaType'];
 
@@ -1268,11 +1274,42 @@ export class ReceiptsService {
   // ----- RCP-11: receipt recommended ----------------------------------------------------------------------
 
   async recommended(ctx: Ctx): Promise<ReceiptRecommendationDto[]> {
-    return this.db.run(ctx, async (trx) => {
-      const today = await this.today(trx, ctx);
+    return this.db.run(ctx, async (trx) => this.recommendedIn(trx, ctx, await this.today(trx, ctx)));
+  }
+
+  /**
+   * Spending from the last 90 days with no receipt that's worth one: business spending at or above the business's
+   * receipt threshold (UP-09), at a multi-department store above $50 (RCP-11), or, when the workspace set a reminder
+   * amount, everyday spending at or above it, cards and imports included. Bills, debt and savings never: they don't
+   * come with receipts. Not dismissed, and not a bill that carries its own document.
+   */
+  private async recommendedIn(trx: Trx, ctx: Ctx, today: CalendarDate): Promise<ReceiptRecommendationDto[]> {
+    {
+      const ws = await trx
+        .selectFrom('app.workspace')
+        .select(sql<string | null>`priorities->>'receiptReminderMinor'`.as('reminder'))
+        .where('id', '=', ctx.workspaceId)
+        .executeTakeFirstOrThrow();
+      const reminder = ws.reminder && /^\d+$/.test(ws.reminder) ? BigInt(ws.reminder) : null;
       const rows = await trx
         .selectFrom('app.transaction as t')
-        .select(['t.id', 't.txn_date', 't.payee_raw', 't.payee_key', 't.spec'])
+        .leftJoin('app.entity as e', 'e.id', 't.primary_entity_id')
+        .leftJoin('app.business_profile as bp', 'bp.entity_id', 't.primary_entity_id')
+        .leftJoin('app.ledger_account as ca', (j) =>
+          j.on(sql<boolean>`ca.id::text = t.spec->'splits'->0->>'accountId'`),
+        )
+        .leftJoin('app.category_group as g', 'g.id', 'ca.category_group_id')
+        .select([
+          'g.kind as category_kind',
+          't.id',
+          't.txn_date',
+          't.payee_raw',
+          't.payee_key',
+          't.description',
+          't.spec',
+          'e.type as entity_type',
+          'bp.receipt_threshold_minor',
+        ])
         .where('t.workspace_id', '=', ctx.workspaceId)
         .where('t.status', '=', 'posted')
         .where('t.deleted_at', 'is', null)
@@ -1300,6 +1337,18 @@ export class ReceiptsService {
             ),
           ),
         )
+        // A bill's own document is its receipt.
+        .where(({ not, exists, selectFrom }) =>
+          not(
+            exists(
+              selectFrom('app.bill as b')
+                .select('b.id')
+                .whereRef('b.workspace_id', '=', 't.workspace_id')
+                .whereRef('b.transaction_id', '=', 't.id')
+                .where(sql<boolean>`cardinality(b.attachment_ids) > 0`),
+            ),
+          ),
+        )
         .orderBy('t.txn_date', 'desc')
         .limit(500)
         .execute();
@@ -1309,18 +1358,62 @@ export class ReceiptsService {
         const spec = r.spec as TransactionSpec & { type: 'standard' };
         const currency = asCurrencyCode(spec.currency);
         const threshold = RECOMMEND_THRESHOLD_MAJOR * 10n ** BigInt(minorUnits(currency));
-        if (-BigInt(spec.amount) <= threshold) continue;
+        const spent = -BigInt(spec.amount);
         const m = r.payee_key ? directory.match(r.payee_key) : null;
-        if (!m || !MULTI_DEPARTMENT.includes(m.id)) continue;
+        const everyday = !NO_RECEIPT_KINDS.has(r.category_kind ?? '');
+        const reason: ReceiptRecommendationDto['reason'] | null =
+          r.entity_type === 'business' &&
+          spent >= BigInt(r.receipt_threshold_minor ?? DEDUCTIBLE_DEFAULT_MINOR)
+            ? 'deductible'
+            : m && MULTI_DEPARTMENT.includes(m.id) && spent > threshold
+              ? 'multi_department'
+              : reminder !== null && everyday && r.entity_type !== 'business' && spent >= reminder
+                ? 'over_threshold'
+                : null;
+        if (!reason) continue;
         out.push({
           transactionId: r.id,
           date: r.txn_date,
           payee: r.payee_raw,
-          merchant: m.displayName,
+          merchant: m?.displayName ?? r.payee_raw ?? r.description,
           amount: { amount: spec.amount, currency },
+          reason,
         });
       }
       return out;
+    }
+  }
+
+  /** The gentle nudge (UP-09): this week's receipts kept and missing, the streak, and what's still waiting. */
+  async habit(ctx: Ctx): Promise<ReceiptHabitDto> {
+    return this.db.run(ctx, async (trx) => {
+      const ws = await trx
+        .selectFrom('app.workspace')
+        .select('time_zone')
+        .where('id', '=', ctx.workspaceId)
+        .executeTakeFirstOrThrow();
+      const today = todayIn(ws.time_zone);
+      const user = await trx
+        .selectFrom('app.app_user')
+        .select('week_start')
+        .where('id', '=', ctx.userId)
+        .executeTakeFirst();
+      const waiting = await this.recommendedIn(trx, ctx, today);
+      // Twelve weeks back: as far as the recommendations look (90 days).
+      const { rows } = await sql<{ d: string; n: string }>`
+        select (created_at at time zone ${ws.time_zone})::date::text as d, count(*)::text as n
+          from app.receipt
+         where workspace_id = ${ctx.workspaceId} and deleted_at is null and status <> 'rejected'
+           and created_at >= (${addDays(today, -7 * 13)}::date)
+         group by 1`.execute(trx);
+      const h = receiptHabit({
+        today,
+        weekStart: user?.week_start ?? 1,
+        weeks: 12,
+        capturedOn: rows.flatMap((r) => Array.from({ length: Number(r.n) }, () => calendarDate(r.d))),
+        missingOn: waiting.map((w) => calendarDate(w.date)),
+      });
+      return { ...h, waiting: waiting.length, latest: waiting.slice(0, 3) };
     });
   }
 

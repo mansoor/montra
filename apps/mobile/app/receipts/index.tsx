@@ -5,12 +5,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import type { QueuedReceipt } from '@montra/sync';
-import type { ReceiptDto } from '@montra/schemas';
+import type { ReceiptDto, ReceiptRecommendationDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { queuedStatus, receiptStatusKey } from '../../src/features/receipt-capture';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
+import { ReceiptWaitingRow } from '../../src/ui/ReceiptWaiting';
 import { useTheme } from '../../src/ui/theme';
 
 export default function Receipts() {
@@ -22,6 +23,7 @@ export default function Receipts() {
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [waiting, setWaiting] = useState<QueuedReceipt[]>([]);
   const [list, setList] = useState<ReceiptDto[] | null>(null);
+  const [worth, setWorth] = useState<ReceiptRecommendationDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -32,6 +34,7 @@ export default function Receipts() {
     if (!ws) return;
     try {
       setList((await api.listReceipts(ws)).data);
+      setWorth(await api.receiptRecommendations(ws));
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -103,6 +106,23 @@ export default function Receipts() {
           </Card>
         );
       })}
+      {worth.length ? (
+        <Card testID="receipts-worth">
+          <Body style={{ fontWeight: '700' }}>{t('mobile.receipts.waiting_title')}</Body>
+          <Small>{t('mobile.receipts.waiting_hint')}</Small>
+          {worth.map((r, i) => (
+            <ReceiptWaitingRow
+              key={r.transactionId}
+              item={r}
+              last={i === worth.length - 1}
+              onDismiss={(id) => {
+                setWorth((w) => w.filter((x) => x.transactionId !== id));
+                void api.dismissReceiptRecommendation(ws, id).catch(() => void load());
+              }}
+            />
+          ))}
+        </Card>
+      ) : null}
       <Title>{t('mobile.receipts.title')}</Title>
       {error && !state?.online ? <Body muted>{t('mobile.receipts.list_offline')}</Body> : null}
       {error && state?.online ? <Banner tone="danger" text={error} /> : null}

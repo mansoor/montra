@@ -15,6 +15,7 @@ import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { monthSummary, todayLocal } from '../../src/features/home';
 import { useCached } from '../../src/features/use-cached';
 import { BarList, DeviationBars, MiniLineChart } from '../../src/ui/charts';
+import { ReceiptWaitingRow } from '../../src/ui/ReceiptWaiting';
 import { Banner, Body, Card, Row, Segmented, Small, Title } from '../../src/ui/components';
 import { haptic } from '../../src/ui/haptics';
 import { Icon } from '../../src/ui/icons';
@@ -43,6 +44,13 @@ export default function Home() {
     Boolean(ws),
   ).data;
   const notices = useCached(ws, 'status', () => api.status(), Boolean(ws)).data?.notices ?? [];
+  const habitCache = useCached(ws, 'receipt-habit', () => api.receiptHabit(ws), Boolean(ws));
+  const habit = habitCache.data;
+  const notNeeded = (transactionId: string) =>
+    void api
+      .dismissReceiptRecommendation(ws, transactionId)
+      .then(() => habitCache.reload())
+      .catch(() => undefined);
   const currency = session.status === 'signed_in' ? session.workspace.baseCurrency : 'USD';
   const summary = useLocal(
     async (s) => monthSummary(await s.listTransactions({ limit: 2000 }), todayLocal(), currency),
@@ -213,6 +221,43 @@ export default function Home() {
             <Small>{t('mobile.common.loading')}</Small>
           )}
         </Card>
+
+        {habit && habit.waiting > 0 ? (
+          <Card testID="home-receipts">
+            <Body style={{ fontWeight: '700' }}>{t('mobile.receipts.habit_title')}</Body>
+            <Small>
+              {t('mobile.receipts.habit_week', {
+                kept: habit.captured,
+                total: habit.captured + habit.missing,
+              })}
+              {habit.streakWeeks >= 2
+                ? ` ${t('mobile.receipts.habit_streak', { count: habit.streakWeeks })}`
+                : ''}
+            </Small>
+            {habit.latest.map((r, i) => (
+              <ReceiptWaitingRow
+                key={r.transactionId}
+                item={r}
+                onDismiss={notNeeded}
+                last={i === habit.latest.length - 1 && habit.waiting <= habit.latest.length}
+              />
+            ))}
+            {habit.waiting > habit.latest.length ? (
+              <Row
+                title={t('mobile.receipts.see_all', { count: habit.waiting })}
+                onPress={() => router.push('/receipts')}
+                last
+              />
+            ) : null}
+          </Card>
+        ) : habit && habit.captured > 0 ? (
+          <Small>
+            {t('mobile.receipts.habit_all_kept', { count: habit.captured })}
+            {habit.streakWeeks >= 2
+              ? ` ${t('mobile.receipts.habit_streak', { count: habit.streakWeeks })}`
+              : ''}
+          </Small>
+        ) : null}
 
         {charts ? (
           <>
