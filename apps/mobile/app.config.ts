@@ -46,6 +46,13 @@ const config: ExpoConfig = {
     ['expo-camera', { cameraPermission: 'Montra uses the camera to scan receipts and paper statements.' }],
     'expo-notifications',
     [
+      'expo-speech-recognition',
+      {
+        microphonePermission: 'Montra uses the microphone when you speak a transaction.',
+        speechRecognitionPermission: 'Montra turns what you say into text to fill in a transaction.',
+      },
+    ],
+    [
       'expo-build-properties',
       // Minimum OS versions (PLT-02): iOS 17+, Android 11+ (API 30).
       // Plain http only when the API is (a computer on a local network, docs/runbooks/android-apk.md).
