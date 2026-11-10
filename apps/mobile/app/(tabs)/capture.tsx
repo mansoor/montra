@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { BackHandler, Pressable, Text, View } from 'react-native';
+import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
 import type { CategoryDto, SuggestionDto } from '@montra/schemas';
 import { asCurrencyCode, minorUnits } from '@montra/domain';
 import { fmtMoney, t } from '../../src/i18n';
@@ -16,7 +16,9 @@ import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import {
   buildCreateRequest,
   digitsToDisplay,
+  offersReceipt,
   payeeSuggestions,
+  recentAccountIds,
   pressKey,
   previousStep,
   type CaptureStep,
@@ -33,12 +35,14 @@ import {
   Field,
   Row,
   Screen,
+  Segmented,
   Small,
   SuccessBurst,
   Title,
 } from '../../src/ui/components';
 import { haptic } from '../../src/ui/haptics';
-import { Icon } from '../../src/ui/icons';
+import { Icon, type IconName } from '../../src/ui/icons';
+import { SidePanel } from '../../src/ui/SidePanel';
 import { useTheme } from '../../src/ui/theme';
 
 const KEYS: KeypadKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'back'];
@@ -74,6 +78,47 @@ function TextButton({
   );
 }
 
+/** One of the three ways in: an icon over a short word, all three in one row. */
+function ModeButton({
+  icon,
+  label,
+  a11y,
+  onPress,
+  testID,
+}: {
+  icon: IconName;
+  label: string;
+  a11y: string;
+  onPress: () => void;
+  testID?: string;
+}) {
+  const th = useTheme();
+  return (
+    <Pressable
+      onPress={() => {
+        haptic.tap();
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+      testID={testID}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: th.tap + 8,
+        borderRadius: th.radius,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
+        backgroundColor: th.surfaceAlt,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <Icon name={icon} size={20} color={th.primary} />
+      <Text style={{ color: th.text, fontSize: th.font.small, fontWeight: '600' }}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function Capture() {
   const th = useTheme();
   const router = useRouter();
@@ -91,6 +136,7 @@ export default function Capture() {
   const [digits, setDigits] = useState('');
   const [direction, setDirection] = useState<'expense' | 'income'>('expense');
   const [accountId, setAccountId] = useState<string>('');
+  const [allAccounts, setAllAccounts] = useState(false);
   const [payee, setPayee] = useState('');
   const [category, setCategory] = useState<CategoryDto | null>(null);
   const [suggestion, setSuggestion] = useState<SuggestionDto | null>(null);
@@ -102,6 +148,8 @@ export default function Capture() {
   const [busy, setBusy] = useState(false);
   /** Set right after a save: the check animation shows it. */
   const [saved, setSaved] = useState<string | null>(null);
+  /** The spending just saved: offered a receipt photo until dismissed or a new amount is typed. */
+  const [receiptFor, setReceiptFor] = useState<{ id: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -113,6 +161,12 @@ export default function Capture() {
   }, [accounts.length]);
 
   const account = accounts.find((a) => a.id === accountId);
+  const recent = recentAccountIds(
+    history,
+    accounts.map((a) => a.id),
+    accountId,
+  );
+  const shownAccounts = recent.flatMap((id) => accounts.filter((a) => a.id === id));
   const currency = account?.currency ?? 'USD';
   const exponent = minorUnits(asCurrencyCode(currency));
   const suggestions = useMemo(() => payeeSuggestions(history, payee), [history, payee]);
@@ -129,6 +183,7 @@ export default function Capture() {
     setTalking(false);
     setError(null);
     setPicking(false);
+    setReceiptFor(null);
     voice.cancel();
   }, [voice.cancel]);
 
@@ -189,11 +244,14 @@ export default function Capture() {
         categoryId: category?.id ?? null,
         date: todayLocal(),
       });
-      await engine.createTransaction(req);
+      const created = await engine.createTransaction(req);
       await store.setMeta(LAST_ACCOUNT, accountId);
       touch();
-      setSaved(t('mobile.capture.saved', { payee: payee || fmtMoney(req.amount.amount, currency) }));
+      const label = payee || fmtMoney(req.amount.amount, currency);
+      setSaved(t('mobile.capture.saved', { payee: label }));
+      const offer = offersReceipt(direction) ? { id: created.id, label } : null;
       reset();
+      setReceiptFor(offer);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -228,14 +286,6 @@ export default function Capture() {
 
   return (
     <Screen testID="capture">
-      {step === 'amount' ? (
-        <Button
-          kind="secondary"
-          label={t('mobile.receipts.scan')}
-          onPress={() => router.push('/receipt-capture')}
-          testID="capture-receipt"
-        />
-      ) : null}
       {step !== 'amount' ? (
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <TextButton label={t('mobile.common.back')} arrow onPress={back} testID="qa-back" />
@@ -243,6 +293,67 @@ export default function Capture() {
         </View>
       ) : null}
       <Title>{t('mobile.capture.title')}</Title>
+      {step === 'amount' && receiptFor && !digits ? (
+        <Card
+          testID="qa-receipt-offer"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: th.space(2) }}
+        >
+          <View style={{ flex: 1 }}>
+            <Body style={{ fontWeight: '600' }}>{t('mobile.capture.receipt_offer')}</Body>
+            <Small>{t('mobile.capture.receipt_offer_for', { payee: receiptFor.label })}</Small>
+          </View>
+          <Button
+            label={t('mobile.capture.receipt_add')}
+            icon="scan"
+            onPress={() => {
+              const transactionId = receiptFor.id;
+              setReceiptFor(null);
+              router.push({ pathname: '/receipt-capture', params: { transactionId } });
+            }}
+            testID="qa-receipt-add"
+          />
+          <Pressable
+            onPress={() => setReceiptFor(null)}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.capture.receipt_not_now')}
+            hitSlop={8}
+            style={{ minWidth: th.tap, minHeight: th.tap, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Icon name="close" size={18} color={th.muted} />
+          </Pressable>
+        </Card>
+      ) : null}
+      {step === 'amount' ? (
+        <View style={{ flexDirection: 'row', gap: th.space(2) }}>
+          <ModeButton
+            icon="scan"
+            label={t('mobile.capture.mode_scan')}
+            a11y={t('mobile.receipts.scan')}
+            onPress={() => router.push('/receipt-capture')}
+            testID="capture-receipt"
+          />
+          <ModeButton
+            icon="keyboard"
+            label={t('mobile.capture.mode_type')}
+            a11y={t('mobile.capture.sentence')}
+            onPress={() => {
+              setTalking(false);
+              setStep('sentence');
+            }}
+          />
+          <ModeButton
+            icon="mic"
+            label={t('mobile.capture.speak')}
+            a11y={t('mobile.capture.mic_start')}
+            onPress={() => {
+              setTalking(true);
+              setStep('sentence');
+              void voice.start(sentence);
+            }}
+            testID="qa-speak"
+          />
+        </View>
+      ) : null}
       {step === 'payee' ? (
         <Small>
           {fmtMoney(direction === 'expense' ? `-${digits || '0'}` : digits || '0', currency)}
@@ -309,27 +420,15 @@ export default function Capture() {
 
       {step === 'amount' ? (
         <>
-          <View style={{ flexDirection: 'row', gap: th.space(2) }}>
-            {(['expense', 'income'] as const).map((d) => (
-              <Pressable
-                key={d}
-                onPress={() => setDirection(d)}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: direction === d }}
-                style={{
-                  flex: 1,
-                  padding: th.space(2),
-                  borderRadius: th.radius,
-                  alignItems: 'center',
-                  backgroundColor: direction === d ? th.primary : th.surface,
-                }}
-              >
-                <Text style={{ color: direction === d ? th.onPrimary : th.text }}>
-                  {t(`mobile.capture.${d}`)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <Segmented
+            label={t('mobile.capture.title')}
+            value={direction}
+            onChange={setDirection}
+            options={[
+              { value: 'expense', label: t('mobile.capture.expense') },
+              { value: 'income', label: t('mobile.capture.income') },
+            ]}
+          />
           <Text
             accessibilityLabel={`${t('mobile.capture.amount')} ${digitsToDisplay(digits, exponent)} ${currency}`}
             accessibilityLiveRegion="polite"
@@ -349,7 +448,7 @@ export default function Capture() {
               flexDirection: 'row',
               flexWrap: 'wrap',
               justifyContent: 'space-between',
-              rowGap: th.space(2),
+              rowGap: 6,
             }}
           >
             {KEYS.map((k) => (
@@ -360,20 +459,26 @@ export default function Capture() {
                 accessibilityLabel={k === 'back' ? 'Delete' : k}
                 testID={`key-${k}`}
                 style={({ pressed }) => ({
-                  width: '31%',
-                  paddingVertical: th.space(3),
+                  width: '32%',
+                  height: 48,
                   borderRadius: th.radius,
                   alignItems: 'center',
+                  justifyContent: 'center',
                   backgroundColor: pressed ? th.border : th.surface,
                 })}
               >
-                <Text style={{ color: th.text, fontSize: 24 }}>{k === 'back' ? '⌫' : k}</Text>
+                <Text style={{ color: th.text, fontSize: 22 }}>{k === 'back' ? '⌫' : k}</Text>
               </Pressable>
             ))}
           </View>
-          <Small>{t('mobile.capture.account')}</Small>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(2) }}>
-            {accounts.map((a) => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            accessibilityLabel={t('mobile.capture.account')}
+            contentContainerStyle={{ gap: th.space(2), alignItems: 'center' }}
+          >
+            <Small>{t('mobile.capture.account')}</Small>
+            {shownAccounts.map((a) => (
               <Pressable
                 key={a.id}
                 onPress={() => setAccountId(a.id)}
@@ -386,35 +491,33 @@ export default function Capture() {
                   backgroundColor: a.id === accountId ? th.primary : th.surface,
                 }}
               >
-                <Text style={{ color: a.id === accountId ? th.onPrimary : th.text }}>{a.name}</Text>
+                <Text style={{ color: a.id === accountId ? th.onPrimary : th.text }} numberOfLines={1}>
+                  {a.name}
+                </Text>
               </Pressable>
             ))}
-          </View>
+            {accounts.length > shownAccounts.length ? (
+              <Pressable
+                onPress={() => setAllAccounts(true)}
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.capture.all_accounts')}
+                testID="qa-all-accounts"
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 16,
+                  backgroundColor: th.surface,
+                }}
+              >
+                <Text style={{ color: th.text, fontWeight: '700' }}>…</Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
           <Button
             label={t('mobile.capture.next')}
             disabled={!digits}
             onPress={() => setStep('payee')}
             testID="qa-next"
-          />
-          <Button
-            kind="secondary"
-            icon="keyboard"
-            label={t('mobile.capture.sentence')}
-            onPress={() => {
-              setTalking(false);
-              setStep('sentence');
-            }}
-          />
-          <Button
-            kind="secondary"
-            icon="mic"
-            label={t('mobile.capture.speak')}
-            onPress={() => {
-              setTalking(true);
-              setStep('sentence');
-              void voice.start(sentence);
-            }}
-            testID="qa-speak"
           />
         </>
       ) : null}
@@ -464,6 +567,28 @@ export default function Capture() {
         </Card>
       ) : null}
 
+      <SidePanel
+        visible={allAccounts}
+        title={t('mobile.capture.account')}
+        closeLabel={t('mobile.common.cancel')}
+        onClose={() => setAllAccounts(false)}
+        testID="qa-account-list"
+      >
+        {accounts.map((a, i) => (
+          <Row
+            key={a.id}
+            title={a.name}
+            subtitle={t(`account.kind.${a.kind}`)}
+            right={a.id === accountId ? <Icon name="check" size={18} color={th.primary} /> : undefined}
+            onPress={() => {
+              haptic.select();
+              setAccountId(a.id);
+              setAllAccounts(false);
+            }}
+            last={i === accounts.length - 1}
+          />
+        ))}
+      </SidePanel>
       <SuccessBurst label={saved} onDone={() => setSaved(null)} />
       <CategoryPicker
         visible={picking}
