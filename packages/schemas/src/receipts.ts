@@ -216,8 +216,33 @@ export const ReceiptRecommendationDto = z.object({
   payee: z.string().nullable(),
   merchant: z.string(),
   amount: MoneyDto,
+  /**
+   * Why a receipt is worth keeping: business spending above the business's receipt threshold, which a deduction
+   * needs (UP-09); a multi-department store, where it splits the purchase (RCP-11); or everyday spending above the
+   * workspace's reminder amount (planning settings, off unless set).
+   */
+  reason: z.enum(['deductible', 'multi_department', 'over_threshold']),
 });
 export type ReceiptRecommendationDto = z.infer<typeof ReceiptRecommendationDto>;
+
+/**
+ * GET /receipts/habit — the gentle nudge (UP-09): this week's receipts kept and missing, the streak of weeks with
+ * none missing, and the latest few purchases still waiting (all of them are at /receipts/recommended).
+ */
+export const ReceiptHabitDto = z.object({
+  week: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+  /** Receipts captured this week. */
+  captured: z.number().int(),
+  /** Purchases this week that could use a receipt and have none. */
+  missing: z.number().int(),
+  /** Weeks in a row with receipts captured and none missing (the week in progress never breaks it). */
+  streakWeeks: z.number().int(),
+  /** Purchases from the last 90 days still waiting for a receipt. */
+  waiting: z.number().int(),
+  /** The latest three of them. */
+  latest: z.array(ReceiptRecommendationDto),
+});
+export type ReceiptHabitDto = z.infer<typeof ReceiptHabitDto>;
 
 /** RCP-12: an order-history file turned into one receipt per order (idempotent by order id). */
 export const OrderImportResultDto = z.object({

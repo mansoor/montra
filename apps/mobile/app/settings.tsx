@@ -2,14 +2,15 @@
 import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import type { BillingDto, FamilyMemberDto, MeDto } from '@montra/schemas';
+import type { BillingDto, FamilyMemberDto, MeDto, PlanningSettingsDto } from '@montra/schemas';
+import { reminderChoices } from '../src/features/receipt-capture';
 import { config } from '../src/config';
-import { t } from '../src/i18n';
+import { fmtMoney, t } from '../src/i18n';
 import { LOCK_TIMEOUTS } from '../src/lock/policy';
 import { useLockSettings } from '../src/lock/AppLock';
 import { registerForPush, type PushStatus } from '../src/push/register';
 import { useSession } from '../src/session/SessionProvider';
-import { Body, Button, Card, Row, Screen, Small } from '../src/ui/components';
+import { Body, Button, Card, Row, Screen, Segmented, Small } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 
 export default function Settings() {
@@ -23,6 +24,8 @@ export default function Settings() {
   const [me, setMe] = useState<MeDto | null>(null);
   const [family, setFamily] = useState<FamilyMemberDto[]>([]);
   const [plan, setPlan] = useState<BillingDto | null>(null);
+  const [planning, setPlanning] = useState<PlanningSettingsDto | null>(null);
+  const currency = state.status === 'signed_in' ? state.workspace.baseCurrency : 'USD';
 
   useEffect(() => {
     if (state.status !== 'signed_in') return;
@@ -33,6 +36,7 @@ export default function Settings() {
     void api.me().then(setMe, () => undefined);
     void api.familyMembers(state.workspace.id).then(setFamily, () => undefined);
     void api.billing(state.workspace.id).then(setPlan, () => undefined);
+    void api.planningSettings(state.workspace.id).then(setPlanning, () => undefined);
     void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
   }, [api, state]);
 
@@ -80,6 +84,29 @@ export default function Settings() {
           </>
         ) : null}
       </Card>
+
+      {planning ? (
+        <Card testID="settings-receipt-reminders">
+          <Body>{t('mobile.settings.receipt_reminders')}</Body>
+          <Small>{t('mobile.settings.receipt_reminders_hint')}</Small>
+          <Segmented
+            label={t('mobile.settings.receipt_reminders')}
+            value={planning.receiptReminderMinor ?? 'off'}
+            options={reminderChoices(planning.receiptReminderMinor).map((v) => ({
+              value: v ?? 'off',
+              label: v === null ? t('mobile.settings.off') : fmtMoney(v, currency).replace(/[.,]00$/, ''),
+            }))}
+            onChange={(v) => {
+              if (state.status !== 'signed_in') return;
+              const receiptReminderMinor = v === 'off' ? null : v;
+              setPlanning({ ...planning, receiptReminderMinor });
+              void api
+                .updatePlanningSettings(state.workspace.id, { receiptReminderMinor })
+                .then(setPlanning, () => setPlanning(planning));
+            }}
+          />
+        </Card>
+      ) : null}
 
       <Card>
         <Small>{t('mobile.settings.notifications')}</Small>

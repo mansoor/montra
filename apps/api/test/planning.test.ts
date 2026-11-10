@@ -387,14 +387,20 @@ describe('recommendations (REC-01, AIA-05)', () => {
   });
 
   it('keeps planning settings', async () => {
+    // The receipt reminder (UP-09) is off until set.
     expect((await c.get(url('/planning/settings'))).body).toEqual({
       categoryPriorities: {},
       highInterestBps: 800,
+      receiptReminderMinor: null,
     });
     const res = await c.patch(url('/planning/settings'), {
       highInterestBps: 1000,
       categoryPriorities: { [cat('Groceries')]: 5 },
     });
-    expect(res.body).toEqual({ categoryPriorities: { [cat('Groceries')]: 5 }, highInterestBps: 1000 });
+    expect(res.body).toEqual({
+      categoryPriorities: { [cat('Groceries')]: 5 },
+      highInterestBps: 1000,
+      receiptReminderMinor: null,
+    });
   });
 });

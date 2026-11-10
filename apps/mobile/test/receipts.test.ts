@@ -9,6 +9,7 @@ import {
   pageName,
   queuedStatus,
   receiptStatusKey,
+  reminderChoices,
   reviewEdits,
   stalledMessage,
   uncategorizedLines,
@@ -102,6 +103,15 @@ describe('upload errors (TXN-09)', () => {
         error: 'Upload a JPEG',
       },
     );
+  });
+});
+
+describe('receipt reminders (UP-09)', () => {
+  it('offers off and a few amounts, keeping one set on the web', () => {
+    expect(reminderChoices(null)).toEqual([null, '1000', '2500', '5000']);
+    expect(reminderChoices('2500')).toEqual([null, '1000', '2500', '5000']);
+    expect(reminderChoices('1500')).toEqual([null, '1000', '1500', '2500', '5000']);
+    expect(reminderChoices('20000')).toEqual([null, '1000', '2500', '5000', '20000']);
   });
 });
 

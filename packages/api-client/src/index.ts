@@ -139,6 +139,7 @@ import type {
   ReceiptDto,
   ReceiptFileDto,
   ReceiptPageDto,
+  ReceiptHabitDto,
   ReceiptRecommendationDto,
   TripDto,
   TripInput,
@@ -2001,7 +2002,11 @@ export class ApiClient {
   updatePlanningSettings(workspaceId: string, input: UpdatePlanningSettingsInput) {
     return this.request<PlanningSettingsDto>('PATCH', this.ws(workspaceId, '/planning/settings'), input);
   }
-  /** RCP-11: purchases at multi-department stores above the threshold without a receipt. */
+  /** UP-09: this week's receipts kept and missing, the streak, and the latest still waiting. */
+  getReceiptHabit(workspaceId: string) {
+    return this.request<ReceiptHabitDto>('GET', this.ws(workspaceId, '/receipts/habit'));
+  }
+  /** Spending without a receipt that's worth one (RCP-11, UP-09). */
   listReceiptRecommendations(workspaceId: string) {
     return this.request<{ data: ReceiptRecommendationDto[] }>(
       'GET',
@@ -2184,6 +2189,7 @@ export type {
   WithholdingDto,
   ReceiptFileDto,
   ReceiptPageDto,
+  ReceiptHabitDto,
   ReceiptRecommendationDto,
   TripDto,
   BudgetDto,

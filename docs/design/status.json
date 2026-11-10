@@ -502,7 +502,7 @@
   ],
   "RCP-11": [
     "done",
-    "Walmart/Target/Costco/Amazon purchases over 50 (major units) without a receipt are listed on the receipts page, with add-receipt and dismiss"
+    "Walmart/Target/Costco/Amazon purchases over 50 (major units) without a receipt are listed on the receipts page (web and phone), with add-receipt and dismiss; also on the phone's Home"
   ],
   "RCP-12": [
     "done",
@@ -521,8 +521,8 @@
     "mobile capture with expo-camera: multi-shot, blur/glare check and retake after each shot, upload, extraction, matching or creating the transaction; no live edge detection (needs vision-camera, ADR-0009 amendment); not yet run on devices"
   ],
   "UP-09": [
-    "partial",
-    "receipts are stored with their transaction (7-year retention, searchable); missing-receipt flags for deductible business expenses come with BIZ-12 in Phase 8"
+    "done",
+    "receipts are stored with their transaction (7-year retention, searchable); deductible business spending above the business's threshold is flagged as missing a receipt (business report, and /receipts/recommended with Add or Not needed); the phone's Home shows the week's receipts kept and missing, a streak, and an optional reminder amount for everyday spending"
   ],
   "TXN-09": [
     "partial",

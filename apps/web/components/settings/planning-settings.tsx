@@ -2,24 +2,35 @@
 
 import { useState } from 'react';
 import type { CategoryDto, PlanningSettingsDto } from '@montra/api-client';
+import { abs, asCurrencyCode, minorUnits, parseMoney } from '@montra/domain';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
 /**
  * Inputs to the recommendation rules (REC-01, REC-03): which spending categories to protect when the plan is
- * over income, and the APR from which a debt counts as high-interest.
+ * over income, the APR from which a debt counts as high-interest, and the amount from which everyday purchases are
+ * worth a receipt (UP-09).
  */
 export function PlanningSettings({
   workspaceId,
   initial,
   categories,
+  currency,
 }: {
   workspaceId: string;
   initial: PlanningSettingsDto;
   categories: CategoryDto[];
+  /** The base currency: the receipt reminder amount is in it. */
+  currency: string;
 }) {
   const { t } = useI18n();
+  const exp = minorUnits(asCurrencyCode(currency));
+  const [reminder, setReminder] = useState(
+    initial.receiptReminderMinor === null
+      ? ''
+      : (Number(initial.receiptReminderMinor) / 10 ** exp).toFixed(exp),
+  );
   const { run, busy, message } = useAction();
   const [apr, setApr] = useState((initial.highInterestBps / 100).toFixed(2));
   const [priorities, setPriorities] = useState<Record<string, number>>(initial.categoryPriorities);
@@ -31,6 +42,14 @@ export function PlanningSettings({
       onSubmit={(e) => {
         e.preventDefault();
         const bps = Math.trunc(Number(apr.replace(',', '.')) * 100);
+        let receiptReminderMinor: string | null = initial.receiptReminderMinor;
+        try {
+          receiptReminderMinor = reminder.trim()
+            ? String(abs(parseMoney(reminder.replace(',', '.'), currency).amount))
+            : null;
+        } catch {
+          // Not a number: keep what was saved.
+        }
         void run(
           () =>
             browserApi.updatePlanningSettings(workspaceId, {
@@ -38,6 +57,7 @@ export function PlanningSettings({
                 ? Math.max(0, Math.min(10_000, bps))
                 : initial.highInterestBps,
               categoryPriorities: priorities,
+              receiptReminderMinor,
             }),
           t('common.saved'),
         );
@@ -54,6 +74,21 @@ export function PlanningSettings({
             onChange={(e) => setApr(e.target.value)}
           />
           <span className="text-sm">%</span>
+        </label>
+      </section>
+      <section className="card max-w-xl space-y-2">
+        <h2 className="text-base font-semibold">{t('planning.receipt_reminder')}</h2>
+        <p className="text-sm text-muted">{t('planning.receipt_reminder_hint')}</p>
+        <label className="flex items-center gap-2">
+          <input
+            className="input num w-28"
+            inputMode="decimal"
+            aria-label={t('planning.receipt_reminder')}
+            value={reminder}
+            onChange={(e) => setReminder(e.target.value)}
+            data-testid="receipt-reminder"
+          />
+          <span className="text-sm">{currency}</span>
         </label>
       </section>
       <section className="card-flush">
