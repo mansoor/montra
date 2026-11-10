@@ -233,9 +233,8 @@ finished:
 10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
     suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
 11. **Payment lines share a payee key.** The key for "ONLINE PAYMENT TO CARD XXXX4321" is just `TO`, whatever the card,
-    so all such lines share one `app.payee` row and its name is the first one imported. Payees created before the
-    display-name fix keep the old name ("To", "To Visa"). Changing the key would need a migration of payee history
-    and rules.
+    so all such lines share one `app.payee` row and its name is the first one imported. Changing the key would need
+    a migration of payee history and rules.
 
 ---
 
