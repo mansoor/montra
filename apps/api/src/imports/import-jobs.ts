@@ -22,6 +22,7 @@ import {
   normalizeDescription,
   parseAmount,
   parseDelimited,
+  payeeDisplayName,
   readXlsx,
   type ColumnMapping,
   type Sheet,
@@ -651,7 +652,8 @@ export class ImportJobs {
             const name =
               suggestion?.renamePayee ||
               (suggestion?.merchantId && merchants.get(suggestion.merchantId)) ||
-              (row.payee_raw ?? (key ? displayName(key) : (row.description ?? '')));
+              (row.payee_raw ??
+                (key ? payeeDisplayName(row.description ?? '', key) : (row.description ?? '')));
             // ADR-0012 §7: a category the user picked is reviewed; a confident pipeline result is
             // auto-applied; anything else is posted uncategorized with the suggestion for review.
             const chosen = row.category_id;

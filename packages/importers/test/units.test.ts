@@ -14,6 +14,7 @@ import {
   matchMerchant,
   normalizeDescription,
   parseAmount,
+  payeeDisplayName,
   parseDate,
   readXlsx,
   type DedupeInputRow,
@@ -115,6 +116,49 @@ describe('payees (IMP-10)', () => {
     expect(matchMerchant('BLUE BOTTLE', refs)?.id).toBe('bluebottle');
     expect(matchMerchant('TRADER JOE', refs)?.id).toBe('tj');
     expect(matchMerchant('WALGREENS', refs)).toBeNull();
+  });
+
+  // Payment and transfer lines lose their meaning in the key ("ONLINE PAYMENT TO CARD XXXX4321" → "TO"), so the
+  // display name comes from the raw text. The key stays as it was: payee history and rules match on it.
+  it.each([
+    ['ONLINE PAYMENT TO VISA', 'TO VISA', 'Payment to Visa'],
+    ['ONLINE PAYMENT TO CARD XXXX4321', 'TO', 'Payment to Card ••4321'],
+    [
+      'Online Banking transfer to SAV 4567 Confirmation# 1234567890',
+      'BANKING TRANSFER TO SAV CONFIRMATION',
+      'Transfer to Sav ••4567',
+    ],
+    [
+      'ONLINE TRANSFER TO CHK ...1234 TRANSACTION#: 12345 10/25',
+      'TO CHK TRANSACTION',
+      'Transfer to Chk ••1234',
+    ],
+    ['ZELLE PAYMENT TO JOHN SMITH 12345', 'ZELLE PAYMENT TO JOHN SMITH', 'Zelle payment to John Smith'],
+    [
+      'WIRE TRANSFER FROM JANE DOE REF 99X88',
+      'WIRE TRANSFER FROM JANE DOE REF',
+      'Wire transfer from Jane Doe',
+    ],
+    ['ACH CREDIT FROM ACME PAYROLL', 'FROM ACME PAYROLL', 'Credit from Acme Payroll'],
+    ['TO CARD XXXX4321', 'TO', 'To Card ••4321'],
+  ])('names the payment line %s', (raw, key, name) => {
+    expect(normalizeDescription(raw)).toBe(key);
+    expect(payeeDisplayName(raw)).toBe(name);
+    expect(name).not.toMatch(/^(to|from)$/i);
+  });
+
+  it.each([
+    ['SQ *BLUE BOTTLE 0423 SF CA', 'Blue Bottle'],
+    ["TRADER JOE'S #552 SAN FRANCISCO CA", 'Trader Joes'],
+    ['PAYPAL *NETFLIX', 'Netflix'],
+    ['SHELL OIL 57444 OAKLAND CA', 'Shell Oil'],
+    ['KARTENZAHLUNG REWE MARKT GMBH', 'Rewe Markt Gmbh'],
+    ['BACK TO SCHOOL SUPPLY', 'Back To School Supply'],
+    ['DEBIT CARD PURCHASE TO GO SUSHI', 'To Go Sushi'],
+    ['CAPITAL ONE AUTOPAY PYMT', 'Capital One Autopay Pymt'],
+  ])('leaves the merchant %s as %s', (raw, name) => {
+    expect(payeeDisplayName(raw)).toBe(name);
+    expect(payeeDisplayName(raw)).toBe(displayName(normalizeDescription(raw)));
   });
 });
 

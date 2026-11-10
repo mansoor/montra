@@ -110,6 +110,7 @@ Scope, deliverables and exit criteria for each phase are in `docs/design/01-phas
   - templates for YNAB, Mint, Monarch, Quicken and Stessa;
   - saved profiles, matched by fingerprint;
   - payee normalization against 87 reference merchants;
+  - `payeeDisplayName`, which names payment and transfer lines from their raw text ("Payment to Card ••4321");
   - `classifyRows` for dedupe and matching.
 - **Database:** migrations 0006–0009 add files, the **Postgres job queue** (ADR-0011: SKIP LOCKED with
   NOTIFY), import batches and rows, transaction sources, reconciliation, and reference profiles and
@@ -231,6 +232,9 @@ finished:
    (with a progress bar). Bulk posting would speed it up later.
 10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
     suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
+11. **Payment lines share a payee key.** The key for "ONLINE PAYMENT TO CARD XXXX4321" is just `TO`, whatever the card,
+    so all such lines share one `app.payee` row and its name is the first one imported. Changing the key would need
+    a migration of payee history and rules.
 
 ---
 
