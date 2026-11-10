@@ -3,20 +3,20 @@
  * over a chosen period, the budget so far, where the money went and last month's changes; then what's coming up.
  * Charts come from the server (cached for offline); the local store covers the month when they haven't loaded yet.
  */
-import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { summarizeMonths } from '@montra/domain';
 import { CHART_MONTHS } from '@montra/schemas';
-import { fmtDate, fmtMoney, t } from '../../src/i18n';
+import { currentLocale, fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { monthSummary, todayLocal } from '../../src/features/home';
 import { useCached } from '../../src/features/use-cached';
 import { BarList, DeviationBars, MiniLineChart } from '../../src/ui/charts';
 import { ReceiptWaitingRow } from '../../src/ui/ReceiptWaiting';
-import { Banner, Body, Card, Row, Segmented, Small, Title } from '../../src/ui/components';
+import { Banner, Body, Button, Card, Row, Segmented, Small, Title } from '../../src/ui/components';
 import { haptic } from '../../src/ui/haptics';
 import { Icon } from '../../src/ui/icons';
 import { useTheme } from '../../src/ui/theme';
@@ -36,7 +36,33 @@ export default function Home() {
   const { state, refresh } = useSync();
   const [months, setMonths] = useState<Months>(6);
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
-  const dash = useCached(ws, 'dashboard', () => api.dashboard(ws), Boolean(ws)).data;
+  const now = useCached(ws, 'dashboard', () => api.dashboard(ws), Boolean(ws)).data;
+  // The tiles can show another period. It's never remembered: leaving Home brings back the current one.
+  const [at, setAt] = useState<string | null>(null);
+  useFocusEffect(useCallback(() => () => setAt(null), []));
+  const past = useCached(
+    ws,
+    `dashboard-at-${at ?? ''}`,
+    () => api.dashboard(ws, at ?? undefined),
+    Boolean(ws && at),
+  );
+  const dash = at ? past.data : now;
+  const go = (next: string | null) => {
+    haptic.select();
+    setAt(next);
+  };
+  const monthName = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat(currentLocale, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    } catch {
+      return null;
+    }
+  }, []);
+  /** A month reads as "September 2026"; another budget period (weekly, biweekly) as its dates. */
+  const periodLabel = (p: { start: string; end: string }) =>
+    p.start.endsWith('-01') && monthName && Number(p.end.slice(5, 7)) === Number(p.start.slice(5, 7))
+      ? monthName.format(new Date(`${p.start}T00:00:00Z`))
+      : `${fmtDate(p.start)} – ${fmtDate(p.end)}`;
   const charts = useCached(
     ws,
     `dashboard-charts-${months}`,
@@ -127,19 +153,109 @@ export default function Home() {
           <Banner text={t('mobile.home.pending', { count: state.pending })} />
         ) : null}
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(2) }} testID="home-tiles">
-          {tile(t('home.income'), dash?.income.amount ?? summary?.income ?? 0n)}
-          {tile(t('home.spent'), dash?.spent.amount ?? summary?.spent ?? 0n)}
-          {tile(
-            t('home.left_to_spend'),
-            dash?.leftToSpend ?? null,
-            dash?.leftToSpend != null && BigInt(dash.leftToSpend) < 0n,
-          )}
-          {tile(
-            t('budget.lta_label'),
-            dash?.leftToAssign ?? null,
-            dash?.leftToAssign != null && BigInt(dash.leftToAssign) < 0n,
-          )}
+        <View
+          testID="home-period"
+          style={
+            at
+              ? {
+                  gap: th.space(2),
+                  borderWidth: 2,
+                  borderColor: th.warning,
+                  backgroundColor: th.warningSoft,
+                  borderRadius: th.radius,
+                  padding: th.space(2),
+                }
+              : { gap: th.space(2) }
+          }
+        >
+          {dash ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: th.space(2),
+              }}
+            >
+              <Pressable
+                onPress={() => go(dash.nav.previous)}
+                accessibilityRole="button"
+                accessibilityLabel={t('home.period_previous')}
+                hitSlop={8}
+                testID="home-period-previous"
+                style={({ pressed }) => ({
+                  width: th.tap,
+                  height: th.tap,
+                  borderRadius: th.tap / 2,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: th.surfaceAlt,
+                  opacity: pressed ? 0.7 : 1,
+                })}
+              >
+                <Text style={{ color: th.text, fontSize: 22, fontWeight: '700' }}>‹</Text>
+              </Pressable>
+              <Text
+                style={{
+                  minWidth: 150,
+                  textAlign: 'center',
+                  color: at ? th.warning : th.text,
+                  fontWeight: '700',
+                }}
+                accessibilityLiveRegion="polite"
+              >
+                {periodLabel(dash.period)}
+              </Text>
+              <Pressable
+                onPress={() => dash.nav.next && go(dash.nav.nextIsCurrent ? null : dash.nav.next)}
+                disabled={!dash.nav.next}
+                accessibilityRole="button"
+                accessibilityLabel={t('home.period_next')}
+                accessibilityState={{ disabled: !dash.nav.next }}
+                hitSlop={8}
+                testID="home-period-next"
+                style={({ pressed }) => ({
+                  width: th.tap,
+                  height: th.tap,
+                  borderRadius: th.tap / 2,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: th.surfaceAlt,
+                  opacity: !dash.nav.next ? 0.35 : pressed ? 0.7 : 1,
+                })}
+              >
+                <Text style={{ color: th.text, fontSize: 22, fontWeight: '700' }}>›</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {at ? (
+            <>
+              <Text
+                style={{ color: th.warning, fontWeight: '700', textAlign: 'center' }}
+                accessibilityRole="alert"
+              >
+                {t('home.past_period', { period: dash ? periodLabel(dash.period) : at.slice(0, 7) })}
+              </Text>
+              <Button label={t('home.back_to_today')} onPress={() => go(null)} testID="home-period-back" />
+            </>
+          ) : null}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(2) }} testID="home-tiles">
+            {tile(t('home.income'), dash?.income.amount ?? (at ? null : (summary?.income ?? 0n)))}
+            {tile(t('home.spent'), dash?.spent.amount ?? (at ? null : (summary?.spent ?? 0n)))}
+            {tile(
+              t('home.left_to_spend'),
+              dash?.leftToSpend ?? null,
+              dash?.leftToSpend != null && BigInt(dash.leftToSpend) < 0n,
+            )}
+            {tile(
+              t('budget.lta_label'),
+              dash?.leftToAssign ?? null,
+              dash?.leftToAssign != null && BigInt(dash.leftToAssign) < 0n,
+            )}
+          </View>
+          {at && dash ? (
+            <Small>{t('home.past_period_note', { period: periodLabel(dash.period) })}</Small>
+          ) : null}
         </View>
 
         {dash?.lowBalance.map((l) => (
