@@ -43,6 +43,7 @@ export default function More() {
       items: [
         { title: t('nav.goals'), icon: 'goals', href: '/goals', testID: 'more-goals' },
         { title: t('nav.cash_flow'), icon: 'cashFlow', href: '/cash-flow', testID: 'more-cash-flow' },
+        { title: t('nav.explore'), icon: 'explore', href: '/explore', testID: 'more-explore' },
         { title: t('nav.calendar'), icon: 'calendar', href: '/calendar', testID: 'more-calendar' },
         {
           title: t('nav.suggestions'),

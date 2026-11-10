@@ -204,6 +204,58 @@ export const DashboardChartsDto = z.object({
 });
 export type DashboardChartsDto = z.infer<typeof DashboardChartsDto>;
 
+/** At most this many categories side by side in Explore spending. */
+export const EXPLORE_MAX_CATEGORIES = 8;
+export const SpendingExploreQuery = z.object({
+  entityId: Id.optional(),
+  memberId: Id.optional(),
+  months: DashboardChartsQuery.shape.months,
+  /** Comma-separated; none picks the three biggest everyday categories (not bills, debt or savings). */
+  categoryIds: z
+    .preprocess(
+      (v) => (typeof v === 'string' ? v.split(',').filter(Boolean) : v),
+      z.array(Id).max(EXPLORE_MAX_CATEGORIES),
+    )
+    .optional(),
+});
+export type SpendingExploreQuery = z.output<typeof SpendingExploreQuery>;
+
+/**
+ * GET /spending/explore?categoryIds&months&memberId — spending habits for the categories picked, month by month
+ * (FLOW-01, RPT-03). Amounts count the way the dashboard does; the what-if is worked out on the device from these.
+ */
+export const SpendingExploreDto = z.object({
+  entityId: Id,
+  memberId: Id.nullable(),
+  currency: CurrencyCodeDto,
+  months: z.number().int(),
+  /** Oldest first; the last is the current month so far. */
+  periods: z.array(z.object({ start: CalendarDateDto, end: CalendarDateDto })),
+  /** All spending and all income per period, for shares and the share of income kept. */
+  spending: z.array(MinorDto),
+  income: z.array(MinorDto),
+  categories: z.array(
+    z.object({
+      categoryId: Id,
+      name: z.string(),
+      group: z.string().nullable(),
+      /** Per period. */
+      monthly: z.array(MinorDto),
+      /** Purchases per period (refunds not counted). */
+      counts: z.array(z.number().int()),
+      /** Where the money went over the whole period, biggest first, at most 3. */
+      topPlaces: z.array(z.object({ name: z.string(), amount: MinorDto, count: z.number().int() })),
+      /** All of this category's transactions in the period. */
+      drill: DrillDto,
+    }),
+  ),
+  /** Every spending category with spending in the period, biggest first: the ones to pick from. */
+  choices: z.array(
+    z.object({ categoryId: Id, name: z.string(), group: z.string().nullable(), total: MinorDto }),
+  ),
+});
+export type SpendingExploreDto = z.infer<typeof SpendingExploreDto>;
+
 export const SANKEY_NODE_KINDS = [
   'income',
   'entity',

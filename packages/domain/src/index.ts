@@ -14,6 +14,7 @@ export * from './calendar-date.js';
 export * from './operations.js';
 export * from './accounts-summary.js';
 export * from './dashboard-charts.js';
+export * from './spending-explore.js';
 export * from './recurrence.js';
 export * from './ledger/index.js';
 export * from './budget/index.js';
