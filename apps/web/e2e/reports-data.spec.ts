@@ -44,7 +44,8 @@ test('reports drill down and export, and search and ask find the same money', as
   const { base } = await seed(page, `reports-${Date.now()}@example.com`);
 
   await nav(page, 'Reports');
-  await page.getByRole('link', { name: 'Spending', exact: false }).first().click();
+  // The report's own link, not the sidebar's "Explore spending".
+  await page.getByRole('main').getByRole('link', { name: 'Spending', exact: false }).first().click();
   const rows = page.getByTestId('report-row');
   await expect(rows.filter({ hasText: 'Dining out' })).toContainText('$45.00');
   await expect(page.getByTestId('report-total')).toContainText('$165.00');
