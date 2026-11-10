@@ -7,6 +7,7 @@ import type {
   BudgetPeriodDto,
   CalendarDto,
   DashboardChartsDto,
+  SetCategoryBudgetDto,
   SpendingExploreDto,
   DashboardDto,
   ForecastDto,
@@ -211,6 +212,11 @@ export function createApi(opts: ApiOptions) {
 
     // Planning (Phase 6): online reads (cached on the device by useCached) and online-only budget writes.
     dashboard: (w: string) => request<DashboardDto>('GET', `${ws(w)}/dashboard`),
+    /** Explore spending's "Make this my budget": one category, this period (the budget is created if needed). */
+    setCategoryBudget: (
+      w: string,
+      input: { entityId?: string; memberId: string | null; categoryId: string; assigned: string },
+    ) => request<SetCategoryBudgetDto>('POST', `${ws(w)}/budgets/set-category`, input),
     /** Explore spending: the picked categories (none: the three biggest everyday ones) over `months` months. */
     spendingExplore: (w: string, months: number, categoryIds: readonly string[]) =>
       request<SpendingExploreDto>(
