@@ -23,6 +23,7 @@ import {
   CreateGoalRequest,
   DraftBudgetRequest,
   DashboardChartsQuery,
+  DashboardQuery,
   SpendingExploreQuery,
   MoveRequest,
   PlanningSettingsDto,
@@ -206,11 +207,8 @@ export class PlanningController {
 
   @Get('dashboard')
   dashboard(@Ctx() ctx: RequestContext, @Query() q: unknown) {
-    const { entityId, memberId } = parse(
-      z.object({ entityId: z.uuid().optional(), memberId: z.uuid().optional() }),
-      q,
-    );
-    return this.flow.dashboard(dbCtx(ctx), { entityId, memberId });
+    const { entityId, memberId, period } = parse(DashboardQuery, q);
+    return this.flow.dashboard(dbCtx(ctx), { entityId, memberId, period });
   }
 
   @Get('dashboard/charts')

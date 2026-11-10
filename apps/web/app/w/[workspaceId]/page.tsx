@@ -8,6 +8,7 @@ import { DateText } from '@/components/i18n';
 import { PageHeader, StatTile } from '@/components/ui/page-header';
 import { RecommendationList } from '@/components/planning/recommendations';
 import { drillHref } from '@/lib/planning';
+import { endOfMonth, isCalendarDate, type CalendarDate } from '@montra/domain';
 import { CHART_MONTHS } from '@montra/schemas';
 import { HomeCharts } from './home-charts';
 
@@ -18,28 +19,32 @@ export default async function HomePage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ memberId?: string; months?: string }>;
+  searchParams: Promise<{ memberId?: string; months?: string; period?: string }>;
 }) {
   const { workspaceId } = await params;
-  const { memberId, months: m } = await searchParams;
+  const { memberId, months: m, period: p } = await searchParams;
   const only = memberId ? { memberId } : {};
   const months = (CHART_MONTHS as readonly number[]).includes(Number(m)) ? Number(m) : 6;
-  const [[workspace, accounts, transactions, dashboard, recs, categories, members, charts], { t }] =
-    await Promise.all([
-      load((api) =>
-        Promise.all([
-          api.getWorkspace(workspaceId),
-          api.listAccounts(workspaceId),
-          api.listTransactions(workspaceId, { limit: 10, ...only }),
-          api.getDashboard(workspaceId, only),
-          api.listRecommendations(workspaceId, { status: 'open' }),
-          api.listCategories(workspaceId),
-          api.listFamilyMembers(workspaceId),
-          api.getDashboardCharts(workspaceId, { months, ...only }),
-        ]),
-      ),
-      getI18n(),
-    ]);
+  // The tiles' period lives only in the URL: leaving Home (or "Back to today") brings back the current one.
+  const period = p && isCalendarDate(p) ? p : undefined;
+  const [
+    [workspace, accounts, transactions, dashboard, recs, categories, members, charts],
+    { t, locale, date },
+  ] = await Promise.all([
+    load((api) =>
+      Promise.all([
+        api.getWorkspace(workspaceId),
+        api.listAccounts(workspaceId),
+        api.listTransactions(workspaceId, { limit: 10, ...only }),
+        api.getDashboard(workspaceId, { ...only, period }),
+        api.listRecommendations(workspaceId, { status: 'open' }),
+        api.listCategories(workspaceId),
+        api.listFamilyMembers(workspaceId),
+        api.getDashboardCharts(workspaceId, { months, ...only }),
+      ]),
+    ),
+    getI18n(),
+  ]);
   const d = dashboard;
   const ccy = d.currency;
   const lta = d.leftToAssign !== null ? BigInt(d.leftToAssign) : null;
@@ -48,6 +53,22 @@ export default async function HomePage({
   const names = accountMap(accounts);
   const base = `/w/${workspace.id}`;
   const active = members.filter((m) => m.status === 'active');
+  const homeHref = (q: { memberId?: string; period?: string | null }) => {
+    const s = new URLSearchParams();
+    if (q.memberId) s.set('memberId', q.memberId);
+    if (m && months !== 6) s.set('months', String(months));
+    if (q.period) s.set('period', q.period);
+    return s.size ? `${base}?${s}` : base;
+  };
+  // A month reads as "September 2026"; another budget period (weekly, biweekly) as its dates.
+  const start = d.period.start as CalendarDate;
+  const periodLabel =
+    start.endsWith('-01') && d.period.end === endOfMonth(start)
+      ? new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+          new Date(`${start}T00:00:00Z`),
+        )
+      : `${date(d.period.start)} – ${date(d.period.end)}`;
+  const shownPeriod = d.current ? null : d.period.start;
 
   return (
     <div className="space-y-6">
@@ -62,13 +83,13 @@ export default async function HomePage({
           <>
             {active.length > 0 && (
               <nav aria-label={t('home.filter_member')} className="segmented segmented-md">
-                <Link href={base} aria-current={!memberId ? 'page' : undefined}>
+                <Link href={homeHref({ period: shownPeriod })} aria-current={!memberId ? 'page' : undefined}>
                   {t('home.everyone')}
                 </Link>
                 {active.map((m) => (
                   <Link
                     key={m.id}
-                    href={`${base}?memberId=${m.id}`}
+                    href={homeHref({ memberId: m.id, period: shownPeriod })}
                     aria-current={m.id === memberId ? 'page' : undefined}
                   >
                     {m.name}
@@ -83,31 +104,79 @@ export default async function HomePage({
         }
       />
 
-      <section aria-label={t('home.this_period')} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile
-          label={t('home.income')}
-          value={<Money amount={d.income.amount} currency={ccy} />}
-          href={drillHref(base, d.income.drill)}
-        />
-        <StatTile
-          label={t('home.spent')}
-          value={<Money amount={d.spent.amount} currency={ccy} />}
-          href={drillHref(base, d.spent.drill)}
-        />
-        <StatTile
-          label={t('home.left_to_spend')}
-          value={d.leftToSpend !== null ? <Money amount={d.leftToSpend} currency={ccy} /> : '—'}
-          hint={d.leftToSpend === null ? t('home.no_budget_hint') : undefined}
-          tone={d.leftToSpend !== null && BigInt(d.leftToSpend) < 0n ? 'bad' : undefined}
-          href={`${base}/budget`}
-        />
-        <StatTile
-          label={t('budget.lta_label')}
-          value={d.leftToAssign !== null ? <Money amount={d.leftToAssign} currency={ccy} /> : '—'}
-          tone={lta !== null && lta < 0n ? 'bad' : undefined}
-          hint={lta !== null && lta < 0n ? t('budget.over_assigned_hint') : undefined}
-          href={`${base}/budget`}
-        />
+      <section
+        aria-label={t('home.this_period')}
+        data-testid="home-period"
+        className={
+          d.current ? 'space-y-3' : 'space-y-3 rounded-xl border-2 border-warn bg-warn/10 p-3 sm:p-4'
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <nav aria-label={t('home.period_nav')} className="flex items-center gap-1">
+            <Link
+              href={homeHref({ memberId, period: d.nav.previous })}
+              className="btn-secondary px-3"
+              aria-label={t('home.period_previous')}
+              title={t('home.period_previous')}
+            >
+              ←
+            </Link>
+            <span className="min-w-40 px-2 text-center font-semibold">{periodLabel}</span>
+            {d.nav.next ? (
+              <Link
+                href={homeHref({ memberId, period: d.nav.nextIsCurrent ? null : d.nav.next })}
+                className="btn-secondary px-3"
+                aria-label={t('home.period_next')}
+                title={t('home.period_next')}
+              >
+                →
+              </Link>
+            ) : (
+              <span className="btn-secondary px-3 opacity-40" aria-hidden="true">
+                →
+              </span>
+            )}
+          </nav>
+          {!d.current && (
+            <>
+              <p role="status" className="font-semibold text-warn">
+                {t('home.past_period', { period: periodLabel })}
+              </p>
+              <Link href={homeHref({ memberId })} className="btn-primary sm:ml-auto">
+                {t('home.back_to_today')}
+              </Link>
+            </>
+          )}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile
+            label={t('home.income')}
+            value={<Money amount={d.income.amount} currency={ccy} />}
+            href={drillHref(base, d.income.drill)}
+          />
+          <StatTile
+            label={t('home.spent')}
+            value={<Money amount={d.spent.amount} currency={ccy} />}
+            href={drillHref(base, d.spent.drill)}
+          />
+          <StatTile
+            label={t('home.left_to_spend')}
+            value={d.leftToSpend !== null ? <Money amount={d.leftToSpend} currency={ccy} /> : '—'}
+            hint={d.leftToSpend === null ? t('home.no_budget_hint') : undefined}
+            tone={d.leftToSpend !== null && BigInt(d.leftToSpend) < 0n ? 'bad' : undefined}
+            href={`${base}/budget`}
+          />
+          <StatTile
+            label={t('budget.lta_label')}
+            value={d.leftToAssign !== null ? <Money amount={d.leftToAssign} currency={ccy} /> : '—'}
+            tone={lta !== null && lta < 0n ? 'bad' : undefined}
+            hint={lta !== null && lta < 0n ? t('budget.over_assigned_hint') : undefined}
+            href={`${base}/budget`}
+          />
+        </div>
+        {!d.current && (
+          <p className="text-xs text-muted">{t('home.past_period_note', { period: periodLabel })}</p>
+        )}
       </section>
 
       {d.lowBalance.length > 0 && (

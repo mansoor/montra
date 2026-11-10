@@ -210,7 +210,9 @@ export function createApi(opts: ApiOptions) {
     aiSettings: (w: string) => request<{ mode: string }>('GET', `${ws(w)}/ai/settings`),
 
     // Planning (Phase 6): online reads (cached on the device by useCached) and online-only budget writes.
-    dashboard: (w: string) => request<DashboardDto>('GET', `${ws(w)}/dashboard`),
+    /** `period`: any date in the period to show (default today). */
+    dashboard: (w: string, period?: string) =>
+      request<DashboardDto>('GET', `${ws(w)}/dashboard${period ? `?period=${period}` : ''}`),
     /** Explore spending: the picked categories (none: the three biggest everyday ones) over `months` months. */
     spendingExplore: (w: string, months: number, categoryIds: readonly string[]) =>
       request<SpendingExploreDto>(
