@@ -175,7 +175,7 @@ describe('gateway.extractReceipt', () => {
       lines: [],
       subtotal: '26.96',
       tax: '1.75',
-      taxIncluded: false,
+      taxIncluded: 'no',
       discount: '-1.00',
       fees: null,
       tip: null,
@@ -196,16 +196,16 @@ describe('gateway.extractReceipt', () => {
     };
     const gw = createGateway({ adapterFactory: () => scripted, env: {} });
     const ctx = ctxOf(new MemoryStore(), { provider: { id: 'anthropic' } });
-    const line = (rawText: string, lineTotal: string) => ({
+    const line = (rawText: string, lineTotal: string, taxable = 'unmarked') => ({
       rawText,
       expandedName: null,
       qty: null,
       unitPrice: null,
       lineTotal,
       discount: null,
-      taxable: null,
+      taxable,
     });
-    next = answer({ lines: [line('MILK', '3.48'), line('BREAD', '2,10'), line('', '1.00')] });
+    next = answer({ lines: [line('MILK', '3.48', 'no'), line('BREAD', '2,10', 'yes'), line('', '1.00')] });
     const ok = await gw.extractReceipt(doc({ images: [png('x')] }), ctx);
     expect(ok).toMatchObject({
       ok: true,
@@ -216,8 +216,18 @@ describe('gateway.extractReceipt', () => {
         discount: '1.00',
         cardLast4: null,
         confidence: 1,
-        lines: [{ rawText: 'MILK', lineTotal: '3.48' }, { rawText: 'BREAD' }],
+        // v2 answers yes/no/unmarked in words; the receipt keeps true/false/null.
+        taxIncluded: false,
+        lines: [
+          { rawText: 'MILK', lineTotal: '3.48', taxable: false },
+          { rawText: 'BREAD', taxable: true },
+        ],
       },
+    });
+    next = answer({ taxIncluded: 'unclear', lines: [line('EGGS', '2.00')] });
+    expect(await gw.extractReceipt(doc({ images: [png('x')] }), ctx)).toMatchObject({
+      ok: true,
+      value: { taxIncluded: null, lines: [{ rawText: 'EGGS', taxable: null }] },
     });
     next = answer({ lines: [line('A', 'x'), line('B', 'y'), line('C', '1.00')] });
     expect(await gw.extractReceipt(doc({ images: [png('x')] }), ctx)).toMatchObject({
