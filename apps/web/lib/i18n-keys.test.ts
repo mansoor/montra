@@ -121,6 +121,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'reconciled',
     'reversed_in_open_period',
     'security_deposit',
+    'transfer',
   ],
   'entities.action.': ['lock', 'unlock', 'relock'],
   'journal.kind.': [

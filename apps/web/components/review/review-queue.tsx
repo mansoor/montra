@@ -13,6 +13,7 @@ import {
   isEditableTarget,
   percent,
   proposedCategoryId,
+  proposedTransfer,
   removeItems,
   reviewCommand,
   SHORTCUTS,
@@ -121,6 +122,14 @@ export function ReviewQueue({
     [items, cursor],
   );
 
+  const acceptedMessage = useCallback(
+    (r: { accepted: number; transfers: number }) =>
+      r.transfers > 0
+        ? t('review.accepted_transfers', { count: r.accepted, transfers: r.transfers })
+        : t('review.accepted', { count: r.accepted }),
+    [t],
+  );
+
   const accept = useCallback(async () => {
     const ids = selected.size
       ? new Set(selected)
@@ -133,15 +142,17 @@ export function ReviewQueue({
     drop(ids);
     try {
       const r = await browserApi.acceptReview(workspace.id, { transactionIds: [...ids] });
-      setAnnounce(t('review.accepted', { count: r.accepted }));
+      setAnnounce(acceptedMessage(r));
       if (r.skipped > 0) setError(t('review.skipped', { count: r.skipped }));
+      // A transfer absorbs its other side, which may be further down the list.
+      if (r.transfers > 0) await load(null);
     } catch (err) {
       setItems(before.items);
       setCursor(before.cursor);
       setTotal(before.total);
       setError(friendlyMessage(err, t));
     }
-  }, [selected, current, items, cursor, total, drop, workspace.id, t]);
+  }, [selected, current, items, cursor, total, drop, workspace.id, t, load, acceptedMessage]);
 
   const resolve = useCallback(
     async (item: ReviewItemDto, categoryId: string, memberId: string | null | undefined) => {
@@ -176,7 +187,7 @@ export function ReviewQueue({
     setError(null);
     try {
       const r = await browserApi.acceptReview(workspace.id, { minConfidence: above / 100 });
-      setAnnounce(t('review.accepted', { count: r.accepted }));
+      setAnnounce(acceptedMessage(r));
       setCursor(0);
       setSelected(new Set());
       await load(null);
@@ -328,6 +339,11 @@ export function ReviewQueue({
           {items.map((item, i) => {
             const active = item === current;
             const sugCat = proposedCategoryId(item);
+            const sugTransfer = proposedTransfer(item);
+            const transferTo = sugTransfer && item.amount && item.amount.amount.startsWith('-');
+            const otherAccount = sugTransfer
+              ? (accountById.get(sugTransfer.accountId)?.name ?? t('review.another_account'))
+              : null;
             const sugMember = suggestedMemberId(item);
             const conf = confidenceOf(item);
             return (
@@ -375,11 +391,15 @@ export function ReviewQueue({
                   </p>
                   <p className="mt-1 flex flex-wrap items-center gap-2 text-sm">
                     <span data-testid="suggested-category">
-                      {categoryName(sugCat) ?? (
-                        <span className="text-muted">{t('review.no_suggestion')}</span>
-                      )}
+                      {sugTransfer
+                        ? t(transferTo ? 'review.transfer_to' : 'review.transfer_from', {
+                            account: otherAccount ?? '',
+                          })
+                        : (categoryName(sugCat) ?? (
+                            <span className="text-muted">{t('review.no_suggestion')}</span>
+                          ))}
                     </span>
-                    {sugCat && <ConfidenceChip confidence={conf} threshold={threshold} />}
+                    {(sugCat || sugTransfer) && <ConfidenceChip confidence={conf} threshold={threshold} />}
                     {sugMember && memberById.get(sugMember) && (
                       <span className="chip chip-muted">{memberById.get(sugMember)!.name}</span>
                     )}
@@ -401,8 +421,10 @@ export function ReviewQueue({
                     <button
                       type="button"
                       className="btn-secondary px-2 py-1"
-                      disabled={!sugCat}
-                      aria-label={t('review.accept_row', { payee: item.payee || item.description })}
+                      disabled={!sugCat && !sugTransfer}
+                      aria-label={t(sugTransfer ? 'review.make_transfer_row' : 'review.accept_row', {
+                        payee: item.payee || item.description,
+                      })}
                       onClick={(e) => {
                         e.stopPropagation();
                         setCursor(i);
@@ -411,13 +433,15 @@ export function ReviewQueue({
                           .then(
                             (r) => {
                               drop(new Set([item.transactionId]));
-                              setAnnounce(t('review.accepted', { count: r.accepted }));
+                              setAnnounce(acceptedMessage(r));
+                              if (r.skipped > 0) setError(t('review.skipped', { count: r.skipped }));
+                              if (r.transfers > 0) void load(null);
                             },
                             (err) => setError(friendlyMessage(err, t)),
                           );
                       }}
                     >
-                      {t('review.accept')}
+                      {sugTransfer ? t('review.make_transfer') : t('review.accept')}
                     </button>
                     <button
                       type="button"

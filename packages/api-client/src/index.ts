@@ -115,6 +115,8 @@ import type {
   CreateRecurringRequest,
   CreateTransactionRequest,
   CreateTransferRequest,
+  MakeTransferDto,
+  MakeTransferRequest,
   CreateWorkspaceRequest,
   EntityGrant,
   FamilyMemberDto,
@@ -960,6 +962,14 @@ export class ApiClient {
   }
   createTransfer(workspaceId: string, input: CreateTransferInput) {
     return this.request<TransactionDto>('POST', this.ws(workspaceId, '/transactions/transfer'), input);
+  }
+  /** A plain transaction becomes a transfer to or from `accountId`, absorbing the other side if it was recorded. */
+  makeTransfer(workspaceId: string, id: string, input: MakeTransferRequest) {
+    return this.request<MakeTransferDto>(
+      'POST',
+      this.ws(workspaceId, `/transactions/${enc(id)}/make-transfer`),
+      input,
+    );
   }
   /** Edits with optimistic concurrency; a stale `version` fails with ApiError code `version.mismatch` (412). */
   updateTransaction(workspaceId: string, id: string, version: string, input: UpdateTransactionInput) {

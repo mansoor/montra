@@ -31,6 +31,11 @@ export const CategorizationDto = z.object({
       memberId: z.string().nullable(),
     })
     .nullable(),
+  /**
+   * Step 3: the other account of a likely transfer or card payment, and the other side when it was already recorded
+   * (null: only this side is in yet). Accepting the suggestion makes it a transfer. Absent on older entries.
+   */
+  transfer: z.object({ accountId: z.string(), transactionId: z.string().nullable() }).nullable().optional(),
 });
 export type CategorizationDto = z.infer<typeof CategorizationDto>;
 
@@ -313,7 +318,10 @@ export const ReviewListResponse = z.object({
 });
 export type ReviewListResponse = z.infer<typeof ReviewListResponse>;
 
-/** Accept the suggestions as they are: either listed transactions, or everything at or above a confidence. */
+/**
+ * Accept the suggestions as they are: either listed transactions, or everything at or above a confidence. A suggested
+ * transfer is made a transfer (`POST /transactions/:id/make-transfer`).
+ */
 export const AcceptReviewRequest = z
   .object({
     transactionIds: z.array(Id).max(1000).optional(),
@@ -326,7 +334,12 @@ export const AcceptReviewRequest = z
   });
 export type AcceptReviewRequest = z.output<typeof AcceptReviewRequest>;
 
-export const AcceptReviewResponse = z.object({ accepted: z.number(), skipped: z.number() });
+export const AcceptReviewResponse = z.object({
+  accepted: z.number(),
+  skipped: z.number(),
+  /** Of those accepted, how many became transfers. */
+  transfers: z.number().default(0),
+});
 export type AcceptReviewResponse = z.infer<typeof AcceptReviewResponse>;
 
 /** Choose a different category (and optionally member/entity) — a correction the app learns from (AI-05). */

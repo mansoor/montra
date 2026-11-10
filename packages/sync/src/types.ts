@@ -44,6 +44,11 @@ export interface LocalTransaction {
   status: string;
   /** Suggested category for the review stack (categorization.suggested). */
   suggestedCategoryId: string | null;
+  /**
+   * A suggested transfer's other account (categorization.transfer): accepting makes it a transfer on the server.
+   * Absent on rows stored by older builds.
+   */
+  suggestedTransferAccountId?: string | null;
   confidence: number | null;
   explanation: string | null;
   merchantName: string | null;

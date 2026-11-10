@@ -86,9 +86,18 @@ export const suggestedMemberId = (item: ReviewItemDto): string | null =>
 export const proposedCategoryId = (item: ReviewItemDto): string | null =>
   item.categorization?.suggested?.categoryId ?? null;
 
+/** A suggested transfer (step 3): the other account, and its other side when that's already recorded. Accepting it
+ * makes the transaction a transfer. */
+export const proposedTransfer = (
+  item: ReviewItemDto,
+): { accountId: string; transactionId: string | null } | null =>
+  item.categorization?.step === 'transfer' ? (item.categorization.transfer ?? null) : null;
+
 /** Items "accept all ≥ X%" would accept, among those loaded (the API applies it to the whole queue). */
 export function countAtOrAbove(items: readonly ReviewItemDto[], min: number): number {
-  return items.filter((i) => confidenceOf(i) >= min && proposedCategoryId(i) !== null).length;
+  return items.filter(
+    (i) => confidenceOf(i) >= min && (proposedCategoryId(i) !== null || proposedTransfer(i) !== null),
+  ).length;
 }
 
 /** Removes handled items and keeps the cursor on the item that took the current one's place. */

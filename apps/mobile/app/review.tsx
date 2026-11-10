@@ -77,6 +77,8 @@ export default function Review() {
     );
 
   const suggested = current.suggestedCategoryId ? byId.get(current.suggestedCategoryId) : undefined;
+  const transfer = !suggested && Boolean(current.suggestedTransferAccountId);
+  const conf = current.confidence !== null ? ` · ${confidenceLabel(current.confidence)}` : '';
   const rotate = x.interpolate({ inputRange: [-width, 0, width], outputRange: ['-12deg', '0deg', '12deg'] });
 
   return (
@@ -101,8 +103,10 @@ export default function Review() {
             <Small>{fmtDate(current.date)}</Small>
             <Body>
               {suggested
-                ? `${suggested.name}${current.confidence !== null ? ` · ${confidenceLabel(current.confidence)}` : ''}`
-                : t('mobile.review.no_suggestion')}
+                ? `${suggested.name}${conf}`
+                : transfer
+                  ? `${t('mobile.review.transfer')}${conf}`
+                  : t('mobile.review.no_suggestion')}
             </Body>
             {current.explanation ? <Small>{current.explanation}</Small> : null}
           </Card>
@@ -119,8 +123,8 @@ export default function Review() {
         </View>
         <View style={{ flex: 1 }}>
           <Button
-            label={t('mobile.review.accept')}
-            disabled={!suggested}
+            label={transfer ? t('review.make_transfer') : t('mobile.review.accept')}
+            disabled={!suggested && !transfer}
             onPress={() => void accept(current)}
             testID="review-accept"
           />
