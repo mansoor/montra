@@ -28,7 +28,7 @@ import { jsonSchemaOf } from './schema.js';
 import * as categorizeV1 from './tasks/categorize/v1.js';
 import * as extractV1 from './tasks/extract-statement-table/v1.js';
 import * as payslipV1 from './tasks/extract-payslip/v1.js';
-import * as receiptV1 from './tasks/extract-receipt/v1.js';
+import * as receiptV2 from './tasks/extract-receipt/v2.js';
 import * as mapColumnsV1 from './tasks/map-columns/v1.js';
 import * as normalizeV1 from './tasks/normalize-payees/v1.js';
 import * as quickAddV1 from './tasks/parse-quick-add/v1.js';
@@ -795,7 +795,7 @@ export class Gateway implements AiGateway {
    * of its lines is invalid.
    */
   async extractReceipt(doc: ReceiptDocument, ctx: AiContext): Promise<TaskResult<ReceiptExtraction>> {
-    const pv = receiptV1.PROMPT_VERSION;
+    const pv = receiptV2.PROMPT_VERSION;
     if (this.isOff(ctx)) return { ok: false, reason: 'off' };
     const imagesAllowed = ctx.mode === 'builtin' || ctx.mode === 'byok';
     const images = imagesAllowed ? doc.images : [];
@@ -814,7 +814,7 @@ export class Gateway implements AiGateway {
     return this.callProvider<ReceiptExtraction>(
       {
         task: 'extract_receipt',
-        system: receiptV1.SYSTEM,
+        system: receiptV2.SYSTEM,
         promptVersion: pv,
         input: {
           currencyHint: doc.currencyHint,
@@ -824,8 +824,8 @@ export class Gateway implements AiGateway {
           ocrText,
         },
         images,
-        schema: receiptV1.Output,
-        validate: (o: receiptV1.Output) => {
+        schema: receiptV2.Output,
+        validate: (o: receiptV2.Output) => {
           const lines = o.lines
             .map((l) => ({
               rawText: oneLine(l.rawText, 300),
@@ -834,7 +834,7 @@ export class Gateway implements AiGateway {
               unitPrice: cleanDecimal(l.unitPrice),
               lineTotal: cleanDecimal(l.lineTotal),
               discount: positiveDecimal(cleanDecimal(l.discount)),
-              taxable: l.taxable,
+              taxable: receiptV2.fromMark(l.taxable),
             }))
             .filter((l): l is ReceiptExtraction['lines'][number] => l.rawText !== '' && l.lineTotal !== null);
           if (o.lines.length > 0 && lines.length < o.lines.length / 2) return null;
@@ -847,7 +847,7 @@ export class Gateway implements AiGateway {
             lines,
             subtotal: cleanDecimal(o.subtotal),
             tax: cleanDecimal(o.tax),
-            taxIncluded: o.taxIncluded,
+            taxIncluded: receiptV2.fromMark(o.taxIncluded),
             discount: positiveDecimal(cleanDecimal(o.discount)),
             fees: cleanDecimal(o.fees),
             tip: cleanDecimal(o.tip),
