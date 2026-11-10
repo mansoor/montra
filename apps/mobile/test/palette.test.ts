@@ -34,6 +34,9 @@ const TEXT: Pair[] = [
   ['success', 'surface'],
 ];
 const ICONS: Pair[] = [
+  ['chart1', 'surface'],
+  ['chart2', 'surface'],
+  ['chart3', 'surface'],
   ['danger', 'dangerSoft'],
   ['warning', 'warningSoft'],
   ['muted', 'surfaceAlt'],

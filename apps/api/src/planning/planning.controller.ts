@@ -22,6 +22,7 @@ import {
   CreateExpectedIncomeRequest,
   CreateGoalRequest,
   DraftBudgetRequest,
+  DashboardChartsQuery,
   MoveRequest,
   PlanningSettingsDto,
   RecommendationStatus,
@@ -209,6 +210,12 @@ export class PlanningController {
       q,
     );
     return this.flow.dashboard(dbCtx(ctx), { entityId, memberId });
+  }
+
+  @Get('dashboard/charts')
+  dashboardCharts(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    const { entityId, memberId, months } = parse(DashboardChartsQuery, q);
+    return this.flow.dashboardCharts(dbCtx(ctx), { entityId, memberId, months });
   }
 
   @Get('flow/sankey')

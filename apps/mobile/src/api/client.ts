@@ -6,6 +6,7 @@ import type {
   BudgetDto,
   BudgetPeriodDto,
   CalendarDto,
+  DashboardChartsDto,
   DashboardDto,
   ForecastDto,
   GoalDto,
@@ -206,6 +207,9 @@ export function createApi(opts: ApiOptions) {
 
     // Planning (Phase 6): online reads (cached on the device by useCached) and online-only budget writes.
     dashboard: (w: string) => request<DashboardDto>('GET', `${ws(w)}/dashboard`),
+    /** The Home charts for the last `months` months (3, 6, 12 or 24). */
+    dashboardCharts: (w: string, months: number) =>
+      request<DashboardChartsDto>('GET', `${ws(w)}/dashboard/charts?months=${months}`),
     budgets: async (w: string) => (await request<{ data: BudgetDto[] }>('GET', `${ws(w)}/budgets`)).data,
     createBudget: (w: string, input: { entityId: string; name: string }) =>
       request<BudgetDto>('POST', `${ws(w)}/budgets`, input),

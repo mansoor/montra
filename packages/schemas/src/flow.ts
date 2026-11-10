@@ -125,6 +125,85 @@ export const DashboardDto = z.object({
 });
 export type DashboardDto = z.infer<typeof DashboardDto>;
 
+/** The periods the Home charts offer, in months (the current month is the last). */
+export const CHART_MONTHS = [3, 6, 12, 24] as const;
+export const DashboardChartsQuery = z.object({
+  entityId: Id.optional(),
+  memberId: Id.optional(),
+  months: z.coerce
+    .number()
+    .int()
+    .refine((n) => (CHART_MONTHS as readonly number[]).includes(n), 'months must be 3, 6, 12 or 24')
+    .default(6),
+});
+export type DashboardChartsQuery = z.output<typeof DashboardChartsQuery>;
+
+const InsightRow = z.object({ categoryId: Id, name: z.string(), drill: DrillDto });
+
+/**
+ * GET /dashboard/charts?months&entityId&memberId — what the Home charts show, worked out on the server so web and phone
+ * agree (FLOW-01, FAM-09). Spending and income count the way the dashboard tiles do.
+ */
+export const DashboardChartsDto = z.object({
+  entityId: Id,
+  memberId: Id.nullable(),
+  currency: CurrencyCodeDto,
+  months: z.number().int(),
+  /** One per calendar month, oldest first; the last is the current month so far. */
+  monthly: z.array(
+    z.object({
+      start: CalendarDateDto,
+      end: CalendarDateDto,
+      income: MinorDto,
+      spending: MinorDto,
+      /** income − spending. */
+      net: MinorDto,
+      /** At the month's end (today for the current month), in the base currency. */
+      netWorth: MinorDto,
+    }),
+  ),
+  /**
+   * The budget so far this period: the categories furthest from where the budget expects them today, at most 5.
+   * Paced (day-to-day) categories compare with the budget pro rata; others only count once they're over.
+   * Null without a budget.
+   */
+  budget: z
+    .object({
+      budgetId: Id,
+      period: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+      rows: z.array(
+        InsightRow.extend({
+          assigned: MinorDto,
+          spent: MinorDto,
+          expected: MinorDto,
+          /** spent − expected: positive is over, negative is under. */
+          difference: MinorDto,
+        }),
+      ),
+    })
+    .nullable(),
+  /** Where the money went this month: the top 5 spending categories and the month's total. */
+  topSpending: z.object({
+    period: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+    total: MinorDto,
+    rows: z.array(InsightRow.extend({ amount: MinorDto })),
+  }),
+  /** Last full month against the three before it: the 5 biggest changes, either way. */
+  changes: z.object({
+    period: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+    rows: z.array(
+      InsightRow.extend({
+        amount: MinorDto,
+        /** The average of the three months before. */
+        usual: MinorDto,
+        /** amount − usual. */
+        difference: MinorDto,
+      }),
+    ),
+  }),
+});
+export type DashboardChartsDto = z.infer<typeof DashboardChartsDto>;
+
 export const SANKEY_NODE_KINDS = [
   'income',
   'entity',

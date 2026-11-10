@@ -17,6 +17,7 @@ import type {
   DashboardDto,
   DraftBudgetDto,
   DraftBudgetRequest,
+  DashboardChartsDto,
   ExpectedIncomeDto,
   ForecastDto,
   GoalDto,
@@ -1947,6 +1948,13 @@ export class ApiClient {
   getDashboard(workspaceId: string, opts: { entityId?: string; memberId?: string } = {}) {
     return this.request<DashboardDto>('GET', this.ws(workspaceId, `/dashboard${query(opts)}`));
   }
+  /** The Home charts: monthly flows and net worth, budget so far, top spending, changes (DashboardChartsDto). */
+  getDashboardCharts(
+    workspaceId: string,
+    opts: { months?: number; entityId?: string; memberId?: string } = {},
+  ) {
+    return this.request<DashboardChartsDto>('GET', this.ws(workspaceId, `/dashboard/charts${query(opts)}`));
+  }
   getSankey(workspaceId: string, opts: { from?: string; to?: string; entityId?: string } = {}) {
     return this.request<SankeyDto>('GET', this.ws(workspaceId, `/flow/sankey${query(opts)}`));
   }
@@ -2185,6 +2193,7 @@ export type {
   DashboardDto,
   DraftBudgetDto,
   ExpectedIncomeDto,
+  DashboardChartsDto,
   ForecastDto,
   GoalDto,
   NetWorthDto,

@@ -109,6 +109,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET/POST /goals`, `GET/PATCH /goals/{id}` | Goals, sinking funds (own category), debt payoff simulation | BUD-07/08, FAM-07 |
 | `GET/POST /expected-income`, `PATCH /expected-income/{id}` | Expected take-home income, matched to deposits | BUD-03 |
 | `GET /dashboard?entityId&memberId` | Home numbers (one round trip), each with a transactions `drill` filter | FLOW-01, FAM-09 |
+| `GET /dashboard/charts?months&entityId&memberId` | Home charts for 3, 6, 12 or 24 months: income, spending and net worth per month, the budget so far (paced categories against the pro-rata budget, bills when over), this month's top 5 spending, and last month's 5 biggest changes from the 3 before | FLOW-01, FAM-09 |
 | `GET /flow/sankey?from&to&entityId` | Sankey nodes and links with drill-down filters | FLOW-02, FLOW-06 |
 | `GET /flow/forecast?days=7..90&entityId` | Daily balances per cash/card account, items, low-balance warnings | FLOW-03 |
 | `GET /calendar?from&to&entityId` | Bills, paydays and goal due dates | FLOW-05, UP-14 |
