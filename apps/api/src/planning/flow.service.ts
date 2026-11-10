@@ -54,7 +54,7 @@ import { leaseStatus } from '../rentals/properties.service.js';
 import { RentService } from '../rentals/rent.service.js';
 import { FxRatesService } from '../fx/fx.service.js';
 import type { TransactionSpec } from '../transactions/poster.js';
-import { BudgetsService, isBudgetCategory } from './budgets.service.js';
+import { BudgetsService, isBudgetCategory, specOf } from './budgets.service.js';
 import { occurrenceTotal, PlanningData, previousMonths, type Ctx } from './data.js';
 
 type Money = CalendarItemDto['currency'];
@@ -1050,7 +1050,7 @@ export class FlowService {
 
   async dashboard(
     ctx: Ctx,
-    opts: { entityId?: string | null; memberId?: string | null },
+    opts: { entityId?: string | null; memberId?: string | null; period?: CalendarDate },
   ): Promise<DashboardDto> {
     return this.db.run(ctx, async (trx) => {
       const entityId = opts.entityId ?? (await this.defaultEntity(trx, ctx));
@@ -1066,7 +1066,11 @@ export class FlowService {
         .where((eb) => (memberId ? eb('member_id', '=', memberId) : eb('member_id', 'is', null)))
         .executeTakeFirst();
 
-      let period: Period = periodContaining({ type: 'monthly' }, today);
+      // The period asked for (a later date means now). Budgets have their own periods; otherwise months.
+      const at = opts.period && opts.period < today ? opts.period : today;
+      const spec = budget ? specOf(budget) : ({ type: 'monthly' } as const);
+      let period: Period = periodContaining(spec, at);
+      const current = period.start <= today && today <= period.end;
       let income = 0n;
       let spent = 0n;
       let leftToSpend: bigint | null = null;
@@ -1079,7 +1083,7 @@ export class FlowService {
       // Payroll taxes and deductions are part of pay, not spending (04 §8).
       spendIds = cats.filter((c) => c.type === 'expense' && c.kind !== 'system').map((c) => c.id);
       if (budget) {
-        const c = await this.budgets.compute(trx, ctx, budget.id);
+        const c = await this.budgets.compute(trx, ctx, budget.id, current ? undefined : period.start);
         period = c.period;
         const r = c.results[c.results.length - 1]!;
         income = c.income.actual;
@@ -1090,7 +1094,7 @@ export class FlowService {
           .reduce((t, l) => t + l.available, 0n);
         leftToAssign = budget.method === 'category_limits' ? null : r.leftToAssign;
         const names = new Map(c.categories.map((x) => [x.id, x.name]));
-        pace = c.categories
+        pace = (current ? c.categories : [])
           .filter(isBudgetCategory)
           .flatMap((cat) => {
             const l = r.lines.get(cat.id);
@@ -1135,11 +1139,18 @@ export class FlowService {
         .where('status', '=', 'open')
         .executeTakeFirstOrThrow();
       const memberDrill = memberId ? { memberId } : {};
+      const next = addDays(period.end, 1);
       return {
         entityId,
         memberId,
         currency: entity.currency as Money,
         period: { start: period.start, end: period.end },
+        current,
+        nav: {
+          previous: addDays(period.start, -1),
+          next: current ? null : next,
+          nextIsCurrent: !current && periodContaining(spec, next).end >= today,
+        },
         budgetId: budget?.id ?? null,
         income: {
           amount: s(income),

@@ -1949,7 +1949,8 @@ export class ApiClient {
       input,
     );
   }
-  getDashboard(workspaceId: string, opts: { entityId?: string; memberId?: string } = {}) {
+  /** `period`: any date in the period to show (default today); only the income, spending and budget figures follow it. */
+  getDashboard(workspaceId: string, opts: { entityId?: string; memberId?: string; period?: string } = {}) {
     return this.request<DashboardDto>('GET', this.ws(workspaceId, `/dashboard${query(opts)}`));
   }
   /** The Home charts: monthly flows and net worth, budget so far, top spending, changes (DashboardChartsDto). */

@@ -92,19 +92,37 @@ export const NetWorthDto = z.object({
 });
 export type NetWorthDto = z.infer<typeof NetWorthDto>;
 
-/** GET /dashboard?entityId&memberId — the home numbers in one round trip (FLOW-01, FAM-09). */
+/**
+ * GET /dashboard?entityId&memberId&period — `period` is any date in the period to show (default: today; a later date
+ * shows the current period). Only the income, spending and budget figures follow it; the rest is as of today.
+ */
+export const DashboardQuery = z.object({
+  entityId: Id.optional(),
+  memberId: Id.optional(),
+  period: CalendarDateDto.optional(),
+});
+export type DashboardQuery = z.output<typeof DashboardQuery>;
+
+/** GET /dashboard?entityId&memberId&period — the home numbers in one round trip (FLOW-01, FAM-09). */
 export const DashboardDto = z.object({
   entityId: Id.nullable(),
   memberId: Id.nullable(),
   currency: CurrencyCodeDto,
   period: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+  /** The period shown contains today. When it doesn't, clients say so plainly, with a way back. */
+  current: z.boolean(),
+  /**
+   * A date in the period before and in the one after, for `?period=` (the budget's periods, else months). `next` is
+   * null for the current period; `nextIsCurrent` says the next one is the current period (link without `period`).
+   */
+  nav: z.object({ previous: CalendarDateDto, next: CalendarDateDto.nullable(), nextIsCurrent: z.boolean() }),
   budgetId: Id.nullable(),
   income: z.object({ amount: MinorDto, drill: DrillDto }),
   spent: z.object({ amount: MinorDto, drill: DrillDto }),
   /** Σ available of the spending categories; null without a budget. */
   leftToSpend: MinorDto.nullable(),
   leftToAssign: MinorDto.nullable(),
-  /** The categories furthest over pace (FLOW-04), at most 5. */
+  /** The categories furthest over pace (FLOW-04), at most 5; none for a past period. */
   pace: z.array(
     z.object({
       categoryId: Id,
