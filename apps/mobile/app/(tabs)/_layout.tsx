@@ -64,6 +64,7 @@ export default function TabsLayout() {
           tabBarIcon: AddIcon,
           tabBarLabel: () => null,
           tabBarAccessibilityLabel: t('mobile.capture.title'),
+          tabBarButtonTestID: 'tab-add',
         }}
       />
       <Tabs.Screen name="budget" options={{ title: t('mobile.tab.budget'), tabBarIcon: icon('budget') }} />

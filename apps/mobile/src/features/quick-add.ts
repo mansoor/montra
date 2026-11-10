@@ -17,6 +17,30 @@ export function previousStep(step: CaptureStep, via: 'keypad' | 'sentence'): Cap
   return null;
 }
 
+/**
+ * The accounts quick add shows in its one row: the most recently used first (by the transactions on the phone), then
+ * any never used, up to `n`. The selected account is always shown: chosen from the full list, it takes the last place,
+ * so the others don't move under your finger.
+ */
+export function recentAccountIds(
+  history: readonly { accountId: string | null }[],
+  accountIds: readonly string[],
+  selected: string,
+  n = 3,
+): string[] {
+  const known = new Set(accountIds);
+  const order: string[] = [];
+  for (const id of [...history.map((t) => t.accountId), ...accountIds])
+    if (id && known.has(id) && !order.includes(id)) order.push(id);
+  const shown = order.slice(0, n);
+  return selected && known.has(selected) && !shown.includes(selected)
+    ? [...shown.slice(0, n - 1), selected]
+    : shown;
+}
+
+/** After saving, offer to photograph the receipt (TXN-08): for spending only; income rarely has one. */
+export const offersReceipt = (direction: 'expense' | 'income'): boolean => direction === 'expense';
+
 export type KeypadKey = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '00' | 'back' | 'clear';
 
 const MAX_DIGITS = 12;
