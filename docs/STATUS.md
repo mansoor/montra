@@ -782,6 +782,7 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Phone: voice entry** (TXN-07): quick add has **Say it** and a microphone beside the sentence box. The phone's speech service (`expo-speech-recognition`) fills the sentence as you speak, and the same parser as typing reads it. No audio is kept. Pure parts in `src/features/voice.ts`.
 - **Receipts nothing is reading, and AI that can't run** (2026-11-09): two failures that used to be silent now say why and what fixes it.
   - A receipt whose images may not go to the AI (or in local mode) waits for the doc-worker's `receipt.ocr`. With no doc-worker running it said "Reading" forever. `ReceiptDto.stalled` is now set when a `processing` receipt's latest job has waited in its queue past `JOB_STALL_MS` (3 minutes, `apps/api/src/jobs/queue.ts`) or failed, naming the worker it needs (`documents` or `jobs`). The web lists receipts being read above the tabs, with the reason and a link to Settings → AI; the receipt page and the phone say the same ("Not being read").
   - `/v1/status` has `workers.documents` and `workers.jobs`, `delayed` when that worker's queues lag past the same limit (`app.metrics_queue()`). The workspace layout and `/status` show a line for each delayed worker.

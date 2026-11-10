@@ -23,6 +23,7 @@ import {
   type KeypadKey,
 } from '../../src/features/quick-add';
 import { todayLocal } from '../../src/features/home';
+import { useVoice } from '../../src/features/use-voice';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import {
   Banner,
@@ -36,6 +37,8 @@ import {
   SuccessBurst,
   Title,
 } from '../../src/ui/components';
+import { haptic } from '../../src/ui/haptics';
+import { Icon } from '../../src/ui/icons';
 import { useTheme } from '../../src/ui/theme';
 
 const KEYS: KeypadKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'back'];
@@ -93,6 +96,9 @@ export default function Capture() {
   const [suggestion, setSuggestion] = useState<SuggestionDto | null>(null);
   const [picking, setPicking] = useState(false);
   const [sentence, setSentence] = useState('');
+  /** Came to the sentence step by voice: the keyboard stays down while listening. */
+  const [talking, setTalking] = useState(false);
+  const voice = useVoice(setSentence);
   const [busy, setBusy] = useState(false);
   /** Set right after a save: the check animation shows it. */
   const [saved, setSaved] = useState<string | null>(null);
@@ -120,18 +126,21 @@ export default function Capture() {
     setCategory(null);
     setSuggestion(null);
     setSentence('');
+    setTalking(false);
     setError(null);
     setPicking(false);
-  }, []);
+    voice.cancel();
+  }, [voice.cancel]);
 
   const back = useCallback(() => {
     const prev = previousStep(step, via);
     if (prev) {
+      if (voice.listening) voice.cancel();
       setError(null);
       setStep(prev);
     }
     return prev !== null;
-  }, [step, via]);
+  }, [step, via, voice.listening, voice.cancel]);
 
   // Android's back button steps back through the entry before it leaves the screen.
   useFocusEffect(
@@ -245,16 +254,50 @@ export default function Capture() {
       {step === 'sentence' ? (
         <>
           {!state?.online ? <Banner tone="warning" text={t('mobile.capture.sentence_offline')} /> : null}
-          <Field
-            label={t('mobile.capture.sentence')}
-            placeholder={t('mobile.capture.sentence_placeholder')}
-            value={sentence}
-            onChangeText={setSentence}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={() => void parseSentence()}
-            testID="qa-sentence"
-          />
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: th.space(2) }}>
+            <View style={{ flex: 1 }}>
+              <Field
+                label={t('mobile.capture.sentence')}
+                placeholder={t('mobile.capture.sentence_placeholder')}
+                value={sentence}
+                onChangeText={setSentence}
+                autoFocus={!talking}
+                multiline
+                returnKeyType="done"
+                blurOnSubmit
+                onSubmitEditing={() => void parseSentence()}
+                testID="qa-sentence"
+              />
+            </View>
+            <Pressable
+              onPress={() => {
+                haptic.tap();
+                if (voice.listening) voice.stop();
+                else void voice.start(sentence);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t(voice.listening ? 'mobile.capture.mic_stop' : 'mobile.capture.mic_start')}
+              testID="qa-mic"
+              style={({ pressed }) => ({
+                width: th.tap,
+                height: th.tap,
+                borderRadius: th.tap / 2,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: voice.listening ? th.danger : th.primary,
+                opacity: pressed ? 0.8 : 1,
+              })}
+            >
+              <Icon name={voice.listening ? 'stop' : 'mic'} size={20} color={th.onPrimary} />
+            </Pressable>
+          </View>
+          {voice.listening ? (
+            <Small color={th.primary}>{t('mobile.capture.listening')}</Small>
+          ) : voice.errorKey ? (
+            <Banner tone="warning" text={t(voice.errorKey, { message: voice.errorDetail ?? '' })} />
+          ) : (
+            <Small>{t('mobile.capture.voice_hint')}</Small>
+          )}
           <Button
             label={t('mobile.capture.next')}
             busy={busy}
@@ -353,7 +396,26 @@ export default function Capture() {
             onPress={() => setStep('payee')}
             testID="qa-next"
           />
-          <Button kind="secondary" label={t('mobile.capture.sentence')} onPress={() => setStep('sentence')} />
+          <Button
+            kind="secondary"
+            icon="keyboard"
+            label={t('mobile.capture.sentence')}
+            onPress={() => {
+              setTalking(false);
+              setStep('sentence');
+            }}
+          />
+          <Button
+            kind="secondary"
+            icon="mic"
+            label={t('mobile.capture.speak')}
+            onPress={() => {
+              setTalking(true);
+              setStep('sentence');
+              void voice.start(sentence);
+            }}
+            testID="qa-speak"
+          />
         </>
       ) : null}
 
