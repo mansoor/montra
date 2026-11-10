@@ -91,6 +91,18 @@ export const ReceiptGroupDto = z.object({
 });
 export type ReceiptGroupDto = z.infer<typeof ReceiptGroupDto>;
 
+/**
+ * A `processing` receipt that nothing is reading: its job has waited in the queue for minutes (no worker is
+ * taking it) or failed. `documents` is the doc-worker's OCR (images not allowed to the AI, or local mode);
+ * `jobs` is the API's job worker that runs the AI read.
+ */
+export const ReceiptStalledDto = z.object({
+  worker: z.enum(['documents', 'jobs']),
+  reason: z.enum(['waiting', 'failed']),
+  since: z.string(),
+});
+export type ReceiptStalledDto = z.infer<typeof ReceiptStalledDto>;
+
 export const ReceiptDto = z.object({
   id: Id,
   entityId: Id,
@@ -129,6 +141,7 @@ export const ReceiptDto = z.object({
       warnings: z.array(z.string()),
     })
     .nullable(),
+  stalled: ReceiptStalledDto.nullable(),
   retainUntil: z.string(),
   createdAt: z.string(),
   version: z.string(),

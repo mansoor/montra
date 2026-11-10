@@ -93,9 +93,19 @@ export function ReceiptReview({
   if (receipt.status === 'processing') {
     return (
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]">
-        <p role="status" className="card text-sm text-muted">
-          {t('receipts.reading')}
-        </p>
+        <div className="space-y-3">
+          <p role="status" className="card text-sm text-muted">
+            {t('receipts.reading')}
+          </p>
+          {receipt.stalled && (
+            <p role="alert" className="card border-warn text-sm" data-testid="receipt-stalled">
+              {t(`receipts.stalled.${receipt.stalled.worker}_${receipt.stalled.reason}`)}{' '}
+              <Link href={`/w/${ws}/settings?tab=ai`} className="font-medium text-brand-600 underline">
+                {t('receipts.ai_settings')}
+              </Link>
+            </p>
+          )}
+        </div>
         {viewer}
       </div>
     );

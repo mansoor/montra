@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-04, with Phase 11 code complete (on `claude/phase11-contracts`, PR open). Launch steps remain. Keep this file current:
+_Last updated 2026-11-09, with Phase 11 code complete (on `claude/phase11-contracts`, PR open). Launch steps remain. Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -782,6 +782,10 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Receipts nothing is reading, and AI that can't run** (2026-11-09): two failures that used to be silent now say why and what fixes it.
+  - A receipt whose images may not go to the AI (or in local mode) waits for the doc-worker's `receipt.ocr`. With no doc-worker running it said "Reading" forever. `ReceiptDto.stalled` is now set when a `processing` receipt's latest job has waited in its queue past `JOB_STALL_MS` (3 minutes, `apps/api/src/jobs/queue.ts`) or failed, naming the worker it needs (`documents` or `jobs`). The web lists receipts being read above the tabs, with the reason and a link to Settings → AI; the receipt page and the phone say the same ("Not being read").
+  - `/v1/status` has `workers.documents` and `workers.jobs`, `delayed` when that worker's queues lag past the same limit (`app.metrics_queue()`). The workspace layout and `/status` show a line for each delayed worker.
+  - "Your own API key" with no key used to turn every AI feature off without a word. Saving mode `byok` (Anthropic) without a key is now refused (`ai.key_required` on `apiKey`, checked on the web form too). Removing the key is still allowed, and `AiSettingsDto.problem` (`no_key`, `no_endpoint`, `not_configured`) puts a warning on the AI settings page. Features that degrade without AI (receipts, payslips, questions, scanned PDFs, the provider test) give that reason and fix instead of "AI is off".
 - **Receipts read by Claude** (`extract_receipt.v2`): the schema now fits Anthropic's limit of 16 nullable parameters; a test covers every AI task.
 - **Phone: receipt uploads**: pages upload natively with a time limit; a capture waiting to retry shows why and when, with Try now.
 - **Phone: look and feel**: Lucide icons by meaning (`src/ui/icons.tsx`), tinted fills (`primarySoft`, `dangerSoft`, `warningSoft`, `surfaceAlt` in `src/ui/palette.ts`, with an AA contrast test for every text-on-fill pair), cards with soft depth, filled fields, banners with icons, rows with leading icons, a tab bar with icons and a raised Add button, More grouped into sections, haptics (`src/ui/haptics.ts`: tap, select, success) and a check animation when quick add saves (`SuccessBurst`).

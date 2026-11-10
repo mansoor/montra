@@ -25,7 +25,7 @@ import { Db } from '../db/database.js';
 import { notFound } from '../common/errors.js';
 import { parse } from '../common/zod.js';
 import { requireRole } from '../common/roles.js';
-import { AiService } from './ai.service.js';
+import { AI_PROBLEM_TEXT, AiService } from './ai.service.js';
 
 const DEFAULT_PAGE = 50;
 
@@ -68,7 +68,7 @@ export class AiController {
         provider: runtime.ctx.provider.id,
         model: null,
         latencyMs: null,
-        error: runtime.mode === 'off' ? 'AI is off' : 'No provider is configured for this mode',
+        error: runtime.problem ? AI_PROBLEM_TEXT[runtime.problem] : 'AI is off',
       };
     const started = Date.now();
     const res = await this.ai.gateway.ping({ ...runtime.ctx, parkLocal: false });

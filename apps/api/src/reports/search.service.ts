@@ -15,7 +15,7 @@ import {
   type CalendarDate,
 } from '@montra/domain';
 import type { AskAnswerDto, SearchResultsDto } from '@montra/schemas';
-import { AiService } from '../ai/ai.service.js';
+import { AI_PROBLEM_TEXT, AiService } from '../ai/ai.service.js';
 import { AppError } from '../common/errors.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
@@ -131,7 +131,13 @@ export class SearchService {
         .execute();
       const runtime = await this.ai.runtime(trx, ctx, { type: 'question', id: ctx.workspaceId });
       if (!runtime.available) {
-        throw new AppError(409, 'ai.off', 'Asking questions needs AI. You can turn it on in settings.');
+        throw new AppError(
+          409,
+          'ai.off',
+          runtime.problem
+            ? `Asking questions needs AI. ${AI_PROBLEM_TEXT[runtime.problem]}`
+            : 'Asking questions needs AI. You can turn it on in settings.',
+        );
       }
       const res = await this.ai.gateway.answerQuestion(
         {

@@ -37,6 +37,11 @@ template text for summaries (graceful degradation, §8).
 | `local` | `OpenAiCompatibleAdapter` → Ollama / LM Studio / vLLM URL; on-device (mobile) later | The URL is reached from the user's own network. Self-hosted edition: the worker calls it directly. Hosted service: the gateway can't reach the endpoint, so AI work for **async jobs** (import categorization, receipt extraction) is parked as `pending_local` tasks. The next open web or desktop client on the user's network claims them, runs them against the local endpoint and posts the validated results back. Until then, rows go through rules and history, and the rest to the review queue. See [10](10-assumptions.md). |
 | `off` | `NullAdapter` | Every task returns `{ ok:false, reason:'off' }`. |
 
+A mode that is on but can't run (BYOK with no key saved, local with no URL, builtin with no provider on this
+server) also gets the `NullAdapter`. `AiRuntime.problem` and `AiSettingsDto.problem` say which, so the settings
+page warns and features that degrade say the reason and the fix rather than "AI is off". Saving BYOK
+(Anthropic) without a key is refused with `ai.key_required`.
+
 ## 3. Per-task routing (AIA-02)
 
 Routing is configuration, not code. It is versioned in `ai-routing.yaml` and overridable

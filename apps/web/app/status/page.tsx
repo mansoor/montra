@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { StatusDto } from '@montra/api-client';
 import { getPublicI18n } from '@/lib/i18n-public';
 import { API_URL } from '@/lib/session';
+import { delayedWorkers } from '@/lib/status';
 import { PublicShell } from '@/components/public-shell';
 
 export const metadata: Metadata = { title: 'Status' };
@@ -14,7 +15,12 @@ async function read(): Promise<StatusDto> {
   } catch {
     // If the API can't be reached, that's the answer.
   }
-  return { status: 'down', checkedAt: new Date().toISOString(), notices: [] };
+  return {
+    status: 'down',
+    checkedAt: new Date().toISOString(),
+    notices: [],
+    workers: { documents: 'ok', jobs: 'ok' },
+  };
 }
 
 /** OPS-03: open to anyone. Hosted separately, this would still answer when the rest is down; see docs/runbooks. */
@@ -32,6 +38,11 @@ export default async function StatusPage() {
       >
         {t(`status.${status.status}`)}
       </p>
+      {delayedWorkers(status).map((w) => (
+        <p key={w} className="card text-sm" data-testid="status-worker">
+          {t(`status.worker.${w}`)}
+        </p>
+      ))}
       {status.notices.length === 0 && <p className="text-sm text-muted">{t('status.no_notices')}</p>}
       {status.notices.map((n) => (
         <article key={n.id} className="card space-y-1" data-testid="status-notice">
