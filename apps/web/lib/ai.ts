@@ -55,6 +55,21 @@ export const OUTCOME_TONE: Record<AiEventDto['outcome'], Tone> = {
 export const needsKey = (mode: AiMode) => mode === 'byok';
 export const needsEndpoint = (mode: AiMode) => mode === 'local';
 
+/**
+ * Saving "your own key" with Anthropic and no key typed or saved would quietly turn AI off (the API refuses
+ * it too). An OpenAI-compatible server may not need a key.
+ */
+export const keyMissing = (
+  mode: AiMode,
+  provider: AiSettingsDto['provider'],
+  typed: string,
+  saved: Pick<AiSettingsDto, 'provider' | 'hasKey'>,
+) =>
+  needsKey(mode) &&
+  provider === 'anthropic' &&
+  !typed.trim() &&
+  !(saved.hasKey && saved.provider === provider);
+
 /** Parses the threshold slider (whole percent) into the API's 0.5..0.99. */
 export const thresholdFromPercent = (p: number) => Math.min(0.99, Math.max(0.5, whole(p) / 100));
 

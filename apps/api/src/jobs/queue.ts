@@ -22,6 +22,12 @@ export interface EnqueueInput {
   maxAttempts?: number;
 }
 
+/**
+ * How long a job may wait in its queue before we tell people nothing is picking it up (a worker isn't running).
+ * Workers wake on NOTIFY, so a healthy queue starts a job within seconds.
+ */
+export const JOB_STALL_MS = 3 * 60_000;
+
 /** A job failure that retrying cannot fix (bad file, unsupported format). */
 export class PermanentJobError extends Error {
   constructor(

@@ -46,13 +46,14 @@ import type {
   ReceiptListQuery,
   ReceiptPageDto,
   ReceiptRecommendationDto,
+  ReceiptStalledDto,
   UpdateReceiptRequest,
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { JobQueue } from '../jobs/queue.js';
+import { JOB_STALL_MS, JobQueue } from '../jobs/queue.js';
 import { STORAGE_PORT, sha256, storageKey, type StoragePort } from '../storage/storage.js';
-import { AiService } from '../ai/ai.service.js';
+import { AiService, aiUnavailableWarning } from '../ai/ai.service.js';
 import {
   Categorizer,
   ruleRecord,
@@ -257,7 +258,7 @@ export class ReceiptsService {
         mode: runtime.mode,
         model: null,
         confidence: null,
-        warnings: ['AI is off: enter the lines yourself'],
+        warnings: [aiUnavailableWarning(runtime, 'enter the lines yourself')],
       });
       return;
     }
@@ -382,6 +383,29 @@ export class ReceiptsService {
       .execute();
   }
 
+  /**
+   * Whether anything is reading a `processing` receipt: its latest job (the doc-worker's `receipt.ocr`, then
+   * `receipt.extract`) has waited in the queue past JOB_STALL_MS, or failed. Without this, a receipt whose
+   * worker isn't running just says "Reading" forever.
+   */
+  private async stalled(trx: Trx, ctx: Ctx, receiptId: string): Promise<ReceiptStalledDto | null> {
+    const job = await trx
+      .selectFrom('app.job')
+      .select(['queue', 'status', 'run_after', 'updated_at'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('type', 'in', ['receipt.ocr', 'receipt.extract'])
+      .where(sql<string>`payload->>'receiptId'`, '=', receiptId)
+      .orderBy('created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    if (!job) return null;
+    const worker = job.queue === 'doc' ? 'documents' : 'jobs';
+    if (job.status === 'failed') return { worker, reason: 'failed', since: job.updated_at.toISOString() };
+    if (job.status === 'queued' && Date.now() - job.run_after.getTime() > JOB_STALL_MS)
+      return { worker, reason: 'waiting', since: job.run_after.toISOString() };
+    return null;
+  }
+
   async dto(trx: Trx, ctx: Ctx, r: ReceiptRow): Promise<ReceiptDto> {
     const lines = await this.lines(trx, ctx, r.id);
     const groups = r.currency ? groupsOf(r, lines) : [];
@@ -414,6 +438,7 @@ export class ReceiptsService {
       tripId: r.trip_id,
       orderRef: r.order_ref,
       extraction: extraction ?? null,
+      stalled: r.status === 'processing' ? await this.stalled(trx, ctx, r.id) : null,
       retainUntil: r.retain_until,
       createdAt: r.created_at.toISOString(),
       version: r.version.toString(),

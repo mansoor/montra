@@ -11,7 +11,7 @@ import { BillingService } from '../src/ops/billing.service.js';
 import { scrubEvent } from '../src/ops/errors.js';
 import { AppVersionInterceptor } from '../src/ops/metrics.js';
 import { OpsJobs } from '../src/ops/ops-jobs.js';
-import { StatusService } from '../src/ops/support.service.js';
+import { StatusService, workerStates } from '../src/ops/support.service.js';
 import { OwnershipService } from '../src/data/ownership.service.js';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
@@ -609,6 +609,27 @@ describe('notices, status and the app version (OPS-03, OPS-04)', () => {
     });
     expect((await status()).notices).toEqual([]);
     await staff.post(`/v1/admin/notices/${later.body.id}/end`);
+  });
+
+  it('says when a worker isn’t picking up work, such as no doc-worker running', async () => {
+    const { rows } = await admin.query(
+      `insert into app.job (queue, type, run_after) values ('doc', 'test.nobody_home', now() - interval '10 minutes')
+       returning id`,
+    );
+    try {
+      expect((await status()).workers).toMatchObject({ documents: 'delayed' });
+    } finally {
+      await admin.query(`delete from app.job where id = $1`, [rows[0].id]);
+    }
+    // Which worker, judged by how long the oldest ready job has waited.
+    expect(workerStates([])).toEqual({ documents: 'ok', jobs: 'ok' });
+    expect(
+      workerStates([
+        { queue: 'doc', lag_seconds: 30 },
+        { queue: 'ai', lag_seconds: 600 },
+      ]),
+    ).toEqual({ documents: 'ok', jobs: 'delayed' });
+    expect(workerStates([{ queue: 'doc', lag_seconds: 600 }])).toEqual({ documents: 'delayed', jobs: 'ok' });
   });
 
   it('says so when something’s wrong', async () => {

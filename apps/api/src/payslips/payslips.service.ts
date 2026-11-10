@@ -36,7 +36,7 @@ import type {
   UpdateEmployerRequest,
   UpdatePayslipRequest,
 } from '@montra/schemas';
-import { AiService } from '../ai/ai.service.js';
+import { AiService, aiUnavailableWarning } from '../ai/ai.service.js';
 import { payeeKeyOf } from '../categorization/categorizer.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
@@ -469,7 +469,7 @@ export class PayslipsService {
           status: 'needs_review',
           extraction: JSON.stringify({
             mode: runtime.mode,
-            warnings: ['AI is off: enter the payslip yourself'],
+            warnings: [aiUnavailableWarning(runtime, 'enter the payslip yourself')],
           }),
         })
         .where('workspace_id', '=', ctx.workspaceId)

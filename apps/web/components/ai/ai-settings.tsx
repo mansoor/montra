@@ -9,6 +9,7 @@ import {
   AI_MODES,
   budgetPercent,
   formatUsd,
+  keyMissing,
   needsEndpoint,
   needsKey,
   parseBudget,
@@ -83,6 +84,8 @@ export function AiSettings({
     if (!b.ok) return setErrors({ fields: { monthlyBudgetUsd: t('ai.budget_invalid') } });
     if (needsEndpoint(mode) && !endpoint.trim())
       return setErrors({ fields: { endpoint: t('ai.endpoint_required') } });
+    if (keyMissing(mode, provider, apiKey, settings))
+      return setErrors({ fields: { apiKey: t('ai.key_required') } });
     const input: UpdateAiSettingsInput = {
       mode,
       provider: mode === 'local' ? 'openai_compatible' : provider,
@@ -119,6 +122,11 @@ export function AiSettings({
   return (
     <form onSubmit={onSubmit} className="space-y-4" aria-label={t('ai.title')} noValidate>
       <FormError message={errors.form} action={errors.action} />
+      {settings.problem && (
+        <p role="alert" className="card border-warn text-sm" data-testid="ai-problem">
+          {t(`ai.problem.${settings.problem}`)}
+        </p>
+      )}
       {!isOwner && <p className="text-sm text-muted">{t('ai.owner_only')}</p>}
 
       <fieldset className="card space-y-3" disabled={!isOwner}>

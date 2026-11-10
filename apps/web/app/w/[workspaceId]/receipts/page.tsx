@@ -3,7 +3,7 @@ import Link from 'next/link';
 import type { ReceiptListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
-import { STATUS_CHIP } from '@/lib/receipts';
+import { STATUS_CHIP, stalledReasons } from '@/lib/receipts';
 import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 import { ReceiptRecommendations } from '@/components/receipts/recommendations';
 import { OrderImport } from '@/components/receipts/order-import';
@@ -32,10 +32,12 @@ export default async function ReceiptsPage({
   const sp = await searchParams;
   const tab: TabKey = sp.tab && sp.tab in TABS ? (sp.tab as TabKey) : sp.q ? 'all' : 'inbox';
   const q = sp.q?.trim() || undefined;
-  const [page, recommended] = await load((api) =>
+  const [page, recommended, reading] = await load((api) =>
     Promise.all([
       api.listReceipts(workspaceId, { ...TABS[tab].query, ...(q ? { q } : {}), limit: 100 }),
       api.listReceiptRecommendations(workspaceId),
+      // Receipts still being read aren't in any tab but All, so they're listed above the tabs.
+      api.listReceipts(workspaceId, { status: 'processing', limit: 100 }),
     ]),
   );
   const { t } = await getI18n();
@@ -52,6 +54,37 @@ export default async function ReceiptsPage({
         <ReceiptUpload workspaceId={workspaceId} />
         <OrderImport workspaceId={workspaceId} />
       </div>
+      {reading.data.length > 0 && (
+        <section className="card space-y-2" aria-labelledby="receipts-reading" data-testid="receipts-reading">
+          <h2 id="receipts-reading" className="text-base font-semibold">
+            {t('receipts.being_read', { count: reading.data.length })}
+          </h2>
+          {stalledReasons(reading.data).map((reason) => (
+            <p key={reason} role="alert" className="rounded-md border border-warn px-3 py-2 text-sm">
+              {t(`receipts.stalled.${reason}`)}{' '}
+              <Link
+                href={`/w/${workspaceId}/settings?tab=ai`}
+                className="font-medium text-brand-600 underline"
+              >
+                {t('receipts.ai_settings')}
+              </Link>
+            </p>
+          ))}
+          <ul className="divide-y divide-line text-sm">
+            {reading.data.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <Link href={`${base}/${r.id}`} className="underline">
+                  {r.merchant ?? t('receipts.unknown_merchant')}
+                </Link>
+                <span className={r.stalled ? 'chip chip-warn' : STATUS_CHIP.processing}>
+                  {t('receipts.status.processing')}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted">{t('receipts.being_read_hint')}</p>
+        </section>
+      )}
       <ReceiptRecommendations workspaceId={workspaceId} items={recommended} />
       <section className="space-y-3" aria-labelledby="receipt-list">
         <h2 id="receipt-list" className="sr-only">

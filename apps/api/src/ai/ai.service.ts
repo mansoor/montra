@@ -11,13 +11,15 @@ import {
   type ProviderConfig,
   type TaskName,
 } from '@montra/ai-gateway';
-import type { AiDisclosureDto, AiSettingsDto, UpdateAiSettingsRequest } from '@montra/schemas';
+import type { AiDisclosureDto, AiProblem, AiSettingsDto, UpdateAiSettingsRequest } from '@montra/schemas';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
-import { unprocessable } from '../common/errors.js';
+import { AppError, unprocessable } from '../common/errors.js';
 
 type Ctx = { workspaceId: string; userId: string };
+
+type AiProvider = NonNullable<StoredSettings['provider']>;
 
 /** Stored in `workspace.ai_settings` (03 §1). The BYOK key lives encrypted in `ai_credential`. */
 interface StoredSettings {
@@ -40,6 +42,8 @@ export interface AiRuntime {
   allowReceiptImages: boolean;
   /** False when the mode can't run anything (off, or no key/endpoint configured). */
   available: boolean;
+  /** Why a mode that is on can't run (null when it can, or when AI is off). */
+  problem: AiProblem | null;
 }
 
 export const DEFAULT_THRESHOLD = 0.8;
@@ -85,6 +89,23 @@ export const AI_DISCLOSURES: AiDisclosureDto[] = [
   },
 ];
 
+/**
+ * What to tell the user when AI can't run, with the fix. Features that degrade without AI put this in their
+ * warnings instead of a bare "AI is off", so a BYOK workspace with no key doesn't look switched off.
+ */
+export const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
+  no_key: 'AI is set to use your own API key, but no key is saved. Add one in Settings → AI.',
+  no_endpoint: 'AI is set to a local model, but no model URL is saved. Add one in Settings → AI.',
+  not_configured: "Built-in AI isn't set up on this server. Choose another mode in Settings → AI.",
+};
+
+/**
+ * The warning a feature stores when AI can't run, ending with what to do meanwhile: "AI is off: enter the
+ * lines yourself", or the reason and fix when AI is on but can't run.
+ */
+export const aiUnavailableWarning = (r: Pick<AiRuntime, 'problem'>, meanwhile: string) =>
+  r.problem ? `${AI_PROBLEM_TEXT[r.problem]} Until then, ${meanwhile}.` : `AI is off: ${meanwhile}`;
+
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
 
 /**
@@ -117,7 +138,8 @@ export class AiService {
       .executeTakeFirstOrThrow();
     const s = (ws.ai_settings ?? {}) as StoredSettings;
     const mode = ws.ai_mode;
-    const provider = await this.providerFor(trx, ctx, mode, s);
+    const problem = await this.problemFor(trx, ctx, mode, s);
+    const provider = problem ? ({ id: 'null' } as const) : await this.providerFor(trx, ctx, mode, s);
     const failover =
       mode !== 'off' && s.failover && this.config.AI_FAILOVER_PROVIDER
         ? ({
@@ -156,7 +178,37 @@ export class AiService {
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImages: (mode === 'builtin' || mode === 'byok') && (s.allowReceiptImagesToLlm ?? false),
       available: provider.id !== 'null',
+      problem,
     };
+  }
+
+  /**
+   * Why a mode that is on can't run. BYOK and local are the workspace's own settings, so they count even with
+   * the fake provider; built-in depends on this server's provider config, which `fake` satisfies.
+   */
+  private async problemFor(trx: Trx, ctx: Ctx, mode: AiMode, s: StoredSettings): Promise<AiProblem | null> {
+    if (mode === 'off') return null;
+    if (mode === 'local') return s.endpoint ? null : 'no_endpoint';
+    if (mode === 'byok') {
+      const provider = s.provider ?? 'anthropic';
+      if (provider !== 'anthropic') return null;
+      return (await this.hasKey(trx, ctx, provider)) ? null : 'no_key';
+    }
+    const id = this.config.AI_PROVIDER;
+    if (id === 'null') return 'not_configured';
+    if (id === 'anthropic' && !this.config.ANTHROPIC_API_KEY) return 'not_configured';
+    if (id === 'openai_compatible' && !this.config.AI_BASE_URL) return 'not_configured';
+    return null;
+  }
+
+  private async hasKey(trx: Trx, ctx: Ctx, provider: AiProvider): Promise<boolean> {
+    const cred = await trx
+      .selectFrom('app.ai_credential')
+      .select('provider')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('provider', '=', provider)
+      .executeTakeFirst();
+    return Boolean(cred);
   }
 
   private async providerFor(trx: Trx, ctx: Ctx, mode: AiMode, s: StoredSettings): Promise<ProviderConfig> {
@@ -333,6 +385,7 @@ export class AiService {
         spentUsd: Number(spentUsd.toFixed(4)),
         state: ratio >= 1 ? 'exhausted' : ratio >= 0.8 ? 'downgraded' : 'ok',
       },
+      problem: await this.problemFor(trx, ctx, ws.ai_mode, s),
       disclosures: AI_DISCLOSURES,
     };
   }
@@ -363,6 +416,14 @@ export class AiService {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('provider', '=', provider)
         .execute();
+    }
+    // Saving "your own key" without one would quietly turn every AI feature off. Removing the key (clearKey on
+    // its own) is still allowed; the settings page then says what's missing.
+    if (req.mode === 'byok' && provider === 'anthropic' && !req.apiKey) {
+      if (!(await this.hasKey(trx, ctx, provider))) {
+        const message = 'Enter your API key to use your own key';
+        throw new AppError(422, 'ai.key_required', message, [{ path: 'apiKey', message }]);
+      }
     }
     if (req.apiKey) {
       const keyEnc = await this.crypto.encrypt(trx, ctx.workspaceId, `ai_credential.${provider}`, req.apiKey);

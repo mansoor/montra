@@ -302,6 +302,27 @@ describe('AI settings and audit log (UP-13, AIA-08, AIA-10)', () => {
     const res = await h.as('stranger@example.com').patch(w.url('/ai/settings'), { mode: 'off' });
     expect([403, 404]).toContain(res.status);
   });
+
+  it('won’t save “your own key” without a key, and says why AI can’t run when the key is gone', async () => {
+    const saved = await c.patch(w.url('/ai/settings'), { mode: 'byok', apiKey: 'sk-test-abcdefgh1234' });
+    expect(saved.body).toMatchObject({ mode: 'byok', hasKey: true, problem: null });
+    // Removing the key on its own is allowed; the settings then say what's missing.
+    const cleared = await c.patch(w.url('/ai/settings'), { clearKey: true });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toMatchObject({ mode: 'byok', hasKey: false, problem: 'no_key' });
+    const test = await c.post(w.url('/ai/settings/test'));
+    expect(test.body).toMatchObject({ ok: false, error: expect.stringMatching(/no key is saved/) });
+    // Saving the mode without a key is refused, on the key field.
+    const refused = await c.patch(w.url('/ai/settings'), { mode: 'byok', threshold: 0.85 });
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe('ai.key_required');
+    expect(refused.body.errors).toEqual([expect.objectContaining({ path: 'apiKey' })]);
+    expect((await c.get(w.url('/ai/settings'))).body.threshold).not.toBe(0.85);
+    // Off is a choice, not a problem.
+    expect((await c.patch(w.url('/ai/settings'), { mode: 'off' })).body.problem).toBeNull();
+    const back = await c.patch(w.url('/ai/settings'), { mode: 'builtin' });
+    expect(back.body).toMatchObject({ mode: 'builtin', problem: null });
+  });
 });
 
 describe('insights: recurring proposals and anomalies (AI-08, AI-09)', () => {

@@ -6,6 +6,7 @@ import {
   draftToTransaction,
   formatUsd,
   groupInsights,
+  keyMissing,
   highlightSpans,
   parseBudget,
   parseJsonContent,
@@ -274,6 +275,21 @@ describe('AI settings helpers (UP-13, AIA-08)', () => {
     expect(thresholdFromPercent(85)).toBe(0.85);
     expect(formatUsd(0.0004)).toBe('$0.0004');
     expect(formatUsd(1.5)).toBe('$1.50');
+  });
+
+  it('won’t save “your own key” without a key', () => {
+    const none = { provider: 'anthropic' as const, hasKey: false };
+    const saved = { provider: 'anthropic' as const, hasKey: true };
+    expect(keyMissing('byok', 'anthropic', '', none)).toBe(true);
+    expect(keyMissing('byok', 'anthropic', '   ', none)).toBe(true);
+    expect(keyMissing('byok', 'anthropic', 'sk-ant-123456', none)).toBe(false);
+    expect(keyMissing('byok', 'anthropic', '', saved)).toBe(false);
+    // A key saved for the other provider doesn't count.
+    expect(keyMissing('byok', 'anthropic', '', { provider: 'openai_compatible', hasKey: true })).toBe(true);
+    // An OpenAI-compatible server may not need one; other modes never do.
+    expect(keyMissing('byok', 'openai_compatible', '', none)).toBe(false);
+    expect(keyMissing('builtin', 'anthropic', '', none)).toBe(false);
+    expect(keyMissing('off', 'anthropic', '', none)).toBe(false);
   });
 });
 

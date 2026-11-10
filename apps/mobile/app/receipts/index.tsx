@@ -9,7 +9,7 @@ import type { ReceiptDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
-import { queuedStatus } from '../../src/features/receipt-capture';
+import { queuedStatus, receiptStatusKey } from '../../src/features/receipt-capture';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
@@ -112,7 +112,7 @@ export default function Receipts() {
           key={r.id}
           testID="receipt-row"
           title={r.merchant ?? t('mobile.receipts.unknown_merchant')}
-          subtitle={[r.receiptDate ? fmtDate(r.receiptDate) : null, t(`mobile.receipts.status.${r.status}`)]
+          subtitle={[r.receiptDate ? fmtDate(r.receiptDate) : null, t(receiptStatusKey(r))]
             .filter(Boolean)
             .join(' · ')}
           right={<Small>{fmtMoney(r.total, r.currency)}</Small>}

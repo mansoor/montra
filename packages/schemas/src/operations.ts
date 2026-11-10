@@ -70,10 +70,18 @@ export const SystemNoticeDto = z.object({
 });
 export type SystemNoticeDto = z.infer<typeof SystemNoticeDto>;
 
+/**
+ * Background workers, judged by their queues: `delayed` when work has waited minutes without being picked up.
+ * `documents` is the doc-worker (OCR of scans and receipts); `jobs` is the API's job worker (imports, AI).
+ */
+export const WorkerState = z.enum(['ok', 'delayed']);
+export type WorkerState = z.infer<typeof WorkerState>;
+
 export const StatusDto = z.object({
   status: z.enum(['operational', 'maintenance', 'incident', 'down']),
   checkedAt: z.string(),
   notices: z.array(SystemNoticeDto),
+  workers: z.object({ documents: WorkerState, jobs: WorkerState }),
 });
 export type StatusDto = z.infer<typeof StatusDto>;
 

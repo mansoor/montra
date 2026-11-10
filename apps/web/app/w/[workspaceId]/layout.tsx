@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { API_URL } from '@/lib/session';
+import { delayedWorkers } from '@/lib/status';
 import { Realtime } from '@/components/realtime';
 import { I18nProvider } from '@/components/i18n';
 import { GlobalShortcuts, ReviewCountBadge } from '@/components/review/review-badge';
@@ -27,9 +28,9 @@ export default async function WorkspaceLayout({
   const [workspace, { me, t }] = await Promise.all([load((api) => api.getWorkspace(workspaceId)), getI18n()]);
   const base = `/w/${workspace.id}`;
   // OPS-03: what's been announced. Nothing else on the page should fail because this did.
-  const notices = await load((api) => api.getStatus())
-    .then((s) => s.notices)
-    .catch(() => []);
+  const { notices, delayed } = await load((api) => api.getStatus())
+    .then((s) => ({ notices: s.notices, delayed: delayedWorkers(s) }))
+    .catch(() => ({ notices: [], delayed: [] }));
   const groups: NavGroup[] = [
     { items: [{ href: base, label: t('nav.home'), icon: 'home', exact: true }] },
     {
@@ -103,6 +104,11 @@ export default async function WorkspaceLayout({
         <LocalAiRunner workspaceId={workspace.id} />
         <ClientErrorReporter />
         <Tour workspaceId={workspace.id} />
+        {delayed.map((w) => (
+          <p key={w} role="status" className="card mb-4 border-warn text-sm" data-testid="worker-delayed">
+            {t(`status.worker.${w}`)}
+          </p>
+        ))}
         {notices.map((n) => (
           <section
             key={n.id}

@@ -37,6 +37,11 @@ template text for summaries (graceful degradation, §8).
 | `local` | `OpenAiCompatibleAdapter` → Ollama / LM Studio / vLLM URL; on-device (mobile) later | The URL is reached from the user's own network. Self-hosted edition: the worker calls it directly. Hosted service: the gateway can't reach the endpoint, so AI work for **async jobs** (import categorization, receipt extraction) is parked as `pending_local` tasks. The next open web or desktop client on the user's network claims them, runs them against the local endpoint and posts the validated results back. Until then, rows go through rules and history, and the rest to the review queue. See [10](10-assumptions.md). |
 | `off` | `NullAdapter` | Every task returns `{ ok:false, reason:'off' }`. |
 
+A mode that is on but can't run (BYOK with no key saved, local with no URL, builtin with no provider on this
+server) also gets the `NullAdapter`. `AiRuntime.problem` and `AiSettingsDto.problem` say which, so the settings
+page warns and features that degrade say the reason and the fix rather than "AI is off". Saving BYOK
+(Anthropic) without a key is refused with `ai.key_required`.
+
 ## 3. Per-task routing (AIA-02)
 
 Routing is configuration, not code. It is versioned in `ai-routing.yaml` and overridable
@@ -48,7 +53,7 @@ per environment and per workspace mode.
 | `map_tax_lines`, `flag_separation`, `flag_capital` | `claude-haiku-5-5` (small, cheap) | `low` | 1 list per call | JSON schema; answers limited to what was offered, and the user decides |
 | `extract_receipt`, `extract_payslip`, `extract_statement_table` | `claude-sonnet-5-5` (vision) | `medium` | 1 document | JSON schema |
 
-`extract_receipt` (`tasks/extract-receipt/v1.ts`) sends the receipt images in builtin and BYOK modes only,
+`extract_receipt` (`tasks/extract-receipt/v2.ts`) sends the receipt images in builtin and BYOK modes only,
 with the masked OCR text when there is some. Local mode sends only the masked OCR text from the doc-worker
 (`receipt.ocr`). Amounts come back as decimal strings, and `taxIncluded` marks VAT-style receipts. An answer
 that loses more than half of its lines to validation is `invalid_output`.

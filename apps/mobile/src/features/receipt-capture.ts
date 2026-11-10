@@ -74,3 +74,26 @@ export function reviewEdits(
 
 /** The lines still without a category (the phone's review stack walks through these). */
 export const uncategorizedLines = (r: ReceiptDto) => r.lines.filter((l) => !l.categoryId);
+
+const STALLED: Record<
+  NonNullable<ReceiptDto['stalled']>['worker'],
+  Record<NonNullable<ReceiptDto['stalled']>['reason'], string>
+> = {
+  documents: {
+    waiting: 'mobile.receipts.stalled.documents_waiting',
+    failed: 'mobile.receipts.stalled.documents_failed',
+  },
+  jobs: { waiting: 'mobile.receipts.stalled.jobs_waiting', failed: 'mobile.receipts.stalled.jobs_failed' },
+};
+
+/**
+ * What to say about a receipt nothing is reading (no worker has picked up its job, or the job failed), as a
+ * message key with the fix; null while it's being read normally or once it's read.
+ */
+export function stalledMessage(r: Pick<ReceiptDto, 'status' | 'stalled'>): string | null {
+  return r.status === 'processing' && r.stalled ? STALLED[r.stalled.worker][r.stalled.reason] : null;
+}
+
+/** The status word for a receipt row: "Not being read" rather than "Reading" when nothing is reading it. */
+export const receiptStatusKey = (r: Pick<ReceiptDto, 'status' | 'stalled'>) =>
+  stalledMessage(r) ? 'mobile.receipts.status.stalled' : `mobile.receipts.status.${r.status}`;

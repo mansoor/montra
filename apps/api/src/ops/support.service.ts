@@ -14,6 +14,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { JOB_STALL_MS } from '../jobs/queue.js';
 import { ERROR_REPORTER, type ErrorReporter } from './errors.js';
 
 type Ctx = DbContext & { workspaceId: string; userId: string };
@@ -173,6 +174,18 @@ export class SupportService {
   }
 }
 
+/**
+ * Each worker's state from its queues' lag (seconds the oldest ready job has waited). The doc-worker runs the
+ * `doc` queue; the API's job worker runs the rest.
+ */
+export function workerStates(queues: { queue: string; lag_seconds: number }[]): StatusDto['workers'] {
+  const delayed = (q: { lag_seconds: number }) => Number(q.lag_seconds) * 1000 > JOB_STALL_MS;
+  return {
+    documents: queues.some((q) => q.queue === 'doc' && delayed(q)) ? 'delayed' : 'ok',
+    jobs: queues.some((q) => q.queue !== 'doc' && delayed(q)) ? 'delayed' : 'ok',
+  };
+}
+
 @Injectable()
 export class StatusService {
   private cached: { at: number; value: StatusDto } | null = null;
@@ -184,7 +197,12 @@ export class StatusService {
     if (this.cached && now - this.cached.at < STATUS_CACHE_MS) return this.cached.value;
     const value = await this.read().catch(
       // If the database can't be reached that's the answer, rather than an error page on the status page.
-      (): StatusDto => ({ status: 'down', checkedAt: new Date().toISOString(), notices: [] }),
+      (): StatusDto => ({
+        status: 'down',
+        checkedAt: new Date().toISOString(),
+        notices: [],
+        workers: { documents: 'ok', jobs: 'ok' },
+      }),
     );
     this.cached = { at: now, value };
     return value;
@@ -206,6 +224,11 @@ export class StatusService {
         .limit(20)
         .execute(),
     );
+    const { rows: queues } = await this.db.run({}, (trx) =>
+      sql<{ queue: string; lag_seconds: number }>`select queue, lag_seconds from app.metrics_queue()`.execute(
+        trx,
+      ),
+    );
     const now = Date.now();
     const started = (n: (typeof notices)[number]) => !n.starts_at || n.starts_at.getTime() <= now;
     const status = notices.some((n) => n.kind === 'incident' && started(n))
@@ -224,6 +247,7 @@ export class StatusService {
         startsAt: n.starts_at?.toISOString() ?? null,
         endsAt: n.ends_at?.toISOString() ?? null,
       })),
+      workers: workerStates(queues),
     };
   }
 }
