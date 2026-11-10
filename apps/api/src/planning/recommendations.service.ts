@@ -59,9 +59,14 @@ export interface PlanningSettings {
   categoryPriorities: Record<string, number>;
   /** REC-03: debts at or above this APR count as high-interest. */
   highInterestBps: number;
+  receiptReminderMinor: string | null;
 }
 
-export const DEFAULT_SETTINGS: PlanningSettings = { categoryPriorities: {}, highInterestBps: 800 };
+export const DEFAULT_SETTINGS: PlanningSettings = {
+  categoryPriorities: {},
+  highInterestBps: 800,
+  receiptReminderMinor: null,
+};
 
 interface Draft {
   type: RecommendationType;

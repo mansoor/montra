@@ -49,6 +49,13 @@ export function queuedStatus(
   return { kind: 'uploading' };
 }
 
+/** The reminder amounts offered on the phone (minor units of the base currency), plus one set on the web. */
+export function reminderChoices(current: string | null): Array<string | null> {
+  const preset = ['1000', '2500', '5000'];
+  const extra = current !== null && !preset.includes(current) ? [current] : [];
+  return [null, ...[...preset, ...extra].sort((a, b) => Number(BigInt(a) - BigInt(b)))];
+}
+
 /** File name for page `n` (1-based) of a capture. */
 export const pageName = (n: number) => `page-${String(n).padStart(2, '0')}.jpg`;
 

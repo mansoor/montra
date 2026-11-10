@@ -263,6 +263,14 @@ export const PlanningSettingsDto = z.object({
   categoryPriorities: z.record(z.string(), z.number().int().min(1).max(5)),
   /** REC-03: debts at or above this APR (basis points) count as high-interest. */
   highInterestBps: z.number().int().min(0).max(10_000),
+  /**
+   * UP-09: remind about a receipt for everyday spending at or above this (minor units of the base currency), cards
+   * and imports included; bills, debt and savings never. Null: off.
+   */
+  receiptReminderMinor: z
+    .string()
+    .regex(/^\d{1,19}$/)
+    .nullable(),
 });
 export type PlanningSettingsDto = z.infer<typeof PlanningSettingsDto>;
 export const UpdatePlanningSettingsRequest = PlanningSettingsDto.partial();

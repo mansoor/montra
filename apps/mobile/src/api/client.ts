@@ -11,6 +11,9 @@ import type {
   ForecastDto,
   GoalDto,
   NetWorthDto,
+  PlanningSettingsDto,
+  ReceiptHabitDto,
+  ReceiptRecommendationDto,
   RecommendationDto,
   SankeyDto,
   CategoryProposalsResponse,
@@ -280,6 +283,16 @@ export function createApi(opts: ApiOptions) {
         source: 'camera',
         ...(input.transactionId ? { transactionId: input.transactionId } : {}),
       }),
+    /** UP-09: this week's receipts kept and missing, the streak, and the latest still waiting. */
+    receiptHabit: (w: string) => request<ReceiptHabitDto>('GET', `${ws(w)}/receipts/habit`),
+    receiptRecommendations: async (w: string) =>
+      (await request<{ data: ReceiptRecommendationDto[] }>('GET', `${ws(w)}/receipts/recommended`)).data,
+    /** "Not needed": the purchase is never suggested again. */
+    dismissReceiptRecommendation: (w: string, transactionId: string) =>
+      request<void>('POST', `${ws(w)}/receipts/recommended/${transactionId}/dismiss`),
+    planningSettings: (w: string) => request<PlanningSettingsDto>('GET', `${ws(w)}/planning/settings`),
+    updatePlanningSettings: (w: string, patch: Partial<PlanningSettingsDto>) =>
+      request<PlanningSettingsDto>('PATCH', `${ws(w)}/planning/settings`, patch),
     listReceipts: (w: string, status?: ReceiptDto['status']) =>
       request<ReceiptPageDto>('GET', `${ws(w)}/receipts?limit=100${status ? `&status=${status}` : ''}`),
     getReceipt: (w: string, id: string) => request<ReceiptDto>('GET', `${ws(w)}/receipts/${id}`),

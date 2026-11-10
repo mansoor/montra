@@ -4,6 +4,7 @@ export * from './decimal.js';
 export * from './money.js';
 export * from './allocate.js';
 export * from './receipt.js';
+export * from './receipt-habit.js';
 export * from './payslip.js';
 export * from './business.js';
 export * from './rental.js';
