@@ -48,6 +48,13 @@ export type AiMode = z.infer<typeof AiMode>;
 export const AiProvider = z.enum(['anthropic', 'openai_compatible']);
 export type AiProvider = z.infer<typeof AiProvider>;
 
+/**
+ * Why a chosen mode can't run: BYOK with no key saved, local mode with no model URL, or built-in AI that this
+ * server has no provider for. Every AI feature answers "off" until it's fixed, so the settings page says so.
+ */
+export const AiProblem = z.enum(['no_key', 'no_endpoint', 'not_configured']);
+export type AiProblem = z.infer<typeof AiProblem>;
+
 export const AiDisclosureDto = z.object({
   mode: AiMode,
   title: z.string(),
@@ -88,6 +95,8 @@ export const AiSettingsDto = z.object({
     spentUsd: z.number(),
     state: z.enum(['ok', 'downgraded', 'exhausted']),
   }),
+  /** Set when the mode is on but can't run; null when AI works or is deliberately off. */
+  problem: AiProblem.nullable(),
   disclosures: z.array(AiDisclosureDto),
 });
 export type AiSettingsDto = z.infer<typeof AiSettingsDto>;

@@ -37,7 +37,7 @@ import { JobQueue, PermanentJobError, Worker, type Job, type JobContext } from '
 import { effectiveDecision } from './imports.service.js';
 import { Categorizer, type StoredCategorization } from '../categorization/categorizer.service.js';
 import { MerchantDirectory } from '../categorization/merchants.js';
-import { AiService } from '../ai/ai.service.js';
+import { AI_PROBLEM_TEXT, AiService } from '../ai/ai.service.js';
 
 /** What parse stores in `import_row.suggestion`: the pipeline decision plus what commit needs. */
 export interface RowSuggestion extends StoredCategorization {
@@ -531,7 +531,9 @@ export class ImportJobs {
     if (!runtime.available)
       throw new PermanentJobError(
         'pdf.needs_ai',
-        'This PDF is a scan. Reading scanned statements needs AI — turn it on in Settings → AI, or upload the CSV export instead.',
+        runtime.problem
+          ? `This PDF is a scan, and reading scanned statements needs AI. ${AI_PROBLEM_TEXT[runtime.problem]} Or upload the CSV export instead.`
+          : 'This PDF is a scan. Reading scanned statements needs AI — turn it on in Settings → AI, or upload the CSV export instead.',
       );
     const res = await this.ai.gateway.extractStatementTable(
       { pages: p.previousResult?.pages ?? [], currency },

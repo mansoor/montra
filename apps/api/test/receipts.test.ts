@@ -387,6 +387,72 @@ describe('AI modes', () => {
   });
 });
 
+describe('a receipt nothing is reading', () => {
+  const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const jobOf = async (receiptId: string, type: string) =>
+    (
+      await admin.query(`select id from app.job where type = $1 and payload->>'receiptId' = $2`, [
+        type,
+        receiptId,
+      ])
+    ).rows[0].id as string;
+
+  it('says when the doc-worker hasn’t picked up its OCR, and when the OCR failed', async () => {
+    await c.patch(url('/ai/settings'), { allowReceiptImagesToLlm: false });
+    try {
+      const f = await upload(encodeFakeReceiptImage(WALMART), 'waiting.png');
+      const created = (await c.post(url('/receipts'), { fileIds: [f.body.fileId] })).body;
+      // Just queued: still reading, nothing to say yet.
+      expect(created).toMatchObject({ status: 'processing', stalled: null });
+      const job = await jobOf(created.id, 'receipt.ocr');
+      await admin.query(`update app.job set run_after = $2 where id = $1`, [job, ago(10)]);
+      const waiting = (await c.get(url(`/receipts/${created.id}`))).body;
+      expect(waiting.stalled).toEqual({ worker: 'documents', reason: 'waiting', since: expect.any(String) });
+      // The list says the same, so the web's "being read" panel can show it.
+      const listed = (await c.get(url('/receipts?status=processing'))).body.data;
+      expect(listed.find((r: any) => r.id === created.id).stalled).toMatchObject({ reason: 'waiting' });
+      await admin.query(`update app.job set status = 'failed' where id = $1`, [job]);
+      expect((await c.get(url(`/receipts/${created.id}`))).body.stalled).toMatchObject({
+        worker: 'documents',
+        reason: 'failed',
+      });
+      await admin.query(`update app.job set status = 'cancelled' where id = $1`, [job]);
+    } finally {
+      await c.patch(url('/ai/settings'), { allowReceiptImagesToLlm: true });
+    }
+  });
+
+  it('says when the job worker hasn’t picked up the AI read', async () => {
+    const f = await upload(encodeFakeReceiptImage(WALMART), 'no-worker.png');
+    const created = (await c.post(url('/receipts'), { fileIds: [f.body.fileId] })).body;
+    const job = await jobOf(created.id, 'receipt.extract');
+    await admin.query(`update app.job set run_after = $2 where id = $1`, [job, ago(10)]);
+    expect((await c.get(url(`/receipts/${created.id}`))).body.stalled).toMatchObject({
+      worker: 'jobs',
+      reason: 'waiting',
+    });
+    // Once a worker runs it, the receipt is read and the warning goes.
+    await worker.drain(['ai']);
+    const read = (await c.get(url(`/receipts/${created.id}`))).body;
+    expect(read.status).not.toBe('processing');
+    expect(read.stalled).toBeNull();
+  });
+
+  it('says why AI can’t read it when “your own key” has no key', async () => {
+    await c.patch(url('/ai/settings'), { mode: 'byok', apiKey: 'sk-test-abcdefgh1234' });
+    await c.patch(url('/ai/settings'), { clearKey: true });
+    try {
+      const receipt = await capture(WALMART);
+      expect(receipt).toMatchObject({ status: 'needs_review', lines: [] });
+      expect(receipt.extraction.warnings[0]).toMatch(
+        /no key is saved\. Add one in Settings → AI\. Until then, enter the lines yourself/,
+      );
+    } finally {
+      await c.patch(url('/ai/settings'), { mode: 'builtin' });
+    }
+  });
+});
+
 describe('receipt recommended (RCP-11)', () => {
   it('lists multi-department purchases over $50 without a receipt, until dismissed', async () => {
     const big = await spend(
