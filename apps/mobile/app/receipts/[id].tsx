@@ -11,7 +11,12 @@ import { config } from '../../src/config';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
-import { reviewEdits, uncategorizedLines } from '../../src/features/receipt-capture';
+import {
+  receiptStatusKey,
+  reviewEdits,
+  stalledMessage,
+  uncategorizedLines,
+} from '../../src/features/receipt-capture';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
@@ -71,19 +76,21 @@ export default function ReceiptReview() {
     return <Screen>{error ? <Banner tone="danger" text={error} /> : <Body muted>…</Body>}</Screen>;
   const open = receipt.status === 'inbox' || receipt.status === 'needs_review';
   const missing = uncategorizedLines(receipt).length;
+  const stalled = stalledMessage(receipt);
 
   return (
     <Screen testID="receipt-review">
       <Title>{receipt.merchant ?? t('mobile.receipts.unknown_merchant')}</Title>
       <Small>
-        {[
-          receipt.receiptDate ? fmtDate(receipt.receiptDate) : null,
-          t(`mobile.receipts.status.${receipt.status}`),
-        ]
+        {[receipt.receiptDate ? fmtDate(receipt.receiptDate) : null, t(receiptStatusKey(receipt))]
           .filter(Boolean)
           .join(' · ')}
       </Small>
-      {receipt.status === 'processing' ? <Body muted>{t('mobile.receipts.reading')}</Body> : null}
+      {stalled ? (
+        <Banner tone="warning" text={t(stalled)} />
+      ) : receipt.status === 'processing' ? (
+        <Body muted>{t('mobile.receipts.reading')}</Body>
+      ) : null}
       {receipt.validationGap && receipt.validationGap !== '0' ? (
         <Banner
           tone="warning"

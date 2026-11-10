@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { catalogs } from '@montra/i18n';
 import type { ReceiptDto } from '@montra/schemas';
 import { ApiError, createApi } from '../src/api/client';
 import { assessFrame } from '../src/features/camera-metrics';
@@ -7,7 +8,9 @@ import {
   frameVerdict,
   pageName,
   queuedStatus,
+  receiptStatusKey,
   reviewEdits,
+  stalledMessage,
   uncategorizedLines,
 } from '../src/features/receipt-capture';
 
@@ -139,5 +142,35 @@ describe('receipt API calls', () => {
       transactionId: 't1',
     });
     expect(api.receiptFilePath('w1', 'r1', 'f1')).toBe('/v1/workspaces/w1/receipts/r1/files/f1');
+  });
+});
+
+describe('a receipt nothing is reading', () => {
+  const since = '2026-11-09T10:00:00.000Z';
+  const r = (stalled: ReceiptDto['stalled'], status: ReceiptDto['status'] = 'processing') => ({
+    status,
+    stalled,
+  });
+
+  it('says why and what fixes it, instead of "Reading" forever', () => {
+    expect(stalledMessage(r(null))).toBeNull();
+    expect(receiptStatusKey(r(null))).toBe('mobile.receipts.status.processing');
+    const waiting = r({ worker: 'documents', reason: 'waiting', since });
+    expect(stalledMessage(waiting)).toBe('mobile.receipts.stalled.documents_waiting');
+    expect(receiptStatusKey(waiting)).toBe('mobile.receipts.status.stalled');
+    expect(stalledMessage(r({ worker: 'jobs', reason: 'failed', since }))).toBe(
+      'mobile.receipts.stalled.jobs_failed',
+    );
+    // Once it's read, the old job doesn't matter.
+    expect(stalledMessage(r({ worker: 'documents', reason: 'failed', since }, 'inbox'))).toBeNull();
+    expect(receiptStatusKey(r(null, 'inbox'))).toBe('mobile.receipts.status.inbox');
+  });
+
+  it('has a message for every case', () => {
+    const en = catalogs.en!;
+    for (const worker of ['documents', 'jobs'] as const)
+      for (const reason of ['waiting', 'failed'] as const)
+        expect(en[stalledMessage(r({ worker, reason, since }))!]).toBeTruthy();
+    expect(en['mobile.receipts.status.stalled']).toBeTruthy();
   });
 });
