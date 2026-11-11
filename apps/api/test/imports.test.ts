@@ -401,4 +401,54 @@ describe('contract additions for the import UI', () => {
     const open = (await c.get(w.url(`/accounts/${acct}/reconciliations?status=in_progress`))).body.data;
     expect(open).toHaveLength(1);
   });
+
+  it("never applies one account's saved choice of rows to another account (IMP-04, IMP-13)", async () => {
+    const w = await setup();
+    const checking = (await c.post(w.url('/accounts'), { name: 'Checking', kind: 'checking' })).body.id;
+    const savings = (await c.post(w.url('/accounts'), { name: 'Savings', kind: 'savings' })).body.id;
+    const other = (await c.post(w.url('/accounts'), { name: 'Joint', kind: 'checking' })).body.id;
+    const amounts = async (batchId: string) =>
+      (await c.get(w.url(`/imports/${batchId}/rows`))).body.data.map((r: any) => r.amount.amount).sort();
+
+    // Checking's rows chosen in the mapping step, then committed: its profile remembers that choice.
+    const up = await upload(w.ws.id, 'ynab.csv', corpus('ynab.csv'));
+    const first = (await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId: checking })).body;
+    await worker.drain();
+    const proposed = (await c.get(w.url(`/imports/${first.id}`))).body;
+    await c.put(w.url(`/imports/${first.id}/mapping`), {
+      mapping: { ...proposed.mapping, filter: { column: 0, values: ['Checking'] } },
+    });
+    await worker.drain();
+    expect(await amounts(first.id)).toEqual(['-650', '320000']);
+    await c.post(w.url(`/imports/${first.id}/commit`));
+    await worker.drain();
+
+    // The same export for Savings, asked for by name: Savings' rows, not Checking's.
+    const up2 = await upload(w.ws.id, 'ynab (1).csv', corpus('ynab.csv'));
+    const forSavings = (
+      await c.post(w.url('/imports'), {
+        fileId: up2.body.fileId,
+        accountId: savings,
+        accountFilter: 'Savings',
+      })
+    ).body;
+    await worker.drain();
+    expect(await amounts(forSavings.id)).toEqual(['50000']);
+
+    // … and without a name: the file's accounts are offered again, rather than Checking's rows.
+    const forOther = (await c.post(w.url('/imports'), { fileId: up2.body.fileId, accountId: other })).body;
+    await worker.drain();
+    const asked = (await c.get(w.url(`/imports/${forOther.id}`))).body;
+    expect(asked).toMatchObject({ status: 'needs_mapping', warnings: ['multiple_accounts_choose_one'] });
+    expect(asked.analysis).toMatchObject({ accounts: ['Checking', 'Savings'], accountColumn: 0 });
+
+    // Checking itself keeps its remembered choice.
+    const again = (await c.post(w.url('/imports'), { fileId: up2.body.fileId, accountId: checking })).body;
+    await worker.drain();
+    expect((await c.get(w.url(`/imports/${again.id}`))).body).toMatchObject({
+      status: 'preview',
+      mappingSource: 'profile',
+    });
+    expect(await amounts(again.id)).toEqual(['-650', '320000']);
+  });
 });
