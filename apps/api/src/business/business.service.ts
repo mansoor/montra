@@ -7,6 +7,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { newId, type BusinessPartyRow, type BusinessProfileRow, type Trx } from '@montra/db';
 import type {
+  BusinessLogoDto,
   BusinessProfileDto,
   CreatePartyRequest,
   PartyDto,
@@ -19,6 +20,7 @@ import { payeeKeyOf } from '../categorization/categorizer.service.js';
 import { Db } from '../db/database.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
+import { checkLogo } from './logo.js';
 import {
   businessEntities,
   businessEntity,
@@ -85,6 +87,7 @@ export class BusinessService {
             ? { tax_savings_account_id: req.taxSavingsAccountId }
             : {}),
           ...(req.receiptThreshold !== undefined ? { receipt_threshold_minor: req.receiptThreshold } : {}),
+          ...(req.domain !== undefined ? { domain: req.domain } : {}),
         })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('entity_id', '=', entityId)
@@ -116,6 +119,8 @@ export class BusinessService {
         tax_rate_bps: null,
         tax_savings_account_id: null,
         receipt_threshold_minor: 7500n,
+        logo_file_id: null,
+        domain: null,
         version: 1n,
         created_at: new Date(0),
         updated_at: new Date(0),
@@ -157,8 +162,101 @@ export class BusinessService {
       taxRateBps: r.tax_rate_bps,
       taxSavingsAccountId: r.tax_savings_account_id,
       receiptThreshold: String(r.receipt_threshold_minor),
+      logoFileId: r.logo_file_id,
+      domain: r.domain,
       version: Number(r.version),
     };
+  }
+
+  // ----- Logo (ADR-0032) -------------------------------------------------------------------------------------
+
+  /** Replaces the logo. The old file is marked deleted: a logo isn't paperwork, so it isn't kept for seven years. */
+  async setLogo(ctx: Ctx, entityId: string, bytes: Uint8Array, fileName: string): Promise<BusinessLogoDto> {
+    const check = await checkLogo(bytes);
+    if (!check.ok) {
+      throw check.reason === 'type'
+        ? new AppError(415, 'logo.unsupported_type', 'Upload the logo as a PNG or JPEG image')
+        : check.reason === 'size'
+          ? new AppError(413, 'logo.too_large', 'The logo can be up to 1 MB')
+          : unprocessable('logo.too_many_pixels', 'The logo can be up to 4096 pixels on each side');
+    }
+    const { mediaType, width, height } = check.image;
+    // Check access before storing anything: without write access to the business, nothing is kept.
+    await this.db.run(ctx, async (trx) => {
+      await businessEntity(trx, ctx, entityId);
+      await this.ensureProfile(trx, ctx, entityId);
+    });
+    const id = newId();
+    const key = storageKey(ctx.workspaceId, 'logo', id);
+    await this.storage.put(key, bytes, mediaType);
+    await this.db.run(ctx, async (trx) => {
+      await trx
+        .insertInto('app.file')
+        .values({
+          workspace_id: ctx.workspaceId,
+          id,
+          kind: 'logo',
+          storage_key: key,
+          file_name: fileName.replace(/[\\/\0]/g, '_').slice(0, 255) || 'logo',
+          mime: mediaType,
+          bytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          uploaded_by: ctx.userId,
+        })
+        .execute();
+      await this.replaceLogo(trx, ctx, entityId, id);
+    });
+    return { fileId: id, mediaType, bytes: bytes.length, width, height };
+  }
+
+  async removeLogo(ctx: Ctx, entityId: string): Promise<void> {
+    await this.db.run(ctx, async (trx) => {
+      await businessEntity(trx, ctx, entityId);
+      await this.replaceLogo(trx, ctx, entityId, null);
+    });
+  }
+
+  private async replaceLogo(trx: Trx, ctx: Ctx, entityId: string, fileId: string | null): Promise<void> {
+    const before = await trx
+      .selectFrom('app.business_profile')
+      .select('logo_file_id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .forUpdate()
+      .executeTakeFirst();
+    const res = await trx
+      .updateTable('app.business_profile')
+      .set({ logo_file_id: fileId })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .executeTakeFirst();
+    if (!res.numUpdatedRows) throw notFound('Business');
+    if (before?.logo_file_id && before.logo_file_id !== fileId) {
+      await trx
+        .updateTable('app.file')
+        .set({ deleted_at: new Date() })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', before.logo_file_id)
+        .execute();
+    }
+  }
+
+  /** The logo's bytes, for the settings, the invoice page and the PDF; null without one. */
+  async logo(ctx: Ctx, entityId: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+    return this.db.run(ctx, async (trx) => {
+      await taxedEntity(trx, ctx, entityId);
+      return this.logoIn(trx, ctx, entityId);
+    });
+  }
+
+  async logoIn(trx: Trx, ctx: Ctx, entityId: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+    const row = await trx
+      .selectFrom('app.business_profile')
+      .select('logo_file_id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .executeTakeFirst();
+    return row?.logo_file_id ? this.fileBytes(trx, ctx, row.logo_file_id) : null;
   }
 
   // ----- Customers and vendors -----------------------------------------------------------------------------

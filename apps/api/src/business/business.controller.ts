@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -18,6 +19,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   AccountingExportQuery,
   BillStatus,
+  BusinessDashboardQuery,
   CalendarDateDto,
   CreateBillRequest,
   CreateInvoiceRequest,
@@ -33,6 +35,7 @@ import {
   UpdateInvoiceRequest,
   UpdatePartyRequest,
   UpdateTripRequest,
+  LOGO_MAX_BYTES,
 } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -93,6 +96,55 @@ export class BusinessController {
       parse(Id, entityId),
       parse(UpdateBusinessProfileRequest, body),
     );
+  }
+
+  /** ADR-0032: the logo on invoices, a PNG or JPEG checked by its content. */
+  @Put('businesses/:entityId/logo')
+  async setLogo(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Req() req: FastifyRequest) {
+    const id = parse(Id, entityId);
+    const { bytes, fileName } = await this.readUpload(req, LOGO_MAX_BYTES);
+    return this.business.setLogo(dbCtx(ctx), id, bytes, fileName);
+  }
+
+  @Delete('businesses/:entityId/logo')
+  @HttpCode(204)
+  async removeLogo(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string) {
+    await this.business.removeLogo(dbCtx(ctx), parse(Id, entityId));
+  }
+
+  @Get('businesses/:entityId/logo')
+  async logo(
+    @Ctx() ctx: RequestContext,
+    @Param('entityId') entityId: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    const logo = await this.business.logo(dbCtx(ctx), parse(Id, entityId));
+    if (!logo) throw new AppError(404, 'logo.none', 'This business has no logo');
+    void reply.header('content-type', logo.mime);
+    void reply.header('cache-control', 'private, max-age=3600');
+    void reply.header('x-content-type-options', 'nosniff');
+    return Buffer.from(logo.bytes);
+  }
+
+  /** ADR-0032: one business at a glance over 3–24 months, with the month the tiles show. */
+  @Get('businesses/:entityId/dashboard')
+  dashboard(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Query() q: unknown) {
+    return this.reports.dashboard(dbCtx(ctx), parse(Id, entityId), parse(BusinessDashboardQuery, q));
+  }
+
+  private async readUpload(req: FastifyRequest, maxBytes: number) {
+    if (!req.isMultipart()) {
+      throw new AppError(415, 'upload.multipart_required', 'Send the file as multipart/form-data');
+    }
+    const limit = Math.min(maxBytes, this.config.MAX_UPLOAD_BYTES);
+    const part = await req.file({ limits: { fileSize: limit, files: 1 } });
+    if (!part) throw new AppError(400, 'upload.no_file', 'No file in the request');
+    const bytes = new Uint8Array(await part.toBuffer());
+    if (part.file.truncated) {
+      throw new AppError(413, 'upload.too_large', `Files can be up to ${(limit / 1_048_576).toFixed(0)} MB`);
+    }
+    if (bytes.length === 0) throw new AppError(400, 'upload.empty', 'The file is empty');
+    return { bytes, fileName: part.filename || 'logo' };
   }
 
   @Post('businesses/files')
