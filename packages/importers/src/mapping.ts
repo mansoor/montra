@@ -32,6 +32,11 @@ export interface ColumnMapping {
   reference?: number;
   /** Rows whose first cells match one of these (case-insensitive) are skipped (totals, footers). */
   skipPatterns?: string[];
+  /**
+   * Payees that mark an account's opening balance rather than a transaction (YNAB's "Starting Balance"): the row's
+   * amount becomes the statement's opening balance and the row is skipped.
+   */
+  openingPayees?: string[];
   /** Only import rows whose `filter.column` equals one of `filter.values` (multi-account app exports). */
   filter?: { column: number; values: string[] };
   decimal: DecimalSeparator;

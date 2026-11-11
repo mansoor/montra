@@ -49,7 +49,11 @@ export class ImportsService {
   ) {}
 
   /** Starts an import of an uploaded file into an account (IMP-01). Parsing runs in the worker. */
-  async create(ctx: Ctx, req: CreateImportRequest): Promise<ImportBatchDto> {
+  async create(
+    ctx: Ctx,
+    req: CreateImportRequest,
+    opts: { migrationId?: string } = {},
+  ): Promise<ImportBatchDto> {
     const id = newId();
     await this.db.run(ctx, async (trx) => {
       const file = await trx
@@ -84,6 +88,7 @@ export class ImportsService {
           status: 'parsing',
           warnings: '[]',
           created_by: ctx.userId,
+          ...(opts.migrationId ? { migration_id: opts.migrationId } : {}),
         })
         .execute();
       const parse = { workspaceId: ctx.workspaceId, batchId: id, accountFilter: req.accountFilter ?? null };

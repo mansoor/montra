@@ -51,6 +51,8 @@ import { JobQueue, Worker } from './jobs/queue.js';
 import { ImportsService } from './imports/imports.service.js';
 import { ImportJobs } from './imports/import-jobs.js';
 import { ImportsController, UploadsController } from './imports/imports.controller.js';
+import { MigrationsController } from './imports/migrations.controller.js';
+import { MigrationsService } from './imports/migrations.service.js';
 import { ReconciliationController } from './reconciliation/reconciliation.controller.js';
 import { AiService } from './ai/ai.service.js';
 import { AiController } from './ai/ai.controller.js';
@@ -137,6 +139,7 @@ export class AppModule {
       PushDevicesController,
       UploadsController,
       ImportsController,
+      MigrationsController,
       ReconciliationController,
       AiController,
       CategorizationController,
@@ -201,6 +204,7 @@ export class AppModule {
         JobQueue,
         Worker,
         ImportsService,
+        MigrationsService,
         ImportJobs,
         AiService,
         Categorizer,

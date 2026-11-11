@@ -15,11 +15,13 @@ const TEMPLATES = [
 
 const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD', 'INR', 'JPY'];
 
-export function WelcomeForm() {
+/** `switchFirst`: go on to bringing data over from another app (the Switch page links here with ?switch=1). */
+export function WelcomeForm({ switchFirst = false }: { switchFirst?: boolean } = {}) {
   const router = useRouter();
   const [template, setTemplate] = useState<(typeof TEMPLATES)[number]['value']>('household');
   const [errors, setErrors] = useState<FormErrors>({ fields: {} });
   const [busy, setBusy] = useState(false);
+  const [switching, setSwitching] = useState(switchFirst);
   const defaultTz = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -37,7 +39,7 @@ export function WelcomeForm() {
         businessName: template === 'freelancer' || template === 'hybrid' ? str('businessName') : undefined,
         rentalName: template === 'landlord' || template === 'hybrid' ? str('rentalName') : undefined,
       });
-      router.push(`/w/${ws.id}`);
+      router.push(switching ? `/w/${ws.id}/switch` : `/w/${ws.id}`);
       router.refresh();
     } catch (err) {
       setErrors(toFormErrors(err));
@@ -121,6 +123,23 @@ export function WelcomeForm() {
           {(p) => <input {...p} name="timeZone" className="input" defaultValue={defaultTz} />}
         </Field>
       </div>
+
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="switching"
+          className="mt-1"
+          checked={switching}
+          onChange={(e) => setSwitching(e.target.checked)}
+        />
+        <span>
+          I’m coming from another app: help me bring my data over
+          <span className="block text-xs text-muted">
+            YNAB, Monarch, Mint, Lunch Money, Empower, Copilot and more. Best done now, while the workspace is
+            fresh.
+          </span>
+        </span>
+      </label>
 
       <button type="submit" className="btn-primary w-full" disabled={busy}>
         {busy ? 'Creating…' : 'Create workspace'}

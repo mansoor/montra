@@ -126,6 +126,16 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
       .filter(Boolean)
       .join(' · ');
     const payee = m.payee !== undefined ? (r[m.payee] ?? '').trim() || null : null;
+    if (payee && m.openingPayees?.some((p) => p.toLowerCase() === payee.toLowerCase())) {
+      result.opening = (result.opening ?? 0n) + amount;
+      result.skipped.push({ rowNo, reason: 'footer' });
+      continue;
+    }
+    // A zero amount moves no money (split parents, $0 holds): counted as skipped, never imported.
+    if (amount === 0n) {
+      result.skipped.push({ rowNo, reason: 'filtered' });
+      continue;
+    }
     const balance = m.balance !== undefined ? parseAmount(r[m.balance] ?? '', currency, m.decimal) : null;
     result.rows.push({
       rowNo,

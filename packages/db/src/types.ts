@@ -497,6 +497,16 @@ export interface ImportProfileTable {
 export type ImportBatchStatus =
   'uploaded' | 'parsing' | 'needs_mapping' | 'preview' | 'committing' | 'committed' | 'failed' | 'undone';
 
+/** Switching from another app (IMP-13): the batches made from one export, and the user's plan for it. */
+export interface ImportMigrationTable {
+  workspace_id: string;
+  id: string;
+  source: string;
+  plan: Json<Record<string, unknown>>;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
 export interface ImportBatchTable {
   workspace_id: string;
   id: string;
@@ -527,6 +537,8 @@ export interface ImportBatchTable {
   analysis: Json<Record<string, unknown>> | null;
   job_id: string | null;
   error: string | null;
+  /** The migration (switching from another app) this batch belongs to (IMP-13). */
+  migration_id: string | null;
   committed_at: Date | null;
   undo_until: Date | null;
   undone_at: Date | null;
@@ -1380,6 +1392,7 @@ export interface Database {
   'app.job': JobTable;
   'app.import_profile': ImportProfileTable;
   'app.import_batch': ImportBatchTable;
+  'app.import_migration': ImportMigrationTable;
   'app.import_row': ImportRowTable;
   'app.transaction_source': TransactionSourceTable;
   'app.payee_alias': PayeeAliasTable;
