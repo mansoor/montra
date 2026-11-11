@@ -6,6 +6,7 @@ import { InvestmentPerformance, PlanSettings, ValueUpdates } from '@/components/
 import { CardPanel } from '@/components/accounts/card-panel';
 import { AssetPanel, CashCount, DebtPanel } from '@/components/accounts/other-panels';
 import { LoanPanel } from '@/components/accounts/loan-panel';
+import { MoveBooks } from '@/components/accounts/move-books';
 import { TrackLoanForm } from '@/components/accounts/loan-tracking';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
@@ -251,6 +252,13 @@ export default async function RegisterPage({
             </tbody>
           </table>
         </div>
+      )}
+      {workspace.role === 'owner' && !account.archived && (
+        <MoveBooks
+          workspaceId={workspaceId}
+          account={account}
+          entities={workspace.entities.filter((e) => e.id !== account.entityId && e.type !== 'rental')}
+        />
       )}
     </div>
   );
