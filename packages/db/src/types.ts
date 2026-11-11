@@ -217,6 +217,7 @@ export interface TransactionTable {
     | 'rent'
     | 'security_deposit'
     | 'loan'
+    | 'payroll'
   >;
   dedupe_key: string | null;
   original_amount_minor: Int8 | null;

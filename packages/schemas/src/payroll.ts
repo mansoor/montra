@@ -143,6 +143,9 @@ export const PayrollPersonDto = z.object({
   bank: z.object({ accountType: z.enum(['checking', 'savings']), last4: z.string() }).nullable(),
   vendorPartyId: Id.nullable(),
   notes: z.string().nullable(),
+  payScheduleId: Id.nullable(),
+  /** Thousandths of an hour an hourly employee usually works in a period. */
+  defaultHoursMilli: z.string().nullable(),
   onboarding: OnboardingDto,
   version: z.number().int(),
 });
@@ -166,6 +169,12 @@ const PersonFields = z.object({
   workState: StateCode.nullable().optional(),
   bank: BankInput.nullable().optional(),
   notes: OptionalText(2000),
+  payScheduleId: Id.nullable().optional(),
+  defaultHoursMilli: z
+    .string()
+    .regex(/^\d{1,9}$/)
+    .nullable()
+    .optional(),
 });
 
 export const CreatePersonRequest = PersonFields.extend({
@@ -437,3 +446,205 @@ export type AddI9DocumentRequest = z.output<typeof AddI9DocumentRequest>;
 
 export const PayrollFileDto = z.object({ fileId: Id, mediaType: z.string(), bytes: z.number().int() });
 export type PayrollFileDto = z.infer<typeof PayrollFileDto>;
+
+// ----- Stage 2: pay schedules, pay runs, payslips and reimbursements (PRL-06..11) -----------------------------------
+
+export const PayFrequency = z.enum(['biweekly', 'semimonthly', 'monthly']);
+export type PayFrequency = z.infer<typeof PayFrequency>;
+
+export const PayScheduleDto = z.object({
+  id: Id,
+  entityId: Id,
+  name: z.string(),
+  frequency: PayFrequency,
+  anchorDate: CalendarDateDto,
+  payLagDays: z.number().int(),
+  payFromAccountId: Id.nullable(),
+  /** The next period without a pay run, and its payday. */
+  nextPeriod: z.object({ start: CalendarDateDto, end: CalendarDateDto, payDate: CalendarDateDto }),
+  people: z.number().int(),
+  archived: z.boolean(),
+  version: z.number().int(),
+});
+export type PayScheduleDto = z.infer<typeof PayScheduleDto>;
+
+export const CreatePayScheduleRequest = z.object({
+  entityId: Id,
+  name: Text(100).min(1),
+  frequency: PayFrequency,
+  /** Every two weeks: the first day of any one period. Ignored for the others. */
+  anchorDate: CalendarDateDto,
+  payLagDays: z.number().int().min(0).max(31).default(0),
+  payFromAccountId: Id.nullable().optional(),
+});
+export type CreatePayScheduleRequest = z.output<typeof CreatePayScheduleRequest>;
+
+export const UpdatePayScheduleRequest = z.object({
+  name: Text(100).min(1).optional(),
+  payLagDays: z.number().int().min(0).max(31).optional(),
+  payFromAccountId: Id.nullable().optional(),
+  archived: z.boolean().optional(),
+  version: Version,
+});
+export type UpdatePayScheduleRequest = z.output<typeof UpdatePayScheduleRequest>;
+
+export const PaycheckLineKind = z.enum([
+  'earning',
+  'pre_tax_deduction',
+  'employee_tax',
+  'post_tax_deduction',
+  'reimbursement',
+  'employer_tax',
+]);
+export type PaycheckLineKind = z.infer<typeof PaycheckLineKind>;
+
+export const PaycheckLineDto = z.object({
+  id: Id,
+  kind: PaycheckLineKind,
+  code: z.string(),
+  label: z.string(),
+  /** Thousandths of an hour: 37.5 hours = "37500". */
+  hoursMilli: z.string().nullable(),
+  rate: MinorDto.nullable(),
+  amount: MinorDto,
+  taxable: MinorDto.nullable(),
+  source: z.enum(['computed', 'manual']),
+  reimbursementId: Id.nullable(),
+});
+export type PaycheckLineDto = z.infer<typeof PaycheckLineDto>;
+
+const Totals = {
+  gross: MinorDto,
+  preTax: MinorDto,
+  employeeTaxes: MinorDto,
+  postTax: MinorDto,
+  reimbursements: MinorDto,
+  net: MinorDto,
+  employerTaxes: MinorDto,
+};
+
+export const PaycheckDto = z.object({
+  id: Id,
+  payRunId: Id,
+  personId: Id,
+  personName: z.string(),
+  payType: PayType.nullable(),
+  ...Totals,
+  lines: z.array(PaycheckLineDto),
+  /** Calendar year to date through this paycheck: approved runs only, and this one. */
+  ytd: z.object(Totals),
+  transactionId: Id.nullable(),
+  version: z.number().int(),
+});
+export type PaycheckDto = z.infer<typeof PaycheckDto>;
+
+export const PayRunDto = z.object({
+  id: Id,
+  entityId: Id,
+  scheduleId: Id.nullable(),
+  scheduleName: z.string().nullable(),
+  periodStart: CalendarDateDto,
+  periodEnd: CalendarDateDto,
+  payDate: CalendarDateDto,
+  status: z.enum(['draft', 'approved']),
+  payFromAccountId: Id.nullable(),
+  /** Which tax engine filled in the taxes: `manual` means they were entered by hand (ADR-0034 §7). */
+  engine: z.string(),
+  notes: z.string().nullable(),
+  approvedAt: z.string().nullable(),
+  totals: z.object({ ...Totals, paychecks: z.number().int() }),
+  /** Present on a single pay run, absent from lists. */
+  paychecks: z.array(PaycheckDto).optional(),
+  version: z.number().int(),
+});
+export type PayRunDto = z.infer<typeof PayRunDto>;
+
+export const CreatePayRunRequest = z.object({
+  entityId: Id,
+  scheduleId: Id,
+  /** Any day in the period to pay; the next unpaid period when left out. */
+  periodDate: CalendarDateDto.optional(),
+});
+export type CreatePayRunRequest = z.output<typeof CreatePayRunRequest>;
+
+export const UpdatePayRunRequest = z.object({
+  payDate: CalendarDateDto.optional(),
+  payFromAccountId: Id.nullable().optional(),
+  notes: OptionalText(2000),
+  version: Version,
+});
+export type UpdatePayRunRequest = z.output<typeof UpdatePayRunRequest>;
+
+const HoursMilli = z.string().regex(/^\d{1,9}$/, 'Hours in thousandths');
+const EditableLine = z.object({
+  code: z.string().trim().min(1).max(40),
+  label: Text(100).min(1),
+  amount: NonNegativeMinor,
+});
+
+/**
+ * What can be changed on a draft paycheck. Each list given replaces the manual lines of its kind. Regular pay is worked
+ * out from `hoursMilli` (hourly) or the salary; taxes are entered by hand until a tax engine fills them in (stage 3).
+ */
+export const UpdatePaycheckRequest = z.object({
+  hoursMilli: HoursMilli.nullable().optional(),
+  overtimeHoursMilli: HoursMilli.nullable().optional(),
+  earnings: z.array(EditableLine).max(20).optional(),
+  preTaxDeductions: z.array(EditableLine).max(20).optional(),
+  employeeTaxes: z.array(EditableLine).max(20).optional(),
+  postTaxDeductions: z.array(EditableLine).max(20).optional(),
+  employerTaxes: z.array(EditableLine).max(20).optional(),
+  version: Version,
+});
+export type UpdatePaycheckRequest = z.output<typeof UpdatePaycheckRequest>;
+
+export const ApprovePayRunRequest = z.object({
+  version: Version,
+  /** The person approving confirms the amounts; Montra moves no money. */
+  confirmed: z.literal(true),
+});
+export type ApprovePayRunRequest = z.output<typeof ApprovePayRunRequest>;
+
+export const ReimbursementStatus = z.enum(['submitted', 'approved', 'declined', 'paid']);
+export type ReimbursementStatus = z.infer<typeof ReimbursementStatus>;
+
+export const ReimbursementDto = z.object({
+  id: Id,
+  entityId: Id,
+  personId: Id,
+  personName: z.string(),
+  personKind: PersonKind,
+  spentOn: CalendarDateDto,
+  description: z.string(),
+  amount: MinorDto,
+  currency: z.string(),
+  expenseAccountId: Id,
+  files: z.array(z.object({ id: Id, fileName: z.string(), mime: z.string() })),
+  /** Paid is worked out: its pay run was approved, or its bill was paid. */
+  status: ReimbursementStatus,
+  payVia: z.enum(['pay_run', 'bill']).nullable(),
+  declineReason: z.string().nullable(),
+  payRunId: Id.nullable(),
+  billId: Id.nullable(),
+  version: z.number().int(),
+});
+export type ReimbursementDto = z.infer<typeof ReimbursementDto>;
+
+export const CreateReimbursementRequest = z.object({
+  entityId: Id,
+  personId: Id,
+  spentOn: CalendarDateDto,
+  description: Text(500).min(1),
+  amount: MinorDto.refine((s) => BigInt(s) > 0n, 'Amount must be more than zero'),
+  expenseAccountId: Id,
+  /** Receipt photos or PDFs uploaded through `POST /payroll/files?purpose=receipt`. */
+  fileIds: z.array(Id).max(6).default([]),
+});
+export type CreateReimbursementRequest = z.output<typeof CreateReimbursementRequest>;
+
+/** An employee is paid on the next pay run, untaxed; a contractor through a bill to their vendor record. */
+export const DecideReimbursementRequest = z.discriminatedUnion('decision', [
+  z.object({ decision: z.literal('approve'), version: Version }),
+  z.object({ decision: z.literal('decline'), reason: OptionalText(500), version: Version }),
+]);
+export type DecideReimbursementRequest = z.output<typeof DecideReimbursementRequest>;

@@ -24,11 +24,12 @@ export default async function PersonPage({
       api.getPayrollPerson(workspaceId, personId),
     ]),
   );
-  const [w4s, w9s, i9] = await load((api) =>
+  const [w4s, w9s, i9, schedules] = await load((api) =>
     Promise.all([
       person.kind === 'employee' ? api.listW4(workspaceId, personId) : Promise.resolve([]),
       person.kind === 'contractor' ? api.listW9(workspaceId, personId) : Promise.resolve([]),
       person.kind === 'employee' ? api.getI9(workspaceId, personId) : Promise.resolve(null),
+      api.listPaySchedules(workspaceId, entityId),
     ]),
   );
   const { t } = await getI18n();
@@ -44,7 +45,14 @@ export default async function PersonPage({
           {person.kind === 'employee' ? t('payroll.employee') : t('payroll.contractor')}
         </span>
       </div>
-      <PersonDetails workspaceId={workspaceId} currency={business.currency} person={person} />
+      <PersonDetails
+        workspaceId={workspaceId}
+        currency={business.currency}
+        person={person}
+        schedules={schedules
+          .filter((s) => !s.archived || s.id === person.payScheduleId)
+          .map((s) => ({ id: s.id, name: s.name }))}
+      />
       {person.kind === 'employee' ? (
         <>
           <W4Panel

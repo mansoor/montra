@@ -127,6 +127,14 @@ export class PeopleService {
           ...(await this.bankColumns(s, req.bank ?? null)),
           vendor_party_id: vendor,
           notes: req.notes || null,
+          pay_schedule_id: await this.scheduleFor(
+            trx,
+            ctx,
+            req.entityId,
+            req.kind,
+            req.payScheduleId ?? null,
+          ),
+          default_hours_milli: req.defaultHoursMilli != null ? BigInt(req.defaultHoursMilli) : null,
           created_by: ctx.userId,
         })
         .execute();
@@ -164,6 +172,10 @@ export class PeopleService {
       copy('workState', 'work_state');
       copy('notes', 'notes', (v) => v || null);
       copy('vendorPartyId', 'vendor_party_id');
+      copy('defaultHoursMilli', 'default_hours_milli', (v) => (v == null ? null : BigInt(v as string)));
+      if (req.payScheduleId !== undefined) {
+        set.pay_schedule_id = await this.scheduleFor(trx, ctx, r.entity_id, r.kind, req.payScheduleId);
+      }
       if (req.address !== undefined) Object.assign(set, this.addressColumns(req.address));
       if (req.tin !== undefined) Object.assign(set, await this.tinColumns(s, req.tin));
       if (req.birthDate !== undefined)
@@ -341,6 +353,28 @@ export class PeopleService {
     };
   }
 
+  /** A pay schedule of this business, for an employee (contractors are paid through bills). */
+  private async scheduleFor(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+    kind: string,
+    scheduleId: string | null,
+  ): Promise<string | null> {
+    if (!scheduleId) return null;
+    if (kind !== 'employee')
+      throw unprocessable('payroll.schedule_for_contractor', 'Contractors are paid through bills');
+    const s = await trx
+      .selectFrom('app.pay_schedule')
+      .select('id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .where('id', '=', scheduleId)
+      .executeTakeFirst();
+    if (!s) throw unprocessable('payroll.schedule_not_found', 'Choose a pay schedule of this business');
+    return s.id;
+  }
+
   /** The vendor a contractor is paid as (PRL-10): the one given, or one found or made from their name. */
   private async vendorFor(
     trx: Trx,
@@ -505,6 +539,8 @@ export class PeopleService {
           : null,
       vendorPartyId: r.vendor_party_id,
       notes: r.notes,
+      payScheduleId: r.pay_schedule_id,
+      defaultHoursMilli: r.default_hours_milli !== null ? String(r.default_hours_milli) : null,
       onboarding,
       version: Number(r.version),
     };

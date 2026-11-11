@@ -18,6 +18,15 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   AddI9DocumentRequest,
+  ApprovePayRunRequest,
+  CreatePayRunRequest,
+  CreatePayScheduleRequest,
+  CreateReimbursementRequest,
+  DecideReimbursementRequest,
+  ReimbursementStatus,
+  UpdatePaycheckRequest,
+  UpdatePayRunRequest,
+  UpdatePayScheduleRequest,
   CreatePersonRequest,
   CreateW4Request,
   CreateW9Request,
@@ -41,7 +50,9 @@ import { AppError } from '../common/errors.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { parse } from '../common/zod.js';
 import { FormsService } from './forms.service.js';
+import { PayRunsService } from './pay-runs.service.js';
 import { PeopleService } from './people.service.js';
+import { ReimbursementsService } from './reimbursements.service.js';
 
 const Id = z.uuid();
 const EntityQuery = z.object({ entityId: z.uuid() });
@@ -58,6 +69,8 @@ export class PayrollController {
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(PeopleService) private readonly people: PeopleService,
     @Inject(FormsService) private readonly forms: FormsService,
+    @Inject(PayRunsService) private readonly runs: PayRunsService,
+    @Inject(ReimbursementsService) private readonly reimbursements: ReimbursementsService,
   ) {}
 
   // ----- People (PRL-01) -----------------------------------------------------------------------------------------
@@ -215,7 +228,10 @@ export class PayrollController {
   /** A copy of an identity document; sealed before it's stored. */
   @Post('files')
   async upload(@Ctx() ctx: RequestContext, @Query() q: unknown, @Req() req: FastifyRequest) {
-    const { entityId } = parse(EntityQuery, q);
+    const { entityId, purpose } = parse(
+      EntityQuery.extend({ purpose: z.enum(['identity', 'receipt']).default('identity') }),
+      q,
+    );
     if (!req.isMultipart()) {
       throw new AppError(415, 'upload.multipart_required', 'Send the file as multipart/form-data');
     }
@@ -230,7 +246,129 @@ export class PayrollController {
       );
     }
     if (bytes.length === 0) throw new AppError(400, 'upload.empty', 'The file is empty');
-    return this.forms.uploadFile(dbCtx(ctx), entityId, bytes, part.filename || 'document');
+    return this.forms.uploadFile(dbCtx(ctx), entityId, bytes, part.filename || 'document', purpose);
+  }
+  // ----- Pay schedules and pay runs (PRL-06..09) -------------------------------------------------------------------
+
+  @Get('schedules')
+  async schedules(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    return { data: await this.runs.listSchedules(dbCtx(ctx), parse(EntityQuery, q).entityId) };
+  }
+
+  @Post('schedules')
+  createSchedule(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.runs.createSchedule(dbCtx(ctx), parse(CreatePayScheduleRequest, body));
+  }
+
+  @Patch('schedules/:id')
+  updateSchedule(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.runs.updateSchedule(dbCtx(ctx), parse(Id, id), parse(UpdatePayScheduleRequest, body));
+  }
+
+  @Get('runs')
+  async runsList(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    return { data: await this.runs.list(dbCtx(ctx), parse(EntityQuery, q).entityId) };
+  }
+
+  @Post('runs')
+  createRun(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.runs.create(dbCtx(ctx), parse(CreatePayRunRequest, body));
+  }
+
+  @Get('runs/:id')
+  getRun(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.runs.get(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Patch('runs/:id')
+  updateRun(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.runs.update(dbCtx(ctx), parse(Id, id), parse(UpdatePayRunRequest, body));
+  }
+
+  @Delete('runs/:id')
+  @HttpCode(204)
+  async deleteRun(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {
+    await this.runs.remove(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Patch('runs/:id/paychecks/:paycheckId')
+  updatePaycheck(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Param('paycheckId') paycheckId: string,
+    @Body() body: unknown,
+  ) {
+    return this.runs.updatePaycheck(
+      dbCtx(ctx),
+      parse(Id, id),
+      parse(Id, paycheckId),
+      parse(UpdatePaycheckRequest, body),
+    );
+  }
+
+  @Post('runs/:id/approve')
+  @HttpCode(200)
+  approveRun(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.runs.approve(dbCtx(ctx), parse(Id, id), parse(ApprovePayRunRequest, body));
+  }
+
+  @Post('runs/:id/reopen')
+  @HttpCode(200)
+  reopenRun(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    const { version } = parse(z.object({ version: z.number().int().positive() }), body);
+    return this.runs.reopen(dbCtx(ctx), parse(Id, id), version);
+  }
+
+  /** PRL-08: a payslip, for anyone who can read the pay runs of the business. */
+  @Get('paychecks/:id/payslip')
+  async payslip(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    return pdf(reply, await this.runs.payslipPdf(dbCtx(ctx), parse(Id, id)));
+  }
+
+  // ----- Reimbursements (PRL-11) -----------------------------------------------------------------------------------
+
+  @Get('reimbursements')
+  async reimbursementList(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    const opts = parse(
+      EntityQuery.extend({ status: ReimbursementStatus.optional(), personId: z.uuid().optional() }),
+      q,
+    );
+    return { data: await this.reimbursements.list(dbCtx(ctx), opts) };
+  }
+
+  @Post('reimbursements')
+  createReimbursement(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.reimbursements.create(dbCtx(ctx), parse(CreateReimbursementRequest, body));
+  }
+
+  @Get('reimbursements/:id')
+  getReimbursement(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.reimbursements.get(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Post('reimbursements/:id/decision')
+  @HttpCode(200)
+  decideReimbursement(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.reimbursements.decide(dbCtx(ctx), parse(Id, id), parse(DecideReimbursementRequest, body));
+  }
+
+  @Get('reimbursements/:id/files/:fileId')
+  async reimbursementFile(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    const f = await this.reimbursements.file(dbCtx(ctx), parse(Id, id), parse(Id, fileId));
+    void reply.header('content-type', f.mime);
+    void reply.header('content-disposition', `inline; filename="${safeName(f.fileName)}"`);
+    void reply.header('cache-control', 'private, no-store');
+    void reply.header('x-content-type-options', 'nosniff');
+    return Buffer.from(f.bytes);
   }
 }
 

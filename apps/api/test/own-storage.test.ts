@@ -289,6 +289,15 @@ describe('connecting S3-compatible storage (ADR-0031 §2, §3)', () => {
     expect(done.map((d: any) => d.fileName)).toContain('Partner lunch.png');
   });
 
+  it('leaves out a sealed copy of an identity document, which the owner couldn’t open there', async () => {
+    const f = await admin.query(
+      `insert into app.file (workspace_id, kind, storage_key, file_name, mime, bytes, sha256, sealed)
+       values ($1, 'other', $2, 'id.png', 'application/octet-stream', 1, repeat('0', 64), true) returning id`,
+      [wsId, `${wsId}/other/sealed-id`],
+    );
+    expect(await item(f.rows[0].id)).toBeUndefined();
+  });
+
   it('retries with backoff, shows failing after five failures in a row, and recovers', async () => {
     const mail = h.app.get(MAIL_PORT) as MemoryMail;
     // Whatever the time of day this runs, nothing is held for quiet hours.

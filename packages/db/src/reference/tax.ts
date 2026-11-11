@@ -40,6 +40,7 @@ export const US_TAX_LINES: TaxLine[] = [
     deductibleBps: 5000,
   },
   { code: 'US_SCH_C_L25', form: 'schedule_c', line: '25', label: 'Utilities' },
+  { code: 'US_SCH_C_L26', form: 'schedule_c', line: '26', label: 'Wages (less employment credits)' },
   { code: 'US_SCH_C_L27A', form: 'schedule_c', line: '27a', label: 'Other expenses' },
   { code: 'US_SCH_E_L3', form: 'schedule_e', line: '3', label: 'Rents received' },
   { code: 'US_SCH_E_L5', form: 'schedule_e', line: '5', label: 'Advertising' },
