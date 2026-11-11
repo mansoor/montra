@@ -32,6 +32,17 @@ import type {
   UpdatePaycheckRequest,
   UpdatePayRunRequest,
   UpdatePayScheduleRequest,
+  CreateDe4Request,
+  De4Dto,
+  DepositObligationDto,
+  PayrollDepositDto,
+  PayrollSettingsDto,
+  PayrollTaxesDto,
+  PayrollTaxKind,
+  PreTaxCode,
+  RecordDepositRequest,
+  UpdatePayrollSettingsRequest,
+  WorksheetDto,
 } from '@montra/schemas';
 import type {
   AcceptRecommendationRequest,
@@ -319,6 +330,20 @@ export type ApprovePayRunInput = z.input<typeof ApprovePayRunRequest>;
 export type CreateReimbursementInput = z.input<typeof CreateReimbursementRequest>;
 export type DecideReimbursementInput = z.input<typeof DecideReimbursementRequest>;
 export type { PayRunDto, PayScheduleDto, PaycheckDto, ReimbursementDto, ReimbursementStatus };
+export type CreateDe4Input = z.input<typeof CreateDe4Request>;
+export type UpdatePayrollSettingsInput = z.input<typeof UpdatePayrollSettingsRequest>;
+export type RecordDepositInput = z.input<typeof RecordDepositRequest>;
+export type WorksheetForm = '941' | '940' | 'de9' | 'de9c';
+export type {
+  De4Dto,
+  DepositObligationDto,
+  PayrollDepositDto,
+  PayrollSettingsDto,
+  PayrollTaxesDto,
+  PayrollTaxKind,
+  PreTaxCode,
+  WorksheetDto,
+};
 export type CreateWorkspaceInput = z.input<typeof CreateWorkspaceRequest>;
 export type AnalyzeMigrationInput = z.input<typeof AnalyzeMigrationRequest>;
 export type StartMigrationInput = z.input<typeof StartMigrationRequest>;
@@ -2410,6 +2435,64 @@ export class ApiClient {
       'POST',
       this.ws(workspaceId, `/payroll/files${query({ entityId, purpose: 'receipt' })}`),
       form,
+    );
+  }
+  // ----- Payroll, stage 3: employer tax (PRL-12..16) -------------------------------------------------------------
+
+  listDe4(workspaceId: string, personId: string) {
+    return this.request<{ data: De4Dto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/de4`),
+    ).then((r) => r.data);
+  }
+  createDe4(workspaceId: string, personId: string, input: CreateDe4Input) {
+    return this.request<De4Dto>('POST', this.ws(workspaceId, `/payroll/people/${enc(personId)}/de4`), input);
+  }
+  de4PdfPath(workspaceId: string, personId: string, id: string) {
+    return this.baseUrl + this.ws(workspaceId, `/payroll/people/${enc(personId)}/de4/${enc(id)}/pdf`);
+  }
+  getPayrollSettings(workspaceId: string, entityId: string) {
+    return this.request<PayrollSettingsDto>(
+      'GET',
+      this.ws(workspaceId, `/payroll/settings${query({ entityId })}`),
+    );
+  }
+  updatePayrollSettings(workspaceId: string, entityId: string, input: UpdatePayrollSettingsInput) {
+    return this.request<PayrollSettingsDto>(
+      'PUT',
+      this.ws(workspaceId, `/payroll/settings${query({ entityId })}`),
+      input,
+    );
+  }
+  getPayrollTaxes(workspaceId: string, entityId: string, year: number) {
+    return this.request<PayrollTaxesDto>(
+      'GET',
+      this.ws(workspaceId, `/payroll/taxes${query({ entityId, year: String(year) })}`),
+    );
+  }
+  recordPayrollDeposit(workspaceId: string, input: RecordDepositInput) {
+    return this.request<PayrollDepositDto>('POST', this.ws(workspaceId, '/payroll/deposits'), input);
+  }
+  deletePayrollDeposit(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/payroll/deposits/${enc(id)}`));
+  }
+  getPayrollWorksheet(
+    workspaceId: string,
+    entityId: string,
+    form: WorksheetForm,
+    year: number,
+    quarter?: number,
+  ) {
+    return this.request<WorksheetDto>(
+      'GET',
+      this.ws(
+        workspaceId,
+        `/payroll/worksheets/${enc(form)}${query({
+          entityId,
+          year: String(year),
+          ...(quarter ? { quarter: String(quarter) } : {}),
+        })}`,
+      ),
     );
   }
 }
