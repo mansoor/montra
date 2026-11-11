@@ -55,6 +55,7 @@ import { parse } from '../common/zod.js';
 import { FormsService } from './forms.service.js';
 import { PayRunsService } from './pay-runs.service.js';
 import { PayrollTaxesService } from './payroll-taxes.service.js';
+import { YearEndService } from './year-end.service.js';
 import { PeopleService } from './people.service.js';
 import { ReimbursementsService } from './reimbursements.service.js';
 
@@ -83,6 +84,7 @@ export class PayrollController {
     @Inject(PayRunsService) private readonly runs: PayRunsService,
     @Inject(ReimbursementsService) private readonly reimbursements: ReimbursementsService,
     @Inject(PayrollTaxesService) private readonly taxes: PayrollTaxesService,
+    @Inject(YearEndService) private readonly yearEnd: YearEndService,
   ) {}
 
   // ----- People (PRL-01) -----------------------------------------------------------------------------------------
@@ -443,6 +445,76 @@ export class PayrollController {
     if (!name) throw new AppError(404, 'not_found', 'No such worksheet');
     const { entityId, year, quarter } = parse(WorksheetQuery, q);
     return this.taxes.worksheet(dbCtx(ctx), entityId, name, year, name === '940' ? null : (quarter ?? 1));
+  }
+
+  // ----- Year-end forms (PRL-17..20) -------------------------------------------------------------------------------
+
+  @Get('year-end')
+  yearEndSummary(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return this.yearEnd.summary(dbCtx(ctx), entityId, year);
+  }
+
+  @Get('year-end/w2/:personId')
+  async w2(
+    @Ctx() ctx: RequestContext,
+    @Param('personId') personId: string,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.w2EmployeePdf(dbCtx(ctx), entityId, year, parse(Id, personId)));
+  }
+
+  @Get('year-end/w2-employer')
+  async w2Employer(
+    @Ctx() ctx: RequestContext,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.w2EmployerPdf(dbCtx(ctx), entityId, year));
+  }
+
+  @Get('year-end/1099/:personId')
+  async nec(
+    @Ctx() ctx: RequestContext,
+    @Param('personId') personId: string,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.necRecipientPdf(dbCtx(ctx), entityId, year, parse(Id, personId)));
+  }
+
+  @Get('year-end/1099-payer')
+  async necPayer(
+    @Ctx() ctx: RequestContext,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.necPayerPdf(dbCtx(ctx), entityId, year));
+  }
+
+  @Get('year-end/efw2')
+  async efw2(
+    @Ctx() ctx: RequestContext,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<string> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    const f = await this.yearEnd.efw2(dbCtx(ctx), entityId, year);
+    void reply.header('content-type', 'text/plain; charset=us-ascii');
+    void reply.header('content-disposition', `attachment; filename="${safeName(f.fileName)}"`);
+    void reply.header('cache-control', 'private, no-store');
+    void reply.header('x-content-type-options', 'nosniff');
+    return f.text;
   }
 }
 

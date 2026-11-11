@@ -164,6 +164,10 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET /payroll/taxes?entityId&year` | What to deposit and when, worked out from approved paychecks, with any deposit recorded against each period | PRL-15 |
 | `POST /payroll/deposits` `{ entityId, tax, periodStart, paidOn, payFromAccountId, confirmation? }`, `DELETE /payroll/deposits/{id}` | Record a deposit the owner made (posts one transaction owned by it), or take it back (voids it unless reconciled or closed) | PRL-15 |
 | `GET /payroll/worksheets/{941\|940\|de9\|de9c}?entityId&year&quarter` | Worksheets for Form 941 and 940 and California's DE 9 and DE 9C, for copying into the agencies' filing | PRL-16 |
+| `GET /payroll/year-end?entityId&year` | W-2 boxes per employee, the W-3, 1099-NEC amounts per contractor against the year's threshold, the 1096, the due date and what would stop SSA accepting the EFW2 file. Write access to the business | PRL-17, PRL-18, PRL-20 |
+| `GET /payroll/year-end/w2/{personId}?entityId&year`, `GET /payroll/year-end/1099/{personId}?entityId&year` (PDFs: recent sign-in; logged) | A person's copies: W-2 B, C and 2, or 1099-NEC B and 2, with the SSN or TIN truncated | PRL-17, PRL-18, PRL-19 |
+| `GET /payroll/year-end/w2-employer?entityId&year`, `GET /payroll/year-end/1099-payer?entityId&year` (PDFs: recent sign-in; logged) | The business's copies with full numbers: W-2 copy D and the W-3, or 1099-NEC copy C and the 1096 worksheet | PRL-17, PRL-18 |
+| `GET /payroll/year-end/efw2?entityId&year` (recent sign-in; logged) | SSA's EFW2 wage file as text; `422 payroll.efw2_problems` while SSA would reject it | PRL-20 |
 | `GET /payroll/paychecks/{id}/payslip` | Payslip PDF with the year to date | PRL-08 |
 | `GET/POST /payroll/reimbursements?entityId&status&personId`, `GET /payroll/reimbursements/{id}`, `POST /payroll/reimbursements/{id}/decision` `{ decision: approve \| decline, reason?, version }`, `GET /payroll/reimbursements/{id}/files/{fileId}`; receipts through `POST /payroll/files?entityId&purpose=receipt` | Reimbursements: paid untaxed on the next pay run, or as a bill to a contractor | PRL-10, PRL-11 |
 

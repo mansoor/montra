@@ -9,7 +9,15 @@ import { StatusLine, useAction } from './use-action';
 /** BAK-06: what's been deleted, and until when it can come back. */
 export function TrashList({ workspaceId, items }: { workspaceId: string; items: TrashItemDto[] }) {
   const { run, busy, message, t } = useAction();
-  if (items.length === 0) return <p className="card text-sm text-muted">{t('trash.empty')}</p>;
+  // Restoring the last item empties the list; the confirmation stays on screen with the empty state.
+  if (items.length === 0) {
+    return (
+      <div className="space-y-2">
+        <p className="card text-sm text-muted">{t('trash.empty')}</p>
+        <StatusLine message={message} />
+      </div>
+    );
+  }
   return (
     <section className="card-flush" aria-label={t('trash.title')}>
       <ul className="divide-y divide-line">

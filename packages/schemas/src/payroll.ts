@@ -711,6 +711,21 @@ export const PayrollSettingsDto = z.object({
   caDepositSchedule: CaDepositSchedule,
   /** The tax years Montra has tables for. */
   taxYears: z.array(z.number().int()),
+  /** Stage 4: the employer's address in parts, for W-2s, 1099s and the EFW2 file. */
+  filingAddress: z
+    .object({
+      line1: z.string(),
+      line2: z.string().nullable(),
+      city: z.string(),
+      state: z.string(),
+      zip: z.string(),
+    })
+    .nullable(),
+  /** SSA Business Services Online user ID and the contact SSA asks about the wage file. */
+  ssaUserId: z.string().nullable(),
+  contactName: z.string().nullable(),
+  contactPhone: z.string().nullable(),
+  contactEmail: z.string().nullable(),
   version: z.number().int(),
 });
 export type PayrollSettingsDto = z.infer<typeof PayrollSettingsDto>;
@@ -732,6 +747,28 @@ export const UpdatePayrollSettingsRequest = z.object({
   caEttRate: RatePercent.optional(),
   federalDepositSchedule: FederalDepositSchedule.optional(),
   caDepositSchedule: CaDepositSchedule.optional(),
+  filingAddress: z
+    .object({
+      line1: Text(100).min(1),
+      line2: OptionalText(100),
+      city: Text(60).min(1),
+      state: StateCode,
+      zip: z
+        .string()
+        .transform((v) => v.replace(/[\s-]/g, ''))
+        .pipe(z.string().regex(/^\d{5}(\d{4})?$/, 'A ZIP code has 5 or 9 digits')),
+    })
+    .nullable()
+    .optional(),
+  ssaUserId: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{8}$/, 'A BSO User ID is eight letters or digits')
+    .nullable()
+    .optional(),
+  contactName: OptionalText(100),
+  contactPhone: OptionalText(30),
+  contactEmail: z.string().trim().email().max(320).nullable().optional(),
   /** 0 when no settings were saved yet. */
   version: z.number().int().min(0),
 });
@@ -835,3 +872,68 @@ export const WorksheetDto = z.object({
   notes: z.array(z.string()),
 });
 export type WorksheetDto = z.infer<typeof WorksheetDto>;
+
+// ----- Stage 4: year-end forms (PRL-17..20; ADR-0034 §7b) ------------------------------------------------------------
+
+export const W2BoxesDto = z.object({
+  box1: MinorDto,
+  box2: MinorDto,
+  box3: MinorDto,
+  box4: MinorDto,
+  box5: MinorDto,
+  box6: MinorDto,
+  /** Box 12 code D: 401(k) elective deferrals. */
+  box12D: MinorDto,
+  /** Box 13: retirement plan. */
+  retirementPlan: z.boolean(),
+  /** Box 14 CASDI, and boxes 16 and 17 for California. */
+  caSdi: MinorDto,
+  caWages: MinorDto,
+  caTax: MinorDto,
+});
+export type W2BoxesDto = z.infer<typeof W2BoxesDto>;
+
+export const W2Dto = z.object({
+  personId: Id,
+  name: z.string(),
+  tinMasked: z.string().nullable(),
+  boxes: W2BoxesDto,
+  paychecks: z.number().int(),
+});
+export type W2Dto = z.infer<typeof W2Dto>;
+
+export const Form1099NecDto = z.object({
+  personId: Id,
+  name: z.string(),
+  tinMasked: z.string().nullable(),
+  /** Box 1, from paid bills to the contractor, by payment date; card payments are left out (they're on a 1099-K). */
+  nonemployeeCompensation: MinorDto,
+  payments: z.number().int(),
+  /** Over the year's threshold, so a 1099-NEC is due. */
+  required: z.boolean(),
+  hasW9: z.boolean(),
+});
+export type Form1099NecDto = z.infer<typeof Form1099NecDto>;
+
+export const YearEndDto = z.object({
+  entityId: Id,
+  year: z.number().int(),
+  employer: z.object({
+    name: z.string(),
+    ein: z.string().nullable(),
+    caEmployerAccount: z.string().nullable(),
+  }),
+  w2s: z.array(W2Dto),
+  /** Form W-3: the W-2s added up. */
+  w3: z.object({ forms: z.number().int(), boxes: W2BoxesDto }),
+  necThreshold: z.object({ amount: MinorDto, known: z.boolean() }),
+  necs: z.array(Form1099NecDto),
+  /** Form 1096 for the 1099-NECs that are due. */
+  form1096: z.object({ forms: z.number().int(), total: MinorDto }),
+  /** Due to employees, SSA, contractors and the IRS: January 31, or the next business day. */
+  dueDate: CalendarDateDto,
+  /** What would stop SSA accepting the EFW2 file; empty when it can be made. */
+  efw2Problems: z.array(z.object({ where: z.string(), message: z.string() })),
+  notes: z.array(z.string()),
+});
+export type YearEndDto = z.infer<typeof YearEndDto>;
