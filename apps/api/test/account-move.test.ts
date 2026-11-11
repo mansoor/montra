@@ -65,11 +65,13 @@ beforeAll(async () => {
   partner = h.as('account-move-partner@example.test');
   admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
-  const w = (await c.post('/v1/workspaces', { name: 'Books', baseCurrency: 'USD', template: 'household' })).body;
+  const w = (await c.post('/v1/workspaces', { name: 'Books', baseCurrency: 'USD', template: 'household' }))
+    .body;
   ws = w.id;
   url = (p) => `/v1/workspaces/${ws}${p}`;
-  biz = (await c.post(url('/entities'), { type: 'business', name: 'Rivera Studio', businessType: 'sole_prop' }))
-    .body.id;
+  biz = (
+    await c.post(url('/entities'), { type: 'business', name: 'Rivera Studio', businessType: 'sole_prop' })
+  ).body.id;
   const me = (await c.get(url(''))).body;
   personal = me.entities.find((e: any) => e.type === 'personal').id;
   const cats = (await c.get(url('/categories'))).body.data;
@@ -92,8 +94,8 @@ beforeAll(async () => {
     })
   ).body.id;
   const spend = async (amount: string, categoryId: string, payee: string, date = addDays(today, -20)) =>
-    (await c.post(url('/transactions'), { date, accountId: card, amount: usd(amount), payee, categoryId })).body
-      .id;
+    (await c.post(url('/transactions'), { date, accountId: card, amount: usd(amount), payee, categoryId }))
+      .body.id;
   tx.office = await spend('-12000', cat('Office expense', biz), 'Staples');
   tx.groceries = await spend('-8000', cat('Groceries', personal), 'Market');
   tx.payment = (
@@ -114,7 +116,10 @@ beforeAll(async () => {
     `update app.journal_entry set locked = true where transaction_id = $1 and entity_id = $2`,
     [tx.office, personal],
   );
-  const invite = await c.post(url('/sharing/invites'), { email: 'account-move-partner@example.test', role: 'partner' });
+  const invite = await c.post(url('/sharing/invites'), {
+    email: 'account-move-partner@example.test',
+    role: 'partner',
+  });
   await partner.post(`/v1/invites/${invite.body.token}/accept`);
 });
 afterAll(async () => {
@@ -161,9 +166,7 @@ describe('moving an account to a business', () => {
 
   it('moves the whole history, keeping every amount, date and reconciled line', async () => {
     const res = await c.post(url(`/accounts/${card}/move`), { entityId: biz });
-`);
     expect(res.status).toBe(200);
-`);
     expect(res.body).toMatchObject({ moved: true, transactions: 3, entries: 1 });
     const a = await accountOf(card);
     expect(a.entityId).toBe(biz);
@@ -209,7 +212,10 @@ describe('moving an account to a business', () => {
     expect(rm.rows).toEqual([{ entity_id: biz }]);
     const reg = (await c.get(url(`/accounts/${card}/register`))).body;
     expect(reg.data ?? reg).toBeTruthy();
-    const history = await admin.query('select from_entity_id, to_entity_id, transactions from app.account_move where ledger_account_id = $1', [card]);
+    const history = await admin.query(
+      'select from_entity_id, to_entity_id, transactions from app.account_move where ledger_account_id = $1',
+      [card],
+    );
     expect(history.rows).toEqual([{ from_entity_id: personal, to_entity_id: biz, transactions: 3 }]);
   });
 

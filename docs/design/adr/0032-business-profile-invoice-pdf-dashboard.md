@@ -31,13 +31,20 @@ expenses and profit over 3, 6, 12 or 24 months, as charts and as a table.
 
 ### Invoice PDF in any script
 
-- **Embedded, subset fonts.** The renderer embeds Noto Sans through `@pdf-lib/fontkit`, so only the glyphs used are
-  stored. Each run of text takes the first font that has its characters: Noto Sans (Latin, Greek, Cyrillic,
-  Vietnamese and Devanagari), then Arabic, Hebrew, Thai and Simplified Chinese (which also covers Japanese kana). A
-  character none of them has still prints as "?" rather than failing the send.
-- **Shaping is fontkit's.** Arabic joins and Indic conjuncts come from fontkit's OpenType layout. A run in a
-  right-to-left script is laid out right to left; a line that mixes directions keeps its runs in reading order, which
-  is right for names and short notes but isn't the full Unicode bidi algorithm.
+- **A chain of embedded fonts.** Each run of text takes the first font that has its characters: Noto Sans (Latin,
+  Greek, Cyrillic, Vietnamese and Devanagari), then Arabic, Hebrew, Thai and Simplified Chinese (which also covers
+  Japanese kana). A character none of them has still prints as "?" rather than failing the send.
+- **Subset with HarfBuzz, not pdf-lib.** pdf-lib's own subsetter (`subset: true`) drops most glyphs of these fonts:
+  a PDF it made showed "ve S d o" for "Rivera Studio". So each font is cut down with HarfBuzz (`subset-font`, layout
+  tables kept) to the document's characters, and the small result is embedded whole. A Latin invoice carries about
+  30 KB of fonts; one with Chinese, about 100 KB.
+- **Laid out with fontkit, drawn by position.** Arabic joins and Indic conjuncts come from fontkit's OpenType layout.
+  pdf-lib draws a string by the plain widths of its glyphs and only lists widths for glyphs the character map
+  reaches, so substituted glyphs (joining forms, half forms) took a whole em and fell apart. Each run is drawn instead
+  as a `TJ` array that puts every glyph where the layout put it; Latin keeps its kerning too. Checked by rendering
+  with MuPDF and pdf.js.
+- **Directions.** A run in a right-to-left script is laid out right to left; a line that mixes directions keeps its
+  runs in reading order, which is right for names and short notes but isn't the full Unicode bidi algorithm.
 - **Fonts come from npm** (`@expo-google-fonts/noto-sans*`, OFL-1.1), resolved from `node_modules` at first use and
   cached for the process. The Chinese font is the large one (about 10 MB a weight; the package holds nine).
 - The invoice PDF that was sent stays as it was sent (ADR-0017); only new renders use the fonts and the logo.

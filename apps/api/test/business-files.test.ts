@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { toCsv, toIif, toXero, type JournalLine } from '../src/business/export.service.js';
 import { renderInvoicePdf, type InvoicePdfData } from '../src/business/invoice-pdf.js';
 import { checkLogo, sniffLogo } from '../src/business/logo.js';
-import { fontRuns } from '../src/business/pdf-fonts.js';
+import { FontSet, fontRuns } from '../src/business/pdf-fonts.js';
 
 /** A 1×1 PNG. */
 const PNG = Buffer.from(
@@ -140,7 +140,10 @@ describe('font runs', () => {
   });
 
   it('leaves digits out of a right-to-left run, which would reverse them', () => {
-    expect(fontRuns('مرحبا 123').map((r) => r.text)).toEqual(['مرحبا ', '123']);
+    expect(fontRuns('مرحبا 123')).toEqual([
+      { font: 1, text: 'مرحبا' },
+      { font: 0, text: ' 123' },
+    ]);
   });
 
   it('prints Hindi in Noto Sans itself, and Thai in its own font', () => {
@@ -148,6 +151,19 @@ describe('font runs', () => {
       { font: 0, text: 'नमस्ते ' },
       { font: 3, text: 'ขอบคุณ' },
     ]);
+  });
+
+  it('lays out joined Arabic and Devanagari conjuncts at their shaped width', async () => {
+    const fonts = new FontSet(await PDFDocument.create());
+    const words = ['مرحبا', 'क्षत्रिय'];
+    fonts.prepare(words);
+    for (const w of words) {
+      const [run] = await fonts.shape(w, 'regular');
+      // Shaping substitutes forms the font's character map doesn't reach; the PDF gives those a whole em, so the
+      // drawing has to say where each goes.
+      expect(run!.glyphs.some((g) => g.pdfWidth === 1000)).toBe(true);
+      expect(run!.width).toBeCloseTo(run!.glyphs.reduce((t, g) => t + g.xAdvance, 0) / run!.unitsPerEm);
+    }
   });
 
   it('prints what no font has as "?"', () => {

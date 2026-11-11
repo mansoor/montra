@@ -47,6 +47,7 @@
     "reflect-metadata": "^0.2.2",
     "regenerator-runtime": "0.14.1",
     "rxjs": "^7.8.2",
+    "subset-font": "2.9.0",
     "ws": "^8.22.0",
     "yauzl": "^3.4.0",
     "yazl": "^3.3.1",

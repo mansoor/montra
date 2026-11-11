@@ -1,14 +1,38 @@
 /**
  * Fonts for PDFs in any script (ADR-0032). Noto Sans first, then one font per script it lacks; each run of text takes
- * the first font that has all its characters. Fonts are read from their npm packages once per process and embedded as
- * subsets, so a PDF carries only the glyphs it uses.
+ * the first font that has all its characters.
+ *
+ * Two things pdf-lib can't do here, done by hand:
+ * - **Subsetting.** pdf-lib's own subsetter drops most glyphs of these fonts, so each font is cut down with HarfBuzz
+ *   (`subset-font`, layout tables kept) to the characters the document uses, and that small font is embedded whole.
+ * - **Positioning.** pdf-lib places glyphs by their plain advance widths, but Arabic joins its letters through GPOS
+ *   cursive attachment. Each run is laid out with fontkit and drawn with its glyph positions (a `TJ` array), so Arabic
+ *   connects and Latin text keeps its kerning.
  */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 // fontkit's Indic shaper (Devanagari) is built with generators compiled for regenerator's runtime, a global it expects.
 import 'regenerator-runtime/runtime.js';
 import fontkit from '@pdf-lib/fontkit';
-import type { PDFDocument, PDFFont } from 'pdf-lib';
+import {
+  PDFHexString,
+  PDFNumber,
+  PDFOperator,
+  PDFOperatorNames,
+  beginText,
+  endText,
+  popGraphicsState,
+  pushGraphicsState,
+  setFillingColor,
+  setFontAndSize,
+  setTextMatrix,
+  setTextRise,
+  type Color,
+  type PDFDocument,
+  type PDFFont,
+  type PDFPage,
+} from 'pdf-lib';
+import subsetFont from 'subset-font';
 
 const require = createRequire(import.meta.url);
 
@@ -24,27 +48,45 @@ const CHAIN = [
 ] as const;
 
 type Weight = 'regular' | 'bold';
-const bytesCache = new Map<string, Uint8Array>();
-const coverage: { hasGlyphForCodePoint(cp: number): boolean }[] = [];
 
-function fontBytes(i: number, weight: Weight): Uint8Array {
+/** The parts of a fontkit font this file uses. */
+interface FkFont {
+  unitsPerEm: number;
+  characterSet: number[];
+  glyphForCodePoint(cp: number): { id: number };
+  hasGlyphForCodePoint(cp: number): boolean;
+  layout(text: string): {
+    glyphs: { id: number; advanceWidth: number }[];
+    positions: { xAdvance: number; xOffset: number; yOffset: number }[];
+  };
+}
+
+const bytesCache = new Map<string, Buffer>();
+const coverage: FkFont[] = [];
+
+const weightOf = (i: number, weight: Weight) =>
+  weight === 'bold' && CHAIN[i]!.bold ? '700Bold' : '400Regular';
+
+function fontBytes(i: number, weight: Weight): Buffer {
   const f = CHAIN[i]!;
-  const w = weight === 'bold' && f.bold ? '700Bold' : '400Regular';
+  const w = weightOf(i, weight);
   const key = `${f.pkg}/${w}`;
   let b = bytesCache.get(key);
   if (!b) {
-    b = new Uint8Array(readFileSync(require.resolve(`@expo-google-fonts/${f.pkg}/${w}/${f.file}_${w}.ttf`)));
+    b = readFileSync(require.resolve(`@expo-google-fonts/${f.pkg}/${w}/${f.file}_${w}.ttf`));
     bytesCache.set(key, b);
   }
   return b;
 }
 
+function covers(i: number, cp: number): boolean {
+  coverage[i] ??= fontkit.create(fontBytes(i, 'regular')) as unknown as FkFont;
+  return coverage[i]!.hasGlyphForCodePoint(cp);
+}
+
 /** Which font of the chain has `cp`, or -1. Coverage is the same for both weights. */
 function fontFor(cp: number): number {
-  for (let i = 0; i < CHAIN.length; i++) {
-    coverage[i] ??= fontkit.create(fontBytes(i, 'regular') as Buffer) as unknown as (typeof coverage)[number];
-    if (coverage[i]!.hasGlyphForCodePoint(cp)) return i;
-  }
+  for (let i = 0; i < CHAIN.length; i++) if (covers(i, cp)) return i;
   return -1;
 }
 
@@ -69,7 +111,7 @@ export function fontRuns(text: string): Run[] {
   for (const ch of text) {
     const cp = ch.codePointAt(0)!;
     const current = runs[runs.length - 1];
-    if (current && joins(current.font, ch) && coversCp(current.font, cp)) {
+    if (current && joins(current.font, ch) && covers(current.font, cp)) {
       current.text += ch;
       continue;
     }
@@ -82,49 +124,148 @@ export function fontRuns(text: string): Run[] {
     if (current && current.font === font) current.text += out;
     else runs.push({ font, text: out });
   }
-  return runs;
+  // A right-to-left run is laid out as a whole, so a space at its end would print at its left. Spaces at either end
+  // go to their own run, in reading order.
+  const split = runs.flatMap((r) => {
+    if (!RTL.has(r.font)) return [r];
+    const [, lead = '', body = '', trail = ''] = /^(\s*)([\s\S]*?)(\s*)$/u.exec(r.text) ?? [];
+    return [
+      ...(lead ? [{ font: 0, text: lead }] : []),
+      ...(body ? [{ font: r.font, text: body }] : []),
+      ...(trail ? [{ font: 0, text: trail }] : []),
+    ];
+  });
+  return split.reduce<Run[]>((out, r) => {
+    const last = out[out.length - 1];
+    if (last && last.font === r.font && !RTL.has(r.font)) last.text += r.text;
+    else out.push({ ...r });
+    return out;
+  }, []);
 }
 
-function coversCp(font: number, cp: number): boolean {
-  coverage[font] ??= fontkit.create(
-    fontBytes(font, 'regular') as Buffer,
-  ) as unknown as (typeof coverage)[number];
-  return coverage[font]!.hasGlyphForCodePoint(cp);
-}
-
+/** A run laid out: what to draw and how wide it is at size 1. */
 export interface ShapedRun {
   font: PDFFont;
   text: string;
   width: number;
+  /**
+   * Glyph ids in drawing order; the width the PDF gives each, in thousandths of an em; and where the layout puts it,
+   * in font units.
+   */
+  glyphs: { id: number; pdfWidth: number; xAdvance: number; xOffset: number; yOffset: number }[];
+  unitsPerEm: number;
 }
 
-/** The fonts of one document, embedded the first time a run needs them. */
+interface Embedded {
+  pdf: PDFFont;
+  fk: FkFont;
+  /**
+   * The glyphs pdf-lib writes a width for: only those its character map reaches. A glyph that shaping substitutes
+   * (an Arabic joining form, a Devanagari half form) takes the PDF's default width, a whole em.
+   */
+  listed: ReadonlySet<number>;
+}
+
+/** The fonts of one document: cut down to its characters, embedded, then used to lay out and draw its text. */
 export class FontSet {
-  private readonly embedded = new Map<string, PDFFont>();
+  private readonly embedded = new Map<string, Promise<Embedded>>();
+  private chars = '?: ';
+
   constructor(private readonly pdf: PDFDocument) {
     pdf.registerFontkit(fontkit);
   }
 
-  private async font(i: number, weight: Weight): Promise<PDFFont> {
-    const key = `${i}:${weight === 'bold' && CHAIN[i]!.bold ? 'bold' : 'regular'}`;
-    let f = this.embedded.get(key);
-    if (!f) {
-      f = await this.pdf.embedFont(fontBytes(i, weight), { subset: true });
-      this.embedded.set(key, f);
-    }
-    return f;
+  /**
+   * Every string the document will print, before anything is drawn. Each font is cut down to all of the document's
+   * characters it has, so a line broken differently later still finds its glyphs.
+   */
+  prepare(texts: readonly string[]): void {
+    this.chars = [...new Set([...`${texts.join('')}?: `].filter((c) => !/[\r\n\t]/.test(c)))].join('');
   }
 
-  /**
-   * The runs of `text` with their embedded fonts and their width at size 1 (widths scale with the size): measure and
-   * draw from these, so each run is laid out once.
-   */
+  private embed(i: number, weight: Weight): Promise<Embedded> {
+    const key = `${i}:${weightOf(i, weight)}`;
+    let e = this.embedded.get(key);
+    if (!e) {
+      e = (async () => {
+        const text = [...this.chars].filter((c) => covers(i, c.codePointAt(0)!)).join('') || '?';
+        const bytes = await subsetFont(fontBytes(i, weight), text, { targetFormat: 'truetype' });
+        const fk = fontkit.create(bytes) as unknown as FkFont;
+        return {
+          pdf: await this.pdf.embedFont(bytes, { subset: false }),
+          fk,
+          listed: new Set(fk.characterSet.map((cp) => fk.glyphForCodePoint(cp).id)),
+        };
+      })();
+      this.embedded.set(key, e);
+    }
+    return e;
+  }
+
+  /** The runs of `text`, laid out. Measure and draw from these, so each run is laid out once. */
   async shape(text: string, weight: Weight): Promise<ShapedRun[]> {
     const out: ShapedRun[] = [];
     for (const r of fontRuns(text)) {
-      const font = await this.font(r.font, weight);
-      out.push({ font, text: r.text, width: font.widthOfTextAtSize(r.text, 1) });
+      const { pdf, fk, listed } = await this.embed(r.font, weight);
+      const { glyphs, positions } = fk.layout(r.text);
+      const shaped = glyphs.map((g, i) => ({
+        id: g.id,
+        pdfWidth: listed.has(g.id) ? (g.advanceWidth * 1000) / fk.unitsPerEm : 1000,
+        xAdvance: positions[i]!.xAdvance,
+        xOffset: positions[i]!.xOffset,
+        yOffset: positions[i]!.yOffset,
+      }));
+      const width = shaped.reduce((w, g) => w + g.xAdvance, 0) / fk.unitsPerEm;
+      out.push({ font: pdf, text: r.text, width, glyphs: shaped, unitsPerEm: fk.unitsPerEm });
     }
     return out;
   }
+}
+
+const hex = (id: number) => id.toString(16).padStart(4, '0');
+
+/**
+ * Draws laid-out runs from `x` on the baseline `y`. In a `TJ` array a number moves the next glyph left by that many
+ * thousandths of the font size, so each glyph lands where the layout put it rather than where its plain width would.
+ */
+export function drawRuns(
+  page: PDFPage,
+  runs: readonly ShapedRun[],
+  x: number,
+  y: number,
+  size: number,
+  color: Color,
+): void {
+  const ops: PDFOperator[] = [pushGraphicsState(), beginText(), setFillingColor(color)];
+  let at = x;
+  for (const r of runs) {
+    const key = page.node.newFontDictionary(r.font.name, r.font.ref);
+    const k = 1000 / r.unitsPerEm;
+    ops.push(setFontAndSize(key, size), setTextMatrix(1, 0, 0, 1, at, y));
+    // One TJ per stretch at the same height; a mark raised or lowered (yOffset) gets its own, with a text rise.
+    let parts: (PDFHexString | PDFNumber)[] = [];
+    let rise = 0;
+    const flush = () => {
+      if (parts.length === 0) return;
+      ops.push(setTextRise((rise * size) / r.unitsPerEm));
+      ops.push(PDFOperator.of(PDFOperatorNames.ShowTextAdjusted, [page.doc.context.obj(parts)]));
+      parts = [];
+    };
+    for (const g of r.glyphs) {
+      if (g.yOffset !== rise) {
+        flush();
+        rise = g.yOffset;
+      }
+      if (g.xOffset) parts.push(PDFNumber.of(-g.xOffset * k));
+      parts.push(PDFHexString.of(hex(g.id)));
+      // The PDF moves on by its width for the glyph (and back from the offset); the layout wants xAdvance.
+      const adjust = g.pdfWidth - (g.xAdvance - g.xOffset) * k;
+      if (adjust) parts.push(PDFNumber.of(adjust));
+    }
+    flush();
+    if (rise) ops.push(setTextRise(0));
+    at += r.width * size;
+  }
+  ops.push(endText(), popGraphicsState());
+  page.pushOperators(...ops);
 }

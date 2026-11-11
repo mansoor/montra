@@ -3,8 +3,8 @@
  * (ADR-0032), so names in Arabic, Hebrew, Hindi, Thai, Chinese or Japanese print as written; a character none of the
  * fonts has prints as "?" rather than failing the send. The business's logo and domain head the page.
  */
-import { PDFDocument, rgb, type PDFImage, type PDFPage, type RGB } from 'pdf-lib';
-import { FontSet, type ShapedRun } from './pdf-fonts.js';
+import { PDFDocument, rgb, type PDFImage, type PDFPage } from 'pdf-lib';
+import { drawRuns, FontSet, type ShapedRun } from './pdf-fonts.js';
 
 export interface InvoicePdfData {
   business: {
@@ -71,6 +71,7 @@ export async function renderInvoicePdf(d: InvoicePdfData): Promise<Uint8Array> {
   pdf.setTitle(`${d.labels.invoice} ${d.number}`);
   pdf.setCreator('Montra');
   const fonts = new FontSet(pdf);
+  fonts.prepare(textsOf(d));
   // Shaping lays text out with fontkit, which is slow next to the standard fonts: each string is shaped once.
   const shapes = new Map<string, Promise<Shaped>>();
   const shape = (s: string, weight: Weight = 'regular') => {
@@ -93,17 +94,11 @@ export async function renderInvoicePdf(d: InvoicePdfData): Promise<Uint8Array> {
     page = pdf.addPage([WIDTH, HEIGHT]);
     y = HEIGHT - MARGIN;
   };
-  const drawRuns = (runs: Shaped, x: number, size: number, color: RGB) => {
-    for (const r of runs) {
-      page.drawText(r.text, { x, y, size, font: r.font, color });
-      x += r.width * size;
-    }
-  };
   const text = async (s: string, x: number, size = 10, weight: Weight = 'regular', color = INK) =>
-    drawRuns(await shape(s, weight), x, size, color);
+    drawRuns(page, await shape(s, weight), x, y, size, color);
   const right = async (s: string, xRight: number, size = 10, weight: Weight = 'regular', color = INK) => {
     const runs = await shape(s, weight);
-    drawRuns(runs, xRight - widthOf(runs, size), size, color);
+    drawRuns(page, runs, xRight - widthOf(runs, size), y, size, color);
   };
 
   /** Words to lines no wider than `width`; a word wider than the column is cut rather than run off the page. */
@@ -206,9 +201,10 @@ export async function renderInvoicePdf(d: InvoicePdfData): Promise<Uint8Array> {
     await right(d.labels.quantity, QTY, 9, 'bold', MUTED);
     await right(d.labels.price, PRICE, 9, 'bold', MUTED);
     await right(d.labels.amount, AMOUNT, 9, 'bold', MUTED);
-    y -= 8;
+    // The rule sits under the column titles, not through them.
+    y -= 14;
     rule();
-    y -= 8;
+    y -= 6;
   };
   await tableHead();
   for (const l of d.lines) {
@@ -267,4 +263,16 @@ async function embedLogo(
   } catch {
     return null;
   }
+}
+
+/** Every string the invoice prints, so its fonts can be cut down to exactly those characters. */
+function textsOf(d: InvoicePdfData): string[] {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (typeof v === 'string') out.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object' && !(v instanceof Uint8Array)) Object.values(v).forEach(walk);
+  };
+  walk(d);
+  return out;
 }
