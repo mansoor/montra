@@ -404,3 +404,113 @@ describe('recommendations (REC-01, AIA-05)', () => {
     });
   });
 });
+
+// Last, so the extra goals and their categories don't change the figures the tests above pin.
+describe('editing and archiving goals (BUD-07, BUD-08)', () => {
+  const patch = (id: string, body: object) => c.patch(url(`/goals/${id}`), body);
+
+  it('edits the target and due date, and refuses a stale version', async () => {
+    const created = (
+      await c.post(url('/goals'), {
+        entityId: personal,
+        name: 'Holiday',
+        type: 'sinking_fund',
+        target: '60000',
+        dueDate: addDays(addMonths(thisMonth, 2), 14),
+      })
+    ).body;
+    expect(created.progress.monthlyNeeded).toBe('20000');
+
+    const target = await patch(created.id, { target: '90000', version: created.version });
+    expect(target.status).toBe(200);
+    expect(target.body).toMatchObject({ target: '90000', version: created.version + 1 });
+    expect(target.body.progress.monthlyNeeded).toBe('30000');
+
+    const due = addDays(addMonths(thisMonth, 5), 14);
+    const moved = await patch(created.id, {
+      dueDate: due,
+      name: 'Summer holiday',
+      version: target.body.version,
+    });
+    expect(moved.status).toBe(200);
+    // Fields left out of the patch keep their values.
+    expect(moved.body).toMatchObject({
+      name: 'Summer holiday',
+      target: '90000',
+      dueDate: due,
+      categoryId: created.categoryId,
+    });
+    expect(moved.body.progress.monthlyNeeded).toBe('15000');
+
+    const stale = await patch(created.id, { target: '1000', version: created.version });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('version.conflict');
+    expect((await c.get(url(`/goals/${created.id}`))).body.target).toBe('90000');
+
+    // A sinking fund keeps its target and due date.
+    const noDue = await patch(created.id, { dueDate: null, version: moved.body.version });
+    expect(noDue.status).toBe(422);
+    expect(noDue.body.code).toBe('goal.sinking_fund');
+    // Its funding category must be a spending category.
+    const income = await patch(created.id, { categoryId: cat('Salary'), version: moved.body.version });
+    expect(income.status).toBe(422);
+    expect(income.body.code).toBe('goal.category');
+  });
+
+  it('archives a goal out of the budget and restores it', async () => {
+    const goal = (await c.get(url('/goals'))).body.data.find((g: any) => g.name === 'Summer holiday');
+    const goalLines = async () =>
+      (await period()).groups
+        .flatMap((g: any) => g.lines)
+        .filter((l: any) => l.goal)
+        .map((l: any) => l.goal.goalId);
+    expect(await goalLines()).toContain(goal.id);
+
+    const archived = await patch(goal.id, { archived: true, version: goal.version });
+    expect(archived.status).toBe(200);
+    expect(archived.body).toMatchObject({ archived: true, target: '90000', categoryId: goal.categoryId });
+    expect(await goalLines()).not.toContain(goal.id);
+    const list = (await c.get(url('/goals'))).body.data;
+    expect(list[list.length - 1]).toMatchObject({ id: goal.id, archived: true }); // archived goals list last
+
+    const restored = await patch(goal.id, { archived: false, version: archived.body.version });
+    expect(restored.status).toBe(200);
+    expect(restored.body.archived).toBe(false);
+    expect(await goalLines()).toContain(goal.id);
+  });
+
+  it('keeps a debt payoff strategy, and funds a goal through the budget once its accounts are unlinked', async () => {
+    const debt = (await c.get(url('/goals'))).body.data.find((g: any) => g.type === 'debt_payoff');
+    const noStrategy = await patch(debt.id, { strategy: null, version: debt.version });
+    expect(noStrategy.status).toBe(422);
+    expect(noStrategy.body.code).toBe('goal.strategy');
+    const snowball = await patch(debt.id, {
+      strategy: 'snowball',
+      extraPayment: '20000',
+      version: debt.version,
+    });
+    expect(snowball.status).toBe(200);
+    expect(snowball.body.linkedAccountIds).toEqual([card]);
+    expect(snowball.body.payoff).toMatchObject({ strategy: 'snowball', monthlyPayment: '25000' });
+
+    const savings = (
+      await c.post(url('/goals'), {
+        entityId: personal,
+        name: 'Rainy day',
+        type: 'emergency_fund',
+        target: '300000',
+        linkedAccountIds: [checking],
+      })
+    ).body;
+    expect(savings.categoryId).toBeNull();
+    const unlinked = await patch(savings.id, { linkedAccountIds: [], version: savings.version });
+    expect(unlinked.status).toBe(200);
+    expect(unlinked.body).toMatchObject({ linkedAccountIds: [], target: '300000' });
+    expect(unlinked.body.categoryId).toBeTruthy();
+    const cats = (await c.get(url('/categories'))).body.data;
+    expect(cats.find((x: any) => x.id === unlinked.body.categoryId)).toMatchObject({
+      name: 'Rainy day',
+      group: 'Savings goals',
+    });
+  });
+});
