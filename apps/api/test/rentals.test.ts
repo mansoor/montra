@@ -1099,7 +1099,9 @@ describe('reminders and maintenance (RNT-12, RNT-13)', () => {
       completedOn: today,
       version: created.body.version,
     });
-    expect(done.body).toMatchObject({ status: 'done', completedOn: today });
+    // Fields the patch leaves out keep their values.
+    expect(done.body).toMatchObject({ status: 'done', completedOn: today, fileIds: [fileId], cost: '12000' });
+    expect((await get(fileUrl)).statusCode).toBe(200);
     const stale = await c.patch(url(`/maintenance/${created.body.id}`), {
       notes: 'x',
       version: created.body.version,

@@ -647,6 +647,40 @@ describe('bills (BIZ-06)', () => {
     const t = (await c.get(url(`/transactions/${res.body.transactionId}`))).body;
     expect(t).toMatchObject({ source: 'bill', payee: 'Print Shop', amount: usd('-18000') });
   });
+
+  it('keeps attached files when a patch leaves them out', async () => {
+    const boundary = '----montra';
+    const up = await h.app.inject({
+      method: 'POST',
+      url: url('/uploads'),
+      headers: {
+        authorization: `Bearer dev:${EMAIL}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="bill.csv"\r\nContent-Type: text/csv\r\n\r\nDate,Amount\n${today},1\r\n--${boundary}--\r\n`,
+      ),
+    });
+    expect(up.statusCode).toBe(201);
+    const fileId = JSON.parse(up.body).fileId;
+    const created = await c.post(url('/bills'), {
+      entityId: biz,
+      partyId: vendor.id,
+      billDate: today,
+      dueDate: addDays(today, 30),
+      amount: '4200',
+      expenseAccountId: cat('Supplies'),
+      fileIds: [fileId],
+    });
+    expect(created.body.fileIds).toEqual([fileId]);
+    const noted = await c.patch(url(`/bills/${created.body.id}`), {
+      notes: 'Paid by card',
+      version: created.body.version,
+    });
+    expect(noted.status).toBe(200);
+    expect(noted.body).toMatchObject({ notes: 'Paid by card', fileIds: [fileId] });
+    await c.patch(url(`/bills/${created.body.id}`), { void: true, version: noted.body.version });
+  });
 });
 
 describe('mileage (BIZ-07)', () => {
