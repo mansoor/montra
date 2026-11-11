@@ -16,13 +16,12 @@ import {
 import {
   analyze,
   classifyRows,
-  decodeText,
   detectDecimalSeparator,
   displayName,
   normalizeDescription,
   parseAmount,
-  parseDelimited,
   payeeDisplayName,
+  readTextSheets,
   readXlsx,
   type ColumnMapping,
   type Sheet,
@@ -77,7 +76,8 @@ const UNDO_DAYS = 30;
 /** Mapping confidence at or above which the preview opens without the mapping step. */
 const MAPPING_OK = 0.75;
 const SAMPLE_ROWS = 25;
-const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
+/** Locales that write the day first: an ambiguous date column (03/04) is read day-first for them. */
+export const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
 
 @Injectable()
 export class ImportJobs {
@@ -369,7 +369,11 @@ export class ImportJobs {
         throw new PermanentJobError('doc.corrupt', `Unreadable spreadsheet: ${(err as Error).message}`);
       }
     }
-    return [parseDelimited(decodeText(bytes).text)];
+    try {
+      return readTextSheets(fileType === 'qif' || fileType === 'ofx' ? fileType : 'csv', bytes);
+    } catch (err) {
+      throw new PermanentJobError('doc.corrupt', `Unreadable statement: ${(err as Error).message}`);
+    }
   }
 
   private async candidates(
@@ -559,7 +563,7 @@ export class ImportJobs {
     trx: Trx,
     ctx: Ctx,
     batchId: string,
-    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf',
+    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx',
     sheets: Sheet[],
     current: ReturnType<typeof analyze>,
     opts: Parameters<typeof analyze>[1],
@@ -574,7 +578,8 @@ export class ImportJobs {
       .executeTakeFirst();
     const res = await this.ai.gateway.mapColumns(
       {
-        fileType,
+        // QIF and OFX are read into a fixed grid, which the mapper sees as a CSV.
+        fileType: fileType === 'qif' || fileType === 'ofx' ? 'csv' : fileType,
         rows: current.sheet.rows.slice(0, 30).map((r) => r.map((cell) => String(cell ?? ''))),
         locale: user?.locale ?? 'en-US',
         accountType: accountType === 'liability' ? 'liability' : 'asset',

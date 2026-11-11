@@ -3,6 +3,7 @@
  * kysely-codegen output checked in CI once the schema grows.
  */
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from 'kysely';
+import type { PayrollDatabase } from './payroll-types.js';
 
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 type CalendarDateCol = ColumnType<string, string, string>;
@@ -441,7 +442,7 @@ export interface MfaResetRequestTable {
 export interface FileTable {
   workspace_id: string;
   id: string;
-  kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other';
+  kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other' | 'logo';
   storage_key: string;
   file_name: string;
   mime: string;
@@ -451,6 +452,8 @@ export interface FileTable {
   /** RCP-10: receipt images are kept until this date (7 years by default). */
   retain_until: CalendarDateCol | null;
   page_count: number | null;
+  /** ADR-0034: the bytes in storage are sealed with the workspace data key (copies of identity documents). */
+  sealed: Generated<boolean>;
   created_at: Generated<Date>;
   deleted_at: Date | null;
 }
@@ -514,7 +517,7 @@ export interface ImportBatchTable {
   ledger_account_id: string;
   file_id: string;
   file_name: string;
-  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf';
+  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx';
   profile_id: string | null;
   fingerprint: string | null;
   mapping: Json<Record<string, unknown>> | null;
@@ -1331,16 +1334,75 @@ export interface ExportJobTable {
   created_at: Generated<Date>;
   finished_at: Date | null;
   expires_at: Date | null;
+  /** ADR-0031 §7: a copy sent to the workspace's own storage. */
+  destination_id: Generated<string | null>;
+  destination_status: Generated<StorageCopyStatus | null>;
+  destination_path: Generated<string | null>;
+  destination_error: Generated<string | null>;
+  destination_attempts: Generated<number>;
+  destination_next_at: Generated<Date | null>;
+  scheduled: Generated<boolean>;
 }
+
+export type StorageCopyStatus = 'pending' | 'done' | 'failed' | 'pruned';
 
 export interface BackupScheduleTable {
   workspace_id: string;
   user_id: string;
   cadence: 'weekly' | 'monthly';
-  destination: Generated<'email_link'>;
+  destination: Generated<'email_link' | 'storage'>;
   next_run_on: CalendarDateCol;
   last_run_at: Date | null;
   version: Int8Default;
+  created_at: Generated<Date>;
+  /** A scheduled password's key, wrapped by the KMS port (ADR-0031 §7). Never the password. */
+  wrapped_key: Generated<Buffer | null>;
+  kdf: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
+}
+
+// Your own storage (migration 0029, ADR-0031).
+
+export type StorageDestinationKind = 's3' | 'webdav';
+export type StorageFileKind = 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'other';
+
+export interface StorageDestinationTable {
+  workspace_id: string;
+  id: Generated<string>;
+  kind: StorageDestinationKind;
+  label: string;
+  /** What isn't secret: { endpoint, region, bucket, pathStyle } or { url, username }. */
+  config: Json<Record<string, unknown>>;
+  /** Sealed by FieldCrypto as 'storage_destination.secret'. Never sent to a client. */
+  secret_enc: Buffer;
+  secret_hint: string | null;
+  folder: string;
+  mirror_files: Generated<boolean>;
+  file_kinds: Generated<StorageFileKind[]>;
+  delete_with_montra: Generated<boolean>;
+  keep_backups: Generated<number>;
+  can_delete: Generated<boolean>;
+  status: Generated<'active' | 'paused' | 'failing'>;
+  consecutive_failures: Generated<number>;
+  last_success_at: Date | null;
+  last_error: string | null;
+  last_error_at: Date | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+  version: Int8Default;
+}
+
+export interface StorageMirrorItemTable {
+  workspace_id: string;
+  destination_id: string;
+  file_id: string;
+  status: Generated<'pending' | 'done' | 'failed' | 'skipped' | 'delete'>;
+  attempts: Generated<number>;
+  next_attempt_at: Generated<Date>;
+  last_error: string | null;
+  remote_path: string | null;
+  bytes: Int8 | null;
+  mirrored_at: Date | null;
   created_at: Generated<Date>;
 }
 
@@ -1360,7 +1422,7 @@ export interface RestoreJobTable {
   expires_at: Timestamp;
 }
 
-export interface Database {
+export interface Database extends PayrollDatabase {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
   'app.workspace_member': WorkspaceMemberTable;
@@ -1432,6 +1494,7 @@ export interface Database {
   'app.employer_deposit': EmployerDepositTable;
   'app.payslip_deposit': PayslipDepositTable;
   'app.business_profile': BusinessProfileTable;
+  'app.account_move': AccountMoveTable;
   'app.business_party': BusinessPartyTable;
   'app.invoice': InvoiceTable;
   'app.invoice_line': InvoiceLineTable;
@@ -1461,6 +1524,8 @@ export interface Database {
   'app.security_event': SecurityEventTable;
   'app.export_job': ExportJobTable;
   'app.backup_schedule': BackupScheduleTable;
+  'app.storage_destination': StorageDestinationTable;
+  'app.storage_mirror_item': StorageMirrorItemTable;
   'app.restore_job': RestoreJobTable;
   'app.subscription': SubscriptionTable;
   'app.feature_flag': FeatureFlagTable;
@@ -1477,6 +1542,19 @@ export interface Database {
 
 // Phase 8: small business (migration 0018, ADR-0017). Amounts are positive minor units.
 
+/** ADR-0033: an account moved to another entity's books, its history re-posted there. */
+export interface AccountMoveTable {
+  workspace_id: string;
+  id: Generated<string>;
+  ledger_account_id: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  transactions: number;
+  entries: number;
+  moved_by: string | null;
+  moved_at: Generated<Date>;
+}
+
 export interface BusinessProfileTable {
   workspace_id: string;
   entity_id: string;
@@ -1490,6 +1568,9 @@ export interface BusinessProfileTable {
   tax_rate_bps: number | null;
   tax_savings_account_id: string | null;
   receipt_threshold_minor: Int8Default;
+  /** ADR-0032: a PNG or JPEG printed on invoices, and the website or email domain as a bare host name. */
+  logo_file_id: string | null;
+  domain: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;

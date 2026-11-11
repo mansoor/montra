@@ -7,6 +7,7 @@ import { TransactionEditor } from '@/components/transaction-editor';
 import { JournalView } from '@/components/journal-view';
 import { TransactionFx } from '@/components/receipts/transaction-fx';
 import { ReceiptUpload } from '@/components/receipts/receipt-upload';
+import { ReceiptButton, receiptButtonState } from '@/components/receipts/receipt-button';
 
 export const metadata: Metadata = { title: 'Transaction' };
 export const dynamic = 'force-dynamic';
@@ -46,13 +47,21 @@ export default async function TransactionPage({
     transaction.splits !== null &&
     !transaction.managedBy &&
     portfolios.some((e) => e.id === splitEntity);
-  const { t } = await getI18n();
+  const { t, money } = await getI18n();
   const entityName = new Map(workspace.entities.map((e) => [e.id, e.name]));
   // CUR-05: rates apply when the paying account's currency differs from its entity's.
   const account = accounts.find((a) => a.id === transaction.accountId);
   const functional = workspace.entities.find((e) => e.id === account?.entityId)?.functionalCurrency;
   const foreignAccount = Boolean(account && functional && account.currency !== functional);
   const standard = transaction.entries.some((e) => e.kind === 'standard') && transaction.amount !== null;
+  // The receipt by the amount: opens it, or goes to "Add a receipt" below.
+  const receiptState = receiptButtonState(transaction.receipt, standard && !transaction.managedBy);
+  const RECEIPT_LABEL = {
+    add: 'receipts.add_receipt',
+    view: 'receipts.view_receipt',
+    reading: 'receipts.reading_receipt',
+    check: 'receipts.receipt_needs_look',
+  } as const;
   // AI-10: a hint at the tax line its categories usually go on, for bookkeeping; not tax advice.
   const hints = [
     ...new Map(
@@ -69,7 +78,27 @@ export default async function TransactionPage({
       <Link href={`/w/${workspaceId}/transactions`} className="text-sm text-brand-600 underline">
         ← {t('nav.transactions')}
       </Link>
-      <h1 className="page-title">{transaction.payee || transaction.description || t('editor.untitled')}</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="page-title min-w-0 flex-1">
+          {transaction.payee || transaction.description || t('editor.untitled')}
+        </h1>
+        {transaction.amount && (
+          <span className="num text-xl font-semibold" data-testid="txn-amount">
+            {money(transaction.amount.amount, transaction.amount.currency)}
+          </span>
+        )}
+        {receiptState && (
+          <ReceiptButton
+            state={receiptState}
+            label={t(RECEIPT_LABEL[receiptState])}
+            href={
+              transaction.receipt
+                ? `/w/${workspaceId}/receipts/${transaction.receipt.id}`
+                : `/w/${workspaceId}/transactions/${transaction.id}#receipt`
+            }
+          />
+        )}
+      </div>
       <TransactionEditor
         workspace={workspace}
         transaction={transaction}
@@ -96,7 +125,7 @@ export default async function TransactionPage({
         </p>
       ))}
       <TransactionFx workspaceId={workspaceId} transaction={transaction} foreignAccount={foreignAccount} />
-      {standard && (
+      {receiptState === 'add' && (
         <section id="receipt" aria-labelledby="receipt-heading" className="card space-y-2">
           <h2 id="receipt-heading" className="font-medium">
             {t('receipts.add_receipt')}

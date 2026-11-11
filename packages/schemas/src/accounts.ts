@@ -250,3 +250,52 @@ export const LedgerAccountDto = z.object({
   archived: z.boolean(),
 });
 export type LedgerAccountDto = z.infer<typeof LedgerAccountDto>;
+
+// ----- Moving an account to other books (ACC-03; ADR-0033) ----------------------------------------------------
+
+/** Why a move can't happen yet. Each comes with how many entries it concerns and a sentence saying what to do. */
+export const AccountMoveBlocker = z.enum([
+  /** An entry is dated in a closed period of either books: the closed figures would change. */
+  'closed_period',
+  /** The two books keep different home currencies. */
+  'currency_mismatch',
+  /** A journal written by hand touches the account together with something only the old books have. */
+  'manual_journal',
+  /** Rental books: their mortgages, deposits and rent are tied to properties. So is a loan whose schedule has one. */
+  'rental_books',
+  'property_loan',
+  /** The account is archived. */
+  'archived',
+]);
+export type AccountMoveBlocker = z.infer<typeof AccountMoveBlocker>;
+
+export const MoveAccountRequest = z.object({
+  /** The books it moves to: the Personal entity or a business. */
+  entityId: Id,
+});
+export type MoveAccountRequest = z.output<typeof MoveAccountRequest>;
+
+/**
+ * GET /accounts/:id/move?entityId — what moving would do, before anything changes; POST does it and returns the same
+ * with `moved: true`. Amounts, dates and reconciled lines stay exactly as they are; only the books holding them change.
+ */
+export const AccountMovePreviewDto = z.object({
+  accountId: Id,
+  fromEntityId: Id,
+  toEntityId: Id,
+  /** Transactions re-posted, and entries (opening balance, adjustments) without a transaction. */
+  transactions: z.number().int(),
+  entries: z.number().int(),
+  /** Lines already reconciled; they stay reconciled. */
+  reconciledLines: z.number().int(),
+  /**
+   * Transactions whose categories stay in the old books. After the move they show as paid by (or for) the other books,
+   * an amount each owes the other, until someone recategorizes them.
+   */
+  crossBooks: z.number().int(),
+  /** Defaults that point at this account and are cleared, such as a business's deposit account. */
+  clearedDefaults: z.array(z.enum(['default_deposit_account', 'tax_savings_account'])),
+  blockers: z.array(z.object({ code: AccountMoveBlocker, count: z.number().int(), message: z.string() })),
+  moved: z.boolean(),
+});
+export type AccountMovePreviewDto = z.infer<typeof AccountMovePreviewDto>;

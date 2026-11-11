@@ -15,6 +15,7 @@ import { RestoreService } from './data/restore.service.js';
 import { NotificationJobs } from './notifications/notification-jobs.service.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
 import { PayslipJobs } from './payslips/payslip-jobs.js';
+import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
 const config = loadConfig();
@@ -45,6 +46,10 @@ await planning.schedule();
 await notifications.schedule();
 // Hourly: expired archives, files past retention, accounts past their 30 days, and scheduled backups (BAK-05, BAK-09).
 await retention.schedule();
+// Copies to the owner's own storage (ADR-0031). Each run schedules the next; this catches up after a restart.
+const mirror = app.get(StorageMirrorJobs);
+mirror.register();
+await mirror.schedule();
 // Nightly reconciliation of every workspace's books, and the hourly check for lapsed plans.
 const ops = app.get(OpsJobs);
 ops.register();

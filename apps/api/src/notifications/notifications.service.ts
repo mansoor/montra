@@ -40,10 +40,11 @@ export const DEFAULT_CHANNELS: Record<NotificationType, ChannelPrefs> = {
   suggestion: on(false, false),
   weekly_digest: on(true, false),
   backup_ready: on(true, false),
+  storage_failing: on(true, false),
 };
 
 /** Asked for by the person it goes to, so unsubscribing from notifications and the daily cap don't apply. */
-const REQUESTED: ReadonlySet<NotificationType> = new Set(['backup_ready']);
+const REQUESTED: ReadonlySet<NotificationType> = new Set(['backup_ready', 'storage_failing']);
 
 export interface NewNotification {
   type: NotificationType;

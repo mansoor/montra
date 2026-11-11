@@ -4,6 +4,23 @@
  */
 import type { z } from 'zod';
 import type {
+  AddI9DocumentRequest,
+  CreatePersonRequest,
+  CreateW4Request,
+  CreateW9Request,
+  I9Dto,
+  PayrollFileDto,
+  PayrollPersonDto,
+  PersonKind,
+  RevealRequest,
+  RevealResponse,
+  SaveI9Section1Request,
+  SaveI9Section2Request,
+  UpdatePersonRequest,
+  W4Dto,
+  W9Dto,
+} from '@montra/schemas';
+import type {
   AcceptRecommendationRequest,
   AnalyzeMigrationRequest,
   StartMigrationRequest,
@@ -222,6 +239,15 @@ import type {
   StorageUsageDto,
   TrashItemDto,
   UpdateNotificationPrefsRequest,
+  AccountMovePreviewDto,
+  BusinessDashboardDto,
+  BusinessLogoDto,
+  ConnectStorageRequest,
+  StorageConnection,
+  StorageDestinationDto,
+  StorageItemDto,
+  StorageTestResultDto,
+  UpdateStorageRequest,
   BusinessProfileDto,
   InvoiceDto,
   InvoiceLineDto,
@@ -264,6 +290,16 @@ import type {
   UpdatePayslipRequest,
 } from '@montra/schemas';
 
+// ----- Payroll (PRL-01..05, ADR-0034) -----
+export type CreatePersonInput = z.input<typeof CreatePersonRequest>;
+export type UpdatePersonInput = z.input<typeof UpdatePersonRequest>;
+export type RevealInput = z.input<typeof RevealRequest>;
+export type CreateW4Input = z.input<typeof CreateW4Request>;
+export type CreateW9Input = z.input<typeof CreateW9Request>;
+export type SaveI9Section1Input = z.input<typeof SaveI9Section1Request>;
+export type SaveI9Section2Input = z.input<typeof SaveI9Section2Request>;
+export type AddI9DocumentInput = z.input<typeof AddI9DocumentRequest>;
+export type { I9Dto, PayrollFileDto, PayrollPersonDto, PersonKind, RevealResponse, W4Dto, W9Dto };
 export type CreateWorkspaceInput = z.input<typeof CreateWorkspaceRequest>;
 export type AnalyzeMigrationInput = z.input<typeof AnalyzeMigrationRequest>;
 export type StartMigrationInput = z.input<typeof StartMigrationRequest>;
@@ -325,6 +361,9 @@ export type UpdateNotificationPrefsInput = z.input<typeof UpdateNotificationPref
 export type CreateBackupInput = z.input<typeof CreateBackupRequest>;
 export type CreateTaxPackageInput = z.input<typeof CreateTaxPackageRequest>;
 export type SaveBackupScheduleInput = z.input<typeof SaveBackupScheduleRequest>;
+export type ConnectStorageInput = z.input<typeof ConnectStorageRequest>;
+export type UpdateStorageInput = z.input<typeof UpdateStorageRequest>;
+export type StorageConnectionInput = z.input<typeof StorageConnection>;
 export type ConfirmRestoreInput = z.input<typeof ConfirmRestoreRequest>;
 export type RequestDeletionInput = z.input<typeof RequestDeletionRequest>;
 export type CreatePropertyInput = z.input<typeof CreatePropertyRequest>;
@@ -878,6 +917,22 @@ export class ApiClient {
   updateAccount(workspaceId: string, accountId: string, input: UpdateAccountInput) {
     return this.request<AccountDto>('PATCH', this.ws(workspaceId, `/accounts/${enc(accountId)}`), input);
   }
+  /** ADR-0033: what moving the account to other books would do; nothing changes. */
+  previewAccountMove(workspaceId: string, accountId: string, entityId: string) {
+    return this.request<AccountMovePreviewDto>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/move${query({ entityId })}`),
+    );
+  }
+  moveAccount(workspaceId: string, accountId: string, entityId: string) {
+    return this.request<AccountMovePreviewDto>(
+      'POST',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/move`),
+      {
+        entityId,
+      },
+    );
+  }
   adjustBalance(workspaceId: string, accountId: string, input: BalanceAdjustmentInput) {
     return this.request<unknown>(
       'POST',
@@ -1325,6 +1380,33 @@ export class ApiClient {
       'PATCH',
       this.ws(workspaceId, `/businesses/${enc(entityId)}`),
       input,
+    );
+  }
+  /** ADR-0032: a PNG or JPEG, checked by its content on the server. */
+  setBusinessLogo(workspaceId: string, entityId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<BusinessLogoDto>(
+      'POST',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/logo`),
+      form,
+    );
+  }
+  removeBusinessLogo(workspaceId: string, entityId: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/businesses/${enc(entityId)}/logo`));
+  }
+  /** Where the logo is served; through the web's API proxy it needs no token. The file id refreshes a cached copy. */
+  businessLogoPath(workspaceId: string, entityId: string, fileId: string) {
+    return this.ws(workspaceId, `/businesses/${enc(entityId)}/logo?v=${enc(fileId)}`);
+  }
+  getBusinessDashboard(
+    workspaceId: string,
+    entityId: string,
+    opts: { months?: number; month?: string } = {},
+  ) {
+    return this.request<BusinessDashboardDto>(
+      'GET',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/dashboard${query(opts)}`),
     );
   }
   uploadBusinessFile(workspaceId: string, file: Blob, fileName: string) {
@@ -1781,6 +1863,40 @@ export class ApiClient {
   getStorageUsage(workspaceId: string) {
     return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
   }
+  /** The workspace's own storage (ADR-0031). Owners only. */
+  getStorageDestination(workspaceId: string) {
+    return this.request<{ destination: StorageDestinationDto | null }>(
+      'GET',
+      this.ws(workspaceId, '/storage-destination'),
+    ).then((r) => r.destination);
+  }
+  testStorageDestination(workspaceId: string, connection: StorageConnectionInput, folder?: string) {
+    return this.request<StorageTestResultDto>('POST', this.ws(workspaceId, '/storage-destination/test'), {
+      connection,
+      ...(folder ? { folder } : {}),
+    });
+  }
+  connectStorageDestination(workspaceId: string, input: ConnectStorageInput) {
+    return this.request<StorageDestinationDto>('POST', this.ws(workspaceId, '/storage-destination'), input);
+  }
+  updateStorageDestination(workspaceId: string, input: UpdateStorageInput) {
+    return this.request<StorageDestinationDto>('PATCH', this.ws(workspaceId, '/storage-destination'), input);
+  }
+  disconnectStorageDestination(workspaceId: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, '/storage-destination'));
+  }
+  backfillStorageDestination(workspaceId: string) {
+    return this.request<{ queued: number }>('POST', this.ws(workspaceId, '/storage-destination/backfill'));
+  }
+  retryStorageDestination(workspaceId: string) {
+    return this.request<{ queued: number }>('POST', this.ws(workspaceId, '/storage-destination/retry'));
+  }
+  listStorageItems(workspaceId: string, status: StorageItemDto['status'] = 'failed') {
+    return this.request<{ data: StorageItemDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/storage-destination/items?status=${status}`),
+    ).then((r) => r.data);
+  }
   listRestores() {
     return this.request<{ data: RestoreJobDto[] }>('GET', '/v1/me/restores').then((r) => r.data);
   }
@@ -2122,6 +2238,115 @@ export class ApiClient {
       this.ws(workspaceId, `/sync/changes${query({ since, limit })}`),
     );
   }
+  // ----- Payroll (PRL-01..05, ADR-0034) ----------------------------------------------------------------------
+  listPayrollPeople(workspaceId: string, opts: { entityId: string; kind?: PersonKind }) {
+    return this.request<{ data: PayrollPersonDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/people${query(opts)}`),
+    ).then((r) => r.data);
+  }
+  getPayrollPerson(workspaceId: string, id: string) {
+    return this.request<PayrollPersonDto>('GET', this.ws(workspaceId, `/payroll/people/${enc(id)}`));
+  }
+  createPayrollPerson(workspaceId: string, input: CreatePersonInput) {
+    return this.request<PayrollPersonDto>('POST', this.ws(workspaceId, '/payroll/people'), input);
+  }
+  updatePayrollPerson(workspaceId: string, id: string, input: UpdatePersonInput) {
+    return this.request<PayrollPersonDto>('PATCH', this.ws(workspaceId, `/payroll/people/${enc(id)}`), input);
+  }
+  deletePayrollPerson(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/payroll/people/${enc(id)}`));
+  }
+  /** One full value; needs a recent sign-in, and is logged. */
+  revealPayrollField(workspaceId: string, personId: string, input: RevealInput) {
+    return this.request<RevealResponse>(
+      'POST',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/reveal`),
+      input,
+    );
+  }
+  listW4(workspaceId: string, personId: string) {
+    return this.request<{ data: W4Dto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/w4`),
+    ).then((r) => r.data);
+  }
+  createW4(workspaceId: string, personId: string, input: CreateW4Input) {
+    return this.request<W4Dto>('POST', this.ws(workspaceId, `/payroll/people/${enc(personId)}/w4`), input);
+  }
+  w4PdfPath(workspaceId: string, personId: string, id: string) {
+    return this.baseUrl + this.ws(workspaceId, `/payroll/people/${enc(personId)}/w4/${enc(id)}/pdf`);
+  }
+  listW9(workspaceId: string, personId: string) {
+    return this.request<{ data: W9Dto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/w9`),
+    ).then((r) => r.data);
+  }
+  createW9(workspaceId: string, personId: string, input: CreateW9Input) {
+    return this.request<W9Dto>('POST', this.ws(workspaceId, `/payroll/people/${enc(personId)}/w9`), input);
+  }
+  w9PdfPath(workspaceId: string, personId: string, id: string) {
+    return this.baseUrl + this.ws(workspaceId, `/payroll/people/${enc(personId)}/w9/${enc(id)}/pdf`);
+  }
+  getI9(workspaceId: string, personId: string) {
+    return this.request<{ data: I9Dto | null }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/i9`),
+    ).then((r) => r.data);
+  }
+  saveI9Section1(workspaceId: string, personId: string, input: SaveI9Section1Input) {
+    return this.request<I9Dto>(
+      'PUT',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/i9/section1`),
+      input,
+    );
+  }
+  saveI9Section2(workspaceId: string, personId: string, input: SaveI9Section2Input) {
+    return this.request<I9Dto>(
+      'PUT',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/i9/section2`),
+      input,
+    );
+  }
+  addI9Document(workspaceId: string, personId: string, input: AddI9DocumentInput) {
+    return this.request<I9Dto>(
+      'POST',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/i9/documents`),
+      input,
+    );
+  }
+  removeI9Document(workspaceId: string, personId: string, documentId: string) {
+    return this.request<I9Dto>(
+      'DELETE',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/i9/documents/${enc(documentId)}`),
+    );
+  }
+  destroyI9(workspaceId: string, personId: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/payroll/people/${enc(personId)}/i9`));
+  }
+  i9PdfPath(workspaceId: string, personId: string) {
+    return this.baseUrl + this.ws(workspaceId, `/payroll/people/${enc(personId)}/i9/pdf`);
+  }
+  i9DocumentFilePath(workspaceId: string, personId: string, documentId: string, fileId: string) {
+    return (
+      this.baseUrl +
+      this.ws(
+        workspaceId,
+        `/payroll/people/${enc(personId)}/i9/documents/${enc(documentId)}/files/${enc(fileId)}`,
+      )
+    );
+  }
+  /** A copy of an identity document; sealed before it's stored. */
+  uploadPayrollFile(workspaceId: string, entityId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<PayrollFileDto>(
+      'POST',
+      this.ws(workspaceId, `/payroll/files${query({ entityId })}`),
+      form,
+    );
+  }
 }
 
 const enc = encodeURIComponent;
@@ -2158,6 +2383,9 @@ function toApiError(status: number, body: unknown): ApiError {
 export type {
   AskAnswerDto,
   BackupScheduleDto,
+  StorageDestinationDto,
+  StorageItemDto,
+  StorageTestResultDto,
   DeletionStatusDto,
   ExportJobDto,
   NotificationDto,
@@ -2191,6 +2419,9 @@ export type {
   ScheduleEExportFormat,
   TenantDto,
   BillDto,
+  AccountMovePreviewDto,
+  BusinessDashboardDto,
+  BusinessLogoDto,
   BusinessProfileDto,
   InvoiceDto,
   InvoiceLineDto,

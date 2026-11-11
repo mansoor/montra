@@ -4,6 +4,7 @@
  */
 import type {
   BudgetDto,
+  TransactionDto,
   BudgetPeriodDto,
   CalendarDto,
   DashboardChartsDto,
@@ -46,8 +47,12 @@ import type {
   RequestDeletionRequest,
   SecurityEventDto,
   StorageUsageDto,
+  StorageDestinationDto,
   UpdateNotificationPrefsRequest,
+  BusinessDashboardDto,
+  BusinessLogoDto,
   BusinessProfileDto,
+  UpdateBusinessProfileRequest,
   LeaseDto,
   RentPaymentRequest,
   RentRollDto,
@@ -319,6 +324,8 @@ export function createApi(opts: ApiOptions) {
     listReceipts: (w: string, status?: ReceiptDto['status']) =>
       request<ReceiptPageDto>('GET', `${ws(w)}/receipts?limit=100${status ? `&status=${status}` : ''}`),
     getReceipt: (w: string, id: string) => request<ReceiptDto>('GET', `${ws(w)}/receipts/${id}`),
+    /** One transaction, fresh from the server (its receipt can change without the transaction changing). */
+    getTransaction: (w: string, id: string) => request<TransactionDto>('GET', `${ws(w)}/transactions/${id}`),
     /** Path of a page image; load it with the bearer header. */
     receiptFilePath: (w: string, id: string, fileId: string) => `${ws(w)}/receipts/${id}/files/${fileId}`,
     updateReceipt: (w: string, id: string, input: ReceiptReviewInput) =>
@@ -342,6 +349,23 @@ export function createApi(opts: ApiOptions) {
       request<MileageSummaryDto>('GET', `${ws(w)}/mileage-trips?entityId=${entityId}`),
     createMileageTrip: (w: string, input: CreateTripRequest) =>
       request<MileageTripDto>('POST', `${ws(w)}/mileage-trips`, input),
+    /** ADR-0032: the landing page over 3–24 months, ending with `month` (a first of the month) or this month. */
+    businessDashboard: (w: string, entityId: string, months: number, month?: string | null) =>
+      request<BusinessDashboardDto>(
+        'GET',
+        `${ws(w)}/businesses/${entityId}/dashboard?months=${months}${month ? `&month=${month}` : ''}`,
+      ),
+    updateBusiness: (w: string, entityId: string, input: Partial<UpdateBusinessProfileRequest>) =>
+      request<BusinessProfileDto>('PATCH', `${ws(w)}/businesses/${entityId}`, input),
+    /** A PNG or JPEG from the device; the server checks what it really is. */
+    setBusinessLogo: (w: string, entityId: string, file: UploadFile) =>
+      sendFile<BusinessLogoDto>(`${ws(w)}/businesses/${entityId}/logo`, file),
+    removeBusinessLogo: (w: string, entityId: string) =>
+      request<void>('DELETE', `${ws(w)}/businesses/${entityId}/logo`),
+    /** Load these with `authHeaders()`: an image source and a download both take headers. */
+    businessLogoUrl: (w: string, entityId: string, fileId: string) =>
+      `${opts.baseUrl}${ws(w)}/businesses/${entityId}/logo?v=${fileId}`,
+    invoicePdfUrl: (w: string, id: string) => `${opts.baseUrl}${ws(w)}/invoices/${id}/pdf`,
 
     // ----- Rentals (08 §3): reads, and logging rent. The rest is managed on the web. ---------------
     rentalPortfolios: async (w: string) =>
@@ -390,6 +414,10 @@ export function createApi(opts: ApiOptions) {
     backupDownloadUrl: (w: string, id: string) => `${opts.baseUrl}${ws(w)}/backups/${id}/download`,
     authHeaders,
     storageUsage: (w: string) => request<StorageUsageDto>('GET', `${ws(w)}/storage`),
+    /** The workspace's own storage (ADR-0031). Owners only: anyone else gets a 403. */
+    storageDestination: async (w: string) =>
+      (await request<{ destination: StorageDestinationDto | null }>('GET', `${ws(w)}/storage-destination`))
+        .destination,
     securityActivity: async () =>
       (await request<{ data: SecurityEventDto[] }>('GET', '/v1/me/security-activity')).data,
     deletionStatus: () => request<DeletionStatusDto>('GET', '/v1/me/deletion'),

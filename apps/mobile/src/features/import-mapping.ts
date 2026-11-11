@@ -138,13 +138,26 @@ export const IMPORT_MIME_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/pdf',
+  // QIF and OFX/QFX (ADR-0030). Phones rarely know these types and report the files as octet-stream, so that is
+  // allowed too; fileTypeOf then accepts only the extensions below.
+  'application/qif',
+  'application/x-qif',
+  'application/x-ofx',
+  'application/vnd.intu.qfx',
+  'application/octet-stream',
 ] as const;
 
-export function fileTypeOf(name: string, mime?: string | null): 'csv' | 'xlsx' | 'xls' | 'pdf' | null {
+export function fileTypeOf(
+  name: string,
+  mime?: string | null,
+): 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx' | null {
   const ext = name.toLowerCase().split('.').pop() ?? '';
   if (ext === 'csv' || ext === 'tsv' || ext === 'txt') return 'csv';
-  if (ext === 'xlsx' || ext === 'xls' || ext === 'pdf') return ext;
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'pdf' || ext === 'qif') return ext;
+  if (ext === 'ofx' || ext === 'qfx') return 'ofx';
   if (mime?.includes('pdf')) return 'pdf';
+  if (mime?.includes('qif')) return 'qif';
+  if (mime?.includes('ofx') || mime?.includes('qfx')) return 'ofx';
   if (mime?.includes('spreadsheetml')) return 'xlsx';
   if (mime?.includes('ms-excel')) return 'xls';
   if (mime?.includes('csv')) return 'csv';

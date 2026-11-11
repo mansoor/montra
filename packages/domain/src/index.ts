@@ -22,3 +22,4 @@ export * from './budget/index.js';
 export * from './account-types.js';
 export * from './investments.js';
 export * from './cards.js';
+export * from './payroll.js';

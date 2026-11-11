@@ -1,10 +1,25 @@
 import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
+import type { AccountKind } from '@montra/domain';
+
+/** What a QIF or OFX file says about one of its accounts (ADR-0030). */
+export interface SheetAccount {
+  /** The value in the sheet's Account column. */
+  name: string;
+  /** From the file's account type (QIF `!Type:CCard`, OFX `<CCACCTFROM>`), when it says. */
+  kind: AccountKind | null;
+  /** The statement's closing balance as written (OFX `<LEDGERBAL><BALAMT>`), or null. */
+  closing: string | null;
+}
 
 /** A sheet as rows of trimmed strings, exactly as displayed in the file (no type coercion). */
 export interface Sheet {
   name: string;
   rows: string[][];
+  /** QIF and OFX files: their accounts, with what the file says about each. */
+  accounts?: SheetAccount[];
+  /** Warning codes from reading the file, e.g. `investment_transactions_skipped:12` (a count after the colon). */
+  warnings?: string[];
 }
 
 const DELIMITERS = [',', ';', '\t', '|'];

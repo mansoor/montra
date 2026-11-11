@@ -18,7 +18,7 @@
   ],
   "ACC-03": [
     "done",
-    "default entity per account; splits across entities"
+    "default entity per account, chosen when adding one; splits across entities; an account moves to Personal or a business with its whole history re-booked, reconciled lines kept and closed periods refused (ADR-0033). The phone has no add-account screen"
   ],
   "ACC-05": [
     "done",
@@ -226,7 +226,7 @@
   ],
   "IMP-01": [
     "done",
-    "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF; mobile in P4"
+    "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF, QIF and OFX/QFX (ADR-0030); mobile in P4"
   ],
   "IMP-03": [
     "done",
@@ -246,7 +246,7 @@
   ],
   "IMP-07": [
     "done",
-    "ordinal exact duplicates, covered-range probable duplicates, one-to-one matching"
+    "ordinal exact duplicates (keyed on the bank's FITID when an OFX file gives one), covered-range probable duplicates, one-to-one matching"
   ],
   "IMP-08": [
     "done",
@@ -262,7 +262,7 @@
   ],
   "IMP-13": [
     "done",
-    "YNAB, Mint, Monarch, Quicken, Stessa, Actual, Lunch Money, Tiller, Goodbudget and Empower templates, other exports by column names; switching from another app (ADR-0029): one export into several accounts with categories, opening balances and paired transfers, for a fresh start"
+    "YNAB, Mint, Monarch, Quicken, Stessa, Actual, Lunch Money, Tiller, Goodbudget and Empower templates, other exports by column names; Quicken for Windows QIF and bank OFX/QFX files (ADR-0030); switching from another app (ADR-0029): one export into several accounts with categories, opening balances and paired transfers, for a fresh start"
   ],
   "DE-08": [
     "done",
@@ -486,7 +486,7 @@
   ],
   "RCP-06": [
     "done",
-    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line)"
+    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line); a transaction's screen (web and phone) opens its receipt, or adds one, from a button by the amount"
   ],
   "RCP-07": [
     "done",
@@ -698,7 +698,7 @@
   ],
   "BIZ-01": [
     "done",
-    "several businesses, each with type, fiscal year, currency, default accounts and invoice details"
+    "several businesses, each with type, fiscal year, currency, default accounts and invoice details; a logo (PNG or JPEG, checked by content) and a website or email domain, on web and phone (ADR-0032)"
   ],
   "BIZ-02": [
     "done",
@@ -714,7 +714,7 @@
   ],
   "BIZ-05": [
     "done",
-    "lines, tax, due date, PDF, email and derived status; exact or quoted payments auto-link. A deposit pays one invoice. PDF prints Latin text only; email not run against a real server"
+    "lines, tax, due date, PDF, email and derived status; exact or quoted payments auto-link. A deposit pays one invoice. The PDF carries the logo and domain and prints Latin, Greek, Cyrillic, Devanagari, Arabic, Hebrew, Thai, Chinese and Japanese text (embedded Noto fonts; Korean and emoji print as ?); on the phone it opens in the share sheet (ADR-0032). Email not run against a real server"
   ],
   "BIZ-06": [
     "done",
@@ -730,7 +730,7 @@
   ],
   "BIZ-10": [
     "done",
-    "P&L for any dates, expenses by category and vendor, income by customer, Schedule C summary"
+    "P&L for any dates, expenses by category and vendor, income by customer, Schedule C summary; a landing page per business on web and phone: money in and out, revenue, expenses, profit and cash on hand over 3–24 months with a month picker, as charts and a table, from the P&L's own monthly query (ADR-0032)"
   ],
   "BIZ-11": [
     "done",
@@ -866,7 +866,7 @@
   ],
   "BAK-05": [
     "partial",
-    "weekly or monthly emailed download link. Google Drive, OneDrive, Dropbox and iCloud need OAuth apps of their own"
+    "weekly or monthly, as an emailed link or saved to the workspace's own S3-compatible or WebDAV storage (Backblaze B2, Wasabi, R2, MinIO, Nextcloud, Synology), optionally with a password; \"Back up now\" can save there too (ADR-0031). Google Drive, OneDrive and Dropbox need OAuth apps registered in the owner's name; iCloud has no server API"
   ],
   "BAK-06": [
     "done",
@@ -922,7 +922,7 @@
   ],
   "BAK-03": [
     "partial",
-    "Written as Terraform that passes validate, never applied: versioning, replication, 30-day recovery. Uploads now use the bucket’s KMS default"
+    "Written as Terraform that passes validate, never applied: versioning, replication, 30-day recovery. Uploads now use the bucket’s KMS default. An owner can also keep a copy of every file in storage of their own (ADR-0031)"
   ],
   "BAK-07": [
     "partial",
@@ -959,5 +959,29 @@
   "OPS-12": [
     "partial",
     "disaster recovery and incident response runbooks, never exercised"
+  ],
+  "PRL-01": [
+    "done",
+    "Employees and contractors per business, readable only with write access to it; a contractor is a vendor of the business (ADR-0034)"
+  ],
+  "PRL-02": [
+    "done",
+    "2020+ W-4 recorded as signed, history kept, newest in force by effective date; substitute PDF. Pre-2020 W-4s are not supported"
+  ],
+  "PRL-03": [
+    "done",
+    "W-9 (Rev. March 2024) updates the contractor's TIN; substitute PDF"
+  ],
+  "PRL-04": [
+    "done",
+    "Sections 1 and 2, documents with sealed copies, the 3-business-day due date and the retention rule worked out from the dates; substitute PDF. Signatures are a typed name with an attestation and the audit log; no E-Verify"
+  ],
+  "PRL-05": [
+    "done",
+    "_enc columns and sealed files under the workspace key, masked display, reveal/download/view need a recent sign-in and write to the audit log; backups decrypt them and restore re-seals"
+  ],
+  "PRL-10": [
+    "partial",
+    "contractors are vendors, so bills (BIZ-06) pay them; 1099 totals come with year-end (stage 4)"
   ]
 }

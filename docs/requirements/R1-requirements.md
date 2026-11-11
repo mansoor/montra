@@ -27,7 +27,7 @@ The user should feel in control: every dollar has a job, every transaction lands
 | Budgeting | Zero-based and category budgets, rollover, goals, sinking funds | Scenario planning, multi-year forecasts |
 | Money flow | Cash-flow view, Sankey flow, 30/60/90-day forecast | Live balance forecasts from bank data |
 | AI recommendations | Budget alignment, overspend alerts, monthly review | Conversational assistant over all data, proactive negotiation tips |
-| Small business | Income/expense, invoices (basic), mileage, tax categories, P&L | Payroll export, sales tax, accountant portal, bank feeds |
+| Small business | Income/expense, invoices (basic), mileage, tax categories, P&L, payroll for employees and contractors (5.1, added 2026-11-10) | Sales tax, accountant portal, bank feeds, payroll provider integration |
 | Rental properties | Properties, units, leases, rent roll, expenses, Schedule E report | Tenant portal, online rent collection, maintenance requests |
 | Platforms | Responsive web app + iOS and Android apps | Desktop app, wearable glance widgets |
 
@@ -323,7 +323,45 @@ R1 targets sole proprietors, freelancers and single-member LLCs with up to about
 | BIZ-12 | Receipt vault: every business expense can carry an image or PDF; missing-receipt list for items over a threshold (default $75). | M |
 | BIZ-13 | Accountant access: an invited user with read-only or edit access to selected entities only; export to CSV/XLSX and QuickBooks/Xero-compatible formats. | S |
 | BIZ-14 | Sales tax/VAT tracking per transaction. | C |
-| BIZ-15 | Payroll summary import (from a payroll provider CSV). | C |
+| BIZ-15 | Payroll summary import (from a payroll provider CSV). Payroll itself is 5.1. | C |
+
+### 5.1 Payroll (moved into scope on 2026-11-10)
+
+The owner decided on 2026-11-10 to bring payroll into scope for business entities (ADR-0034). This replaces the
+"payroll processing" line of 14.2 for businesses. These are the owner's decisions:
+
+- **Jurisdictions:** federal plus one state: California (chosen 2026-11-10; other states later).
+- **Tax engine:** built into Montra behind a port, so a payroll provider can replace it later. Montra calculates, says
+  what to deposit and when, and fills in the forms. The owner files and pays through EFTPS, SSA and the state portal.
+  Montra never moves money or e-files.
+- **Personal data:** Montra keeps the forms and copies of identity documents.
+
+Calculations are estimates for the owner's records and are not tax advice (worded as AI-10's tax hints are).
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| PRL-01 | Employees and contractors per business: legal name, address, contact, SSN or TIN, hire and end dates, pay type (hourly or salary) and rate, work state, and bank details for reference. | M |
+| PRL-02 | Form W-4 (2020 and later layout) per employee: filing status, multiple jobs, dependents, other income, deductions, extra withholding, exempt; history kept, and a filled PDF. | M |
+| PRL-03 | Form W-9 per contractor: name, business name, tax classification, exemptions, TIN and certification; a filled PDF. | M |
+| PRL-04 | Form I-9: Section 1 entered by or with the employee and Section 2 by the employer, with copies of the documents examined stored as files. The screen says the employer must examine the original documents and that E-Verify is not included. Copies follow the retention rule: 3 years after hire or 1 year after employment ends, whichever is later; a filled PDF. | M |
+| PRL-05 | Personal data protection: SSNs, TINs, dates of birth, document numbers, bank details and ID images are encrypted at rest and shown masked; showing or downloading one is logged in the audit log; only people who can write to the business see payroll records. | M |
+| PRL-06 | Pay schedules per business: every two weeks, twice a month or monthly, with the pay date for each period. | M |
+| PRL-07 | Pay runs with gross-to-net per employee: hours or salary, extra earnings, pre-tax and post-tax deductions, taxes withheld and net pay; draft, then approved. | M |
+| PRL-08 | A payslip PDF per employee per pay run, with year-to-date figures. | M |
+| PRL-09 | An approved pay run posts to the ledger by ADR-0005: wages and employer taxes as expenses, taxes withheld and employer taxes owed as liabilities, and net pay from the chosen account. | M |
+| PRL-10 | Contractors are paid through bills (BIZ-06) from their vendor record. | M |
+| PRL-11 | Reimbursement requests from employees and contractors with a receipt: approve or decline, then pay through the next pay run (not taxed) or a bill. | M |
+| PRL-12 | Federal income tax withholding by the IRS Pub 15-T percentage method, from yearly tables kept as reference data by tax year. | M |
+| PRL-13 | Social Security, Medicare and Additional Medicare tax, employee and employer shares, with the yearly wage base. | M |
+| PRL-14 | FUTA, and California's income tax withholding, SDI, and UI and ETT (UI rate entered per business). | M |
+| PRL-15 | Deposit schedule (monthly or semiweekly) with due dates and reminders of what to deposit. | M |
+| PRL-16 | Form 941 and Form 940 worksheets, and California's DE 9 and DE 9C. | M |
+| PRL-17 | Form W-2 (copies B, C and 2, and the employer's copy) and Form W-3 at year end. | M |
+| PRL-18 | Form 1099-NEC for contractors paid over the threshold, and Form 1096. | M |
+| PRL-19 | California copies of the year-end forms. | S |
+| PRL-20 | An EFW2 file for upload to SSA Business Services Online. | C |
+| PRL-21 | The tax engine sits behind a port, so a payroll provider (for example Check or Gusto Embedded) can replace it without changing pay runs or the ledger. | M |
+| PRL-22 | On the phone: pay runs, payslips, and a reimbursement request with a receipt photo. | S |
 
 ## 6. Rental property management
 
@@ -579,7 +617,8 @@ R1 ships every **M** requirement. **S** items that slip move to R1.x. R2 adds li
 
 - Live bank or brokerage connections; investment performance by holding or security. (Gain at account level moved into scope
   on 2026-11-06: ACC-07, ADR-0025.)
-- Tax filing, payroll processing, sales tax filing.
+- Tax filing and sales tax filing. Payroll moved into scope for businesses on 2026-11-10 (5.1, ADR-0034): Montra
+  calculates and fills in forms, and the owner files and pays.
 - Tenant-facing portal, online rent collection, tenant screening.
 - Bill pay or moving real money.
 

@@ -66,6 +66,7 @@ function Gate() {
         <Stack.Screen name="receipts/[id]" options={{ title: t('mobile.receipts.review_title') }} />
         <Stack.Screen name="business/index" options={{ title: t('nav.business') }} />
         <Stack.Screen name="business/mileage" options={{ title: t('business.tab_mileage') }} />
+        <Stack.Screen name="business/settings" options={{ title: t('mobile.business.settings') }} />
         <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
         <Stack.Screen name="notification-settings" options={{ title: t('notifications.settings') }} />
         <Stack.Screen name="your-data" options={{ title: t('settings.tab.data') }} />

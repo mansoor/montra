@@ -36,6 +36,8 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   export_job: 'About archives, not the books',
   backup_schedule: 'About archives, not the books',
   restore_job: 'About archives, not the books',
+  storage_destination: 'A secret, and a connection the owner makes again (ADR-0031)',
+  storage_mirror_item: 'What was copied to a connection a restore can’t bring back (ADR-0031)',
   notification_pref: 'Follows the person',
   security_event: 'Follows the person',
 };
@@ -47,6 +49,23 @@ export const EXPORT_ONLY: ReadonlySet<string> = new Set(['audit_log', 'ai_event'
 export const ENCRYPTED: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   transaction: { memo_enc: 'transaction.memo' },
   bank_account: { account_number_enc: 'bank_account.account_number' },
+  // Payroll (ADR-0034).
+  payroll_person: {
+    tin_enc: 'payroll_person.tin',
+    birth_date_enc: 'payroll_person.birth_date',
+    bank_routing_enc: 'payroll_person.bank_routing',
+    bank_account_enc: 'payroll_person.bank_account',
+  },
+  payroll_w4: { tin_enc: 'payroll_w4.tin' },
+  payroll_w9: { tin_enc: 'payroll_w9.tin' },
+  payroll_i9: {
+    birth_date_enc: 'payroll_i9.birth_date',
+    ssn_enc: 'payroll_i9.ssn',
+    a_number_enc: 'payroll_i9.a_number',
+    i94_number_enc: 'payroll_i9.i94_number',
+    passport_number_enc: 'payroll_i9.passport_number',
+  },
+  payroll_i9_document: { number_enc: 'payroll_i9_document.number' },
 };
 
 export const plainName = (column: string) => column.replace(/_enc$/, '');
