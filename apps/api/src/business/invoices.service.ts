@@ -370,6 +370,8 @@ export class InvoicesService {
         legalName: profile.legal_name,
         address: profile.address,
         email: profile.email,
+        domain: profile.domain,
+        logo: await this.business.logoIn(trx, ctx, r.entity_id),
       },
       customer: { name: party?.name ?? '', address: party?.address ?? null, email: party?.email ?? null },
       number: r.number,

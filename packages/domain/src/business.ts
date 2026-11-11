@@ -3,7 +3,7 @@
  * units in the entity's currency. Tax figures here are estimates the user asked for, never tax advice.
  */
 import { allocate } from './allocate.js';
-import { addDays, type CalendarDate } from './calendar-date.js';
+import { addDays, addMonths, endOfMonth, type CalendarDate } from './calendar-date.js';
 import { divRound } from './rounding.js';
 
 // ----- Invoices (BIZ-05) ------------------------------------------------------------------------------------
@@ -217,3 +217,50 @@ export function taxSetAside(ytdProfit: bigint, rateBps: number, savedSoFar: bigi
 /** Profit ÷ revenue in basis points; null without revenue. */
 export const marginBps = (revenue: bigint, expenses: bigint): number | null =>
   revenue <= 0n ? null : Number(divRound((revenue - expenses) * 10_000n, revenue));
+
+// ----- The business landing page (ADR-0032) -------------------------------------------------------------------
+
+export interface BusinessMonth {
+  readonly moneyIn: bigint | string;
+  readonly moneyOut: bigint | string;
+  readonly revenue: bigint | string;
+  readonly expenses: bigint | string;
+}
+
+export interface BusinessTotals {
+  moneyIn: bigint;
+  moneyOut: bigint;
+  revenue: bigint;
+  expenses: bigint;
+  profit: bigint;
+  marginBps: number | null;
+}
+
+/** The period's totals: sums over the months, profit as revenue less expenses and the margin as the P&L states it. */
+export function summarizeBusinessMonths(months: readonly BusinessMonth[]): BusinessTotals {
+  const sum = (k: keyof BusinessMonth) => months.reduce((t, m) => t + BigInt(m[k]), 0n);
+  const revenue = sum('revenue');
+  const expenses = sum('expenses');
+  return {
+    moneyIn: sum('moneyIn'),
+    moneyOut: sum('moneyOut'),
+    revenue,
+    expenses,
+    profit: revenue - expenses,
+    marginBps: marginBps(revenue, expenses),
+  };
+}
+
+/**
+ * The months a dashboard shows: `count` calendar months ending with the one starting `last` (a first of the month),
+ * oldest first.
+ */
+export function monthsEnding(
+  last: CalendarDate,
+  count: number,
+): { start: CalendarDate; end: CalendarDate }[] {
+  return Array.from({ length: count }, (_, i) => {
+    const start = addMonths(last, -(count - 1 - i));
+    return { start, end: endOfMonth(start) };
+  });
+}

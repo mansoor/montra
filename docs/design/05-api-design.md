@@ -44,6 +44,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | --- | --- | --- |
 | `GET/POST /accounts`, `GET/PATCH /accounts/{id}`, `POST /accounts/{id}/archive` | Bank/card/loan/asset accounts | ACC-02..06 |
 | `POST /accounts/{id}/balance-adjustments` | Audited adjustment | ACC-05 |
+| `GET /accounts/{id}/move?entityId`, `POST /accounts/{id}/move` `{ entityId }` (owners) | Preview, then move the account and its whole history to Personal or a business; blockers say why not ([ADR-0033](adr/0033-moving-an-account-to-other-books.md)) | ACC-03 |
 | `GET /accounts/{id}/register?view=ledger|simple` | Date, description, debit, credit, running balance | DE-06 |
 | `GET/POST /loans`, `PATCH /loans/{id}`, `GET /loans/{id}/schedule`, `POST /loans/{id}/payments`, `DELETE /loans/{id}/payments/{number}` | Tracked loans on any account, from the real balance ([ADR-0024](adr/0024-loan-tracking.md)) | RNT-08, ACC-02 |
 | `GET/POST /accounts/{id}/valuations`, `DELETE /accounts/{id}/valuations/{id}` (latest only), `GET /accounts/{id}/performance?range=` | Statement values and gain over time ([ADR-0025](adr/0025-retirement-and-gains.md)) | ACC-07 |
@@ -131,7 +132,9 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `GET /businesses`, `GET/PATCH /businesses/{entityId}`, `POST /businesses/files` | Business profile, documents | BIZ-01, BIZ-12 |
+| `GET /businesses`, `GET/PATCH /businesses/{entityId}` (incl. `domain`), `POST /businesses/files` | Business profile, documents | BIZ-01, BIZ-12 |
+| `POST/GET/DELETE /businesses/{entityId}/logo` (multipart PNG or JPEG, ≤ 1 MB) | The logo on invoices, checked by content ([ADR-0032](adr/0032-business-profile-invoice-pdf-dashboard.md)) | BIZ-01, BIZ-05 |
+| `GET /businesses/{entityId}/dashboard?months=3\|6\|12\|24&month=YYYY-MM-01` | The landing page: money in and out, revenue, expenses, profit and cash on hand by month, open invoices and bills ([ADR-0032](adr/0032-business-profile-invoice-pdf-dashboard.md)) | BIZ-10 |
 | `GET /parties?entityId&kind`, `POST /parties`, `PATCH /parties/{id}` | Customers and vendors; rows with a null `id` come from activity | BIZ-04 |
 | `GET/POST /invoices`, `GET/PATCH/DELETE /invoices/{id}`, `POST /invoices/{id}/send`, `POST /invoices/{id}/void`, `GET /invoices/{id}/pdf`, `GET /invoices/{id}/candidates`, `POST /invoices/{id}/payments` `{ transactionId \| accountId, date, amount }`, `DELETE /invoices/{id}/payments/{paymentId}` | Invoices and their payments (ADR-0017) | BIZ-05 |
 | `GET/POST /bills`, `GET/PATCH /bills/{id}`, `GET /bills/{id}/candidates`, `POST/DELETE /bills/{id}/payment`, `GET /bills/{id}/files/{fileId}` | Bills | BIZ-06 |

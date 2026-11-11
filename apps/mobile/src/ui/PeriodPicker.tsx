@@ -19,6 +19,8 @@ export function PeriodPicker({
   periods,
   warn,
   onPick,
+  label = range,
+  testID = 'home-period',
 }: {
   shown: Period;
   /** Newest first; the first is the current period. */
@@ -27,6 +29,9 @@ export function PeriodPicker({
   warn: boolean;
   /** null for the current period. */
   onPick: (start: string | null) => void;
+  /** How a period reads: its dates by default, a month's name on the business page. */
+  label?: (p: Period) => string;
+  testID?: string;
 }) {
   const th = useTheme();
   const [open, setOpen] = useState(false);
@@ -39,9 +44,9 @@ export function PeriodPicker({
           setOpen(true);
         }}
         accessibilityRole="button"
-        accessibilityLabel={`${t('home.period_nav')}: ${range(shown)}`}
+        accessibilityLabel={`${t('home.period_nav')}: ${label(shown)}`}
         hitSlop={8}
-        testID="home-period-pick"
+        testID={`${testID}-pick`}
         style={({ pressed }) => ({
           flexDirection: 'row',
           alignItems: 'center',
@@ -52,7 +57,7 @@ export function PeriodPicker({
         })}
       >
         <Text style={{ color, fontSize: th.font.small, fontWeight: warn ? '700' : '400' }}>
-          {range(shown)}
+          {label(shown)}
         </Text>
         <Icon name="expand" size={16} color={color} />
       </Pressable>
@@ -67,12 +72,12 @@ export function PeriodPicker({
           <FlatList
             data={periods}
             keyExtractor={(p) => p.start}
-            testID="home-period-list"
+            testID={`${testID}-list`}
             renderItem={({ item, index }) => {
               const picked = item.start === shown.start;
               return (
                 <Row
-                  title={range(item)}
+                  title={label(item)}
                   subtitle={index === 0 ? t('home.period_current') : undefined}
                   right={picked ? <Icon name="check" size={18} color={th.primary} /> : <View />}
                   last={index === periods.length - 1}
@@ -81,7 +86,7 @@ export function PeriodPicker({
                     setOpen(false);
                     onPick(index === 0 ? null : item.start);
                   }}
-                  testID={`home-period-${item.start}`}
+                  testID={`${testID}-${item.start}`}
                 />
               );
             }}
