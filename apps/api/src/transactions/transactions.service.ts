@@ -1201,36 +1201,33 @@ export class TransactionsService {
     ctx: Ctx,
     ids: string[],
   ): Promise<Map<string, TransactionDto['receipt']>> {
-    const rows = await trx
+    // Two queries, so each uses its index: linked receipts by transaction, and the few still being read or checked.
+    const linked = await trx
       .selectFrom('app.receipt')
-      .select([
-        'id',
-        'status',
-        'transaction_id',
-        sql<string | null>`match_candidates->0->>'transactionId'`.as('added_for'),
-      ])
+      .select(['id', 'status', 'transaction_id'])
       .where('workspace_id', '=', ctx.workspaceId)
+      .where('transaction_id', 'in', ids)
       .where('deleted_at', 'is', null)
-      .where((eb) =>
-        eb.or([
-          eb('transaction_id', 'in', ids),
-          eb.and([
-            eb('transaction_id', 'is', null),
-            eb('status', 'in', ['processing', 'needs_review']),
-            eb(sql<string>`match_candidates->0->>'transactionId'`, 'in', ids),
-            eb(sql<number>`jsonb_array_length(match_candidates)`, '=', 1),
-            eb.not(eb(sql<boolean>`match_candidates->0 ? 'score'`, '=', true)),
-          ]),
-        ]),
-      )
       .orderBy('created_at', 'desc')
       .execute();
     const out = new Map<string, TransactionDto['receipt']>();
+    for (const r of linked)
+      if (r.transaction_id && !out.has(r.transaction_id))
+        out.set(r.transaction_id, { id: r.id, status: r.status });
+    const pending = await trx
+      .selectFrom('app.receipt')
+      .select(['id', 'status', sql<string>`match_candidates->0->>'transactionId'`.as('added_for')])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('status', 'in', ['processing', 'needs_review'])
+      .where('deleted_at', 'is', null)
+      .where('transaction_id', 'is', null)
+      .where(sql<string>`match_candidates->0->>'transactionId'`, 'in', ids)
+      .where(sql<number>`jsonb_array_length(match_candidates)`, '=', 1)
+      .where(sql<boolean>`not (match_candidates->0 ? 'score')`)
+      .orderBy('created_at', 'desc')
+      .execute();
     // A linked receipt wins over one still being read.
-    for (const r of rows) if (r.transaction_id) out.set(r.transaction_id, { id: r.id, status: r.status });
-    for (const r of rows)
-      if (!r.transaction_id && r.added_for && !out.has(r.added_for))
-        out.set(r.added_for, { id: r.id, status: r.status });
+    for (const r of pending) if (!out.has(r.added_for)) out.set(r.added_for, { id: r.id, status: r.status });
     return out;
   }
 
