@@ -92,8 +92,9 @@ import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
 import { FormsService } from './payroll/forms.service.js';
 import { PayRunsService } from './payroll/pay-runs.service.js';
+import { PayrollTaxesService } from './payroll/payroll-taxes.service.js';
 import { ReimbursementsService } from './payroll/reimbursements.service.js';
-import { ManualTaxEngine, PAYROLL_TAX_ENGINE } from './payroll/tax-engine.js';
+import { BuiltInTaxEngine, PAYROLL_TAX_ENGINE } from './payroll/tax-engine.js';
 import { PayrollController } from './payroll/payroll.controller.js';
 import { PeopleService } from './payroll/people.service.js';
 import { BackupService } from './data/backup.service.js';
@@ -250,7 +251,8 @@ export class AppModule {
         FormsService,
         PayRunsService,
         ReimbursementsService,
-        { provide: PAYROLL_TAX_ENGINE, useClass: ManualTaxEngine },
+        { provide: PAYROLL_TAX_ENGINE, useClass: BuiltInTaxEngine },
+        PayrollTaxesService,
         PropertiesService,
         RentService,
         LoansService,

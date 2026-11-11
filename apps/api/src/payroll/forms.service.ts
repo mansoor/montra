@@ -18,6 +18,7 @@ import {
 } from '@montra/domain';
 import type {
   AddI9DocumentRequest,
+  CreateDe4Request,
   CreateW4Request,
   CreateW9Request,
   I9DocumentDto,
@@ -26,6 +27,7 @@ import type {
   SaveI9Section1Request,
   SaveI9Section2Request,
   W4Dto,
+  De4Dto,
   W9Dto,
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
@@ -33,7 +35,7 @@ import { FieldCrypto } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { STORAGE_PORT, sha256, storageKey, type StoragePort } from '../storage/storage.js';
-import { i9Doc, renderFormPdf, w4Doc, w9Doc, formatTin } from './form-pdf.js';
+import { de4Doc, i9Doc, renderFormPdf, w4Doc, w9Doc, formatTin } from './form-pdf.js';
 import { PeopleService } from './people.service.js';
 import { auditView, conflict, formatAddress, payrollEntity, personName, sealer, type Ctx } from './shared.js';
 
@@ -168,7 +170,7 @@ export class FormsService {
           exempt: w.exempt,
           signedName: w.signed_name,
           signedOn: dateOrNull(w.signed_on)!,
-          employer: { name: employer.name, address: employer.address, ein: null },
+          employer: { name: employer.name, address: employer.address, ein: employer.ein },
           firstDay: dateOrNull(p.hire_date),
         }),
       );
@@ -177,6 +179,127 @@ export class FormsService {
         id: w4Id,
       });
       return { bytes, fileName: `W-4 ${p.last_name} ${String(w.effective_date).slice(0, 10)}.pdf` };
+    });
+  }
+
+  // ----- DE 4 (PRL-14) -----------------------------------------------------------------------------------------
+
+  async listDe4(ctx: Ctx, personId: string): Promise<De4Dto[]> {
+    return this.db.run(ctx, async (trx) => {
+      const p = await this.people.row(trx, ctx, personId);
+      const e = await payrollEntity(trx, ctx, p.entity_id);
+      const rows = await trx
+        .selectFrom('app.payroll_de4')
+        .selectAll()
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('person_id', '=', personId)
+        .orderBy('effective_date', 'desc')
+        .execute();
+      const today = todayIn(e.timeZone);
+      const current = rows.find((r) => dateOrNull(r.effective_date)! <= today) ?? rows.at(-1);
+      return rows.map((r) => ({
+        id: r.id,
+        personId: r.person_id,
+        effectiveDate: dateOrNull(r.effective_date)!,
+        legalName: r.legal_name,
+        address: r.address,
+        tinMasked: maskTin('ssn', r.tin_last4),
+        filingStatus: r.filing_status,
+        allowances: r.allowances,
+        estimatedDeductionAllowances: r.estimated_deduction_allowances,
+        extraWithholding: String(r.extra_withholding_minor),
+        exempt: r.exempt,
+        signedName: r.signed_name,
+        signedOn: dateOrNull(r.signed_on)!,
+        current: r.id === current?.id,
+      }));
+    });
+  }
+
+  /** California's DE 4, kept as signed like a W-4; a newer one takes over from its effective date. */
+  async createDe4(ctx: Ctx, personId: string, req: CreateDe4Request): Promise<De4Dto> {
+    await this.db.run(ctx, async (trx) => {
+      const p = await this.people.row(trx, ctx, personId);
+      await payrollEntity(trx, ctx, p.entity_id);
+      if (p.kind !== 'employee') throw unprocessable('payroll.not_employee', 'A DE 4 is for an employee');
+      const s = sealer(this.crypto, trx, ctx);
+      const ssn = p.tin_type === 'ein' ? null : await s.open('payroll_person.tin', p.tin_enc);
+      const taken = await trx
+        .selectFrom('app.payroll_de4')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('person_id', '=', personId)
+        .where('effective_date', '=', req.effectiveDate)
+        .executeTakeFirst();
+      if (taken) {
+        throw new AppError(
+          409,
+          'payroll.de4_exists',
+          'There is already a DE 4 from this date; use a later date',
+        );
+      }
+      await trx
+        .insertInto('app.payroll_de4')
+        .values({
+          workspace_id: ctx.workspaceId,
+          id: newId(),
+          entity_id: p.entity_id,
+          person_id: personId,
+          effective_date: req.effectiveDate,
+          legal_name: personName(p),
+          address: formatAddress(p),
+          tin_enc: await s.seal('payroll_de4.tin', ssn),
+          tin_last4: ssn ? lastFour(ssn) : null,
+          filing_status: req.filingStatus,
+          allowances: req.allowances,
+          estimated_deduction_allowances: req.estimatedDeductionAllowances,
+          extra_withholding_minor: BigInt(req.extraWithholding),
+          exempt: req.exempt,
+          signed_name: req.signedName,
+          signed_on: req.signedOn,
+          created_by: ctx.userId,
+        })
+        .execute();
+    });
+    const all = await this.listDe4(ctx, personId);
+    return all.find((w) => w.effectiveDate === req.effectiveDate)!;
+  }
+
+  async de4Pdf(ctx: Ctx, personId: string, de4Id: string): Promise<{ bytes: Uint8Array; fileName: string }> {
+    return this.db.run(ctx, async (trx) => {
+      const p = await this.people.row(trx, ctx, personId);
+      const e = await payrollEntity(trx, ctx, p.entity_id);
+      const w = await trx
+        .selectFrom('app.payroll_de4')
+        .selectAll()
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('person_id', '=', personId)
+        .where('id', '=', de4Id)
+        .executeTakeFirst();
+      if (!w) throw notFound('DE 4');
+      const ssn = await sealer(this.crypto, trx, ctx).open('payroll_de4.tin', w.tin_enc);
+      const employer = await this.employer(trx, ctx, p.entity_id, e.name);
+      const bytes = await renderFormPdf(
+        de4Doc({
+          year: Number(String(w.effective_date).slice(0, 4)),
+          name: w.legal_name,
+          address: w.address,
+          ssn: formatTin('ssn', ssn),
+          filingStatus: w.filing_status,
+          allowances: w.allowances,
+          estimatedDeductionAllowances: w.estimated_deduction_allowances,
+          extraWithholding: w.extra_withholding_minor,
+          exempt: w.exempt,
+          signedName: w.signed_name,
+          signedOn: dateOrNull(w.signed_on)!,
+          employer: { name: employer.name, address: employer.address, account: employer.account },
+        }),
+      );
+      await auditView(trx, ctx, 'payroll.form_downloaded', 'payroll_person', personId, {
+        form: 'de4',
+        id: de4Id,
+      });
+      return { bytes, fileName: `DE 4 ${p.last_name} ${String(w.effective_date).slice(0, 10)}.pdf` };
     });
   }
 
@@ -717,7 +840,16 @@ export class FormsService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('entity_id', '=', entityId)
       .executeTakeFirst();
-    return { name: b?.legal_name || name, address: b?.address ?? null };
+    const settings = await trx
+      .selectFrom('app.payroll_settings')
+      .select(['ein', 'ca_employer_account'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .executeTakeFirst();
+    const ein = settings?.ein ? `${settings.ein.slice(0, 2)}-${settings.ein.slice(2)}` : null;
+    const a = settings?.ca_employer_account;
+    const account = a ? `${a.slice(0, 3)}-${a.slice(3, 7)}-${a.slice(7)}` : null;
+    return { name: b?.legal_name || name, address: b?.address ?? null, ein, account };
   }
 
   private i9Row(trx: Trx, ctx: Ctx, personId: string): Promise<PayrollI9Row | undefined> {
