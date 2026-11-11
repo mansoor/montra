@@ -65,6 +65,8 @@ export type TransactionSpec =
       leaseId?: string;
       depositLeaseId?: string;
       loanId?: string;
+      /** The same for a paycheck in an approved pay run (ADR-0034 §6). */
+      paycheckId?: string;
       /** The payslip's employer: this deposit is the pay its expected income is waiting for (PAY-07). */
       employerId?: string;
       /**
@@ -87,7 +89,8 @@ export type TransactionSpec =
       fxRateTo?: string;
     };
 
-export type TransactionOwner = 'payslip' | 'invoice' | 'bill' | 'lease' | 'security_deposit' | 'loan';
+export type TransactionOwner =
+  'payslip' | 'invoice' | 'bill' | 'lease' | 'security_deposit' | 'loan' | 'paycheck';
 
 const OWNER_FIELDS: readonly (readonly [string, TransactionOwner])[] = [
   ['payslipId', 'payslip'],
@@ -96,6 +99,7 @@ const OWNER_FIELDS: readonly (readonly [string, TransactionOwner])[] = [
   ['leaseId', 'lease'],
   ['depositLeaseId', 'security_deposit'],
   ['loanId', 'loan'],
+  ['paycheckId', 'paycheck'],
 ];
 
 /** What owns this transaction, if anything (ADR-0016..18). Its ledger side changes only through the owner. */
@@ -111,6 +115,7 @@ const OWNER_WORDS: Record<TransactionOwner, string> = {
   lease: 'a lease',
   security_deposit: 'a lease',
   loan: 'a mortgage',
+  paycheck: 'a pay run',
 };
 
 export function assertNotOwned(spec: unknown): void {
