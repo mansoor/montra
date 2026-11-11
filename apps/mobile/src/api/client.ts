@@ -4,6 +4,7 @@
  */
 import type {
   BudgetDto,
+  TransactionDto,
   BudgetPeriodDto,
   CalendarDto,
   DashboardChartsDto,
@@ -46,6 +47,7 @@ import type {
   RequestDeletionRequest,
   SecurityEventDto,
   StorageUsageDto,
+  StorageDestinationDto,
   UpdateNotificationPrefsRequest,
   BusinessDashboardDto,
   BusinessLogoDto,
@@ -322,6 +324,8 @@ export function createApi(opts: ApiOptions) {
     listReceipts: (w: string, status?: ReceiptDto['status']) =>
       request<ReceiptPageDto>('GET', `${ws(w)}/receipts?limit=100${status ? `&status=${status}` : ''}`),
     getReceipt: (w: string, id: string) => request<ReceiptDto>('GET', `${ws(w)}/receipts/${id}`),
+    /** One transaction, fresh from the server (its receipt can change without the transaction changing). */
+    getTransaction: (w: string, id: string) => request<TransactionDto>('GET', `${ws(w)}/transactions/${id}`),
     /** Path of a page image; load it with the bearer header. */
     receiptFilePath: (w: string, id: string, fileId: string) => `${ws(w)}/receipts/${id}/files/${fileId}`,
     updateReceipt: (w: string, id: string, input: ReceiptReviewInput) =>
@@ -410,6 +414,10 @@ export function createApi(opts: ApiOptions) {
     backupDownloadUrl: (w: string, id: string) => `${opts.baseUrl}${ws(w)}/backups/${id}/download`,
     authHeaders,
     storageUsage: (w: string) => request<StorageUsageDto>('GET', `${ws(w)}/storage`),
+    /** The workspace's own storage (ADR-0031). Owners only: anyone else gets a 403. */
+    storageDestination: async (w: string) =>
+      (await request<{ destination: StorageDestinationDto | null }>('GET', `${ws(w)}/storage-destination`))
+        .destination,
     securityActivity: async () =>
       (await request<{ data: SecurityEventDto[] }>('GET', '/v1/me/security-activity')).data,
     deletionStatus: () => request<DeletionStatusDto>('GET', '/v1/me/deletion'),

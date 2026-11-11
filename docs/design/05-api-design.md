@@ -84,15 +84,15 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `POST /uploads` (multipart, field `file`) → `{ fileId, fileType, sha256, duplicateOf }` | Upload of up to 25 MB, type checked by magic bytes and content-hashed; `duplicateOf` flags a re-upload. Presigned direct-to-S3 uploads are added for mobile (Phase 4) | IMP-01/02 |
-| `POST /imports` `{ fileId, accountId, accountFilter? }` (202), `GET /imports?accountId` | Start an import batch (parsing runs in the worker; XLS and PDF go through the doc worker first); history | IMP-01, IMP-13 |
+| `POST /uploads` (multipart, field `file`) → `{ fileId, fileType, sha256, duplicateOf }` | Upload of up to 25 MB, type checked by magic bytes and content (`csv`, `xlsx`, `xls`, `pdf`, `qif`, and `ofx` for OFX and QFX: [ADR-0030](adr/0030-qif-and-ofx-files.md)) and content-hashed; `duplicateOf` flags a re-upload. Presigned direct-to-S3 uploads are added for mobile (Phase 4) | IMP-01/02 |
+| `POST /imports` `{ fileId, accountId, accountFilter? }` (202), `GET /imports?accountId` | Start an import batch (parsing runs in the worker; XLS and PDF go through the doc worker first; QIF and OFX are read into a fixed grid with a known mapping, OFX's `FITID` keys dedupe and its `LEDGERBAL` is the closing balance); history | IMP-01, IMP-13 |
 | `GET /imports/{id}` | Status, counts, balance check | IMP-08 |
 | `GET /imports/{id}/rows?status=` | Preview rows with suggestions | IMP-06 |
 | `PUT /imports/{id}/mapping` | Confirm or edit the column mapping (saves the profile) | IMP-03/04 |
 | `PATCH /imports/{id}/rows/{rowId}` | Change one preview row (category, skip, not-duplicate) | IMP-06 |
 | `POST /imports/{id}/commit`, `POST /imports/{id}/undo` (202) | Commit atomically, undo within 30 days (the result lists kept rows) | IMP-08/09 |
 | `GET /migrations/eligibility` | Switching from another app is for a fresh start: whether the workspace has transactions of its own (an earlier switch's don't count) | IMP-13 |
-| `POST /migrations/analyze` `{ source, fileIds, inverted? }` | Reads an export (CSV, TSV, XLSX) without creating anything: its accounts (dates, money in and out, opening balance, a matching account, a suggested kind) and categories (group, totals, a matching category, looks like a transfer) | IMP-13 |
+| `POST /migrations/analyze` `{ source, fileIds, inverted? }` | Reads an export (CSV, TSV, XLSX, QIF, OFX/QFX) without creating anything: its accounts (dates, money in and out, opening balance, a matching account, a suggested kind) and categories (group, totals, a matching category, looks like a transfer). A QIF or OFX file's account types suggest the kinds, and an OFX account's opening balance is its closing balance less its rows | IMP-13 |
 | `POST /migrations` `{ source, fileIds, inverted?, entityId?, accounts[], categories[] }` | Creates the chosen accounts (opening balance from today's balance or the export's) and categories, then one import per account (`accountFilter`), tagged with the migration so the worker uses its category map and signs; 409 `migration.not_fresh` when the workspace has its own transactions ([ADR-0029](adr/0029-switching-from-another-app.md)) | IMP-13 |
 | `GET /migrations/{id}`, `POST /migrations/{id}/commit`, `POST /migrations/{id}/transfers` | The migration's imports and their status; import every previewed one; make the transfers paired between its accounts | IMP-13, TXN-04 |
 | `GET /jobs/{id}` | Job status, progress and result (commit/undo summaries) | — |
@@ -164,12 +164,14 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET/POST /saved-reports`, `DELETE /saved-reports/{id}` | Saved custom reports, per person | RPT-02 |
 | `GET /search?q=` | Transactions, payees, receipts. Syntax: words, `"phrases"`, `>500`, `tag:travel` | RPT-05 |
 | `POST /ask` | A question: the plan comes from AI, the figures and transactions from SQL | RPT-06 |
-| `POST /backups` (re-auth), `GET /backups`, `GET /backups/{id}`, `GET /backups/{id}/download` | Backup, optionally with a password; kept 7 days | NFR-06, BAK-04 |
+| `POST /backups` `{ entityId?, password?, saveToStorage? }` (re-auth), `GET /backups`, `GET /backups/{id}`, `GET /backups/{id}/download` | Backup, optionally with a password; kept 7 days. An owner's is also saved to the workspace's own storage unless `saveToStorage: false`; `storageCopy` says how that went ([ADR-0031](adr/0031-your-own-storage.md)) | NFR-06, BAK-04, BAK-05 |
 | `POST /tax-package` `{ entityId, year }` (re-auth) | ZIP of reports + receipts, listed with the backups | RPT-04, UP-10 |
-| `GET/PUT/DELETE /backup-schedule` | Weekly or monthly, by emailed link | BAK-05 |
+| `GET/PUT/DELETE /backup-schedule` `{ cadence, destination: email_link\|storage, password?: string\|null }` | Weekly or monthly, by emailed link or to the workspace's own storage. A password is turned into a KMS-wrapped key and never kept; `null` removes it, leaving it out keeps it | BAK-05 |
 | `POST /v1/me/restores` (multipart, re-auth), `GET /v1/me/restores`, `GET /v1/me/restores/{id}`, `POST /v1/me/restores/{id}/confirm` | Preview, then restore into a new workspace or as added books | BAK-06 |
 | `GET /trash`, `POST /trash/{kind}/{id}/restore` | Trash bin | BAK-06 |
 | `GET /storage` | Usage against the quota | BAK-08 |
+| `GET /storage-destination` → `{ destination }`; `POST /storage-destination` `{ label, connection, folder?, fileKinds?, mirrorFiles?, deleteWithMontra?, keepBackups?, copyExisting }` (re-auth; 422 `storage.<reason>` when the test fails, 409 `storage.exists`); `PATCH /storage-destination` `{ version, …, paused?, connection? }` (re-auth when the connection or folder changes); `DELETE /storage-destination` (re-auth) | The workspace's own S3-compatible or WebDAV storage. Owners only. Tested before it's saved; the secret is sealed and never returned | BAK-03, BAK-05 |
+| `POST /storage-destination/test` `{ connection, folder? }` → `{ ok, canDelete, error, code }`; `POST /storage-destination/backfill`; `POST /storage-destination/retry` → `{ queued }`; `GET /storage-destination/items?status=failed\|pending\|done\|skipped` | Try a connection without saving it (a blank secret uses the saved one), copy what's already in Montra, try failures again, and see what's copied or failing | BAK-03, BAK-05 |
 | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/{id}/read`, `POST /notifications/read-all` | Inbox | NOT-01 |
 | `GET/PATCH /v1/me/notification-prefs` | Channels per type, quiet hours, cap, digest day, thresholds | NOT-01..03 |
 | `POST /v1/unsubscribe?token=` (no session) | One-click unsubscribe | OPS-10 |

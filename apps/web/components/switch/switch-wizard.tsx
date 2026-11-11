@@ -6,7 +6,13 @@ import { ACCOUNT_KINDS, accountProfile, parseMoney } from '@montra/domain';
 import type { MigrationAnalysisDto, MigrationSource, StartMigrationRequest } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
-import { SWITCH_SOURCES, switchSource } from '@/lib/switch-sources';
+import {
+  newCategoryName,
+  sourceLabel,
+  SWITCH_ACCEPT,
+  SWITCH_SOURCES,
+  switchSource,
+} from '@/lib/switch-sources';
 import { useI18n } from '../i18n';
 
 type AccountTarget = StartMigrationRequest['accounts'][number]['target'];
@@ -35,7 +41,7 @@ function defaults(a: MigrationAnalysisDto, keep?: Plan): Plan {
           ? { type: 'existing', categoryId: c.matchId }
           : {
               type: 'new',
-              name: c.name.slice(0, 200),
+              name: newCategoryName(c.name, c.group),
               group: (c.group ?? 'Imported').slice(0, 200),
               kind: BigInt(c.moneyIn) > BigInt(c.moneyOut) ? 'income' : 'expense',
             });
@@ -63,7 +69,7 @@ export function SwitchWizard({
   const [busy, setBusy] = useState<'upload' | 'read' | 'start' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const app = source ? switchSource(source) : undefined;
-  const appName = app ? app.name || t('switch.other_name') : '';
+  const appName = app ? sourceLabel(app, t) : '';
 
   const upload = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -167,7 +173,7 @@ export function SwitchWizard({
               className="btn-secondary justify-start"
               onClick={() => setSource(s.id)}
             >
-              {s.name || t('switch.other_name')}
+              {sourceLabel(s, t)}
             </button>
           ))}
         </div>
@@ -213,7 +219,7 @@ export function SwitchWizard({
             <input
               type="file"
               multiple
-              accept=".csv,.tsv,.txt,.xlsx"
+              accept={SWITCH_ACCEPT}
               className="sr-only"
               onChange={(e) => void upload(e.target.files)}
               disabled={busy !== null}
@@ -434,7 +440,7 @@ export function SwitchWizard({
                             e.target.value === 'new'
                               ? {
                                   type: 'new',
-                                  name: c.name.slice(0, 200),
+                                  name: newCategoryName(c.name, c.group),
                                   group: (c.group ?? 'Imported').slice(0, 200),
                                   kind: BigInt(c.moneyIn) > BigInt(c.moneyOut) ? 'income' : 'expense',
                                 }
@@ -510,5 +516,5 @@ export function SwitchWizard({
 
 /** The export a file was recognized as, by the app's name. */
 function templateName(id: string): string {
-  return switchSource(id)?.name || { quicken: 'Quicken', stessa: 'Stessa' }[id] || id;
+  return switchSource(id)?.name || { quicken: 'Quicken', stessa: 'Stessa', qif: 'QIF', ofx: 'OFX' }[id] || id;
 }

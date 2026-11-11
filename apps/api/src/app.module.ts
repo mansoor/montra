@@ -48,6 +48,9 @@ import { SyncService } from './sync/sync.service.js';
 import { RealtimeService } from './realtime/realtime.service.js';
 import { mailProvider } from './mail/mail.service.js';
 import { storageProvider } from './storage/storage.js';
+import { StorageController } from './storage/storage.controller.js';
+import { StorageDestinationsService } from './storage/storage-destinations.service.js';
+import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { JobQueue, Worker } from './jobs/queue.js';
 import { ImportsService } from './imports/imports.service.js';
 import { ImportJobs } from './imports/import-jobs.js';
@@ -160,6 +163,7 @@ export class AppModule {
       ReportsController,
       NotificationsController,
       DataController,
+      StorageController,
       RestoresController,
       AccountDataController,
       NotificationPrefsController,
@@ -242,6 +246,8 @@ export class AppModule {
         RentalReportsService,
         RentalJobs,
         BackupService,
+        StorageDestinationsService,
+        StorageMirrorJobs,
         RestoreService,
         OwnershipService,
         NotificationsService,

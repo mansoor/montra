@@ -226,7 +226,7 @@
   ],
   "IMP-01": [
     "done",
-    "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF; mobile in P4"
+    "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF, QIF and OFX/QFX (ADR-0030); mobile in P4"
   ],
   "IMP-03": [
     "done",
@@ -246,7 +246,7 @@
   ],
   "IMP-07": [
     "done",
-    "ordinal exact duplicates, covered-range probable duplicates, one-to-one matching"
+    "ordinal exact duplicates (keyed on the bank's FITID when an OFX file gives one), covered-range probable duplicates, one-to-one matching"
   ],
   "IMP-08": [
     "done",
@@ -262,7 +262,7 @@
   ],
   "IMP-13": [
     "done",
-    "YNAB, Mint, Monarch, Quicken, Stessa, Actual, Lunch Money, Tiller, Goodbudget and Empower templates, other exports by column names; switching from another app (ADR-0029): one export into several accounts with categories, opening balances and paired transfers, for a fresh start"
+    "YNAB, Mint, Monarch, Quicken, Stessa, Actual, Lunch Money, Tiller, Goodbudget and Empower templates, other exports by column names; Quicken for Windows QIF and bank OFX/QFX files (ADR-0030); switching from another app (ADR-0029): one export into several accounts with categories, opening balances and paired transfers, for a fresh start"
   ],
   "DE-08": [
     "done",
@@ -486,7 +486,7 @@
   ],
   "RCP-06": [
     "done",
-    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line)"
+    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line); a transaction's screen (web and phone) opens its receipt, or adds one, from a button by the amount"
   ],
   "RCP-07": [
     "done",
@@ -866,7 +866,7 @@
   ],
   "BAK-05": [
     "partial",
-    "weekly or monthly emailed download link. Google Drive, OneDrive, Dropbox and iCloud need OAuth apps of their own"
+    "weekly or monthly, as an emailed link or saved to the workspace's own S3-compatible or WebDAV storage (Backblaze B2, Wasabi, R2, MinIO, Nextcloud, Synology), optionally with a password; \"Back up now\" can save there too (ADR-0031). Google Drive, OneDrive and Dropbox need OAuth apps registered in the owner's name; iCloud has no server API"
   ],
   "BAK-06": [
     "done",
@@ -922,7 +922,7 @@
   ],
   "BAK-03": [
     "partial",
-    "Written as Terraform that passes validate, never applied: versioning, replication, 30-day recovery. Uploads now use the bucket’s KMS default"
+    "Written as Terraform that passes validate, never applied: versioning, replication, 30-day recovery. Uploads now use the bucket’s KMS default. An owner can also keep a copy of every file in storage of their own (ADR-0031)"
   ],
   "BAK-07": [
     "partial",

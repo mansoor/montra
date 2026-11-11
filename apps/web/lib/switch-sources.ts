@@ -6,8 +6,10 @@ import type { MigrationSource } from '@montra/schemas';
  */
 export interface SwitchSource {
   id: MigrationSource;
-  /** The app's name (a proper noun: not translated). */
+  /** The app's name (a proper noun: not translated), or '' for a translated one (`nameKey`). */
   name: string;
+  /** Message key of the name when `name` is '' (default `switch.other_name`). */
+  nameKey?: string;
   steps: string[];
   /** A caution about the export, or null. */
   note: string | null;
@@ -100,11 +102,30 @@ export const SWITCH_SOURCES: SwitchSource[] = [
     help: 'https://goodbudget.com/?p=12471',
   },
   {
+    id: 'quicken_windows',
+    name: 'Quicken (Windows)',
+    steps: [
+      'switch.quicken_windows.step_1',
+      'switch.quicken_windows.step_2',
+      'switch.quicken_windows.step_3',
+    ],
+    note: 'switch.quicken_windows.note',
+    help: null,
+  },
+  {
     id: 'quicken_mac',
     name: 'Quicken (Mac)',
     steps: ['switch.quicken_mac.step_1', 'switch.quicken_mac.step_2'],
     note: 'switch.quicken_mac.note',
     help: 'https://info.quicken.com/mac/exporting-register-transactions-to-a-csv-spreadshe',
+  },
+  {
+    id: 'bank',
+    name: '',
+    nameKey: 'switch.bank_name',
+    steps: ['switch.bank.step_1', 'switch.bank.step_2', 'switch.bank.step_3'],
+    note: 'switch.bank.note',
+    help: null,
   },
   {
     id: 'other',
@@ -116,3 +137,16 @@ export const SWITCH_SOURCES: SwitchSource[] = [
 ];
 
 export const switchSource = (id: string): SwitchSource | undefined => SWITCH_SOURCES.find((s) => s.id === id);
+
+/** A source's name as shown: the app's own, or the translated one (your bank, another app). */
+export const sourceLabel = (s: SwitchSource, t: (key: string) => string): string =>
+  s.name || t(s.nameKey ?? 'switch.other_name');
+
+/** A file category's name for a new category: QIF's "Food:Groceries" in the group "Food" becomes "Groceries". */
+export function newCategoryName(name: string, group: string | null): string {
+  const leaf = group && name.startsWith(`${group}:`) ? name.slice(group.length + 1).trim() : '';
+  return (leaf || name).slice(0, 200);
+}
+
+/** File types the Switch page reads: spreadsheets, QIF and OFX/QFX (ADR-0030). */
+export const SWITCH_ACCEPT = '.csv,.tsv,.txt,.xlsx,.qif,.ofx,.qfx';

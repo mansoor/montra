@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CalendarDateDto, Id, MoneyDto } from './common.js';
 import { CategorizationDto, MerchantDto } from './ai.js';
 import { ForeignAmountDto, ForeignAmountInput, RateDto } from './fx.js';
+import { RECEIPT_STATUSES } from './receipts.js';
 
 export const SplitInput = z.object({
   /** A category, or any ledger account (e.g. mortgage principal, escrow) for advanced splits. */
@@ -127,6 +128,11 @@ export const TransactionDto = z.object({
   localTime: z.string().nullable(),
   /** Paying account (standard) or source account (transfer), from the stored input; null for journals. */
   accountId: z.string().nullable(),
+  /**
+   * The receipt on this transaction, or one added for it that is still being read or needs a look (RCP-06).
+   * Null when there is none, so the screen offers "Add receipt".
+   */
+  receipt: z.object({ id: z.string(), status: z.enum(RECEIPT_STATUSES) }).nullable(),
   /** The categorization as entered (also present on scheduled occurrences that have no entries yet). */
   splits: z
     .array(
