@@ -10,6 +10,7 @@ const TABS = [
   ['/bills', 'business.tab_bills'],
   ['/parties', 'business.tab_parties'],
   ['/mileage', 'business.tab_mileage'],
+  ['/people', 'business.tab_people'],
   ['/taxes', 'business.tab_taxes'],
   ['/receipts', 'business.tab_receipts'],
   ['/settings', 'business.tab_settings'],

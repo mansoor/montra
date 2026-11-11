@@ -3,6 +3,7 @@
  * kysely-codegen output checked in CI once the schema grows.
  */
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from 'kysely';
+import type { PayrollDatabase } from './payroll-types.js';
 
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 type CalendarDateCol = ColumnType<string, string, string>;
@@ -441,7 +442,7 @@ export interface MfaResetRequestTable {
 export interface FileTable {
   workspace_id: string;
   id: string;
-  kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other';
+  kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other' | 'logo';
   storage_key: string;
   file_name: string;
   mime: string;
@@ -451,6 +452,8 @@ export interface FileTable {
   /** RCP-10: receipt images are kept until this date (7 years by default). */
   retain_until: CalendarDateCol | null;
   page_count: number | null;
+  /** ADR-0034: the bytes in storage are sealed with the workspace data key (copies of identity documents). */
+  sealed: Generated<boolean>;
   created_at: Generated<Date>;
   deleted_at: Date | null;
 }
@@ -1419,7 +1422,7 @@ export interface RestoreJobTable {
   expires_at: Timestamp;
 }
 
-export interface Database {
+export interface Database extends PayrollDatabase {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
   'app.workspace_member': WorkspaceMemberTable;
@@ -1491,6 +1494,7 @@ export interface Database {
   'app.employer_deposit': EmployerDepositTable;
   'app.payslip_deposit': PayslipDepositTable;
   'app.business_profile': BusinessProfileTable;
+  'app.account_move': AccountMoveTable;
   'app.business_party': BusinessPartyTable;
   'app.invoice': InvoiceTable;
   'app.invoice_line': InvoiceLineTable;
@@ -1538,6 +1542,19 @@ export interface Database {
 
 // Phase 8: small business (migration 0018, ADR-0017). Amounts are positive minor units.
 
+/** ADR-0033: an account moved to another entity's books, its history re-posted there. */
+export interface AccountMoveTable {
+  workspace_id: string;
+  id: Generated<string>;
+  ledger_account_id: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  transactions: number;
+  entries: number;
+  moved_by: string | null;
+  moved_at: Generated<Date>;
+}
+
 export interface BusinessProfileTable {
   workspace_id: string;
   entity_id: string;
@@ -1551,6 +1568,9 @@ export interface BusinessProfileTable {
   tax_rate_bps: number | null;
   tax_savings_account_id: string | null;
   receipt_threshold_minor: Int8Default;
+  /** ADR-0032: a PNG or JPEG printed on invoices, and the website or email domain as a bare host name. */
+  logo_file_id: string | null;
+  domain: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;

@@ -12,6 +12,7 @@ import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
 import { LedgerService } from './ledger/ledger.service.js';
 import { WorkspacesService } from './workspaces/workspaces.service.js';
 import { WorkspacesController } from './workspaces/workspaces.controller.js';
+import { AccountMoveService } from './accounts/account-move.service.js';
 import { AccountsService } from './accounts/accounts.service.js';
 import { ValuationsService } from './accounts/valuations.service.js';
 import { CardsService } from './accounts/cards.service.js';
@@ -89,6 +90,9 @@ import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
+import { FormsService } from './payroll/forms.service.js';
+import { PayrollController } from './payroll/payroll.controller.js';
+import { PeopleService } from './payroll/people.service.js';
 import { BackupService } from './data/backup.service.js';
 import { AccountDataController, DataController, RestoresController } from './data/data.controller.js';
 import { OwnershipService } from './data/ownership.service.js';
@@ -152,6 +156,7 @@ export class AppModule {
       PlanningController,
       PayslipsController,
       BusinessController,
+      PayrollController,
       RentalsController,
       WorkspaceOpsController,
       SupportController,
@@ -182,6 +187,7 @@ export class AppModule {
         LedgerService,
         WorkspacesService,
         AccountsService,
+        AccountMoveService,
         ValuationsService,
         CardsService,
         TransactionsService,
@@ -237,6 +243,8 @@ export class AppModule {
         BusinessReportsService,
         ExportService,
         BusinessJobs,
+        PeopleService,
+        FormsService,
         PropertiesService,
         RentService,
         LoansService,

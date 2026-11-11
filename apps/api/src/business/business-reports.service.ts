@@ -6,8 +6,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import {
+  addMonths,
   asCurrencyCode,
   calendarDate,
+  compareDates,
+  endOfMonth,
+  monthsEnding,
+  startOfMonth,
+  summarizeBusinessMonths,
   daysBetween,
   depreciationForYear,
   divRound,
@@ -19,6 +25,8 @@ import {
   type DepreciationMethod,
 } from '@montra/domain';
 import type {
+  BusinessDashboardDto,
+  BusinessDashboardQuery,
   MissingReceiptsDto,
   PartyKind,
   PartyReportDto,
@@ -78,15 +86,7 @@ export class BusinessReportsService {
          group by a.id, a.name, a.type, g.name, a.tax_line_code
         having sum(p.functional_amount_minor) <> 0
          order by a.name`.execute(trx);
-      const { rows: monthly } = await sql<{ month: string; revenue: string; expenses: string }>`
-        select date_trunc('month', p.entry_date)::date::text as month,
-               coalesce(sum(-p.functional_amount_minor) filter (where a.type = 'income'), 0)::text as revenue,
-               coalesce(sum(p.functional_amount_minor) filter (where a.type = 'expense'), 0)::text as expenses
-          from app.posting p
-          join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
-         where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${e.id}
-           and a.type in ('income', 'expense') and p.entry_date between ${from} and ${to}
-         group by 1 order by 1`.execute(trx);
+      const monthly = await pnlMonths(trx, ctx, e.id, from, to);
       const line = (r: (typeof rows)[number]) => ({
         categoryId: r.id,
         name: r.name,
@@ -110,6 +110,122 @@ export class BusinessReportsService {
         income: income.map(line),
         expense: expense.map(line),
         months: monthly.map((m) => ({ month: dateOf(m.month), revenue: m.revenue, expenses: m.expenses })),
+      };
+    });
+  }
+
+  // ----- The landing page (ADR-0032) ---------------------------------------------------------------------------
+
+  async dashboard(ctx: Ctx, entityId: string, q: BusinessDashboardQuery): Promise<BusinessDashboardDto> {
+    return this.db.run(ctx, async (trx) => {
+      const e = await businessEntity(trx, ctx, entityId);
+      const today = todayOf(e);
+      const thisMonth = startOfMonth(today);
+      const first = await sql<{ d: string | null }>`
+        select min(entry_date)::text as d from app.posting
+         where workspace_id = ${ctx.workspaceId} and entity_id = ${e.id}`.execute(trx);
+      const firstMonth = first.rows[0]?.d ? startOfMonth(dateOf(first.rows[0].d)) : thisMonth;
+      const periods: { start: CalendarDate; end: CalendarDate }[] = [];
+      for (let m = thisMonth; periods.length < 60 && compareDates(m, firstMonth) >= 0; m = addMonths(m, -1))
+        periods.push({ start: m, end: endOfMonth(m) });
+      const chosen = q.month && compareDates(q.month, thisMonth) < 0 ? q.month : thisMonth;
+      const months = monthsEnding(chosen, q.months);
+      const from = months[0]!.start;
+      const to = months[months.length - 1]!.end;
+      // A balance is as of today at most: later-dated entries (a scheduled payment) haven't happened yet.
+      const cashTo = compareDates(to, today) > 0 ? today : to;
+
+      // Revenue and expenses: the P&L's own query, so a month here is the P&L for that month.
+      const pnl = new Map((await pnlMonths(trx, ctx, e.id, from, to)).map((m) => [m.month, m]));
+
+      // Money in and out: per journal entry, the net movement on the business's bank, cash and card accounts, so a
+      // transfer between two of them nets to nothing. Opening balances, corrections and revaluations aren't money moving.
+      const { rows: flows } = await sql<{ month: string; money_in: string; money_out: string }>`
+        with moves as (
+          select date_trunc('month', p.entry_date)::date as month, p.journal_entry_id, sum(p.functional_amount_minor) as net
+            from app.posting p
+            join app.bank_account b on b.workspace_id = p.workspace_id and b.ledger_account_id = p.ledger_account_id
+            join app.journal_entry je on je.workspace_id = p.workspace_id and je.id = p.journal_entry_id
+           where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${e.id}
+             and b.kind in ('checking', 'savings', 'cash', 'credit_card', 'line_of_credit')
+             and je.kind not in ('opening_balance', 'adjustment', 'valuation', 'fx_revaluation', 'depreciation', 'closing')
+             and p.entry_date between ${from} and ${to}
+           group by 1, 2
+        )
+        select month::text,
+               coalesce(sum(net) filter (where net > 0), 0)::text as money_in,
+               coalesce(-sum(net) filter (where net < 0), 0)::text as money_out
+          from moves group by 1`.execute(trx);
+      const flow = new Map(flows.map((f) => [dateOf(f.month), f]));
+
+      // Cash on hand: bank and cash balances at each month's end.
+      const { rows: cash } = await sql<{ month: string | null; delta: string }>`
+        select case when p.entry_date < ${from} then null else date_trunc('month', p.entry_date)::date::text end as month,
+               sum(p.functional_amount_minor)::text as delta
+          from app.posting p
+          join app.bank_account b on b.workspace_id = p.workspace_id and b.ledger_account_id = p.ledger_account_id
+         where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${e.id}
+           and b.kind in ('checking', 'savings', 'cash') and p.entry_date <= ${cashTo}
+         group by 1`.execute(trx);
+      let balance = BigInt(cash.find((c) => c.month === null)?.delta ?? '0');
+      const cashDelta = new Map(cash.filter((c) => c.month).map((c) => [dateOf(c.month), BigInt(c.delta)]));
+
+      const monthly = months.map((m) => {
+        const p = pnl.get(m.start);
+        const f = flow.get(m.start);
+        balance += cashDelta.get(m.start) ?? 0n;
+        const revenue = BigInt(p?.revenue ?? '0');
+        const expenses = BigInt(p?.expenses ?? '0');
+        return {
+          start: m.start,
+          end: m.end,
+          moneyIn: f?.money_in ?? '0',
+          moneyOut: f?.money_out ?? '0',
+          revenue: String(revenue),
+          expenses: String(expenses),
+          profit: String(revenue - expenses),
+          cashOnHand: String(balance),
+        };
+      });
+      const totals = summarizeBusinessMonths(monthly);
+
+      const { rows: inv } = await sql<{ open: string; overdue: boolean }>`
+        select (i.total_minor - coalesce((select sum(ip.amount_minor) from app.invoice_payment ip
+                                           where ip.workspace_id = i.workspace_id and ip.invoice_id = i.id), 0))::text as open,
+               i.due_date < ${today} as overdue
+          from app.invoice i
+         where i.workspace_id = ${ctx.workspaceId} and i.entity_id = ${e.id} and i.status = 'sent'`.execute(
+        trx,
+      );
+      const { rows: bills } = await sql<{ amount: string; overdue: boolean }>`
+        select amount_minor::text as amount, due_date < ${today} as overdue
+          from app.bill
+         where workspace_id = ${ctx.workspaceId} and entity_id = ${e.id} and status = 'open'`.execute(trx);
+      const open = (rows: { amount: bigint; overdue: boolean }[]) => {
+        const live = rows.filter((r) => r.amount > 0n);
+        const late = live.filter((r) => r.overdue);
+        const sum = (rs: typeof live) => String(rs.reduce((t, r) => t + r.amount, 0n));
+        return { count: live.length, amount: sum(live), overdueCount: late.length, overdueAmount: sum(late) };
+      };
+
+      return {
+        entityId: e.id,
+        currency: asCurrencyCode(e.currency),
+        months: q.months,
+        month: { start: chosen, end: endOfMonth(chosen) },
+        current: chosen === thisMonth,
+        periods,
+        monthly,
+        totals: {
+          moneyIn: String(totals.moneyIn),
+          moneyOut: String(totals.moneyOut),
+          revenue: String(totals.revenue),
+          expenses: String(totals.expenses),
+          profit: String(totals.profit),
+          marginBps: totals.marginBps,
+        },
+        openInvoices: open(inv.map((r) => ({ amount: BigInt(r.open), overdue: r.overdue }))),
+        openBills: open(bills.map((r) => ({ amount: BigInt(r.amount), overdue: r.overdue }))),
       };
     });
   }
@@ -541,3 +657,26 @@ export class BusinessReportsService {
 }
 
 export type { BusinessEntity };
+
+/**
+ * The P&L month by month (BIZ-10): revenue and expenses of a business between two dates. The P&L report and the
+ * landing page both read it, so their figures can't drift apart.
+ */
+export async function pnlMonths(
+  trx: Trx,
+  ctx: Ctx,
+  entityId: string,
+  from: CalendarDate,
+  to: CalendarDate,
+): Promise<{ month: CalendarDate; revenue: string; expenses: string }[]> {
+  const { rows } = await sql<{ month: string; revenue: string; expenses: string }>`
+    select date_trunc('month', p.entry_date)::date::text as month,
+           coalesce(sum(-p.functional_amount_minor) filter (where a.type = 'income'), 0)::text as revenue,
+           coalesce(sum(p.functional_amount_minor) filter (where a.type = 'expense'), 0)::text as expenses
+      from app.posting p
+      join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
+     where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${entityId}
+       and a.type in ('income', 'expense') and p.entry_date between ${from} and ${to}
+     group by 1 order by 1`.execute(trx);
+  return rows.map((r) => ({ month: dateOf(r.month), revenue: r.revenue, expenses: r.expenses }));
+}

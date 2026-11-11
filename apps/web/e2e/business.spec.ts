@@ -118,6 +118,8 @@ test('invoices, bills and mileage reach Schedule C and the export', async ({ pag
   await sections.getByRole('link', { name: 'Overview' }).click();
   const pnl = page.getByTestId('pnl');
   await expect(pnl.getByRole('row', { name: /Net profit.*\$110\.00/ })).toBeVisible();
+  // ADR-0032: the landing page's month table, with this month's revenue as the P&L has it.
+  await expect(page.getByTestId('business-months').getByRole('row').nth(1)).toContainText('$150.00');
   await page.getByRole('link', { name: 'Income by customer' }).click();
   await expect(
     page.getByTestId('report-customers').getByRole('row', { name: /Bluebird Cafe.*\$150\.00/ }),

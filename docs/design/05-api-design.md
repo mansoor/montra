@@ -44,6 +44,7 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | --- | --- | --- |
 | `GET/POST /accounts`, `GET/PATCH /accounts/{id}`, `POST /accounts/{id}/archive` | Bank/card/loan/asset accounts | ACC-02..06 |
 | `POST /accounts/{id}/balance-adjustments` | Audited adjustment | ACC-05 |
+| `GET /accounts/{id}/move?entityId`, `POST /accounts/{id}/move` `{ entityId }` (owners) | Preview, then move the account and its whole history to Personal or a business; blockers say why not ([ADR-0033](adr/0033-moving-an-account-to-other-books.md)) | ACC-03 |
 | `GET /accounts/{id}/register?view=ledger|simple` | Date, description, debit, credit, running balance | DE-06 |
 | `GET/POST /loans`, `PATCH /loans/{id}`, `GET /loans/{id}/schedule`, `POST /loans/{id}/payments`, `DELETE /loans/{id}/payments/{number}` | Tracked loans on any account, from the real balance ([ADR-0024](adr/0024-loan-tracking.md)) | RNT-08, ACC-02 |
 | `GET/POST /accounts/{id}/valuations`, `DELETE /accounts/{id}/valuations/{id}` (latest only), `GET /accounts/{id}/performance?range=` | Statement values and gain over time ([ADR-0025](adr/0025-retirement-and-gains.md)) | ACC-07 |
@@ -131,7 +132,9 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `GET /businesses`, `GET/PATCH /businesses/{entityId}`, `POST /businesses/files` | Business profile, documents | BIZ-01, BIZ-12 |
+| `GET /businesses`, `GET/PATCH /businesses/{entityId}` (incl. `domain`), `POST /businesses/files` | Business profile, documents | BIZ-01, BIZ-12 |
+| `POST/GET/DELETE /businesses/{entityId}/logo` (multipart PNG or JPEG, ≤ 1 MB) | The logo on invoices, checked by content ([ADR-0032](adr/0032-business-profile-invoice-pdf-dashboard.md)) | BIZ-01, BIZ-05 |
+| `GET /businesses/{entityId}/dashboard?months=3\|6\|12\|24&month=YYYY-MM-01` | The landing page: money in and out, revenue, expenses, profit and cash on hand by month, open invoices and bills ([ADR-0032](adr/0032-business-profile-invoice-pdf-dashboard.md)) | BIZ-10 |
 | `GET /parties?entityId&kind`, `POST /parties`, `PATCH /parties/{id}` | Customers and vendors; rows with a null `id` come from activity | BIZ-04 |
 | `GET/POST /invoices`, `GET/PATCH/DELETE /invoices/{id}`, `POST /invoices/{id}/send`, `POST /invoices/{id}/void`, `GET /invoices/{id}/pdf`, `GET /invoices/{id}/candidates`, `POST /invoices/{id}/payments` `{ transactionId \| accountId, date, amount }`, `DELETE /invoices/{id}/payments/{paymentId}` | Invoices and their payments (ADR-0017) | BIZ-05 |
 | `GET/POST /bills`, `GET/PATCH /bills/{id}`, `GET /bills/{id}/candidates`, `POST/DELETE /bills/{id}/payment`, `GET /bills/{id}/files/{fileId}` | Bills | BIZ-06 |
@@ -151,6 +154,9 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 | `GET/PUT /properties/{id}/budget?month` | Expected rent, planned expenses, capex reserve, actuals | RNT-14 |
 | `GET /reports/rental?entityId&from&to`, `GET /reports/schedule-e?entityId&year`, `GET /exports/schedule-e?entityId&year&format` (`csv`, `xlsx`; recent sign-in required) | Metrics and Schedule E per property and portfolio | RNT-06, RNT-11, UP-10 |
 | `GET/POST /employers`, `PATCH /employers/{id}`; `POST /payslips/files` (multipart PDF or photo) → `fileId`; `POST /payslips` `{ employerId, fileIds[], fromLast, payDate? }` (201, reading runs as a job); `GET /payslips?memberId&employerId&status`; `GET/PATCH/DELETE /payslips/{id}`; `GET /payslips/{id}/files/{fileId}`; `POST /payslips/{id}/confirm` `{ version, depositTransactionId? }` | Payslips; a confirm comes back unposted with `matchCandidates` when several deposits fit (ADR-0016) | PAY-01..09 |
+| `GET/POST /payroll/people?entityId&kind`, `GET/PATCH/DELETE /payroll/people/{id}`, `POST /payroll/people/{id}/reveal` `{ field, recordId? }` (recent sign-in; logged) | Employees and contractors; personal data masked, one value revealed at a time. Write access to the business needed to read (ADR-0034) | PRL-01, PRL-05 |
+| `GET/POST /payroll/people/{id}/w4`, `GET /payroll/people/{id}/w4/{formId}/pdf`; `GET/POST /payroll/people/{id}/w9`, `GET /payroll/people/{id}/w9/{formId}/pdf` (PDFs: recent sign-in; logged) | W-4 and W-9, recorded as signed and never edited | PRL-02, PRL-03 |
+| `GET /payroll/people/{id}/i9`, `PUT …/i9/section1`, `PUT …/i9/section2`, `POST …/i9/documents`, `DELETE …/i9/documents/{documentId}`, `GET …/i9/documents/{documentId}/files/{fileId}`, `GET …/i9/pdf`, `DELETE …/i9` (after retention); `POST /payroll/files?entityId` (multipart; sealed) | I-9 sections, documents and sealed copies; retention worked out from hire and end dates | PRL-04, PRL-05 |
 
 ### Reports, search, export, notifications
 

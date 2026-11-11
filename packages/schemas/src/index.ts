@@ -19,3 +19,4 @@ export * from './notifications.js';
 export * from './data-ownership.js';
 export * from './storage.js';
 export * from './operations.js';
+export * from './payroll.js';

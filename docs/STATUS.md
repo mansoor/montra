@@ -617,13 +617,13 @@ Phase 8 leftovers, not blocking:
 
 - **Not tried on the real thing:** IIF and Xero files against QuickBooks and Xero themselves; invoice email through a real mail
   server; `flag_separation` and `map_tax_lines` against the real provider.
-- Invoice PDFs print Latin text only (the standard PDF fonts); other characters print as "?". Embedding a font would fix it.
+- ~~Invoice PDFs print Latin text only.~~ Done: embedded Noto fonts (ADR-0032, §7g). Korean and emoji still print "?".
 - A deposit pays one invoice: one cheque for two invoices needs splitting by hand. Bills can't be part paid.
 - Foreign-currency invoices and bills are refused.
 - Estimated-tax periods assume a calendar tax year, even for a business with another fiscal year.
 - The mileage rate editor is the admin screen in Phase 11; until then a new rate is a reference-data change.
 - Reminders appear on the calendar and as suggestions, and since Phase 10 by push and email too.
-- Mobile: invoices and bills are read-only, and there's no device run yet.
+- Mobile: invoices and bills are read-only (an invoice's PDF can be shared), and there's no device run yet.
 - BIZ-08, BIZ-14 and BIZ-15 (could-haves) aren't started.
 
 ## 7d. Phase 9, rental properties (done)
@@ -788,6 +788,23 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **A business's logo, domain and landing page; invoice PDFs in any script** (BIZ-01, BIZ-05, BIZ-10; [ADR-0032](design/adr/0032-business-profile-invoice-pdf-dashboard.md), migration 0030):
+  - **Logo and domain.** Business settings (web, and phone → Business → Logo and domain) take a PNG or JPEG logo (≤ 1 MB, 4096 px a side), checked by its content, stored as file kind `logo`; replacing it marks the old file deleted. The domain is the website or email domain as a bare host name: `normalizeDomain` in `@montra/schemas` turns `https://www.example.com/x` or `sales@example.com` into a host and refuses anything else, on both clients and the server. Both print on invoices and head the web invoice page.
+  - **Invoice PDF.** Text prints in embedded Noto fonts, script by script (`apps/api/src/business/pdf-fonts.ts`): Latin, Greek, Cyrillic, Vietnamese, Devanagari, Arabic, Hebrew, Thai, Chinese and Japanese; Korean and emoji still print "?". Don't switch back to pdf-lib's own `subset: true` or `drawText` for these fonts: its subsetter drops most glyphs, and its plain widths break Arabic joins and Devanagari conjuncts. Fonts are cut with HarfBuzz (`subset-font`) and each run is drawn as a positioned `TJ` array. `regenerator-runtime` is there because fontkit's Indic shaper needs it. Mixed-direction lines keep runs in reading order (no full bidi). The API image keeps only the regular and bold weights. A PDF already sent stays as sent. On the phone, an open invoice opens its PDF in the share sheet (`expo-sharing`, a new native module, so the APK needs rebuilding).
+  - **Landing page** (web Business → Overview, phone More → Business): `GET /businesses/:entityId/dashboard` gives, per month, money in and out (the business's bank, cash and card accounts, transfers between them left out), revenue and expenses (the P&L's own monthly query, `pnlMonths`, so they match `reports/pnl`), profit and cash on hand, plus open invoices and bills today. 3, 6, 12 or 24 months, ending with a month from the dropdown (back to the first activity, 60 at most), as tiles, three charts and a table. `summarizeBusinessMonths` and `monthsEnding` in `@montra/domain`. The P&L, customer and vendor reports stay below it on the web.
+- **Moving an account to other books** (ACC-03; [ADR-0033](design/adr/0033-moving-an-account-to-other-books.md), confirmed with the owner): an account's page (web, owners only) has **Move to other books**: pick Personal or a business, see what moves (transactions, other entries, reconciled lines kept, transactions whose categories stay in the old books, defaults cleared) or why it can't (a closed period in either books, different home currencies, a hand-written journal tying it to old-books lines, rental books or a property loan, archived), then move. The poster's `rebookAccount` re-books each transaction from what's posted, not from its spec, so payslips, invoices and rent move too; it settles again between entities around the paying account (in equity mode it also cancels the old owner contribution or draw), takes the account's uncategorized, bank-fee and FX lines along, keeps cleared and reconciled states (under `app.allow_locked_edit`) and checks every account's total is unchanged before writing. Import batches and reconciliations follow by `on update cascade`; the daily balance read model through `app.move_account_read_model`; loan schedules without a property and valuations too. Each move is an `account_move` row. Adding an account on the web now says "Whose books", and a business's settings link to adding one there. The phone has no add-account screen and no move yet.
+- **Payroll, stage 1: people and onboarding forms, web** (PRL-01..05, requirements 5.1, [ADR-0034](design/adr/0034-payroll.md)):
+  the owner moved payroll into scope on 2026-11-10 (federal plus one state; Montra calculates and fills in forms, and the owner
+  files and pays). Business → People lists employees and contractors with what each still needs. A person has contact and pay
+  details, and a tax ID, birth date and bank account that are sealed (`_enc`), shown masked, and revealed one at a time after a
+  recent sign-in, each reveal written to the audit log. Employees get W-4s (2020+, kept as history; the one in force by
+  effective date) and an I-9: Section 1 with the employee, the documents examined with copies, then Section 2. The I-9 is due
+  3 business days after the first day, and it can't be deleted until 3 years after hire or 1 year after leaving, whichever is
+  later. The screen says the originals must be examined and that E-Verify isn't included. A contractor is a vendor of the
+  business (so bills pay them) and has W-9s. Each form downloads as a substitute PDF (logged). ID copies are `app.file` rows
+  marked `sealed`: the bytes are encrypted before `StoragePort`, served only through their I-9, decrypted into backups and
+  re-sealed on restore. Read-only access to a business sees no payroll (`payroll.no_access`). Migration 0031,
+  `/v1/workspaces/{id}/payroll/*`. Stages 2–4 (pay runs, employer tax, year-end) follow; nothing on the phone yet.
 - **The receipt by the amount, web and phone** (RCP-06): a transaction's screen has a round receipt button beside its amount. Filled, it opens the receipt; with a "+", it adds one (the camera on the phone, the "Add a receipt" section on the web, which now shows only then). While a receipt added from the transaction is being read or needs a look, the button opens it and says so; on the phone, one waiting to upload opens the queue. `TransactionDto.receipt` (`{ id, status }`) is the linked receipt, else one added from the transaction that isn't linked yet (its only, unscored candidate). The phone reads it fresh from the server when the screen opens, because linking doesn't always change the synced transaction. On the phone, "Chosen by you" (how the category was picked) moved from under the amount to the Category row.
 - **Your own storage for files and backups, web and phone** ([ADR-0031](design/adr/0031-your-own-storage.md); BAK-03, BAK-05): Settings → Your own storage lets an owner connect an S3-compatible bucket (AWS S3, Backblaze B2, Wasabi, Cloudflare R2, MinIO) or a WebDAV folder (Nextcloud, ownCloud, Synology).
   - **Mirror, not move.** Montra keeps its own copy, so OCR, previews, matching, retention and quota are unchanged. A copy goes to `<folder>/<kind>/<year>/<date> <name> (<id tail>).<ext>`, by default under `Montra/<workspace>`.

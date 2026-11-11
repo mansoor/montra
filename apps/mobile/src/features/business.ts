@@ -28,3 +28,14 @@ export function normalizeMiles(input: string): string | null {
   const t = input.trim();
   return /^\d{1,6}(\.\d)?$/.test(t) && /[1-9]/.test(t) ? t : null;
 }
+
+/** A file name for an invoice's PDF on the device: its number, with nothing a file system would choke on. */
+export function invoicePdfName(number: string): string {
+  const safe = number.replace(/[^\p{L}\p{N}._-]+/gu, '_').replace(/^[._]+/, '');
+  return `${safe || 'invoice'}.pdf`;
+}
+
+/** The dashboard's months for the table, newest first. */
+export function newestFirst<T extends { start: string }>(months: readonly T[]): T[] {
+  return [...months].sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
+}
