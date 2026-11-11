@@ -980,17 +980,13 @@
     "done",
     "_enc columns and sealed files under the workspace key, masked display, reveal/download/view need a recent sign-in and write to the audit log; backups decrypt them and restore re-seals"
   ],
-  "PRL-10": [
-    "done",
-    "Contractors are vendors of the business and are paid through bills (BIZ-06); their reimbursements become bills too"
-  ],
   "PRL-06": [
     "done",
     "Every two weeks (from an anchor date), twice a month (1st-15th, 16th-end) or monthly; payday a set number of days after the period"
   ],
   "PRL-07": [
     "done",
-    "Draft runs with a paycheck per employee on the schedule: hours (and 1.5x overtime) or salary per period, other earnings, deductions and taxes; taxes are entered by hand until stage 3"
+    "Draft runs with a paycheck per employee on the schedule: hours (and 1.5x overtime) or salary per period, other earnings, deductions; taxes from the built-in engine, a typed-in tax overrides its line"
   ],
   "PRL-08": [
     "done",
@@ -998,15 +994,39 @@
   ],
   "PRL-09": [
     "done",
-    "One transaction per paycheck (owner `paycheck`): wages (Schedule C line 26) and reimbursed costs debited, withholding credited to liabilities, net from the bank; employer taxes post when deposited (stage 3). Reopen while nothing is reconciled or closed"
+    "One transaction per paycheck (owner `paycheck`): wages (Schedule C line 26) and reimbursed costs debited, withholding credited to liabilities, net from the bank; employer taxes post when the deposit is recorded. Reopen while nothing is reconciled or closed"
+  ],
+  "PRL-10": [
+    "done",
+    "Contractors are vendors of the business and are paid through bills (BIZ-06); their reimbursements become bills too"
   ],
   "PRL-11": [
     "done",
     "Requests with receipts (web and phone), approve or decline; an employee's is paid untaxed on the next pay run, a contractor's becomes a bill; paid is worked out from the run or bill"
   ],
+  "PRL-12": [
+    "done",
+    "Pub 15-T Worksheet 1A (2020+ W-4) on the annual percentage tables, kept as reviewed code per tax year (2026); no W-4 = single, no adjustments"
+  ],
+  "PRL-13": [
+    "done",
+    "Social Security to the yearly wage base, Medicare, Additional Medicare over $200,000 (employee only), employer shares; 401(k) stays in FICA wages, cafeteria plans don't"
+  ],
+  "PRL-14": [
+    "done",
+    "FUTA 0.6% on $7,000 with California's credit reduction on Form 940 (provisional until DOL's final list); California Method B with the DE 4, SDI, UI at the business's rate and ETT"
+  ],
+  "PRL-15": [
+    "done",
+    "Monthly or semiweekly 941 deposits, FUTA by quarter with the $500 carry, California PIT/SDI and UI/ETT, due dates past weekends and federal holidays; recorded deposits post (owner `payroll_deposit`); reminders within three days"
+  ],
+  "PRL-16": [
+    "done",
+    "941 (with line 16 or Schedule B liabilities), 940 (with Schedule A), DE 9 and DE 9C worksheets, filled from approved paychecks for copying into the agencies' forms"
+  ],
   "PRL-21": [
-    "partial",
-    "PayrollTaxEngine port with a manual engine; the built-in federal and California engine is stage 3"
+    "done",
+    "PayrollTaxEngine port: the built-in federal and California engine (`montra`), with the manual engine kept for a provider or testing"
   ],
   "PRL-22": [
     "partial",

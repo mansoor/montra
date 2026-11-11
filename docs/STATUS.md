@@ -788,11 +788,24 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Payroll, stage 3: employer tax, web** (PRL-12..16, PRL-21, [ADR-0034](design/adr/0034-payroll.md) §7–7a): the built-in
+  engine (`montra`) replaces the manual one. Each paycheck gets federal income tax (Pub 15-T Worksheet 1A from the W-4),
+  Social Security to the $184,500 wage base, Medicare and Additional Medicare, and for California work California income
+  tax (EDD Method B from the new DE 4), SDI, UI at the business's rate and ETT, plus FUTA. The 2026 tables are reviewed code
+  in `@montra/domain` (`payroll-tax-tables.ts`), tested against the EDD's worked examples; a year without tables gets a
+  note to enter taxes. Before-tax deductions are `retirement` (out of income tax only) or `section125` (out of all). A
+  typed-in tax still overrides its line. Business → Payroll → Payroll taxes keeps the EIN, EDD account, UI and ETT rates
+  and deposit schedules; lists what to deposit and when (941 monthly or semiweekly, FUTA by quarter with the $500 carry,
+  California PIT/SDI and UI/ETT), each deposit recorded posts one owned transaction (`payroll_deposit.managed`): withholding
+  out of its liability and the employer's share to Payroll taxes (Schedule C line 23); and fills in the 941, 940, DE 9
+  and DE 9C worksheets. Deposits due within three days are reminded nightly (`bill_due`). California's 2026 FUTA credit
+  reduction (1.5%) is the DOL's provisional figure and is flagged on the 940. Migration 0033. Stage 4 (W-2, W-3, 1099-NEC,
+  1096, EFW2) is next.
 - **Payroll, stage 2: pay runs, payslips and reimbursements, web and phone** (PRL-06..11, PRL-22, [ADR-0034](design/adr/0034-payroll.md)):
   Business → Payroll has pay schedules (every two weeks, twice a month, monthly), pay runs and reimbursement requests. Starting
   a run drafts a paycheck for each employee on the schedule: hours at their rate (overtime at 1.5×) or the salary for the
   period, plus any approved reimbursement, untaxed. Other earnings, deductions and the taxes are entered on the draft: the
-  `PayrollTaxEngine` port has only a manual engine until stage 3. Approving (with a confirmation that Montra moves no money)
+  `PayrollTaxEngine` port had only a manual engine until stage 3. Approving (with a confirmation that Montra moves no money)
   posts one transaction per paycheck, owned by the run (`paycheck.managed`): wages to Schedule C line 26, reimbursed costs to
   their category, withholding to liabilities, net pay from the run's bank account. Employer taxes are kept on the paycheck and
   post when deposited (stage 3). A run reopens while none of its transactions is reconciled or closed. Each paycheck has a
