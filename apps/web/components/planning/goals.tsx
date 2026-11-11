@@ -28,7 +28,7 @@ export function GoalsBoard({
   ...options
 }: GoalOptions & { goals: GoalDto[]; empty: ReactNode }) {
   const { t } = useI18n();
-  const { run, busy, message } = useAction();
+  const { run, busy, message, setMessage } = useAction();
   const active = goals.filter((g) => !g.archived);
   const archived = goals.filter((g) => g.archived);
   const setArchived = (g: GoalDto, value: boolean) =>
@@ -45,10 +45,11 @@ export function GoalsBoard({
         <div className="grid gap-4 md:grid-cols-2">
           {active.map((g) => (
             <GoalCard
-              key={`${g.id}-${g.version}`}
+              key={g.id}
               goal={g}
               options={options}
               busy={busy}
+              onSaved={() => setMessage({ tone: 'good', text: t('goal.saved') })}
               onArchive={() => {
                 if (window.confirm(t('goal.archive_confirm', { name: g.name }))) void setArchived(g, true);
               }}
@@ -99,11 +100,14 @@ function GoalCard({
   options,
   busy,
   onArchive,
+  onSaved,
 }: {
   goal: GoalDto;
   options: GoalOptions;
   busy: boolean;
   onArchive: () => void;
+  /** The form closes on save, so the board reports it. */
+  onSaved: () => void;
 }) {
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
@@ -113,6 +117,7 @@ function GoalCard({
       <GoalForm
         {...options}
         goal={g}
+        onSaved={onSaved}
         onClose={() => {
           setEditing(false);
           requestAnimationFrame(() => editButton.current?.focus());
@@ -273,8 +278,9 @@ export function GoalForm({
   accounts,
   members: allMembers,
   goal,
+  onSaved,
   onClose,
-}: GoalOptions & { goal?: GoalDto; onClose?: () => void }) {
+}: GoalOptions & { goal?: GoalDto; onSaved?: () => void; onClose?: () => void }) {
   const { t, locale } = useI18n();
   const { run, busy, message, setMessage } = useAction();
   const personal = workspace.entities.find((e) => e.type === 'personal') ?? workspace.entities[0]!;
@@ -320,20 +326,20 @@ export function GoalForm({
         }
         if (goal) {
           const debt = goal.type === 'debt_payoff';
-          void run(
-            () =>
-              browserApi.updateGoal(workspace.id, goal.id, {
-                name,
-                memberId: memberId || null,
-                target: tgt,
-                dueDate: due || null,
-                linkedAccountIds: linked,
-                ...(debt ? { strategy, extraPayment: ext } : {}),
-                version: goal.version,
-              }),
-            t('goal.saved'),
+          void run(() =>
+            browserApi.updateGoal(workspace.id, goal.id, {
+              name,
+              memberId: memberId || null,
+              target: tgt,
+              dueDate: due || null,
+              linkedAccountIds: linked,
+              ...(debt ? { strategy, extraPayment: ext } : {}),
+              version: goal.version,
+            }),
           ).then((r) => {
-            if (r) onClose?.();
+            if (!r) return;
+            onSaved?.();
+            onClose?.();
           });
           return;
         }
