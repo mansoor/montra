@@ -235,9 +235,10 @@ export const CreateBillRequest = z.object({
 });
 export type CreateBillRequest = z.output<typeof CreateBillRequest>;
 
+// Zod 4's .partial() keeps .default(): `fileIds` is redeclared without one (packages/schemas/test/patches.test.ts).
 export const UpdateBillRequest = CreateBillRequest.omit({ entityId: true })
   .partial()
-  .extend({ void: z.boolean().optional(), version: Version });
+  .extend({ fileIds: z.array(Id).max(20).optional(), void: z.boolean().optional(), version: Version });
 export type UpdateBillRequest = z.output<typeof UpdateBillRequest>;
 
 // ----- Mileage (BIZ-07) --------------------------------------------------------------------------------------

@@ -1,0 +1,4 @@
+Date,Category Group,Category,Payee,Amount,Currency,Notes,Tags,Account Name,Original Name,Transaction Number,Type,Parent ID,Recurring ID,Created At
+2026-10-28,Food,Dining,Blue Bottle,-6.50,usd,coffee,,Everyday Checking,BLUE BOTTLE #12,,,,,2026-10-28
+2026-10-25,Income,Salary,Acme,3200.00,usd,,,Everyday Checking,ACME PAYROLL,,,,,2026-10-25
+2026-10-24,Food,Groceries,Trader Joes,-84.20,usd,,,Travel Card,TRADER JOES 123,,,,,2026-10-24

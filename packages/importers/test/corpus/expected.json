@@ -287,5 +287,93 @@
     "total": -300,
     "balance": "n_a",
     "warning": "ambiguous_date_format"
+  },
+  "lunch-money.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "Blue Bottle"
+    },
+    "balance": "n_a",
+    "rows": 2,
+    "total": 319350,
+    "template": "lunch_money",
+    "accountFilter": "Everyday Checking"
+  },
+  "tiller.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "Blue Bottle"
+    },
+    "balance": "n_a",
+    "rows": 2,
+    "total": 319350,
+    "template": "tiller"
+  },
+  "actual.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "Blue Bottle"
+    },
+    "balance": "n_a",
+    "rows": 3,
+    "skipped": 1,
+    "total": -12650,
+    "template": "actual"
+  },
+  "goodbudget.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "Blue Bottle"
+    },
+    "balance": "n_a",
+    "rows": 2,
+    "total": 319350,
+    "template": "goodbudget"
+  },
+  "empower.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "Blue Bottle"
+    },
+    "balance": "n_a",
+    "rows": 2,
+    "total": 319350,
+    "template": "empower"
+  },
+  "ynab-starting.csv": {
+    "account": "asset",
+    "currency": "USD",
+    "errors": 0,
+    "first": {
+      "date": "2026-10-28",
+      "amount": -650,
+      "contains": "Blue Bottle"
+    },
+    "balance": "n_a",
+    "rows": 1,
+    "skipped": 1,
+    "total": -650,
+    "template": "ynab",
+    "accountFilter": "Checking"
   }
 }

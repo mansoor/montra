@@ -122,6 +122,7 @@ describe('closed contract gaps', () => {
       foreign: null,
       tripId: null,
       localTime: null,
+      receipt: null,
       accountId: 'chk',
       splits: [
         { accountId: 'rent', amount: '-120000', memberId: null, memo: null, propertyId: null, unitId: null },

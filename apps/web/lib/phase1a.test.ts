@@ -44,6 +44,7 @@ const txn = (postings: ReturnType<typeof posting>[], over: Partial<TransactionDt
   foreign: null,
   tripId: null,
   localTime: null,
+  receipt: null,
   accountId: null,
   splits: null,
   amount: { amount: '-12000', currency: 'USD' },

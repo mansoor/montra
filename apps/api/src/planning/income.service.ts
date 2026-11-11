@@ -6,7 +6,7 @@ import type {
   ExpectedIncomeDto,
   UpdateExpectedIncomeRequest,
 } from '@montra/schemas';
-import { notFound, unprocessable } from '../common/errors.js';
+import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { payeeKeyOf } from '../categorization/categorizer.service.js';
 import type { Ctx } from './data.js';
@@ -83,7 +83,8 @@ export class IncomeService {
         .returningAll()
         .executeTakeFirst();
       if (!row)
-        throw unprocessable(
+        throw new AppError(
+          409,
           'version.conflict',
           'This income was changed by someone else; reload and try again',
         );

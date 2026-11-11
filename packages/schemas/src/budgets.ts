@@ -428,9 +428,17 @@ export const CreateExpectedIncomeRequest = z.object({
 });
 export type CreateExpectedIncomeRequest = z.output<typeof CreateExpectedIncomeRequest>;
 
+// Zod 4's .partial() keeps .default(): the defaulted fields are redeclared without one, so a patch that leaves
+// them out keeps what is stored (packages/schemas/test/patches.test.ts).
 export const UpdateExpectedIncomeRequest = CreateExpectedIncomeRequest.omit({ entityId: true })
   .partial()
-  .extend({ active: z.boolean().optional(), version: z.number().int().positive() });
+  .extend({
+    memberId: Id.nullable().optional(),
+    accountId: Id.nullable().optional(),
+    payee: z.string().trim().max(200).nullable().optional(),
+    active: z.boolean().optional(),
+    version: z.number().int().positive(),
+  });
 export type UpdateExpectedIncomeRequest = z.output<typeof UpdateExpectedIncomeRequest>;
 
 export const ExpectedIncomeDto = z.object({

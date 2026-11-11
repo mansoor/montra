@@ -37,9 +37,10 @@ export function decodeText(bytes: Uint8Array): DecodedText {
   }
 }
 
-export type FileType = 'csv' | 'xlsx' | 'xls' | 'pdf';
+/** `qif` is Quicken Interchange Format; `ofx` is OFX 1.x/2.x and Quicken's QFX (ADR-0030). */
+export type FileType = 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx';
 
-/** Detects the file type from magic bytes, falling back to the extension for text files. */
+/** Detects the file type from magic bytes and content, falling back to the extension for text files. */
 export function detectFileType(bytes: Uint8Array, fileName: string): FileType | null {
   const head = [...bytes.subarray(0, 8)];
   const is = (sig: number[]) => sig.every((b, i) => head[i] === b);
@@ -47,9 +48,23 @@ export function detectFileType(bytes: Uint8Array, fileName: string): FileType | 
   if (is([0x50, 0x4b, 0x03, 0x04]))
     return /\.xlsx$/i.test(fileName) || !/\.(docx|zip)$/i.test(fileName) ? 'xlsx' : null;
   if (is([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) return 'xls'; // OLE2 compound file
+  const text = textHead(bytes);
+  if (/OFXHEADER\s*[:=]/i.test(text) || /<OFX>/i.test(text)) return 'ofx';
+  if (/^\s*!(type:|account\b|option:)/i.test(text)) return 'qif';
+  if (/\.(ofx|qfx)$/i.test(fileName)) return 'ofx';
+  if (/\.qif$/i.test(fileName)) return 'qif';
   if (/\.(csv|tsv|txt)$/i.test(fileName)) return 'csv';
   // Unknown extension: accept if it looks like text.
   const sample = bytes.subarray(0, 512);
   const binary = [...sample].filter((b) => b < 9 || (b > 13 && b < 32)).length;
   return binary === 0 ? 'csv' : null;
+}
+
+/** The start of a text file (BOM and UTF-16 handled), for sniffing QIF and OFX. */
+function textHead(bytes: Uint8Array): string {
+  try {
+    return decodeText(bytes.subarray(0, 2048)).text;
+  } catch {
+    return '';
+  }
 }

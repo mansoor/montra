@@ -1,0 +1,5 @@
+Account,Date,Payee,Notes,Category_Group,Category,Amount,Split_Amount,Cleared
+Checking,2026-10-28,Blue Bottle,coffee,Food,Dining,-6.50,0,Cleared
+Checking,2026-10-27,Costco,(SPLIT INTO 2),,,0,-120.00,Cleared
+Checking,2026-10-27,Costco,(SPLIT 1 OF 2),Food,Groceries,-80.00,0,Cleared
+Checking,2026-10-27,Costco,(SPLIT 2 OF 2),Home,Household,-40.00,0,Cleared

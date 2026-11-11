@@ -22,6 +22,8 @@ export interface ParsedRow {
   balance: bigint | null;
   category: string | null;
   reference: string | null;
+  /** The bank's id for the transaction (OFX `FITID`), when the file has one. */
+  externalId: string | null;
   raw: string[];
 }
 
@@ -126,6 +128,16 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
       .filter(Boolean)
       .join(' · ');
     const payee = m.payee !== undefined ? (r[m.payee] ?? '').trim() || null : null;
+    if (payee && m.openingPayees?.some((p) => p.toLowerCase() === payee.toLowerCase())) {
+      result.opening = (result.opening ?? 0n) + amount;
+      result.skipped.push({ rowNo, reason: 'footer' });
+      continue;
+    }
+    // A zero amount moves no money (split parents, $0 holds): counted as skipped, never imported.
+    if (amount === 0n) {
+      result.skipped.push({ rowNo, reason: 'filtered' });
+      continue;
+    }
     const balance = m.balance !== undefined ? parseAmount(r[m.balance] ?? '', currency, m.decimal) : null;
     result.rows.push({
       rowNo,
@@ -137,6 +149,7 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
       balance,
       category: m.category !== undefined ? (r[m.category] ?? '').trim() || null : null,
       reference: m.reference !== undefined ? (r[m.reference] ?? '').trim() || null : null,
+      externalId: m.externalId !== undefined ? (r[m.externalId] ?? '').trim() || null : null,
       raw: r,
     });
     if (!result.minDate || compareDates(date, result.minDate) < 0) result.minDate = date;

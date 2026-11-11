@@ -29,6 +29,11 @@ export default async function ImportPage({
         </Link>
       </div>
       <p className="text-sm text-muted">{t('imports.upload.intro')}</p>
+      <p className="text-sm">
+        <Link href={`${base}/switch`} className="font-medium text-brand-600 underline">
+          {t('import.switch_link')}
+        </Link>
+      </p>
       {open.length === 0 ? (
         <p className="card text-sm text-muted">
           {t('imports.upload.no_accounts')}{' '}

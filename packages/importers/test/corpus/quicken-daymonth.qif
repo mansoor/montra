@@ -1,0 +1,13 @@
+!Type:Bank
+D01/02/2026
+T-10.00
+PBakery
+^
+D03/04/2026
+T-20.00
+PButcher
+^
+D05/06/2026
+T-30.00
+PGreengrocer
+^

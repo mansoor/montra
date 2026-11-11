@@ -49,7 +49,11 @@ export class ImportsService {
   ) {}
 
   /** Starts an import of an uploaded file into an account (IMP-01). Parsing runs in the worker. */
-  async create(ctx: Ctx, req: CreateImportRequest): Promise<ImportBatchDto> {
+  async create(
+    ctx: Ctx,
+    req: CreateImportRequest,
+    opts: { migrationId?: string } = {},
+  ): Promise<ImportBatchDto> {
     const id = newId();
     await this.db.run(ctx, async (trx) => {
       const file = await trx
@@ -62,7 +66,7 @@ export class ImportsService {
       if (!file) throw notFound('Uploaded file');
       const fileType = fileTypeOf(file.mime, file.file_name);
       if (!fileType)
-        throw unprocessable('import.unsupported_file', 'Upload a CSV, XLS, XLSX or PDF statement');
+        throw unprocessable('import.unsupported_file', 'Upload a CSV, XLS, XLSX, PDF, QIF or OFX statement');
       const account = await this.ledger.accountRef(trx, ctx.workspaceId, req.accountId);
       if (!isBalanceSheet(account.type) || account.type === 'equity') {
         throw unprocessable(
@@ -84,6 +88,7 @@ export class ImportsService {
           status: 'parsing',
           warnings: '[]',
           created_by: ctx.userId,
+          ...(opts.migrationId ? { migration_id: opts.migrationId } : {}),
         })
         .execute();
       const parse = { workspaceId: ctx.workspaceId, batchId: id, accountFilter: req.accountFilter ?? null };
@@ -380,6 +385,8 @@ export class ImportsService {
 
 export function fileTypeOf(mime: string, fileName: string): ImportBatchTable['file_type'] | null {
   if (/pdf/.test(mime) || /\.pdf$/i.test(fileName)) return 'pdf';
+  if (/qif/.test(mime) || /\.qif$/i.test(fileName)) return 'qif';
+  if (/ofx|qfx/.test(mime) || /\.(ofx|qfx)$/i.test(fileName)) return 'ofx';
   if (/spreadsheetml|\.sheet/.test(mime) || /\.xlsx$/i.test(fileName)) return 'xlsx';
   if (/ms-excel$/.test(mime) || /\.xls$/i.test(fileName)) return 'xls';
   if (/csv|text\/plain|tab-separated/.test(mime) || /\.(csv|tsv|txt)$/i.test(fileName)) return 'csv';

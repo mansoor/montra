@@ -283,6 +283,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'support_access',
   ],
   'data.kind_': ['backup', 'tax_package'],
+  'switch.problem_': ['unsupported_type', 'unreadable', 'no_transactions', 'needs_mapping'],
   'data.status_': ['queued', 'running', 'ready', 'failed', 'expired'],
   'trash.kind_': ['transaction', 'receipt'],
   'rules.dow.': ['0', '1', '2', '3', '4', '5', '6'],

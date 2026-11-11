@@ -446,7 +446,8 @@ export class ReviewService {
     return { created, rows };
   }
 
-  private async createCategory(
+  /** A category (and its group, when new) in an entity: proposals here, and switching from another app. */
+  async createCategory(
     trx: Trx,
     ctx: Ctx,
     entityId: string,

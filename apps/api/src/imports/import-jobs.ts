@@ -16,13 +16,12 @@ import {
 import {
   analyze,
   classifyRows,
-  decodeText,
   detectDecimalSeparator,
   displayName,
   normalizeDescription,
   parseAmount,
-  parseDelimited,
   payeeDisplayName,
+  readTextSheets,
   readXlsx,
   type ColumnMapping,
   type Sheet,
@@ -77,7 +76,8 @@ const UNDO_DAYS = 30;
 /** Mapping confidence at or above which the preview opens without the mapping step. */
 const MAPPING_OK = 0.75;
 const SAMPLE_ROWS = 25;
-const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
+/** Locales that write the day first: an ambiguous date column (03/04) is read day-first for them. */
+export const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
 
 @Injectable()
 export class ImportJobs {
@@ -172,10 +172,13 @@ export class ImportJobs {
         .select('locale')
         .where('id', '=', ctx.userId)
         .executeTakeFirst();
+      // Switching from another app reads the file as its plan screen showed it: signs as written (or flipped there),
+      // without guessing from the account type (IMP-13).
+      const migration = await this.migrationSign(trx, ctx, batch.id);
       const analyzeOpts: Parameters<typeof analyze>[1] = {
         fileType: batch.file_type,
         currency,
-        accountType: account.type === 'liability' ? 'liability' : 'asset',
+        accountType: migration || account.type !== 'liability' ? 'asset' : 'liability',
         preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
         profiles: ordered.map((x) => ({
           id: x.id,
@@ -186,6 +189,12 @@ export class ImportJobs {
         statement: statementBalances,
       };
       let analysis = analyze(sheets, analyzeOpts, p.override);
+      // Switching from another app: the user said this file shows spending as positive (IMP-13).
+      if (!p.override && migration === 'inverted')
+        analysis = analyze(sheets, analyzeOpts, {
+          ...analysis.proposal.mapping,
+          sign: analysis.proposal.mapping.sign === 'inverted' ? 'normal' : 'inverted',
+        });
       // IMP-03: when the heuristics aren't sure, ask the AI column mapper and keep its mapping if it parses
       // the file better. The user can still correct it in the mapping step.
       if (!p.override && analysis.proposal.confidence < MAPPING_OK)
@@ -307,6 +316,46 @@ export class ImportJobs {
     });
   }
 
+  /** For a batch from a migration: whether its plan flips the file's signs; null for any other batch. */
+  private async migrationSign(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+  ): Promise<'as_written' | 'inverted' | null> {
+    const row = await trx
+      .selectFrom('app.import_batch as b')
+      .innerJoin('app.import_migration as m', (j) =>
+        j.onRef('m.workspace_id', '=', 'b.workspace_id').onRef('m.id', '=', 'b.migration_id'),
+      )
+      .select(['m.plan', 'b.file_id'])
+      .where('b.workspace_id', '=', ctx.workspaceId)
+      .where('b.id', '=', batchId)
+      .executeTakeFirst();
+    if (!row) return null;
+    const inverted = (row.plan as { inverted?: string[] }).inverted ?? [];
+    return inverted.includes(row.file_id) ? 'inverted' : 'as_written';
+  }
+
+  /** The plan's category mapping for a migration batch: file name (lower case) → category id, or null to skip. */
+  private async migrationCategories(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+  ): Promise<Map<string, string | null>> {
+    const row = await trx
+      .selectFrom('app.import_batch as b')
+      .innerJoin('app.import_migration as m', (j) =>
+        j.onRef('m.workspace_id', '=', 'b.workspace_id').onRef('m.id', '=', 'b.migration_id'),
+      )
+      .select('m.plan')
+      .where('b.workspace_id', '=', ctx.workspaceId)
+      .where('b.id', '=', batchId)
+      .executeTakeFirst();
+    const categories =
+      (row?.plan as { categories?: Record<string, string | null> } | undefined)?.categories ?? {};
+    return new Map(Object.entries(categories));
+  }
+
   private async sheets(fileType: string, storageKey: string, p: ParsePayload): Promise<Sheet[]> {
     if (p.previousResult?.kind === 'grid' && p.previousResult.sheets) return p.previousResult.sheets;
     if (fileType === 'xls' || fileType === 'pdf')
@@ -319,7 +368,11 @@ export class ImportJobs {
         throw new PermanentJobError('doc.corrupt', `Unreadable spreadsheet: ${(err as Error).message}`);
       }
     }
-    return [parseDelimited(decodeText(bytes).text)];
+    try {
+      return readTextSheets(fileType === 'qif' || fileType === 'ofx' ? fileType : 'csv', bytes);
+    } catch (err) {
+      throw new PermanentJobError('doc.corrupt', `Unreadable statement: ${(err as Error).message}`);
+    }
   }
 
   private async candidates(
@@ -446,6 +499,8 @@ export class ImportJobs {
     const byName = new Map<string, string>();
     for (const c of prepared.categories)
       if (c.entityId === account.entityId) byName.set(c.name.toLowerCase(), c.id);
+    // Switching from another app: the user's plan maps the file's category names (IMP-13).
+    const planned = await this.migrationCategories(trx, ctx, batchId);
     const items = [];
     const merchantOf = new Map<number, string>();
     for (const [i, r] of rows.entries()) {
@@ -454,7 +509,10 @@ export class ImportJobs {
       let fileCategoryId: string | null = null;
       if (r.category) {
         const leaf = r.category.split(/[:/>]/).at(-1)!.trim().toLowerCase();
-        fileCategoryId = byName.get(r.category.toLowerCase()) ?? byName.get(leaf) ?? null;
+        const key = r.category.trim().toLowerCase();
+        fileCategoryId = planned.has(key)
+          ? (planned.get(key) ?? null)
+          : (byName.get(r.category.toLowerCase()) ?? byName.get(leaf) ?? null);
       }
       const m = merchants.match(r.normalizedDescription);
       if (m) merchantOf.set(i, m.id);
@@ -504,7 +562,7 @@ export class ImportJobs {
     trx: Trx,
     ctx: Ctx,
     batchId: string,
-    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf',
+    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx',
     sheets: Sheet[],
     current: ReturnType<typeof analyze>,
     opts: Parameters<typeof analyze>[1],
@@ -519,7 +577,8 @@ export class ImportJobs {
       .executeTakeFirst();
     const res = await this.ai.gateway.mapColumns(
       {
-        fileType,
+        // QIF and OFX are read into a fixed grid, which the mapper sees as a CSV.
+        fileType: fileType === 'qif' || fileType === 'ofx' ? 'csv' : fileType,
         rows: current.sheet.rows.slice(0, 30).map((r) => r.map((cell) => String(cell ?? ''))),
         locale: user?.locale ?? 'en-US',
         accountType: accountType === 'liability' ? 'liability' : 'asset',

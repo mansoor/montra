@@ -16,3 +16,6 @@
 *.ttf binary
 *.woff binary
 *.woff2 binary
+
+# Kept byte for byte: the Windows-1252 and CRLF test of the QIF reader.
+packages/importers/test/corpus/quicken-ansi.qif binary
