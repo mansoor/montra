@@ -562,7 +562,7 @@ export class ImportJobs {
     trx: Trx,
     ctx: Ctx,
     batchId: string,
-    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf',
+    fileType: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx',
     sheets: Sheet[],
     current: ReturnType<typeof analyze>,
     opts: Parameters<typeof analyze>[1],
@@ -577,7 +577,8 @@ export class ImportJobs {
       .executeTakeFirst();
     const res = await this.ai.gateway.mapColumns(
       {
-        fileType,
+        // QIF and OFX are read into a fixed grid, which the mapper sees as a CSV.
+        fileType: fileType === 'qif' || fileType === 'ofx' ? 'csv' : fileType,
         rows: current.sheet.rows.slice(0, 30).map((r) => r.map((cell) => String(cell ?? ''))),
         locale: user?.locale ?? 'en-US',
         accountType: accountType === 'liability' ? 'liability' : 'asset',
