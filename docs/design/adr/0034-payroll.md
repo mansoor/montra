@@ -153,6 +153,37 @@ worksheets are for copying into the agencies' own filing; Montra doesn't file th
 
 A deposit due within three days, or overdue, is a `bill_due` notification to members who can read the business.
 
+### 7b. Year-end forms (stage 4)
+
+W-2s, the W-3, 1099-NECs and the 1096 are worked out from the year's records each time they're asked for, like the
+worksheets, so a reopened pay run or a late bill changes them and nothing goes stale. Nothing about them is stored
+except what the forms need that Montra didn't have: the employer's address in parts (the business profile keeps free
+text) and the SSA submitter's BSO User ID and contact, on `payroll_settings` (migration 0034).
+
+- **W-2 boxes** come from approved paychecks by pay date in the calendar year: box 1 is wages less both kinds of
+  before-tax deduction, boxes 3 and 5 are the wage bases worked out per person in pay-date order (Social Security
+  capped at the wage base), boxes 2, 4 and 6 are what was withheld (box 6 includes Additional Medicare), box 12 code D
+  is the `retirement` deductions, read as 401(k), and box 13's retirement plan box is ticked when there were any. For
+  California: box 14 `CASDI`, box 15 the EDD account, and boxes 16 and 17. Reimbursements aren't wages (§8), so
+  they're on no W-2.
+- **Copies.** Each employee's PDF has copies B, C and 2. Their SSN is truncated to the last four digits, as the IRS
+  allows on copies furnished to employees. The employer's PDF has copy D for each employee with the full SSN, and the
+  W-3. Copy A is not rendered: it must be the IRS's scannable red form or filed electronically, and the EFW2 file is
+  the electronic route. Copy 1 for a state isn't made, since California takes wages on the DE 9C instead.
+- **1099-NEC** amounts come from paid bills to each contractor's vendor record by payment date. Bills paid from a
+  credit card are left out, since the card company reports them on a 1099-K. A 1099-NEC is due when the year's total
+  reaches the threshold: $600 through 2025, and $2,000 for payments from 2026 (One Big Beautiful Bill Act §70433),
+  indexed from 2027, which Montra flags until it has the figure. The contractor's PDF has copies B and 2 with the TIN
+  truncated; the payer's has copy C with the full TIN and a Form 1096 worksheet. Copy A is filed through the IRS's
+  IRIS portal or on the red form; Montra doesn't file it.
+- **EFW2** (SSA Publication 42-007) is RA, RE, an RW per employee, RT and RF, 512 bytes each, ending CR LF, in upper case
+  except the emails. It's built by a pure function and tested byte by byte. Before it's made, the problems SSA would
+  reject are listed (an EIN prefix SSA doesn't issue, a missing BSO User ID or contact, an SSN starting with 9, 666 or
+  000), and the download is refused until they're fixed. The owner uploads it to Business Services Online; Montra
+  doesn't file it.
+- Full SSNs and TINs leave Montra only on the employer's copies and the EFW2 file. Both need a recent sign-in, and
+  each download is logged (`payroll.form_downloaded`), as stage 1's forms are.
+
 ### 8. Reimbursements are not wages
 
 A reimbursement request carries a receipt file and an amount and category, and it's approved or declined by someone who

@@ -303,6 +303,15 @@ export interface PayrollSettingsTable {
     CaDepositScheduleCol | undefined,
     CaDepositScheduleCol
   >;
+  filing_line1: string | null;
+  filing_line2: string | null;
+  filing_city: string | null;
+  filing_state: string | null;
+  filing_zip: string | null;
+  ssa_user_id: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
