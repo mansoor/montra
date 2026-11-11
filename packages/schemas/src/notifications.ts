@@ -16,6 +16,7 @@ export const NOTIFICATION_TYPES = [
   'suggestion',
   'weekly_digest',
   'backup_ready',
+  'storage_failing',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;

@@ -16,6 +16,7 @@ import { ThemeChoiceControl } from '@/components/theme-choice';
 import { PlanningSettings } from '@/components/settings/planning-settings';
 import { NotificationSettings } from '@/components/settings/notification-settings';
 import { PrivacyPanel, SecurityActivity } from '@/components/settings/privacy-security';
+import { StorageSettings } from '@/components/settings/storage-settings';
 import {
   BackupPanel,
   DeleteAccountPanel,
@@ -39,6 +40,7 @@ const TABS = {
   notifications: 'settings.tab.notifications',
   security: 'settings.tab.security',
   data: 'settings.tab.data',
+  storage: 'settings.tab.storage',
   privacy: 'settings.tab.privacy',
   billing: 'settings.tab.billing',
   support: 'settings.tab.support',
@@ -50,7 +52,7 @@ const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: 'settings.group.you', tabs: ['profile', 'appearance', 'notifications', 'security'] },
   { label: 'settings.group.workspace', tabs: ['entities', 'family', 'accounts', 'sharing', 'planning'] },
   { label: 'settings.group.ai', tabs: ['ai', 'ai-activity'] },
-  { label: 'settings.group.data', tabs: ['data', 'privacy', 'support', 'billing'] },
+  { label: 'settings.group.data', tabs: ['data', 'storage', 'privacy', 'support', 'billing'] },
 ];
 
 export default async function SettingsPage({
@@ -129,19 +131,20 @@ export default async function SettingsPage({
     const events = await load((api) => api.getSecurityActivity());
     body = <SecurityActivity events={events} />;
   } else if (tab === 'data') {
-    const [usage, jobs, schedule, restores, deletion] = await load((api) =>
+    const [usage, jobs, schedule, restores, deletion, destination] = await load((api) =>
       Promise.all([
         api.getStorageUsage(workspaceId),
         api.listBackups(workspaceId),
         api.getBackupSchedule(workspaceId),
         api.listRestores(),
         api.getDeletionStatus(),
+        isOwner ? api.getStorageDestination(workspaceId) : Promise.resolve(null),
       ]),
     );
     body = (
       <div className="space-y-5">
         <StorageMeter usage={usage} />
-        <BackupPanel workspace={workspace} jobs={jobs} schedule={schedule} />
+        <BackupPanel workspace={workspace} jobs={jobs} schedule={schedule} destination={destination} />
         <RestorePanel workspace={workspace} restores={restores} />
         <section className="card flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm">{t('data.trash_hint')}</p>
@@ -152,6 +155,13 @@ export default async function SettingsPage({
         <DeleteAccountPanel status={deletion} />
       </div>
     );
+  } else if (tab === 'storage') {
+    const [destination, failed] = isOwner
+      ? await load((api) =>
+          Promise.all([api.getStorageDestination(workspaceId), api.listStorageItems(workspaceId, 'failed')]),
+        )
+      : [null, []];
+    body = <StorageSettings workspace={workspace} destination={destination} failed={failed} />;
   } else if (tab === 'billing') {
     body = (
       <BillingPanel workspaceId={workspaceId} billing={await load((api) => api.getBilling(workspaceId))} />
