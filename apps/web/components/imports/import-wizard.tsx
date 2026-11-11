@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CategoryDto, ImportBatchDto, UndoResultDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
-import { canUndo, importErrorKey, isBusy, warningKey } from '@/lib/imports';
+import { canUndo, importErrorKey, isBusy, warningKey, warningParams } from '@/lib/imports';
 import { onChanges } from '@/lib/sync';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
@@ -286,7 +286,7 @@ function Warnings({ warnings }: { warnings: string[] }) {
     <ul className="space-y-1" aria-label={t('imports.warnings')}>
       {warnings.map((w) => (
         <li key={w} className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
-          {t(warningKey(w))}
+          {t(warningKey(w), warningParams(w))}
         </li>
       ))}
     </ul>

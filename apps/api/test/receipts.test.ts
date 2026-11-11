@@ -165,6 +165,32 @@ describe('the Walmart receipt (Phase 5 exit criterion 1, requirements §3.5)', (
     expect(t.localTime).toBe('14:32:00'); // TZ-03
   });
 
+  it('shows the receipt on its transaction, and one added from a transaction while it needs a look', async () => {
+    expect((await c.get(url(`/transactions/${txn.id}`))).body.receipt).toEqual({
+      id: receipt.id,
+      status: 'matched',
+    });
+    const other = await spend('2026-10-26', '-1500', 'CORNER HARDWARE', checking);
+    expect((await c.get(url(`/transactions/${other.id}`))).body.receipt).toBeNull();
+    // Added from that transaction, but it doesn't add up to the charge: it waits for a look, and still shows there.
+    const added = await capture(['CORNER HARDWARE', '10/26/2026', 'NAILS   12.00 T', 'TOTAL   12.00'], {
+      transactionId: other.id,
+    });
+    expect(added).toMatchObject({ status: 'needs_review', transactionId: null });
+    expect((await c.get(url(`/transactions/${other.id}`))).body.receipt).toEqual({
+      id: added.id,
+      status: 'needs_review',
+    });
+    const listed = (await c.get(url('/transactions?limit=200'))).body.data;
+    expect(listed.find((x: any) => x.id === other.id).receipt).toEqual({
+      id: added.id,
+      status: 'needs_review',
+    });
+    // Deleted, it's gone from the transaction, so the screen offers "Add a receipt" again.
+    expect((await c.delete(url(`/receipts/${added.id}`))).status).toBe(204);
+    expect((await c.get(url(`/transactions/${other.id}`))).body.receipt).toBeNull();
+  });
+
   it('keeps the image 7 years and serves it to the review screen (RCP-06, RCP-10)', async () => {
     expect(receipt.retainUntil.slice(0, 4)).toBe(String(new Date().getUTCFullYear() + 7));
     const res = await h.app.inject({

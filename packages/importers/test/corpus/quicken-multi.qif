@@ -1,0 +1,88 @@
+!Option:AutoSwitch
+!Account
+NChecking
+TBank
+^
+NVisa
+TCCard
+^
+NBrokerage
+TInvst
+^
+!Clear:AutoSwitch
+!Type:Cat
+NFood
+DFood and drink
+E
+^
+NFood:Groceries
+E
+^
+!Account
+NChecking
+TBank
+^
+!Type:Bank
+D10/1'26
+T3000.00
+PACME PAYROLL
+SSalary
+$3500.00
+STaxes:Federal
+$-400.00
+S[401k]
+EPre-tax
+$-100.00
+^
+D10/6'26
+T-150.00
+PCostco
+SFood:Groceries
+EFood
+$-90.00
+SFood:Groceries
+EMore food
+$-60.00
+^
+D10/16'26
+T-250.00
+PVisa payment
+L[Visa]
+^
+!Account
+NVisa
+TCCard
+^
+!Type:CCard
+D10/8'26
+T-42.00
+PSHELL OIL
+LAuto:Fuel
+^
+D10/16'26
+T250.00
+PPayment received
+L[Checking]
+^
+!Account
+NBrokerage
+TInvst
+^
+!Type:Invst
+D10/10'26
+NBuy
+YVanguard Total Market
+I250.00
+Q2
+T500.00
+^
+D10/20'26
+NDiv
+YVanguard Total Market
+T12.00
+^
+!Type:Memorized
+KC
+T-50.00
+PGym
+^

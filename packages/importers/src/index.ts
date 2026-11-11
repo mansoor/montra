@@ -11,3 +11,7 @@ export * from './receipt-match.js';
 export * from './fingerprint.js';
 export * from './templates.js';
 export * from './analyze.js';
+export * from './fixed-layout.js';
+export * from './qif.js';
+export * from './ofx.js';
+export * from './read.js';

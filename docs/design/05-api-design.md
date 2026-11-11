@@ -83,15 +83,15 @@ Paths are relative to `/v1/workspaces/{wid}` unless they start with `/v1`.
 
 | Method & path | Purpose | Req |
 | --- | --- | --- |
-| `POST /uploads` (multipart, field `file`) → `{ fileId, fileType, sha256, duplicateOf }` | Upload of up to 25 MB, type checked by magic bytes and content-hashed; `duplicateOf` flags a re-upload. Presigned direct-to-S3 uploads are added for mobile (Phase 4) | IMP-01/02 |
-| `POST /imports` `{ fileId, accountId, accountFilter? }` (202), `GET /imports?accountId` | Start an import batch (parsing runs in the worker; XLS and PDF go through the doc worker first); history | IMP-01, IMP-13 |
+| `POST /uploads` (multipart, field `file`) → `{ fileId, fileType, sha256, duplicateOf }` | Upload of up to 25 MB, type checked by magic bytes and content (`csv`, `xlsx`, `xls`, `pdf`, `qif`, and `ofx` for OFX and QFX: [ADR-0030](adr/0030-qif-and-ofx-files.md)) and content-hashed; `duplicateOf` flags a re-upload. Presigned direct-to-S3 uploads are added for mobile (Phase 4) | IMP-01/02 |
+| `POST /imports` `{ fileId, accountId, accountFilter? }` (202), `GET /imports?accountId` | Start an import batch (parsing runs in the worker; XLS and PDF go through the doc worker first; QIF and OFX are read into a fixed grid with a known mapping, OFX's `FITID` keys dedupe and its `LEDGERBAL` is the closing balance); history | IMP-01, IMP-13 |
 | `GET /imports/{id}` | Status, counts, balance check | IMP-08 |
 | `GET /imports/{id}/rows?status=` | Preview rows with suggestions | IMP-06 |
 | `PUT /imports/{id}/mapping` | Confirm or edit the column mapping (saves the profile) | IMP-03/04 |
 | `PATCH /imports/{id}/rows/{rowId}` | Change one preview row (category, skip, not-duplicate) | IMP-06 |
 | `POST /imports/{id}/commit`, `POST /imports/{id}/undo` (202) | Commit atomically, undo within 30 days (the result lists kept rows) | IMP-08/09 |
 | `GET /migrations/eligibility` | Switching from another app is for a fresh start: whether the workspace has transactions of its own (an earlier switch's don't count) | IMP-13 |
-| `POST /migrations/analyze` `{ source, fileIds, inverted? }` | Reads an export (CSV, TSV, XLSX) without creating anything: its accounts (dates, money in and out, opening balance, a matching account, a suggested kind) and categories (group, totals, a matching category, looks like a transfer) | IMP-13 |
+| `POST /migrations/analyze` `{ source, fileIds, inverted? }` | Reads an export (CSV, TSV, XLSX, QIF, OFX/QFX) without creating anything: its accounts (dates, money in and out, opening balance, a matching account, a suggested kind) and categories (group, totals, a matching category, looks like a transfer). A QIF or OFX file's account types suggest the kinds, and an OFX account's opening balance is its closing balance less its rows | IMP-13 |
 | `POST /migrations` `{ source, fileIds, inverted?, entityId?, accounts[], categories[] }` | Creates the chosen accounts (opening balance from today's balance or the export's) and categories, then one import per account (`accountFilter`), tagged with the migration so the worker uses its category map and signs; 409 `migration.not_fresh` when the workspace has its own transactions ([ADR-0029](adr/0029-switching-from-another-app.md)) | IMP-13 |
 | `GET /migrations/{id}`, `POST /migrations/{id}/commit`, `POST /migrations/{id}/transfers` | The migration's imports and their status; import every previewed one; make the transfers paired between its accounts | IMP-13, TXN-04 |
 | `GET /jobs/{id}` | Job status, progress and result (commit/undo summaries) | — |
