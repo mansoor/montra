@@ -19,6 +19,7 @@ import { ReceiptWaitingRow } from '../../src/ui/ReceiptWaiting';
 import { Banner, Body, Button, Card, Row, Segmented, Small, Title } from '../../src/ui/components';
 import { haptic } from '../../src/ui/haptics';
 import { Icon } from '../../src/ui/icons';
+import { PeriodPicker } from '../../src/ui/PeriodPicker';
 import { useTheme } from '../../src/ui/theme';
 
 type Months = (typeof CHART_MONTHS)[number];
@@ -110,9 +111,7 @@ export default function Home() {
           <View style={{ flex: 1 }}>
             <Title>{session.status === 'signed_in' ? session.workspace.name : ''}</Title>
             {dash ? (
-              <Small>
-                {fmtDate(dash.period.start)} – {fmtDate(dash.period.end)}
-              </Small>
+              <PeriodPicker shown={dash.period} periods={dash.periods} warn={!dash.current} onPick={go} />
             ) : null}
           </View>
           <Pressable
@@ -168,66 +167,6 @@ export default function Home() {
               : { gap: th.space(2) }
           }
         >
-          {dash ? (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: th.space(2),
-              }}
-            >
-              <Pressable
-                onPress={() => go(dash.nav.previous)}
-                accessibilityRole="button"
-                accessibilityLabel={t('home.period_previous')}
-                hitSlop={8}
-                testID="home-period-previous"
-                style={({ pressed }) => ({
-                  width: th.tap,
-                  height: th.tap,
-                  borderRadius: th.tap / 2,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: th.surfaceAlt,
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <Text style={{ color: th.text, fontSize: 22, fontWeight: '700' }}>‹</Text>
-              </Pressable>
-              <Text
-                style={{
-                  minWidth: 150,
-                  textAlign: 'center',
-                  color: at ? th.warning : th.text,
-                  fontWeight: '700',
-                }}
-                accessibilityLiveRegion="polite"
-              >
-                {periodLabel(dash.period)}
-              </Text>
-              <Pressable
-                onPress={() => dash.nav.next && go(dash.nav.nextIsCurrent ? null : dash.nav.next)}
-                disabled={!dash.nav.next}
-                accessibilityRole="button"
-                accessibilityLabel={t('home.period_next')}
-                accessibilityState={{ disabled: !dash.nav.next }}
-                hitSlop={8}
-                testID="home-period-next"
-                style={({ pressed }) => ({
-                  width: th.tap,
-                  height: th.tap,
-                  borderRadius: th.tap / 2,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: th.surfaceAlt,
-                  opacity: !dash.nav.next ? 0.35 : pressed ? 0.7 : 1,
-                })}
-              >
-                <Text style={{ color: th.text, fontSize: 22, fontWeight: '700' }}>›</Text>
-              </Pressable>
-            </View>
-          ) : null}
           {at ? (
             <>
               <Text
