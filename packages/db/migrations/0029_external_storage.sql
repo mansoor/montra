@@ -1,4 +1,4 @@
--- Your own storage for files and backups (BAK-03, BAK-05; ADR-0030). Montra keeps its copy of every file and also writes one to
+-- Your own storage for files and backups (BAK-03, BAK-05; ADR-0031). Montra keeps its copy of every file and also writes one to
 -- storage the owner connects (S3-compatible or WebDAV for now). Backups can go there too, on demand or on a schedule.
 
 -- -----------------------------------------------------------------------------
@@ -20,7 +20,7 @@ create table app.storage_destination (
   mirror_files        boolean not null default true,
   file_kinds          text[] not null default array['statement', 'receipt', 'payslip', 'lease', 'invoice', 'other']
                         check (file_kinds <@ array['statement', 'receipt', 'payslip', 'lease', 'invoice', 'other']),
-  -- ADR-0030 §6: off means a copy outlives Montra's file.
+  -- ADR-0031 §6: off means a copy outlives Montra's file.
   delete_with_montra  boolean not null default false,
   -- Archives Montra wrote to backups/ that it keeps; 0 keeps them all.
   keep_backups        integer not null default 12 check (keep_backups between 0 and 1000),
@@ -62,7 +62,7 @@ create index storage_mirror_due on app.storage_mirror_item (next_attempt_at) whe
 create index storage_mirror_file on app.storage_mirror_item (workspace_id, file_id);
 
 -- -----------------------------------------------------------------------------
--- Backups to the connection (ADR-0030 §7).
+-- Backups to the connection (ADR-0031 §7).
 -- -----------------------------------------------------------------------------
 alter table app.export_job add column destination_id uuid;
 alter table app.export_job add column destination_status text
@@ -148,7 +148,7 @@ end $$;
 create trigger file_storage_restored after update of deleted_at on app.file
   for each row execute function app.storage_file_restored();
 
--- Deleted for good: the copy stays unless the owner asked otherwise (ADR-0030 §6).
+-- Deleted for good: the copy stays unless the owner asked otherwise (ADR-0031 §6).
 create function app.storage_file_removed() returns trigger
   language plpgsql volatile security definer set search_path = app, pg_temp as $$
 begin

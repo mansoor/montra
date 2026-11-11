@@ -1,4 +1,4 @@
-/** The workspace's own storage (ADR-0030): turning the settings form into a request, and its status into words. */
+/** The workspace's own storage (ADR-0031): turning the settings form into a request, and its status into words. */
 import type { StorageConnectionInput, StorageDestinationDto } from '@montra/api-client';
 
 export interface ConnectionForm {

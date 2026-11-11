@@ -8,7 +8,7 @@ import { asDestinationError, DestinationError, type StorageDestination } from '.
 const TIMEOUT_MS = 120_000;
 
 /**
- * WebDAV: Nextcloud, ownCloud, Synology, Apache and nginx (ADR-0030 §2). Montra needs only PUT, MKCOL and DELETE, so this is written
+ * WebDAV: Nextcloud, ownCloud, Synology, Apache and nginx (ADR-0031 §2). Montra needs only PUT, MKCOL and DELETE, so this is written
  * over `node:http` rather than taken as a dependency. Redirects aren't followed: the address given must be the folder itself.
  */
 export class WebDavDestination implements StorageDestination {

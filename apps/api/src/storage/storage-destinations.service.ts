@@ -1,5 +1,5 @@
 /**
- * The owner's own storage (BAK-03, BAK-05; ADR-0030): connecting, testing, changing, disconnecting, and what it's done so far.
+ * The owner's own storage (BAK-03, BAK-05; ADR-0031): connecting, testing, changing, disconnecting, and what it's done so far.
  * Only owners, and RLS says so too. A secret goes in sealed and never comes back out.
  */
 import { Inject, Injectable } from '@nestjs/common';

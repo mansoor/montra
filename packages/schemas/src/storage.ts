@@ -1,4 +1,4 @@
-/** Your own storage for files and backups (BAK-03, BAK-05; ADR-0030). Secrets go in and never come back out. */
+/** Your own storage for files and backups (BAK-03, BAK-05; ADR-0031). Secrets go in and never come back out. */
 import { z } from 'zod';
 import { Id } from './common.js';
 
@@ -89,7 +89,7 @@ const Options = {
 export const ConnectStorageRequest = z.object({
   ...Options,
   connection: StorageConnection,
-  /** Also copy the files already in Montra (ADR-0030 §5). */
+  /** Also copy the files already in Montra (ADR-0031 §5). */
   copyExisting: z.boolean().default(true),
 });
 export type ConnectStorageRequest = z.output<typeof ConnectStorageRequest>;

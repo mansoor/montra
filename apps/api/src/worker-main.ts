@@ -46,7 +46,7 @@ await planning.schedule();
 await notifications.schedule();
 // Hourly: expired archives, files past retention, accounts past their 30 days, and scheduled backups (BAK-05, BAK-09).
 await retention.schedule();
-// Copies to the owner's own storage (ADR-0030). Each run schedules the next; this catches up after a restart.
+// Copies to the owner's own storage (ADR-0031). Each run schedules the next; this catches up after a restart.
 const mirror = app.get(StorageMirrorJobs);
 mirror.register();
 await mirror.schedule();

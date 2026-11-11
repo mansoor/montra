@@ -1,10 +1,10 @@
 import type { Readable } from 'node:stream';
 
 /**
- * Storage the workspace owner connects (ADR-0030). Montra only ever writes and deletes there: it never reads a copy back, because
+ * Storage the workspace owner connects (ADR-0031). Montra only ever writes and deletes there: it never reads a copy back, because
  * its own copy stays the one everything uses. Paths are relative to the connection's root and use `/`.
  *
- * Google Drive, OneDrive and Dropbox would implement this too, with a token refresh before each run (ADR-0030 §2).
+ * Google Drive, OneDrive and Dropbox would implement this too, with a token refresh before each run (ADR-0031 §2).
  */
 export interface StorageDestination {
   /** Writes a file, making folders as needed. Replaces a file of the same name. */

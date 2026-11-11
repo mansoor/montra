@@ -68,7 +68,7 @@ export function BackupPanel({
   workspace: WorkspaceDto;
   jobs: ExportJobDto[];
   schedule: BackupScheduleDto | null;
-  /** The workspace's own storage (ADR-0030), for owners. */
+  /** The workspace's own storage (ADR-0031), for owners. */
   destination?: StorageDestinationDto | null;
 }) {
   const router = useRouter();

@@ -46,7 +46,7 @@ export const ExportJobDto = z.object({
   error: z.string().nullable(),
   createdAt: z.string(),
   expiresAt: z.string().nullable(),
-  /** A copy sent to the workspace's own storage (ADR-0030 §7), or null when none was asked for. */
+  /** A copy sent to the workspace's own storage (ADR-0031 §7), or null when none was asked for. */
   storageCopy: z
     .object({
       status: z.enum(['pending', 'done', 'failed', 'pruned']),
@@ -78,7 +78,7 @@ export type BackupDestination = z.infer<typeof BackupDestination>;
 
 export const BackupScheduleDto = z.object({
   cadence: z.enum(['weekly', 'monthly']),
-  /** An emailed download link, or saved to the workspace's own storage (ADR-0030 §7). */
+  /** An emailed download link, or saved to the workspace's own storage (ADR-0031 §7). */
   destination: BackupDestination,
   /** Each archive is encrypted with the password given when scheduling. */
   encrypted: z.boolean(),

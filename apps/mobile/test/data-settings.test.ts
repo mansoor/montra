@@ -63,7 +63,7 @@ describe('humanBytes', () => {
   });
 });
 
-describe('storageStatusLine (ADR-0030)', () => {
+describe('storageStatusLine (ADR-0031)', () => {
   const d = (over: Partial<StorageDestinationDto>) =>
     ({
       status: 'active',

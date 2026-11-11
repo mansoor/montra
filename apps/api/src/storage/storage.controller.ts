@@ -33,7 +33,7 @@ import { StorageDestinationsService } from './storage-destinations.service.js';
 
 const TestRequest = z.object({ connection: StorageConnection, folder: StorageFolder.optional() });
 
-/** The workspace's own storage (ADR-0030). `storage` itself is the usage meter (BAK-08), so this is `storage-destination`. */
+/** The workspace's own storage (ADR-0031). `storage` itself is the usage meter (BAK-08), so this is `storage-destination`. */
 @Controller('v1/workspaces/:workspaceId/storage-destination')
 @UseGuards(AuthGuard, WorkspaceGuard)
 @UseInterceptors(IdempotencyInterceptor)

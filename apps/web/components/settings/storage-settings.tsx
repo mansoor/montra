@@ -16,7 +16,7 @@ import { StatusLine, useAction } from '../use-action';
 
 const KINDS = ['statement', 'receipt', 'payslip', 'invoice', 'lease', 'other'] as const;
 
-/** ADR-0030: a copy of every document, and backups, in storage the owner controls. */
+/** ADR-0031: a copy of every document, and backups, in storage the owner controls. */
 export function StorageSettings({
   workspace,
   destination,

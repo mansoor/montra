@@ -58,7 +58,7 @@ export function humanBytes(bytes: string | null): string {
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
 
-/** One line on the workspace's own storage (ADR-0030), as an i18n key and its values. The phone shows it; settings are on the web. */
+/** One line on the workspace's own storage (ADR-0031), as an i18n key and its values. The phone shows it; settings are on the web. */
 export function storageStatusLine(d: StorageDestinationDto): {
   key: string;
   values?: Record<string, number>;

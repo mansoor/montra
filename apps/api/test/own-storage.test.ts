@@ -21,7 +21,7 @@ import { ADMIN_URL } from './env.js';
 import { fakeS3, fakeWebDav, type FakeServer } from './fakes/storage-servers.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
-// Your own storage for files and backups (BAK-03, BAK-05; ADR-0030), against in-process S3 and WebDAV servers.
+// Your own storage for files and backups (BAK-03, BAK-05; ADR-0031), against in-process S3 and WebDAV servers.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
 const OWNER = 'owner-storage@example.com';
@@ -115,7 +115,7 @@ afterAll(async () => {
   await h.close();
 });
 
-describe('names and folders (ADR-0030 §4)', () => {
+describe('names and folders (ADR-0031 §4)', () => {
   it('files copies by kind and year, with a readable name that traces back to Montra', () => {
     const p = filePath('Montra/Smith household', {
       id: '019a7c3e-0000-7000-8000-00009c41d07e',
@@ -146,7 +146,7 @@ describe('names and folders (ADR-0030 §4)', () => {
   });
 });
 
-describe('where Montra may connect (ADR-0030 §3)', () => {
+describe('where Montra may connect (ADR-0031 §3)', () => {
   const prod = { allowPrivate: false };
 
   it('refuses private, loopback, link-local and metadata addresses', () => {
@@ -209,7 +209,7 @@ describe('where Montra may connect (ADR-0030 §3)', () => {
   });
 });
 
-describe('connecting S3-compatible storage (ADR-0030 §2, §3)', () => {
+describe('connecting S3-compatible storage (ADR-0031 §2, §3)', () => {
   it('is for owners only', async () => {
     expect((await partner.get(url('/storage-destination'))).status).toBe(403);
     expect(
@@ -353,7 +353,7 @@ describe('connecting S3-compatible storage (ADR-0030 §2, §3)', () => {
   });
 });
 
-describe('when Montra deletes a file for good (ADR-0030 §6)', () => {
+describe('when Montra deletes a file for good (ADR-0031 §6)', () => {
   it('keeps your copy by default', async () => {
     const fileId = await upload(OWNER, wsId, PNG, 'Kept.png');
     await mirror.run();
@@ -385,7 +385,7 @@ describe('when Montra deletes a file for good (ADR-0030 §6)', () => {
   });
 });
 
-describe('backups to your storage (ADR-0030 §7)', () => {
+describe('backups to your storage (ADR-0031 §7)', () => {
   const drain = () => worker.drain(['report'], 20);
 
   beforeEach(async () => {
@@ -513,7 +513,7 @@ describe('backups to your storage (ADR-0030 §7)', () => {
   });
 });
 
-describe('changing and disconnecting (ADR-0030 §3, §6)', () => {
+describe('changing and disconnecting (ADR-0031 §3, §6)', () => {
   it('re-tests a changed connection with the stored secret, and refuses a stale version', async () => {
     const current = (await c.get(url('/storage-destination'))).body.destination;
     expect(
@@ -581,7 +581,7 @@ describe('changing and disconnecting (ADR-0030 §3, §6)', () => {
   });
 });
 
-describe('WebDAV storage (ADR-0030 §2)', () => {
+describe('WebDAV storage (ADR-0031 §2)', () => {
   let dc: Client;
   let davWs: string;
   const durl = (p: string) => `/v1/workspaces/${davWs}${p}`;

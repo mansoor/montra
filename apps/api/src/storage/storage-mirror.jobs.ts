@@ -1,5 +1,5 @@
 /**
- * Copies files and backups to the owner's storage (ADR-0030 §5–§7). One system job, `storage.mirror`, works through every connection
+ * Copies files and backups to the owner's storage (ADR-0031 §5–§7). One system job, `storage.mirror`, works through every connection
  * with something due, each under an owner's RLS context. It claims rows with a lease, so two workers never copy the same file and a
  * crash only delays one. It then reschedules itself for whatever is due next.
  */
@@ -372,7 +372,7 @@ export class StorageMirrorJobs {
     );
   }
 
-  /** Keeps the newest `keep_backups` archives Montra wrote there, and deletes older ones (ADR-0030 §6). */
+  /** Keeps the newest `keep_backups` archives Montra wrote there, and deletes older ones (ADR-0031 §6). */
   private async prune(ctx: Ctx, dest: DestinationRow, remote: StorageDestination): Promise<number> {
     if (dest.keep_backups === 0 || !dest.can_delete) return 0;
     const old = await this.db.run(ctx, (trx) =>

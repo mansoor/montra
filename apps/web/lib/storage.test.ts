@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { StorageDestinationDto } from '@montra/api-client';
 import { emptyConnection, hasSecret, storageSummary, storageWhere, toConnection } from './storage';
 
-// The workspace's own storage settings (ADR-0030).
+// The workspace's own storage settings (ADR-0031).
 const destination = (over: Partial<StorageDestinationDto> = {}): StorageDestinationDto => ({
   id: '00000000-0000-4000-8000-000000000001',
   kind: 's3',

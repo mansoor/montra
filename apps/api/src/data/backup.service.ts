@@ -173,7 +173,7 @@ export class BackupService {
     const wrapped = req.password && kdf ? await this.kms.wrap(await deriveKey(req.password, kdf)) : null;
     return this.db.run(ctx, async (trx) => {
       if (req.entityId) await this.requireEntity(trx, ctx, req.entityId);
-      // ADR-0030 §7: a copy goes to the owner's storage too, unless they said not to.
+      // ADR-0031 §7: a copy goes to the owner's storage too, unless they said not to.
       const destination =
         role === 'owner' && req.saveToStorage !== false ? await this.destinationIn(trx, ctx) : undefined;
       if (req.saveToStorage && !destination) {
@@ -380,7 +380,7 @@ export class BackupService {
 
   async saveSchedule(ctx: Ctx, role: string, req: SaveBackupScheduleRequest): Promise<BackupScheduleDto> {
     if (role !== 'owner') throw new AppError(403, 'export.not_allowed', 'Only an owner can schedule backups');
-    // ADR-0030 §7: the key derived here is kept, wrapped by the KMS port. The password isn't.
+    // ADR-0031 §7: the key derived here is kept, wrapped by the KMS port. The password isn't.
     let key: { wrapped_key: Buffer | null; kdf: string | null } | undefined;
     if (req.password === null) key = { wrapped_key: null, kdf: null };
     else if (req.password) {
@@ -559,7 +559,7 @@ export class BackupService {
         .where('id', '=', id)
         .returning(['destination_id'])
         .executeTakeFirstOrThrow();
-      // ADR-0030 §7: the mirror job saves it to the owner's storage, and tells a schedule's owner how that went.
+      // ADR-0031 §7: the mirror job saves it to the owner's storage, and tells a schedule's owner how that went.
       if (job.destination_id) {
         await trx
           .updateTable('app.export_job')

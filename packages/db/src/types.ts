@@ -1331,7 +1331,7 @@ export interface ExportJobTable {
   created_at: Generated<Date>;
   finished_at: Date | null;
   expires_at: Date | null;
-  /** ADR-0030 §7: a copy sent to the workspace's own storage. */
+  /** ADR-0031 §7: a copy sent to the workspace's own storage. */
   destination_id: Generated<string | null>;
   destination_status: Generated<StorageCopyStatus | null>;
   destination_path: Generated<string | null>;
@@ -1352,12 +1352,12 @@ export interface BackupScheduleTable {
   last_run_at: Date | null;
   version: Int8Default;
   created_at: Generated<Date>;
-  /** A scheduled password's key, wrapped by the KMS port (ADR-0030 §7). Never the password. */
+  /** A scheduled password's key, wrapped by the KMS port (ADR-0031 §7). Never the password. */
   wrapped_key: Generated<Buffer | null>;
   kdf: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
 }
 
-// Your own storage (migration 0029, ADR-0030).
+// Your own storage (migration 0029, ADR-0031).
 
 export type StorageDestinationKind = 's3' | 'webdav';
 export type StorageFileKind = 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'other';

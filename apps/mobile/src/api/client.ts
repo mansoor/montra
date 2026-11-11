@@ -391,7 +391,7 @@ export function createApi(opts: ApiOptions) {
     backupDownloadUrl: (w: string, id: string) => `${opts.baseUrl}${ws(w)}/backups/${id}/download`,
     authHeaders,
     storageUsage: (w: string) => request<StorageUsageDto>('GET', `${ws(w)}/storage`),
-    /** The workspace's own storage (ADR-0030). Owners only: anyone else gets a 403. */
+    /** The workspace's own storage (ADR-0031). Owners only: anyone else gets a 403. */
     storageDestination: async (w: string) =>
       (await request<{ destination: StorageDestinationDto | null }>('GET', `${ws(w)}/storage-destination`))
         .destination,

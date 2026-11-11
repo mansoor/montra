@@ -1,4 +1,4 @@
-# ADR-0030: Your own storage for files and backups
+# ADR-0031: Your own storage for files and backups
 
 - Status: accepted
 - Date: 2026-11-10

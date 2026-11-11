@@ -4,7 +4,7 @@ import type { S3Secret, S3Settings } from '@montra/schemas';
 import { agentsFor, assertAllowedUrl, type HostPolicy } from './guard.js';
 import { asDestinationError, DestinationError, type StorageDestination } from './types.js';
 
-/** AWS S3 and everything that speaks its API: Backblaze B2, Wasabi, Cloudflare R2, MinIO (ADR-0030 §2). */
+/** AWS S3 and everything that speaks its API: Backblaze B2, Wasabi, Cloudflare R2, MinIO (ADR-0031 §2). */
 export class S3Destination implements StorageDestination {
   private readonly client: S3Client;
   private readonly bucket: string;

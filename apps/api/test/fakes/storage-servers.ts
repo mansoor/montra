@@ -1,5 +1,5 @@
 /**
- * In-process stand-ins for someone's storage (ADR-0030), so the tests run in CI without MinIO or a Nextcloud. The S3 one is driven by
+ * In-process stand-ins for someone's storage (ADR-0031), so the tests run in CI without MinIO or a Nextcloud. The S3 one is driven by
  * the real AWS SDK, and the WebDAV one by Montra's own client. Each keeps what it was given in memory, and can be told to fail.
  */
 import http from 'node:http';

@@ -1,4 +1,4 @@
-/** Folder layout and readable names in someone's storage (ADR-0030 §4). Pure, so it's tested on its own. */
+/** Folder layout and readable names in someone's storage (ADR-0031 §4). Pure, so it's tested on its own. */
 import type { StorageFileKind } from '@montra/schemas';
 
 export const KIND_FOLDERS: Record<StorageFileKind, string> = {

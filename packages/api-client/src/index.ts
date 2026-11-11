@@ -1790,7 +1790,7 @@ export class ApiClient {
   getStorageUsage(workspaceId: string) {
     return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
   }
-  /** The workspace's own storage (ADR-0030). Owners only. */
+  /** The workspace's own storage (ADR-0031). Owners only. */
   getStorageDestination(workspaceId: string) {
     return this.request<{ destination: StorageDestinationDto | null }>(
       'GET',

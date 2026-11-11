@@ -1,5 +1,5 @@
 /**
- * Where Montra may connect for someone's storage (ADR-0030 §3). The owner names the host, so in production the API refuses private,
+ * Where Montra may connect for someone's storage (ADR-0031 §3). The owner names the host, so in production the API refuses private,
  * loopback, link-local and metadata addresses, and plain http. The address is checked as each connection is made, through the
  * socket's `lookup`, so a name that resolves somewhere else later (DNS rebinding) is caught too.
  */
