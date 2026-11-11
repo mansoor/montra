@@ -50,15 +50,36 @@ afterAll(async () => {
 });
 
 describe('Home for another period (FLOW-01)', () => {
-  it('shows the current month by default, with only a way back', async () => {
+  it('shows the current month by default, offering each month back to the first transaction', async () => {
     const d = (await c.get(url('/dashboard'))).body;
     expect(d).toMatchObject({
       period: { start: thisMonth, end: endOfMonth(thisMonth) },
       current: true,
-      nav: { previous: addDays(thisMonth, -1), next: null, nextIsCurrent: false },
       income: { amount: '0' },
       spent: { amount: '4000' },
     });
+    // The opening balance is the first transaction, 40 days before last month began.
+    const first = startOfMonth(addDays(lastMonth, -40));
+    const months = [thisMonth, lastMonth, addMonths(thisMonth, -2), addMonths(thisMonth, -3)].filter(
+      (m) => m >= first,
+    );
+    expect(d.periods).toEqual(months.map((m) => ({ start: m, end: endOfMonth(m) })));
+  });
+
+  it('offers only the current period to a member with no transactions', async () => {
+    const sam = (await c.post(url('/family-members'), { name: 'Sam', relationship: 'spouse_partner' })).body
+      .id;
+    const d = (await c.get(url(`/dashboard?memberId=${sam}`))).body;
+    expect(d.periods).toEqual([{ start: thisMonth, end: endOfMonth(thisMonth) }]);
+  });
+
+  it('offers at most 12 months, keeping an older period shown', async () => {
+    const old = addMonths(thisMonth, -20);
+    const d = (await c.get(url(`/dashboard?period=${old}`))).body;
+    expect(d).toMatchObject({ period: { start: old }, current: false });
+    expect(d.periods[0]).toEqual({ start: thisMonth, end: endOfMonth(thisMonth) });
+    expect(d.periods.length).toBeLessThanOrEqual(13);
+    expect(d.periods.at(-1)).toEqual({ start: old, end: endOfMonth(old) });
   });
 
   it('shows last month’s money in and out for any date in it, pointing back to now', async () => {
@@ -66,7 +87,6 @@ describe('Home for another period (FLOW-01)', () => {
     expect(d).toMatchObject({
       period: { start: lastMonth, end: endOfMonth(lastMonth) },
       current: false,
-      nav: { previous: addDays(lastMonth, -1), next: thisMonth, nextIsCurrent: true },
       income: { amount: '500000', drill: { from: lastMonth, to: endOfMonth(lastMonth) } },
       spent: { amount: '42000', drill: { from: lastMonth, to: endOfMonth(lastMonth) } },
     });
@@ -90,7 +110,8 @@ describe('Home for another period (FLOW-01)', () => {
 
   it('shows the current period for a later date, and refuses a malformed one', async () => {
     const d = (await c.get(url(`/dashboard?period=${addMonths(thisMonth, 3)}`))).body;
-    expect(d).toMatchObject({ period: { start: thisMonth }, current: true, nav: { next: null } });
+    expect(d).toMatchObject({ period: { start: thisMonth }, current: true });
+    expect(d.periods[0]).toEqual({ start: thisMonth, end: endOfMonth(thisMonth) });
     expect((await c.get(url('/dashboard?period=last-month'))).status).toBe(400);
   });
 });

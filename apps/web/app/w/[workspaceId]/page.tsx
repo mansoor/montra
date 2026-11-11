@@ -10,6 +10,7 @@ import { RecommendationList } from '@/components/planning/recommendations';
 import { drillHref } from '@/lib/planning';
 import { endOfMonth, isCalendarDate, type CalendarDate } from '@montra/domain';
 import { CHART_MONTHS } from '@montra/schemas';
+import { PeriodSelect } from '@/components/planning/period-select';
 import { HomeCharts } from './home-charts';
 
 export const dynamic = 'force-dynamic';
@@ -69,16 +70,18 @@ export default async function HomePage({
         )
       : `${date(d.period.start)} – ${date(d.period.end)}`;
   const shownPeriod = d.current ? null : d.period.start;
+  // The current period (first) links without ?period=, so leaving it there is the default.
+  const periodOptions = d.periods.map((x, i) => ({
+    href: homeHref({ memberId, period: i === 0 ? null : x.start }),
+    label: `${date(x.start)} – ${date(x.end)}`,
+  }));
+  const periodValue = homeHref({ memberId, period: shownPeriod });
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={t('nav.home')}
-        subtitle={
-          <>
-            <DateText date={d.period.start} /> – <DateText date={d.period.end} />
-          </>
-        }
+        subtitle={<PeriodSelect label={t('home.period_nav')} options={periodOptions} value={periodValue} />}
         actions={
           <>
             {active.length > 0 && (
@@ -111,43 +114,16 @@ export default async function HomePage({
           d.current ? 'space-y-3' : 'space-y-3 rounded-xl border-2 border-warn bg-warn/10 p-3 sm:p-4'
         }
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <nav aria-label={t('home.period_nav')} className="flex items-center gap-1">
-            <Link
-              href={homeHref({ memberId, period: d.nav.previous })}
-              className="btn-secondary px-3"
-              aria-label={t('home.period_previous')}
-              title={t('home.period_previous')}
-            >
-              ←
+        {!d.current && (
+          <div className="flex flex-wrap items-center gap-2">
+            <p role="status" className="font-semibold text-warn">
+              {t('home.past_period', { period: periodLabel })}
+            </p>
+            <Link href={homeHref({ memberId })} className="btn-primary sm:ml-auto">
+              {t('home.back_to_today')}
             </Link>
-            <span className="min-w-40 px-2 text-center font-semibold">{periodLabel}</span>
-            {d.nav.next ? (
-              <Link
-                href={homeHref({ memberId, period: d.nav.nextIsCurrent ? null : d.nav.next })}
-                className="btn-secondary px-3"
-                aria-label={t('home.period_next')}
-                title={t('home.period_next')}
-              >
-                →
-              </Link>
-            ) : (
-              <span className="btn-secondary px-3 opacity-40" aria-hidden="true">
-                →
-              </span>
-            )}
-          </nav>
-          {!d.current && (
-            <>
-              <p role="status" className="font-semibold text-warn">
-                {t('home.past_period', { period: periodLabel })}
-              </p>
-              <Link href={homeHref({ memberId })} className="btn-primary sm:ml-auto">
-                {t('home.back_to_today')}
-              </Link>
-            </>
-          )}
-        </div>
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
             label={t('home.income')}

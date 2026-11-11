@@ -61,6 +61,7 @@ const ICONS = {
   next: ChevronRight,
   chevronDown: ChevronDown,
   back: ChevronLeft,
+  expand: ChevronDown,
   review: Inbox,
   goals: Target,
   cashFlow: TrendingUp,

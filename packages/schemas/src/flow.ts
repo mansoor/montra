@@ -112,10 +112,11 @@ export const DashboardDto = z.object({
   /** The period shown contains today. When it doesn't, clients say so plainly, with a way back. */
   current: z.boolean(),
   /**
-   * A date in the period before and in the one after, for `?period=` (the budget's periods, else months). `next` is
-   * null for the current period; `nextIsCurrent` says the next one is the current period (link without `period`).
+   * The periods to pick from, newest first: the current one (link without `period`), then back to the earliest with
+   * any transaction for the entity (and member), at most 12 months back. The budget's periods, else months. The
+   * period shown is always in the list, even when older.
    */
-  nav: z.object({ previous: CalendarDateDto, next: CalendarDateDto.nullable(), nextIsCurrent: z.boolean() }),
+  periods: z.array(z.object({ start: CalendarDateDto, end: CalendarDateDto })),
   budgetId: Id.nullable(),
   income: z.object({ amount: MinorDto, drill: DrillDto }),
   spent: z.object({ amount: MinorDto, drill: DrillDto }),
