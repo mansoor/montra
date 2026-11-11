@@ -3,6 +3,7 @@
  * kysely-codegen output checked in CI once the schema grows.
  */
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from 'kysely';
+import type { PayrollDatabase } from './payroll-types.js';
 
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 type CalendarDateCol = ColumnType<string, string, string>;
@@ -451,6 +452,8 @@ export interface FileTable {
   /** RCP-10: receipt images are kept until this date (7 years by default). */
   retain_until: CalendarDateCol | null;
   page_count: number | null;
+  /** ADR-0032: the bytes in storage are sealed with the workspace data key (copies of identity documents). */
+  sealed: Generated<boolean>;
   created_at: Generated<Date>;
   deleted_at: Date | null;
 }
@@ -1360,7 +1363,7 @@ export interface RestoreJobTable {
   expires_at: Timestamp;
 }
 
-export interface Database {
+export interface Database extends PayrollDatabase {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
   'app.workspace_member': WorkspaceMemberTable;
