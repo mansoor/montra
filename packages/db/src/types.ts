@@ -517,7 +517,7 @@ export interface ImportBatchTable {
   ledger_account_id: string;
   file_id: string;
   file_name: string;
-  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf';
+  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx';
   profile_id: string | null;
   fingerprint: string | null;
   mapping: Json<Record<string, unknown>> | null;

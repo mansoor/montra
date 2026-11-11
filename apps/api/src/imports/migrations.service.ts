@@ -21,10 +21,10 @@ import {
 import {
   analyze,
   applyMapping,
-  decodeText,
   findAccountColumn,
-  parseDelimited,
+  parseAmount,
   pickSheet,
+  readTextSheets,
   readXlsx,
   type ParsedRow,
   type Sheet,
@@ -45,6 +45,7 @@ import { AccountsService } from '../accounts/accounts.service.js';
 import { ReviewService } from '../categorization/review.service.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { ImportsService, fileTypeOf } from './imports.service.js';
+import { DAY_FIRST_LOCALES } from './import-jobs.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -56,6 +57,8 @@ interface AccountRows {
   rows: ParsedRow[];
   opening: bigint | null;
   group: (row: ParsedRow) => string | null;
+  /** What the file says the account is (QIF `!Type:CCard`, OFX `<CCACCTFROM>`), or null. */
+  kind: AccountKind | null;
 }
 
 interface ReadFile {
@@ -79,6 +82,17 @@ function kindFromName(name: string): AccountKind {
   if (/cash|wallet/.test(n)) return 'cash';
   if (/invest|brokerage|401|ira|roth|retirement/.test(n)) return 'investment';
   return 'checking';
+}
+
+/** The file's own account type where it gives one, refined by the name (QIF's "Oth L" may well be a mortgage). */
+function suggestKind(name: string, fileKind: AccountKind | null): AccountKind {
+  const guess = kindFromName(name);
+  if (fileKind === null) return guess;
+  if (fileKind === 'asset' || fileKind === 'liability') {
+    const side = accountProfile(guess).side;
+    return side === fileKind && guess !== 'checking' ? guess : fileKind;
+  }
+  return fileKind;
 }
 
 @Injectable()
@@ -186,7 +200,7 @@ export class MigrationsService {
             moneyOut: String(rows.reduce((t, r) => (r.amount < 0n ? t - r.amount : t), 0n)),
             opening: opening === null ? null : String(opening),
             matchId: accountByName.get(key.toLowerCase()) ?? null,
-            suggestedKind: kindFromName(key),
+            suggestedKind: suggestKind(key, list.find((a) => a.kind)?.kind ?? null),
           };
         }),
         categories: [...categories.entries()]
@@ -197,7 +211,11 @@ export class MigrationsService {
             rows: c.rows,
             moneyIn: String(c.moneyIn),
             moneyOut: String(c.moneyOut),
-            matchId: categoryByName.get(name.toLowerCase()) ?? null,
+            // Quicken's "Food:Groceries" matches a Groceries category.
+            matchId:
+              categoryByName.get(name.toLowerCase()) ??
+              categoryByName.get(name.split(':').at(-1)!.trim().toLowerCase()) ??
+              null,
             transfer: TRANSFER.test(name) || TRANSFER.test(c.group ?? ''),
           })),
       };
@@ -441,7 +459,7 @@ export class MigrationsService {
     return out;
   }
 
-  /** Reads each file into its accounts' rows (CSV, TSV and XLSX; other files go through the Import page). */
+  /** Reads each file into its accounts' rows (CSV, TSV, XLSX, QIF and OFX; PDFs go through the Import page). */
   private async read(
     trx: Trx,
     ctx: Ctx,
@@ -450,6 +468,13 @@ export class MigrationsService {
     inverted: readonly string[] = [],
   ): Promise<ReadFile[]> {
     const out: ReadFile[] = [];
+    // Dates read as the import will read them (QIF's 03/04/26 is day-first for a day-first locale).
+    const user = await trx
+      .selectFrom('app.app_user')
+      .select('locale')
+      .where('id', '=', ctx.userId)
+      .executeTakeFirst();
+    const preferDayFirst = DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US');
     for (const fileId of fileIds) {
       const file = await trx
         .selectFrom('app.file')
@@ -467,19 +492,19 @@ export class MigrationsService {
         accounts: new Map(),
       };
       const type = fileTypeOf(file.mime, file.file_name);
-      if (type !== 'csv' && type !== 'xlsx') {
+      if (type !== 'csv' && type !== 'xlsx' && type !== 'qif' && type !== 'ofx') {
         out.push({ ...base, problem: 'unsupported_type' });
         continue;
       }
       let sheets: Sheet[];
       try {
         const bytes = await this.storage.get(file.storage_key);
-        sheets = type === 'xlsx' ? await readXlsx(bytes) : [parseDelimited(decodeText(bytes).text)];
+        sheets = type === 'xlsx' ? await readXlsx(bytes) : readTextSheets(type, bytes);
       } catch {
         out.push({ ...base, problem: 'unreadable' });
         continue;
       }
-      const a = analyze(sheets, { fileType: type, currency, accountType: 'asset' });
+      const a = analyze(sheets, { fileType: type, currency, accountType: 'asset', preferDayFirst });
       const proposal = a.proposal as typeof a.proposal & { groupColumn?: number | null };
       const template = proposal.templateId ?? null;
       if (!template && proposal.confidence < 0.75) {
@@ -501,10 +526,27 @@ export class MigrationsService {
           ? [...new Set(a.parsed.rows.map((r) => (r.raw[accountColumn] ?? '').trim()).filter(Boolean))]
           : [];
       // Openings (YNAB's Starting Balance) are skipped rows, so each account is parsed on its own to find its own.
+      // An OFX statement states only its closing balance: the opening is what leads to it.
+      const own = (key: string | null) =>
+        key === null && sheet.accounts?.length === 1
+          ? sheet.accounts[0]
+          : sheet.accounts?.find((x) => x.name === key);
+      const opening = (p: { rows: ParsedRow[]; opening: bigint | null }, key: string | null) => {
+        const closing = own(key)?.closing;
+        const end = closing ? parseAmount(closing, currency, mapping.decimal) : null;
+        return p.opening ?? (end === null ? null : end - p.rows.reduce((t, r) => t + r.amount, 0n));
+      };
       const accounts = new Map<string, AccountRows>();
       if (accountColumn === null) {
         const p = applyMapping(sheet, mapping, currency);
-        accounts.set(file.file_name, { fileId, filter: null, rows: p.rows, opening: p.opening, group });
+        accounts.set(file.file_name, {
+          fileId,
+          filter: null,
+          rows: p.rows,
+          opening: opening(p, null),
+          group,
+          kind: own(null)?.kind ?? null,
+        });
       } else {
         for (const key of keys) {
           const p = applyMapping(
@@ -512,7 +554,14 @@ export class MigrationsService {
             { ...mapping, filter: { column: accountColumn, values: [key] } },
             currency,
           );
-          accounts.set(key, { fileId, filter: key, rows: p.rows, opening: p.opening, group });
+          accounts.set(key, {
+            fileId,
+            filter: key,
+            rows: p.rows,
+            opening: opening(p, key),
+            group,
+            kind: own(key)?.kind ?? null,
+          });
         }
       }
       const rows = [...accounts.values()].reduce((n, x) => n + x.rows.length, 0);

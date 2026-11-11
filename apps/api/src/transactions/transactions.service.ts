@@ -1192,6 +1192,45 @@ export class TransactionsService {
     }
   }
 
+  /**
+   * Each transaction's receipt: the one linked to it, else one added for it ("Add receipt") that is still being read or
+   * needs a look. That second kind holds the transaction as its only candidate without a score until it is linked.
+   */
+  private async receiptsFor(
+    trx: Trx,
+    ctx: Ctx,
+    ids: string[],
+  ): Promise<Map<string, TransactionDto['receipt']>> {
+    // Two queries, so each uses its index: linked receipts by transaction, and the few still being read or checked.
+    const linked = await trx
+      .selectFrom('app.receipt')
+      .select(['id', 'status', 'transaction_id'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('transaction_id', 'in', ids)
+      .where('deleted_at', 'is', null)
+      .orderBy('created_at', 'desc')
+      .execute();
+    const out = new Map<string, TransactionDto['receipt']>();
+    for (const r of linked)
+      if (r.transaction_id && !out.has(r.transaction_id))
+        out.set(r.transaction_id, { id: r.id, status: r.status });
+    const pending = await trx
+      .selectFrom('app.receipt')
+      .select(['id', 'status', sql<string>`match_candidates->0->>'transactionId'`.as('added_for')])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('status', 'in', ['processing', 'needs_review'])
+      .where('deleted_at', 'is', null)
+      .where('transaction_id', 'is', null)
+      .where(sql<string>`match_candidates->0->>'transactionId'`, 'in', ids)
+      .where(sql<number>`jsonb_array_length(match_candidates)`, '=', 1)
+      .where(sql<boolean>`not (match_candidates->0 ? 'score')`)
+      .orderBy('created_at', 'desc')
+      .execute();
+    // A linked receipt wins over one still being read.
+    for (const r of pending) if (!out.has(r.added_for)) out.set(r.added_for, { id: r.id, status: r.status });
+    return out;
+  }
+
   async load(trx: Trx, ctx: Ctx, ids: string[]): Promise<TransactionDto[]> {
     if (ids.length === 0) return [];
     const txns = await trx
@@ -1242,6 +1281,7 @@ export class TransactionsService {
       .where('tt.transaction_id', 'in', ids)
       .orderBy('t.name')
       .execute();
+    const receipts = await this.receiptsFor(trx, ctx, ids);
     const order = new Map(ids.map((id, i) => [id, i]));
     const merchants = await this.merchants.load(trx);
     const result: TransactionDto[] = [];
@@ -1265,6 +1305,7 @@ export class TransactionsService {
         localTime: t.local_time,
         amount: specAmount(t.spec as TransactionSpec | null),
         accountId: specAccount(t.spec as TransactionSpec | null),
+        receipt: receipts.get(t.id) ?? null,
         splits: specSplits(t.spec as TransactionSpec | null),
         managedBy: ownerOf(t.spec),
         entries: entries

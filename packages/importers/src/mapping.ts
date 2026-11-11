@@ -30,6 +30,8 @@ export interface ColumnMapping {
   balance?: number;
   category?: number;
   reference?: number;
+  /** The bank's own id for each transaction (OFX `FITID`): dedupe keys on it rather than the description. */
+  externalId?: number;
   /** Rows whose first cells match one of these (case-insensitive) are skipped (totals, footers). */
   skipPatterns?: string[];
   /**

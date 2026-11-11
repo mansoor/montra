@@ -17,6 +17,7 @@ import {
   rowDisplay,
   WARNING_KEYS,
   warningKey,
+  warningParams,
 } from './imports';
 
 const en = catalogs.en!;
@@ -248,6 +249,12 @@ describe('warnings and failures', () => {
   it('maps every known warning and failure code to a message', () => {
     expect(warningKey('ambiguous_date_format')).toBe('imports.warning.ambiguous_date_format');
     expect(warningKey('something_new')).toBe('imports.warning.unknown');
+    // A count rides after a colon (QIF/OFX investment records left out).
+    expect(warningKey('investment_transactions_skipped:3')).toBe(
+      'imports.warning.investment_transactions_skipped',
+    );
+    expect(warningParams('investment_transactions_skipped:3')).toEqual({ count: 3 });
+    expect(warningParams('ambiguous_date_format')).toBeUndefined();
     for (const key of [...Object.values(WARNING_KEYS), 'imports.warning.unknown'])
       expect(en[key], key).toBeTruthy();
     for (const key of Object.values(IMPORT_ERROR_KEYS)) expect(en[key], key).toBeTruthy();

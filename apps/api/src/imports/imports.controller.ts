@@ -42,6 +42,8 @@ const MIME_BY_TYPE = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   xls: 'application/vnd.ms-excel',
   pdf: 'application/pdf',
+  qif: 'application/qif',
+  ofx: 'application/x-ofx',
 } as const;
 
 /** File uploads (IMP-01). Multipart for now; presigned direct-to-S3 uploads arrive with mobile (Phase 4). */
@@ -71,7 +73,8 @@ export class UploadsController {
     if (bytes.length === 0) throw new AppError(400, 'upload.empty', 'The file is empty');
     const fileName = part.filename.replace(/[\\/\0]/g, '_').slice(0, 255) || 'statement';
     const fileType = detectFileType(bytes, fileName);
-    if (!fileType) throw new AppError(415, 'upload.unsupported_type', 'Upload a CSV, XLS, XLSX or PDF file');
+    if (!fileType)
+      throw new AppError(415, 'upload.unsupported_type', 'Upload a CSV, XLS, XLSX, PDF, QIF or OFX file');
     const id = newId();
     const digest = sha256(bytes);
     const key = storageKey(ctx.workspaceId!, 'statement', id);

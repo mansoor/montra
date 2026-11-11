@@ -4,10 +4,14 @@ import { BankAccountKind } from './accounts.js';
 
 // ----- Uploads (IMP-01) ----------------------------------------------------------------------------------
 
+/** Statement file types. `qif` is Quicken's QIF; `ofx` is OFX 1.x/2.x and QFX (ADR-0030). */
+export const IMPORT_FILE_TYPES = ['csv', 'xlsx', 'xls', 'pdf', 'qif', 'ofx'] as const;
+export type ImportFileType = (typeof IMPORT_FILE_TYPES)[number];
+
 export const UploadDto = z.object({
   fileId: z.string(),
   fileName: z.string(),
-  fileType: z.enum(['csv', 'xlsx', 'xls', 'pdf']).nullable(),
+  fileType: z.enum(IMPORT_FILE_TYPES).nullable(),
   bytes: z.number(),
   sha256: z.string(),
   /** An earlier upload with identical content (same statement uploaded twice). */
@@ -55,6 +59,8 @@ export const ColumnMappingDto = z
     balance: col.optional(),
     category: col.optional(),
     reference: col.optional(),
+    /** The bank's transaction id column (OFX `FITID`), which dedupe keys on. */
+    externalId: col.optional(),
     skipPatterns: z.array(z.string().max(100)).max(20).optional(),
     filter: z.object({ column: col, values: z.array(z.string().max(200)).max(20) }).optional(),
     decimal: z.enum(['.', ',']),
@@ -119,7 +125,7 @@ export const ImportBatchDto = z.object({
   accountId: z.string(),
   fileId: z.string(),
   fileName: z.string(),
-  fileType: z.enum(['csv', 'xlsx', 'xls', 'pdf']),
+  fileType: z.enum(IMPORT_FILE_TYPES),
   status: ImportStatus,
   currency: z.string(),
   mapping: ColumnMappingDto.nullable(),
@@ -258,7 +264,10 @@ export type ReconciliationDto = z.infer<typeof ReconciliationDto>;
 
 // ----- Switching from another app (IMP-13, ADR-0029) ----------------------------------------------------------
 
-/** The apps the Switch page has export instructions for; `other` is any CSV with dates and amounts. */
+/**
+ * The apps the Switch page has export instructions for; `bank` is your banks' own OFX/QFX downloads, and `other` is
+ * any CSV with dates and amounts.
+ */
 export const MIGRATION_SOURCES = [
   'ynab',
   'monarch',
@@ -272,7 +281,9 @@ export const MIGRATION_SOURCES = [
   'pocketsmith',
   'simplifi',
   'goodbudget',
+  'quicken_windows',
   'quicken_mac',
+  'bank',
   'other',
 ] as const;
 export const MigrationSource = z.enum(MIGRATION_SOURCES);
