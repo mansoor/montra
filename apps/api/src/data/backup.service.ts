@@ -84,6 +84,8 @@ export interface ArchiveManifest {
     bytes: string;
     sha256: string;
     path: string;
+    /** ADR-0032: sealed in storage; the archive holds it decrypted, and a restore seals it again. */
+    sealed?: boolean;
   }[];
   /** Sum of postings per account: what a restore must come back to. */
   balances: Record<string, string>;
@@ -529,7 +531,10 @@ export class BackupService {
     zip.addFile(join(dir, 'summary.xlsx'), 'summary.xlsx');
     for (const f of manifest.files) {
       try {
-        const bytes = await this.storage.get(f.path);
+        const stored = await this.storage.get(f.path);
+        const bytes = f.sealed
+          ? await this.db.run(ctx, (trx) => this.crypto.openBytes(trx, ctx.workspaceId, f.id, stored))
+          : stored;
         // The path in the manifest is where it sits in the archive, set once it's in there.
         const path = `attachments/${f.id}-${safeFileName(f.name)}`;
         zip.addBuffer(Buffer.from(bytes), path);
@@ -666,6 +671,7 @@ export class BackupService {
                   sha256: String(row.sha256),
                   // Where it's stored, until it's been copied in.
                   path: String(row.storage_key),
+                  ...(row.sealed ? { sealed: true } : {}),
                 });
               }
             }
