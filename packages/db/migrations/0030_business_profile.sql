@@ -47,3 +47,43 @@ create policy account_move_insert on app.account_move for insert
   with check (workspace_id = app.current_workspace_id()
               and app.can_write_entity(from_entity_id) and app.can_write_entity(to_entity_id));
 grant select, insert on app.account_move to montra_app;
+create trigger account_move_audit after insert on app.account_move
+  for each row execute function app.audit_row();
+
+-- The account's import batches and reconciliations follow its entity: their keys include it, so the move updates
+-- `ledger_account.entity_id` and these cascade. (Postings can't cascade: they take their entity from their entry,
+-- so the move rewrites the entries instead.)
+do $$
+declare c record;
+begin
+  for c in
+    select con.conname, con.conrelid::regclass::text as tbl
+      from pg_constraint con
+     where con.contype = 'f'
+       and con.confrelid = 'app.ledger_account'::regclass
+       and con.conrelid in ('app.import_batch'::regclass, 'app.reconciliation'::regclass)
+       and array_length(con.conkey, 1) = 3
+  loop
+    execute format('alter table %s drop constraint %I', c.tbl, c.conname);
+    execute format('alter table %s add constraint %I foreign key (workspace_id, entity_id, ledger_account_id) '
+                   'references app.ledger_account (workspace_id, entity_id, id) on update cascade', c.tbl, c.conname);
+  end loop;
+end $$;
+
+-- The daily balance read model keeps the entity it first saw for an account. After a move, its rows follow the
+-- account's new entity. The app can only read the read model, so this is a definer; it changes nothing unless the
+-- caller can write the account's books.
+create function app.move_account_read_model(p_account uuid) returns void
+  language plpgsql volatile security definer set search_path = app, pg_temp as $$
+declare v_entity uuid;
+begin
+  select entity_id into v_entity from app.ledger_account
+   where workspace_id = app.current_workspace_id() and id = p_account;
+  if v_entity is null or not app.can_write_entity(v_entity) then
+    raise exception 'account % not found', p_account using errcode = 'insufficient_privilege';
+  end if;
+  update app.account_balance_daily set entity_id = v_entity
+   where workspace_id = app.current_workspace_id() and ledger_account_id = p_account and entity_id <> v_entity;
+end $$;
+revoke all on function app.move_account_read_model(uuid) from public;
+grant execute on function app.move_account_read_model(uuid) to montra_app;

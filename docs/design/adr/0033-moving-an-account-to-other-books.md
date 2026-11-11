@@ -1,6 +1,6 @@
 # ADR-0033: Moving an account to other books
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-10
 
 ## Context

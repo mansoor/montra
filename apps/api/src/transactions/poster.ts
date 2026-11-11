@@ -15,6 +15,9 @@ import {
   buildTransactionEntries,
   buildTransferEntries,
   calendarDate,
+  FOLLOWING_ROLES,
+  rebookStandalone,
+  rebookTransaction,
   compareDates,
   decimalToString,
   impliedRate,
@@ -25,7 +28,10 @@ import {
   type CarryingBalance,
   type Decimal,
   type JournalEntryDraft,
+  type JournalKind,
   type LedgerAccountRef,
+  type RebookEntity,
+  type RebookLine,
   type SplitInput,
   type SystemRole,
 } from '@montra/domain';
@@ -536,6 +542,310 @@ export class TransactionPoster {
     return outcome;
   }
 
+  /**
+   * ADR-0033: everything booked on `accountId`, re-booked as if the account had always been in `toEntityId`'s books.
+   * The caller has checked that nothing is in a closed period and the books share a currency. Reconciled lines are
+   * rewritten under the audited locked-edit setting and keep their state; before anything is written, each
+   * transaction's lines (settling lines aside) must total exactly what they did, or nothing changes.
+   */
+  async rebookAccount(
+    trx: Trx,
+    ctx: Ctx,
+    accountId: string,
+    fromEntityId: string,
+    toEntityId: string,
+  ): Promise<{ transactions: number; entries: number }> {
+    const touched = await trx
+      .selectFrom('app.journal_entry as je')
+      .innerJoin('app.posting as p', (j) =>
+        j.onRef('p.workspace_id', '=', 'je.workspace_id').onRef('p.journal_entry_id', '=', 'je.id'),
+      )
+      .select(['je.id', 'je.transaction_id'])
+      .distinct()
+      .where('p.workspace_id', '=', ctx.workspaceId)
+      .where('p.ledger_account_id', '=', accountId)
+      .execute();
+    const txIds = [...new Set(touched.map((t) => t.transaction_id).filter((t): t is string => t !== null))];
+    const standaloneIds = touched.filter((t) => t.transaction_id === null).map((t) => t.id);
+
+    // Every entry being rewritten, with its postings and their accounts' roles.
+    const entries = await trx
+      .selectFrom('app.journal_entry')
+      .select([
+        'id',
+        'transaction_id',
+        'entity_id',
+        'entry_date',
+        'kind',
+        'description',
+        'restricted',
+        'restricted_member_id',
+        'posted_at',
+      ])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where((eb) =>
+        eb.or([
+          ...(txIds.length ? [eb('transaction_id', 'in', txIds)] : []),
+          ...(standaloneIds.length ? [eb('id', 'in', standaloneIds)] : []),
+          eb.val(false),
+        ]),
+      )
+      .orderBy('posted_at')
+      .execute();
+    const entryIds = entries.map((e) => e.id);
+    const postings = entryIds.length
+      ? await trx
+          .selectFrom('app.posting as p')
+          .innerJoin('app.ledger_account as a', 'a.id', 'p.ledger_account_id')
+          .select([
+            'p.journal_entry_id',
+            'p.ledger_account_id',
+            'p.amount_minor',
+            'p.currency',
+            'p.functional_amount_minor',
+            'p.fx_rate',
+            'p.member_id',
+            'p.property_id',
+            'p.unit_id',
+            'p.memo',
+            'p.line_no',
+            'p.cleared',
+            'p.reconciliation_id',
+            'a.system_role',
+            'a.counterparty_entity_id',
+            'a.entity_id as account_entity_id',
+          ])
+          .where('p.workspace_id', '=', ctx.workspaceId)
+          .where('p.journal_entry_id', 'in', entryIds)
+          .orderBy('p.line_no')
+          .execute()
+      : [];
+    const roleOf = new Map(
+      postings.map((p) => [
+        p.ledger_account_id,
+        {
+          role: (p.system_role as SystemRole | null) ?? null,
+          counterparty: p.counterparty_entity_id,
+          entityId: p.account_entity_id,
+        },
+      ]),
+    );
+    // A line's cleared state is kept per transaction and account: reconciled wins, then cleared.
+    const rank = { uncleared: 0, cleared: 1, reconciled: 2 } as const;
+    const clearedOf = new Map<
+      string,
+      { cleared: 'uncleared' | 'cleared' | 'reconciled'; rec: string | null }
+    >();
+    const entryTx = new Map(entries.map((e) => [e.id, e.transaction_id ?? `entry:${e.id}`]));
+    for (const p of postings) {
+      const k = `${entryTx.get(p.journal_entry_id)}|${p.ledger_account_id}`;
+      const prev = clearedOf.get(k);
+      if (!prev || rank[p.cleared] > rank[prev.cleared])
+        clearedOf.set(k, { cleared: p.cleared, rec: p.reconciliation_id });
+    }
+
+    const specs = txIds.length
+      ? await trx
+          .selectFrom('app.transaction')
+          .select(['id', 'spec'])
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', 'in', txIds)
+          .execute()
+      : [];
+    const mainAccount = (spec: unknown): string | null => {
+      const s = spec as { type?: string; accountId?: string; fromAccountId?: string } | null;
+      return (s?.type === 'transfer' ? s.fromAccountId : s?.accountId) ?? null;
+    };
+    const plans = new Map<string, { hub: string; follows: boolean; spec: unknown }>();
+    for (const t of specs) {
+      const main = mainAccount(t.spec);
+      const follows = main === accountId;
+      let hub = toEntityId;
+      if (!follows && main) {
+        hub =
+          roleOf.get(main)?.entityId ?? (await this.ledger.accountRef(trx, ctx.workspaceId, main)).entityId;
+      }
+      plans.set(t.id, { hub, follows, spec: t.spec });
+    }
+
+    const pairs: [string, string][] = [];
+    for (const e of entries) {
+      const plan = e.transaction_id ? plans.get(e.transaction_id) : undefined;
+      if (plan) pairs.push([plan.hub, e.entity_id], [plan.hub, toEntityId]);
+    }
+    const resolver = await this.ledger.resolver(trx, ctx.workspaceId, pairs);
+
+    const lineOf = (p: (typeof postings)[number]): RebookLine => ({
+      lineNo: p.line_no,
+      accountId: p.ledger_account_id,
+      accountEntityId: p.account_entity_id,
+      currency: asCurrencyCode(p.currency),
+      amount: BigInt(p.amount_minor),
+      functionalAmount: BigInt(p.functional_amount_minor),
+      fxRate: p.fx_rate,
+      memberId: p.member_id,
+      propertyId: p.property_id,
+      unitId: p.unit_id,
+      memo: p.memo,
+      role: (p.system_role as SystemRole | null) ?? null,
+      counterpartyEntityId: p.counterparty_entity_id,
+    });
+
+    // Plan everything before writing anything.
+    const written: { transactionId: string | null; drafts: JournalEntryDraft[] }[] = [];
+    const remapped = new Map<string, Map<string, string>>(); // per transaction: old following account → new
+    for (const txId of txIds) {
+      const plan = plans.get(txId)!;
+      const bookings = await this.loadBookings(trx, ctx, txId);
+      const rebookEntities: RebookEntity[] = bookings.map((b) => {
+        const first = entries.find((e) => e.transaction_id === txId && e.entity_id === b.entityId)!;
+        const lines = (b.effective?.postings ?? []).map((l) => ({
+          ...l,
+          role: roleOf.get(l.accountId)?.role ?? null,
+          counterpartyEntityId: roleOf.get(l.accountId)?.counterparty ?? null,
+        }));
+        return {
+          entityId: b.entityId,
+          functionalCurrency:
+            b.effective?.functionalCurrency ?? resolver.entity(b.entityId).functionalCurrency,
+          entryDate: b.earliestDate,
+          kind: first.kind as JournalKind,
+          description: first.description,
+          restricted: first.restricted,
+          restrictedMemberId: first.restricted_member_id,
+          lines,
+        };
+      });
+      const drafts = rebookTransaction(
+        {
+          bookings: rebookEntities,
+          accountId,
+          fromEntityId,
+          toEntityId,
+          hubEntityId: plan.hub,
+          follows: plan.follows,
+        },
+        resolver,
+      );
+      const map = new Map<string, string>();
+      if (plan.follows) {
+        for (const b of rebookEntities)
+          for (const l of b.lines)
+            if (b.entityId === fromEntityId && l.role && FOLLOWING_ROLES.has(l.role))
+              map.set(l.accountId, resolver.systemAccount(toEntityId, l.role).id);
+      }
+      // Settling accounts the resolver just created (a first owner draw) aren't known yet: learn their roles.
+      const unknown = drafts
+        .flatMap((d) => d.postings.map((p) => p.accountId))
+        .filter((id) => !roleOf.has(id));
+      if (unknown.length) {
+        for (const a of await trx
+          .selectFrom('app.ledger_account')
+          .select(['id', 'system_role', 'counterparty_entity_id', 'entity_id'])
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', 'in', unknown)
+          .execute()) {
+          roleOf.set(a.id, {
+            role: (a.system_role as SystemRole | null) ?? null,
+            counterparty: a.counterparty_entity_id,
+            entityId: a.entity_id,
+          });
+        }
+      }
+      assertSameLines(
+        rebookEntities.flatMap((b) => b.lines),
+        drafts.flatMap((d) => d.postings),
+        map,
+        roleOf,
+      );
+      remapped.set(txId, map);
+      written.push({ transactionId: txId, drafts });
+    }
+    for (const id of standaloneIds) {
+      const e = entries.find((x) => x.id === id)!;
+      const draft = rebookStandalone(
+        {
+          entityId: e.entity_id,
+          functionalCurrency: resolver.entity(e.entity_id).functionalCurrency,
+          entryDate: calendarDate(String(e.entry_date).slice(0, 10)),
+          kind: e.kind as JournalKind,
+          description: e.description,
+          lines: postings.filter((p) => p.journal_entry_id === id).map(lineOf),
+        },
+        accountId,
+        toEntityId,
+        resolver,
+      );
+      if (!draft) {
+        throw unprocessable(
+          'account.move_manual_journal',
+          'A journal written by hand uses this account with something only the old books have',
+        );
+      }
+      written.push({ transactionId: null, drafts: [draft] });
+    }
+
+    // Write: the old entries go, the account changes books, the new entries come in with their states.
+    await sql`select set_config('app.allow_locked_edit', 'on', true)`.execute(trx);
+    await this.deleteEntries(trx, ctx, entryIds);
+    await trx
+      .updateTable('app.ledger_account')
+      .set({ entity_id: toEntityId })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', accountId)
+      .execute();
+    this.ledger.cacheOf(trx)?.accounts.delete(accountId);
+    for (const w of written) {
+      const ids = await this.ledger.post(trx, ctx, w.transactionId, w.drafts);
+      const key = w.transactionId ?? `entry:${standaloneIds[written.indexOf(w) - txIds.length]}`;
+      for (const [i, draft] of w.drafts.entries()) {
+        let locked = false;
+        for (const p of draft.postings) {
+          const state = clearedOf.get(`${key}|${p.accountId}`);
+          if (!state || state.cleared === 'uncleared') continue;
+          locked ||= state.cleared === 'reconciled';
+          await trx
+            .updateTable('app.posting')
+            .set({ cleared: state.cleared, reconciliation_id: state.rec })
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('journal_entry_id', '=', ids[i]!)
+            .where('ledger_account_id', '=', p.accountId)
+            .execute();
+        }
+        if (locked) {
+          await trx
+            .updateTable('app.journal_entry')
+            .set({ locked: true })
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', '=', ids[i]!)
+            .execute();
+        }
+      }
+    }
+    // Transactions whose main account moved: their books, and their spec's system splits, follow it.
+    for (const txId of txIds) {
+      const plan = plans.get(txId)!;
+      if (!plan.follows) continue;
+      const map = remapped.get(txId)!;
+      const spec = plan.spec as { splits?: { accountId: string }[] } | null;
+      const next = spec?.splits
+        ? {
+            ...spec,
+            splits: spec.splits.map((s) => ({ ...s, accountId: map.get(s.accountId) ?? s.accountId })),
+          }
+        : spec;
+      await trx
+        .updateTable('app.transaction')
+        .set({ primary_entity_id: toEntityId, ...(next ? { spec: JSON.stringify(next) } : {}) })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', txId)
+        .execute();
+    }
+    await sql`select app.move_account_read_model(${accountId}::uuid)`.execute(trx);
+    await sql`select set_config('app.allow_locked_edit', '', true)`.execute(trx);
+    return { transactions: txIds.length, entries: standaloneIds.length };
+  }
+
   /** How a transaction's entries are protected: decides whether undo can remove them (IMP-09, DE-10). */
   async protection(trx: Trx, ctx: Ctx, transactionId: string): Promise<'none' | 'reconciled' | 'closed'> {
     let result: 'none' | 'reconciled' | 'closed' = 'none';
@@ -687,3 +997,43 @@ export class TransactionPoster {
 
 /** "1.0900000000" → "1.09" for display and storage. */
 const trimRate = (s: string) => (s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s);
+
+/** Settling lines are redone by a move; everything else must come out to the same totals per account. */
+const SETTLING_ROLES: ReadonlySet<string> = new Set([
+  'inter_entity_clearing',
+  'due_to_entity',
+  'due_from_entity',
+  'owner_contribution',
+  'owner_draw',
+]);
+
+/** ADR-0033's safety net: the re-booked lines total, per account, exactly what was booked (system lines mapped). */
+function assertSameLines(
+  before: readonly { accountId: string; amount: bigint; functionalAmount: bigint }[],
+  after: readonly { accountId: string; amount: bigint; functionalAmount: bigint }[],
+  remap: ReadonlyMap<string, string>,
+  roles: ReadonlyMap<string, { role: SystemRole | null }>,
+): void {
+  const totals = (lines: typeof before, map: (id: string) => string) => {
+    const out = new Map<string, string>();
+    const sums = new Map<string, [bigint, bigint]>();
+    for (const l of lines) {
+      if (SETTLING_ROLES.has(roles.get(l.accountId)?.role ?? '')) continue;
+      const k = map(l.accountId);
+      const [a, f] = sums.get(k) ?? [0n, 0n];
+      sums.set(k, [a + l.amount, f + l.functionalAmount]);
+    }
+    for (const [k, [a, f]] of sums) if (a !== 0n || f !== 0n) out.set(k, `${a}/${f}`);
+    return out;
+  };
+  const was = totals(before, (id) => remap.get(id) ?? id);
+  const is = totals(after, (id) => id);
+  const same = was.size === is.size && [...was].every(([k, v]) => is.get(k) === v);
+  if (!same) {
+    throw new AppError(
+      500,
+      'ledger.move_changed',
+      'Moving the account would have changed its amounts; nothing moved',
+    );
+  }
+}
