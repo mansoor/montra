@@ -198,3 +198,22 @@ end $$;
 
 grant select, insert, update, delete on app.pay_schedule, app.pay_run, app.paycheck, app.paycheck_line,
   app.reimbursement to montra_app;
+
+-- Your own storage (migration 0029) mirrors new files. A sealed copy of an identity document is ciphertext under the
+-- workspace key, which the owner couldn't open from their storage, so it stays out of the mirror (ADR-0034 §3).
+create or replace function app.storage_file_added() returns trigger
+  language plpgsql volatile security definer set search_path = app, pg_temp as $$
+declare queued integer;
+begin
+  if new.kind = 'export' or new.sealed then return null; end if;
+  insert into app.storage_mirror_item (workspace_id, destination_id, file_id)
+  select d.workspace_id, d.id, new.id from app.storage_destination d
+   where d.workspace_id = new.workspace_id and d.mirror_files and d.status <> 'paused' and new.kind = any (d.file_kinds)
+  on conflict do nothing;
+  get diagnostics queued = row_count;
+  if queued > 0 then
+    perform app.schedule_system_job('schedule', 'storage.mirror', now());
+  end if;
+  return null;
+end $$;
+revoke all on function app.storage_file_added() from public;

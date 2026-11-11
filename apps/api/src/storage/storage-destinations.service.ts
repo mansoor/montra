@@ -430,7 +430,8 @@ export class StorageDestinationsService {
     const res = await sql`
       insert into app.storage_mirror_item (workspace_id, destination_id, file_id)
       select f.workspace_id, ${row.id}::uuid, f.id from app.file f
-       where f.workspace_id = ${row.workspace_id}::uuid and f.deleted_at is null and f.kind = any (${row.file_kinds}::text[])
+       where f.workspace_id = ${row.workspace_id}::uuid and f.deleted_at is null and not f.sealed
+         and f.kind = any (${row.file_kinds}::text[])
       on conflict do nothing`.execute(trx);
     const queued = Number(res.numAffectedRows ?? 0);
     if (queued > 0) await this.wake(trx, row.workspace_id, row.id, false);

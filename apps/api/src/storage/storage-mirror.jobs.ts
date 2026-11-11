@@ -233,6 +233,8 @@ export class StorageMirrorJobs {
           .select(['id', 'kind', 'file_name', 'mime', 'bytes', 'storage_key', 'created_at', 'deleted_at'])
           .where('workspace_id', '=', ctx.workspaceId)
           .where('id', '=', item.file_id)
+          // A sealed copy of an identity document is ciphertext the owner couldn't open (ADR-0034 §3): never copied.
+          .where('sealed', '=', false)
           .executeTakeFirst(),
       );
       if (!file) {
