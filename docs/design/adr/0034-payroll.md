@@ -92,11 +92,97 @@ A pay run is a draft until it's approved. Approving posts it, and a posted paych
 
 ### 7. The tax engine is a port (stages 2–3)
 
-`PayrollTaxEngine` takes the employee's W-4, the business's settings, the pay period and year-to-date figures. It returns
-each tax with its base and amount. The built-in engine is pure functions in `@montra/payroll`, unit-tested against the
-IRS's published examples, and reads its tables from reference data keyed by tax year and jurisdiction
-(`ref.payroll_tax_table`, loaded like the mileage rates). A provider adapter would implement the same port, and pay runs
-store only the results, so changing engines changes no stored data.
+`PayrollTaxEngine` takes the employee's W-4 and DE 4, the business's settings, the pay frequency, this paycheck's wages
+and before-tax deductions, and the same for the year to date. It returns each tax with its base and amount, and notes
+for the owner. A provider adapter would implement the same port, and pay runs store only the results, so changing
+engines changes no stored data.
+
+The built-in engine (`montra`, stage 3) is pure functions in `@montra/domain` (`payroll-tax.ts`):
+
+- federal income tax by Pub 15-T Worksheet 1A, the percentage method for automated systems, on the annual tables;
+- Social Security to the yearly wage base, Medicare, and Additional Medicare over $200,000 (employee only);
+- FUTA at the net 0.6% on the first $7,000;
+- California income tax by the EDD's Method B on the table for the pay frequency, SDI with no wage limit, and UI at the
+  business's own rate and ETT on the first $7,000.
+
+**The tables are code, not reference data.** Each year's tables are a TypeScript module (`payroll-tax-tables.ts`)
+transcribed from Pub 15-T and the EDD's schedules, with money as strings parsed to cents and rates in parts per million.
+The tests run the agencies' worked examples against them (EDD Method B examples A, B, C, E and F), and Pub 15-T, which
+gives no worked example for Worksheet 1A, is checked line by line in the test comments. A table in the database would
+let a year be loaded without a release, but the engine would then need the database to be tested, and a wrong
+transcription would arrive unreviewed. A new year is a pull request with its tests. A pay date in a year with no tables
+gets no computed taxes and a note on the paycheck saying to enter them.
+
+Decisions inside the engine:
+
+- **Before-tax deductions have two codes.** `retirement` (401(k), 403(b)) comes out of income-tax wages only;
+  `section125` (a cafeteria plan's health, dental, FSA or HSA) comes out of every wage base here, California's included.
+- **Each division is rounded to the cent, half up.** Pub 15-T allows rounding to the dollar; cents keep the payslip exact.
+- **Supplemental pay is taxed with regular pay** (the aggregate method). The 22% flat rate isn't offered yet.
+- **No W-4:** single, standard schedule, no adjustments. **No DE 4:** single with no allowances, as the DE 4's
+  instructions say. Both are noted on the paycheck.
+- **Another work state:** federal taxes are worked out and a note says to enter that state's.
+- **FUTA credit reduction** is a state's extra FUTA on Form 940 Schedule A, owed with the fourth quarter. California's
+  2026 figure (1.5%) is the Department of Labor's provisional list until it publishes the final one after November 10,
+  so the table marks it provisional and the 940 worksheet says to check it.
+
+### 7a. Deposits and worksheets (stage 3)
+
+What's owed is never stored: it's worked out from approved paychecks each time, so reopening a run moves it.
+
+- **Federal 941 taxes** (income tax withheld, both shares of Social Security and Medicare) follow the business's schedule:
+  monthly, due the 15th of the next month, or semiweekly, Wednesday-to-Friday paydays due the next Wednesday and
+  Saturday-to-Tuesday paydays the next Friday, with at least three banking days and never across a quarter (Pub 15
+  §11). A single day's $100,000 is flagged for the next-day rule.
+- **FUTA** is due by the end of the month after a quarter once more than $500 is owed, else carried forward; the fourth
+  quarter, with any credit reduction, is due with Form 940.
+- **California PIT and SDI** follow the schedule set for them (quarterly, monthly or semiweekly, which the EDD ties to the
+  federal schedule and the amounts withheld). **UI and ETT** are quarterly.
+- Due dates move to the next banking day past weekends and federal holidays (and DC's Emancipation Day).
+
+The owner records a deposit after paying it in EFTPS or the EDD's e-Services. That stores the amount by tax code and
+posts one transaction: the bank pays, what was withheld leaves its liability, and the employer's share is expensed to
+*Payroll taxes* (Schedule C line 23). The transaction is owned by the deposit (`payroll_deposit.managed`), and removing the
+deposit voids it unless it's reconciled or in a closed period. One deposit per tax and period: a change after paying
+shows as a difference to settle.
+
+The 941, 940, DE 9 and DE 9C worksheets are filled from the same paychecks. Wage bases on them (Social Security up to
+the wage base, Additional Medicare, FUTA and UI up to $7,000) are worked out again from each person's paychecks in pay-date
+order, so a tax typed in by hand doesn't change what wages are reported; 941 line 7 shows the cents that differ. The
+worksheets are for copying into the agencies' own filing; Montra doesn't file them.
+
+A deposit due within three days, or overdue, is a `bill_due` notification to members who can read the business.
+
+### 7b. Year-end forms (stage 4)
+
+W-2s, the W-3, 1099-NECs and the 1096 are worked out from the year's records each time they're asked for, like the
+worksheets, so a reopened pay run or a late bill changes them and nothing goes stale. Nothing about them is stored
+except what the forms need that Montra didn't have: the employer's address in parts (the business profile keeps free
+text) and the SSA submitter's BSO User ID and contact, on `payroll_settings` (migration 0034).
+
+- **W-2 boxes** come from approved paychecks by pay date in the calendar year: box 1 is wages less both kinds of
+  before-tax deduction, boxes 3 and 5 are the wage bases worked out per person in pay-date order (Social Security
+  capped at the wage base), boxes 2, 4 and 6 are what was withheld (box 6 includes Additional Medicare), box 12 code D
+  is the `retirement` deductions, read as 401(k), and box 13's retirement plan box is ticked when there were any. For
+  California: box 14 `CASDI`, box 15 the EDD account, and boxes 16 and 17. Reimbursements aren't wages (§8), so
+  they're on no W-2.
+- **Copies.** Each employee's PDF has copies B, C and 2. Their SSN is truncated to the last four digits, as the IRS
+  allows on copies furnished to employees. The employer's PDF has copy D for each employee with the full SSN, and the
+  W-3. Copy A is not rendered: it must be the IRS's scannable red form or filed electronically, and the EFW2 file is
+  the electronic route. Copy 1 for a state isn't made, since California takes wages on the DE 9C instead.
+- **1099-NEC** amounts come from paid bills to each contractor's vendor record by payment date. Bills paid from a
+  credit card are left out, since the card company reports them on a 1099-K. A 1099-NEC is due when the year's total
+  reaches the threshold: $600 through 2025, and $2,000 for payments from 2026 (One Big Beautiful Bill Act §70433),
+  indexed from 2027, which Montra flags until it has the figure. The contractor's PDF has copies B and 2 with the TIN
+  truncated; the payer's has copy C with the full TIN and a Form 1096 worksheet. Copy A is filed through the IRS's
+  IRIS portal or on the red form; Montra doesn't file it.
+- **EFW2** (SSA Publication 42-007) is RA, RE, an RW per employee, RT and RF, 512 bytes each, ending CR LF, in upper case
+  except the emails. It's built by a pure function and tested byte by byte. Before it's made, the problems SSA would
+  reject are listed (an EIN prefix SSA doesn't issue, a missing BSO User ID or contact, an SSN starting with 9, 666 or
+  000), and the download is refused until they're fixed. The owner uploads it to Business Services Online; Montra
+  doesn't file it.
+- Full SSNs and TINs leave Montra only on the employer's copies and the EFW2 file. Both need a recent sign-in, and
+  each download is logged (`payroll.form_downloaded`), as stage 1's forms are.
 
 ### 8. Reimbursements are not wages
 
@@ -122,13 +208,16 @@ practical.
   copy ciphertext. Sealed files should be left out of the mirror.
 - A backup holds decrypted ID copies and TINs. Backups already hold decrypted `_enc` columns, so the advice to set an
   archive passphrase covers both.
-- Each tax year needs its tables loaded before the first pay date of the year. A pay run in a year with no tables is
-  refused with a message rather than computed from last year's.
+- Each tax year needs its tables in a release before the first pay date of the year. A pay run in a year with no
+  tables isn't computed from last year's: its paychecks say to enter the taxes.
 - Only one state, and only the 2020+ W-4. Supporting a second state means another table set and form renderings, not a
   new design.
 
 ## Alternatives considered
 
+- **Tax tables in `ref` reference data.** See §7: reviewability and pure tests won over loading without a release.
+- **Store what's owed as deposit rows when a run is approved.** Simpler to list, but a reopened run or a changed
+  schedule would leave them wrong; working it out each time can't drift.
 - **Integrate a payroll provider now.** Check or Gusto Embedded would file and pay, but they need a commercial agreement,
   KYB for every business, and money movement, which the owner ruled out for now. The port keeps that path open.
 - **Overlay the official PDFs.** Accurate to the pixel, but the agencies' PDFs change layout every year and some are

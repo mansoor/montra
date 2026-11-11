@@ -129,6 +129,15 @@ export function PayrollHome({
       <p className="card text-sm text-muted" data-testid="payroll-run-notice">
         {t('payroll.run.notice')}
       </p>
+      <p className="text-sm">
+        <Link href={`${base}/taxes`} className="underline">
+          {t('payroll.taxes.link')}
+        </Link>
+        {' · '}
+        <Link href={`${base}/year-end`} className="underline">
+          {t('payroll.year_end.link')}
+        </Link>
+      </p>
 
       <section className="space-y-2" aria-labelledby="pay-runs">
         <div className="flex flex-wrap items-center justify-between gap-2">

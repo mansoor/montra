@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
+import { De4Panel } from '@/components/payroll/de4-panel';
 import { I9Panel } from '@/components/payroll/i9-panel';
 import { PersonDetails } from '@/components/payroll/person-details';
 import { W4Panel, W9Panel } from '@/components/payroll/tax-forms';
@@ -24,9 +25,10 @@ export default async function PersonPage({
       api.getPayrollPerson(workspaceId, personId),
     ]),
   );
-  const [w4s, w9s, i9, schedules] = await load((api) =>
+  const [w4s, de4s, w9s, i9, schedules] = await load((api) =>
     Promise.all([
       person.kind === 'employee' ? api.listW4(workspaceId, personId) : Promise.resolve([]),
+      person.kind === 'employee' ? api.listDe4(workspaceId, personId) : Promise.resolve([]),
       person.kind === 'contractor' ? api.listW9(workspaceId, personId) : Promise.resolve([]),
       person.kind === 'employee' ? api.getI9(workspaceId, personId) : Promise.resolve(null),
       api.listPaySchedules(workspaceId, entityId),
@@ -60,6 +62,13 @@ export default async function PersonPage({
             currency={business.currency}
             person={person}
             forms={w4s}
+            today={today}
+          />
+          <De4Panel
+            workspaceId={workspaceId}
+            currency={business.currency}
+            person={person}
+            forms={de4s}
             today={today}
           />
           <I9Panel

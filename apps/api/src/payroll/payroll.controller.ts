@@ -28,7 +28,10 @@ import {
   UpdatePayRunRequest,
   UpdatePayScheduleRequest,
   CreatePersonRequest,
+  CreateDe4Request,
   CreateW4Request,
+  RecordDepositRequest,
+  UpdatePayrollSettingsRequest,
   CreateW9Request,
   PersonKind,
   RevealRequest,
@@ -51,14 +54,23 @@ import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { parse } from '../common/zod.js';
 import { FormsService } from './forms.service.js';
 import { PayRunsService } from './pay-runs.service.js';
+import { PayrollTaxesService } from './payroll-taxes.service.js';
+import { YearEndService } from './year-end.service.js';
 import { PeopleService } from './people.service.js';
 import { ReimbursementsService } from './reimbursements.service.js';
 
 const Id = z.uuid();
 const EntityQuery = z.object({ entityId: z.uuid() });
+const Year = z.coerce.number().int().min(2000).max(2100);
+const WorksheetQuery = EntityQuery.extend({
+  year: Year,
+  quarter: z.coerce.number().int().min(1).max(4).optional(),
+});
+const FORMS = { '941': '941', '940': '940', de9: 'DE 9', de9c: 'DE 9C' } as const;
 
 /**
- * Payroll (PRL-01..05; ADR-0034). Everything here needs write access to the business. Full personal data comes back
+ * Payroll (PRL-01..16; ADR-0034). People and their forms need write access to the business; pay runs, taxes and
+ * worksheets can be read with read access. Full personal data comes back
  * only from a reveal, a form PDF or a document copy: each needs a recent sign-in and is logged.
  */
 @Controller('v1/workspaces/:workspaceId/payroll')
@@ -71,6 +83,8 @@ export class PayrollController {
     @Inject(FormsService) private readonly forms: FormsService,
     @Inject(PayRunsService) private readonly runs: PayRunsService,
     @Inject(ReimbursementsService) private readonly reimbursements: ReimbursementsService,
+    @Inject(PayrollTaxesService) private readonly taxes: PayrollTaxesService,
+    @Inject(YearEndService) private readonly yearEnd: YearEndService,
   ) {}
 
   // ----- People (PRL-01) -----------------------------------------------------------------------------------------
@@ -131,6 +145,27 @@ export class PayrollController {
   ): Promise<Buffer> {
     requireRecentAuth(ctx);
     return pdf(reply, await this.forms.w4Pdf(dbCtx(ctx), parse(Id, id), parse(Id, formId)));
+  }
+
+  @Get('people/:id/de4')
+  async listDe4(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return { data: await this.forms.listDe4(dbCtx(ctx), parse(Id, id)) };
+  }
+
+  @Post('people/:id/de4')
+  createDe4(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.forms.createDe4(dbCtx(ctx), parse(Id, id), parse(CreateDe4Request, body));
+  }
+
+  @Get('people/:id/de4/:formId/pdf')
+  async de4Pdf(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Param('formId') formId: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    return pdf(reply, await this.forms.de4Pdf(dbCtx(ctx), parse(Id, id), parse(Id, formId)));
   }
 
   @Get('people/:id/w9')
@@ -369,6 +404,117 @@ export class PayrollController {
     void reply.header('cache-control', 'private, no-store');
     void reply.header('x-content-type-options', 'nosniff');
     return Buffer.from(f.bytes);
+  }
+
+  // ----- Employer tax (PRL-12..16) ---------------------------------------------------------------------------------
+
+  @Get('settings')
+  settings(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    return this.taxes.settings(dbCtx(ctx), parse(EntityQuery, q).entityId);
+  }
+
+  @Put('settings')
+  updateSettings(@Ctx() ctx: RequestContext, @Query() q: unknown, @Body() body: unknown) {
+    return this.taxes.updateSettings(
+      dbCtx(ctx),
+      parse(EntityQuery, q).entityId,
+      parse(UpdatePayrollSettingsRequest, body),
+    );
+  }
+
+  @Get('taxes')
+  taxesFor(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return this.taxes.taxes(dbCtx(ctx), entityId, year);
+  }
+
+  @Post('deposits')
+  recordDeposit(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.taxes.recordDeposit(dbCtx(ctx), parse(RecordDepositRequest, body));
+  }
+
+  @Delete('deposits/:id')
+  @HttpCode(204)
+  async removeDeposit(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {
+    await this.taxes.removeDeposit(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Get('worksheets/:form')
+  worksheet(@Ctx() ctx: RequestContext, @Param('form') form: string, @Query() q: unknown) {
+    const name = FORMS[form as keyof typeof FORMS];
+    if (!name) throw new AppError(404, 'not_found', 'No such worksheet');
+    const { entityId, year, quarter } = parse(WorksheetQuery, q);
+    return this.taxes.worksheet(dbCtx(ctx), entityId, name, year, name === '940' ? null : (quarter ?? 1));
+  }
+
+  // ----- Year-end forms (PRL-17..20) -------------------------------------------------------------------------------
+
+  @Get('year-end')
+  yearEndSummary(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return this.yearEnd.summary(dbCtx(ctx), entityId, year);
+  }
+
+  @Get('year-end/w2/:personId')
+  async w2(
+    @Ctx() ctx: RequestContext,
+    @Param('personId') personId: string,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.w2EmployeePdf(dbCtx(ctx), entityId, year, parse(Id, personId)));
+  }
+
+  @Get('year-end/w2-employer')
+  async w2Employer(
+    @Ctx() ctx: RequestContext,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.w2EmployerPdf(dbCtx(ctx), entityId, year));
+  }
+
+  @Get('year-end/1099/:personId')
+  async nec(
+    @Ctx() ctx: RequestContext,
+    @Param('personId') personId: string,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.necRecipientPdf(dbCtx(ctx), entityId, year, parse(Id, personId)));
+  }
+
+  @Get('year-end/1099-payer')
+  async necPayer(
+    @Ctx() ctx: RequestContext,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    return pdf(reply, await this.yearEnd.necPayerPdf(dbCtx(ctx), entityId, year));
+  }
+
+  @Get('year-end/efw2')
+  async efw2(
+    @Ctx() ctx: RequestContext,
+    @Query() q: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<string> {
+    requireRecentAuth(ctx);
+    const { entityId, year } = parse(EntityQuery.extend({ year: Year }), q);
+    const f = await this.yearEnd.efw2(dbCtx(ctx), entityId, year);
+    void reply.header('content-type', 'text/plain; charset=us-ascii');
+    void reply.header('content-disposition', `attachment; filename="${safeName(f.fileName)}"`);
+    void reply.header('cache-control', 'private, no-store');
+    void reply.header('x-content-type-options', 'nosniff');
+    return f.text;
   }
 }
 

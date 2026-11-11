@@ -221,6 +221,8 @@ export interface PaycheckTable {
   person_id: string;
   person_name: string;
   w4_id: string | null;
+  de4_id: string | null;
+  tax_notes: ColumnType<string[], string[] | undefined, string[]>;
   gross_minor: Int8Default;
   pre_tax_minor: Int8Default;
   employee_taxes_minor: Int8Default;
@@ -279,6 +281,87 @@ export interface ReimbursementTable {
   updated_at: Generated<Date>;
 }
 
+// ----- Stage 3: employer tax (migration 0033) ----------------------------------------------------------------------
+
+export type FederalDepositScheduleCol = 'monthly' | 'semiweekly';
+export type CaDepositScheduleCol = 'quarterly' | 'monthly' | 'semiweekly';
+
+export interface PayrollSettingsTable {
+  workspace_id: string;
+  entity_id: string;
+  ein: string | null;
+  ca_employer_account: string | null;
+  ca_ui_rate_ppm: number | null;
+  ca_ett_rate_ppm: Generated<number>;
+  federal_deposit_schedule: ColumnType<
+    FederalDepositScheduleCol,
+    FederalDepositScheduleCol | undefined,
+    FederalDepositScheduleCol
+  >;
+  ca_deposit_schedule: ColumnType<
+    CaDepositScheduleCol,
+    CaDepositScheduleCol | undefined,
+    CaDepositScheduleCol
+  >;
+  filing_line1: string | null;
+  filing_line2: string | null;
+  filing_city: string | null;
+  filing_state: string | null;
+  filing_zip: string | null;
+  ssa_user_id: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type De4FilingStatusCol = 'single' | 'married' | 'head_of_household';
+
+export interface PayrollDe4Table {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  person_id: string;
+  effective_date: CalendarDateCol;
+  legal_name: string;
+  address: string | null;
+  tin_enc: Buffer | null;
+  tin_last4: string | null;
+  filing_status: De4FilingStatusCol;
+  allowances: Generated<number>;
+  estimated_deduction_allowances: Generated<number>;
+  extra_withholding_minor: Int8Default;
+  exempt: Generated<boolean>;
+  signed_name: string;
+  signed_on: CalendarDateCol;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export type PayrollTaxKindCol = 'federal_941' | 'federal_940' | 'ca_pit_sdi' | 'ca_ui_ett';
+
+export interface PayrollDepositTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  tax: PayrollTaxKindCol;
+  period_start: CalendarDateCol;
+  period_end: CalendarDateCol;
+  due_date: CalendarDateCol;
+  paid_on: CalendarDateCol;
+  amount_minor: Int8Default;
+  parts: ColumnType<Record<string, string>, string, string>;
+  pay_from_account_id: string;
+  transaction_id: string | null;
+  confirmation: string | null;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface PayrollDatabase {
   'app.payroll_person': PayrollPersonTable;
   'app.payroll_w4': PayrollW4Table;
@@ -290,6 +373,9 @@ export interface PayrollDatabase {
   'app.paycheck': PaycheckTable;
   'app.paycheck_line': PaycheckLineTable;
   'app.reimbursement': ReimbursementTable;
+  'app.payroll_settings': PayrollSettingsTable;
+  'app.payroll_de4': PayrollDe4Table;
+  'app.payroll_deposit': PayrollDepositTable;
 }
 
 export type PayrollPersonRow = Selectable<PayrollPersonTable>;
@@ -302,3 +388,6 @@ export type PayRunRow = Selectable<PayRunTable>;
 export type PaycheckRow = Selectable<PaycheckTable>;
 export type PaycheckLineRow = Selectable<PaycheckLineTable>;
 export type ReimbursementRow = Selectable<ReimbursementTable>;
+export type PayrollSettingsRow = Selectable<PayrollSettingsTable>;
+export type PayrollDe4Row = Selectable<PayrollDe4Table>;
+export type PayrollDepositRow = Selectable<PayrollDepositTable>;

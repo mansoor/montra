@@ -15,6 +15,8 @@ type Row = { code: string; label: string; amount: string };
 
 const EMPLOYEE_TAXES = ['fit', 'ss', 'medicare', 'addl_medicare', 'ca_pit', 'ca_sdi'] as const;
 const EMPLOYER_TAXES = ['ss_er', 'medicare_er', 'futa', 'ca_ui', 'ca_ett'] as const;
+/** Before-tax deductions the tax engine knows: 401(k)-type and cafeteria plan. */
+const PRE_TAX = ['retirement', 'section125'] as const;
 
 /** One pay run (PRL-07..09): its paychecks, editable while it's a draft, then approved and posted. */
 export function PayRunEditor({
@@ -52,6 +54,8 @@ export function PayRunEditor({
     futa: t('payroll.tax.futa'),
     ca_ui: t('payroll.tax.ca_ui'),
     ca_ett: t('payroll.tax.ca_ett'),
+    retirement: t('payroll.pre_tax.retirement'),
+    section125: t('payroll.pre_tax.section125'),
   };
   const SECTION: Record<PaycheckDto['lines'][number]['kind'], string> = {
     earning: t('payroll.run.earnings'),
@@ -86,8 +90,10 @@ export function PayRunEditor({
             {run.scheduleName && ` · ${run.scheduleName}`}
           </span>
         </div>
-        {run.engine === 'manual' && draft && (
-          <p className="text-sm text-muted">{t('payroll.run.manual_taxes')}</p>
+        {draft && (
+          <p className="text-sm text-muted">
+            {run.engine === 'manual' ? t('payroll.run.manual_taxes') : t('payroll.run.engine_taxes')}
+          </p>
         )}
         {editable ? (
           <div className="grid gap-3 sm:grid-cols-3">
@@ -169,6 +175,13 @@ export function PayRunEditor({
               )}
             </div>
           </div>
+          {pc.taxNotes.length > 0 && (
+            <ul className="space-y-1 text-xs text-muted" aria-label={t('payroll.run.tax_notes')}>
+              {pc.taxNotes.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          )}
           {editing === pc.id ? (
             <PaycheckForm
               paycheck={pc}
@@ -389,7 +402,13 @@ function PaycheckForm({
     employer_tax: t('payroll.run.employer_taxes'),
   };
   const codes = (kind: EditableKind): readonly string[] | null =>
-    kind === 'employee_tax' ? EMPLOYEE_TAXES : kind === 'employer_tax' ? EMPLOYER_TAXES : null;
+    kind === 'employee_tax'
+      ? EMPLOYEE_TAXES
+      : kind === 'employer_tax'
+        ? EMPLOYER_TAXES
+        : kind === 'pre_tax_deduction'
+          ? PRE_TAX
+          : null;
 
   function submit() {
     const out: Record<string, { code: string; label: string; amount: string }[]> = {};
@@ -465,7 +484,11 @@ function PaycheckForm({
               {codes(kind) ? (
                 <select
                   className="input"
-                  aria-label={t('payroll.run.which_tax')}
+                  aria-label={
+                    kind === 'pre_tax_deduction'
+                      ? t('payroll.run.which_deduction')
+                      : t('payroll.run.which_tax')
+                  }
                   value={r.code}
                   onChange={(e) =>
                     setRows((x) => ({

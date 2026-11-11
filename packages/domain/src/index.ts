@@ -23,3 +23,6 @@ export * from './account-types.js';
 export * from './investments.js';
 export * from './cards.js';
 export * from './payroll.js';
+export * from './payroll-tax.js';
+export * from './payroll-deposits.js';
+export * from './payroll-year-end.js';

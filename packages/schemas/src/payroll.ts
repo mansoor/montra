@@ -533,6 +533,8 @@ export const PaycheckDto = z.object({
   lines: z.array(PaycheckLineDto),
   /** Calendar year to date through this paycheck: approved runs only, and this one. */
   ytd: z.object(Totals),
+  /** What the tax engine wants the owner to know, such as a missing W-4 or another state's taxes to enter. */
+  taxNotes: z.array(z.string()),
   transactionId: Id.nullable(),
   version: z.number().int(),
 });
@@ -584,7 +586,8 @@ const EditableLine = z.object({
 
 /**
  * What can be changed on a draft paycheck. Each list given replaces the manual lines of its kind. Regular pay is worked
- * out from `hoursMilli` (hourly) or the salary; taxes are entered by hand until a tax engine fills them in (stage 3).
+ * out from `hoursMilli` (hourly) or the salary. The tax engine fills in the taxes; a tax entered here overrides its line.
+ * Before-tax deductions use a `PreTaxCode`, which says which taxes they reduce.
  */
 export const UpdatePaycheckRequest = z.object({
   hoursMilli: HoursMilli.nullable().optional(),
@@ -648,3 +651,289 @@ export const DecideReimbursementRequest = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('decline'), reason: OptionalText(500), version: Version }),
 ]);
 export type DecideReimbursementRequest = z.output<typeof DecideReimbursementRequest>;
+
+// ----- Stage 3: employer tax (PRL-12..16; ADR-0034 §7) -------------------------------------------------------------
+
+/** Before-tax deductions the tax engine knows how to treat: 401(k)-type out of income tax only, cafeteria plan out of all. */
+export const PreTaxCode = z.enum(['retirement', 'section125']);
+export type PreTaxCode = z.infer<typeof PreTaxCode>;
+
+export const De4FilingStatus = z.enum(['single', 'married', 'head_of_household']);
+export type De4FilingStatus = z.infer<typeof De4FilingStatus>;
+
+export const De4Dto = z.object({
+  id: Id,
+  personId: Id,
+  effectiveDate: CalendarDateDto,
+  legalName: z.string(),
+  address: z.string().nullable(),
+  tinMasked: z.string().nullable(),
+  filingStatus: De4FilingStatus,
+  allowances: z.number().int(),
+  estimatedDeductionAllowances: z.number().int(),
+  extraWithholding: MinorDto,
+  exempt: z.boolean(),
+  signedName: z.string(),
+  signedOn: CalendarDateDto,
+  current: z.boolean(),
+});
+export type De4Dto = z.infer<typeof De4Dto>;
+
+/** California's DE 4, recorded as signed like a W-4. Without one, California tax is withheld as single, no allowances. */
+export const CreateDe4Request = z.object({
+  effectiveDate: CalendarDateDto,
+  filingStatus: De4FilingStatus,
+  allowances: z.number().int().min(0).max(99).default(0),
+  estimatedDeductionAllowances: z.number().int().min(0).max(99).default(0),
+  extraWithholding: NonNegativeMinor.default('0'),
+  exempt: z.boolean().default(false),
+  signedName: Text(300).min(1),
+  signedOn: CalendarDateDto,
+  attested: z.literal(true),
+});
+export type CreateDe4Request = z.output<typeof CreateDe4Request>;
+
+export const FederalDepositSchedule = z.enum(['monthly', 'semiweekly']);
+export const CaDepositSchedule = z.enum(['quarterly', 'monthly', 'semiweekly']);
+/** A rate as a percent with up to three decimals: "3.4", "0.1". */
+const RatePercent = z.string().regex(/^\d{1,2}(\.\d{1,3})?$/, 'A percent such as 3.4');
+
+export const PayrollSettingsDto = z.object({
+  entityId: Id,
+  /** Nine digits, shown as 12-3456789. */
+  ein: z.string().nullable(),
+  caEmployerAccount: z.string().nullable(),
+  /** Null: the new-employer rate (`caUiRateDefault`) is used. */
+  caUiRate: z.string().nullable(),
+  caUiRateDefault: z.string(),
+  caEttRate: z.string(),
+  federalDepositSchedule: FederalDepositSchedule,
+  caDepositSchedule: CaDepositSchedule,
+  /** The tax years Montra has tables for. */
+  taxYears: z.array(z.number().int()),
+  /** Stage 4: the employer's address in parts, for W-2s, 1099s and the EFW2 file. */
+  filingAddress: z
+    .object({
+      line1: z.string(),
+      line2: z.string().nullable(),
+      city: z.string(),
+      state: z.string(),
+      zip: z.string(),
+    })
+    .nullable(),
+  /** SSA Business Services Online user ID and the contact SSA asks about the wage file. */
+  ssaUserId: z.string().nullable(),
+  contactName: z.string().nullable(),
+  contactPhone: z.string().nullable(),
+  contactEmail: z.string().nullable(),
+  version: z.number().int(),
+});
+export type PayrollSettingsDto = z.infer<typeof PayrollSettingsDto>;
+
+export const UpdatePayrollSettingsRequest = z.object({
+  ein: z
+    .string()
+    .transform((s) => s.replace(/[\s-]/g, ''))
+    .pipe(z.string().regex(/^\d{9}$/, 'An EIN has nine digits'))
+    .nullable()
+    .optional(),
+  caEmployerAccount: z
+    .string()
+    .transform((s) => s.replace(/[\s-]/g, ''))
+    .pipe(z.string().regex(/^\d{8}$/, 'An EDD account number has eight digits'))
+    .nullable()
+    .optional(),
+  caUiRate: RatePercent.nullable().optional(),
+  caEttRate: RatePercent.optional(),
+  federalDepositSchedule: FederalDepositSchedule.optional(),
+  caDepositSchedule: CaDepositSchedule.optional(),
+  filingAddress: z
+    .object({
+      line1: Text(100).min(1),
+      line2: OptionalText(100),
+      city: Text(60).min(1),
+      state: StateCode,
+      zip: z
+        .string()
+        .transform((v) => v.replace(/[\s-]/g, ''))
+        .pipe(z.string().regex(/^\d{5}(\d{4})?$/, 'A ZIP code has 5 or 9 digits')),
+    })
+    .nullable()
+    .optional(),
+  ssaUserId: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{8}$/, 'A BSO User ID is eight letters or digits')
+    .nullable()
+    .optional(),
+  contactName: OptionalText(100),
+  contactPhone: OptionalText(30),
+  contactEmail: z.string().trim().email().max(320).nullable().optional(),
+  /** 0 when no settings were saved yet. */
+  version: z.number().int().min(0),
+});
+export type UpdatePayrollSettingsRequest = z.output<typeof UpdatePayrollSettingsRequest>;
+
+export const PayrollTaxKind = z.enum(['federal_941', 'federal_940', 'ca_pit_sdi', 'ca_ui_ett']);
+export type PayrollTaxKind = z.infer<typeof PayrollTaxKind>;
+
+export const PayrollDepositDto = z.object({
+  id: Id,
+  entityId: Id,
+  tax: PayrollTaxKind,
+  periodStart: CalendarDateDto,
+  periodEnd: CalendarDateDto,
+  dueDate: CalendarDateDto,
+  paidOn: CalendarDateDto,
+  amount: MinorDto,
+  parts: z.record(z.string(), MinorDto),
+  payFromAccountId: Id,
+  transactionId: Id.nullable(),
+  confirmation: z.string().nullable(),
+});
+export type PayrollDepositDto = z.infer<typeof PayrollDepositDto>;
+
+/**
+ * Something to pay: a tax for a deposit period, worked out from approved paychecks. `carried` FUTA isn't due yet: it's
+ * under $500 and rolls into the next quarter.
+ */
+export const DepositObligationDto = z.object({
+  tax: PayrollTaxKind,
+  periodStart: CalendarDateDto,
+  periodEnd: CalendarDateDto,
+  dueDate: CalendarDateDto,
+  amount: MinorDto,
+  parts: z.record(z.string(), MinorDto),
+  status: z.enum(['upcoming', 'due_soon', 'overdue', 'paid', 'carried']),
+  deposit: PayrollDepositDto.nullable(),
+  /** Deposited, but the paychecks changed since: what's still owed (negative when overpaid). */
+  difference: MinorDto,
+  /** A single day's 941 taxes of $100,000 or more must be deposited the next banking day. */
+  nextDay: z.boolean(),
+});
+export type DepositObligationDto = z.infer<typeof DepositObligationDto>;
+
+export const PayrollTaxesDto = z.object({
+  entityId: Id,
+  year: z.number().int(),
+  settings: PayrollSettingsDto,
+  obligations: z.array(DepositObligationDto),
+});
+export type PayrollTaxesDto = z.infer<typeof PayrollTaxesDto>;
+
+export const RecordDepositRequest = z.object({
+  entityId: Id,
+  tax: PayrollTaxKind,
+  periodStart: CalendarDateDto,
+  paidOn: CalendarDateDto,
+  payFromAccountId: Id,
+  confirmation: OptionalText(100),
+});
+export type RecordDepositRequest = z.output<typeof RecordDepositRequest>;
+
+/** A worksheet line: the form's line number, its wording, and an amount or a count. */
+export const WorksheetLineDto = z.object({
+  line: z.string(),
+  label: z.string(),
+  amount: MinorDto.nullable(),
+  count: z.number().int().nullable().optional(),
+  /** A rate the line multiplies by, as a percent. */
+  rate: z.string().nullable().optional(),
+});
+export type WorksheetLineDto = z.infer<typeof WorksheetLineDto>;
+
+export const WorksheetDto = z.object({
+  form: z.enum(['941', '940', 'DE 9', 'DE 9C']),
+  entityId: Id,
+  year: z.number().int(),
+  quarter: z.number().int().min(1).max(4).nullable(),
+  employer: z.object({
+    name: z.string(),
+    ein: z.string().nullable(),
+    caEmployerAccount: z.string().nullable(),
+  }),
+  dueDate: CalendarDateDto,
+  lines: z.array(WorksheetLineDto),
+  /** Form 941 line 16 or Schedule B, Form 940 line 16: liability by month or quarter. */
+  liabilities: z.array(z.object({ label: z.string(), amount: MinorDto })),
+  /** DE 9C: one row per employee. */
+  employees: z
+    .array(
+      z.object({
+        personId: Id,
+        name: z.string(),
+        tinMasked: z.string().nullable(),
+        subjectWages: MinorDto,
+        pitWages: MinorDto,
+        pitWithheld: MinorDto,
+      }),
+    )
+    .optional(),
+  notes: z.array(z.string()),
+});
+export type WorksheetDto = z.infer<typeof WorksheetDto>;
+
+// ----- Stage 4: year-end forms (PRL-17..20; ADR-0034 §7b) ------------------------------------------------------------
+
+export const W2BoxesDto = z.object({
+  box1: MinorDto,
+  box2: MinorDto,
+  box3: MinorDto,
+  box4: MinorDto,
+  box5: MinorDto,
+  box6: MinorDto,
+  /** Box 12 code D: 401(k) elective deferrals. */
+  box12D: MinorDto,
+  /** Box 13: retirement plan. */
+  retirementPlan: z.boolean(),
+  /** Box 14 CASDI, and boxes 16 and 17 for California. */
+  caSdi: MinorDto,
+  caWages: MinorDto,
+  caTax: MinorDto,
+});
+export type W2BoxesDto = z.infer<typeof W2BoxesDto>;
+
+export const W2Dto = z.object({
+  personId: Id,
+  name: z.string(),
+  tinMasked: z.string().nullable(),
+  boxes: W2BoxesDto,
+  paychecks: z.number().int(),
+});
+export type W2Dto = z.infer<typeof W2Dto>;
+
+export const Form1099NecDto = z.object({
+  personId: Id,
+  name: z.string(),
+  tinMasked: z.string().nullable(),
+  /** Box 1, from paid bills to the contractor, by payment date; card payments are left out (they're on a 1099-K). */
+  nonemployeeCompensation: MinorDto,
+  payments: z.number().int(),
+  /** Over the year's threshold, so a 1099-NEC is due. */
+  required: z.boolean(),
+  hasW9: z.boolean(),
+});
+export type Form1099NecDto = z.infer<typeof Form1099NecDto>;
+
+export const YearEndDto = z.object({
+  entityId: Id,
+  year: z.number().int(),
+  employer: z.object({
+    name: z.string(),
+    ein: z.string().nullable(),
+    caEmployerAccount: z.string().nullable(),
+  }),
+  w2s: z.array(W2Dto),
+  /** Form W-3: the W-2s added up. */
+  w3: z.object({ forms: z.number().int(), boxes: W2BoxesDto }),
+  necThreshold: z.object({ amount: MinorDto, known: z.boolean() }),
+  necs: z.array(Form1099NecDto),
+  /** Form 1096 for the 1099-NECs that are due. */
+  form1096: z.object({ forms: z.number().int(), total: MinorDto }),
+  /** Due to employees, SSA, contractors and the IRS: January 31, or the next business day. */
+  dueDate: CalendarDateDto,
+  /** What would stop SSA accepting the EFW2 file; empty when it can be made. */
+  efw2Problems: z.array(z.object({ where: z.string(), message: z.string() })),
+  notes: z.array(z.string()),
+});
+export type YearEndDto = z.infer<typeof YearEndDto>;
