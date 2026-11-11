@@ -349,6 +349,61 @@ describe('XLSX and fingerprints (IMP-01, IMP-04)', () => {
     expect(o.proposal.source).toBe('user');
     expect(o.parsed.rows.map((r) => r.amount)).toEqual([100n, 200n]);
   });
+
+  it("keeps a profile's choice of account to the account it was saved for", () => {
+    const sheet = {
+      name: 'CSV',
+      rows: [
+        ['Account', 'When', 'What', 'How much'],
+        ['Checking', '2026-10-01', 'X', '1.00'],
+        ['Savings', '2026-10-02', 'Y', '2.00'],
+        ['Checking', '2026-10-03', 'Z', '3.00'],
+      ],
+    };
+    const fp = fingerprint('csv', sheet.rows[0]!, 4);
+    const mapping = {
+      headerRow: 0,
+      dataStart: 1,
+      date: 1,
+      dateFormat: 'YYYY-MM-DD' as const,
+      description: [2],
+      amount: 3,
+      sign: 'normal' as const,
+      decimal: '.' as const,
+      filter: { column: 0, values: ['Checking'] },
+    };
+    const run = (sameAccount: boolean, accountFilter?: string) =>
+      analyze([sheet], {
+        fileType: 'csv',
+        currency: 'USD',
+        accountType: 'asset',
+        accountFilter,
+        profiles: [{ id: 'p1', fingerprint: fp, mapping, sameAccount }],
+      });
+    const amounts = (a: ReturnType<typeof run>) => a.parsed.rows.map((r) => r.amount);
+
+    // Its own account: the remembered choice, with the file's accounts listed to change it.
+    const own = run(true);
+    expect(own.proposal).toMatchObject({
+      source: 'profile',
+      confidence: 1,
+      accounts: ['Checking', 'Savings'],
+    });
+    expect(amounts(own)).toEqual([100n, 300n]);
+    // Another account, asked for by name: that account's rows, with the profile's columns.
+    const asked = run(false, 'Savings');
+    expect(asked.proposal).toMatchObject({ source: 'profile', mapping: { filter: { values: ['Savings'] } } });
+    expect(amounts(asked)).toEqual([200n]);
+    // Another account, not named: the choice is asked again rather than taking Checking's rows.
+    const other = run(false);
+    expect(other.proposal).toMatchObject({
+      confidence: 0.7,
+      warnings: ['multiple_accounts_choose_one'],
+      accounts: ['Checking', 'Savings'],
+      accountColumn: 0,
+    });
+    expect(other.proposal.mapping.filter).toBeUndefined();
+  });
 });
 
 describe('statement period settles ambiguous dates', () => {
