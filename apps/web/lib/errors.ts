@@ -23,6 +23,7 @@ const CODE_KEYS: Record<string, string> = {
   'transaction.reconciled': 'errors.transaction_reconciled',
   'period.locked': 'errors.period_locked',
   'version.mismatch': 'errors.version_mismatch',
+  'version.conflict': 'errors.version_conflict',
   'transaction.reversed': 'errors.transaction_reversed',
   'invite.invalid': 'errors.invite_invalid',
   'invite.email_mismatch': 'errors.invite_email_mismatch',
@@ -49,6 +50,9 @@ const ACTION_KEYS: Record<string, string> = {
   'email.unverified': 'errors.action_verify',
 };
 
+/** Someone else saved first: reloading shows their change, then the edit can be made again. */
+const RELOAD_CODES = new Set(['version.conflict']);
+
 export function friendlyMessage(err: unknown, t: T = staticT): string {
   if (err instanceof ApiError) {
     if (err.status === 0) return t('errors.network');
@@ -61,12 +65,17 @@ export function friendlyMessage(err: unknown, t: T = staticT): string {
 const currentLocation = () =>
   typeof window === 'undefined' ? '/' : window.location.pathname + window.location.search;
 
-/** For 403 mfa.required / reauth.required / email.unverified: where to go to fix it (AUTH-03/04/09). */
+/**
+ * For 403 mfa.required / reauth.required / email.unverified: where to go to fix it (AUTH-03/04/09).
+ * For a 409 version conflict: reload the page.
+ */
 export function errorAction(
   err: unknown,
   t: T = staticT,
   returnTo: string = currentLocation(),
 ): ErrorAction | undefined {
+  if (err instanceof ApiError && err.status === 409 && RELOAD_CODES.has(err.code))
+    return { href: returnTo, label: t('errors.action_reload') };
   if (!(err instanceof ApiError) || err.status !== 403) return undefined;
   const href = stepUpHref(err.code, returnTo);
   const key = ACTION_KEYS[err.code];

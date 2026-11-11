@@ -48,6 +48,12 @@ describe('session modes (ADR-0006)', () => {
     expect(errorAction(new ApiError(403, 'forbidden', 'x'))).toBeUndefined();
     expect(errorAction(new ApiError(409, 'mfa.required', 'x'))).toBeUndefined();
   });
+
+  it('explains a version conflict and offers a reload', () => {
+    const stale = new ApiError(409, 'version.conflict', 'The goal was changed by someone else');
+    expect(friendlyMessage(stale)).toMatch(/Someone else changed this since you opened it/);
+    expect(errorAction(stale, undefined, '/w/1/goals')).toEqual({ href: '/w/1/goals', label: 'Reload' });
+  });
 });
 
 describe('realtime client (PLT-06)', () => {

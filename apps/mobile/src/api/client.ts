@@ -66,6 +66,7 @@ import type {
   RegisterPushDeviceRequest,
   SuggestionDto,
   SuggestRequest,
+  UpdateGoalRequest,
   UploadDto,
   WorkspaceDto,
 } from '@montra/schemas';
@@ -254,6 +255,9 @@ export function createApi(opts: ApiOptions) {
     copyBudget: (w: string, id: string, start: string, from: 'last' | 'avg3', version: number) =>
       request<BudgetPeriodDto>('POST', `${ws(w)}/budgets/${id}/periods/${start}/copy`, { from, version }),
     goals: async (w: string) => (await request<{ data: GoalDto[] }>('GET', `${ws(w)}/goals`)).data,
+    /** Edits or archives a goal; `version` is the one the screen showed (409 version.conflict when stale). */
+    updateGoal: (w: string, id: string, patch: UpdateGoalRequest) =>
+      request<GoalDto>('PATCH', `${ws(w)}/goals/${encodeURIComponent(id)}`, patch),
     sankey: (w: string, from: string, to: string) =>
       request<SankeyDto>('GET', `${ws(w)}/flow/sankey?from=${from}&to=${to}`),
     forecast: (w: string, days: number) => request<ForecastDto>('GET', `${ws(w)}/flow/forecast?days=${days}`),

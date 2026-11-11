@@ -79,6 +79,19 @@ describe('API client', () => {
     expect(err).toMatchObject({ status: 422, code: 'account.not_found', message: 'No such account' });
   });
 
+  it('edits a goal with its version, and reports a stale one as a conflict', async () => {
+    const { f, calls } = fakeFetch(() => ({
+      status: 409,
+      body: { code: 'version.conflict', title: 'Conflict', detail: 'The goal was changed by someone else' },
+    }));
+    const api = createApi({ baseUrl: 'http://api', token: async () => 'dev:a@b.co', fetch: f });
+    const err = await api.updateGoal('w1', 'g1', { archived: true, version: 4 }).catch((e) => e);
+    expect(calls[0]!.url).toBe('http://api/v1/workspaces/w1/goals/g1');
+    expect(calls[0]!.init.method).toBe('PATCH');
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ archived: true, version: 4 });
+    expect(err).toMatchObject({ status: 409, code: 'version.conflict' });
+  });
+
   it('says which app this is, and tells when it’s too old (OPS-04)', async () => {
     const { f, calls } = fakeFetch(() => ({
       status: 426,
