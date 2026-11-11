@@ -1139,18 +1139,14 @@ export class FlowService {
         .where('status', '=', 'open')
         .executeTakeFirstOrThrow();
       const memberDrill = memberId ? { memberId } : {};
-      const next = addDays(period.end, 1);
+      const periods = await this.homePeriods(trx, ctx, { entityId, memberId, spec, today, shown: period });
       return {
         entityId,
         memberId,
         currency: entity.currency as Money,
         period: { start: period.start, end: period.end },
         current,
-        nav: {
-          previous: addDays(period.start, -1),
-          next: current ? null : next,
-          nextIsCurrent: !current && periodContaining(spec, next).end >= today,
-        },
+        periods,
         budgetId: budget?.id ?? null,
         income: {
           amount: s(income),
@@ -1176,6 +1172,43 @@ export class FlowService {
         openRecommendations: Number(open.n),
       };
     });
+  }
+
+  /**
+   * The periods Home offers (DashboardDto.periods), newest first: the current one, then back to the earliest with any
+   * transaction for the entity (and member), at most 12 months back. The period shown is added when it's older.
+   */
+  private async homePeriods(
+    trx: Trx,
+    ctx: Ctx,
+    o: {
+      entityId: string;
+      memberId: string | null;
+      spec: Parameters<typeof periodContaining>[0];
+      today: CalendarDate;
+      shown: Period;
+    },
+  ): Promise<Period[]> {
+    let q = trx
+      .selectFrom('app.posting')
+      .select((eb) => eb.fn.min<string>('entry_date').as('first'))
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', o.entityId);
+    if (o.memberId) q = q.where('member_id', '=', o.memberId);
+    const row = await q.executeTakeFirst();
+    const first = row?.first ? calendarDate(String(row.first)) : o.today;
+    // Twelve months, the current one included.
+    const floor = addMonths(startOfMonth(o.today), -11);
+    const from = first > floor ? first : floor;
+    const out: Period[] = [];
+    let p: Period = periodContaining(o.spec, o.today);
+    out.push(p);
+    while (p.start > from) {
+      p = periodContaining(o.spec, addDays(p.start, -1));
+      out.push(p);
+    }
+    if (o.shown.start < out[out.length - 1]!.start) out.push({ start: o.shown.start, end: o.shown.end });
+    return out;
   }
 
   /**
