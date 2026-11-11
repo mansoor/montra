@@ -590,29 +590,41 @@ export class FormsService {
   // ----- Files ----------------------------------------------------------------------------------------------------
 
   /** A copy of an identity document, sealed before it reaches storage (ADR-0034 §3). */
-  async uploadFile(ctx: Ctx, entityId: string, bytes: Uint8Array, fileName: string): Promise<PayrollFileDto> {
+  async uploadFile(
+    ctx: Ctx,
+    entityId: string,
+    bytes: Uint8Array,
+    fileName: string,
+    purpose: 'identity' | 'receipt' = 'identity',
+  ): Promise<PayrollFileDto> {
     const mediaType = detectReceiptMedia(bytes);
     if (!mediaType)
       throw new AppError(415, 'upload.unsupported_type', 'Upload a PDF, or a JPEG, PNG or WebP photo');
     const id = newId();
-    const key = storageKey(ctx.workspaceId, 'payroll', id);
+    // A receipt for a reimbursement is ordinary paperwork; a copy of an ID is sealed (ADR-0034 §3).
+    const seal = purpose === 'identity';
+    const key = storageKey(ctx.workspaceId, seal ? 'payroll' : 'receipt', id);
     await this.db.run(ctx, async (trx) => {
       await payrollEntity(trx, ctx, entityId);
-      const sealed = await this.crypto.sealBytes(trx, ctx.workspaceId, id, bytes);
-      await this.storage.put(key, sealed, 'application/octet-stream');
+      if (seal) {
+        const sealed = await this.crypto.sealBytes(trx, ctx.workspaceId, id, bytes);
+        await this.storage.put(key, sealed, 'application/octet-stream');
+      } else {
+        await this.storage.put(key, bytes, mediaType);
+      }
       await trx
         .insertInto('app.file')
         .values({
           workspace_id: ctx.workspaceId,
           id,
-          kind: 'other',
+          kind: seal ? 'other' : 'receipt',
           storage_key: key,
           file_name: fileName.replace(/[\\/\0]/g, '_').slice(0, 255) || 'document',
           mime: mediaType,
           bytes: bytes.length,
           sha256: sha256(bytes),
           uploaded_by: ctx.userId,
-          sealed: true,
+          sealed: seal,
           retain_until: sql<string>`(current_date + make_interval(years => ${FILE_RETENTION_YEARS}))::date`,
         })
         .execute();

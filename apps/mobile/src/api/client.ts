@@ -4,6 +4,11 @@
  */
 import type {
   BudgetDto,
+  CreateReimbursementRequest,
+  PayRunDto,
+  PayrollPersonDto,
+  PayrollFileDto,
+  ReimbursementDto,
   TransactionDto,
   BudgetPeriodDto,
   CalendarDto,
@@ -398,6 +403,25 @@ export function createApi(opts: ApiOptions) {
     deletionStatus: () => request<DeletionStatusDto>('GET', '/v1/me/deletion'),
     requestDeletion: (input: RequestDeletionRequest) =>
       request<DeletionStatusDto>('POST', '/v1/me/deletion', input),
+
+    // ----- Payroll (PRL-22): pay runs, payslips and reimbursements, read live and never stored on the device. ------
+    payRuns: async (w: string, entityId: string) =>
+      (await request<{ data: PayRunDto[] }>('GET', `${ws(w)}/payroll/runs?entityId=${entityId}`)).data,
+    payRun: (w: string, id: string) => request<PayRunDto>('GET', `${ws(w)}/payroll/runs/${id}`),
+    reimbursements: async (w: string, entityId: string) =>
+      (
+        await request<{ data: ReimbursementDto[] }>(
+          'GET',
+          `${ws(w)}/payroll/reimbursements?entityId=${entityId}`,
+        )
+      ).data,
+    payrollPeople: async (w: string, entityId: string) =>
+      (await request<{ data: PayrollPersonDto[] }>('GET', `${ws(w)}/payroll/people?entityId=${entityId}`))
+        .data,
+    uploadReimbursementReceipt: (w: string, entityId: string, file: UploadFile) =>
+      sendFile<PayrollFileDto>(`${ws(w)}/payroll/files?entityId=${entityId}&purpose=receipt`, file),
+    createReimbursement: (w: string, input: CreateReimbursementRequest) =>
+      request<ReimbursementDto>('POST', `${ws(w)}/payroll/reimbursements`, input),
 
     // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
     listEmployers: async (w: string) =>

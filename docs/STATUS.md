@@ -788,6 +788,17 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Payroll, stage 2: pay runs, payslips and reimbursements, web and phone** (PRL-06..11, PRL-22, [ADR-0034](design/adr/0034-payroll.md)):
+  Business → Payroll has pay schedules (every two weeks, twice a month, monthly), pay runs and reimbursement requests. Starting
+  a run drafts a paycheck for each employee on the schedule: hours at their rate (overtime at 1.5×) or the salary for the
+  period, plus any approved reimbursement, untaxed. Other earnings, deductions and the taxes are entered on the draft: the
+  `PayrollTaxEngine` port has only a manual engine until stage 3. Approving (with a confirmation that Montra moves no money)
+  posts one transaction per paycheck, owned by the run (`paycheck.managed`): wages to Schedule C line 26, reimbursed costs to
+  their category, withholding to liabilities, net pay from the run's bank account. Employer taxes are kept on the paycheck and
+  post when deposited (stage 3). A run reopens while none of its transactions is reconciled or closed. Each paycheck has a
+  payslip PDF with the year to date. A contractor's reimbursement becomes a bill to their vendor record. Read-only access sees
+  runs and payslips (names are kept on the paycheck) but no personal records. The phone (Business → Payroll) shows pay runs
+  and payslip lines and submits a reimbursement with a receipt photo; not run on a device. Migration 0032.
 - **Payroll, stage 1: people and onboarding forms, web** (PRL-01..05, requirements 5.1, [ADR-0034](design/adr/0034-payroll.md)):
   the owner moved payroll into scope on 2026-11-10 (federal plus one state; Montra calculates and fills in forms, and the owner
   files and pays). Business → People lists employees and contractors with what each still needs. A person has contact and pay

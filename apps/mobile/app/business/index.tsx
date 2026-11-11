@@ -88,6 +88,14 @@ export default function Business() {
             onPress={() => router.push({ pathname: '/business/mileage', params: { entityId } })}
             testID="business-mileage"
           />
+          <Button
+            kind="secondary"
+            label={t('mobile.payroll.open')}
+            onPress={() =>
+              router.push({ pathname: '/business/payroll', params: { entityId, currency: ccy ?? 'USD' } })
+            }
+            testID="business-payroll"
+          />
 
           <Title>
             {t('business.owed_to_you')}: {fmtMoney(sumMinor(invoices.map((i) => i.open)), ccy)}
