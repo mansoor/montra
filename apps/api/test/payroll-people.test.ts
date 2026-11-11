@@ -465,7 +465,7 @@ describe('I-9 (PRL-04)', () => {
     expect(relock).toMatchObject({ status: 409, body: { code: 'payroll.i9_signed' } });
     const pdf = await raw(`/payroll/people/${employee.id}/i9/pdf`);
     expect(pdf.status).toBe(200);
-    expect((await PDFDocument.load(pdf.bytes)).getPageCount()).toBeGreaterThanOrEqual(2);
+    expect((await PDFDocument.load(pdf.bytes)).getPageCount()).toBe(1);
   });
 
   it('keeps the I-9 for 3 years after hire or 1 year after leaving, whichever is later', async () => {

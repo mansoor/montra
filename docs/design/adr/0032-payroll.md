@@ -8,7 +8,7 @@
 R1 listed payroll processing as out of scope (requirements 14.2), and BIZ-15 only imports a provider's CSV. On 2026-11-10
 the owner moved payroll into scope for business entities (requirements 5.1, PRL-01..22) and decided:
 
-- **Jurisdictions:** federal and one state.
+- **Jurisdictions:** federal and one state, California (the owner chose it on 2026-11-10; others later).
 - **Tax engine:** built into Montra behind a port, so a payroll provider (Check, Gusto Embedded and the like) can replace it.
 - **Money and filing:** Montra works out what is owed, when to deposit it and what goes on each form. The owner pays through
   EFTPS and the state's portal, and files with the IRS, SSA and the state. Montra never moves money or e-files.

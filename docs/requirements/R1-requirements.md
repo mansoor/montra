@@ -330,7 +330,7 @@ R1 targets sole proprietors, freelancers and single-member LLCs with up to about
 The owner decided on 2026-11-10 to bring payroll into scope for business entities (ADR-0032). This replaces the
 "payroll processing" line of 14.2 for businesses. These are the owner's decisions:
 
-- **Jurisdictions:** federal plus one state.
+- **Jurisdictions:** federal plus one state: California (chosen 2026-11-10; other states later).
 - **Tax engine:** built into Montra behind a port, so a payroll provider can replace it later. Montra calculates, says
   what to deposit and when, and fills in the forms. The owner files and pays through EFTPS, SSA and the state portal.
   Montra never moves money or e-files.
@@ -353,12 +353,12 @@ Calculations are estimates for the owner's records and are not tax advice (worde
 | PRL-11 | Reimbursement requests from employees and contractors with a receipt: approve or decline, then pay through the next pay run (not taxed) or a bill. | M |
 | PRL-12 | Federal income tax withholding by the IRS Pub 15-T percentage method, from yearly tables kept as reference data by tax year. | M |
 | PRL-13 | Social Security, Medicare and Additional Medicare tax, employee and employer shares, with the yearly wage base. | M |
-| PRL-14 | FUTA, and the chosen state's income tax withholding and unemployment insurance (rate entered per business). | M |
+| PRL-14 | FUTA, and California's income tax withholding, SDI, and UI and ETT (UI rate entered per business). | M |
 | PRL-15 | Deposit schedule (monthly or semiweekly) with due dates and reminders of what to deposit. | M |
-| PRL-16 | Form 941 and Form 940 worksheets, and the state's quarterly equivalents. | M |
+| PRL-16 | Form 941 and Form 940 worksheets, and California's DE 9 and DE 9C. | M |
 | PRL-17 | Form W-2 (copies B, C and 2, and the employer's copy) and Form W-3 at year end. | M |
 | PRL-18 | Form 1099-NEC for contractors paid over the threshold, and Form 1096. | M |
-| PRL-19 | State copies of the year-end forms for the chosen state. | S |
+| PRL-19 | California copies of the year-end forms. | S |
 | PRL-20 | An EFW2 file for upload to SSA Business Services Online. | C |
 | PRL-21 | The tax engine sits behind a port, so a payroll provider (for example Check or Gusto Embedded) can replace it without changing pay runs or the ledger. | M |
 | PRL-22 | On the phone: pay runs, payslips, and a reimbursement request with a receipt photo. | S |
