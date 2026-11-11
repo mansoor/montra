@@ -25,8 +25,12 @@ export async function onboardHousehold(page: Page, email: string, account: strin
   await expect(page.getByRole('heading', { name: account })).toBeVisible();
 }
 
+/** A sidebar link by the start of its name, so a count badge still matches ("Review 3") but "Month in review" doesn't. */
 export const nav = (page: Page, name: string) =>
-  page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name, exact: false }).click();
+  page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('link', { name: new RegExp(`^${name}`, 'i') })
+    .click();
 
 /** Settings → AI: optionally change the mode and the review threshold, then save. */
 export async function setAi(page: Page, opts: { mode?: RegExp; threshold?: number }) {

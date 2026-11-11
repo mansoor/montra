@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
+  CalendarCheck,
   ArrowLeftRight,
   BookOpen,
   Briefcase,
@@ -64,6 +65,7 @@ const ICONS = {
   goals: Flag,
   reports: ChartColumn,
   explore: ChartLine,
+  monthReview: CalendarCheck,
   recommendations: Sparkles,
   calendar: CalendarDays,
   inbox: Inbox,

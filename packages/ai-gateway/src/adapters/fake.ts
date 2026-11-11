@@ -271,6 +271,18 @@ export class FakeAdapter implements ProviderAdapter {
           text: `${String(input.title ?? '')}.${figures ? ` ${figures[0]!.toUpperCase()}${figures.slice(1)}.` : ''}`,
         };
       }
+      case 'summarize_month': {
+        // Restates the figures verbatim (so it passes the numbers check), one point per figure, at most five.
+        const figures = Object.entries((input.figures as Record<string, string> | undefined) ?? {});
+        const said = (k: string, v: string) => `${k.replace(/([A-Z])/g, ' $1').toLowerCase()} ${v}`;
+        const plain = figures.filter(([k]) => !k.startsWith('suggested:'));
+        const suggested = figures.filter(([k]) => k.startsWith('suggested:'));
+        return {
+          headline: `Your ${String(input.month ?? '')}${input.complete ? '' : ' so far'}.`,
+          points: plain.slice(0, 5).map(([k, v]) => `${said(k, v)}.`),
+          budgetNote: suggested.length ? `${suggested.map(([k, v]) => `${k} ${v}`).join(', ')}.` : null,
+        };
+      }
       case 'ping':
         return { ok: true };
     }

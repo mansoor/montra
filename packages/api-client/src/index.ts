@@ -20,6 +20,7 @@ import type {
   DashboardChartsDto,
   SetCategoryBudgetDto,
   SetCategoryBudgetRequest,
+  MonthSummaryDto,
   SpendingExploreDto,
   ExpectedIncomeDto,
   ForecastDto,
@@ -1975,6 +1976,10 @@ export class ApiClient {
     return this.request<SetCategoryBudgetDto>('POST', this.ws(workspaceId, '/budgets/set-category'), input);
   }
   /** Explore spending: the picked categories month by month (SpendingExploreDto). */
+  /** Month in review: the figures for one month (default last month), worded by AI or in plain sentences. */
+  getMonthSummary(workspaceId: string, opts: { month?: string; entityId?: string; memberId?: string } = {}) {
+    return this.request<MonthSummaryDto>('GET', this.ws(workspaceId, `/summary/month${query(opts)}`));
+  }
   getSpendingExplore(
     workspaceId: string,
     opts: { months?: number; categoryIds?: string[]; entityId?: string; memberId?: string } = {},
@@ -2234,6 +2239,7 @@ export type {
   DashboardChartsDto,
   SetCategoryBudgetDto,
   SetCategoryBudgetRequest,
+  MonthSummaryDto,
   SpendingExploreDto,
   ForecastDto,
   GoalDto,

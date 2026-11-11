@@ -212,6 +212,17 @@ export default function Home() {
           />
         ) : null}
 
+        <Card style={{ paddingVertical: th.space(1) }}>
+          <Row
+            title={t('home.month_review', { month: lastMonthName() })}
+            subtitle={t('home.month_review_hint')}
+            icon="monthReview"
+            onPress={() => router.push('/month')}
+            testID="home-month-review"
+            last
+          />
+        </Card>
+
         <Card testID="home-over-time">
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <Body style={{ fontWeight: '700' }}>{t('home.charts.title')}</Body>
@@ -422,4 +433,15 @@ export default function Home() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+/** Last month's name, for the Month in review link. */
+function lastMonthName(): string {
+  const now = new Date();
+  const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  try {
+    return new Intl.DateTimeFormat(currentLocale, { month: 'long', timeZone: 'UTC' }).format(last);
+  } catch {
+    return last.toISOString().slice(0, 7);
+  }
 }
