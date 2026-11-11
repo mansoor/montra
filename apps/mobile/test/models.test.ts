@@ -237,6 +237,10 @@ describe('guided mapping', () => {
     expect(fileTypeOf('Statement.PDF')).toBe('pdf');
     expect(fileTypeOf('export', 'text/csv')).toBe('csv');
     expect(fileTypeOf('photo.heic')).toBeNull();
+    expect(fileTypeOf('Checking.QIF', 'application/octet-stream')).toBe('qif');
+    expect(fileTypeOf('download.qfx')).toBe('ofx');
+    expect(fileTypeOf('statement', 'application/x-ofx')).toBe('ofx');
+    expect(fileTypeOf('backup.bin', 'application/octet-stream')).toBeNull();
   });
 });
 

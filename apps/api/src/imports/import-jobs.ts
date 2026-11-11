@@ -16,13 +16,12 @@ import {
 import {
   analyze,
   classifyRows,
-  decodeText,
   detectDecimalSeparator,
   displayName,
   normalizeDescription,
   parseAmount,
-  parseDelimited,
   payeeDisplayName,
+  readTextSheets,
   readXlsx,
   type ColumnMapping,
   type Sheet,
@@ -77,7 +76,8 @@ const UNDO_DAYS = 30;
 /** Mapping confidence at or above which the preview opens without the mapping step. */
 const MAPPING_OK = 0.75;
 const SAMPLE_ROWS = 25;
-const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
+/** Locales that write the day first: an ambiguous date column (03/04) is read day-first for them. */
+export const DAY_FIRST_LOCALES = /^(en-(GB|IE|AU|NZ|IN|ZA)|de|fr|es|it|nl|pt|da|sv|nb|fi|pl|cs|tr|ru)/;
 
 @Injectable()
 export class ImportJobs {
@@ -368,7 +368,11 @@ export class ImportJobs {
         throw new PermanentJobError('doc.corrupt', `Unreadable spreadsheet: ${(err as Error).message}`);
       }
     }
-    return [parseDelimited(decodeText(bytes).text)];
+    try {
+      return readTextSheets(fileType === 'qif' || fileType === 'ofx' ? fileType : 'csv', bytes);
+    } catch (err) {
+      throw new PermanentJobError('doc.corrupt', `Unreadable statement: ${(err as Error).message}`);
+    }
   }
 
   private async candidates(
