@@ -214,7 +214,8 @@ export function YearEnd({
                   : p.where === 'employer'
                     ? t('payroll.year_end.where_employer')
                     : p.where}
-                :{p.message}
+                {': '}
+                {p.message}
               </li>
             ))}
           </ul>
