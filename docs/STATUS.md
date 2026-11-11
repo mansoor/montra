@@ -788,6 +788,18 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Payroll, stage 1: people and onboarding forms, web** (PRL-01..05, requirements 5.1, [ADR-0034](design/adr/0034-payroll.md)):
+  the owner moved payroll into scope on 2026-11-10 (federal plus one state; Montra calculates and fills in forms, and the owner
+  files and pays). Business → People lists employees and contractors with what each still needs. A person has contact and pay
+  details, and a tax ID, birth date and bank account that are sealed (`_enc`), shown masked, and revealed one at a time after a
+  recent sign-in, each reveal written to the audit log. Employees get W-4s (2020+, kept as history; the one in force by
+  effective date) and an I-9: Section 1 with the employee, the documents examined with copies, then Section 2. The I-9 is due
+  3 business days after the first day, and it can't be deleted until 3 years after hire or 1 year after leaving, whichever is
+  later. The screen says the originals must be examined and that E-Verify isn't included. A contractor is a vendor of the
+  business (so bills pay them) and has W-9s. Each form downloads as a substitute PDF (logged). ID copies are `app.file` rows
+  marked `sealed`: the bytes are encrypted before `StoragePort`, served only through their I-9, decrypted into backups and
+  re-sealed on restore. Read-only access to a business sees no payroll (`payroll.no_access`). Migration 0031,
+  `/v1/workspaces/{id}/payroll/*`. Stages 2–4 (pay runs, employer tax, year-end) follow; nothing on the phone yet.
 - **The receipt by the amount, web and phone** (RCP-06): a transaction's screen has a round receipt button beside its amount. Filled, it opens the receipt; with a "+", it adds one (the camera on the phone, the "Add a receipt" section on the web, which now shows only then). While a receipt added from the transaction is being read or needs a look, the button opens it and says so; on the phone, one waiting to upload opens the queue. `TransactionDto.receipt` (`{ id, status }`) is the linked receipt, else one added from the transaction that isn't linked yet (its only, unscored candidate). The phone reads it fresh from the server when the screen opens, because linking doesn't always change the synced transaction. On the phone, "Chosen by you" (how the category was picked) moved from under the amount to the Category row.
 - **Your own storage for files and backups, web and phone** ([ADR-0031](design/adr/0031-your-own-storage.md); BAK-03, BAK-05): Settings → Your own storage lets an owner connect an S3-compatible bucket (AWS S3, Backblaze B2, Wasabi, Cloudflare R2, MinIO) or a WebDAV folder (Nextcloud, ownCloud, Synology).
   - **Mirror, not move.** Montra keeps its own copy, so OCR, previews, matching, retention and quota are unchanged. A copy goes to `<folder>/<kind>/<year>/<date> <name> (<id tail>).<ext>`, by default under `Montra/<workspace>`.

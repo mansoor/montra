@@ -959,5 +959,29 @@
   "OPS-12": [
     "partial",
     "disaster recovery and incident response runbooks, never exercised"
+  ],
+  "PRL-01": [
+    "done",
+    "Employees and contractors per business, readable only with write access to it; a contractor is a vendor of the business (ADR-0034)"
+  ],
+  "PRL-02": [
+    "done",
+    "2020+ W-4 recorded as signed, history kept, newest in force by effective date; substitute PDF. Pre-2020 W-4s are not supported"
+  ],
+  "PRL-03": [
+    "done",
+    "W-9 (Rev. March 2024) updates the contractor's TIN; substitute PDF"
+  ],
+  "PRL-04": [
+    "done",
+    "Sections 1 and 2, documents with sealed copies, the 3-business-day due date and the retention rule worked out from the dates; substitute PDF. Signatures are a typed name with an attestation and the audit log; no E-Verify"
+  ],
+  "PRL-05": [
+    "done",
+    "_enc columns and sealed files under the workspace key, masked display, reveal/download/view need a recent sign-in and write to the audit log; backups decrypt them and restore re-seals"
+  ],
+  "PRL-10": [
+    "partial",
+    "contractors are vendors, so bills (BIZ-06) pay them; 1099 totals come with year-end (stage 4)"
   ]
 }
