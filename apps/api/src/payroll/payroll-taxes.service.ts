@@ -72,8 +72,8 @@ const DEPOSIT_NAMES: Record<PayrollTaxKind, { payee: string; label: string }> = 
 
 const DUE_SOON_DAYS = 7;
 
-/** One approved paycheck, with what the worksheets need. */
-interface PaidCheck {
+/** One approved paycheck, with what the worksheets and year-end forms need. */
+export interface PaidCheck {
   personId: string;
   personName: string;
   workState: string | null;
@@ -87,7 +87,7 @@ interface PaidCheck {
 }
 
 /** Wage bases, worked out from a person's paychecks in pay-date order through the year. */
-interface Bases {
+export interface Bases {
   income: bigint;
   employment: bigint;
   ss: bigint;
@@ -137,6 +137,17 @@ export class PayrollTaxesService {
         ...(req.caEttRate !== undefined && { ca_ett_rate_ppm: percentToPpm(req.caEttRate) }),
         ...(req.federalDepositSchedule && { federal_deposit_schedule: req.federalDepositSchedule }),
         ...(req.caDepositSchedule && { ca_deposit_schedule: req.caDepositSchedule }),
+        ...(req.filingAddress !== undefined && {
+          filing_line1: req.filingAddress?.line1 ?? null,
+          filing_line2: req.filingAddress?.line2 ?? null,
+          filing_city: req.filingAddress?.city ?? null,
+          filing_state: req.filingAddress?.state ?? null,
+          filing_zip: req.filingAddress?.zip ?? null,
+        }),
+        ...(req.ssaUserId !== undefined && { ssa_user_id: req.ssaUserId }),
+        ...(req.contactName !== undefined && { contact_name: req.contactName }),
+        ...(req.contactPhone !== undefined && { contact_phone: req.contactPhone }),
+        ...(req.contactEmail !== undefined && { contact_email: req.contactEmail }),
       };
       if (row) {
         await trx
@@ -340,7 +351,7 @@ export class PayrollTaxesService {
   }
 
   /** Approved paychecks with pay dates in the year, oldest first, with each tax by code. */
-  private async paidChecks(trx: Trx, ctx: Ctx, entityId: string, year: number): Promise<PaidCheck[]> {
+  async paidChecks(trx: Trx, ctx: Ctx, entityId: string, year: number): Promise<PaidCheck[]> {
     const rows = await trx
       .selectFrom('app.paycheck as p')
       .innerJoin('app.pay_run as r', (j) =>
@@ -607,6 +618,20 @@ function settingsDto(entityId: string, row: PayrollSettingsRow | undefined): Pay
     federalDepositSchedule: row?.federal_deposit_schedule ?? 'monthly',
     caDepositSchedule: row?.ca_deposit_schedule ?? 'quarterly',
     taxYears: Object.keys(PAYROLL_TAX_TABLES).map(Number),
+    filingAddress:
+      row?.filing_line1 && row.filing_city && row.filing_state && row.filing_zip
+        ? {
+            line1: row.filing_line1,
+            line2: row.filing_line2,
+            city: row.filing_city,
+            state: row.filing_state,
+            zip: row.filing_zip,
+          }
+        : null,
+    ssaUserId: row?.ssa_user_id ?? null,
+    contactName: row?.contact_name ?? null,
+    contactPhone: row?.contact_phone ?? null,
+    contactEmail: row?.contact_email ?? null,
     version: row ? Number(row.version) : 0,
   };
 }
@@ -648,7 +673,7 @@ async function bankAccount(trx: Trx, ctx: Ctx, entityId: string, accountId: stri
 }
 
 /** Each paycheck's wage bases, keyed by the check, worked out per person in pay-date order. */
-function basesFor(checks: PaidCheck[], year: number): Map<PaidCheck, Bases> {
+export function basesFor(checks: PaidCheck[], year: number): Map<PaidCheck, Bases> {
   const t = payrollTaxYear(year);
   const out = new Map<PaidCheck, Bases>();
   const ytd = new Map<string, bigint>();

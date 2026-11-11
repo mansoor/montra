@@ -93,6 +93,7 @@ import { PaymentLinks } from './business/payment-links.service.js';
 import { FormsService } from './payroll/forms.service.js';
 import { PayRunsService } from './payroll/pay-runs.service.js';
 import { PayrollTaxesService } from './payroll/payroll-taxes.service.js';
+import { YearEndService } from './payroll/year-end.service.js';
 import { ReimbursementsService } from './payroll/reimbursements.service.js';
 import { BuiltInTaxEngine, PAYROLL_TAX_ENGINE } from './payroll/tax-engine.js';
 import { PayrollController } from './payroll/payroll.controller.js';
@@ -253,6 +254,7 @@ export class AppModule {
         ReimbursementsService,
         { provide: PAYROLL_TAX_ENGINE, useClass: BuiltInTaxEngine },
         PayrollTaxesService,
+        YearEndService,
         PropertiesService,
         RentService,
         LoansService,
