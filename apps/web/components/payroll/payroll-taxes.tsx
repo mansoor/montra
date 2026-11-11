@@ -108,7 +108,9 @@ function SettingsCard({
   const [open, setOpen] = useState(canWrite && settings.version === 0);
   const [f, setF] = useState({
     ein: settings.ein ? `${settings.ein.slice(0, 2)}-${settings.ein.slice(2)}` : '',
-    caEmployerAccount: settings.caEmployerAccount ?? '',
+    caEmployerAccount: settings.caEmployerAccount
+      ? `${settings.caEmployerAccount.slice(0, 3)}-${settings.caEmployerAccount.slice(3, 7)}-${settings.caEmployerAccount.slice(7)}`
+      : '',
     caUiRate: settings.caUiRate ?? '',
     caEttRate: settings.caEttRate,
     federalDepositSchedule: settings.federalDepositSchedule,

@@ -2152,6 +2152,8 @@
   "payroll.de4.estimated": "Allowances for estimated deductions (line 1b)",
   "payroll.de4.estimated_count": "{count, plural, one {# for estimated deductions} other {# for estimated deductions}}",
   "payroll.de4.exempt": "Claims exemption from California withholding (line 3)",
+  "payroll.de4.extra_withholding": "Additional amount withheld each pay period (line 2)",
+  "payroll.de4.filing_status": "Filing status",
   "payroll.de4.head_of_household": "Head of household",
   "payroll.de4.hint": "California withholding uses the DE 4 in force on each payday. A new one takes over from its effective date.",
   "payroll.de4.married": "Married (one income)",

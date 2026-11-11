@@ -451,14 +451,29 @@ export function de4Doc(d: De4PdfData): FormDoc {
             label: '1a. Number of regular withholding allowances (Worksheet A)',
             value: String(d.allowances),
           },
+        ],
+      },
+      {
+        kind: 'fields',
+        fields: [
           {
             label: '1b. Number of allowances from the Estimated Deductions, Worksheet B',
             value: String(d.estimatedDeductionAllowances),
           },
+        ],
+      },
+      {
+        kind: 'fields',
+        fields: [
           {
             label: '1c. Total number of allowances you are claiming',
             value: String(d.allowances + d.estimatedDeductionAllowances),
           },
+        ],
+      },
+      {
+        kind: 'fields',
+        fields: [
           {
             label: '2. Additional amount of state income tax to be withheld each pay period (Worksheet C)',
             value: usd(d.extraWithholding),

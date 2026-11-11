@@ -138,7 +138,7 @@ export function De4Panel({
             save();
           }}
         >
-          <Field label={t('payroll.w4.filing_status')}>
+          <Field label={t('payroll.de4.filing_status')}>
             <select
               className="input"
               value={f.filingStatus}
@@ -173,7 +173,7 @@ export function De4Panel({
               onChange={(e) => setF((x) => ({ ...x, estimatedDeductionAllowances: e.target.value }))}
             />
           </Field>
-          <Field label={t('payroll.w4.extra_withholding')}>
+          <Field label={t('payroll.de4.extra_withholding')}>
             <input
               className="input"
               inputMode="decimal"
