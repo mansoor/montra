@@ -306,34 +306,50 @@ export const GOAL_TYPES = ['emergency_fund', 'debt_payoff', 'savings', 'sinking_
 export const GoalType = z.enum(GOAL_TYPES);
 export type GoalType = z.infer<typeof GoalType>;
 
-const GoalFields = z.object({
-  entityId: Id,
-  memberId: Id.nullable().default(null),
+/** What can change after a goal is created. No defaults here: a field left out of a patch stays as it is. */
+const GoalEditable = z.object({
+  memberId: Id.nullable(),
   name: z.string().trim().min(1).max(200),
-  type: GoalType,
-  target: PositiveMinor.nullable().default(null),
-  dueDate: CalendarDateDto.nullable().default(null),
+  target: PositiveMinor.nullable(),
+  dueDate: CalendarDateDto.nullable(),
   /** The budget category that funds it (savings or debt group). */
-  categoryId: Id.nullable().default(null),
-  strategy: z.enum(['snowball', 'avalanche']).nullable().default(null),
+  categoryId: Id.nullable(),
+  strategy: z.enum(['snowball', 'avalanche']).nullable(),
   /** Savings accounts (progress = their balance) or debts (payoff plan). */
-  linkedAccountIds: z.array(Id).max(20).default([]),
+  linkedAccountIds: z.array(Id).max(20),
   /** Debt payoff: paid on top of the minimums each month. */
-  extraPayment: NonNegativeMinor.nullable().default(null),
+  extraPayment: NonNegativeMinor.nullable(),
 });
 
-export const CreateGoalRequest = GoalFields.refine(
-  (g) => g.type !== 'sinking_fund' || (g.target !== null && g.dueDate !== null),
-  { message: 'A sinking fund needs a target and a due date', path: ['dueDate'] },
-).refine((g) => g.type !== 'debt_payoff' || g.strategy !== null, {
-  message: 'Choose snowball or avalanche',
-  path: ['strategy'],
-});
+const goalField = GoalEditable.shape;
+export const CreateGoalRequest = z
+  .object({
+    entityId: Id,
+    type: GoalType,
+    name: goalField.name,
+    memberId: goalField.memberId.default(null),
+    target: goalField.target.default(null),
+    dueDate: goalField.dueDate.default(null),
+    categoryId: goalField.categoryId.default(null),
+    strategy: goalField.strategy.default(null),
+    linkedAccountIds: goalField.linkedAccountIds.default([]),
+    extraPayment: goalField.extraPayment.default(null),
+  })
+  .refine((g) => g.type !== 'sinking_fund' || (g.target !== null && g.dueDate !== null), {
+    message: 'A sinking fund needs a target and a due date',
+    path: ['dueDate'],
+  })
+  .refine((g) => g.type !== 'debt_payoff' || g.strategy !== null, {
+    message: 'Choose snowball or avalanche',
+    path: ['strategy'],
+  });
 export type CreateGoalRequest = z.output<typeof CreateGoalRequest>;
 
-export const UpdateGoalRequest = GoalFields.omit({ entityId: true, type: true })
-  .partial()
-  .extend({ archived: z.boolean().optional(), version: z.number().int().positive() });
+// Zod 4's .partial() keeps .default(): build the patch from the fields without defaults.
+export const UpdateGoalRequest = GoalEditable.partial().extend({
+  archived: z.boolean().optional(),
+  version: z.number().int().positive(),
+});
 export type UpdateGoalRequest = z.output<typeof UpdateGoalRequest>;
 
 export const DebtPayoffDto = z.object({

@@ -235,6 +235,10 @@ finished:
 11. **Payment lines share a payee key.** The key for "ONLINE PAYMENT TO CARD XXXX4321" is just `TO`, whatever the card,
     so all such lines share one `app.payee` row and its name is the first one imported. Changing the key would need
     a migration of payee history and rules.
+12. **Patch schemas that fill defaults.** Zod 4's `.partial()` keeps `.default()`, so a patch built as
+    `Create….partial()` resets the fields it leaves out. Goals are fixed; `UpdateExpectedIncomeRequest` (`memberId`,
+    `accountId`, `payee`), `UpdateBillRequest` (`fileIds`) and `UpdateMaintenanceRequest` (`fileIds`,
+    `transactionIds`) still do it.
 
 ---
 
@@ -516,7 +520,7 @@ Phase 6 leftovers, not blocking:
 - FAM-06/07: the API supports member budgets and goals; the screens have no member picker yet (fits Phase 7).
 - FLOW-06: owner draws never count as spending, but the Sankey doesn't draw them as transfers yet.
 - REC-06: unused subscriptions aren't detected. REC-04's wording can name at-risk bills awkwardly.
-- Mobile: goals are read-only, and budgets are created only as monthly zero-based. No device run yet.
+- Mobile: budgets are created only as monthly zero-based. No device run yet. (Goals can now be edited and archived on the phone; see §7g.)
 
 Design notes that the API relies on:
 
@@ -786,6 +790,7 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Editing and archiving goals, web and phone** (BUD-07, BUD-08): each goal on the web has **Edit** (the add form, pre-filled, without kind and books, which can't change) and **Archive** (after a confirmation); archived goals sit in a collapsible list with **Restore**. On the phone, tap a goal for an edit panel with the same fields and Archive behind an `Alert`; archived goals can be restored from the bottom of the screen. Saves send the goal's `version`: a stale one is refused with 409 `version.conflict`, which the web now explains everywhere with a Reload link, and the phone reopens the panel on the latest copy. The patch contract was fixed on the way: Zod 4's `.partial()` keeps `.default()`, so every `PATCH /goals/:id` used to reset the fields it left out (archiving cleared the target, due date, category and linked accounts). The API now also checks a new funding category like create does, and a goal whose linked accounts are all removed gets its own budget category again. Pure phone parts in `src/features/goals.ts`; not run on a device.
 - **Explore spending, web and phone** (FLOW-01): Plan → Explore spending on the web, More → Explore spending on the phone. Pick up to 8 categories and 3, 6, 12 or 24 months; see them month by month in a chart and a table (cells drill to transactions), a card per category (trend, average, share of spending, purchases and typical size, biggest month, the pace for 12 months, top places), and what-ifs (cut by a percent or cap a month: the saving, the share of income kept, and months to each goal). Nothing is saved, except through **Make this my budget**: a row with a change shows this month's budget for the category, and the button sets it to the what-if's monthly amount (the average less the cut, or the cap) after a confirmation naming the month, the new amount and what it replaces. It updates the entity's (or member's) budget, or creates one when there is none. `GET /spending/explore` (now with each category's `assigned` and the `budget`), `POST /budgets/set-category`; the arithmetic is `categoryStats`, `whatIf` and `whatIfTarget` in `@montra/domain`.
 - **Home's numbers for another period, web and phone** (FLOW-01): the date range under the Home title is a dropdown (a down arrow beside it) that picks the period for the four tiles (income, spent, left to spend, left to assign): the budget's periods, else months, newest first, back to the earliest with any transaction for the entity and member, at most 12 months. Away from the current period it's hard to miss: the tiles sit in a warning-coloured box saying "You're looking at September 2026, not the current period", with **Back to today** and a note that everything else on Home is as of today. It's never remembered: on the web it lives only in the URL (`?period=`), and the phone resets it when you leave Home. The charts keep their own period. `GET /dashboard?period=` returns the list as `periods`.
 - **Transfers made real, web and phone** (TXN-04, AI-01): a card payment or move between accounts that was detected as a transfer becomes one when you accept it in review (Make transfer). The other side, when it was recorded separately, is absorbed: both statement lines stay on the transfer and stay cleared, the other side goes to the trash, re-importing either statement finds nothing new, and undoing the import that created the transfer keeps it (reason `transfer`). It stops counting as spending and income. A payment that names another account's last 4 digits is suggested before that account's statement arrives, and that statement later matches the transfer on amount and date. Import dedupe now keys statement lines per account (from `transaction_source`), so a transfer is recognised on both accounts' statements. `POST /transactions/:id/make-transfer`, ADR-0028.
