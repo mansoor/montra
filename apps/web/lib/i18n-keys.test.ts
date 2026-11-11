@@ -84,6 +84,10 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'business.format_': ['csv', 'xlsx', 'quickbooks_iif', 'xero_csv'],
   'business.range_': ['month', 'quarter', 'ytd', 'last_year'],
   'business.show_': ['pnl', 'customers', 'vendors'],
+  // ADR-0032: the business landing page reuses Home's period labels; ADR-0033: moving an account.
+  'home.charts.range_': ['3', '6', '12', '24'],
+  'account.books.': ['business', 'rental'],
+  'account.move.cleared.': ['default_deposit_account', 'tax_savings_account'],
   'parties.add_': ['customer', 'vendor'],
   'parties.new_': ['customer', 'vendor'],
   'parties.empty_': ['customer', 'vendor'],
