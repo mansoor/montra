@@ -173,6 +173,7 @@ describe('view models', () => {
       foreign: null,
       tripId: null,
       localTime: null,
+      receipt: null,
       accountId: null,
       splits: null,
       amount: amount === null ? null : { amount, currency: 'USD' },

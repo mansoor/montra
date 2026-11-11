@@ -73,6 +73,7 @@ export function makeDto(t: TxInput, version = 1): TransactionDto {
     foreign: null,
     tripId: null,
     localTime: null,
+    receipt: null,
     accountId: ACCOUNT,
     splits: [
       {
