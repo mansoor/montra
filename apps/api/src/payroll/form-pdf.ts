@@ -403,6 +403,98 @@ export function w4Doc(d: W4PdfData): FormDoc {
   };
 }
 
+export interface De4PdfData {
+  year: number;
+  name: string;
+  address: string | null;
+  ssn: string | null;
+  filingStatus: 'single' | 'married' | 'head_of_household';
+  allowances: number;
+  estimatedDeductionAllowances: number;
+  extraWithholding: bigint;
+  exempt: boolean;
+  signedName: string;
+  signedOn: string;
+  employer: { name: string; address: string | null; account: string | null };
+}
+
+/** California's Employee's Withholding Allowance Certificate, as a substitute form with the DE 4's content. */
+export function de4Doc(d: De4PdfData): FormDoc {
+  return {
+    form: `DE 4 (${d.year})`,
+    title: 'Employee’s Withholding Allowance Certificate',
+    subtitle:
+      'Complete this form so that your employer can withhold the correct California state income tax from your paycheck.',
+    footer: FOOTER,
+    blocks: [
+      {
+        kind: 'fields',
+        fields: [
+          { label: 'Your full name', value: d.name, span: 0.65 },
+          { label: 'Social security number', value: d.ssn, span: 0.35 },
+        ],
+      },
+      { kind: 'fields', fields: [{ label: 'Home address, city, state and ZIP code', value: d.address }] },
+      {
+        kind: 'checks',
+        label: 'Filing status',
+        options: [
+          { label: 'Single or Married (with two or more incomes)', checked: d.filingStatus === 'single' },
+          { label: 'Married (one income)', checked: d.filingStatus === 'married' },
+          { label: 'Head of Household', checked: d.filingStatus === 'head_of_household' },
+        ],
+      },
+      {
+        kind: 'fields',
+        fields: [
+          {
+            label: '1a. Number of regular withholding allowances (Worksheet A)',
+            value: String(d.allowances),
+          },
+          {
+            label: '1b. Number of allowances from the Estimated Deductions, Worksheet B',
+            value: String(d.estimatedDeductionAllowances),
+          },
+          {
+            label: '1c. Total number of allowances you are claiming',
+            value: String(d.allowances + d.estimatedDeductionAllowances),
+          },
+          {
+            label: '2. Additional amount of state income tax to be withheld each pay period (Worksheet C)',
+            value: usd(d.extraWithholding),
+          },
+        ],
+      },
+      {
+        kind: 'checks',
+        options: [
+          {
+            label: `3. I claim exemption from withholding for ${d.year}, and I certify I meet both of the conditions for exemption.`,
+            checked: d.exempt,
+          },
+        ],
+      },
+      {
+        kind: 'text',
+        text: 'Under the penalties of perjury, I certify that the number of withholding allowances claimed on this certificate does not exceed the number to which I am entitled or, if claiming exemption from withholding, that I am entitled to claim the exempt status.',
+      },
+      { kind: 'signature', label: 'Employee’s signature', name: d.signedName, date: usDate(d.signedOn) },
+      { kind: 'heading', text: 'Employer' },
+      {
+        kind: 'fields',
+        fields: [
+          {
+            label: 'Employer’s name and address',
+            value: [d.employer.name, d.employer.address].filter(Boolean).join('\n'),
+            span: 0.65,
+          },
+          { label: 'California employer payroll tax account number', value: d.employer.account, span: 0.35 },
+        ],
+      },
+    ],
+  };
+}
+
 export const W9_CLASSIFICATIONS: Record<string, string> = {
   individual: 'Individual/sole proprietor',
   c_corporation: 'C corporation',

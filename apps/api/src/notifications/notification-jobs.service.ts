@@ -16,6 +16,7 @@ import {
 import { Db } from '../db/database.js';
 import { Worker, type Job } from '../jobs/queue.js';
 import { FlowService } from '../planning/flow.service.js';
+import { PayrollTaxesService } from '../payroll/payroll-taxes.service.js';
 import { RentService } from '../rentals/rent.service.js';
 import { RentalOpsService } from '../rentals/rental-ops.service.js';
 import { rentalEntities } from '../rentals/shared.js';
@@ -24,6 +25,12 @@ import { NotificationsService, type NewNotification } from './notifications.serv
 type Ctx = { workspaceId: string; userId: string };
 
 const BILL_DAYS = 3;
+const DEPOSIT_TITLES = {
+  federal_941: 'Federal payroll tax deposit (941)',
+  federal_940: 'FUTA deposit (940)',
+  ca_pit_sdi: 'California PIT and SDI deposit',
+  ca_ui_ett: 'California UI and ETT deposit',
+} as const;
 const LARGE_LOOKBACK_DAYS = 2;
 const RECENT_RECOMMENDATION_DAYS = 2;
 const DELIVER_EVERY_MS = 5 * 60_000;
@@ -39,6 +46,7 @@ export class NotificationJobs {
     @Inject(FlowService) private readonly flow: FlowService,
     @Inject(RentService) private readonly rent: RentService,
     @Inject(RentalOpsService) private readonly ops: RentalOpsService,
+    @Inject(PayrollTaxesService) private readonly payrollTaxes: PayrollTaxesService,
   ) {}
 
   register(): void {
@@ -80,6 +88,7 @@ export class NotificationJobs {
       () => this.overspending(ctx, base, today),
       () => this.large(ctx, base, today, prefs.largeTransaction),
       () => this.rentals(ctx, base, today),
+      () => this.payrollDeposits(ctx, base, today, now),
       () => this.importReminder(ctx, base, today, prefs.importReminderDays),
       () => this.recommendations(ctx, base, today),
       ...(weekday === prefs.digestWeekday ? [() => this.digest(ctx, base, today)] : []),
@@ -177,6 +186,47 @@ export class NotificationJobs {
       title: `Large transaction: ${t.payee || t.description || 'no payee'}`,
       link: `${base}/transactions/${t.id}`,
     }));
+  }
+
+  /** PRL-15: a payroll tax deposit due within BILL_DAYS, or overdue, for a business with approved pay runs. */
+  private async payrollDeposits(
+    ctx: Ctx,
+    base: string,
+    today: CalendarDate,
+    now: Date,
+  ): Promise<NewNotification[]> {
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{ entity_id: string }>`
+        select distinct entity_id from app.pay_run
+         where workspace_id = ${ctx.workspaceId} and status = 'approved'
+           and pay_date >= ${`${Number(today.slice(0, 4)) - 1}-10-01`}::date`.execute(trx),
+    );
+    const out: NewNotification[] = [];
+    for (const { entity_id } of rows) {
+      const years = [Number(today.slice(0, 4)) - 1, Number(today.slice(0, 4))];
+      for (const year of years) {
+        const { obligations } = await this.payrollTaxes.taxes(ctx, entity_id, year, now);
+        for (const o of obligations) {
+          if (
+            o.status !== 'overdue' &&
+            !(o.status === 'due_soon' && daysBetween(today, o.dueDate) <= BILL_DAYS)
+          ) {
+            continue;
+          }
+          out.push({
+            type: 'bill_due',
+            dedupeKey: `payroll_deposit:${entity_id}:${o.tax}:${o.periodStart}:${o.status}`,
+            title: `${DEPOSIT_TITLES[o.tax]} of ${formatMoney(money(BigInt(o.amount), asCurrencyCode('USD')), { locale: 'en-US' })} ${
+              o.status === 'overdue'
+                ? `was due on ${o.dueDate}`
+                : `is due ${o.dueDate === today ? 'today' : `on ${o.dueDate}`}`
+            }`,
+            link: `${base}/business/${entity_id}/payroll/taxes`,
+          });
+        }
+      }
+    }
+    return out;
   }
 
   private async rentals(ctx: Ctx, base: string, today: CalendarDate): Promise<NewNotification[]> {

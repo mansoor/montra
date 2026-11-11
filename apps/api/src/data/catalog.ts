@@ -57,6 +57,7 @@ export const ENCRYPTED: Readonly<Record<string, Readonly<Record<string, string>>
     bank_account_enc: 'payroll_person.bank_account',
   },
   payroll_w4: { tin_enc: 'payroll_w4.tin' },
+  payroll_de4: { tin_enc: 'payroll_de4.tin' },
   payroll_w9: { tin_enc: 'payroll_w9.tin' },
   payroll_i9: {
     birth_date_enc: 'payroll_i9.birth_date',

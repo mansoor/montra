@@ -7,7 +7,8 @@ import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
 // Payroll, stage 2: pay schedules, pay runs, payslips, posting and reimbursements (PRL-06..11; ADR-0034 §6–8).
-// Made-up people and never-issued test SSNs only. Taxes are entered by hand here: the manual engine computes none.
+// Made-up people and never-issued test SSNs only. The built-in engine works out federal and California taxes (stage 3);
+// a tax typed in by hand overrides its line. Runs are in June 2026, a year Montra has tables for.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 const today = todayIn('UTC');
 const EMAIL = 'payroll-runs@example.test';
@@ -170,11 +171,22 @@ describe('pay schedules (PRL-06)', () => {
 });
 
 describe('a pay run (PRL-07)', () => {
-  it('drafts a paycheck per employee from their hours or salary, with no taxes from the manual engine', async () => {
-    const res = await c.post(url('/payroll/runs'), { entityId: biz, scheduleId: schedule.id });
+  it('drafts a paycheck per employee from their hours or salary, with the engine’s taxes', async () => {
+    const res = await c.post(url('/payroll/runs'), {
+      entityId: biz,
+      scheduleId: schedule.id,
+      periodDate: '2026-06-15',
+    });
     expect(res.status).toBe(201);
     run = res.body;
-    expect(run).toMatchObject({ status: 'draft', engine: 'manual', payFromAccountId: checking });
+    expect(run).toMatchObject({
+      status: 'draft',
+      engine: 'montra',
+      payFromAccountId: checking,
+      periodStart: '2026-06-08',
+      periodEnd: '2026-06-21',
+      payDate: '2026-06-26',
+    });
     expect(run.paychecks.map((p: any) => p.personName)).toEqual(['Avery Testperson', 'Blake Sample']);
     const a = paycheckOf(run, hourly);
     expect(line(a, 'regular')).toMatchObject({
@@ -183,9 +195,42 @@ describe('a pay run (PRL-07)', () => {
       amount: '180000',
       source: 'computed',
     });
-    expect(a).toMatchObject({ gross: '180000', employeeTaxes: '0', net: '180000' });
-    expect(line(paycheckOf(run, salaried), 'salary').amount).toBe('200000');
-    expect(run.totals).toMatchObject({ gross: '380000', net: '380000', paychecks: 2 });
+    // No W-4, DE 4 or UI rate yet: single, no adjustments or allowances, and the new-employer UI rate.
+    // FIT: 1,800 × 26 = 46,800 − 8,600 = 38,200; 1,240 + 12% × 18,300 = 3,436; / 26 = 132.15.
+    // CA PIT: 1,800 − 219 = 1,581; 17.54 + 4.4% × 571 = 42.66. SS 6.2%, Medicare 1.45%, SDI 1.3%.
+    const taxes = (pc: any, kind: string) =>
+      Object.fromEntries(pc.lines.filter((l: any) => l.kind === kind).map((l: any) => [l.code, l.amount]));
+    expect(taxes(a, 'employee_tax')).toEqual({
+      fit: '13215',
+      ss: '11160',
+      medicare: '2610',
+      ca_pit: '4266',
+      ca_sdi: '2340',
+    });
+    // FUTA 0.6%, UI 3.4% and ETT 0.1% on the first $7,000.
+    expect(taxes(a, 'employer_tax')).toEqual({
+      ss_er: '11160',
+      medicare_er: '2610',
+      futa: '1080',
+      ca_ui: '6120',
+      ca_ett: '180',
+    });
+    expect(a).toMatchObject({
+      gross: '180000',
+      employeeTaxes: '33591',
+      net: '146409',
+      employerTaxes: '21150',
+    });
+    expect(a.taxNotes).toEqual([
+      'No W-4 on file: federal tax is withheld as single with no adjustments.',
+      'No DE 4 on file: California tax is withheld as single with no allowances.',
+      'No UI rate entered for the business: the new-employer rate, 3.4%, is used.',
+    ]);
+    const b = paycheckOf(run, salaried);
+    expect(line(b, 'salary').amount).toBe('200000');
+    // FIT 156.15; SS 124.00; Medicare 29.00; CA PIT 2,000 − 219 = 1,781: 43.24 + 6.6% × 187 = 55.58; SDI 26.00.
+    expect(b).toMatchObject({ employeeTaxes: '39073', net: '160927' });
+    expect(run.totals).toMatchObject({ gross: '380000', net: '307336', paychecks: 2 });
     const again = await c.post(url('/payroll/runs'), {
       entityId: biz,
       scheduleId: schedule.id,
@@ -194,13 +239,13 @@ describe('a pay run (PRL-07)', () => {
     expect(again).toMatchObject({ status: 409, body: { code: 'payroll.run_exists' } });
   });
 
-  it('takes hours, overtime, deductions and taxes entered by hand, and works out net pay', async () => {
+  it('takes hours, overtime, deductions and taxes entered by hand, which override the engine’s', async () => {
     const a = paycheckOf(run, hourly);
     const res = await c.patch(url(`/payroll/runs/${run.id}/paychecks/${a.id}`), {
       hoursMilli: '75500',
       overtimeHoursMilli: '2000',
       earnings: [{ code: 'bonus', label: 'Holiday bonus', amount: '10000' }],
-      preTaxDeductions: [{ code: '401k', label: '401(k)', amount: '9000' }],
+      preTaxDeductions: [{ code: 'retirement', label: '401(k)', amount: '9000' }],
       employeeTaxes: [
         { code: 'fit', label: 'Federal income tax', amount: '12000' },
         { code: 'ss', label: 'Social Security', amount: '11253' },
@@ -216,14 +261,21 @@ describe('a pay run (PRL-07)', () => {
     // 75.5 h × $22.50 = $1,698.75; 2 h × $33.75 = $67.50; plus $100 bonus.
     expect(line(pc, 'regular').amount).toBe('169875');
     expect(line(pc, 'overtime')).toMatchObject({ hoursMilli: '2000', rate: '3375', amount: '6750' });
+    // Every employee tax was typed in. Of the employer's, Social Security was; the engine adds the rest on all
+    // $1,866.25, since a 401(k) deferral stays in those wages: Medicare 27.06, FUTA 11.20, UI 63.45, ETT 1.87.
     expect(pc).toMatchObject({
       gross: '186625',
       preTax: '9000',
       employeeTaxes: '31163',
       postTax: '0',
       net: '146462',
-      employerTaxes: '11253',
+      employerTaxes: '21611',
     });
+    const badPreTax = await c.patch(url(`/payroll/runs/${run.id}/paychecks/${a.id}`), {
+      preTaxDeductions: [{ code: 'gym', label: 'Gym', amount: '100' }],
+      version: pc.version,
+    });
+    expect(badPreTax).toMatchObject({ status: 422, body: { code: 'payroll.pre_tax_code' } });
     const stale = await c.patch(url(`/payroll/runs/${run.id}/paychecks/${a.id}`), {
       hoursMilli: '1000',
       version: a.version,

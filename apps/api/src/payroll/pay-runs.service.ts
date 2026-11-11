@@ -1,7 +1,7 @@
 /**
  * Pay schedules and pay runs (PRL-06..09; ADR-0034 §6–7). A run is a draft of one paycheck per employee on the schedule:
  * regular pay is worked out from hours or salary, approved reimbursements are added untaxed, and the tax engine fills in
- * the taxes (the manual engine leaves them to be entered). Approving posts each paycheck as its own transaction; reopening
+ * the taxes (the built-in federal and California engine; a tax typed in overrides its line). Approving posts each paycheck as its own transaction; reopening
  * takes them back out while nothing is reconciled or closed.
  */
 import { Inject, Injectable } from '@nestjs/common';
@@ -24,12 +24,15 @@ import {
   paycheckTotals,
   payPeriodContaining,
   PERIODS_PER_YEAR,
+  PRE_TAX_CODES,
   salaryPerPeriod,
   todayIn,
   type CalendarDate,
   type JournalEntryDraft,
   type PaycheckTotals,
   type PostingDraft,
+  type PreTaxCode,
+  type WageParts,
 } from '@montra/domain';
 import type {
   ApprovePayRunRequest,
@@ -337,6 +340,15 @@ export class PayRunsService {
         if (!given) return;
         if (kind === 'earning' && given.some((g) => COMPUTED_EARNINGS.has(g.code))) {
           throw unprocessable('payroll.computed_earning', 'Regular pay comes from the hours or salary');
+        }
+        if (
+          kind === 'pre_tax_deduction' &&
+          given.some((g) => !PRE_TAX_CODES.includes(g.code as PreTaxCode))
+        ) {
+          throw unprocessable(
+            'payroll.pre_tax_code',
+            `A before-tax deduction must be one of: ${PRE_TAX_CODES.join(', ')}`,
+          );
         }
         const allowed: readonly string[] | null =
           kind === 'employee_tax' ? EMPLOYEE_TAX_CODES : kind === 'employer_tax' ? EMPLOYER_TAX_CODES : null;
@@ -855,7 +867,7 @@ export class PayRunsService {
     let lines = await this.lines(trx, ctx, [paycheckId]);
     const now = paycheckTotals(lines.map((l) => ({ kind: l.kind, amount: BigInt(l.amount_minor) })));
     const payDate = dateOf(run.pay_date);
-    const ytd = await this.yearToDate(trx, ctx, pc.person_id, payDate, run.id);
+    const ytd = await this.ytdWages(trx, ctx, pc.person_id, payDate, run.id);
     const w4 = await trx
       .selectFrom('app.payroll_w4')
       .selectAll()
@@ -864,14 +876,32 @@ export class PayRunsService {
       .where('effective_date', '<=', payDate)
       .orderBy('effective_date', 'desc')
       .executeTakeFirst();
-    const taxes = await this.engine.compute({
+    const de4 = await trx
+      .selectFrom('app.payroll_de4')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('person_id', '=', pc.person_id)
+      .where('effective_date', '<=', payDate)
+      .orderBy('effective_date', 'desc')
+      .executeTakeFirst();
+    const settings = await trx
+      .selectFrom('app.payroll_settings')
+      .select(['ca_ui_rate_ppm', 'ca_ett_rate_ppm'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', pc.entity_id)
+      .executeTakeFirst();
+    const preTax = (code: PreTaxCode) =>
+      lines
+        .filter((l) => l.kind === 'pre_tax_deduction' && l.code === code)
+        .reduce((t, l) => t + BigInt(l.amount_minor), 0n);
+    const frequency = schedule?.frequency ?? 'monthly';
+    const { lines: taxes, notes } = await this.engine.compute({
       entityId: pc.entity_id,
       payDate,
-      periodsPerYear: schedule ? PERIODS_PER_YEAR[schedule.frequency] : 1,
-      gross: now.gross,
-      preTax: now.preTax,
-      ytdGross: ytd.gross,
-      ytdPreTax: ytd.preTax,
+      frequency,
+      periodsPerYear: schedule ? PERIODS_PER_YEAR[schedule.frequency] : 12,
+      wages: { gross: now.gross, retirement: preTax('retirement'), section125: preTax('section125') },
+      ytd,
       workState: person.work_state,
       w4: w4
         ? {
@@ -884,6 +914,17 @@ export class PayRunsService {
             exempt: w4.exempt,
           }
         : null,
+      de4: de4
+        ? {
+            filingStatus: de4.filing_status,
+            allowances: de4.allowances,
+            estimatedDeductionAllowances: de4.estimated_deduction_allowances,
+            extraWithholding: BigInt(de4.extra_withholding_minor),
+            exempt: de4.exempt,
+          }
+        : null,
+      caUiRate: settings?.ca_ui_rate_ppm != null ? BigInt(settings.ca_ui_rate_ppm) : null,
+      caEttRate: BigInt(settings?.ca_ett_rate_ppm ?? 1000),
     });
     const manual = new Set(lines.filter((l) => l.source === 'manual').map((l) => `${l.kind}:${l.code}`));
     sort = 200;
@@ -905,6 +946,8 @@ export class PayRunsService {
       .updateTable('app.paycheck')
       .set({
         w4_id: w4?.id ?? null,
+        de4_id: de4?.id ?? null,
+        tax_notes: notes,
         gross_minor: totals.gross,
         pre_tax_minor: totals.preTax,
         employee_taxes_minor: totals.employeeTaxes,
@@ -916,6 +959,39 @@ export class PayRunsService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('id', '=', paycheckId)
       .execute();
+  }
+
+  /** Gross pay and before-tax deductions by kind, from approved runs earlier in the pay date's year (this run left out). */
+  private async ytdWages(
+    trx: Trx,
+    ctx: Ctx,
+    personId: string,
+    payDate: CalendarDate,
+    excludeRunId: string,
+  ): Promise<WageParts> {
+    const { rows } = await sql<{
+      gross: string | null;
+      retirement: string | null;
+      section125: string | null;
+    }>`
+      select (select coalesce(sum(p.gross_minor), 0) from app.paycheck p
+                join app.pay_run r on r.workspace_id = p.workspace_id and r.id = p.pay_run_id
+               where p.workspace_id = ${ctx.workspaceId} and p.person_id = ${personId} and r.status = 'approved'
+                 and r.id <> ${excludeRunId} and r.pay_date between ${`${payDate.slice(0, 4)}-01-01`}::date and ${payDate}::date) as gross,
+             coalesce(sum(l.amount_minor) filter (where l.code = 'retirement'), 0) as retirement,
+             coalesce(sum(l.amount_minor) filter (where l.code = 'section125'), 0) as section125
+        from app.paycheck_line l
+        join app.paycheck p on p.workspace_id = l.workspace_id and p.id = l.paycheck_id
+        join app.pay_run r on r.workspace_id = p.workspace_id and r.id = p.pay_run_id
+       where l.workspace_id = ${ctx.workspaceId} and p.person_id = ${personId} and r.status = 'approved'
+         and r.id <> ${excludeRunId} and l.kind = 'pre_tax_deduction'
+         and r.pay_date between ${`${payDate.slice(0, 4)}-01-01`}::date and ${payDate}::date`.execute(trx);
+    const r = rows[0];
+    return {
+      gross: BigInt(r?.gross ?? 0),
+      retirement: BigInt(r?.retirement ?? 0),
+      section125: BigInt(r?.section125 ?? 0),
+    };
   }
 
   /** Approved paychecks for this person earlier in the pay date's calendar year, leaving out this run. */
@@ -1159,6 +1235,7 @@ export class PayRunsService {
             reimbursementId: l.reimbursement_id,
           })),
         ytd: totalsDto(add(before, rowTotals(p))),
+        taxNotes: p.tax_notes ?? [],
         transactionId: p.transaction_id,
         version: Number(p.version),
       });
