@@ -234,7 +234,7 @@
   ],
   "IMP-04": [
     "done",
-    "profiles by fingerprint per account"
+    "profiles by fingerprint per account; a profile's choice of account in a multi-account file applies only to the account it was saved for"
   ],
   "IMP-05": [
     "done",
