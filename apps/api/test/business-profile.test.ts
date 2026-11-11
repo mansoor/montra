@@ -113,7 +113,7 @@ describe('the domain', () => {
 describe('the logo', () => {
   it('stores a PNG checked by its content, and serves it back', async () => {
     const res = await upload(EMAIL, `/businesses/${biz}/logo`, PNG, 'logo.png', 'image/png');
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(201);
     const logo = JSON.parse(res.body);
     expect(logo).toMatchObject({ mediaType: 'image/png', width: 1, height: 1, bytes: PNG.length });
     expect((await c.get(url(`/businesses/${biz}`))).body.logoFileId).toBe(logo.fileId);

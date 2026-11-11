@@ -279,6 +279,32 @@ describe('what stops a move', () => {
     expect((await c.get(url(`/businesses/${biz}`))).body.defaultDepositAccountId).toBeNull();
   });
 
+  it('takes value updates along, still linked to the entries they posted', async () => {
+    const fund = (
+      await c.post(url('/accounts'), {
+        name: 'Brokerage',
+        kind: 'investment',
+        openingBalance: usd('100000'),
+        openingDate: addDays(today, -30),
+      })
+    ).body.id;
+    const v = await c.post(url(`/accounts/${fund}/valuations`), {
+      values: [{ date: addDays(today, -1), value: '120000' }],
+    });
+    expect(v.status).toBeLessThan(300);
+    const res = await c.post(url(`/accounts/${fund}/move`), { entityId: biz });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ transactions: 0, entries: 2 });
+    const rows = await admin.query(
+      `select v.entity_id, je.entity_id as entry_entity from app.account_valuation v
+         join app.journal_entry je on je.id = v.entry_id where v.account_id = $1`,
+      [fund],
+    );
+    expect(rows.rows).toEqual([{ entity_id: biz, entry_entity: biz }]);
+    expect((await accountOf(fund)).balance.amount).toBe('120000');
+    expect((await c.get(url(`/accounts/${fund}/valuations`))).status).toBe(200);
+  });
+
   it('refuses the books it is already in', async () => {
     expect((await c.get(url(`/accounts/${checking}/move?entityId=${personal}`))).status).toBe(422);
   });

@@ -787,6 +787,27 @@ export class TransactionPoster {
 
     // Write: the old entries go, the account changes books, the new entries come in with their states.
     await sql`select set_config('app.allow_locked_edit', 'on', true)`.execute(trx);
+    // A value update keeps the entry it posted (ACC-07): let go of it here, and point it at the new entry below.
+    const valuations = standaloneIds.length
+      ? await trx
+          .selectFrom('app.account_valuation')
+          .select(['id', 'entry_id'])
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('entry_id', 'in', standaloneIds)
+          .execute()
+      : [];
+    if (valuations.length) {
+      await trx
+        .updateTable('app.account_valuation')
+        .set({ entry_id: null })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where(
+          'id',
+          'in',
+          valuations.map((v) => v.id),
+        )
+        .execute();
+    }
     await this.deleteEntries(trx, ctx, entryIds);
     await trx
       .updateTable('app.ledger_account')
@@ -797,7 +818,16 @@ export class TransactionPoster {
     this.ledger.cacheOf(trx)?.accounts.delete(accountId);
     for (const w of written) {
       const ids = await this.ledger.post(trx, ctx, w.transactionId, w.drafts);
-      const key = w.transactionId ?? `entry:${standaloneIds[written.indexOf(w) - txIds.length]}`;
+      const oldEntry = w.transactionId ? null : standaloneIds[written.indexOf(w) - txIds.length]!;
+      const key = w.transactionId ?? `entry:${oldEntry}`;
+      for (const v of valuations.filter((x) => x.entry_id === oldEntry)) {
+        await trx
+          .updateTable('app.account_valuation')
+          .set({ entry_id: ids[0]! })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', v.id)
+          .execute();
+      }
       for (const [i, draft] of w.drafts.entries()) {
         let locked = false;
         for (const p of draft.postings) {

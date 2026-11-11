@@ -16,8 +16,6 @@ const SETTLING: ReadonlySet<SystemRole> = new Set([
   'due_to_entity',
   'due_from_entity',
 ]);
-/** The other side of `inter_entity_clearing` when Personal pays for a business or receives its money (equity mode). */
-const OWNER_SIDE: ReadonlySet<SystemRole> = new Set(['owner_contribution', 'owner_draw']);
 /**
  * In a transaction whose main account moves, the old books' lines in these accounts belong to that account and go
  * with it: what the account's own money was, not what it was spent on.
