@@ -239,6 +239,9 @@ import type {
   StorageUsageDto,
   TrashItemDto,
   UpdateNotificationPrefsRequest,
+  AccountMovePreviewDto,
+  BusinessDashboardDto,
+  BusinessLogoDto,
   ConnectStorageRequest,
   StorageConnection,
   StorageDestinationDto,
@@ -914,6 +917,22 @@ export class ApiClient {
   updateAccount(workspaceId: string, accountId: string, input: UpdateAccountInput) {
     return this.request<AccountDto>('PATCH', this.ws(workspaceId, `/accounts/${enc(accountId)}`), input);
   }
+  /** ADR-0033: what moving the account to other books would do; nothing changes. */
+  previewAccountMove(workspaceId: string, accountId: string, entityId: string) {
+    return this.request<AccountMovePreviewDto>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/move${query({ entityId })}`),
+    );
+  }
+  moveAccount(workspaceId: string, accountId: string, entityId: string) {
+    return this.request<AccountMovePreviewDto>(
+      'POST',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/move`),
+      {
+        entityId,
+      },
+    );
+  }
   adjustBalance(workspaceId: string, accountId: string, input: BalanceAdjustmentInput) {
     return this.request<unknown>(
       'POST',
@@ -1361,6 +1380,33 @@ export class ApiClient {
       'PATCH',
       this.ws(workspaceId, `/businesses/${enc(entityId)}`),
       input,
+    );
+  }
+  /** ADR-0032: a PNG or JPEG, checked by its content on the server. */
+  setBusinessLogo(workspaceId: string, entityId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<BusinessLogoDto>(
+      'POST',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/logo`),
+      form,
+    );
+  }
+  removeBusinessLogo(workspaceId: string, entityId: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/businesses/${enc(entityId)}/logo`));
+  }
+  /** Where the logo is served; through the web's API proxy it needs no token. The file id refreshes a cached copy. */
+  businessLogoPath(workspaceId: string, entityId: string, fileId: string) {
+    return this.ws(workspaceId, `/businesses/${enc(entityId)}/logo?v=${enc(fileId)}`);
+  }
+  getBusinessDashboard(
+    workspaceId: string,
+    entityId: string,
+    opts: { months?: number; month?: string } = {},
+  ) {
+    return this.request<BusinessDashboardDto>(
+      'GET',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/dashboard${query(opts)}`),
     );
   }
   uploadBusinessFile(workspaceId: string, file: Blob, fileName: string) {
@@ -2373,6 +2419,9 @@ export type {
   ScheduleEExportFormat,
   TenantDto,
   BillDto,
+  AccountMovePreviewDto,
+  BusinessDashboardDto,
+  BusinessLogoDto,
   BusinessProfileDto,
   InvoiceDto,
   InvoiceLineDto,

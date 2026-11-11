@@ -9,6 +9,8 @@ import {
   invoiceStatus,
   invoiceTotals,
   marginBps,
+  monthsEnding,
+  summarizeBusinessMonths,
   mileageDeduction,
   mileageRateOn,
   taxSetAside,
@@ -205,5 +207,31 @@ describe('margin', () => {
     expect(marginBps(100000n, 60000n)).toBe(4000);
     expect(marginBps(100000n, 130000n)).toBe(-3000);
     expect(marginBps(0n, 5000n)).toBeNull();
+  });
+});
+
+describe('the business landing page (ADR-0032)', () => {
+  it('totals the months and states profit and margin the way the P&L does', () => {
+    const t = summarizeBusinessMonths([
+      { moneyIn: '50000', moneyOut: '20000', revenue: '45000', expenses: '15000' },
+      { moneyIn: 30000n, moneyOut: 40000n, revenue: 30000n, expenses: 35000n },
+    ]);
+    expect(t).toEqual({
+      moneyIn: 80000n,
+      moneyOut: 60000n,
+      revenue: 75000n,
+      expenses: 50000n,
+      profit: 25000n,
+      marginBps: marginBps(75000n, 50000n),
+    });
+    expect(summarizeBusinessMonths([]).marginBps).toBeNull();
+  });
+
+  it('lists the months ending with the chosen one, oldest first, across a year end', () => {
+    expect(monthsEnding(calendarDate('2026-02-01'), 3)).toEqual([
+      { start: '2025-12-01', end: '2025-12-31' },
+      { start: '2026-01-01', end: '2026-01-31' },
+      { start: '2026-02-01', end: '2026-02-28' },
+    ]);
   });
 });

@@ -11,10 +11,12 @@ export function PeriodSelect({
   label,
   options,
   value,
+  testId = 'home-period-select',
 }: {
   label: string;
   options: { href: string; label: string }[];
   value: string;
+  testId?: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -22,7 +24,7 @@ export function PeriodSelect({
     <span className="relative -ml-1.5 inline-flex items-center">
       <select
         aria-label={label}
-        data-testid="home-period-select"
+        data-testid={testId}
         className="min-h-8 cursor-pointer appearance-none rounded-[var(--radius-m)] bg-transparent py-1 pr-7 pl-1.5 text-sm text-ink-soft hover:bg-canvas hover:text-ink aria-busy:opacity-60"
         aria-busy={pending || undefined}
         value={value}

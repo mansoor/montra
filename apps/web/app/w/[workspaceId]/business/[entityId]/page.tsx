@@ -8,8 +8,11 @@ import { drillHref } from '@/lib/planning';
 import { LineChart } from '@/components/charts/line-chart';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
+import { BusinessDashboard } from '@/components/business/business-dashboard';
 import { RecommendationList } from '@/components/planning/recommendations';
-import { LinkTabs, StatTile } from '@/components/ui/page-header';
+import { LinkTabs } from '@/components/ui/page-header';
+import { BUSINESS_CHART_MONTHS } from '@montra/schemas';
+import { isCalendarDate } from '@montra/domain';
 
 export const metadata: Metadata = { title: 'Business' };
 export const dynamic = 'force-dynamic';
@@ -17,13 +20,23 @@ export const dynamic = 'force-dynamic';
 const SHOW = ['pnl', 'customers', 'vendors'] as const;
 type Show = (typeof SHOW)[number];
 
-/** The business at a glance: profit and loss, what's owed either way, and income by customer (BIZ-10). */
+/**
+ * The business's landing page: at a glance over a chosen period and month (ADR-0032), then the P&L, income by customer
+ * and expenses by vendor for any dates (BIZ-10).
+ */
 export default async function BusinessOverviewPage({
   params,
   searchParams,
 }: {
   params: Promise<{ workspaceId: string; entityId: string }>;
-  searchParams: Promise<{ range?: string; show?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    range?: string;
+    show?: string;
+    from?: string;
+    to?: string;
+    months?: string;
+    month?: string;
+  }>;
 }) {
   const { workspaceId, entityId } = await params;
   const sp = await searchParams;
@@ -35,68 +48,51 @@ export default async function BusinessOverviewPage({
   const show: Show = (SHOW as readonly string[]).includes(sp.show ?? '') ? (sp.show as Show) : 'pnl';
   const { from, to } =
     sp.from && sp.to ? { from: sp.from as CalendarDate, to: sp.to as CalendarDate } : rangeOf(range, today);
-  const [pnl, customers, vendors, invoices, bills, estimate, recs] = await load((api) =>
+  const months = (BUSINESS_CHART_MONTHS as readonly number[]).includes(Number(sp.months))
+    ? Number(sp.months)
+    : 6;
+  const month = sp.month && isCalendarDate(sp.month) && sp.month.endsWith('-01') ? sp.month : undefined;
+  const [dashboard, pnl, customers, vendors, estimate, recs] = await load((api) =>
     Promise.all([
+      api.getBusinessDashboard(workspaceId, entityId, { months, ...(month ? { month } : {}) }),
       api.getPnl(workspaceId, { entityId, from, to }),
       api.getPartyReport(workspaceId, { entityId, kind: 'customer', from, to }),
       api.getPartyReport(workspaceId, { entityId, kind: 'vendor', from, to }),
-      api.listInvoices(workspaceId, { entityId }),
-      api.listBills(workspaceId, { entityId }),
       api.getTaxEstimate(workspaceId, { entityId }),
       api.listRecommendations(workspaceId, { status: 'open' }),
     ]),
   );
-  const { t } = await getI18n();
+  const { t, money } = await getI18n();
   const ccy = pnl.currency;
   const base = `/w/${workspaceId}`;
   const here = `${base}/business/${entityId}`;
-  const owedToYou = invoices
-    .filter((i) => ['sent', 'partial', 'overdue'].includes(i.status))
-    .reduce((n, i) => n + BigInt(i.open), 0n);
-  const overdue = invoices.filter((i) => i.status === 'overdue');
-  const youOwe = bills
-    .filter((b) => b.status === 'open' || b.status === 'overdue')
-    .reduce((n, b) => n + BigInt(b.amount), 0n);
-  const rate = pnl.marginBps === null ? null : `${(pnl.marginBps / 100).toFixed(1)}%`;
   const notes = recs.filter((r) => r.entityId === entityId);
+  // The dashboard's choices and the reports' are kept apart in the URL, so changing one keeps the other.
+  const dash = { ...(months !== 6 ? { months: String(months) } : {}), ...(month ? { month } : {}) };
   const qs = (extra: Record<string, string>) => {
-    const q = new URLSearchParams({ range, show, ...extra });
+    const q = new URLSearchParams({ ...dash, range, show, ...extra });
     return `${here}?${q.toString()}`;
+  };
+  const dashHref = (q: { months?: number; month?: string | null }) => {
+    const next = new URLSearchParams();
+    const m = q.months ?? months;
+    if (m !== 6) next.set('months', String(m));
+    const chosen = q.month === undefined ? month : q.month;
+    if (chosen) next.set('month', chosen);
+    for (const [k, v] of Object.entries({ range: sp.range, show: sp.show, from: sp.from, to: sp.to }))
+      if (v) next.set(k, v);
+    return next.size ? `${here}?${next}` : here;
   };
   const drill = (categoryIds: string[]) => drillHref(base, { entityId, categoryIds, from, to });
 
   return (
     <div className="space-y-5">
-      <section aria-label={t('business.at_a_glance')} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile
-          label={t('business.profit')}
-          value={<Money amount={pnl.netProfit} currency={ccy} />}
-          hint={rate ? t('business.margin', { rate }) : t('business.no_revenue')}
-          tone={BigInt(pnl.netProfit) < 0n ? 'bad' : undefined}
-        />
-        <StatTile
-          label={t('business.owed_to_you')}
-          value={<Money amount={owedToYou} currency={ccy} />}
-          hint={
-            overdue.length
-              ? t('business.overdue_count', { count: overdue.length })
-              : t('business.none_overdue')
-          }
-          tone={overdue.length ? 'warn' : undefined}
-          href={`${here}/invoices`}
-        />
-        <StatTile
-          label={t('business.you_owe')}
-          value={<Money amount={youOwe} currency={ccy} />}
-          href={`${here}/bills`}
-        />
-        <StatTile
-          label={t('business.to_set_aside')}
-          value={<Money amount={estimate.toSetAside} currency={ccy} />}
-          hint={estimate.rateBps === null ? t('business.enter_rate') : undefined}
-          href={`${here}/taxes`}
-        />
-      </section>
+      <BusinessDashboard
+        d={dashboard}
+        here={here}
+        hrefFor={dashHref}
+        setAside={estimate.rateBps === null ? null : money(BigInt(estimate.toSetAside), ccy)}
+      />
       <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -109,7 +105,7 @@ export default async function BusinessOverviewPage({
           {REPORT_RANGES.map((k) => (
             <Link
               key={k}
-              href={`${here}?${new URLSearchParams({ range: k, show }).toString()}`}
+              href={`${here}?${new URLSearchParams({ ...dash, range: k, show }).toString()}`}
               aria-current={!sp.from && k === range ? 'page' : undefined}
             >
               {t(`business.range_${k}`)}
@@ -119,6 +115,9 @@ export default async function BusinessOverviewPage({
       </div>
       <form action={here} className="flex flex-wrap items-end gap-2" aria-label={t('business.custom_range')}>
         <input type="hidden" name="show" value={show} />
+        {Object.entries(dash).map(([k, v]) => (
+          <input key={k} type="hidden" name={k} value={v} />
+        ))}
         <label>
           <span className="field-label">{t('business.export_from')}</span>
           <input className="input" type="date" name="from" defaultValue={from} required />

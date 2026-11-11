@@ -6,6 +6,7 @@ import { getI18n } from '@/lib/i18n-server';
 import { INVOICE_CHIP } from '@/lib/business';
 import { InvoiceActions } from '@/components/business/invoice-actions';
 import { InvoiceEditor } from '@/components/business/invoice-editor';
+import { Letterhead } from '@/components/business/letterhead';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
 
@@ -42,6 +43,9 @@ export default async function InvoicePage({
         <span className={INVOICE_CHIP[invoice.status]} data-testid="invoice-status">
           {t(`invoices.status.${invoice.status}`)}
         </span>
+        <div className="ml-auto">
+          <Letterhead workspaceId={workspaceId} profile={business} logoAlt={t('business.logo_alt')} />
+        </div>
       </div>
       {invoice.status === 'draft' ? (
         <InvoiceEditor

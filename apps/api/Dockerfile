@@ -17,9 +17,13 @@ COPY apps/api ./apps/api
 RUN pnpm install --frozen-lockfile --filter "@montra/api..." --filter .
 RUN pnpm --filter "@montra/api..." run build
 # Reinstall without the root tooling, from the same lockfile. `pnpm deploy --legacy` resolves versions afresh, so
-# the image could differ from what CI tested.
+# the image could differ from what CI tested. Invoice PDFs use two weights of each Noto font, and one of the Chinese
+# (ADR-0032): the other weights and the preview images are dropped, about 100 MB.
 RUN rm -rf node_modules apps/api/node_modules packages/*/node_modules \
  && pnpm install --frozen-lockfile --prod --filter "@montra/api..." \
+ && find node_modules/.pnpm -path '*@expo-google-fonts*' -type f \
+      \( -name '*.png' -o -name '*.ttf' ! -name '*_400Regular.ttf' ! -name '*_700Bold.ttf' -o -name 'NotoSansSC_700Bold.ttf' \) \
+      -delete \
  && rm -rf apps/api/src apps/api/test apps/api/tsconfig*.json apps/api/vitest.config.ts \
     packages/*/src packages/*/test packages/*/tsconfig*.json packages/*/vitest.config.ts \
  && test -f apps/api/dist/main.js \

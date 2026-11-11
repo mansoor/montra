@@ -1,20 +1,36 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   AddValuationsRequest,
   BalanceAdjustmentRequest,
   BalanceRangeDto,
   CreateAccountRequest,
+  MoveAccountRequest,
   RegisterView,
   UpdateAccountRequest,
   type AccountBalanceHistoryDto,
   type InvestmentPerformanceDto,
   type AccountDto,
+  type AccountMovePreviewDto,
   type CategoryDto,
   type LedgerAccountDto,
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import { requireRole } from '../common/roles.js';
 import { parse } from '../common/zod.js';
+import { AccountMoveService } from './account-move.service.js';
 import { AccountsService } from './accounts.service.js';
 import { CardsService } from './cards.service.js';
 import { ValuationsService } from './valuations.service.js';
@@ -26,7 +42,33 @@ export class AccountsController {
     @Inject(AccountsService) private readonly accounts: AccountsService,
     @Inject(ValuationsService) private readonly valuationsService: ValuationsService,
     @Inject(CardsService) private readonly cards: CardsService,
+    @Inject(AccountMoveService) private readonly moves: AccountMoveService,
   ) {}
+
+  /**
+   * ADR-0033: what moving the account to other books would do, changing nothing. Owners only: the move rewrites
+   * entries other members may not see (a partner's payslip).
+   */
+  @Get('accounts/:accountId/move')
+  movePreview(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Query() q: unknown,
+  ): Promise<AccountMovePreviewDto> {
+    requireRole(ctx, 'owner');
+    return this.moves.preview(dbCtx(ctx), parse(z.uuid(), accountId), parse(MoveAccountRequest, q).entityId);
+  }
+
+  @Post('accounts/:accountId/move')
+  @HttpCode(200)
+  move(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+    @Body() body: unknown,
+  ): Promise<AccountMovePreviewDto> {
+    requireRole(ctx, 'owner');
+    return this.moves.move(dbCtx(ctx), parse(z.uuid(), accountId), parse(MoveAccountRequest, body).entityId);
+  }
 
   @Post('accounts')
   create(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<AccountDto> {

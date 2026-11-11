@@ -21,11 +21,14 @@ export function NewAccountForm({
   accounts,
   employers,
   today,
+  initialEntityId,
 }: {
   workspace: WorkspaceDto;
   accounts: readonly AccountDto[];
   employers: readonly EmployerDto[];
   today: string;
+  /** Whose books it starts in (from a business's page); Personal otherwise. */
+  initialEntityId?: string;
 }) {
   const router = useRouter();
   const { t, locale } = useI18n();
@@ -34,7 +37,12 @@ export function NewAccountForm({
   const [busy, setBusy] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const type = ACCOUNT_PROFILES[kind];
-  const [entityId, setEntityId] = useState(workspace.entities[0]?.id ?? '');
+  const [entityId, setEntityId] = useState(
+    workspace.entities.find((e) => e.id === initialEntityId)?.id ??
+      workspace.entities.find((e) => e.type === 'personal')?.id ??
+      workspace.entities[0]?.id ??
+      '',
+  );
   const [track, setTrack] = useState(false);
   const [terms, setTerms] = useState(() => initialLoanTerms('mortgage', today));
   const tracking = type.installment && track;
@@ -207,7 +215,12 @@ export function NewAccountForm({
             </select>
           )}
         </Field>
-        <Field id="entityId" label={t('account.field.belongs_to')} error={errors.fields.entityId}>
+        <Field
+          id="entityId"
+          label={t('account.field.books')}
+          hint={t('account.field.books_hint')}
+          error={errors.fields.entityId}
+        >
           {(p) => (
             <select
               {...p}
@@ -218,7 +231,7 @@ export function NewAccountForm({
             >
               {workspace.entities.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.name}
+                  {e.type === 'personal' ? e.name : t(`account.books.${e.type}`, { name: e.name })}
                 </option>
               ))}
             </select>
