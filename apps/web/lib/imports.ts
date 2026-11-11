@@ -405,9 +405,18 @@ export const WARNING_KEYS: Record<string, string> = {
   no_date_column: 'imports.warning.no_date_column',
   no_amount_column: 'imports.warning.no_amount_column',
   no_description_column: 'imports.warning.no_description_column',
+  investment_transactions_skipped: 'imports.warning.investment_transactions_skipped',
 };
 
-export const warningKey = (code: string): string => WARNING_KEYS[code] ?? 'imports.warning.unknown';
+/** A warning's message key; a code may carry a count after a colon (`investment_transactions_skipped:3`). */
+export const warningKey = (code: string): string =>
+  WARNING_KEYS[code.split(':')[0]!] ?? 'imports.warning.unknown';
+
+/** A warning's message parameters: its count, when the code carries one. */
+export function warningParams(code: string): { count: number } | undefined {
+  const n = Number(code.split(':')[1]);
+  return Number.isInteger(n) ? { count: n } : undefined;
+}
 
 /** Failure codes (`batch.error` is "code: detail") with a plain-language message. */
 export const IMPORT_ERROR_KEYS: Record<string, string> = {
@@ -455,7 +464,7 @@ export const canUndo = (batch: ImportBatchDto, now: Date = new Date()) =>
   batch.status === 'committed' && batch.undoUntil !== null && new Date(batch.undoUntil) > now;
 
 /** Accepted upload types (IMP-01) and the size limit. */
-export const ACCEPTED_EXTENSIONS = ['csv', 'tsv', 'txt', 'xls', 'xlsx', 'pdf'];
+export const ACCEPTED_EXTENSIONS = ['csv', 'tsv', 'txt', 'xls', 'xlsx', 'pdf', 'qif', 'ofx', 'qfx'];
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export function fileProblem(file: { name: string; size: number }): string | null {

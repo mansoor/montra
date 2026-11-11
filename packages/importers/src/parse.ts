@@ -22,6 +22,8 @@ export interface ParsedRow {
   balance: bigint | null;
   category: string | null;
   reference: string | null;
+  /** The bank's id for the transaction (OFX `FITID`), when the file has one. */
+  externalId: string | null;
   raw: string[];
 }
 
@@ -147,6 +149,7 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
       balance,
       category: m.category !== undefined ? (r[m.category] ?? '').trim() || null : null,
       reference: m.reference !== undefined ? (r[m.reference] ?? '').trim() || null : null,
+      externalId: m.externalId !== undefined ? (r[m.externalId] ?? '').trim() || null : null,
       raw: r,
     });
     if (!result.minDate || compareDates(date, result.minDate) < 0) result.minDate = date;

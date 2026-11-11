@@ -1,6 +1,6 @@
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
-import { switchSource } from '@/lib/switch-sources';
+import { sourceLabel, switchSource } from '@/lib/switch-sources';
 import { PageHeader } from '@/components/ui/page-header';
 import { MigrationProgress } from '@/components/switch/migration-progress';
 
@@ -20,7 +20,9 @@ export default async function MigrationPage({
   const app = switchSource(migration.source);
   return (
     <div className="space-y-6">
-      <PageHeader title={t('switch.progress_title', { app: app?.name || t('switch.other_name') })} />
+      <PageHeader
+        title={t('switch.progress_title', { app: app ? sourceLabel(app, t) : t('switch.other_name') })}
+      />
       <MigrationProgress workspaceId={workspaceId} base={`/w/${workspaceId}`} initial={migration} />
     </div>
   );

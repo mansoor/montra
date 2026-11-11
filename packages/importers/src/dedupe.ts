@@ -2,7 +2,8 @@
  * Duplicate and match classification for imported rows (IMP-07, design 04 §3.5). Silently dropping a real
  * transaction is the worst failure, so only exact duplicates are skipped automatically:
  * - exact duplicate: same account, date, amount, normalized description and per-file ordinal as a
- *   previously imported transaction;
+ *   previously imported transaction. When the bank gives each transaction an id (OFX `FITID`), the id stands in for
+ *   the description, so a bank renaming a payee between downloads doesn't defeat it;
  * - probable duplicate (flagged, never skipped): same amount within ±3 days, description similarity ≥ 0.6,
  *   inside a date range an earlier import of this account covered;
  * - match: a manual / camera / scheduled entry with the same amount within ±3 days and similar description
@@ -17,7 +18,13 @@ export interface DedupeInputRow {
   date: CalendarDate;
   amount: bigint;
   normalizedDescription: string;
+  /** The bank's id for the transaction (OFX `FITID`). */
+  externalId?: string | null;
 }
+
+/** What identifies a row besides its date and amount: the bank's id when there is one, else its description. */
+const identity = (row: DedupeInputRow) =>
+  row.externalId ? `fitid:${row.externalId}` : row.normalizedDescription;
 
 export interface ImportedCandidate {
   transactionId: string;
@@ -49,16 +56,16 @@ export const MATCH_WINDOW_DAYS = 3;
 
 export function dedupeKey(accountId: string, row: DedupeInputRow, ordinal: number): string {
   return createHash('sha256')
-    .update([accountId, row.date, row.amount.toString(), row.normalizedDescription, ordinal].join('|'))
+    .update([accountId, row.date, row.amount.toString(), identity(row), ordinal].join('|'))
     .digest('hex')
     .slice(0, 40);
 }
 
-/** Ordinal of each row among identical (date, amount, description) rows of the same file. */
+/** Ordinal of each row among identical (date, amount, description or bank id) rows of the same file. */
 export function ordinals(rows: readonly DedupeInputRow[]): number[] {
   const seen = new Map<string, number>();
   return rows.map((r) => {
-    const k = `${r.date}|${r.amount}|${r.normalizedDescription}`;
+    const k = `${r.date}|${r.amount}|${identity(r)}`;
     const n = seen.get(k) ?? 0;
     seen.set(k, n + 1);
     return n;
