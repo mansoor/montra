@@ -7,9 +7,11 @@ import type {
   DeletionStatusDto,
   ExportJobDto,
   RestoreJobDto,
+  StorageDestinationDto,
   StorageUsageDto,
   WorkspaceDto,
 } from '@montra/api-client';
+import Link from 'next/link';
 import { browserApi } from '@/lib/browser-api';
 import { barPercent, formatBytes } from '@/lib/reports';
 import { DateText } from '../i18n';
@@ -61,10 +63,13 @@ export function BackupPanel({
   workspace,
   jobs,
   schedule,
+  destination = null,
 }: {
   workspace: WorkspaceDto;
   jobs: ExportJobDto[];
   schedule: BackupScheduleDto | null;
+  /** The workspace's own storage (ADR-0031), for owners. */
+  destination?: StorageDestinationDto | null;
 }) {
   const router = useRouter();
   const { run, busy, message, setMessage, t } = useAction();
@@ -72,6 +77,12 @@ export function BackupPanel({
   const [entityId, setEntityId] = useState(isOwner ? '' : (workspace.entities[0]?.id ?? ''));
   const [password, setPassword] = useState('');
   const [cadence, setCadence] = useState<'weekly' | 'monthly'>(schedule?.cadence ?? 'weekly');
+  const [saveToStorage, setSaveToStorage] = useState(true);
+  const [where, setWhere] = useState<'email_link' | 'storage'>(
+    schedule?.destination ?? (destination ? 'storage' : 'email_link'),
+  );
+  const [schedulePassword, setSchedulePassword] = useState('');
+  const [dropPassword, setDropPassword] = useState(false);
   const [taxEntity, setTaxEntity] = useState(
     workspace.entities.find((e) => e.type !== 'personal')?.id ?? workspace.entities[0]?.id ?? '',
   );
@@ -96,6 +107,7 @@ export function BackupPanel({
                 browserApi.createBackup(workspace.id, {
                   ...(entityId ? { entityId } : {}),
                   ...(password ? { password } : {}),
+                  ...(destination ? { saveToStorage } : {}),
                 }),
               t('data.backup_started'),
             ).then((r) => {
@@ -125,6 +137,16 @@ export function BackupPanel({
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
+          {destination && (
+            <label className="flex items-center gap-2 self-center text-sm">
+              <input
+                type="checkbox"
+                checked={saveToStorage}
+                onChange={(e) => setSaveToStorage(e.target.checked)}
+              />
+              {t('data.save_to_storage', { label: destination.label })}
+            </label>
+          )}
           <button type="submit" className="btn-primary" disabled={busy}>
             {t('data.backup_now')}
           </button>
@@ -151,7 +173,18 @@ export function BackupPanel({
                     {j.fileName ?? t(`data.kind_${j.kind}`)}
                     {j.encrypted && <span className="chip ml-2">{t('data.protected')}</span>}
                   </td>
-                  <td className="px-2 py-2 text-sm">{t(`data.status_${j.status}`)}</td>
+                  <td className="px-2 py-2 text-sm">
+                    {t(`data.status_${j.status}`)}
+                    {j.storageCopy && (
+                      <span
+                        className={`block text-xs ${j.storageCopy.status === 'failed' ? 'text-bad' : 'text-muted'}`}
+                        title={j.storageCopy.error ?? j.storageCopy.path ?? undefined}
+                        data-testid="export-storage-copy"
+                      >
+                        {t(`storage.copy_${j.storageCopy.status}`)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-2 text-right text-sm">{j.bytes ? formatBytes(j.bytes) : '—'}</td>
                   <td className="px-4 py-2 text-right">
                     {j.status === 'ready' && (
@@ -188,7 +221,9 @@ export function BackupPanel({
           <h2 id="schedule-title" className="text-base font-semibold">
             {t('data.schedule')}
           </h2>
-          <p className="text-sm text-muted">{t('data.schedule_hint')}</p>
+          <p className="text-sm text-muted">
+            {where === 'storage' ? t('data.schedule_hint_storage') : t('data.schedule_hint')}
+          </p>
           {schedule && (
             <p className="text-sm" data-testid="schedule-next">
               {t('data.schedule_next')} <DateText date={schedule.nextRunOn} />
@@ -206,13 +241,61 @@ export function BackupPanel({
                 <option value="monthly">{t('data.monthly')}</option>
               </select>
             </label>
+            <label>
+              <span className="field-label">{t('data.schedule_where')}</span>
+              <select
+                className="input"
+                value={where}
+                onChange={(e) => setWhere(e.target.value as 'email_link' | 'storage')}
+              >
+                <option value="email_link">{t('data.schedule_where_email')}</option>
+                {(destination || schedule?.destination === 'storage') && (
+                  <option value="storage">
+                    {t('data.schedule_where_storage', { label: destination?.label ?? t('storage.title') })}
+                  </option>
+                )}
+              </select>
+            </label>
+            <label>
+              <span className="field-label">
+                {schedule?.encrypted ? t('data.schedule_new_password') : t('data.password')}
+              </span>
+              <input
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                maxLength={200}
+                value={schedulePassword}
+                disabled={dropPassword}
+                onChange={(e) => setSchedulePassword(e.target.value)}
+              />
+            </label>
             <button
               type="button"
               className="btn-secondary"
               disabled={busy}
-              onClick={() =>
-                run(() => browserApi.saveBackupSchedule(workspace.id, { cadence }), t('data.schedule_saved'))
-              }
+              onClick={() => {
+                if (schedulePassword && schedulePassword.length < 10)
+                  return setMessage({ tone: 'bad', text: t('data.password_short') });
+                void run(
+                  () =>
+                    browserApi.saveBackupSchedule(workspace.id, {
+                      cadence,
+                      destination: where,
+                      ...(dropPassword
+                        ? { password: null }
+                        : schedulePassword
+                          ? { password: schedulePassword }
+                          : {}),
+                    }),
+                  t('data.schedule_saved'),
+                ).then((r) => {
+                  if (r) {
+                    setSchedulePassword('');
+                    setDropPassword(false);
+                  }
+                });
+              }}
             >
               {t('data.schedule_save')}
             </button>
@@ -229,6 +312,24 @@ export function BackupPanel({
               </button>
             )}
           </div>
+          {schedule?.encrypted && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={dropPassword}
+                onChange={(e) => setDropPassword(e.target.checked)}
+              />
+              {t('data.schedule_drop_password')}
+            </label>
+          )}
+          <p className="text-xs text-muted">
+            {t('data.schedule_password_hint')}{' '}
+            {!destination && (
+              <Link className="underline" href={`/w/${workspace.id}/settings?tab=storage`}>
+                {t('data.connect_storage')}
+              </Link>
+            )}
+          </p>
         </section>
       )}
 

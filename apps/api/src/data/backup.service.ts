@@ -164,10 +164,23 @@ export class BackupService {
       throw new AppError(403, 'export.not_allowed', 'Only an owner can take a backup of the whole workspace');
     }
     // Derived here, so what's queued can't reveal the password.
+    if (req.saveToStorage && role !== 'owner') {
+      throw new AppError(
+        403,
+        'storage.not_allowed',
+        'Only an owner can save backups to the workspace’s storage',
+      );
+    }
     const kdf: KdfParams | null = req.password ? newKdfParams() : null;
     const wrapped = req.password && kdf ? await this.kms.wrap(await deriveKey(req.password, kdf)) : null;
     return this.db.run(ctx, async (trx) => {
       if (req.entityId) await this.requireEntity(trx, ctx, req.entityId);
+      // ADR-0031 §7: a copy goes to the owner's storage too, unless they said not to.
+      const destination =
+        role === 'owner' && req.saveToStorage !== false ? await this.destinationIn(trx, ctx) : undefined;
+      if (req.saveToStorage && !destination) {
+        throw new AppError(409, 'storage.not_connected', 'Connect your own storage first');
+      }
       const id = newId();
       await trx
         .insertInto('app.export_job')
@@ -179,6 +192,7 @@ export class BackupService {
           entity_id: req.entityId ?? null,
           tax_year: null,
           encrypted: Boolean(req.password),
+          destination_id: destination?.id ?? null,
           storage_key: null,
           file_name: null,
           bytes: null,
@@ -261,6 +275,15 @@ export class BackupService {
     return r;
   }
 
+  /** The workspace's own storage, if it has one and the caller can see it (owners only, by RLS). */
+  private async destinationIn(trx: Trx, ctx: Ctx) {
+    return trx
+      .selectFrom('app.storage_destination')
+      .select(['id', 'status'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .executeTakeFirst();
+  }
+
   private jobDto(r: Awaited<ReturnType<BackupService['jobRow']>>): ExportJobDto {
     return {
       id: r.id,
@@ -274,6 +297,11 @@ export class BackupService {
       error: r.error,
       createdAt: r.created_at.toISOString(),
       expiresAt: r.expires_at?.toISOString() ?? null,
+      storageCopy: r.destination_status
+        ? { status: r.destination_status, path: r.destination_path, error: r.destination_error }
+        : r.destination_id
+          ? { status: 'pending', path: null, error: null }
+          : null,
     };
   }
 
@@ -336,7 +364,8 @@ export class BackupService {
 
   private scheduleDto(r: {
     cadence: 'weekly' | 'monthly';
-    destination: 'email_link';
+    destination: 'email_link' | 'storage';
+    wrapped_key: Buffer | null;
     next_run_on: unknown;
     last_run_at: Date | null;
     version: bigint | string | number;
@@ -344,6 +373,7 @@ export class BackupService {
     return {
       cadence: r.cadence,
       destination: r.destination,
+      encrypted: r.wrapped_key !== null,
       nextRunOn: calendarDate(String(r.next_run_on).slice(0, 10)),
       lastRunAt: r.last_run_at?.toISOString() ?? null,
       version: Number(r.version),
@@ -352,7 +382,20 @@ export class BackupService {
 
   async saveSchedule(ctx: Ctx, role: string, req: SaveBackupScheduleRequest): Promise<BackupScheduleDto> {
     if (role !== 'owner') throw new AppError(403, 'export.not_allowed', 'Only an owner can schedule backups');
+    // ADR-0031 §7: the key derived here is kept, wrapped by the KMS port. The password isn't.
+    let key: { wrapped_key: Buffer | null; kdf: string | null } | undefined;
+    if (req.password === null) key = { wrapped_key: null, kdf: null };
+    else if (req.password) {
+      const kdf = newKdfParams();
+      key = {
+        wrapped_key: await this.kms.wrap(await deriveKey(req.password, kdf)),
+        kdf: JSON.stringify(kdf),
+      };
+    }
     return this.db.run(ctx, async (trx) => {
+      if (req.destination === 'storage' && !(await this.destinationIn(trx, ctx))) {
+        throw new AppError(409, 'storage.not_connected', 'Connect your own storage first');
+      }
       const ws = await trx
         .selectFrom('app.workspace')
         .select('time_zone')
@@ -365,15 +408,27 @@ export class BackupService {
           workspace_id: ctx.workspaceId,
           user_id: ctx.userId,
           cadence: req.cadence,
+          destination: req.destination,
           next_run_on: next,
           last_run_at: null,
+          ...(key ?? {}),
         })
         .onConflict((oc) =>
-          oc.columns(['workspace_id', 'user_id']).doUpdateSet({ cadence: req.cadence, next_run_on: next }),
+          oc.columns(['workspace_id', 'user_id']).doUpdateSet({
+            cadence: req.cadence,
+            destination: req.destination,
+            next_run_on: next,
+            version: sql`app.backup_schedule.version + 1`,
+            ...(key ?? {}),
+          }),
         )
         .returningAll()
         .executeTakeFirstOrThrow();
-      await this.security(trx, ctx, 'backup_scheduled', { cadence: req.cadence });
+      await this.security(trx, ctx, 'backup_scheduled', {
+        cadence: req.cadence,
+        destination: req.destination,
+        encrypted: r.wrapped_key !== null,
+      });
       return this.scheduleDto(r);
     });
   }
@@ -409,6 +464,8 @@ export class BackupService {
             .select('time_zone')
             .where('id', '=', ctx.workspaceId)
             .executeTakeFirstOrThrow();
+          // Disconnected since it was scheduled: the emailed link, as before.
+          const destination = s.destination === 'storage' ? await this.destinationIn(trx, ctx) : undefined;
           const id = newId();
           await trx
             .insertInto('app.export_job')
@@ -419,6 +476,9 @@ export class BackupService {
               kind: 'backup',
               entity_id: null,
               tax_year: null,
+              encrypted: s.wrapped_key !== null,
+              destination_id: destination?.id ?? null,
+              scheduled: true,
               storage_key: null,
               file_name: null,
               bytes: null,
@@ -432,7 +492,11 @@ export class BackupService {
             userId: ctx.userId,
             queue: 'report',
             type: 'data.backup',
-            payload: { exportId: id, scheduled: true },
+            payload: {
+              exportId: id,
+              scheduled: true,
+              ...(s.wrapped_key && s.kdf ? { wrappedKey: s.wrapped_key.toString('base64'), kdf: s.kdf } : {}),
+            },
           });
           await trx
             .updateTable('app.backup_schedule')
@@ -483,7 +547,7 @@ export class BackupService {
     await this.storage.putFile(key, path, 'application/octet-stream');
     const { size } = await stat(path);
     await this.db.run(ctx, async (trx) => {
-      await trx
+      const job = await trx
         .updateTable('app.export_job')
         .set({
           status: 'ready',
@@ -495,9 +559,20 @@ export class BackupService {
         })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', id)
-        .execute();
+        .returning(['destination_id'])
+        .executeTakeFirstOrThrow();
+      // ADR-0031 §7: the mirror job saves it to the owner's storage, and tells a schedule's owner how that went.
+      if (job.destination_id) {
+        await trx
+          .updateTable('app.export_job')
+          .set({ destination_status: 'pending', destination_next_at: new Date(), destination_attempts: 0 })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', id)
+          .execute();
+        await sql`select app.schedule_system_job('schedule', 'storage.mirror', now())`.execute(trx);
+      }
       // BAK-05: the emailed link for a scheduled backup. It leads to the app and asks for a sign-in; it isn't itself a key.
-      if (notify) {
+      if (notify && !job.destination_id) {
         const prefs = await this.notifications.prefsIn(trx, ctx.userId);
         await this.notifications.create(
           trx,

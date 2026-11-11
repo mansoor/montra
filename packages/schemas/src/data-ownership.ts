@@ -16,6 +16,9 @@ export const SecurityEventKind = z.enum([
   'deletion_requested',
   'deletion_cancelled',
   'support_access',
+  'storage_connected',
+  'storage_changed',
+  'storage_disconnected',
 ]);
 export type SecurityEventKind = z.infer<typeof SecurityEventKind>;
 
@@ -43,6 +46,14 @@ export const ExportJobDto = z.object({
   error: z.string().nullable(),
   createdAt: z.string(),
   expiresAt: z.string().nullable(),
+  /** A copy sent to the workspace's own storage (ADR-0031 §7), or null when none was asked for. */
+  storageCopy: z
+    .object({
+      status: z.enum(['pending', 'done', 'failed', 'pruned']),
+      path: z.string().nullable(),
+      error: z.string().nullable(),
+    })
+    .nullable(),
 });
 export type ExportJobDto = z.infer<typeof ExportJobDto>;
 
@@ -51,6 +62,8 @@ export const CreateBackupRequest = z.object({
   entityId: Id.optional(),
   /** Encrypts the archive. It isn't stored, and can't be recovered. */
   password: z.string().min(10).max(200).optional(),
+  /** Also save it to the workspace's own storage. Defaults to yes when one is connected. Owners only. */
+  saveToStorage: z.boolean().optional(),
 });
 export type CreateBackupRequest = z.output<typeof CreateBackupRequest>;
 
@@ -60,16 +73,27 @@ export const CreateTaxPackageRequest = z.object({
 });
 export type CreateTaxPackageRequest = z.output<typeof CreateTaxPackageRequest>;
 
+export const BackupDestination = z.enum(['email_link', 'storage']);
+export type BackupDestination = z.infer<typeof BackupDestination>;
+
 export const BackupScheduleDto = z.object({
   cadence: z.enum(['weekly', 'monthly']),
-  destination: z.enum(['email_link']),
+  /** An emailed download link, or saved to the workspace's own storage (ADR-0031 §7). */
+  destination: BackupDestination,
+  /** Each archive is encrypted with the password given when scheduling. */
+  encrypted: z.boolean(),
   nextRunOn: CalendarDateDto,
   lastRunAt: z.string().nullable(),
   version: z.number().int(),
 });
 export type BackupScheduleDto = z.infer<typeof BackupScheduleDto>;
 
-export const SaveBackupScheduleRequest = z.object({ cadence: z.enum(['weekly', 'monthly']) });
+export const SaveBackupScheduleRequest = z.object({
+  cadence: z.enum(['weekly', 'monthly']),
+  destination: BackupDestination.default('email_link'),
+  /** A new password; null removes it; left out keeps the current one. It isn't stored, and can't be recovered. */
+  password: z.string().min(10).max(200).nullable().optional(),
+});
 export type SaveBackupScheduleRequest = z.output<typeof SaveBackupScheduleRequest>;
 
 // ----- Restore (BAK-06) --------------------------------------------------------------------------------------------
