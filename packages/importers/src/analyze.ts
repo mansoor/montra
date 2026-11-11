@@ -9,7 +9,7 @@ import type { Sheet } from './grid.js';
 import { findHeaderRow, inferMapping } from './infer.js';
 import type { ColumnMapping, MappingProposal } from './mapping.js';
 import { applyMapping, checkBalance, type BalanceCheck, type ParseResult } from './parse.js';
-import { matchTemplate } from './templates.js';
+import { findAccountColumn, matchTemplate } from './templates.js';
 
 export interface SavedProfile {
   id: string;
@@ -93,6 +93,16 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
                 ? { start: opts.statement.periodStart, end: opts.statement.periodEnd }
                 : null,
           });
+  }
+  // A multi-account file the templates don't know: keep the asked account's rows, by its account column.
+  if (opts.accountFilter && !proposal.mapping.filter && header) {
+    const column = findAccountColumn(header);
+    if (column !== null)
+      proposal = {
+        ...proposal,
+        mapping: { ...proposal.mapping, filter: { column, values: [opts.accountFilter] } },
+        accountColumn: column,
+      };
   }
   const parsed =
     proposal.confidence > 0

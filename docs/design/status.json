@@ -262,7 +262,7 @@
   ],
   "IMP-13": [
     "done",
-    "YNAB, Mint, Monarch, Quicken, Stessa templates with account filter"
+    "YNAB, Mint, Monarch, Quicken, Stessa, Actual, Lunch Money, Tiller, Goodbudget and Empower templates, other exports by column names; switching from another app (ADR-0029): one export into several accounts with categories, opening balances and paired transfers, for a fresh start"
   ],
   "DE-08": [
     "done",

@@ -5,6 +5,8 @@
 import type { z } from 'zod';
 import type {
   AcceptRecommendationRequest,
+  AnalyzeMigrationRequest,
+  StartMigrationRequest,
   AssignRequest,
   BudgetDto,
   BudgetMoveDto,
@@ -38,6 +40,9 @@ import type {
 } from '@montra/schemas';
 import type {
   AcceptCategoryProposalsRequest,
+  MigrationAnalysisDto,
+  MigrationDto,
+  MigrationEligibilityDto,
   AcceptInsightRequest,
   AcceptReviewRequest,
   AcceptReviewResponse,
@@ -260,6 +265,8 @@ import type {
 } from '@montra/schemas';
 
 export type CreateWorkspaceInput = z.input<typeof CreateWorkspaceRequest>;
+export type AnalyzeMigrationInput = z.input<typeof AnalyzeMigrationRequest>;
+export type StartMigrationInput = z.input<typeof StartMigrationRequest>;
 export type CreateAccountInput = z.input<typeof CreateAccountRequest>;
 export type UpdateAccountInput = z.input<typeof UpdateAccountRequest>;
 export type BalanceAdjustmentInput = z.input<typeof BalanceAdjustmentRequest>;
@@ -1080,6 +1087,28 @@ export class ApiClient {
 
   // ----- Statement import (IMP-01..09) --------------------------------------------------------------------
   /** Uploads one statement file as multipart/form-data (field `file`); the API detects the type. */
+  // ----- Switching from another app (IMP-13) ---------------------------------------------------------------
+  getMigrationEligibility(workspaceId: string) {
+    return this.request<MigrationEligibilityDto>('GET', this.ws(workspaceId, '/migrations/eligibility'));
+  }
+  analyzeMigration(workspaceId: string, input: AnalyzeMigrationInput) {
+    return this.request<MigrationAnalysisDto>('POST', this.ws(workspaceId, '/migrations/analyze'), input);
+  }
+  startMigration(workspaceId: string, input: StartMigrationInput) {
+    return this.request<MigrationDto>('POST', this.ws(workspaceId, '/migrations'), input);
+  }
+  getMigration(workspaceId: string, id: string) {
+    return this.request<MigrationDto>('GET', this.ws(workspaceId, `/migrations/${enc(id)}`));
+  }
+  commitMigration(workspaceId: string, id: string) {
+    return this.request<MigrationDto>('POST', this.ws(workspaceId, `/migrations/${enc(id)}/commit`));
+  }
+  makeMigrationTransfers(workspaceId: string, id: string) {
+    return this.request<{ made: number; migration: MigrationDto }>(
+      'POST',
+      this.ws(workspaceId, `/migrations/${enc(id)}/transfers`),
+    );
+  }
   uploadFile(workspaceId: string, file: Blob, fileName: string) {
     const form = new FormData();
     form.append('file', file, fileName);

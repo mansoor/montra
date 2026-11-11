@@ -107,6 +107,22 @@ export default async function HomePage({
         }
       />
 
+      {transactions.length === 0 && !memberId && (
+        <Link
+          href={`${base}/switch`}
+          className="card flex items-center justify-between gap-3 border-brand-600 hover:bg-brand-50"
+          data-testid="home-switch"
+        >
+          <span>
+            <span className="block font-semibold">{t('home.switch_title')}</span>
+            <span className="text-sm text-muted">{t('home.switch_hint')}</span>
+          </span>
+          <span aria-hidden="true" className="text-brand-600">
+            →
+          </span>
+        </Link>
+      )}
+
       <section
         aria-label={t('home.this_period')}
         data-testid="home-period"
