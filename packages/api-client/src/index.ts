@@ -281,7 +281,7 @@ import type {
   UpdatePayslipRequest,
 } from '@montra/schemas';
 
-// ----- Payroll (PRL-01..05, ADR-0032) -----
+// ----- Payroll (PRL-01..05, ADR-0034) -----
 export type CreatePersonInput = z.input<typeof CreatePersonRequest>;
 export type UpdatePersonInput = z.input<typeof UpdatePersonRequest>;
 export type RevealInput = z.input<typeof RevealRequest>;
@@ -2149,7 +2149,7 @@ export class ApiClient {
       this.ws(workspaceId, `/sync/changes${query({ since, limit })}`),
     );
   }
-  // ----- Payroll (PRL-01..05, ADR-0032) ----------------------------------------------------------------------
+  // ----- Payroll (PRL-01..05, ADR-0034) ----------------------------------------------------------------------
   listPayrollPeople(workspaceId: string, opts: { entityId: string; kind?: PersonKind }) {
     return this.request<{ data: PayrollPersonDto[] }>(
       'GET',

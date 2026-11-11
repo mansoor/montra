@@ -327,7 +327,7 @@ R1 targets sole proprietors, freelancers and single-member LLCs with up to about
 
 ### 5.1 Payroll (moved into scope on 2026-11-10)
 
-The owner decided on 2026-11-10 to bring payroll into scope for business entities (ADR-0032). This replaces the
+The owner decided on 2026-11-10 to bring payroll into scope for business entities (ADR-0034). This replaces the
 "payroll processing" line of 14.2 for businesses. These are the owner's decisions:
 
 - **Jurisdictions:** federal plus one state: California (chosen 2026-11-10; other states later).
@@ -617,7 +617,7 @@ R1 ships every **M** requirement. **S** items that slip move to R1.x. R2 adds li
 
 - Live bank or brokerage connections; investment performance by holding or security. (Gain at account level moved into scope
   on 2026-11-06: ACC-07, ADR-0025.)
-- Tax filing and sales tax filing. Payroll moved into scope for businesses on 2026-11-10 (5.1, ADR-0032): Montra
+- Tax filing and sales tax filing. Payroll moved into scope for businesses on 2026-11-10 (5.1, ADR-0034): Montra
   calculates and fills in forms, and the owner files and pays.
 - Tenant-facing portal, online rent collection, tenant screening.
 - Bill pay or moving real money.

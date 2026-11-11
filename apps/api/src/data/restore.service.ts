@@ -660,7 +660,7 @@ export class RestoreService {
     const bytes = await zip.bytes(file.path);
     if (sha256(bytes) !== file.sha256) throw new Error('A file does not match its checksum');
     written.push(key);
-    // ADR-0032: a sealed file is sealed again under this workspace's key and its new id.
+    // ADR-0034: a sealed file is sealed again under this workspace's key and its new id.
     const stored = row.sealed ? await this.crypto.sealBytes(trx, workspaceId, String(row.id), bytes) : bytes;
     await this.storage.put(key, stored, row.sealed ? 'application/octet-stream' : String(row.mime));
   }

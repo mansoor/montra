@@ -114,7 +114,7 @@ export class FieldCrypto {
     return open(key, sealed, Buffer.from(`${workspaceId}:${column}`)).toString('utf8');
   }
 
-  /** Seals a file's bytes before they reach storage (ADR-0032 §3), bound to the workspace and the file's id. */
+  /** Seals a file's bytes before they reach storage (ADR-0034 §3), bound to the workspace and the file's id. */
   async sealBytes(trx: Trx, workspaceId: string, fileId: string, bytes: Uint8Array): Promise<Buffer> {
     const key = await this.dataKey(trx, workspaceId);
     return seal(key, Buffer.from(bytes), Buffer.from(`${workspaceId}:file:${fileId}`));

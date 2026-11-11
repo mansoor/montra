@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import { formatTin, i9Doc, renderFormPdf, usd, usDate, w4Doc, w9Doc } from '../src/payroll/form-pdf.js';
 
-// The substitute form renderings (PRL-02..04, ADR-0032 §4). Pure: no database.
+// The substitute form renderings (PRL-02..04, ADR-0034 §4). Pure: no database.
 const pages = async (bytes: Uint8Array) => (await PDFDocument.load(bytes)).getPageCount();
 
 describe('form helpers', () => {

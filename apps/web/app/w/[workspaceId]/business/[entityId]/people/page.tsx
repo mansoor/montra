@@ -8,7 +8,7 @@ import { PeopleList } from '@/components/payroll/people-list';
 export const metadata: Metadata = { title: 'People' };
 export const dynamic = 'force-dynamic';
 
-/** Employees and contractors (PRL-01; ADR-0032). Needs write access to the business. */
+/** Employees and contractors (PRL-01; ADR-0034). Needs write access to the business. */
 export default async function PeoplePage({
   params,
 }: {

@@ -1,4 +1,4 @@
--- Payroll, stage 1: people and their onboarding forms (PRL-01..05; ADR-0032).
+-- Payroll, stage 1: people and their onboarding forms (PRL-01..05; ADR-0034).
 -- Everything is scoped to one business. Personal data is readable only by people who can write to the business, so a
 -- read-only accountant or a household partner without a grant sees none of it. SSNs, TINs, dates of birth, document
 -- numbers and bank details are `_enc` columns sealed by FieldCrypto; the audit trigger redacts them.
@@ -126,7 +126,7 @@ create index payroll_w9_person on app.payroll_w9 (workspace_id, person_id, signe
 
 -- ---------------------------------------------------------------------------------------------
 -- PRL-04: Form I-9 (Edition 01/20/25). Section 1 is the employee's, Section 2 the employer's. Retention runs to the later
--- of 3 years after hire and 1 year after the job ends, worked out from the person's dates on read (ADR-0032 §5).
+-- of 3 years after hire and 1 year after the job ends, worked out from the person's dates on read (ADR-0034 §5).
 -- ---------------------------------------------------------------------------------------------
 create table app.payroll_i9 (
   workspace_id               uuid not null,
@@ -205,7 +205,7 @@ create table app.payroll_i9_document (
 create index payroll_i9_document_i9 on app.payroll_i9_document (workspace_id, i9_id);
 
 -- ---------------------------------------------------------------------------------------------
--- Triggers, RLS and grants. Personal data: reading needs write access to the business (ADR-0032 §2).
+-- Triggers, RLS and grants. Personal data: reading needs write access to the business (ADR-0034 §2).
 -- ---------------------------------------------------------------------------------------------
 do $$
 declare t text;

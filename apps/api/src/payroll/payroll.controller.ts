@@ -47,7 +47,7 @@ const Id = z.uuid();
 const EntityQuery = z.object({ entityId: z.uuid() });
 
 /**
- * Payroll (PRL-01..05; ADR-0032). Everything here needs write access to the business. Full personal data comes back
+ * Payroll (PRL-01..05; ADR-0034). Everything here needs write access to the business. Full personal data comes back
  * only from a reveal, a form PDF or a document copy: each needs a recent sign-in and is logged.
  */
 @Controller('v1/workspaces/:workspaceId/payroll')
@@ -194,7 +194,7 @@ export class PayrollController {
     return Buffer.from(f.bytes);
   }
 
-  /** Only after the retention period (ADR-0032 §5). */
+  /** Only after the retention period (ADR-0034 §5). */
   @Delete('people/:id/i9')
   @HttpCode(204)
   async destroyI9(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {

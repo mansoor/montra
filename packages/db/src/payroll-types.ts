@@ -1,5 +1,5 @@
 /**
- * Kysely table types for payroll (migration 0031+, ADR-0032). Kept apart from `types.ts` so payroll's stages don't
+ * Kysely table types for payroll (migration 0031+, ADR-0034). Kept apart from `types.ts` so payroll's stages don't
  * collide with other work there; `Database` extends `PayrollDatabase`.
  */
 import type { ColumnType, Generated, Selectable } from 'kysely';

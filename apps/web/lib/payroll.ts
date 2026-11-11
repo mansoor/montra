@@ -1,5 +1,5 @@
 /**
- * Payroll helpers for the web (PRL-01..05, ADR-0032): what's left to do for each person, and form choices. Pure, so
+ * Payroll helpers for the web (PRL-01..05, ADR-0034): what's left to do for each person, and form choices. Pure, so
  * they're unit-tested.
  */
 import type { PayrollPersonDto } from '@montra/api-client';

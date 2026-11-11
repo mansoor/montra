@@ -1,4 +1,4 @@
-/** Helpers shared by the payroll services (ADR-0032). */
+/** Helpers shared by the payroll services (ADR-0034). */
 import { sql } from 'kysely';
 import type { PayrollPersonRow, Trx } from '@montra/db';
 import { AppError } from '../common/errors.js';
@@ -8,7 +8,7 @@ import { businessEntity, type BusinessEntity, type Ctx } from '../business/share
 export type { Ctx };
 
 /**
- * The business, for payroll: personal data needs write access to it (ADR-0032 §2). A read-only grant gets a clear
+ * The business, for payroll: personal data needs write access to it (ADR-0034 §2). A read-only grant gets a clear
  * refusal rather than an empty list that looks like no one is employed.
  */
 export async function payrollEntity(trx: Trx, ctx: Ctx, entityId: string): Promise<BusinessEntity> {

@@ -36,7 +36,7 @@ const byPrefix = {
   TZ: 1,
   OPS: 11,
   UP: null,
-  // Moved into scope on 2026-11-10 (requirements 5.1, ADR-0032).
+  // Moved into scope on 2026-11-10 (requirements 5.1, ADR-0034).
   PRL: 12,
 };
 const later = 'Later';

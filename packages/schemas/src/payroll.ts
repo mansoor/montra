@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CalendarDateDto, Id } from './common.js';
 import { MinorDto } from './budgets.js';
 
-// ----- Payroll (PRL-01..22, requirements 5.1, ADR-0032). Stage 1: people and onboarding forms. ----------------------
+// ----- Payroll (PRL-01..22, requirements 5.1, ADR-0034). Stage 1: people and onboarding forms. ----------------------
 // Personal data never comes back in full from a list or a read: TINs and bank numbers are masked, and a full value
 // takes a separate, logged reveal request.
 
@@ -93,7 +93,7 @@ const AddressInput = z.object({
     .optional(),
 });
 
-/** Where an employee stands with their forms. Retention follows ADR-0032 §5. */
+/** Where an employee stands with their forms. Retention follows ADR-0034 §5. */
 export const OnboardingDto = z.object({
   w4: z
     .object({ id: Id, effectiveDate: CalendarDateDto, filingStatus: z.string(), exempt: z.boolean() })

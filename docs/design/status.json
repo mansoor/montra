@@ -962,7 +962,7 @@
   ],
   "PRL-01": [
     "done",
-    "Employees and contractors per business, readable only with write access to it; a contractor is a vendor of the business (ADR-0032)"
+    "Employees and contractors per business, readable only with write access to it; a contractor is a vendor of the business (ADR-0034)"
   ],
   "PRL-02": [
     "done",

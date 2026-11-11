@@ -84,7 +84,7 @@ export interface ArchiveManifest {
     bytes: string;
     sha256: string;
     path: string;
-    /** ADR-0032: sealed in storage; the archive holds it decrypted, and a restore seals it again. */
+    /** ADR-0034: sealed in storage; the archive holds it decrypted, and a restore seals it again. */
     sealed?: boolean;
   }[];
   /** Sum of postings per account: what a restore must come back to. */

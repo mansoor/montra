@@ -452,7 +452,7 @@ export interface FileTable {
   /** RCP-10: receipt images are kept until this date (7 years by default). */
   retain_until: CalendarDateCol | null;
   page_count: number | null;
-  /** ADR-0032: the bytes in storage are sealed with the workspace data key (copies of identity documents). */
+  /** ADR-0034: the bytes in storage are sealed with the workspace data key (copies of identity documents). */
   sealed: Generated<boolean>;
   created_at: Generated<Date>;
   deleted_at: Date | null;

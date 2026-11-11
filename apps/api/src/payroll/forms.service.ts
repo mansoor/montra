@@ -1,5 +1,5 @@
 /**
- * Onboarding forms (PRL-02..05; ADR-0032 §3–5): W-4 and W-9 are recorded as signed and never edited; the I-9 is filled
+ * Onboarding forms (PRL-02..05; ADR-0034 §3–5): W-4 and W-9 are recorded as signed and never edited; the I-9 is filled
  * in two sections, with sealed copies of the documents examined. Downloading a filled form or a copy is logged.
  */
 import { Inject, Injectable } from '@nestjs/common';
@@ -500,7 +500,7 @@ export class FormsService {
     });
   }
 
-  /** Destroys an I-9 and its copies once the retention period is over (ADR-0032 §5). */
+  /** Destroys an I-9 and its copies once the retention period is over (ADR-0034 §5). */
   async destroyI9(ctx: Ctx, personId: string): Promise<void> {
     await this.db.run(ctx, async (trx) => {
       const p = await this.people.row(trx, ctx, personId);
@@ -589,7 +589,7 @@ export class FormsService {
 
   // ----- Files ----------------------------------------------------------------------------------------------------
 
-  /** A copy of an identity document, sealed before it reaches storage (ADR-0032 §3). */
+  /** A copy of an identity document, sealed before it reaches storage (ADR-0034 §3). */
   async uploadFile(ctx: Ctx, entityId: string, bytes: Uint8Array, fileName: string): Promise<PayrollFileDto> {
     const mediaType = detectReceiptMedia(bytes);
     if (!mediaType)

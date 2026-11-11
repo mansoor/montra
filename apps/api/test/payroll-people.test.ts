@@ -11,7 +11,7 @@ import { STORAGE_PORT, type StoragePort } from '../src/storage/storage.js';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
-// Payroll, stage 1: people and onboarding forms (PRL-01..05; ADR-0032). Only made-up people and never-issued test SSNs
+// Payroll, stage 1: people and onboarding forms (PRL-01..05; ADR-0034). Only made-up people and never-issued test SSNs
 // (the 9xx range) appear here.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 const today = todayIn('UTC');
@@ -524,7 +524,7 @@ describe('I-9 (PRL-04)', () => {
   });
 });
 
-describe('backup and restore (ADR-0032 §3)', () => {
+describe('backup and restore (ADR-0034 §3)', () => {
   function readZip(bytes: Buffer): Promise<Map<string, Buffer>> {
     return new Promise((resolve, reject) => {
       yauzl.fromBuffer(bytes, { lazyEntries: true }, (err, zip) => {

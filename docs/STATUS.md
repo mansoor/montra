@@ -788,7 +788,7 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
-- **Payroll, stage 1: people and onboarding forms, web** (PRL-01..05, requirements 5.1, [ADR-0032](design/adr/0032-payroll.md)):
+- **Payroll, stage 1: people and onboarding forms, web** (PRL-01..05, requirements 5.1, [ADR-0034](design/adr/0034-payroll.md)):
   the owner moved payroll into scope on 2026-11-10 (federal plus one state; Montra calculates and fills in forms, and the owner
   files and pays). Business → People lists employees and contractors with what each still needs. A person has contact and pay
   details, and a tax ID, birth date and bank account that are sealed (`_enc`), shown masked, and revealed one at a time after a

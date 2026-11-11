@@ -1,5 +1,5 @@
 /**
- * Payroll onboarding rules that don't need the database (PRL-04, PRL-05; ADR-0032). Pure, so clients and tests share them.
+ * Payroll onboarding rules that don't need the database (PRL-04, PRL-05; ADR-0034). Pure, so clients and tests share them.
  */
 import { addDays, addMonths, isoDayOfWeek, type CalendarDate } from './calendar-date.js';
 

@@ -47,7 +47,7 @@ export const EXPORT_ONLY: ReadonlySet<string> = new Set(['audit_log', 'ai_event'
 export const ENCRYPTED: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   transaction: { memo_enc: 'transaction.memo' },
   bank_account: { account_number_enc: 'bank_account.account_number' },
-  // Payroll (ADR-0032).
+  // Payroll (ADR-0034).
   payroll_person: {
     tin_enc: 'payroll_person.tin',
     birth_date_enc: 'payroll_person.birth_date',

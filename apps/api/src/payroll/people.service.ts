@@ -1,5 +1,5 @@
 /**
- * Employees and contractors (PRL-01, PRL-05; ADR-0032). Personal data is sealed on the way in, masked on the way out,
+ * Employees and contractors (PRL-01, PRL-05; ADR-0034). Personal data is sealed on the way in, masked on the way out,
  * and a full value is only returned by `reveal`, which writes to the audit log.
  */
 import { Inject, Injectable } from '@nestjs/common';
@@ -184,7 +184,7 @@ export class PeopleService {
   }
 
   /**
-   * Removes someone added by mistake. Refused while an I-9 must still be kept (ADR-0032 §5): end their employment instead.
+   * Removes someone added by mistake. Refused while an I-9 must still be kept (ADR-0034 §5): end their employment instead.
    */
   async remove(ctx: Ctx, id: string): Promise<void> {
     await this.db.run(ctx, async (trx) => {
