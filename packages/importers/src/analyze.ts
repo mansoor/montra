@@ -5,7 +5,7 @@
 import type { CalendarDate, CurrencyCode } from '@montra/domain';
 import type { FileType } from './decode.js';
 import { fingerprint } from './fingerprint.js';
-import { FIXED, fixedProposal, isFixedLayout } from './fixed-layout.js';
+import { FIXED, fixedDefaults, fixedProposal, isFixedLayout } from './fixed-layout.js';
 import type { Sheet } from './grid.js';
 import { parseAmount } from './amounts.js';
 import { parseDate } from './dates.js';
@@ -74,8 +74,11 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
 
   let proposal: Analysis['proposal'];
   if (override) {
-    // A QIF/OFX grid keeps its columns whatever the user maps, so the bank's ids still dedupe.
-    const mapping = isFixedLayout(opts.fileType) ? { externalId: FIXED.id, ...override } : override;
+    // A QIF/OFX grid keeps its columns whatever the user maps: the bank's ids still dedupe, and Quicken's Opening
+    // Balance record is still the opening balance.
+    const mapping = isFixedLayout(opts.fileType)
+      ? { ...fixedDefaults(opts.fileType), ...override }
+      : override;
     proposal = { mapping, confidence: 1, source: 'user', warnings: [], header };
   } else if (isFixedLayout(opts.fileType)) {
     // Every QIF (or OFX) grid has the same columns, so a saved profile can't tell one bank's file from another's: the

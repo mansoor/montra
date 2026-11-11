@@ -159,6 +159,15 @@ describe('QIF reader (IMP-13, ADR-0030)', () => {
     expect(a.parsed.rows[0]!.date).toBe('2026-02-01');
   });
 
+  it('keeps the Opening Balance record out when the user changes the mapping', () => {
+    const sheets = readTextSheets('qif', bytes('quicken-bank.qif'));
+    const opts = { fileType: 'qif' as const, currency: 'USD' as const, accountType: 'asset' as const };
+    const { openingPayees: _, externalId: __, ...mapping } = analyze(sheets, opts).proposal.mapping;
+    const a = analyze(sheets, opts, { ...mapping, description: [FIXED.memo] });
+    expect(a.parsed.rows).toHaveLength(5);
+    expect(a.parsed.opening).toBe(0n);
+  });
+
   it('reads Windows-1252 (ANSI) files with CRLF line ends', () => {
     const { a } = read('quicken-ansi.qif');
     expect(a.parsed.rows.map((r) => r.payee)).toEqual(['Café Crème', 'Müller Bäckerei']);

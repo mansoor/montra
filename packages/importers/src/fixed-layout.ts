@@ -41,6 +41,17 @@ export const isFixedLayout = (fileType: FileType): fileType is 'qif' | 'ofx' =>
 /** Payee Quicken gives an account's first record, which carries its opening balance. */
 const OPENING_PAYEES = ['Opening Balance'];
 
+/**
+ * What a QIF or OFX mapping always has, whatever columns the user maps: the bank's ids for dedupe, and for QIF the
+ * Opening Balance record kept out of the transactions.
+ */
+export const fixedDefaults = (
+  fileType: 'qif' | 'ofx',
+): Pick<ColumnMapping, 'externalId' | 'openingPayees'> => ({
+  externalId: FIXED.id,
+  ...(fileType === 'qif' ? { openingPayees: OPENING_PAYEES } : {}),
+});
+
 /** The mapping for a QIF or OFX grid: dates as the file writes them, signs as written. */
 export function fixedProposal(
   sheet: Sheet,
@@ -67,9 +78,8 @@ export function fixedProposal(
     sign: 'normal',
     category: FIXED.category,
     reference: FIXED.number,
-    externalId: FIXED.id,
     decimal: detectDecimalSeparator(values(FIXED.amount)),
-    ...(fileType === 'qif' ? { openingPayees: OPENING_PAYEES } : {}),
+    ...fixedDefaults(fileType),
     ...(accounts.length && (opts.accountFilter || accounts.length === 1)
       ? { filter: { column: FIXED.account, values: [opts.accountFilter ?? accounts[0]!] } }
       : {}),
