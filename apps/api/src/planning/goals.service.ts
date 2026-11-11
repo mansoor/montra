@@ -13,12 +13,15 @@ import {
   type Debt,
 } from '@montra/domain';
 import type { CreateGoalRequest, DebtPayoffDto, GoalDto, UpdateGoalRequest } from '@montra/schemas';
-import { notFound, unprocessable } from '../common/errors.js';
+import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { BudgetsService } from './budgets.service.js';
 import { PlanningData, type Ctx } from './data.js';
 
 const SAVINGS_GROUP = 'Savings goals';
+
+const conflict = () =>
+  new AppError(409, 'version.conflict', 'The goal was changed by someone else; reload and try again');
 
 @Injectable()
 export class GoalsService {
@@ -32,15 +35,14 @@ export class GoalsService {
     return this.db.run(ctx, async (trx) => {
       const entity = await this.data.entity(trx, ctx, req.entityId);
       await this.checkAccounts(trx, ctx, req.entityId, req.linkedAccountIds, req.type);
-      let categoryId = req.categoryId;
-      if (categoryId) {
-        const cat = (await this.data.categories(trx, ctx, req.entityId)).find((c) => c.id === categoryId);
-        if (!cat || cat.type !== 'expense')
-          throw unprocessable('goal.category', 'Pick a spending category of the same entity');
-      } else if (req.type !== 'debt_payoff' && req.linkedAccountIds.length === 0) {
-        // Money for the goal is set aside in the budget: give it its own category in "Savings goals".
-        categoryId = await this.goalCategory(trx, ctx, req.entityId, entity.currency, req.name);
-      }
+      const categoryId = await this.fundingCategory(trx, ctx, {
+        entityId: req.entityId,
+        currency: entity.currency,
+        type: req.type,
+        name: req.name,
+        categoryId: req.categoryId,
+        linkedAccountIds: req.linkedAccountIds,
+      });
       const row = await trx
         .insertInto('app.goal')
         .values({
@@ -88,6 +90,7 @@ export class GoalsService {
   async update(ctx: Ctx, id: string, req: UpdateGoalRequest): Promise<GoalDto> {
     return this.db.run(ctx, async (trx) => {
       const goal = await this.load(trx, ctx, id);
+      if (BigInt(goal.version) !== BigInt(req.version)) throw conflict();
       if (req.linkedAccountIds)
         await this.checkAccounts(trx, ctx, goal.entity_id, req.linkedAccountIds, goal.type);
       const next = {
@@ -101,6 +104,20 @@ export class GoalsService {
       if (goal.type === 'debt_payoff' && next.strategy === null) {
         throw unprocessable('goal.strategy', 'Choose snowball or avalanche');
       }
+      // A goal that loses its linked accounts (or its category) is funded through the budget again.
+      const linked = req.linkedAccountIds ?? goal.linked_account_ids;
+      const requestedCategory = req.categoryId !== undefined ? req.categoryId : goal.category_id;
+      const categoryId =
+        requestedCategory === goal.category_id && requestedCategory !== null
+          ? requestedCategory
+          : await this.fundingCategory(trx, ctx, {
+              entityId: goal.entity_id,
+              currency: (await this.data.entity(trx, ctx, goal.entity_id)).currency,
+              type: goal.type,
+              name: req.name ?? goal.name,
+              categoryId: requestedCategory,
+              linkedAccountIds: linked,
+            });
       const row = await trx
         .updateTable('app.goal')
         .set({
@@ -108,7 +125,7 @@ export class GoalsService {
           ...(req.memberId !== undefined ? { member_id: req.memberId } : {}),
           ...(req.target !== undefined ? { target_minor: req.target } : {}),
           ...(req.dueDate !== undefined ? { due_date: req.dueDate } : {}),
-          ...(req.categoryId !== undefined ? { category_id: req.categoryId } : {}),
+          ...(categoryId !== goal.category_id ? { category_id: categoryId } : {}),
           ...(req.strategy !== undefined && goal.type === 'debt_payoff' ? { strategy: req.strategy } : {}),
           ...(req.linkedAccountIds !== undefined ? { linked_account_ids: req.linkedAccountIds } : {}),
           ...(req.extraPayment !== undefined ? { extra_payment_minor: req.extraPayment } : {}),
@@ -119,8 +136,7 @@ export class GoalsService {
         .where('version', '=', BigInt(req.version))
         .returningAll()
         .executeTakeFirst();
-      if (!row)
-        throw unprocessable('version.conflict', 'The goal was changed by someone else; reload and try again');
+      if (!row) throw conflict();
       return (await this.toDtos(trx, ctx, [row]))[0]!;
     });
   }
@@ -136,6 +152,35 @@ export class GoalsService {
       .executeTakeFirst();
     if (!row) throw notFound('Goal');
     return row;
+  }
+
+  /**
+   * The budget category that funds a goal: the one picked (a spending category of the same entity), or for a
+   * goal without linked accounts (other than debt payoff) its own category in "Savings goals".
+   */
+  private async fundingCategory(
+    trx: Trx,
+    ctx: Ctx,
+    g: {
+      entityId: string;
+      currency: string;
+      type: GoalRow['type'];
+      name: string;
+      categoryId: string | null;
+      linkedAccountIds: readonly string[];
+    },
+  ): Promise<string | null> {
+    if (g.categoryId) {
+      const cat = (await this.data.categories(trx, ctx, g.entityId)).find((c) => c.id === g.categoryId);
+      if (!cat || cat.type !== 'expense')
+        throw unprocessable('goal.category', 'Pick a spending category of the same entity');
+      return g.categoryId;
+    }
+    if (g.type !== 'debt_payoff' && g.linkedAccountIds.length === 0) {
+      // Money for the goal is set aside in the budget: give it its own category in "Savings goals".
+      return this.goalCategory(trx, ctx, g.entityId, g.currency, g.name);
+    }
+    return null;
   }
 
   private async checkAccounts(
