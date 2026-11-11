@@ -20,7 +20,7 @@ export function Letterhead({
     <div className="flex items-center gap-3" data-testid="letterhead">
       {src && (
         // A plain img: next/image would fetch this private image on the server, without the session.
-        <img src={src} alt={logoAlt} className="h-10 max-w-[10rem] object-contain" />
+        <img src={src} alt={logoAlt} className="h-10 max-w-[10rem] rounded-md bg-white object-contain p-1" />
       )}
       <div className="text-sm">
         <p className="font-semibold">{profile.legalName ?? profile.name}</p>

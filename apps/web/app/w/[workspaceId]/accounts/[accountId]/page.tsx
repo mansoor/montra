@@ -255,6 +255,8 @@ export default async function RegisterPage({
       )}
       {workspace.role === 'owner' && !account.archived && (
         <MoveBooks
+          // A fresh form once the account is in other books: its choices change with them.
+          key={account.entityId}
           workspaceId={workspaceId}
           account={account}
           entities={workspace.entities.filter((e) => e.id !== account.entityId && e.type !== 'rental')}
