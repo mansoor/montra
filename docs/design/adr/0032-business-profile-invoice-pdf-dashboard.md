@@ -15,7 +15,7 @@ expenses and profit over 3, 6, 12 or 24 months, as charts and as a table.
 
 ### Logo and domain
 
-- **The logo is a file like a receipt.** `PUT /businesses/:entityId/logo` takes one multipart image, stored through
+- **The logo is a file like a receipt.** `POST /businesses/:entityId/logo` takes one multipart image, stored through
   `StoragePort` under its own file kind `logo` (migration 0030). It's checked by its content, never its name or
   declared type: a PNG or JPEG whose header parses, at most 1 MB and 4096 pixels a side. WebP, GIF and SVG are refused:
   `pdf-lib` can't draw the first two, and an SVG is a document that can carry scripts.

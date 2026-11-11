@@ -8,7 +8,6 @@ import {
   Param,
   Patch,
   Post,
-  Put,
   Query,
   Req,
   Res,
@@ -99,7 +98,7 @@ export class BusinessController {
   }
 
   /** ADR-0032: the logo on invoices, a PNG or JPEG checked by its content. */
-  @Put('businesses/:entityId/logo')
+  @Post('businesses/:entityId/logo')
   async setLogo(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Req() req: FastifyRequest) {
     const id = parse(Id, entityId);
     const { bytes, fileName } = await this.readUpload(req, LOGO_MAX_BYTES);

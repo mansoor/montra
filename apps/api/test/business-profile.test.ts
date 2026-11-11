@@ -33,7 +33,7 @@ let cat: (name: string) => string;
 const upload = (email: string, path: string, bytes: Buffer, name: string, type: string) => {
   const boundary = '----montra-logo';
   return h.app.inject({
-    method: 'PUT',
+    method: 'POST',
     url: url(path),
     headers: {
       authorization: `Bearer dev:${email}`,

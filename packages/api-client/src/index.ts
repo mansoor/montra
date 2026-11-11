@@ -1351,7 +1351,7 @@ export class ApiClient {
     const form = new FormData();
     form.append('file', file, fileName);
     return this.request<BusinessLogoDto>(
-      'PUT',
+      'POST',
       this.ws(workspaceId, `/businesses/${enc(entityId)}/logo`),
       form,
     );
