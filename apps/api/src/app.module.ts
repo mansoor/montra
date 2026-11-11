@@ -12,6 +12,7 @@ import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
 import { LedgerService } from './ledger/ledger.service.js';
 import { WorkspacesService } from './workspaces/workspaces.service.js';
 import { WorkspacesController } from './workspaces/workspaces.controller.js';
+import { AccountMoveService } from './accounts/account-move.service.js';
 import { AccountsService } from './accounts/accounts.service.js';
 import { ValuationsService } from './accounts/valuations.service.js';
 import { CardsService } from './accounts/cards.service.js';
@@ -189,6 +190,7 @@ export class AppModule {
         LedgerService,
         WorkspacesService,
         AccountsService,
+        AccountMoveService,
         ValuationsService,
         CardsService,
         TransactionsService,

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { AccountDto, BusinessProfileDto } from '@montra/api-client';
+import { normalizeDomain } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage, errorAction } from '@/lib/errors';
 import { parseAmountInput } from '@/lib/money';
@@ -32,6 +33,7 @@ export function BusinessProfileForm({
     deposit: profile.defaultDepositAccountId ?? '',
     savings: profile.taxSavingsAccountId ?? '',
     threshold: amountToInput(profile.receiptThreshold, profile.currency),
+    domain: profile.domain ?? '',
   });
   const set =
     (k: keyof typeof f) =>
@@ -46,6 +48,10 @@ export function BusinessProfileForm({
         e.preventDefault();
         const threshold = parseAmountInput(f.threshold, profile.currency, locale, t);
         if (!threshold.ok) return setMessage({ tone: 'bad', text: threshold.error });
+        const domain = f.domain.trim() ? normalizeDomain(f.domain) : null;
+        if (f.domain.trim() && !domain)
+          return setMessage({ tone: 'bad', text: t('business.domain_invalid') });
+        if (domain) setF((x) => ({ ...x, domain }));
         void run(
           () =>
             browserApi.updateBusiness(workspaceId, profile.entityId, {
@@ -57,6 +63,7 @@ export function BusinessProfileForm({
               defaultDepositAccountId: f.deposit || null,
               taxSavingsAccountId: f.savings || null,
               receiptThreshold: String(threshold.minor),
+              domain,
             }),
           t('business.profile_saved'),
         );
@@ -71,6 +78,23 @@ export function BusinessProfileForm({
         <label>
           <span className="field-label">{t('business.email')}</span>
           <input className="input" type="email" value={f.email} onChange={set('email')} />
+        </label>
+        <label>
+          <span className="field-label">{t('business.domain')}</span>
+          <input
+            className="input"
+            maxLength={300}
+            inputMode="url"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="example.com"
+            aria-describedby="domain-hint"
+            value={f.domain}
+            onChange={set('domain')}
+          />
+          <span id="domain-hint" className="text-xs text-muted">
+            {t('business.domain_hint')}
+          </span>
         </label>
         <label className="sm:col-span-2">
           <span className="field-label">{t('business.address')}</span>
@@ -116,6 +140,84 @@ export function BusinessProfileForm({
       </button>
       <StatusLine message={message} />
     </form>
+  );
+}
+
+/** ADR-0032: the logo on invoices. A PNG or JPEG up to 1 MB; the server checks what the file really is. */
+export function BusinessLogoForm({
+  workspaceId,
+  profile,
+}: {
+  workspaceId: string;
+  profile: BusinessProfileDto;
+}) {
+  const { run, busy, message, t } = useAction();
+  const input = useRef<HTMLInputElement>(null);
+  const src = profile.logoFileId
+    ? `/api${browserApi.businessLogoPath(workspaceId, profile.entityId, profile.logoFileId)}`
+    : null;
+
+  return (
+    <section className="card space-y-3" aria-labelledby="logo-title" data-testid="business-logo">
+      <div>
+        <h2 id="logo-title" className="text-base font-semibold">
+          {t('business.logo')}
+        </h2>
+        <p className="text-sm text-muted">{t('business.logo_hint')}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex h-16 w-40 items-center justify-center rounded-lg border border-line bg-white p-2">
+          {src ? (
+            // A plain img: next/image would fetch it on the server, without the session.
+            <img src={src} alt={t('business.logo_alt')} className="max-h-full max-w-full object-contain" />
+          ) : (
+            <span className="text-xs text-muted">{t('business.no_logo')}</span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <input
+            ref={input}
+            type="file"
+            accept="image/png,image/jpeg"
+            className="sr-only"
+            aria-label={t('business.logo_choose')}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              void run(
+                () => browserApi.setBusinessLogo(workspaceId, profile.entityId, file, file.name),
+                t('business.logo_saved'),
+              );
+            }}
+          />
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy}
+            onClick={() => input.current?.click()}
+          >
+            {src ? t('business.logo_replace') : t('business.logo_choose')}
+          </button>
+          {src && (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () => browserApi.removeBusinessLogo(workspaceId, profile.entityId),
+                  t('business.logo_removed'),
+                )
+              }
+            >
+              {t('business.logo_remove')}
+            </button>
+          )}
+        </div>
+      </div>
+      <StatusLine message={message} />
+    </section>
   );
 }
 

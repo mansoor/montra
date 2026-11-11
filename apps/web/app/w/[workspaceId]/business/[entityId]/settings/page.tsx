@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
-import { BusinessProfileForm, ExportForm } from '@/components/business/business-settings';
+import { BusinessLogoForm, BusinessProfileForm, ExportForm } from '@/components/business/business-settings';
 
 export const metadata: Metadata = { title: 'Business settings' };
 export const dynamic = 'force-dynamic';
@@ -26,11 +26,17 @@ export default async function BusinessSettingsPage({
   const year = todayIn(workspace.timeZone).slice(0, 4);
   return (
     <div className="space-y-5">
+      <BusinessLogoForm workspaceId={workspaceId} profile={business} />
       <BusinessProfileForm
         workspaceId={workspaceId}
         profile={business}
         accounts={accounts.filter((a) => !a.archived)}
       />
+      <p className="text-sm">
+        <Link href={`/w/${workspaceId}/accounts/new?entityId=${entityId}`} className="underline">
+          {t('business.add_account')}
+        </Link>
+      </p>
       <ExportForm workspaceId={workspaceId} entityId={entityId} from={`${year}-01-01`} to={`${year}-12-31`} />
       <section className="card space-y-2" aria-labelledby="accountant-title">
         <h2 id="accountant-title" className="text-base font-semibold">

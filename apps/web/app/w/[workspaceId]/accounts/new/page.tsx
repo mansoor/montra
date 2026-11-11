@@ -8,8 +8,15 @@ import { NewAccountForm } from '@/components/new-account-form';
 export const metadata: Metadata = { title: 'Add account' };
 export const dynamic = 'force-dynamic';
 
-export default async function NewAccountPage({ params }: { params: Promise<{ workspaceId: string }> }) {
+export default async function NewAccountPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ workspaceId: string }>;
+  searchParams: Promise<{ entityId?: string }>;
+}) {
   const { workspaceId } = await params;
+  const { entityId } = await searchParams;
   const [workspace, accounts, employers] = await load((api) =>
     Promise.all([
       api.getWorkspace(workspaceId),
@@ -29,6 +36,7 @@ export default async function NewAccountPage({ params }: { params: Promise<{ wor
         accounts={accounts}
         employers={employers}
         today={todayIn(workspace.timeZone)}
+        {...(entityId ? { initialEntityId: entityId } : {})}
       />
     </div>
   );

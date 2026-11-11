@@ -54,7 +54,10 @@ import type {
   StorageUsageDto,
   StorageDestinationDto,
   UpdateNotificationPrefsRequest,
+  BusinessDashboardDto,
+  BusinessLogoDto,
   BusinessProfileDto,
+  UpdateBusinessProfileRequest,
   LeaseDto,
   RentPaymentRequest,
   RentRollDto,
@@ -351,6 +354,23 @@ export function createApi(opts: ApiOptions) {
       request<MileageSummaryDto>('GET', `${ws(w)}/mileage-trips?entityId=${entityId}`),
     createMileageTrip: (w: string, input: CreateTripRequest) =>
       request<MileageTripDto>('POST', `${ws(w)}/mileage-trips`, input),
+    /** ADR-0032: the landing page over 3–24 months, ending with `month` (a first of the month) or this month. */
+    businessDashboard: (w: string, entityId: string, months: number, month?: string | null) =>
+      request<BusinessDashboardDto>(
+        'GET',
+        `${ws(w)}/businesses/${entityId}/dashboard?months=${months}${month ? `&month=${month}` : ''}`,
+      ),
+    updateBusiness: (w: string, entityId: string, input: Partial<UpdateBusinessProfileRequest>) =>
+      request<BusinessProfileDto>('PATCH', `${ws(w)}/businesses/${entityId}`, input),
+    /** A PNG or JPEG from the device; the server checks what it really is. */
+    setBusinessLogo: (w: string, entityId: string, file: UploadFile) =>
+      sendFile<BusinessLogoDto>(`${ws(w)}/businesses/${entityId}/logo`, file),
+    removeBusinessLogo: (w: string, entityId: string) =>
+      request<void>('DELETE', `${ws(w)}/businesses/${entityId}/logo`),
+    /** Load these with `authHeaders()`: an image source and a download both take headers. */
+    businessLogoUrl: (w: string, entityId: string, fileId: string) =>
+      `${opts.baseUrl}${ws(w)}/businesses/${entityId}/logo?v=${fileId}`,
+    invoicePdfUrl: (w: string, id: string) => `${opts.baseUrl}${ws(w)}/invoices/${id}/pdf`,
 
     // ----- Rentals (08 §3): reads, and logging rent. The rest is managed on the web. ---------------
     rentalPortfolios: async (w: string) =>
