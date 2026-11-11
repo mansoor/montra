@@ -5,8 +5,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Platform, Share, View } from 'react-native';
 import { Directory, File, Paths } from 'expo-file-system';
-import type { DeletionStatusDto, ExportJobDto, SecurityEventDto, StorageUsageDto } from '@montra/schemas';
-import { hasRunningExport, humanBytes, needsFreshSignIn } from '../src/features/data-settings';
+import type {
+  DeletionStatusDto,
+  ExportJobDto,
+  SecurityEventDto,
+  StorageDestinationDto,
+  StorageUsageDto,
+} from '@montra/schemas';
+import {
+  hasRunningExport,
+  humanBytes,
+  needsFreshSignIn,
+  storageStatusLine,
+} from '../src/features/data-settings';
 import { t } from '../src/i18n';
 import { useSession } from '../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Field, Row, Screen, Small, Title } from '../src/ui/components';
@@ -23,6 +34,7 @@ export default function YourData() {
   const [usage, setUsage] = useState<StorageUsageDto | null>(null);
   const [events, setEvents] = useState<SecurityEventDto[]>([]);
   const [deletion, setDeletion] = useState<DeletionStatusDto | null>(null);
+  const [destination, setDestination] = useState<StorageDestinationDto | null>(null);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +52,8 @@ export default function YourData() {
       setUsage(u);
       setEvents(e);
       setDeletion(d);
+      // Owners only; for anyone else there's nothing to show.
+      setDestination(await api.storageDestination(ws).catch(() => null));
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -121,6 +135,16 @@ export default function YourData() {
         </Card>
       ) : null}
 
+      {destination ? (
+        <Card testID="your-data-own-storage">
+          <Small>{`${t('storage.title')} · ${destination.label} · ${t(`storage.status_${destination.status}`)}`}</Small>
+          <Body>{t(storageStatusLine(destination).key, storageStatusLine(destination).values)}</Body>
+          {destination.lastError ? (
+            <Small>{`${t('storage.last_error')} ${destination.lastError}`}</Small>
+          ) : null}
+        </Card>
+      ) : null}
+
       <Title>{t('data.backup')}</Title>
       <Card>
         <Small>{t('data.backup_hint')}</Small>
@@ -137,7 +161,9 @@ export default function YourData() {
         <Row
           key={j.id}
           title={j.fileName ?? t(`data.kind_${j.kind}`)}
-          subtitle={`${t(`data.status_${j.status}`)}${j.bytes ? ` · ${humanBytes(j.bytes)}` : ''}`}
+          subtitle={`${t(`data.status_${j.status}`)}${j.bytes ? ` · ${humanBytes(j.bytes)}` : ''}${
+            j.storageCopy ? ` · ${t(`storage.copy_${j.storageCopy.status}`)}` : ''
+          }`}
           onPress={j.status === 'ready' ? () => void save(j) : undefined}
           testID="your-data-export"
         />

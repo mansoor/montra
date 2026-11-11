@@ -1331,16 +1331,75 @@ export interface ExportJobTable {
   created_at: Generated<Date>;
   finished_at: Date | null;
   expires_at: Date | null;
+  /** ADR-0030 §7: a copy sent to the workspace's own storage. */
+  destination_id: Generated<string | null>;
+  destination_status: Generated<StorageCopyStatus | null>;
+  destination_path: Generated<string | null>;
+  destination_error: Generated<string | null>;
+  destination_attempts: Generated<number>;
+  destination_next_at: Generated<Date | null>;
+  scheduled: Generated<boolean>;
 }
+
+export type StorageCopyStatus = 'pending' | 'done' | 'failed' | 'pruned';
 
 export interface BackupScheduleTable {
   workspace_id: string;
   user_id: string;
   cadence: 'weekly' | 'monthly';
-  destination: Generated<'email_link'>;
+  destination: Generated<'email_link' | 'storage'>;
   next_run_on: CalendarDateCol;
   last_run_at: Date | null;
   version: Int8Default;
+  created_at: Generated<Date>;
+  /** A scheduled password's key, wrapped by the KMS port (ADR-0030 §7). Never the password. */
+  wrapped_key: Generated<Buffer | null>;
+  kdf: ColumnType<Record<string, unknown> | null, string | null | undefined, string | null>;
+}
+
+// Your own storage (migration 0029, ADR-0030).
+
+export type StorageDestinationKind = 's3' | 'webdav';
+export type StorageFileKind = 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'other';
+
+export interface StorageDestinationTable {
+  workspace_id: string;
+  id: Generated<string>;
+  kind: StorageDestinationKind;
+  label: string;
+  /** What isn't secret: { endpoint, region, bucket, pathStyle } or { url, username }. */
+  config: Json<Record<string, unknown>>;
+  /** Sealed by FieldCrypto as 'storage_destination.secret'. Never sent to a client. */
+  secret_enc: Buffer;
+  secret_hint: string | null;
+  folder: string;
+  mirror_files: Generated<boolean>;
+  file_kinds: Generated<StorageFileKind[]>;
+  delete_with_montra: Generated<boolean>;
+  keep_backups: Generated<number>;
+  can_delete: Generated<boolean>;
+  status: Generated<'active' | 'paused' | 'failing'>;
+  consecutive_failures: Generated<number>;
+  last_success_at: Date | null;
+  last_error: string | null;
+  last_error_at: Date | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+  version: Int8Default;
+}
+
+export interface StorageMirrorItemTable {
+  workspace_id: string;
+  destination_id: string;
+  file_id: string;
+  status: Generated<'pending' | 'done' | 'failed' | 'skipped' | 'delete'>;
+  attempts: Generated<number>;
+  next_attempt_at: Generated<Date>;
+  last_error: string | null;
+  remote_path: string | null;
+  bytes: Int8 | null;
+  mirrored_at: Date | null;
   created_at: Generated<Date>;
 }
 
@@ -1461,6 +1520,8 @@ export interface Database {
   'app.security_event': SecurityEventTable;
   'app.export_job': ExportJobTable;
   'app.backup_schedule': BackupScheduleTable;
+  'app.storage_destination': StorageDestinationTable;
+  'app.storage_mirror_item': StorageMirrorItemTable;
   'app.restore_job': RestoreJobTable;
   'app.subscription': SubscriptionTable;
   'app.feature_flag': FeatureFlagTable;

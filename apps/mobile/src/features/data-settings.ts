@@ -2,7 +2,13 @@
  * Notification and data settings on the phone (OPS-13). The server decides everything; these only shape what's on screen and what's
  * sent back, so a change to one switch can't overwrite the others.
  */
-import type { ChannelPrefs, ExportJobDto, NotificationPrefsDto, NotificationType } from '@montra/schemas';
+import type {
+  ChannelPrefs,
+  ExportJobDto,
+  NotificationPrefsDto,
+  NotificationType,
+  StorageDestinationDto,
+} from '@montra/schemas';
 
 /** What someone can switch here, in the order it's shown. Backups aren't listed: those go out because they were asked for. */
 export const NOTIFICATION_ROWS: readonly NotificationType[] = [
@@ -50,4 +56,16 @@ export function humanBytes(bytes: string | null): string {
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
+}
+
+/** One line on the workspace's own storage (ADR-0030), as an i18n key and its values. The phone shows it; settings are on the web. */
+export function storageStatusLine(d: StorageDestinationDto): {
+  key: string;
+  values?: Record<string, number>;
+} {
+  if (d.status === 'paused') return { key: 'storage.summary_paused' };
+  if (d.status === 'failing') return { key: 'storage.summary_failing' };
+  if (d.files.pending > 0) return { key: 'storage.summary_copying', values: { n: d.files.pending } };
+  if (d.files.failed > 0) return { key: 'storage.summary_failed', values: { n: d.files.failed } };
+  return { key: 'storage.summary_ok', values: { n: d.files.done } };
 }

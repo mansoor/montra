@@ -222,6 +222,12 @@ import type {
   StorageUsageDto,
   TrashItemDto,
   UpdateNotificationPrefsRequest,
+  ConnectStorageRequest,
+  StorageConnection,
+  StorageDestinationDto,
+  StorageItemDto,
+  StorageTestResultDto,
+  UpdateStorageRequest,
   BusinessProfileDto,
   InvoiceDto,
   InvoiceLineDto,
@@ -325,6 +331,9 @@ export type UpdateNotificationPrefsInput = z.input<typeof UpdateNotificationPref
 export type CreateBackupInput = z.input<typeof CreateBackupRequest>;
 export type CreateTaxPackageInput = z.input<typeof CreateTaxPackageRequest>;
 export type SaveBackupScheduleInput = z.input<typeof SaveBackupScheduleRequest>;
+export type ConnectStorageInput = z.input<typeof ConnectStorageRequest>;
+export type UpdateStorageInput = z.input<typeof UpdateStorageRequest>;
+export type StorageConnectionInput = z.input<typeof StorageConnection>;
 export type ConfirmRestoreInput = z.input<typeof ConfirmRestoreRequest>;
 export type RequestDeletionInput = z.input<typeof RequestDeletionRequest>;
 export type CreatePropertyInput = z.input<typeof CreatePropertyRequest>;
@@ -1781,6 +1790,40 @@ export class ApiClient {
   getStorageUsage(workspaceId: string) {
     return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
   }
+  /** The workspace's own storage (ADR-0030). Owners only. */
+  getStorageDestination(workspaceId: string) {
+    return this.request<{ destination: StorageDestinationDto | null }>(
+      'GET',
+      this.ws(workspaceId, '/storage-destination'),
+    ).then((r) => r.destination);
+  }
+  testStorageDestination(workspaceId: string, connection: StorageConnectionInput, folder?: string) {
+    return this.request<StorageTestResultDto>('POST', this.ws(workspaceId, '/storage-destination/test'), {
+      connection,
+      ...(folder ? { folder } : {}),
+    });
+  }
+  connectStorageDestination(workspaceId: string, input: ConnectStorageInput) {
+    return this.request<StorageDestinationDto>('POST', this.ws(workspaceId, '/storage-destination'), input);
+  }
+  updateStorageDestination(workspaceId: string, input: UpdateStorageInput) {
+    return this.request<StorageDestinationDto>('PATCH', this.ws(workspaceId, '/storage-destination'), input);
+  }
+  disconnectStorageDestination(workspaceId: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, '/storage-destination'));
+  }
+  backfillStorageDestination(workspaceId: string) {
+    return this.request<{ queued: number }>('POST', this.ws(workspaceId, '/storage-destination/backfill'));
+  }
+  retryStorageDestination(workspaceId: string) {
+    return this.request<{ queued: number }>('POST', this.ws(workspaceId, '/storage-destination/retry'));
+  }
+  listStorageItems(workspaceId: string, status: StorageItemDto['status'] = 'failed') {
+    return this.request<{ data: StorageItemDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/storage-destination/items?status=${status}`),
+    ).then((r) => r.data);
+  }
   listRestores() {
     return this.request<{ data: RestoreJobDto[] }>('GET', '/v1/me/restores').then((r) => r.data);
   }
@@ -2158,6 +2201,9 @@ function toApiError(status: number, body: unknown): ApiError {
 export type {
   AskAnswerDto,
   BackupScheduleDto,
+  StorageDestinationDto,
+  StorageItemDto,
+  StorageTestResultDto,
   DeletionStatusDto,
   ExportJobDto,
   NotificationDto,
