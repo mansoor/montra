@@ -132,6 +132,7 @@ begin
   end if;
   return null;
 end $$;
+revoke all on function app.storage_file_added() from public;
 create trigger file_storage_mirror after insert on app.file for each row execute function app.storage_file_added();
 
 -- Back from the trash: a file skipped while it was there is copied after all.
@@ -145,6 +146,7 @@ begin
   end if;
   return null;
 end $$;
+revoke all on function app.storage_file_restored() from public;
 create trigger file_storage_restored after update of deleted_at on app.file
   for each row execute function app.storage_file_restored();
 
@@ -160,6 +162,7 @@ begin
   delete from app.storage_mirror_item where workspace_id = old.workspace_id and file_id = old.id and status <> 'delete';
   return null;
 end $$;
+revoke all on function app.storage_file_removed() from public;
 create trigger file_storage_removed after delete on app.file for each row execute function app.storage_file_removed();
 
 -- What the mirror job has to do: connections with copies or deletions due, or a backup to send, each with an owner to act as.
@@ -180,6 +183,7 @@ create function app.storage_mirror_due()
                    where e.workspace_id = d.workspace_id and e.destination_id = d.id
                      and e.destination_status = 'pending' and coalesce(e.destination_next_at, now()) <= now()))
 $$;
+revoke all on function app.storage_mirror_due() from public;
 grant execute on function app.storage_mirror_due() to montra_app;
 
 -- When the job should next look: the earliest attempt still waiting anywhere, or null with nothing waiting.
@@ -195,4 +199,5 @@ create function app.storage_mirror_next() returns timestamptz
      where e.destination_status = 'pending' and d.status <> 'paused'
   ) x
 $$;
+revoke all on function app.storage_mirror_next() from public;
 grant execute on function app.storage_mirror_next() to montra_app;
