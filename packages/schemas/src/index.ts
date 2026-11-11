@@ -17,4 +17,5 @@ export * from './rentals.js';
 export * from './reports.js';
 export * from './notifications.js';
 export * from './data-ownership.js';
+export * from './storage.js';
 export * from './operations.js';

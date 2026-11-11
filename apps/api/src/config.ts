@@ -36,6 +36,14 @@ const Env = z.object({
   S3_REGION: z.string().default('us-east-1'),
   S3_ACCESS_KEY: z.string().optional(),
   S3_SECRET_KEY: z.string().optional(),
+  /**
+   * Storage the owner connects (ADR-0031 §3): may Montra connect to private addresses and plain http? Off in production, where the
+   * owner could otherwise point the API at its own network. On by default elsewhere, and for a self-hosted install that wants a NAS.
+   */
+  STORAGE_DESTINATIONS_PRIVATE: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce

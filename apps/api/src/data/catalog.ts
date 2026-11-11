@@ -36,6 +36,8 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   export_job: 'About archives, not the books',
   backup_schedule: 'About archives, not the books',
   restore_job: 'About archives, not the books',
+  storage_destination: 'A secret, and a connection the owner makes again (ADR-0031)',
+  storage_mirror_item: 'What was copied to a connection a restore can’t bring back (ADR-0031)',
   notification_pref: 'Follows the person',
   security_event: 'Follows the person',
 };
