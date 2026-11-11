@@ -1024,6 +1024,22 @@
     "done",
     "941 (with line 16 or Schedule B liabilities), 940 (with Schedule A), DE 9 and DE 9C worksheets, filled from approved paychecks for copying into the agencies' forms"
   ],
+  "PRL-17": [
+    "done",
+    "W-2 boxes from approved paychecks (box 12 D and box 13 from retirement deductions, CASDI in box 14, CA boxes 15-17); employee copies B, C, 2 with truncated SSN; employer copy D and the W-3 (recent sign-in, logged). Copy A is the SSA file or the red form"
+  ],
+  "PRL-18": [
+    "done",
+    "1099-NEC from bills paid by bank to each contractor's vendor record by payment date (card payments are on a 1099-K); threshold $600 through 2025, $2,000 from 2026; recipient copies B, 2 with truncated TIN; payer copy C and a Form 1096 worksheet"
+  ],
+  "PRL-19": [
+    "done",
+    "California: W-2 Copy 2 with CASDI and boxes 15-17 (EDD account), 1099-NEC Copy 2 with boxes 5-7; wages go to the EDD on the DE 9C, so no Copy 1"
+  ],
+  "PRL-20": [
+    "done",
+    "EFW2 (SSA Pub 42-007): RA, RE, RW, RT, RF records tested byte by byte; refused with the reasons while SSA would reject it (EIN prefix, BSO user ID, contact, SSN starting 9/666/000)"
+  ],
   "PRL-21": [
     "done",
     "PayrollTaxEngine port: the built-in federal and California engine (`montra`), with the manual engine kept for a provider or testing"
