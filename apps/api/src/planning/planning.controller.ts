@@ -24,6 +24,7 @@ import {
   DraftBudgetRequest,
   DashboardChartsQuery,
   DashboardQuery,
+  MonthSummaryQuery,
   SpendingExploreQuery,
   MoveRequest,
   PlanningSettingsDto,
@@ -41,6 +42,7 @@ import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { parse } from '../common/zod.js';
 import { BudgetsService } from './budgets.service.js';
 import { FlowService } from './flow.service.js';
+import { MonthSummaryService } from './month-summary.service.js';
 import { GoalsService } from './goals.service.js';
 import { IncomeService } from './income.service.js';
 import { RecommendationsService } from './recommendations.service.js';
@@ -58,6 +60,7 @@ export class PlanningController {
     @Inject(GoalsService) private readonly goals: GoalsService,
     @Inject(IncomeService) private readonly income: IncomeService,
     @Inject(FlowService) private readonly flow: FlowService,
+    @Inject(MonthSummaryService) private readonly monthSummary: MonthSummaryService,
     @Inject(RecommendationsService) private readonly recs: RecommendationsService,
     @Inject(PlanningData) private readonly data: PlanningData,
   ) {}
@@ -217,6 +220,12 @@ export class PlanningController {
   dashboard(@Ctx() ctx: RequestContext, @Query() q: unknown) {
     const { entityId, memberId, period } = parse(DashboardQuery, q);
     return this.flow.dashboard(dbCtx(ctx), { entityId, memberId, period });
+  }
+
+  /** Month in review (FLOW-01, AIA-01): the figures, worded by the AI or in plain sentences. */
+  @Get('summary/month')
+  monthReview(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    return this.monthSummary.month(dbCtx(ctx), parse(MonthSummaryQuery, q));
   }
 
   @Get('dashboard/charts')

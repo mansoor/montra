@@ -3,6 +3,7 @@
  * one place. Icons are decorative: the control around one carries its label for screen readers.
  */
 import {
+  CalendarCheck,
   Activity,
   AlertTriangle,
   Banknote,
@@ -58,6 +59,7 @@ const ICONS = {
   check: Check,
   saved: CircleCheck,
   next: ChevronRight,
+  chevronDown: ChevronDown,
   back: ChevronLeft,
   expand: ChevronDown,
   review: Inbox,
@@ -83,6 +85,7 @@ const ICONS = {
   category: Tag,
   document: FileText,
   explore: ChartLine,
+  monthReview: CalendarCheck,
   mic: Mic,
   stop: Square,
   keyboard: Keyboard,

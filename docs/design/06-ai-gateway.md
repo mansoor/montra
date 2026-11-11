@@ -74,6 +74,12 @@ Implementation notes for the Anthropic adapter (current API):
   API validates the plan against the workspace's categories and computes every figure in SQL, so the number can't come from the
   model (AIA-05). It sees the question, category names and today's date, and no amounts. This replaces the tool-use design: tool
   results would have carried amounts to the provider (ADR-0019).
+- `summarize_month` (AIA-01, FLOW-01) words the Month in review. The API computes every figure (money in and out, usual,
+  the clearest changes, the biggest purchases, the budget and next month's suggested budget from BUD-02's median) and
+  sends them formatted and named, with the category and place names it may mention. The answer is a headline, up to five
+  points and a budget note; any number in it that wasn't given fails the call (AIA-05), and the API then shows plain
+  sentences built from the same figures. Results are cached per workspace by their input for 60 days, so reopening a month
+  costs nothing until its figures change. The budget recommendation is computed (BUD-02) and only worded here.
 
 ## 4. Data minimization (AIA-03)
 

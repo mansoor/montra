@@ -40,6 +40,7 @@ export default async function WorkspaceLayout({
         { href: `${base}/goals`, label: t('nav.goals'), icon: 'goals' },
         { href: `${base}/cash-flow`, label: t('nav.cash_flow'), icon: 'flow' },
         { href: `${base}/explore`, label: t('nav.explore'), icon: 'explore' },
+        { href: `${base}/month`, label: t('nav.month'), icon: 'monthReview' },
         { href: `${base}/calendar`, label: t('nav.calendar'), icon: 'calendar' },
         { href: `${base}/suggestions`, label: t('nav.suggestions'), icon: 'recommendations' },
       ],

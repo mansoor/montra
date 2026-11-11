@@ -20,6 +20,8 @@ import * as normalizePayees from '../src/tasks/normalize-payees/v1.js';
 import * as parseQuickAdd from '../src/tasks/parse-quick-add/v1.js';
 import * as ping from '../src/tasks/ping/v1.js';
 import * as proposeCategories from '../src/tasks/propose-categories/v1.js';
+import * as summarizeMonth from '../src/tasks/summarize-month/v1.js';
+import * as wordSummary from '../src/tasks/word-summary/v1.js';
 
 /** Anthropic's limit on union-typed parameters in one schema. */
 const MAX_UNION_PARAMS = 16;
@@ -47,6 +49,8 @@ const TASKS: Record<string, z.ZodType> = {
   parse_quick_add: parseQuickAdd.Output,
   ping: ping.Output,
   propose_categories: proposeCategories.Output,
+  summarize_month: summarizeMonth.Output,
+  word_summary: wordSummary.Output,
 };
 
 describe('structured-output schemas (AIA-04)', () => {

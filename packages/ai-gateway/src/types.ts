@@ -20,7 +20,8 @@ export type TaskName =
   | 'flag_separation'
   | 'flag_capital'
   | 'answer_question'
-  | 'word_summary';
+  | 'word_summary'
+  | 'summarize_month';
 /** Routing groups (AIA-02): small = cheap classifier work, vision = documents, large = summaries and Q&A. */
 export type ModelGroup = 'small' | 'vision' | 'large';
 export type Effort = 'low' | 'medium' | 'high';
@@ -386,6 +387,28 @@ export interface PayslipExtraction {
 }
 
 /** word_summary (REC-01..08, REC-07, BUD-02): AI words numbers that code computed (AIA-05). */
+/**
+ * summarize_month (AIA-01, FLOW-01): the review of one month. Code computes every figure; the model only words them
+ * (AIA-05), and its text may contain no number it wasn't given.
+ */
+export interface MonthSummaryInput {
+  /** The month as people say it ("October 2026"). */
+  month: string;
+  /** False while the month is still running: the figures are so far. */
+  complete: boolean;
+  /** Named figures, already formatted ("$1,250.00", "12%"). The only numbers allowed. */
+  figures: Record<string, string>;
+  /** Category and place names the text may mention. */
+  names: readonly string[];
+}
+
+export interface MonthSummaryOutput {
+  headline: string;
+  points: string[];
+  /** Why next month's budget could change; null without budget suggestions. */
+  budgetNote: string | null;
+}
+
 export interface SummaryInput {
   kind: 'recommendation' | 'monthly_review' | 'draft_budget';
   title: string;
@@ -420,6 +443,8 @@ export interface AiGateway {
   /** RPT-06: a question as a plan. The numbers come from queries, not from here. */
   answerQuestion(input: QuestionInput, ctx: AiContext): Promise<TaskResult<QuestionPlan>>;
   wordSummary(input: SummaryInput, ctx: AiContext): Promise<TaskResult<string>>;
+  /** AIA-01: a month's review, worded from figures code computed. Cached by its input (the same month, same text). */
+  summarizeMonth(input: MonthSummaryInput, ctx: AiContext): Promise<TaskResult<MonthSummaryOutput>>;
   /** Cheap round-trip for the settings page "Test connection" button. */
   ping(ctx: AiContext): Promise<TaskResult<{ model: string }>>;
 }

@@ -631,6 +631,88 @@ describe('word_summary (AIA-05)', () => {
   });
 });
 
+describe('summarize_month (AIA-01, AIA-05)', () => {
+  const input = {
+    month: 'October 2026',
+    complete: true,
+    figures: {
+      moneyIn: '$5,000.00',
+      moneyOut: '$3,800.00',
+      leftOver: '$1,200.00',
+      'suggested: Groceries': '$520.00',
+    },
+    names: ['Groceries', 'Dining out'],
+  };
+  const reply = (json: object) =>
+    new Scripted('fake', () => ({ ok: true, json, usage, model: 'fake-small' }));
+
+  it('words the figures through the fake provider, with a budget note only when there are suggestions', async () => {
+    const res = await createGateway().summarizeMonth(input, ctxOf(new MemoryStore()));
+    expect(res).toMatchObject({
+      ok: true,
+      value: {
+        headline: 'Your October 2026.',
+        // Sorted by name: the wire input is stable JSON.
+        points: ['left over $1,200.00.', 'money in $5,000.00.', 'money out $3,800.00.'],
+        budgetNote: 'suggested: Groceries $520.00.',
+      },
+    });
+    const none = await createGateway().summarizeMonth(
+      { ...input, complete: false, figures: { moneyIn: '$5,000.00' } },
+      ctxOf(new MemoryStore()),
+    );
+    expect(none).toMatchObject({
+      ok: true,
+      value: { headline: 'Your October 2026 so far.', budgetNote: null },
+    });
+  });
+
+  it('rejects any number it wasn’t given, and empty or overlong text', async () => {
+    const ok = {
+      headline: 'You kept $1,200.00 in October 2026.',
+      points: ['Money in was $5,000.00.'],
+      budgetNote: null,
+    };
+    const run = (json: object) =>
+      createGateway({ adapterFactory: () => reply(json) }).summarizeMonth(input, ctxOf(new MemoryStore()));
+    expect(await run(ok)).toMatchObject({ ok: true });
+    expect(await run({ ...ok, points: ['That is 24% of what came in.'] })).toMatchObject({
+      ok: false,
+      reason: 'invalid_output',
+    });
+    expect(await run({ ...ok, points: [] })).toMatchObject({ ok: false, reason: 'invalid_output' });
+    expect(await run({ ...ok, headline: 'x'.repeat(200) })).toMatchObject({
+      ok: false,
+      reason: 'invalid_output',
+    });
+  });
+
+  it('answers the same figures from the cache, without calling the provider again', async () => {
+    let calls = 0;
+    const store = new MemoryStore();
+    const gw = createGateway({
+      adapterFactory: () =>
+        new Scripted('fake', () => {
+          calls++;
+          return {
+            ok: true,
+            json: { headline: 'You kept $1,200.00.', points: ['Money in was $5,000.00.'], budgetNote: null },
+            usage,
+            model: 'fake-small',
+          };
+        }),
+    });
+    expect(await gw.summarizeMonth(input, ctxOf(store))).toMatchObject({ ok: true });
+    expect(await gw.summarizeMonth(input, ctxOf(store))).toMatchObject({
+      ok: true,
+      value: { headline: 'You kept $1,200.00.' },
+    });
+    expect(calls).toBe(1);
+    await gw.summarizeMonth({ ...input, figures: { ...input.figures, moneyIn: '$5,100.00' } }, ctxOf(store));
+    expect(calls).toBe(2);
+  });
+});
+
 describe('extract_payslip (PAY-03, PAY-09)', () => {
   const TEXT = [
     'Employer: ACME Corp',

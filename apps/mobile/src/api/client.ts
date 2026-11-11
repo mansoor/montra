@@ -8,6 +8,7 @@ import type {
   CalendarDto,
   DashboardChartsDto,
   SetCategoryBudgetDto,
+  MonthSummaryDto,
   SpendingExploreDto,
   DashboardDto,
   ForecastDto,
@@ -220,6 +221,9 @@ export function createApi(opts: ApiOptions) {
       w: string,
       input: { entityId?: string; memberId: string | null; categoryId: string; assigned: string },
     ) => request<SetCategoryBudgetDto>('POST', `${ws(w)}/budgets/set-category`, input),
+    /** Month in review: one month (any date in it; default last month), worded by AI or in plain sentences. */
+    monthSummary: (w: string, month?: string) =>
+      request<MonthSummaryDto>('GET', `${ws(w)}/summary/month${month ? `?month=${month}` : ''}`),
     /** Explore spending: the picked categories (none: the three biggest everyday ones) over `months` months. */
     spendingExplore: (w: string, months: number, categoryIds: readonly string[]) =>
       request<SpendingExploreDto>(
