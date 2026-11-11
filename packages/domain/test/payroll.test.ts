@@ -6,6 +6,12 @@ import {
   i9RetainUntil,
   i9Section2Due,
   maskTin,
+  hoursPay,
+  nextPayPeriod,
+  overtimeRate,
+  paycheckTotals,
+  payPeriodContaining,
+  salaryPerPeriod,
 } from '../src/index.js';
 
 describe('I-9 retention (3 years after hire or 1 year after leaving, whichever is later)', () => {
@@ -55,5 +61,76 @@ describe('employment status', () => {
     expect(employmentStatus(d('2026-01-01'), null, today)).toBe('active');
     expect(employmentStatus(d('2026-01-01'), d('2026-11-10'), today)).toBe('active');
     expect(employmentStatus(d('2026-01-01'), d('2026-11-09'), today)).toBe('ended');
+  });
+});
+
+describe('pay periods', () => {
+  it('counts two-week periods from the anchor, before and after it', () => {
+    const anchor = d('2026-01-05');
+    expect(payPeriodContaining('biweekly', anchor, d('2026-01-05'))).toEqual({
+      start: '2026-01-05',
+      end: '2026-01-18',
+    });
+    expect(payPeriodContaining('biweekly', anchor, d('2026-11-11'))).toEqual({
+      start: '2026-11-09',
+      end: '2026-11-22',
+    });
+    expect(payPeriodContaining('biweekly', anchor, d('2026-01-04'))).toEqual({
+      start: '2025-12-22',
+      end: '2026-01-04',
+    });
+  });
+
+  it('splits a month in two on the 15th, and handles February', () => {
+    expect(payPeriodContaining('semimonthly', d('2026-01-01'), d('2026-02-15'))).toEqual({
+      start: '2026-02-01',
+      end: '2026-02-15',
+    });
+    expect(payPeriodContaining('semimonthly', d('2026-01-01'), d('2026-02-16'))).toEqual({
+      start: '2026-02-16',
+      end: '2026-02-28',
+    });
+    expect(payPeriodContaining('monthly', d('2026-01-01'), d('2028-02-10'))).toEqual({
+      start: '2028-02-01',
+      end: '2028-02-29',
+    });
+  });
+
+  it('moves to the next period', () => {
+    const p = payPeriodContaining('semimonthly', d('2026-01-01'), d('2026-12-20'));
+    expect(nextPayPeriod('semimonthly', d('2026-01-01'), p)).toEqual({
+      start: '2027-01-01',
+      end: '2027-01-15',
+    });
+  });
+});
+
+describe('gross to net', () => {
+  it('pays a salary per period to the cent, and hours at a rate', () => {
+    expect(salaryPerPeriod(5_200_000n, 'biweekly')).toBe(200_000n);
+    expect(salaryPerPeriod(5_000_000n, 'semimonthly')).toBe(208_333n); // $2,083.33
+    expect(hoursPay(37_500n, 2_250n)).toBe(84_375n);
+    expect(hoursPay(1_250n, 1_699n)).toBe(2_124n); // 1.25 h at $16.99 = $21.2375
+    expect(overtimeRate(2_250n)).toBe(3_375n);
+  });
+
+  it('adds reimbursements to net pay without making them wages, and leaves employer taxes out', () => {
+    const t = paycheckTotals([
+      { kind: 'earning', amount: 200_000n },
+      { kind: 'pre_tax_deduction', amount: 10_000n },
+      { kind: 'employee_tax', amount: 30_000n },
+      { kind: 'post_tax_deduction', amount: 5_000n },
+      { kind: 'reimbursement', amount: 4_250n },
+      { kind: 'employer_tax', amount: 15_300n },
+    ]);
+    expect(t).toEqual({
+      gross: 200_000n,
+      preTax: 10_000n,
+      employeeTaxes: 30_000n,
+      postTax: 5_000n,
+      reimbursements: 4_250n,
+      net: 159_250n,
+      employerTaxes: 15_300n,
+    });
   });
 });

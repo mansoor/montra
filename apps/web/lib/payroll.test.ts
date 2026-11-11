@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PayrollPersonDto } from '@montra/api-client';
 import { calendarDate as d } from '@montra/domain';
-import { formatTinInput, i9Overdue, missingSteps } from './payroll';
+import { formatTinInput, hoursText, i9Overdue, missingSteps, parseHours } from './payroll';
 
 const person = (over: Partial<PayrollPersonDto> = {}): PayrollPersonDto => ({
   id: '00000000-0000-4000-8000-000000000001',
@@ -34,6 +34,8 @@ const person = (over: Partial<PayrollPersonDto> = {}): PayrollPersonDto => ({
   bank: null,
   vendorPartyId: null,
   notes: null,
+  payScheduleId: null,
+  defaultHoursMilli: null,
   onboarding: { w4: null, w9: null, i9: null },
   version: 1,
   ...over,
@@ -89,5 +91,18 @@ describe('formatTinInput', () => {
     expect(formatTinInput('ssn', '9001')).toBe('900-1');
     expect(formatTinInput('ein', '987654321')).toBe('98-7654321');
     expect(formatTinInput('ssn', '900-12-34567890')).toBe('900-12-3456');
+  });
+});
+
+describe('hours', () => {
+  it('reads and writes hours in thousandths', () => {
+    expect(parseHours('37.5')).toBe('37500');
+    expect(parseHours('80')).toBe('80000');
+    expect(parseHours('7,25')).toBe('7250');
+    expect(parseHours('1.2345')).toBeUndefined();
+    expect(parseHours('-1')).toBeUndefined();
+    expect(hoursText('37500')).toBe('37.5');
+    expect(hoursText('80000')).toBe('80');
+    expect(hoursText('1250')).toBe('1.25');
   });
 });

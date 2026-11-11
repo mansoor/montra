@@ -1,7 +1,16 @@
 /**
  * Payroll onboarding rules that don't need the database (PRL-04, PRL-05; ADR-0034). Pure, so clients and tests share them.
  */
-import { addDays, addMonths, isoDayOfWeek, type CalendarDate } from './calendar-date.js';
+import {
+  addDays,
+  addMonths,
+  diffDays,
+  endOfMonth,
+  isoDayOfWeek,
+  startOfMonth,
+  type CalendarDate,
+} from './calendar-date.js';
+import { divRound } from './rounding.js';
 
 export type TaxIdType = 'ssn' | 'itin' | 'ein';
 
@@ -59,4 +68,84 @@ export function employmentStatus(
   if (endDate && endDate < today) return 'ended';
   if (hireDate && hireDate > today) return 'starting';
   return 'active';
+}
+
+// ----- Pay periods and gross-to-net (PRL-06, PRL-07) ----------------------------------------------------------------
+
+export type PayFrequency = 'biweekly' | 'semimonthly' | 'monthly';
+
+export const PERIODS_PER_YEAR: Record<PayFrequency, number> = { biweekly: 26, semimonthly: 24, monthly: 12 };
+
+export interface PayPeriod {
+  start: CalendarDate;
+  end: CalendarDate;
+}
+
+/**
+ * The pay period a date falls in. Every two weeks counts 14-day periods from `anchor` (any period's first day), either
+ * way; twice a month is the 1st–15th and the 16th–end; monthly is the calendar month.
+ */
+export function payPeriodContaining(
+  frequency: PayFrequency,
+  anchor: CalendarDate,
+  date: CalendarDate,
+): PayPeriod {
+  if (frequency === 'biweekly') {
+    const offset = diffDays(date, anchor);
+    const k = Math.floor(offset / 14);
+    const start = addDays(anchor, k * 14);
+    return { start, end: addDays(start, 13) };
+  }
+  const first = startOfMonth(date);
+  if (frequency === 'monthly') return { start: first, end: endOfMonth(date) };
+  return date.slice(8) <= '15'
+    ? { start: first, end: addDays(first, 14) }
+    : { start: addDays(first, 15), end: endOfMonth(date) };
+}
+
+/** The period after this one. */
+export const nextPayPeriod = (frequency: PayFrequency, anchor: CalendarDate, p: PayPeriod): PayPeriod =>
+  payPeriodContaining(frequency, anchor, addDays(p.end, 1));
+
+/** A salary's share for one period, to the cent (half up): $52,000 a year every two weeks is $2,000.00. */
+export const salaryPerPeriod = (annualMinor: bigint, frequency: PayFrequency): bigint =>
+  divRound(annualMinor, BigInt(PERIODS_PER_YEAR[frequency]));
+
+/** Hours (in thousandths) times a rate, to the cent: 37.5 h at $22.50 is $843.75. */
+export const hoursPay = (hoursMilli: bigint, rateMinor: bigint): bigint =>
+  divRound(hoursMilli * rateMinor, 1000n);
+
+/** Overtime is paid at one and a half times the regular rate (FLSA; California daily overtime is entered as hours). */
+export const overtimeRate = (rateMinor: bigint): bigint => divRound(rateMinor * 3n, 2n);
+
+export type PaycheckLineKind =
+  'earning' | 'pre_tax_deduction' | 'employee_tax' | 'post_tax_deduction' | 'reimbursement' | 'employer_tax';
+
+export interface PaycheckTotals {
+  gross: bigint;
+  preTax: bigint;
+  employeeTaxes: bigint;
+  postTax: bigint;
+  reimbursements: bigint;
+  net: bigint;
+  employerTaxes: bigint;
+}
+
+/** Gross to net from a paycheck's lines. Reimbursements add to net pay but are never wages; employer taxes don't touch it. */
+export function paycheckTotals(lines: readonly { kind: PaycheckLineKind; amount: bigint }[]): PaycheckTotals {
+  const sum = (k: PaycheckLineKind) => lines.filter((l) => l.kind === k).reduce((s, l) => s + l.amount, 0n);
+  const gross = sum('earning');
+  const preTax = sum('pre_tax_deduction');
+  const employeeTaxes = sum('employee_tax');
+  const postTax = sum('post_tax_deduction');
+  const reimbursements = sum('reimbursement');
+  return {
+    gross,
+    preTax,
+    employeeTaxes,
+    postTax,
+    reimbursements,
+    net: gross - preTax - employeeTaxes - postTax + reimbursements,
+    employerTaxes: sum('employer_tax'),
+  };
 }

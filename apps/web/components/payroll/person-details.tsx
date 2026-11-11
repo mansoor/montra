@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { PayrollPersonDto, UpdatePersonInput } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { minorToInput, parseAmountInput } from '@/lib/money';
-import { digitsOnly, formatTinInput } from '@/lib/payroll';
+import { digitsOnly, formatTinInput, hoursText, parseHours } from '@/lib/payroll';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
@@ -18,10 +18,13 @@ export function PersonDetails({
   workspaceId,
   currency,
   person,
+  schedules = [],
 }: {
   workspaceId: string;
   currency: string;
   person: PayrollPersonDto;
+  /** Pay schedules of the business, to put an employee on one (PRL-06). */
+  schedules?: { id: string; name: string }[];
 }) {
   const { run, busy, message, setMessage, t } = useAction();
   const { locale } = useI18n();
@@ -53,6 +56,11 @@ export function PersonDetails({
       }
       rate = String(parsed.minor);
     }
+    const usualHours = form.defaultHours.trim() ? parseHours(form.defaultHours) : null;
+    if (usualHours === undefined) {
+      setMessage({ tone: 'bad', text: t('payroll.run.bad_hours') });
+      return;
+    }
     const input: UpdatePersonInput = {
       firstName: form.firstName.trim(),
       middleName: form.middleName.trim() || null,
@@ -73,6 +81,7 @@ export function PersonDetails({
       rate,
       workState: form.workState.trim() || null,
       notes: form.notes.trim() || null,
+      ...(isEmployee ? { payScheduleId: form.payScheduleId || null, defaultHoursMilli: usualHours } : {}),
       version: p.version,
     };
     void run(() => browserApi.updatePayrollPerson(workspaceId, p.id, input), t('payroll.saved')).then((r) => {
@@ -216,6 +225,26 @@ export function PersonDetails({
                     onChange={set('workState')}
                   />
                 </Field>
+                <Field label={t('payroll.run.schedule')}>
+                  <select className="input" value={form.payScheduleId} onChange={set('payScheduleId')}>
+                    <option value="">{t('payroll.run.no_schedule')}</option>
+                    {schedules.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {form.payType === 'hourly' && (
+                  <Field label={t('payroll.run.usual_hours')}>
+                    <input
+                      className="input num"
+                      inputMode="decimal"
+                      value={form.defaultHours}
+                      onChange={set('defaultHours')}
+                    />
+                  </Field>
+                )}
               </>
             )}
             <label className="sm:col-span-2 lg:col-span-3">
@@ -257,6 +286,11 @@ export function PersonDetails({
                   ) : null}
                 </Item>
                 <Item label={t('payroll.work_state')}>{p.workState}</Item>
+                <Item label={t('payroll.run.schedule')}>
+                  {schedules.find((s) => s.id === p.payScheduleId)?.name ?? null}
+                  {p.defaultHoursMilli &&
+                    ` · ${t('payroll.run.hours_each', { hours: hoursText(p.defaultHoursMilli) })}`}
+                </Item>
               </>
             )}
             {p.notes && <Item label={t('payroll.notes')}>{p.notes}</Item>}
@@ -443,6 +477,8 @@ function initial(p: PayrollPersonDto, currency: string) {
     rate: p.rate ? minorToInput(BigInt(p.rate), currency) : '',
     workState: p.workState ?? '',
     notes: p.notes ?? '',
+    payScheduleId: p.payScheduleId ?? '',
+    defaultHours: p.defaultHoursMilli ? hoursText(p.defaultHoursMilli) : '',
   };
 }
 

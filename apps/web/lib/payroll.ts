@@ -65,3 +65,34 @@ export function formatTinInput(type: 'ssn' | 'itin' | 'ein', text: string): stri
   if (d.length > 3) return `${d.slice(0, 3)}-${d.slice(3)}`;
   return d;
 }
+
+// ----- Pay runs (PRL-07) ---------------------------------------------------------------------------------------------
+
+/** The order a paycheck reads in. */
+export const PAYCHECK_SECTIONS = [
+  'earning',
+  'pre_tax_deduction',
+  'employee_tax',
+  'post_tax_deduction',
+  'reimbursement',
+  'employer_tax',
+] as const;
+
+/** What can be typed in on a draft paycheck (reimbursements come from approved requests). */
+export type EditableKind =
+  'earning' | 'pre_tax_deduction' | 'employee_tax' | 'post_tax_deduction' | 'employer_tax';
+
+/** "37500" thousandths of an hour → "37.5". */
+export function hoursText(milli: string): string {
+  const n = BigInt(milli);
+  const whole = n / 1000n;
+  const frac = (n % 1000n).toString().padStart(3, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : String(whole);
+}
+
+/** "37.5" → "37500"; undefined when it isn't a number of hours with at most three decimals. */
+export function parseHours(text: string): string | undefined {
+  const m = text.trim().match(/^(\d{1,6})(?:[.,](\d{1,3}))?$/);
+  if (!m) return undefined;
+  return String(BigInt(m[1]!) * 1000n + BigInt((m[2] ?? '').padEnd(3, '0') || '0'));
+}

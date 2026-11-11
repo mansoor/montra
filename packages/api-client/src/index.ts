@@ -19,6 +19,19 @@ import type {
   UpdatePersonRequest,
   W4Dto,
   W9Dto,
+  ApprovePayRunRequest,
+  CreatePayRunRequest,
+  CreatePayScheduleRequest,
+  CreateReimbursementRequest,
+  DecideReimbursementRequest,
+  PayRunDto,
+  PayScheduleDto,
+  PaycheckDto,
+  ReimbursementDto,
+  ReimbursementStatus,
+  UpdatePaycheckRequest,
+  UpdatePayRunRequest,
+  UpdatePayScheduleRequest,
 } from '@montra/schemas';
 import type {
   AcceptRecommendationRequest,
@@ -300,6 +313,15 @@ export type SaveI9Section1Input = z.input<typeof SaveI9Section1Request>;
 export type SaveI9Section2Input = z.input<typeof SaveI9Section2Request>;
 export type AddI9DocumentInput = z.input<typeof AddI9DocumentRequest>;
 export type { I9Dto, PayrollFileDto, PayrollPersonDto, PersonKind, RevealResponse, W4Dto, W9Dto };
+export type CreatePayScheduleInput = z.input<typeof CreatePayScheduleRequest>;
+export type UpdatePayScheduleInput = z.input<typeof UpdatePayScheduleRequest>;
+export type CreatePayRunInput = z.input<typeof CreatePayRunRequest>;
+export type UpdatePayRunInput = z.input<typeof UpdatePayRunRequest>;
+export type UpdatePaycheckInput = z.input<typeof UpdatePaycheckRequest>;
+export type ApprovePayRunInput = z.input<typeof ApprovePayRunRequest>;
+export type CreateReimbursementInput = z.input<typeof CreateReimbursementRequest>;
+export type DecideReimbursementInput = z.input<typeof DecideReimbursementRequest>;
+export type { PayRunDto, PayScheduleDto, PaycheckDto, ReimbursementDto, ReimbursementStatus };
 export type CreateWorkspaceInput = z.input<typeof CreateWorkspaceRequest>;
 export type AnalyzeMigrationInput = z.input<typeof AnalyzeMigrationRequest>;
 export type StartMigrationInput = z.input<typeof StartMigrationRequest>;
@@ -2344,6 +2366,95 @@ export class ApiClient {
     return this.request<PayrollFileDto>(
       'POST',
       this.ws(workspaceId, `/payroll/files${query({ entityId })}`),
+      form,
+    );
+  }
+  // ----- Pay runs and reimbursements (PRL-06..11) --------------------------------------------------------------
+  listPaySchedules(workspaceId: string, entityId: string) {
+    return this.request<{ data: PayScheduleDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/schedules${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createPaySchedule(workspaceId: string, input: CreatePayScheduleInput) {
+    return this.request<PayScheduleDto>('POST', this.ws(workspaceId, '/payroll/schedules'), input);
+  }
+  updatePaySchedule(workspaceId: string, id: string, input: UpdatePayScheduleInput) {
+    return this.request<PayScheduleDto>(
+      'PATCH',
+      this.ws(workspaceId, `/payroll/schedules/${enc(id)}`),
+      input,
+    );
+  }
+  listPayRuns(workspaceId: string, entityId: string) {
+    return this.request<{ data: PayRunDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/runs${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  getPayRun(workspaceId: string, id: string) {
+    return this.request<PayRunDto>('GET', this.ws(workspaceId, `/payroll/runs/${enc(id)}`));
+  }
+  createPayRun(workspaceId: string, input: CreatePayRunInput) {
+    return this.request<PayRunDto>('POST', this.ws(workspaceId, '/payroll/runs'), input);
+  }
+  updatePayRun(workspaceId: string, id: string, input: UpdatePayRunInput) {
+    return this.request<PayRunDto>('PATCH', this.ws(workspaceId, `/payroll/runs/${enc(id)}`), input);
+  }
+  deletePayRun(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/payroll/runs/${enc(id)}`));
+  }
+  updatePaycheck(workspaceId: string, runId: string, paycheckId: string, input: UpdatePaycheckInput) {
+    return this.request<PayRunDto>(
+      'PATCH',
+      this.ws(workspaceId, `/payroll/runs/${enc(runId)}/paychecks/${enc(paycheckId)}`),
+      input,
+    );
+  }
+  approvePayRun(workspaceId: string, id: string, input: ApprovePayRunInput) {
+    return this.request<PayRunDto>('POST', this.ws(workspaceId, `/payroll/runs/${enc(id)}/approve`), input);
+  }
+  reopenPayRun(workspaceId: string, id: string, version: number) {
+    return this.request<PayRunDto>('POST', this.ws(workspaceId, `/payroll/runs/${enc(id)}/reopen`), {
+      version,
+    });
+  }
+  payslipPath(workspaceId: string, paycheckId: string) {
+    return this.baseUrl + this.ws(workspaceId, `/payroll/paychecks/${enc(paycheckId)}/payslip`);
+  }
+  /** The payslip PDF as a file, for clients that can't open an authenticated link (the phone). */
+  downloadPayslip(workspaceId: string, paycheckId: string) {
+    return this.requestFile(this.ws(workspaceId, `/payroll/paychecks/${enc(paycheckId)}/payslip`));
+  }
+  listReimbursements(
+    workspaceId: string,
+    opts: { entityId: string; status?: ReimbursementStatus; personId?: string },
+  ) {
+    return this.request<{ data: ReimbursementDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/reimbursements${query(opts)}`),
+    ).then((r) => r.data);
+  }
+  createReimbursement(workspaceId: string, input: CreateReimbursementInput) {
+    return this.request<ReimbursementDto>('POST', this.ws(workspaceId, '/payroll/reimbursements'), input);
+  }
+  decideReimbursement(workspaceId: string, id: string, input: DecideReimbursementInput) {
+    return this.request<ReimbursementDto>(
+      'POST',
+      this.ws(workspaceId, `/payroll/reimbursements/${enc(id)}/decision`),
+      input,
+    );
+  }
+  reimbursementFilePath(workspaceId: string, id: string, fileId: string) {
+    return this.baseUrl + this.ws(workspaceId, `/payroll/reimbursements/${enc(id)}/files/${enc(fileId)}`);
+  }
+  /** A receipt photo or PDF for a reimbursement (not sealed, unlike ID copies). */
+  uploadReceiptForReimbursement(workspaceId: string, entityId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<PayrollFileDto>(
+      'POST',
+      this.ws(workspaceId, `/payroll/files${query({ entityId, purpose: 'receipt' })}`),
       form,
     );
   }

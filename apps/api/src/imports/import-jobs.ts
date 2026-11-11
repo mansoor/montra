@@ -184,6 +184,7 @@ export class ImportJobs {
           id: x.id,
           fingerprint: x.fingerprint,
           mapping: x.mapping as unknown as ColumnMapping,
+          sameAccount: x.ledger_account_id === account.id,
         })),
         accountFilter: p.accountFilter ?? undefined,
         statement: statementBalances,

@@ -18,6 +18,49 @@ export interface SavedProfile {
   id: string;
   fingerprint: string;
   mapping: ColumnMapping;
+  /**
+   * Saved for the account being imported into. Only then does its choice of rows in a multi-account file (`filter`)
+   * still hold: for any other account, that choice was someone else's account.
+   */
+  sameAccount?: boolean;
+}
+
+/**
+ * A saved profile for this import. Its column choices carry over; its choice of rows in a multi-account file carries
+ * over only to the account it was saved for. Elsewhere the asked account (`accountFilter`) replaces it, or the
+ * file's accounts are offered again.
+ */
+function fromProfile(
+  sheet: Sheet,
+  saved: SavedProfile,
+  header: string[] | null,
+  accountFilter: string | undefined,
+): Analysis['proposal'] {
+  const base = {
+    confidence: 1,
+    source: 'profile' as const,
+    warnings: [] as string[],
+    header,
+    profileId: saved.id,
+  };
+  const { filter, ...rest } = saved.mapping;
+  if (!filter) return { ...base, mapping: saved.mapping };
+  const column = filter.column;
+  const accounts = [
+    ...new Set(
+      sheet.rows
+        .slice(saved.mapping.dataStart)
+        .map((r) => (r[column] ?? '').trim())
+        .filter(Boolean),
+    ),
+  ];
+  const listed = { accounts, accountColumn: column };
+  if (accountFilter)
+    return { ...base, ...listed, mapping: { ...rest, filter: { column, values: [accountFilter] } } };
+  if (saved.sameAccount) return { ...base, ...listed, mapping: saved.mapping };
+  if (accounts.length === 1)
+    return { ...base, ...listed, mapping: { ...rest, filter: { column, values: accounts } } };
+  return { ...base, ...listed, mapping: rest, confidence: 0.7, warnings: ['multiple_accounts_choose_one'] };
 }
 
 export interface AnalyzeOptions {
@@ -107,14 +150,7 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
     const saved = opts.profiles?.find((p) => p.fingerprint === fp);
     const template = saved ? null : matchTemplate(sheet, opts.accountFilter);
     proposal = saved
-      ? {
-          mapping: saved.mapping,
-          confidence: 1,
-          source: 'profile',
-          warnings: [],
-          header,
-          profileId: saved.id,
-        }
+      ? fromProfile(sheet, saved, header, opts.accountFilter)
       : template
         ? template
         : inferMapping(sheet, {

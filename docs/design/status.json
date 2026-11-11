@@ -234,7 +234,7 @@
   ],
   "IMP-04": [
     "done",
-    "profiles by fingerprint per account"
+    "profiles by fingerprint per account; a profile's choice of account in a multi-account file applies only to the account it was saved for"
   ],
   "IMP-05": [
     "done",
@@ -981,7 +981,35 @@
     "_enc columns and sealed files under the workspace key, masked display, reveal/download/view need a recent sign-in and write to the audit log; backups decrypt them and restore re-seals"
   ],
   "PRL-10": [
+    "done",
+    "Contractors are vendors of the business and are paid through bills (BIZ-06); their reimbursements become bills too"
+  ],
+  "PRL-06": [
+    "done",
+    "Every two weeks (from an anchor date), twice a month (1st-15th, 16th-end) or monthly; payday a set number of days after the period"
+  ],
+  "PRL-07": [
+    "done",
+    "Draft runs with a paycheck per employee on the schedule: hours (and 1.5x overtime) or salary per period, other earnings, deductions and taxes; taxes are entered by hand until stage 3"
+  ],
+  "PRL-08": [
+    "done",
+    "Payslip PDF per paycheck with each line's year to date; on the phone, payslip lines are shown in the app"
+  ],
+  "PRL-09": [
+    "done",
+    "One transaction per paycheck (owner `paycheck`): wages (Schedule C line 26) and reimbursed costs debited, withholding credited to liabilities, net from the bank; employer taxes post when deposited (stage 3). Reopen while nothing is reconciled or closed"
+  ],
+  "PRL-11": [
+    "done",
+    "Requests with receipts (web and phone), approve or decline; an employee's is paid untaxed on the next pay run, a contractor's becomes a bill; paid is worked out from the run or bill"
+  ],
+  "PRL-21": [
     "partial",
-    "contractors are vendors, so bills (BIZ-06) pay them; 1099 totals come with year-end (stage 4)"
+    "PayrollTaxEngine port with a manual engine; the built-in federal and California engine is stage 3"
+  ],
+  "PRL-22": [
+    "partial",
+    "Phone: pay runs, payslip lines and reimbursements with a receipt photo; not run on a device"
   ]
 }
