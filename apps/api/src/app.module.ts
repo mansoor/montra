@@ -72,6 +72,7 @@ import { BudgetsService } from './planning/budgets.service.js';
 import { GoalsService } from './planning/goals.service.js';
 import { IncomeService } from './planning/income.service.js';
 import { FlowService } from './planning/flow.service.js';
+import { MonthSummaryService } from './planning/month-summary.service.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
 import { PlanningController } from './planning/planning.controller.js';
 import { BillsService } from './business/bills.service.js';
@@ -217,6 +218,7 @@ export class AppModule {
         GoalsService,
         IncomeService,
         FlowService,
+        MonthSummaryService,
         RecommendationsService,
         PayslipsService,
         BusinessService,

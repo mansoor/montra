@@ -38,6 +38,7 @@ import * as taxLinesV1 from './tasks/map-tax-lines/v1.js';
 import * as separationV1 from './tasks/flag-separation/v1.js';
 import * as capitalV1 from './tasks/flag-capital/v1.js';
 import * as questionV1 from './tasks/answer-question/v1.js';
+import * as monthV1 from './tasks/summarize-month/v1.js';
 import * as summaryV1 from './tasks/word-summary/v1.js';
 import type {
   AiContext,
@@ -73,6 +74,8 @@ import type {
   ReceiptExtraction,
   StatementTable,
   StatementText,
+  MonthSummaryInput,
+  MonthSummaryOutput,
   SummaryInput,
   TaskName,
   TaskResult,
@@ -1274,6 +1277,56 @@ export class Gateway implements AiGateway {
     );
   }
 
+  // ----- summarize_month (AIA-01) --------------------------------------------------------------------------
+
+  async summarizeMonth(input: MonthSummaryInput, ctx: AiContext): Promise<TaskResult<MonthSummaryOutput>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const names = input.names.slice(0, 20).map((n) => minimizeText(oneLine(n, 80), ctx.pseudonyms));
+    const wire = { month: oneLine(input.month, 40), complete: input.complete, figures: input.figures, names };
+    const allowed = new Set(
+      [input.month, ...Object.values(input.figures), ...names].flatMap((s) => numbersIn(s)),
+    );
+    const hasBudget = Object.keys(input.figures).some((k) => k.startsWith('suggested:'));
+    const clean = (s: string, max: number) => {
+      const t = s.trim().replace(/\s+/g, ' ');
+      return t && t.length <= max && numbersIn(t).every((n) => allowed.has(n)) ? t : null;
+    };
+    // The same figures give the same review: cached per workspace, so opening it again costs nothing.
+    const route = DEFAULT_ROUTING.summarize_month;
+    const key = sha256(`${monthV1.PROMPT_VERSION}\n${stableJson(wire)}`);
+    const hit = await ctx.store.cacheGet('summarize_month', key);
+    if (isMonthOutput(hit)) {
+      return {
+        ok: true,
+        value: hit,
+        meta: emptyMeta('summarize_month', ctx, 'cache', monthV1.PROMPT_VERSION),
+      };
+    }
+    const res = await this.callProvider<MonthSummaryOutput>(
+      {
+        task: 'summarize_month',
+        system: monthV1.SYSTEM,
+        promptVersion: monthV1.PROMPT_VERSION,
+        input: wire,
+        schema: monthV1.Output,
+        validate: (o: monthV1.Output) => {
+          const headline = clean(o.headline, 160);
+          const points = o.points.map((p) => clean(p, 260));
+          const note = o.budgetNote === null ? null : clean(o.budgetNote, 360);
+          if (!headline || points.length < 1 || points.length > 5 || points.some((p) => p === null))
+            return null;
+          if (o.budgetNote !== null && note === null) return null;
+          return { headline, points: points as string[], budgetNote: hasBudget ? note : null };
+        },
+      },
+      ctx,
+      { spent: 0n },
+    );
+    if (res.ok)
+      await ctx.store.cachePut('summarize_month', key, res.value, res.meta.model, route.cacheTtlDays);
+    return res;
+  }
+
   // ----- ping ----------------------------------------------------------------------------------------------
 
   async ping(ctx: AiContext): Promise<TaskResult<{ model: string }>> {
@@ -1323,4 +1376,15 @@ function memberPseudonyms(members: readonly MemberOption[], extra: AiContext['ps
 
 export function createGateway(opts?: GatewayOptions): AiGateway {
   return new Gateway(opts);
+}
+
+function isMonthOutput(v: unknown): v is MonthSummaryOutput {
+  const o = v as MonthSummaryOutput | null;
+  return (
+    !!o &&
+    typeof o.headline === 'string' &&
+    Array.isArray(o.points) &&
+    o.points.every((p) => typeof p === 'string') &&
+    (o.budgetNote === null || typeof o.budgetNote === 'string')
+  );
 }

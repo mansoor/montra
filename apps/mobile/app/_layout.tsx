@@ -78,6 +78,7 @@ function Gate() {
         <Stack.Screen name="goals" options={{ title: t('nav.goals') }} />
         <Stack.Screen name="cash-flow" options={{ title: t('nav.cash_flow') }} />
         <Stack.Screen name="explore" options={{ title: t('nav.explore') }} />
+        <Stack.Screen name="month" options={{ title: t('nav.month') }} />
         <Stack.Screen name="calendar" options={{ title: t('nav.calendar') }} />
         <Stack.Screen name="suggestions" options={{ title: t('nav.suggestions') }} />
         <Stack.Screen name="activity" options={{ title: t('mobile.activity.title') }} />

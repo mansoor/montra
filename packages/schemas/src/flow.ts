@@ -343,3 +343,83 @@ export const ForecastDto = z.object({
   ),
 });
 export type ForecastDto = z.infer<typeof ForecastDto>;
+
+/**
+ * GET /summary/month?month&entityId&memberId — Month in review (FLOW-01, AIA-01). `month` is any date in the month
+ * (default: last month; a later date than today means this month, so far). Every figure is computed; `story` is the AI's
+ * wording of them (checked for invented numbers), or plain sentences when AI is off or unavailable.
+ */
+export const MonthSummaryQuery = z.object({
+  month: CalendarDateDto.optional(),
+  entityId: Id.optional(),
+  memberId: Id.optional(),
+});
+export type MonthSummaryQuery = z.output<typeof MonthSummaryQuery>;
+
+const CategoryAmountDto = z.object({ categoryId: Id, name: z.string() });
+
+export const MonthSummaryDto = z.object({
+  entityId: Id,
+  memberId: Id.nullable(),
+  currency: CurrencyCodeDto,
+  month: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+  /** False while the month is still running: the figures are so far. */
+  complete: z.boolean(),
+  /** The first day of the month before, and of the month after (null for this month). */
+  nav: z.object({ previous: CalendarDateDto, next: CalendarDateDto.nullable() }),
+  income: MinorDto,
+  spent: MinorDto,
+  /** income − spent. */
+  left: MinorDto,
+  /** Share of income kept, whole percent; null without income. */
+  keptPercent: z.number().int().nullable(),
+  previous: z.object({ income: MinorDto, spent: MinorDto }).nullable(),
+  /** The average of up to three months before that have any data; null without any. */
+  usual: z.object({ income: MinorDto, spent: MinorDto, months: z.number().int() }).nullable(),
+  /** The biggest spending categories this month, at most 6. */
+  categories: z.array(CategoryAmountDto.extend({ spent: MinorDto, usual: MinorDto.nullable() })),
+  /** The clearest changes from usual, at most 3 each way. */
+  changes: z.object({
+    up: z.array(CategoryAmountDto.extend({ spent: MinorDto, usual: MinorDto, change: MinorDto })),
+    down: z.array(CategoryAmountDto.extend({ spent: MinorDto, usual: MinorDto, change: MinorDto })),
+  }),
+  /** The biggest single purchases, at most 3. */
+  largest: z.array(
+    z.object({
+      transactionId: Id,
+      date: CalendarDateDto,
+      payee: z.string(),
+      categoryName: z.string(),
+      amount: MinorDto,
+    }),
+  ),
+  /** How the budget went this month (monthly budgets); null without one. */
+  budget: z
+    .object({
+      budgetId: Id,
+      assigned: MinorDto,
+      spent: MinorDto,
+      over: z.array(CategoryAmountDto.extend({ assigned: MinorDto, spent: MinorDto, overBy: MinorDto })),
+    })
+    .nullable(),
+  /**
+   * Next month's budget from the last three months (BUD-02), where it differs from what's set. Only for the latest
+   * finished month, whose next month is this one, so each line can be made the budget (POST /budgets/set-category).
+   */
+  suggestions: z
+    .object({
+      period: z.object({ start: CalendarDateDto, end: CalendarDateDto }),
+      lines: z.array(CategoryAmountDto.extend({ current: MinorDto.nullable(), suggested: MinorDto })),
+    })
+    .nullable(),
+  /** Transactions this month still waiting in review: the figures may still move. */
+  needsReview: z.number().int(),
+  story: z.object({
+    headline: z.string(),
+    points: z.array(z.string()),
+    budgetNote: z.string().nullable(),
+    /** Who wrote it: the AI, or plain sentences from the figures. */
+    by: z.enum(['ai', 'plain']),
+  }),
+});
+export type MonthSummaryDto = z.infer<typeof MonthSummaryDto>;

@@ -199,6 +199,7 @@ export default async function HomePage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-6">
+          <MonthReviewLink base={base} locale={locale} t={t} />
           <section aria-labelledby="upcoming-heading" className="card">
             <div className="mb-2 flex items-center justify-between">
               <h2 id="upcoming-heading" className="font-semibold">
@@ -353,5 +354,35 @@ export default async function HomePage({
         />
       </section>
     </div>
+  );
+}
+
+/** Last month in review: a link from Home (the review itself loads on its own page). */
+function MonthReviewLink({
+  base,
+  locale,
+  t,
+}: {
+  base: string;
+  locale: string;
+  t: (key: string, values?: Record<string, string | number>) => string;
+}) {
+  const now = new Date();
+  const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const month = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(last);
+  return (
+    <Link
+      href={`${base}/month`}
+      className="card flex items-center justify-between gap-3 hover:bg-brand-50"
+      data-testid="home-month-review"
+    >
+      <span>
+        <span className="block font-semibold">{t('home.month_review', { month })}</span>
+        <span className="text-sm text-muted">{t('home.month_review_hint')}</span>
+      </span>
+      <span aria-hidden="true" className="text-brand-600">
+        →
+      </span>
+    </Link>
   );
 }
