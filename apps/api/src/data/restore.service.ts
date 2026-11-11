@@ -546,7 +546,7 @@ export class RestoreService {
           }
           const prepared = await this.prepare(trx, table, workspaceId, row, ids);
           if (table === 'file')
-            await this.copyFile(zip, filesById.get(oldId ?? ''), prepared, workspaceId, written);
+            await this.copyFile(trx, zip, filesById.get(oldId ?? ''), prepared, workspaceId, written);
           if (table === 'entity' && existing)
             prepared.name = `${String(prepared.name)} (restored)`.slice(0, 200);
           const set: Record<string, unknown> = {};
@@ -647,6 +647,7 @@ export class RestoreService {
 
   /** Always a key made here: a storage key from a file could otherwise point at someone else's document. */
   private async copyFile(
+    trx: Trx,
     zip: ZipReader,
     file: ArchiveManifest['files'][number] | undefined,
     row: Record<string, unknown>,
@@ -659,7 +660,9 @@ export class RestoreService {
     const bytes = await zip.bytes(file.path);
     if (sha256(bytes) !== file.sha256) throw new Error('A file does not match its checksum');
     written.push(key);
-    await this.storage.put(key, bytes, String(row.mime));
+    // ADR-0034: a sealed file is sealed again under this workspace's key and its new id.
+    const stored = row.sealed ? await this.crypto.sealBytes(trx, workspaceId, String(row.id), bytes) : bytes;
+    await this.storage.put(key, stored, row.sealed ? 'application/octet-stream' : String(row.mime));
   }
 
   private async insert(trx: Trx, info: TableInfo, rows: Record<string, unknown>[]): Promise<void> {

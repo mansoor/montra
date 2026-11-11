@@ -90,6 +90,9 @@ import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
 import { PaymentLinks } from './business/payment-links.service.js';
+import { FormsService } from './payroll/forms.service.js';
+import { PayrollController } from './payroll/payroll.controller.js';
+import { PeopleService } from './payroll/people.service.js';
 import { BackupService } from './data/backup.service.js';
 import { AccountDataController, DataController, RestoresController } from './data/data.controller.js';
 import { OwnershipService } from './data/ownership.service.js';
@@ -153,6 +156,7 @@ export class AppModule {
       PlanningController,
       PayslipsController,
       BusinessController,
+      PayrollController,
       RentalsController,
       WorkspaceOpsController,
       SupportController,
@@ -239,6 +243,8 @@ export class AppModule {
         BusinessReportsService,
         ExportService,
         BusinessJobs,
+        PeopleService,
+        FormsService,
         PropertiesService,
         RentService,
         LoansService,

@@ -36,6 +36,8 @@ const byPrefix = {
   TZ: 1,
   OPS: 11,
   UP: null,
+  // Moved into scope on 2026-11-10 (requirements 5.1, ADR-0034).
+  PRL: 12,
 };
 const later = 'Later';
 const overrides = {
@@ -140,6 +142,7 @@ const phaseName = {
   9: 'P9 Rental',
   10: 'P10 Reports & data',
   11: 'P11 Hardening',
+  12: 'P12 Payroll',
   [later]: 'Later (R2+)',
 };
 
