@@ -486,7 +486,7 @@
   ],
   "RCP-06": [
     "done",
-    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line)"
+    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line); a transaction's screen (web and phone) opens its receipt, or adds one, from a button by the amount"
   ],
   "RCP-07": [
     "done",

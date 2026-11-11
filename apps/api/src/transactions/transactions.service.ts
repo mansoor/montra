@@ -1192,6 +1192,48 @@ export class TransactionsService {
     }
   }
 
+  /**
+   * Each transaction's receipt: the one linked to it, else one added for it ("Add receipt") that is still being read or
+   * needs a look. That second kind holds the transaction as its only candidate without a score until it is linked.
+   */
+  private async receiptsFor(
+    trx: Trx,
+    ctx: Ctx,
+    ids: string[],
+  ): Promise<Map<string, TransactionDto['receipt']>> {
+    const rows = await trx
+      .selectFrom('app.receipt')
+      .select([
+        'id',
+        'status',
+        'transaction_id',
+        sql<string | null>`match_candidates->0->>'transactionId'`.as('added_for'),
+      ])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('deleted_at', 'is', null)
+      .where((eb) =>
+        eb.or([
+          eb('transaction_id', 'in', ids),
+          eb.and([
+            eb('transaction_id', 'is', null),
+            eb('status', 'in', ['processing', 'needs_review']),
+            eb(sql<string>`match_candidates->0->>'transactionId'`, 'in', ids),
+            eb(sql<number>`jsonb_array_length(match_candidates)`, '=', 1),
+            eb.not(eb(sql<boolean>`match_candidates->0 ? 'score'`, '=', true)),
+          ]),
+        ]),
+      )
+      .orderBy('created_at', 'desc')
+      .execute();
+    const out = new Map<string, TransactionDto['receipt']>();
+    // A linked receipt wins over one still being read.
+    for (const r of rows) if (r.transaction_id) out.set(r.transaction_id, { id: r.id, status: r.status });
+    for (const r of rows)
+      if (!r.transaction_id && r.added_for && !out.has(r.added_for))
+        out.set(r.added_for, { id: r.id, status: r.status });
+    return out;
+  }
+
   async load(trx: Trx, ctx: Ctx, ids: string[]): Promise<TransactionDto[]> {
     if (ids.length === 0) return [];
     const txns = await trx
@@ -1242,6 +1284,7 @@ export class TransactionsService {
       .where('tt.transaction_id', 'in', ids)
       .orderBy('t.name')
       .execute();
+    const receipts = await this.receiptsFor(trx, ctx, ids);
     const order = new Map(ids.map((id, i) => [id, i]));
     const merchants = await this.merchants.load(trx);
     const result: TransactionDto[] = [];
@@ -1265,6 +1308,7 @@ export class TransactionsService {
         localTime: t.local_time,
         amount: specAmount(t.spec as TransactionSpec | null),
         accountId: specAccount(t.spec as TransactionSpec | null),
+        receipt: receipts.get(t.id) ?? null,
         splits: specSplits(t.spec as TransactionSpec | null),
         managedBy: ownerOf(t.spec),
         entries: entries

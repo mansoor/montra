@@ -4,6 +4,7 @@
  */
 import type {
   BudgetDto,
+  TransactionDto,
   BudgetPeriodDto,
   CalendarDto,
   DashboardChartsDto,
@@ -319,6 +320,8 @@ export function createApi(opts: ApiOptions) {
     listReceipts: (w: string, status?: ReceiptDto['status']) =>
       request<ReceiptPageDto>('GET', `${ws(w)}/receipts?limit=100${status ? `&status=${status}` : ''}`),
     getReceipt: (w: string, id: string) => request<ReceiptDto>('GET', `${ws(w)}/receipts/${id}`),
+    /** One transaction, fresh from the server (its receipt can change without the transaction changing). */
+    getTransaction: (w: string, id: string) => request<TransactionDto>('GET', `${ws(w)}/transactions/${id}`),
     /** Path of a page image; load it with the bearer header. */
     receiptFilePath: (w: string, id: string, fileId: string) => `${ws(w)}/receipts/${id}/files/${fileId}`,
     updateReceipt: (w: string, id: string, input: ReceiptReviewInput) =>
