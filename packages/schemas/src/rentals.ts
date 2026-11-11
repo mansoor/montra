@@ -616,11 +616,16 @@ export const CreateMaintenanceRequest = z.object({
 });
 export type CreateMaintenanceRequest = z.output<typeof CreateMaintenanceRequest>;
 
-export const UpdateMaintenanceRequest = CreateMaintenanceRequest.omit({ propertyId: true }).partial().extend({
-  status: MaintenanceStatus.optional(),
-  completedOn: CalendarDateDto.nullable().optional(),
-  version: Version,
-});
+// Zod 4's .partial() keeps .default(): the lists are redeclared without one (packages/schemas/test/patches.test.ts).
+export const UpdateMaintenanceRequest = CreateMaintenanceRequest.omit({ propertyId: true })
+  .partial()
+  .extend({
+    fileIds: z.array(Id).max(20).optional(),
+    transactionIds: z.array(Id).max(50).optional(),
+    status: MaintenanceStatus.optional(),
+    completedOn: CalendarDateDto.nullable().optional(),
+    version: Version,
+  });
 export type UpdateMaintenanceRequest = z.output<typeof UpdateMaintenanceRequest>;
 
 // ----- Budgets per property (RNT-14) ---------------------------------------------------------------------------

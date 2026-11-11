@@ -514,3 +514,36 @@ describe('editing and archiving goals (BUD-07, BUD-08)', () => {
     });
   });
 });
+
+describe('editing expected income (BUD-03)', () => {
+  it('pauses and resumes without losing the account, payee or member, and refuses a stale version', async () => {
+    const income = (await c.get(url('/expected-income'))).body.data.find(
+      (i: any) => i.name === 'ACME salary',
+    );
+    expect(income).toMatchObject({ accountId: checking, active: true });
+    expect(income.payee).toBeTruthy();
+    const paused = await c.patch(url(`/expected-income/${income.id}`), {
+      active: false,
+      version: income.version,
+    });
+    expect(paused.status).toBe(200);
+    expect(paused.body).toMatchObject({
+      active: false,
+      accountId: checking,
+      payee: income.payee,
+      memberId: income.memberId,
+      amount: income.amount,
+    });
+    const stale = await c.patch(url(`/expected-income/${income.id}`), {
+      active: true,
+      version: income.version,
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('version.conflict');
+    const resumed = await c.patch(url(`/expected-income/${income.id}`), {
+      active: true,
+      version: paused.body.version,
+    });
+    expect(resumed.body).toMatchObject({ active: true, accountId: checking, payee: income.payee });
+  });
+});
