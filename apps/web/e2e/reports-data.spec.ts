@@ -169,6 +169,9 @@ test('a backup restores into a new workspace with the same figures, and the tras
   await trashed.getByRole('button', { name: 'Restore Fresh Mart' }).click();
   await expect(page.getByText('Restored Fresh Mart.')).toBeVisible();
   await expect(trashed).toHaveCount(0);
+  // The trash is empty now, and the confirmation is still there with it.
+  await expect(page.getByText('Nothing in the trash.')).toBeVisible();
+  await expect(page.getByText('Restored Fresh Mart.')).toBeVisible();
 
   await page.goto(`${base}/settings?tab=data`);
   await expect(page.getByTestId('storage-used')).toBeVisible();
