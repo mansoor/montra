@@ -16,6 +16,7 @@ import {
   incomeTaxWages,
   NEXT_DAY_THRESHOLD,
   FUTA_DEPOSIT_THRESHOLD,
+  maskId,
   PAYROLL_TAX_TABLES,
   payrollTaxYear,
   quarterEnd,
@@ -44,6 +45,12 @@ import type {
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { businessEntity, formatScaled, parseScaled, type BusinessEntity } from '../business/shared.js';
+import {
+  employerIdentity,
+  formatEddAccount,
+  formatEin,
+  type EmployerIdentity,
+} from '../business/registrations.js';
 import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { payrollAccount, type PayrollAccountRole } from './payroll-accounts.js';
 import { conflict, payrollEntity, type Ctx } from './shared.js';
@@ -115,7 +122,11 @@ export class PayrollTaxesService {
   async settings(ctx: Ctx, entityId: string): Promise<PayrollSettingsDto> {
     return this.db.run(ctx, async (trx) => {
       await businessEntity(trx, ctx, entityId);
-      return settingsDto(entityId, await this.settingsRow(trx, ctx, entityId));
+      return settingsDto(
+        entityId,
+        await this.settingsRow(trx, ctx, entityId),
+        await employerIdentity(trx, ctx, entityId),
+      );
     });
   }
 
@@ -129,21 +140,12 @@ export class PayrollTaxesService {
       const row = await this.settingsRow(trx, ctx, entityId);
       if ((row ? Number(row.version) : 0) !== req.version) throw conflict();
       const set = {
-        ...(req.ein !== undefined && { ein: req.ein }),
-        ...(req.caEmployerAccount !== undefined && { ca_employer_account: req.caEmployerAccount }),
         ...(req.caUiRate !== undefined && {
           ca_ui_rate_ppm: req.caUiRate === null ? null : percentToPpm(req.caUiRate),
         }),
         ...(req.caEttRate !== undefined && { ca_ett_rate_ppm: percentToPpm(req.caEttRate) }),
         ...(req.federalDepositSchedule && { federal_deposit_schedule: req.federalDepositSchedule }),
         ...(req.caDepositSchedule && { ca_deposit_schedule: req.caDepositSchedule }),
-        ...(req.filingAddress !== undefined && {
-          filing_line1: req.filingAddress?.line1 ?? null,
-          filing_line2: req.filingAddress?.line2 ?? null,
-          filing_city: req.filingAddress?.city ?? null,
-          filing_state: req.filingAddress?.state ?? null,
-          filing_zip: req.filingAddress?.zip ?? null,
-        }),
         ...(req.ssaUserId !== undefined && { ssa_user_id: req.ssaUserId }),
         ...(req.contactName !== undefined && { contact_name: req.contactName }),
         ...(req.contactPhone !== undefined && { contact_phone: req.contactPhone }),
@@ -162,7 +164,11 @@ export class PayrollTaxesService {
           .values({ workspace_id: ctx.workspaceId, entity_id: entityId, ...set })
           .execute();
       }
-      return settingsDto(entityId, await this.settingsRow(trx, ctx, entityId));
+      return settingsDto(
+        entityId,
+        await this.settingsRow(trx, ctx, entityId),
+        await employerIdentity(trx, ctx, entityId),
+      );
     });
   }
 
@@ -176,7 +182,7 @@ export class PayrollTaxesService {
       return {
         entityId,
         year,
-        settings: settingsDto(entityId, row),
+        settings: settingsDto(entityId, row, await employerIdentity(trx, ctx, entityId)),
         obligations: await this.obligations(trx, ctx, entityId, year, row, today),
       };
     });
@@ -279,12 +285,11 @@ export class PayrollTaxesService {
       const checks = await this.paidChecks(trx, ctx, entityId, year);
       const bases = basesFor(checks, year);
       const deposits = await this.deposits(trx, ctx, entityId, year);
+      const id = await employerIdentity(trx, ctx, entityId);
       const employer = {
         name: (await this.legalName(trx, ctx, e)) ?? e.name,
-        ein: row?.ein ? `${row.ein.slice(0, 2)}-${row.ein.slice(2)}` : null,
-        caEmployerAccount: row?.ca_employer_account
-          ? `${row.ca_employer_account.slice(0, 3)}-${row.ca_employer_account.slice(3, 7)}-${row.ca_employer_account.slice(7)}`
-          : null,
+        ein: formatEin(id.ein),
+        caEmployerAccount: formatEddAccount(id.caEmployerAccount),
       };
       const t = payrollTaxYear(year);
       const notes: string[] = [];
@@ -605,29 +610,25 @@ export class PayrollTaxesService {
 
 // ----- Pure helpers --------------------------------------------------------------------------------------------------
 
-function settingsDto(entityId: string, row: PayrollSettingsRow | undefined): PayrollSettingsDto {
+function settingsDto(
+  entityId: string,
+  row: PayrollSettingsRow | undefined,
+  id: EmployerIdentity,
+): PayrollSettingsDto {
   const year = Number(new Date().toISOString().slice(0, 4));
   const t = payrollTaxYear(year) ?? Object.values(PAYROLL_TAX_TABLES).at(-1)!;
   return {
     entityId,
-    ein: row?.ein ?? null,
-    caEmployerAccount: row?.ca_employer_account ?? null,
+    // ADR-0037: from the business's registrations, masked.
+    einMasked: maskId(id.ein, 'ein'),
+    caEmployerAccountMasked: maskId(id.caEmployerAccount),
     caUiRate: row?.ca_ui_rate_ppm != null ? ppmToPercent(row.ca_ui_rate_ppm) : null,
     caUiRateDefault: ppmToPercent(t.california.newEmployerUiRate),
     caEttRate: ppmToPercent(row?.ca_ett_rate_ppm ?? Number(t.california.ettRate)),
     federalDepositSchedule: row?.federal_deposit_schedule ?? 'monthly',
     caDepositSchedule: row?.ca_deposit_schedule ?? 'quarterly',
     taxYears: Object.keys(PAYROLL_TAX_TABLES).map(Number),
-    filingAddress:
-      row?.filing_line1 && row.filing_city && row.filing_state && row.filing_zip
-        ? {
-            line1: row.filing_line1,
-            line2: row.filing_line2,
-            city: row.filing_city,
-            state: row.filing_state,
-            zip: row.filing_zip,
-          }
-        : null,
+    filingAddress: id.filingAddress,
     ssaUserId: row?.ssa_user_id ?? null,
     contactName: row?.contact_name ?? null,
     contactPhone: row?.contact_phone ?? null,

@@ -5,14 +5,26 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
-import { newId, type BusinessPartyRow, type BusinessProfileRow, type Trx } from '@montra/db';
+import {
+  newId,
+  type BusinessPartyRow,
+  type BusinessProfileRow,
+  type BusinessRegistrationRow,
+  type Trx,
+} from '@montra/db';
+import { returnFormOf } from '@montra/domain';
 import type {
   BusinessLogoDto,
   BusinessProfileDto,
+  BusinessRevealRequest,
+  BusinessRevealResponse,
   CreatePartyRequest,
+  OtherRegistrationDto,
+  OtherRegistrationInput,
   PartyDto,
   PartyKind,
   UpdateBusinessProfileRequest,
+  UpdateOtherRegistrationRequest,
   UpdatePartyRequest,
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
@@ -21,6 +33,7 @@ import { Db } from '../db/database.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { checkLogo } from './logo.js';
+import { otherRegistrationDto, otherRegistrations, registrationsDto } from './registrations.js';
 import {
   businessEntities,
   businessEntity,
@@ -47,8 +60,7 @@ export class BusinessService {
   async listBusinesses(ctx: Ctx): Promise<BusinessProfileDto[]> {
     return this.db.run(ctx, async (trx) => {
       const out: BusinessProfileDto[] = [];
-      for (const e of await businessEntities(trx, ctx))
-        out.push(this.profileDto(e, await this.readProfile(trx, ctx, e.id)));
+      for (const e of await businessEntities(trx, ctx)) out.push(await this.profileDtoIn(trx, ctx, e));
       return out;
     });
   }
@@ -56,7 +68,7 @@ export class BusinessService {
   async profile(ctx: Ctx, entityId: string): Promise<BusinessProfileDto> {
     return this.db.run(ctx, async (trx) => {
       const e = await taxedEntity(trx, ctx, entityId);
-      return this.profileDto(e, await this.readProfile(trx, ctx, entityId));
+      return this.profileDtoIn(trx, ctx, e);
     });
   }
 
@@ -66,35 +78,217 @@ export class BusinessService {
     req: UpdateBusinessProfileRequest,
   ): Promise<BusinessProfileDto> {
     return this.db.run(ctx, async (trx) => {
-      const e = await taxedEntity(trx, ctx, entityId);
+      let e = await taxedEntity(trx, ctx, entityId);
       await this.ensureProfile(trx, ctx, entityId);
       for (const account of [req.defaultDepositAccountId, req.taxSavingsAccountId]) {
         if (account) await this.requireBankAccount(trx, ctx, account);
       }
-      const row = await trx
-        .updateTable('app.business_profile')
-        .set({
-          ...(req.legalName !== undefined ? { legal_name: req.legalName } : {}),
-          ...(req.address !== undefined ? { address: req.address } : {}),
-          ...(req.email !== undefined ? { email: req.email } : {}),
-          ...(req.invoicePrefix !== undefined ? { invoice_prefix: req.invoicePrefix } : {}),
-          ...(req.defaultTermsDays !== undefined ? { default_terms_days: req.defaultTermsDays } : {}),
-          ...(req.defaultDepositAccountId !== undefined
-            ? { default_deposit_account_id: req.defaultDepositAccountId }
-            : {}),
-          ...(req.taxRateBps !== undefined ? { tax_rate_bps: req.taxRateBps } : {}),
-          ...(req.taxSavingsAccountId !== undefined
-            ? { tax_savings_account_id: req.taxSavingsAccountId }
-            : {}),
-          ...(req.receiptThreshold !== undefined ? { receipt_threshold_minor: req.receiptThreshold } : {}),
-          ...(req.domain !== undefined ? { domain: req.domain } : {}),
+      if (req.businessType !== undefined || req.fiscalYearStartMonth !== undefined) {
+        e = await this.setLegalSetup(trx, ctx, e, req);
+      }
+      const fa = req.filingAddress;
+      const set = {
+        ...(req.legalName !== undefined ? { legal_name: req.legalName } : {}),
+        ...(req.address !== undefined ? { address: req.address } : {}),
+        ...(req.email !== undefined ? { email: req.email } : {}),
+        ...(req.invoicePrefix !== undefined ? { invoice_prefix: req.invoicePrefix } : {}),
+        ...(req.defaultTermsDays !== undefined ? { default_terms_days: req.defaultTermsDays } : {}),
+        ...(req.defaultDepositAccountId !== undefined
+          ? { default_deposit_account_id: req.defaultDepositAccountId }
+          : {}),
+        ...(req.taxRateBps !== undefined ? { tax_rate_bps: req.taxRateBps } : {}),
+        ...(req.taxSavingsAccountId !== undefined ? { tax_savings_account_id: req.taxSavingsAccountId } : {}),
+        ...(req.receiptThreshold !== undefined ? { receipt_threshold_minor: req.receiptThreshold } : {}),
+        ...(req.domain !== undefined ? { domain: req.domain } : {}),
+        // ADR-0037: legal setup and registrations.
+        ...(req.sCorpElectionDate !== undefined ? { s_corp_election_date: req.sCorpElectionDate } : {}),
+        ...(req.ein !== undefined ? { ein: req.ein } : {}),
+        ...(req.irsName !== undefined ? { irs_name: req.irsName } : {}),
+        ...(req.naicsCode !== undefined ? { naics_code: req.naicsCode } : {}),
+        ...(req.formationState !== undefined ? { formation_state: req.formationState } : {}),
+        ...(req.sosEntityNumber !== undefined ? { sos_entity_number: req.sosEntityNumber } : {}),
+        ...(req.formationDate !== undefined ? { formation_date: req.formationDate } : {}),
+        ...(req.ftbEntityId !== undefined ? { ftb_entity_id: req.ftbEntityId } : {}),
+        ...(req.caEmployerAccount !== undefined ? { ca_employer_account: req.caEmployerAccount } : {}),
+        ...(req.cdtfaPermit !== undefined ? { cdtfa_permit: req.cdtfaPermit } : {}),
+        ...(req.registeredAgentName !== undefined ? { registered_agent_name: req.registeredAgentName } : {}),
+        ...(req.registeredAgentAddress !== undefined
+          ? { registered_agent_address: req.registeredAgentAddress }
+          : {}),
+        ...(req.dbaName !== undefined ? { dba_name: req.dbaName } : {}),
+        ...(req.dbaCounty !== undefined ? { dba_county: req.dbaCounty } : {}),
+        ...(req.dbaExpiresOn !== undefined ? { dba_expires_on: req.dbaExpiresOn } : {}),
+        ...(req.cityLicenseNumber !== undefined ? { city_license_number: req.cityLicenseNumber } : {}),
+        ...(req.cityLicenseExpiresOn !== undefined
+          ? { city_license_expires_on: req.cityLicenseExpiresOn }
+          : {}),
+        ...(fa !== undefined
+          ? {
+              filing_line1: fa?.line1 ?? null,
+              filing_line2: fa?.line2 ?? null,
+              filing_city: fa?.city ?? null,
+              filing_state: fa?.state ?? null,
+              filing_zip: fa?.zip ?? null,
+            }
+          : {}),
+      };
+      // A change to the type or fiscal year alone leaves the profile row as it is.
+      if (Object.keys(set).length) {
+        await trx
+          .updateTable('app.business_profile')
+          .set(set)
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('entity_id', '=', entityId)
+          .execute();
+      }
+      return this.profileDtoIn(trx, ctx, e);
+    });
+  }
+
+  /**
+   * ADR-0037 §1–2: the entity type and fiscal year are on the entity, which only an owner may change (the same rule as
+   * Settings → Books). A rental portfolio has no entity type.
+   */
+  private async setLegalSetup(
+    trx: Trx,
+    ctx: Ctx,
+    e: BusinessEntity,
+    req: UpdateBusinessProfileRequest,
+  ): Promise<BusinessEntity> {
+    if (req.businessType !== undefined && e.type !== 'business') {
+      throw unprocessable('business.not_a_business', 'Only a business has an entity type');
+    }
+    const res = await trx
+      .updateTable('app.entity')
+      .set({
+        ...(req.businessType !== undefined ? { business_type: req.businessType } : {}),
+        ...(req.fiscalYearStartMonth !== undefined
+          ? { fiscal_year_start_month: req.fiscalYearStartMonth }
+          : {}),
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', e.id)
+      .executeTakeFirst();
+    if (!res.numUpdatedRows) {
+      throw new AppError(
+        403,
+        'business.owner_only',
+        'Only an owner can change the entity type or fiscal year',
+      );
+    }
+    return {
+      ...e,
+      ...(req.businessType !== undefined ? { businessType: req.businessType } : {}),
+      ...(req.fiscalYearStartMonth !== undefined ? { fiscalYearStartMonth: req.fiscalYearStartMonth } : {}),
+    };
+  }
+
+  // ----- Registrations (BIZ-22..24, ADR-0037) -----------------------------------------------------------------------
+
+  /** One full tax account number, written to the audit log. The caller has checked for a recent sign-in. */
+  async reveal(ctx: Ctx, entityId: string, req: BusinessRevealRequest): Promise<BusinessRevealResponse> {
+    return this.db.run(ctx, async (trx) => {
+      await businessEntity(trx, ctx, entityId);
+      const r = await this.readProfile(trx, ctx, entityId);
+      const value = {
+        ein: r.ein,
+        ftbEntityId: r.ftb_entity_id,
+        caEmployerAccount: r.ca_employer_account,
+        cdtfaPermit: r.cdtfa_permit,
+      }[req.field];
+      await trx
+        .insertInto('app.audit_log')
+        .values({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: ctx.userId,
+          action: 'business.revealed',
+          subject_type: 'business_profile',
+          subject_id: entityId,
+          diff: JSON.stringify({ field: req.field }),
         })
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('entity_id', '=', entityId)
+        .execute();
+      return { field: req.field, value };
+    });
+  }
+
+  async addRegistration(
+    ctx: Ctx,
+    entityId: string,
+    req: OtherRegistrationInput,
+  ): Promise<OtherRegistrationDto> {
+    return this.db.run(ctx, async (trx) => {
+      await businessEntity(trx, ctx, entityId);
+      const row = await trx
+        .insertInto('app.business_registration')
+        .values({
+          workspace_id: ctx.workspaceId,
+          entity_id: entityId,
+          label: req.label,
+          number: req.number ?? null,
+          issuer: req.issuer ?? null,
+          expires_on: req.expiresOn ?? null,
+        })
         .returningAll()
         .executeTakeFirstOrThrow();
-      return this.profileDto(e, row);
+      return otherRegistrationDto(row);
     });
+  }
+
+  async updateRegistration(
+    ctx: Ctx,
+    entityId: string,
+    id: string,
+    req: UpdateOtherRegistrationRequest,
+  ): Promise<OtherRegistrationDto> {
+    return this.db.run(ctx, async (trx) => {
+      await businessEntity(trx, ctx, entityId);
+      const before = await this.registrationRow(trx, ctx, entityId, id);
+      if (Number(before.version) !== req.version) {
+        throw new AppError(409, 'version.conflict', 'Someone else changed this; reload and try again');
+      }
+      const row = await trx
+        .updateTable('app.business_registration')
+        .set({
+          ...(req.label !== undefined ? { label: req.label } : {}),
+          ...(req.number !== undefined ? { number: req.number } : {}),
+          ...(req.issuer !== undefined ? { issuer: req.issuer } : {}),
+          ...(req.expiresOn !== undefined ? { expires_on: req.expiresOn } : {}),
+        })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      return otherRegistrationDto(row);
+    });
+  }
+
+  async removeRegistration(ctx: Ctx, entityId: string, id: string): Promise<void> {
+    await this.db.run(ctx, async (trx) => {
+      await businessEntity(trx, ctx, entityId);
+      await this.registrationRow(trx, ctx, entityId, id);
+      await trx
+        .deleteFrom('app.business_registration')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', id)
+        .execute();
+    });
+  }
+
+  private async registrationRow(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+    id: string,
+  ): Promise<BusinessRegistrationRow> {
+    const row = await trx
+      .selectFrom('app.business_registration')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', entityId)
+      .where('id', '=', id)
+      .executeTakeFirst();
+    if (!row) throw notFound('Registration');
+    return row;
   }
 
   /** The stored profile, or the defaults: reading doesn't write, because a read-only accountant may be reading. */
@@ -121,6 +315,28 @@ export class BusinessService {
         receipt_threshold_minor: 7500n,
         logo_file_id: null,
         domain: null,
+        s_corp_election_date: null,
+        ein: null,
+        irs_name: null,
+        naics_code: null,
+        formation_state: null,
+        sos_entity_number: null,
+        formation_date: null,
+        ftb_entity_id: null,
+        ca_employer_account: null,
+        cdtfa_permit: null,
+        registered_agent_name: null,
+        registered_agent_address: null,
+        dba_name: null,
+        dba_county: null,
+        dba_expires_on: null,
+        city_license_number: null,
+        city_license_expires_on: null,
+        filing_line1: null,
+        filing_line2: null,
+        filing_city: null,
+        filing_state: null,
+        filing_zip: null,
         version: 1n,
         created_at: new Date(0),
         updated_at: new Date(0),
@@ -146,12 +362,27 @@ export class BusinessService {
     if (!a) throw unprocessable('account.not_a_bank_account', 'Choose a bank or savings account');
   }
 
-  private profileDto(e: BusinessEntity, r: BusinessProfileRow): BusinessProfileDto {
+  private async profileDtoIn(trx: Trx, ctx: Ctx, e: BusinessEntity): Promise<BusinessProfileDto> {
+    return this.profileDto(
+      e,
+      await this.readProfile(trx, ctx, e.id),
+      await otherRegistrations(trx, ctx, e.id),
+    );
+  }
+
+  private profileDto(
+    e: BusinessEntity,
+    r: BusinessProfileRow,
+    other: BusinessRegistrationRow[],
+  ): BusinessProfileDto {
     return {
       entityId: e.id,
       name: e.name,
       businessType: e.businessType,
       fiscalYearStartMonth: e.fiscalYearStartMonth,
+      returnForm: e.type === 'business' ? returnFormOf(e.businessType) : null,
+      sCorpElectionDate: r.s_corp_election_date ? dateOf(r.s_corp_election_date) : null,
+      registrations: registrationsDto(r, other),
       currency: e.currency as BusinessProfileDto['currency'],
       legalName: r.legal_name,
       address: r.address,

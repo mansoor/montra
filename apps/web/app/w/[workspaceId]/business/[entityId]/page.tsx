@@ -9,6 +9,7 @@ import { LineChart } from '@/components/charts/line-chart';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
 import { BusinessDashboard } from '@/components/business/business-dashboard';
+import { EntityTypeLine } from '@/components/business/entity-type-line';
 import { RecommendationList } from '@/components/planning/recommendations';
 import { LinkTabs } from '@/components/ui/page-header';
 import { BUSINESS_CHART_MONTHS } from '@montra/schemas';
@@ -40,14 +41,19 @@ export default async function BusinessOverviewPage({
 }) {
   const { workspaceId, entityId } = await params;
   const sp = await searchParams;
-  const workspace = await load((api) => api.getWorkspace(workspaceId));
+  const [workspace, business] = await load((api) =>
+    Promise.all([api.getWorkspace(workspaceId), api.getBusiness(workspaceId, entityId)]),
+  );
   const today = todayIn(workspace.timeZone);
   const range: ReportRange = (REPORT_RANGES as readonly string[]).includes(sp.range ?? '')
     ? (sp.range as ReportRange)
     : 'ytd';
   const show: Show = (SHOW as readonly string[]).includes(sp.show ?? '') ? (sp.show as Show) : 'pnl';
   const { from, to } =
-    sp.from && sp.to ? { from: sp.from as CalendarDate, to: sp.to as CalendarDate } : rangeOf(range, today);
+    sp.from && sp.to
+      ? { from: sp.from as CalendarDate, to: sp.to as CalendarDate }
+      : // "Year to date" and "Last year" follow the business's fiscal year (ADR-0037 §2).
+        rangeOf(range, today, business.fiscalYearStartMonth);
   const months = (BUSINESS_CHART_MONTHS as readonly number[]).includes(Number(sp.months))
     ? Number(sp.months)
     : 6;
@@ -87,6 +93,7 @@ export default async function BusinessOverviewPage({
 
   return (
     <div className="space-y-5">
+      <EntityTypeLine workspaceId={workspaceId} profile={business} />
       <BusinessDashboard
         d={dashboard}
         here={here}

@@ -37,6 +37,7 @@ export default async function PeoplePage({
       currency={business.currency}
       people={people}
       today={todayIn(workspace.timeZone)}
+      businessType={business.businessType}
     />
   );
 }

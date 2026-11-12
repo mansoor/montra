@@ -293,6 +293,13 @@ import type {
   StorageTestResultDto,
   UpdateStorageRequest,
   BusinessProfileDto,
+  BusinessRegistrationsDto,
+  BusinessRevealField,
+  BusinessRevealResponse,
+  OtherRegistrationDto,
+  OtherRegistrationInput,
+  ReturnFormDto,
+  UpdateOtherRegistrationRequest,
   InvoiceDto,
   InvoiceLineDto,
   InvoicePaymentDto,
@@ -475,6 +482,8 @@ export type {
   PostDepreciationDto,
 };
 export type UpdateBusinessInput = z.input<typeof UpdateBusinessProfileRequest>;
+export type OtherRegistrationInputBody = z.input<typeof OtherRegistrationInput>;
+export type UpdateOtherRegistrationInput = z.input<typeof UpdateOtherRegistrationRequest>;
 export type ReportFiltersInput = z.input<typeof ReportFilters>;
 export type CreateSavedReportInput = z.input<typeof CreateSavedReportRequest>;
 export type AskInput = z.input<typeof AskRequest>;
@@ -1521,6 +1530,40 @@ export class ApiClient {
   /** Where the logo is served; through the web's API proxy it needs no token. The file id refreshes a cached copy. */
   businessLogoPath(workspaceId: string, entityId: string, fileId: string) {
     return this.ws(workspaceId, `/businesses/${enc(entityId)}/logo?v=${enc(fileId)}`);
+  }
+  /** ADR-0037 §5: one full tax account number. Needs a recent sign-in; each reveal is logged. */
+  revealBusinessId(workspaceId: string, entityId: string, field: BusinessRevealField) {
+    return this.request<BusinessRevealResponse>(
+      'POST',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/reveal`),
+      { field },
+    );
+  }
+  /** BIZ-24: a registration beyond the named ones. */
+  addBusinessRegistration(workspaceId: string, entityId: string, input: OtherRegistrationInputBody) {
+    return this.request<OtherRegistrationDto>(
+      'POST',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/registrations`),
+      input,
+    );
+  }
+  updateBusinessRegistration(
+    workspaceId: string,
+    entityId: string,
+    id: string,
+    input: UpdateOtherRegistrationInput,
+  ) {
+    return this.request<OtherRegistrationDto>(
+      'PATCH',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/registrations/${enc(id)}`),
+      input,
+    );
+  }
+  removeBusinessRegistration(workspaceId: string, entityId: string, id: string) {
+    return this.request<void>(
+      'DELETE',
+      this.ws(workspaceId, `/businesses/${enc(entityId)}/registrations/${enc(id)}`),
+    );
   }
   getBusinessDashboard(
     workspaceId: string,
@@ -2893,6 +2936,10 @@ export type {
   BusinessDashboardDto,
   BusinessLogoDto,
   BusinessProfileDto,
+  BusinessRegistrationsDto,
+  BusinessRevealField,
+  OtherRegistrationDto,
+  ReturnFormDto,
   InvoiceDto,
   InvoiceLineDto,
   InvoicePaymentDto,

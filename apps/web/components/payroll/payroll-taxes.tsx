@@ -107,10 +107,6 @@ function SettingsCard({
   const { run, busy, message, t } = useAction();
   const [open, setOpen] = useState(canWrite && settings.version === 0);
   const [f, setF] = useState({
-    ein: settings.ein ? `${settings.ein.slice(0, 2)}-${settings.ein.slice(2)}` : '',
-    caEmployerAccount: settings.caEmployerAccount
-      ? `${settings.caEmployerAccount.slice(0, 3)}-${settings.caEmployerAccount.slice(3, 7)}-${settings.caEmployerAccount.slice(7)}`
-      : '',
     caUiRate: settings.caUiRate ?? '',
     caEttRate: settings.caEttRate,
     federalDepositSchedule: settings.federalDepositSchedule,
@@ -126,8 +122,6 @@ function SettingsCard({
     void run(
       () =>
         browserApi.updatePayrollSettings(workspaceId, entityId, {
-          ein: f.ein.trim() || null,
-          caEmployerAccount: f.caEmployerAccount.trim() || null,
           caUiRate: f.caUiRate.trim() || null,
           caEttRate: f.caEttRate.trim() || '0.1',
           federalDepositSchedule: f.federalDepositSchedule,
@@ -152,13 +146,24 @@ function SettingsCard({
           </button>
         )}
       </div>
-      {!open ? (
-        <dl className="grid gap-2 text-sm sm:grid-cols-3">
-          <Item label={t('payroll.taxes.ein')} value={f.ein || t('payroll.taxes.not_set')} />
+      {/* ADR-0037: the employer's numbers are the business's registrations, set in Business → Settings. */}
+      <div className="space-y-1">
+        <dl className="grid gap-2 text-sm sm:grid-cols-3" data-testid="employer-numbers">
+          <Item label={t('payroll.taxes.ein')} value={settings.einMasked ?? t('payroll.taxes.not_set')} />
           <Item
             label={t('payroll.taxes.edd_account')}
-            value={f.caEmployerAccount || t('payroll.taxes.not_set')}
+            value={settings.caEmployerAccountMasked ?? t('payroll.taxes.not_set')}
           />
+        </dl>
+        <p className="text-xs text-muted">
+          {t('payroll.taxes.from_settings')}{' '}
+          <Link href={`/w/${workspaceId}/business/${entityId}/settings#registrations`} className="underline">
+            {t('payroll.taxes.edit_in_settings')}
+          </Link>
+        </p>
+      </div>
+      {!open ? (
+        <dl className="grid gap-2 text-sm sm:grid-cols-3">
           <Item
             label={t('payroll.taxes.ui_rate')}
             value={
@@ -183,22 +188,6 @@ function SettingsCard({
             save();
           }}
         >
-          <Field label={t('payroll.taxes.ein')}>
-            <input
-              className="input num"
-              placeholder="12-3456789"
-              value={f.ein}
-              onChange={(e) => setF((x) => ({ ...x, ein: e.target.value }))}
-            />
-          </Field>
-          <Field label={t('payroll.taxes.edd_account')}>
-            <input
-              className="input num"
-              placeholder="123-4567-8"
-              value={f.caEmployerAccount}
-              onChange={(e) => setF((x) => ({ ...x, caEmployerAccount: e.target.value }))}
-            />
-          </Field>
           <Field label={t('payroll.taxes.ui_rate_input')}>
             <input
               className="input num"

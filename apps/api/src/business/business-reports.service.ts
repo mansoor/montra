@@ -18,6 +18,8 @@ import {
   depreciationForYear,
   divRound,
   estimatedTaxPeriods,
+  fiscalYearOf,
+  fiscalYearRange,
   marginBps,
   taxSetAside,
   taxSetAsideTarget,
@@ -68,7 +70,9 @@ export class BusinessReportsService {
     return this.db.run(ctx, async (trx) => {
       const e = await businessEntity(trx, ctx, q.entityId);
       const today = todayOf(e);
-      const from = q.from ?? (`${today.slice(0, 4)}-01-01` as CalendarDate);
+      // The fiscal year to date by default (ADR-0037 §2).
+      const from =
+        q.from ?? fiscalYearRange(fiscalYearOf(today, e.fiscalYearStartMonth), e.fiscalYearStartMonth).from;
       const to = q.to ?? today;
       const { rows } = await sql<{
         id: string;
@@ -328,7 +332,9 @@ export class BusinessReportsService {
   async scheduleC(ctx: Ctx, entityId: string, year?: number): Promise<ScheduleCDto> {
     return this.db.run(ctx, async (trx) => {
       const e = await businessEntity(trx, ctx, entityId);
-      const y = year ?? Number(todayOf(e).slice(0, 4));
+      // The business's fiscal year, named by the year it begins in (ADR-0037 §2); January makes it the calendar year.
+      const y = year ?? fiscalYearOf(todayOf(e), e.fiscalYearStartMonth);
+      const { from, to } = fiscalYearRange(y, e.fiscalYearStartMonth);
       const { rows } = await sql<{
         id: string;
         name: string;
@@ -344,7 +350,7 @@ export class BusinessReportsService {
           join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
          where p.workspace_id = ${ctx.workspaceId} and p.entity_id = ${e.id}
            and a.type in ('income', 'expense')
-           and p.entry_date between ${`${y}-01-01`} and ${`${y}-12-31`}
+           and p.entry_date between ${from} and ${to}
          group by a.id
         having sum(p.functional_amount_minor) <> 0`.execute(trx);
       const refLines = await trx
@@ -360,8 +366,8 @@ export class BusinessReportsService {
         .select((eb) => eb.fn.coalesce(eb.fn.sum<string>('deduction_minor'), sql<string>`0`).as('total'))
         .where('workspace_id', '=', ctx.workspaceId)
         .where('entity_id', '=', e.id)
-        .where('trip_date', '>=', `${y}-01-01`)
-        .where('trip_date', '<=', `${y}-12-31`)
+        .where('trip_date', '>=', from)
+        .where('trip_date', '<=', to)
         // Only the owner's own trips: a payroll person's is reimbursed through payroll instead (ADR-0035 §8).
         .where('driver', '=', 'owner')
         .executeTakeFirst();
@@ -422,6 +428,8 @@ export class BusinessReportsService {
       return {
         entityId: e.id,
         year: y,
+        from,
+        to,
         currency: asCurrencyCode(e.currency),
         lines,
         grossReceipts: String(income),

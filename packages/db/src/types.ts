@@ -1496,6 +1496,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.employer_deposit': EmployerDepositTable;
   'app.payslip_deposit': PayslipDepositTable;
   'app.business_profile': BusinessProfileTable;
+  'app.business_registration': BusinessRegistrationTable;
   'app.account_move': AccountMoveTable;
   'app.business_party': BusinessPartyTable;
   'app.invoice': InvoiceTable;
@@ -1573,6 +1574,43 @@ export interface BusinessProfileTable {
   /** ADR-0032: a PNG or JPEG printed on invoices, and the website or email domain as a bare host name. */
   logo_file_id: string | null;
   domain: string | null;
+  /** ADR-0037: legal and tax setup, and registrations (migration 0037). */
+  s_corp_election_date: CalendarDateCol | null;
+  ein: string | null;
+  irs_name: string | null;
+  naics_code: string | null;
+  formation_state: string | null;
+  sos_entity_number: string | null;
+  formation_date: CalendarDateCol | null;
+  ftb_entity_id: string | null;
+  ca_employer_account: string | null;
+  cdtfa_permit: string | null;
+  registered_agent_name: string | null;
+  registered_agent_address: string | null;
+  dba_name: string | null;
+  dba_county: string | null;
+  dba_expires_on: CalendarDateCol | null;
+  city_license_number: string | null;
+  city_license_expires_on: CalendarDateCol | null;
+  filing_line1: string | null;
+  filing_line2: string | null;
+  filing_city: string | null;
+  filing_state: string | null;
+  filing_zip: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** ADR-0037: a registration beyond the named ones (a county permit, a professional licence). */
+export interface BusinessRegistrationTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  label: string;
+  number: string | null;
+  issuer: string | null;
+  expires_on: CalendarDateCol | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -1986,6 +2024,7 @@ export type ReceiptLineRow = Selectable<ReceiptLineTable>;
 export type TripRow = Selectable<TripTable>;
 export type BudgetRow = Selectable<BudgetTable>;
 export type BusinessProfileRow = Selectable<BusinessProfileTable>;
+export type BusinessRegistrationRow = Selectable<BusinessRegistrationTable>;
 export type BusinessPartyRow = Selectable<BusinessPartyTable>;
 export type InvoiceRow = Selectable<InvoiceTable>;
 export type InvoiceLineRow = Selectable<InvoiceLineTable>;

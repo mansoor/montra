@@ -19,12 +19,14 @@ import {
   AccountingExportQuery,
   BillStatus,
   BusinessDashboardQuery,
+  BusinessRevealRequest,
   CalendarDateDto,
   CreateBillRequest,
   CreateInvoiceRequest,
   CreatePartyRequest,
   CreateTripRequest,
   InvoiceStatus,
+  OtherRegistrationInput,
   PartyKind,
   RecordPaymentRequest,
   SendInvoiceRequest,
@@ -32,6 +34,7 @@ import {
   UpdateBillRequest,
   UpdateBusinessProfileRequest,
   UpdateInvoiceRequest,
+  UpdateOtherRegistrationRequest,
   UpdatePartyRequest,
   UpdateTripRequest,
   LOGO_MAX_BYTES,
@@ -95,6 +98,49 @@ export class BusinessController {
       parse(Id, entityId),
       parse(UpdateBusinessProfileRequest, body),
     );
+  }
+
+  /** ADR-0037 §5: one full tax account number, after a recent sign-in, written to the audit log. */
+  @Post('businesses/:entityId/reveal')
+  @HttpCode(200)
+  reveal(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Body() body: unknown) {
+    requireRecentAuth(ctx);
+    return this.business.reveal(dbCtx(ctx), parse(Id, entityId), parse(BusinessRevealRequest, body));
+  }
+
+  /** BIZ-24: registrations beyond the named ones. They're listed in the business's `registrations.other`. */
+  @Post('businesses/:entityId/registrations')
+  addRegistration(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Body() body: unknown) {
+    return this.business.addRegistration(
+      dbCtx(ctx),
+      parse(Id, entityId),
+      parse(OtherRegistrationInput, body),
+    );
+  }
+
+  @Patch('businesses/:entityId/registrations/:id')
+  updateRegistration(
+    @Ctx() ctx: RequestContext,
+    @Param('entityId') entityId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.business.updateRegistration(
+      dbCtx(ctx),
+      parse(Id, entityId),
+      parse(Id, id),
+      parse(UpdateOtherRegistrationRequest, body),
+    );
+  }
+
+  @Delete('businesses/:entityId/registrations/:id')
+  @HttpCode(204)
+  async removeRegistration(
+    @Ctx() ctx: RequestContext,
+    @Param('entityId') entityId: string,
+    @Param('id') id: string,
+  ) {
+    await this.business.removeRegistration(dbCtx(ctx), parse(Id, entityId), parse(Id, id));
   }
 
   /** ADR-0032: the logo on invoices, a PNG or JPEG checked by its content. */

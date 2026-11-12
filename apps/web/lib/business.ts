@@ -2,7 +2,15 @@
  * Business screens' pure helpers (BIZ-05..10): editable invoice rows ↔ the API's minor units, and report date ranges. No
  * float math: amounts go through @montra/domain, and quantities and rates are checked as text.
  */
-import { addDays, invoiceTotals, startOfMonth, type CalendarDate, type InvoiceTotals } from '@montra/domain';
+import {
+  addDays,
+  fiscalYearOf,
+  fiscalYearRange,
+  invoiceTotals,
+  startOfMonth,
+  type CalendarDate,
+  type InvoiceTotals,
+} from '@montra/domain';
 import type { BillDto, CreateInvoiceInput, InvoiceDto } from '@montra/api-client';
 import { parseAmountInput } from './money';
 import { staticT } from './i18n-static';
@@ -131,9 +139,17 @@ export function buildLines(
 export const REPORT_RANGES = ['month', 'quarter', 'ytd', 'last_year'] as const;
 export type ReportRange = (typeof REPORT_RANGES)[number];
 
-/** BIZ-10: this month, the last three whole months plus this one, this year and last year. */
-export function rangeOf(range: ReportRange, today: CalendarDate): { from: CalendarDate; to: CalendarDate } {
+/**
+ * BIZ-10: this month, the last three whole months plus this one, this year and last year. "This year" and "last year"
+ * are the business's fiscal years (ADR-0037 §2); with a January start they're calendar years.
+ */
+export function rangeOf(
+  range: ReportRange,
+  today: CalendarDate,
+  fiscalStartMonth = 1,
+): { from: CalendarDate; to: CalendarDate } {
   const year = Number(today.slice(0, 4));
+  const fiscal = fiscalYearOf(today, fiscalStartMonth);
   switch (range) {
     case 'month':
       return { from: startOfMonth(today), to: today };
@@ -143,9 +159,9 @@ export function rangeOf(range: ReportRange, today: CalendarDate): { from: Calend
       return { from: `${year}-${String(first).padStart(2, '0')}-01` as CalendarDate, to: today };
     }
     case 'ytd':
-      return { from: `${year}-01-01` as CalendarDate, to: today };
+      return { from: fiscalYearRange(fiscal, fiscalStartMonth).from, to: today };
     case 'last_year':
-      return { from: `${year - 1}-01-01` as CalendarDate, to: `${year - 1}-12-31` as CalendarDate };
+      return fiscalYearRange(fiscal - 1, fiscalStartMonth);
   }
 }
 

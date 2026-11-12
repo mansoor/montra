@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { todayIn } from '@montra/domain';
+import { filesScheduleC, todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { drillHref } from '@/lib/planning';
@@ -9,6 +9,7 @@ import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
 import { TaxPackageButton } from '@/components/settings/privacy-security';
 import { StatTile } from '@/components/ui/page-header';
+import { EntityTypeLine } from '@/components/business/entity-type-line';
 
 export const metadata: Metadata = { title: 'Taxes' };
 export const dynamic = 'force-dynamic';
@@ -25,16 +26,22 @@ export default async function TaxesPage({
   const { year: rawYear } = await searchParams;
   const workspace = await load((api) => api.getWorkspace(workspaceId));
   const thisYear = Number(todayIn(workspace.timeZone).slice(0, 4));
-  const year = /^\d{4}$/.test(rawYear ?? '') ? Number(rawYear) : thisYear;
-  const [business, estimate, schedule, lines, byPerson] = await load((api) =>
+  const chosen = /^\d{4}$/.test(rawYear ?? '');
+  const year = chosen ? Number(rawYear) : thisYear;
+  // Estimated tax is the owner's calendar year; the Schedule C summary is the business's fiscal year, which the API
+  // picks when no year is chosen (ADR-0037 §2).
+  const [business, estimate, schedule, lines] = await load((api) =>
     Promise.all([
       api.getBusiness(workspaceId, entityId),
       api.getTaxEstimate(workspaceId, { entityId, year }),
-      api.getScheduleC(workspaceId, { entityId, year }),
+      api.getScheduleC(workspaceId, chosen ? { entityId, year } : { entityId }),
       api.listTaxLines(workspaceId, 'schedule_c'),
-      api.getExpensesByPerson(workspaceId, { entityId, from: `${year}-01-01`, to: `${year}-12-31` }),
     ]),
   );
+  const byPerson = await load((api) =>
+    api.getExpensesByPerson(workspaceId, { entityId, from: schedule.from, to: schedule.to }),
+  );
+  const fiscal = business.fiscalYearStartMonth !== 1;
   const { t } = await getI18n();
   const ccy = estimate.currency;
   const base = `/w/${workspaceId}`;
@@ -51,6 +58,7 @@ export default async function TaxesPage({
         </nav>
         <TaxPackageButton workspaceId={workspaceId} entityId={entityId} year={year} />
       </div>
+      <EntityTypeLine workspaceId={workspaceId} profile={business} />
 
       <section className="space-y-3" aria-labelledby="estimate-title">
         <h2 id="estimate-title" className="text-lg font-semibold">
@@ -107,8 +115,20 @@ export default async function TaxesPage({
 
       <section className="space-y-3" aria-labelledby="schedule-title">
         <h2 id="schedule-title" className="text-lg font-semibold">
-          {t('taxes.schedule_title', { year })}
+          {fiscal
+            ? t('taxes.schedule_title_fiscal', { year: schedule.year })
+            : t('taxes.schedule_title', { year: schedule.year })}
         </h2>
+        {fiscal && (
+          <p className="text-sm text-muted" data-testid="schedule-c-range">
+            <DateText date={schedule.from} /> – <DateText date={schedule.to} />
+          </p>
+        )}
+        {!filesScheduleC(business.businessType) && business.returnForm && (
+          <p role="note" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
+            {t('setup.guide_only', { form: t(`setup.form.${business.returnForm}`) })}
+          </p>
+        )}
         {schedule.warnings.includes('mileage_and_actual_car') && (
           <p role="alert" className="card border-warn text-sm text-warn">
             {t('taxes.warning_mileage_and_actual_car')}
@@ -147,8 +167,8 @@ export default async function TaxesPage({
                         href={drillHref(base, {
                           entityId,
                           categoryIds: l.categoryIds,
-                          from: `${year}-01-01`,
-                          to: `${year}-12-31`,
+                          from: schedule.from,
+                          to: schedule.to,
                         })}
                       >
                         <Money amount={l.amount} currency={ccy} />
@@ -208,7 +228,7 @@ export default async function TaxesPage({
       {byPerson.rows.length > 0 && (
         <section className="space-y-3" aria-labelledby="by-person-title">
           <h2 id="by-person-title" className="text-lg font-semibold">
-            {t('expense.by_person_title', { year })}
+            {t('expense.by_person_title', { year: schedule.year })}
           </h2>
           <div className="card-flush">
             <table className="tbl" data-testid="expenses-by-person">
@@ -236,8 +256,8 @@ export default async function TaxesPage({
                         href={`${base}/transactions?${new URLSearchParams({
                           entityId,
                           spentBy: r.spentBy === 'owner' ? 'owner' : (r.personId ?? 'none'),
-                          from: `${year}-01-01`,
-                          to: `${year}-12-31`,
+                          from: schedule.from,
+                          to: schedule.to,
                         }).toString()}`}
                       >
                         <Money amount={r.amount} currency={ccy} />

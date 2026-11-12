@@ -2,7 +2,14 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ACCOUNT_KINDS, BALANCE_RANGES, PAY_RULES, PLAN_TYPES } from '@montra/domain';
+import {
+  ACCOUNT_KINDS,
+  BALANCE_RANGES,
+  BUSINESS_TYPES,
+  LEGACY_BUSINESS_TYPES,
+  PAY_RULES,
+  PLAN_TYPES,
+} from '@montra/domain';
 import { catalogs } from '@montra/i18n';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -87,6 +94,11 @@ const DYNAMIC: Record<string, readonly string[]> = {
   // ADR-0032: the business landing page reuses Home's period labels; ADR-0033: moving an account.
   'home.charts.range_': ['3', '6', '12', '24'],
   'account.books.': ['business', 'rental'],
+  // ADR-0037: entity types, the return each files, how owners are paid, and the owner-on-payroll notes.
+  'setup.type.': [...BUSINESS_TYPES, ...LEGACY_BUSINESS_TYPES],
+  'setup.form.': ['schedule_c', 'form_1065', 'form_1120s', 'form_1120'],
+  'setup.owner_pay.': ['draws', 'guaranteed_payments', 'reasonable_salary', 'salary'],
+  'payroll.owner_note.': ['not_an_employee_draws', 'not_an_employee_partner', 'reasonable_salary'],
   'account.move.cleared.': ['default_deposit_account', 'tax_savings_account'],
   'parties.add_': ['customer', 'vendor'],
   'parties.new_': ['customer', 'vendor'],

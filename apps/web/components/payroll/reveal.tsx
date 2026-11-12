@@ -18,13 +18,35 @@ export function Reveal({
   personId,
   masked,
   request,
-  format = (v) => v,
+  format,
 }: {
   workspaceId: string;
   personId: string;
   masked: string | null;
   request: RevealInput;
   format?: (value: string) => string;
+}) {
+  return (
+    <RevealValue
+      masked={masked}
+      load={() => browserApi.revealPayrollField(workspaceId, personId, request).then((r) => r.value)}
+      format={format}
+    />
+  );
+}
+
+/** The same for any masked value: `load` fetches the full one (a business's EIN, ADR-0037 §5). */
+export function RevealValue({
+  masked,
+  load,
+  format = (v) => v,
+  label,
+}: {
+  masked: string | null;
+  load: () => Promise<string | null>;
+  format?: (value: string) => string;
+  /** Names what Show reveals, for screen readers. */
+  label?: string;
 }) {
   const { t } = useI18n();
   const [value, setValue] = useState<string | null>(null);
@@ -48,12 +70,12 @@ export function Reveal({
           type="button"
           className="text-sm underline"
           disabled={busy}
+          aria-label={label ? `${t('payroll.show')} ${label}` : undefined}
           onClick={async () => {
             setBusy(true);
             setError(null);
             try {
-              const r = await browserApi.revealPayrollField(workspaceId, personId, request);
-              setValue(r.value ?? '');
+              setValue((await load()) ?? '');
             } catch (err) {
               setError(friendlyMessage(err, t));
             } finally {

@@ -20,6 +20,7 @@ import { AppError } from '../common/errors.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
 import type { BusinessEntity } from '../business/shared.js';
+import { employerIdentity } from '../business/registrations.js';
 import { formatTin } from './form-pdf.js';
 import { basesFor, PayrollTaxesService, type PaidCheck } from './payroll-taxes.service.js';
 import { auditView, formatAddress, payrollEntity, personName, sealer, type Ctx } from './shared.js';
@@ -395,14 +396,16 @@ export class YearEndService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('entity_id', '=', e.id)
       .executeTakeFirst();
-    const f = settings.filingAddress;
+    // ADR-0037: the EIN, EDD account and filing address are the business's registrations.
+    const id = await employerIdentity(trx, ctx, e.id);
+    const f = id.filingAddress;
     return {
       name: profile?.legal_name || e.name,
       address: f
         ? [[f.line1, f.line2].filter(Boolean).join(', '), `${f.city}, ${f.state} ${f.zip}`].join('\n')
         : (profile?.address ?? null),
       settings,
-      raw: { ein: settings.ein, caAccount: settings.caEmployerAccount, filing: f },
+      raw: { ein: id.ein, caAccount: id.caEmployerAccount, filing: f },
     };
   }
 

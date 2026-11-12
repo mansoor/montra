@@ -35,6 +35,7 @@ import { FieldCrypto } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { STORAGE_PORT, sha256, storageKey, type StoragePort } from '../storage/storage.js';
+import { employerIdentity, formatEddAccount, formatEin } from '../business/registrations.js';
 import { de4Doc, i9Doc, renderFormPdf, w4Doc, w9Doc, formatTin } from './form-pdf.js';
 import { PeopleService } from './people.service.js';
 import { auditView, conflict, formatAddress, payrollEntity, personName, sealer, type Ctx } from './shared.js';
@@ -840,16 +841,14 @@ export class FormsService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('entity_id', '=', entityId)
       .executeTakeFirst();
-    const settings = await trx
-      .selectFrom('app.payroll_settings')
-      .select(['ein', 'ca_employer_account'])
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('entity_id', '=', entityId)
-      .executeTakeFirst();
-    const ein = settings?.ein ? `${settings.ein.slice(0, 2)}-${settings.ein.slice(2)}` : null;
-    const a = settings?.ca_employer_account;
-    const account = a ? `${a.slice(0, 3)}-${a.slice(3, 7)}-${a.slice(7)}` : null;
-    return { name: b?.legal_name || name, address: b?.address ?? null, ein, account };
+    // ADR-0037: the employer's numbers are the business's registrations.
+    const id = await employerIdentity(trx, ctx, entityId);
+    return {
+      name: b?.legal_name || name,
+      address: b?.address ?? null,
+      ein: formatEin(id.ein),
+      account: formatEddAccount(id.caEmployerAccount),
+    };
   }
 
   private i9Row(trx: Trx, ctx: Ctx, personId: string): Promise<PayrollI9Row | undefined> {

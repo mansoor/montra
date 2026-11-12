@@ -768,6 +768,30 @@
     "partial",
     "phone shows spent by, attendees and purpose on the transaction screen and has the driver on Log a trip; assets are web only; not run on a device"
   ],
+  "BIZ-21": [
+    "done",
+    "Business → Settings → Legal and tax setup: entity type (LLC tax treatment part of the type), derived return form with a guide-only note off Schedule C, S-corp election date, fiscal year start driving the P&L ranges and the Schedule C summary; shown on Overview and Taxes (ADR-0037, migration 0037)"
+  ],
+  "BIZ-22": [
+    "done",
+    "Registrations card: EIN, IRS name, NAICS, state of formation, SOS number, formation date, FTB ID, EDD account, CDTFA permit, registered agent; tax account numbers masked"
+  ],
+  "BIZ-23": [
+    "done",
+    "EIN, EDD account and filing address moved from payroll_settings to business_profile with a backfill; payroll settings, worksheets, W-4/I-9 PDFs, W-2s, 1099s and EFW2 read them from the business; old payroll columns left unused"
+  ],
+  "BIZ-24": [
+    "done",
+    "DBA (county, expiry), city licence (expiry) and other registrations (label, number, issuer, expiry); nightly reminder 30 days before expiry (type reminder)"
+  ],
+  "BIZ-25": [
+    "done",
+    "payroll person isOwner; ownerNote from the entity type (draws, guaranteed payments, reasonable salary) shown on the add form and the person's page; a warning, not a refusal"
+  ],
+  "BIZ-26": [
+    "partial",
+    "masked to the last four with an audit-logged Show after a recent sign-in (stored in plain text, as payroll kept the EIN); phone shows type, return form and masked EIN read-only; editing is web only; not run on a device"
+  ],
   "REC-09": [
     "done",
     "set-aside suggested when business or rental income arrives; accepting transfers it. For a portfolio it uses your share after depreciation"
