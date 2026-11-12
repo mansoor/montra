@@ -91,6 +91,11 @@ Priority key: **M** = must for R1, **S** = should for R1, **C** = could / later.
 | ACC-05 | Opening balance and balance adjustments, with an audit trail. | M |
 | ACC-06 | Archive closed accounts while keeping history. | M |
 | ACC-07 | Retirement and investment accounts: a plan type (401(k), IRA, HSA…), linked to an employer's payslips with its contributions optional; values from statements; gain over time at account level as a chart and a table. No holdings, prices or advice. Added 2026-11-06. | S |
+| ACC-08 | Add a category to any set of books: a name, spending or income, and a group. Business and rental categories start on their form's "other" tax line, which can be changed. Added 2026-11-12. | S |
+| ACC-09 | Rename a category or move it to another group of the same books. Names are unique per set of books and kind, ignoring case; built-in categories (Uncategorized, FX, bank fees) can't be changed. | S |
+| ACC-10 | Archive a category instead of deleting it: it leaves the pickers, its rules pause and its history stops suggesting it, while past transactions, budgets and reports keep it. Unarchive brings it back. | S |
+| ACC-11 | On the phone, add a category from the category picker (the search text becomes its name) and use it straight away. Needs a connection. | S |
+| ACC-12 | A "Miscellaneous" spending category in personal books' Daily living group, in new books and added once to existing ones. | S |
 
 ### 3.2 Manual entry and camera capture
 

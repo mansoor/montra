@@ -9,7 +9,9 @@ test('turns AI off and still categorizes imports with rules', async ({ page }) =
   test.setTimeout(150_000);
   await onboardHousehold(page, `ai-off-${Date.now()}@example.com`, 'Everyday checking');
 
+  // Settings → AI: the AI group under Settings in the menu, then its AI tab.
   await nav(page, 'Settings');
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'AI', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Settings sections' })
     .getByRole('link', { name: 'AI', exact: true })
@@ -62,6 +64,7 @@ test('turns AI off and still categorizes imports with rules', async ({ page }) =
 
   // No AI calls were made.
   await nav(page, 'Settings');
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'AI', exact: true }).click();
   await page.getByRole('link', { name: 'AI activity' }).click();
   await expect(page.getByText('No AI activity yet.')).toBeVisible();
 });

@@ -32,6 +32,26 @@
     "done",
     "plan types, payslip routing and optional employer contributions, statement values against Investment gains and losses, gain and return by period; the phone and PDF statements are not done (ADR-0025)"
   ],
+  "ACC-08": [
+    "done",
+    "POST categories (entity, name, kind, group; default group by kind; business and rental default to Schedule C L27a/L6 and Schedule E L19/L3); Settings -> Workspace -> Categories (ADR-0040)"
+  ],
+  "ACC-09": [
+    "done",
+    "PATCH categories/:id renames or moves within the books; case-insensitive unique names per books and kind; built-in (system-role) categories refused"
+  ],
+  "ACC-10": [
+    "done",
+    "archive and unarchive (archived_at); archived categories leave GET categories, the sync pull, AI options, rules (skipped) and payee and item history; kept on transactions and reports; ?include=archived lists them"
+  ],
+  "ACC-11": [
+    "done",
+    "phone CategoryPicker: Add a category (search text as name, kind, books, group), created online then synced and picked"
+  ],
+  "ACC-12": [
+    "done",
+    "Miscellaneous in the personal template's Daily living; migration 0040 adds it once to existing personal books (app.add_miscellaneous_category)"
+  ],
   "TXN-01": [
     "done",
     "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"

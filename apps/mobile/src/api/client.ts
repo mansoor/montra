@@ -84,6 +84,8 @@ import type {
   UpdateGoalRequest,
   UploadDto,
   WorkspaceDto,
+  CategoryDto,
+  CategoryGroupDto,
 } from '@montra/schemas';
 
 /** Review edits sent from the phone (RCP-06): line categories and amounts in minor units. */
@@ -344,6 +346,19 @@ export function createApi(opts: ApiOptions) {
     matchReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/match`),
     rejectReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/reject`),
     deleteReceipt: (w: string, id: string) => request<void>('DELETE', `${ws(w)}/receipts/${id}`),
+
+    // ----- Categories (ACC-08): add one from the category picker. The sync pull brings it to the store. ------
+    categoryGroups: async (w: string, entityId: string) =>
+      (
+        await request<{ data: CategoryGroupDto[] }>(
+          'GET',
+          `${ws(w)}/category-groups?entityId=${encodeURIComponent(entityId)}`,
+        )
+      ).data,
+    createCategory: (
+      w: string,
+      input: { entityId: string; name: string; type: 'income' | 'expense'; groupId?: string },
+    ) => request<CategoryDto>('POST', `${ws(w)}/categories`, input),
 
     // ----- Business (08 §3): reads, and logging a trip. Invoices and bills are written on the web. ------------
     businesses: async (w: string) =>

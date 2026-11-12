@@ -24,7 +24,10 @@ import {
   type AccountDto,
   type AccountMovePreviewDto,
   type CategoryDto,
+  type CategoryGroupDto,
+  CreateCategoryRequest,
   type LedgerAccountDto,
+  UpdateCategoryRequest,
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
@@ -33,6 +36,7 @@ import { parse } from '../common/zod.js';
 import { AccountMoveService } from './account-move.service.js';
 import { AccountsService } from './accounts.service.js';
 import { CardsService } from './cards.service.js';
+import { CategoriesService } from './categories.service.js';
 import { ValuationsService } from './valuations.service.js';
 
 @Controller('v1/workspaces/:workspaceId')
@@ -43,6 +47,7 @@ export class AccountsController {
     @Inject(ValuationsService) private readonly valuationsService: ValuationsService,
     @Inject(CardsService) private readonly cards: CardsService,
     @Inject(AccountMoveService) private readonly moves: AccountMoveService,
+    @Inject(CategoriesService) private readonly categoriesService: CategoriesService,
   ) {}
 
   /**
@@ -209,13 +214,50 @@ export class AccountsController {
     };
   }
 
+  /** Active categories; `?include=archived` adds the archived ones, flagged (ACC-10). */
   @Get('categories')
   async categories(
     @Ctx() ctx: RequestContext,
     @Query('entityId') entityId?: string,
+    @Query('include') include?: string,
   ): Promise<{ data: CategoryDto[] }> {
+    const entity = entityId ? parse(z.uuid(), entityId) : undefined;
     return {
-      data: await this.accounts.categories(dbCtx(ctx), entityId ? parse(z.uuid(), entityId) : undefined),
+      data:
+        include === 'archived'
+          ? await this.categoriesService.list(dbCtx(ctx), { entityId: entity, includeArchived: true })
+          : await this.accounts.categories(dbCtx(ctx), entity),
     };
+  }
+
+  /** An entity's category groups, to choose where a new category goes (ACC-08). */
+  @Get('category-groups')
+  async categoryGroups(
+    @Ctx() ctx: RequestContext,
+    @Query('entityId') entityId?: string,
+  ): Promise<{ data: CategoryGroupDto[] }> {
+    return {
+      data: await this.categoriesService.groups(dbCtx(ctx), entityId ? parse(z.uuid(), entityId) : undefined),
+    };
+  }
+
+  /** Adds a category to an entity (ACC-08). */
+  @Post('categories')
+  createCategory(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<CategoryDto> {
+    return this.categoriesService.create(dbCtx(ctx), parse(CreateCategoryRequest, body));
+  }
+
+  /** Renames, moves, archives or unarchives a category (ACC-09, ACC-10). */
+  @Patch('categories/:categoryId')
+  updateCategory(
+    @Ctx() ctx: RequestContext,
+    @Param('categoryId') categoryId: string,
+    @Body() body: unknown,
+  ): Promise<CategoryDto> {
+    return this.categoriesService.update(
+      dbCtx(ctx),
+      parse(z.uuid(), categoryId),
+      parse(UpdateCategoryRequest, body),
+    );
   }
 }

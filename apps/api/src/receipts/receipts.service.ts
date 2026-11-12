@@ -60,6 +60,7 @@ import {
   Categorizer,
   ruleRecord,
   toDto,
+  withoutArchived,
   type StoredCategorization,
 } from '../categorization/categorizer.service.js';
 import { MerchantDirectory } from '../categorization/merchants.js';
@@ -628,7 +629,7 @@ export class ReceiptsService {
       .where('enabled', '=', true)
       .where('scope', '=', 'receipt_line')
       .execute();
-    const { rules } = compileRules(ruleRows.map(ruleRecord));
+    const rules = withoutArchived(compileRules(ruleRows.map(ruleRecord)).rules, prepared.archivedCategoryIds);
     const date = header.receiptDate ?? (await this.today(trx, ctx));
     const exponent = minorUnits(header.currency);
     const entityOf = (categoryId: string) => prepared.categoryById.get(categoryId)?.entityId ?? entityId;
@@ -644,7 +645,10 @@ export class ReceiptsService {
         out[i] = { ...l, ...byRule, entityId: byRule.entityId ?? entityOf(byRule.categoryId) };
         continue;
       }
-      const past = history.get(itemKeyOf(l.rawText));
+      const remembered = history.get(itemKeyOf(l.rawText));
+      // An item last filed under a category since archived is decided afresh (ACC-10).
+      const past =
+        remembered && !prepared.archivedCategoryIds.has(remembered.categoryId) ? remembered : undefined;
       if (past) {
         out[i] = {
           ...l,

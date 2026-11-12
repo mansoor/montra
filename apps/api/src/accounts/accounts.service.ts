@@ -433,12 +433,22 @@ export class AccountsService {
       let q = trx
         .selectFrom('app.ledger_account as a')
         .leftJoin('app.category_group as g', 'g.id', 'a.category_group_id')
-        .select(['a.id', 'a.entity_id', 'a.name', 'a.type', 'a.tax_line_code', 'g.name as group_name'])
+        .select([
+          'a.id',
+          'a.entity_id',
+          'a.name',
+          'a.type',
+          'a.tax_line_code',
+          'a.category_group_id',
+          'a.system_role',
+          'g.name as group_name',
+        ])
         .where('a.workspace_id', '=', ctx.workspaceId)
         .where('a.is_category', '=', true)
         .where('a.archived_at', 'is', null)
         .orderBy('g.sort_order')
-        .orderBy('a.sort_order');
+        .orderBy('a.sort_order')
+        .orderBy('a.name');
       if (entityId) q = q.where('a.entity_id', '=', entityId);
       return (await q.execute()).map((r) => ({
         id: r.id,
@@ -447,6 +457,9 @@ export class AccountsService {
         type: r.type as 'income' | 'expense',
         group: r.group_name,
         taxLineCode: r.tax_line_code,
+        groupId: r.category_group_id,
+        archived: false,
+        fixed: r.system_role !== null,
       }));
     });
   }
