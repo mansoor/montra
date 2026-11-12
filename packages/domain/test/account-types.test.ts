@@ -9,6 +9,7 @@ import {
   balancesOn,
   bpsToPercent,
   calendarDate,
+  canSpendFrom,
   kindsWhere,
   percentToBps,
 } from '../src/index.js';
@@ -51,6 +52,27 @@ describe('account types (ADR-0023)', () => {
       const t = ACCOUNT_PROFILES[kind];
       expect(t.balanceWord === 'owed').toBe(t.side === 'liability');
     }
+  });
+});
+
+describe('canSpendFrom', () => {
+  it('offers what purchases are paid from, and not retirement plans, investments, property or loans', () => {
+    expect(kindsWhere((t) => t.spending)).toEqual([
+      'checking',
+      'savings',
+      'cash',
+      'credit_card',
+      'line_of_credit',
+      'liability',
+    ]);
+    expect(canSpendFrom({ kind: 'investment' })).toBe(false);
+    expect(canSpendFrom({ kind: 'loan' })).toBe(false);
+    expect(canSpendFrom({ kind: 'credit_card' })).toBe(true);
+  });
+
+  it('never offers an archived account', () => {
+    expect(canSpendFrom({ kind: 'checking', archived: true })).toBe(false);
+    expect(canSpendFrom({ kind: 'checking', archived: false })).toBe(true);
   });
 });
 

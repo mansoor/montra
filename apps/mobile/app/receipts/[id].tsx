@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { canSpendFrom } from '@montra/domain';
 import type { CategoryDto, ReceiptDto } from '@montra/schemas';
 import { config } from '../../src/config';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
@@ -28,7 +29,7 @@ export default function ReceiptReview() {
   const { state: session, api, token } = useSession();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
-  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter((a) => !a.archived);
+  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(canSpendFrom);
   const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
   const [bearer, setBearer] = useState<string | null>(null);
   const [picked, setPicked] = useState<Map<string, string | null>>(new Map());
