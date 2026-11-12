@@ -52,6 +52,8 @@ export class SyncService {
       for (const r of page.rows) {
         if (r.table_name === 'transaction') ids.add(r.row_id);
         else if (r.table_name === 'transaction_tag') ids.add(r.row_id.split(':')[0]!);
+        // Its row id starts with the transaction's (ADR-0035 §7).
+        else if (r.table_name === 'expense_detail') ids.add(r.row_id.split(':')[0]!);
         else if (r.table_name === 'journal_entry') entryIds.push(r.row_id);
         else if (r.table_name === 'posting') postingIds.push(r.row_id);
       }

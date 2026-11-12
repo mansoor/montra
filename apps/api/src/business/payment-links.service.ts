@@ -23,7 +23,8 @@ export type PaymentOwner =
   | { billId: string }
   | { leaseId: string }
   | { depositLeaseId: string }
-  | { loanId: string };
+  | { loanId: string }
+  | { assetId: string };
 
 type StandardSpec = Extract<TransactionSpec, { type: 'standard' }>;
 
@@ -94,7 +95,7 @@ export class PaymentLinks {
       payee: string;
       payeeKey: string | null;
       description: string;
-      source: 'invoice' | 'bill' | 'rent' | 'security_deposit' | 'loan';
+      source: 'invoice' | 'bill' | 'rent' | 'security_deposit' | 'loan' | 'manual';
       owner: PaymentOwner;
       splits: SplitSpec[];
     },

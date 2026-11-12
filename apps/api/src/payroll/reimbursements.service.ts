@@ -54,138 +54,138 @@ export class ReimbursementsService {
   }
 
   async create(ctx: Ctx, req: CreateReimbursementRequest): Promise<ReimbursementDto> {
-    return this.db.run(ctx, async (trx) => {
-      const e = await payrollEntity(trx, ctx, req.entityId);
-      const person = await trx
-        .selectFrom('app.payroll_person')
-        .selectAll()
+    return this.db.run(ctx, (trx) => this.createIn(trx, ctx, req));
+  }
+
+  async createIn(trx: Trx, ctx: Ctx, req: CreateReimbursementRequest): Promise<ReimbursementDto> {
+    const e = await payrollEntity(trx, ctx, req.entityId);
+    const person = await trx
+      .selectFrom('app.payroll_person')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', req.entityId)
+      .where('id', '=', req.personId)
+      .executeTakeFirst();
+    if (!person) throw notFound('Person');
+    const category = await trx
+      .selectFrom('app.ledger_account')
+      .select(['id', 'type', 'is_category'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('entity_id', '=', req.entityId)
+      .where('id', '=', req.expenseAccountId)
+      .executeTakeFirst();
+    if (!category || category.type !== 'expense' || !category.is_category) {
+      throw unprocessable('payroll.reimbursement_category', 'Choose an expense category of this business');
+    }
+    const files = [...new Set(req.fileIds)];
+    if (files.length) {
+      const found = await trx
+        .selectFrom('app.file')
+        .select(['id', 'sealed'])
         .where('workspace_id', '=', ctx.workspaceId)
-        .where('entity_id', '=', req.entityId)
-        .where('id', '=', req.personId)
-        .executeTakeFirst();
-      if (!person) throw notFound('Person');
-      const category = await trx
-        .selectFrom('app.ledger_account')
-        .select(['id', 'type', 'is_category'])
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('entity_id', '=', req.entityId)
-        .where('id', '=', req.expenseAccountId)
-        .executeTakeFirst();
-      if (!category || category.type !== 'expense' || !category.is_category) {
-        throw unprocessable('payroll.reimbursement_category', 'Choose an expense category of this business');
+        .where('id', 'in', files)
+        .where('deleted_at', 'is', null)
+        .execute();
+      if (found.length !== files.length || found.some((f) => f.sealed)) {
+        throw unprocessable('payroll.file_not_found', 'Upload the receipt first');
       }
-      const files = [...new Set(req.fileIds)];
-      if (files.length) {
-        const found = await trx
-          .selectFrom('app.file')
-          .select(['id', 'sealed'])
-          .where('workspace_id', '=', ctx.workspaceId)
-          .where('id', 'in', files)
-          .where('deleted_at', 'is', null)
-          .execute();
-        if (found.length !== files.length || found.some((f) => f.sealed)) {
-          throw unprocessable('payroll.file_not_found', 'Upload the receipt first');
-        }
-      }
-      if (req.spentOn > todayIn(e.timeZone)) {
-        throw unprocessable('payroll.reimbursement_future', 'The spending date is in the future');
-      }
-      const row = await trx
-        .insertInto('app.reimbursement')
-        .values({
-          workspace_id: ctx.workspaceId,
-          id: newId(),
-          entity_id: req.entityId,
-          person_id: person.id,
-          person_name: personName(person),
-          spent_on: req.spentOn,
-          description: req.description,
-          amount_minor: BigInt(req.amount),
-          currency: e.currency,
-          expense_account_id: req.expenseAccountId,
-          file_ids: files,
-          created_by: ctx.userId,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      return (await this.dtos(trx, ctx, [row]))[0]!;
-    });
+    }
+    if (req.spentOn > todayIn(e.timeZone)) {
+      throw unprocessable('payroll.reimbursement_future', 'The spending date is in the future');
+    }
+    const row = await trx
+      .insertInto('app.reimbursement')
+      .values({
+        workspace_id: ctx.workspaceId,
+        id: newId(),
+        entity_id: req.entityId,
+        person_id: person.id,
+        person_name: personName(person),
+        spent_on: req.spentOn,
+        description: req.description,
+        amount_minor: BigInt(req.amount),
+        currency: e.currency,
+        expense_account_id: req.expenseAccountId,
+        file_ids: files,
+        created_by: ctx.userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    return (await this.dtos(trx, ctx, [row]))[0]!;
   }
 
   async decide(ctx: Ctx, id: string, req: DecideReimbursementRequest): Promise<ReimbursementDto> {
-    return this.db.run(ctx, async (trx) => {
-      const r = await this.row(trx, ctx, id);
-      const e = await payrollEntity(trx, ctx, r.entity_id);
-      if (BigInt(r.version) !== BigInt(req.version)) throw conflict();
-      if (r.status !== 'submitted') {
-        throw new AppError(
-          409,
-          'payroll.reimbursement_decided',
-          'This reimbursement has already been decided',
-        );
-      }
-      if (req.decision === 'decline') {
-        await trx
-          .updateTable('app.reimbursement')
-          .set({
-            status: 'declined',
-            decided_by: ctx.userId,
-            decided_at: new Date(),
-            decline_reason: req.reason || null,
-          })
-          .where('workspace_id', '=', ctx.workspaceId)
-          .where('id', '=', id)
-          .execute();
-        return (await this.dtos(trx, ctx, [await this.row(trx, ctx, id)]))[0]!;
-      }
-      const person = await trx
-        .selectFrom('app.payroll_person')
-        .select(['kind', 'vendor_party_id'])
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', r.person_id)
-        .executeTakeFirstOrThrow();
-      let billId: string | null = null;
-      if (person.kind === 'contractor') {
-        if (!person.vendor_party_id) {
-          throw unprocessable('payroll.no_vendor', 'This contractor has no vendor record to bill');
-        }
-        const today = todayIn(e.timeZone);
-        billId = newId();
-        await trx
-          .insertInto('app.bill')
-          .values({
-            workspace_id: ctx.workspaceId,
-            id: billId,
-            entity_id: r.entity_id,
-            party_id: person.vendor_party_id,
-            reference: 'Reimbursement',
-            bill_date: today,
-            due_date: today,
-            currency: r.currency,
-            amount_minor: BigInt(r.amount_minor),
-            expense_account_id: r.expense_account_id,
-            notes: r.description,
-            attachment_ids: r.file_ids,
-            created_by: ctx.userId,
-          })
-          .execute();
-      }
+    return this.db.run(ctx, (trx) => this.decideIn(trx, ctx, id, req));
+  }
+
+  async decideIn(trx: Trx, ctx: Ctx, id: string, req: DecideReimbursementRequest): Promise<ReimbursementDto> {
+    const r = await this.row(trx, ctx, id);
+    const e = await payrollEntity(trx, ctx, r.entity_id);
+    if (BigInt(r.version) !== BigInt(req.version)) throw conflict();
+    if (r.status !== 'submitted') {
+      throw new AppError(409, 'payroll.reimbursement_decided', 'This reimbursement has already been decided');
+    }
+    if (req.decision === 'decline') {
       await trx
         .updateTable('app.reimbursement')
         .set({
-          status: 'approved',
-          pay_via: person.kind === 'contractor' ? 'bill' : 'pay_run',
-          bill_id: billId,
+          status: 'declined',
           decided_by: ctx.userId,
           decided_at: new Date(),
+          decline_reason: req.reason || null,
         })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', id)
         .execute();
-      // An employee's joins a draft pay run they're on straight away, so the draft shows it.
-      if (person.kind === 'employee') await this.runs.refreshDraftsFor(trx, ctx, r.person_id);
       return (await this.dtos(trx, ctx, [await this.row(trx, ctx, id)]))[0]!;
-    });
+    }
+    const person = await trx
+      .selectFrom('app.payroll_person')
+      .select(['kind', 'vendor_party_id'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', r.person_id)
+      .executeTakeFirstOrThrow();
+    let billId: string | null = null;
+    if (person.kind === 'contractor') {
+      if (!person.vendor_party_id) {
+        throw unprocessable('payroll.no_vendor', 'This contractor has no vendor record to bill');
+      }
+      const today = todayIn(e.timeZone);
+      billId = newId();
+      await trx
+        .insertInto('app.bill')
+        .values({
+          workspace_id: ctx.workspaceId,
+          id: billId,
+          entity_id: r.entity_id,
+          party_id: person.vendor_party_id,
+          reference: 'Reimbursement',
+          bill_date: today,
+          due_date: today,
+          currency: r.currency,
+          amount_minor: BigInt(r.amount_minor),
+          expense_account_id: r.expense_account_id,
+          notes: r.description,
+          attachment_ids: r.file_ids,
+          created_by: ctx.userId,
+        })
+        .execute();
+    }
+    await trx
+      .updateTable('app.reimbursement')
+      .set({
+        status: 'approved',
+        pay_via: person.kind === 'contractor' ? 'bill' : 'pay_run',
+        bill_id: billId,
+        decided_by: ctx.userId,
+        decided_at: new Date(),
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
+    // An employee's joins a draft pay run they're on straight away, so the draft shows it.
+    if (person.kind === 'employee') await this.runs.refreshDraftsFor(trx, ctx, r.person_id);
+    return (await this.dtos(trx, ctx, [await this.row(trx, ctx, id)]))[0]!;
   }
 
   /** A receipt, served only through its reimbursement. */

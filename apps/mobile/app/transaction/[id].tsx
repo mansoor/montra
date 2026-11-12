@@ -8,6 +8,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { canSpendFrom } from '@montra/domain';
 import type { CategoryDto, TransactionDto, UpdateTransactionRequest } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
+import { expenseLines } from '../../src/features/business';
 import { fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
@@ -79,6 +80,8 @@ export default function TransactionDetail() {
   // How the category was chosen ("Chosen by you", a rule, the AI): only while it is still that category.
   const how = draft.categoryId === row.categoryId ? row.explanation : null;
   const receipt = fresh !== undefined ? fresh : (row.server?.receipt ?? null);
+  // BIZ-18: who spent and, for a meal, who was there and why. Entered on the web.
+  const business = expenseLines(row.server?.expenseDetail);
   const canAdd = !row.pending && Boolean(row.amount?.startsWith('-')) && !row.server?.managedBy;
   const receiptState: ReceiptState | null = receipt
     ? receipt.status === 'processing'
@@ -138,6 +141,19 @@ export default function TransactionDetail() {
           <Small>{t(RECEIPT_LABEL[receiptState])}</Small>
         ) : null}
       </Card>
+      {business ? (
+        <Card testID="txn-expense-detail">
+          {business.spentBy ? (
+            <Row
+              title={t('expense.spent_by')}
+              subtitle={business.spentBy === 'owner' ? t('expense.spent_by_owner') : business.spentBy}
+            />
+          ) : null}
+          {business.attendees ? <Row title={t('expense.attendees')} subtitle={business.attendees} /> : null}
+          {business.purpose ? <Row title={t('expense.purpose')} subtitle={business.purpose} /> : null}
+          {business.mealHint ? <Small>{t('expense.meal_hint')}</Small> : null}
+        </Card>
+      ) : null}
       <Field
         label={t('mobile.txn.payee')}
         value={draft.payee ?? ''}
