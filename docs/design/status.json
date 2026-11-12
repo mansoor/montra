@@ -508,6 +508,10 @@
     "done",
     "Amazon Retail.OrderHistory / Items CSV import on the receipts page (one receipt per order, per-item tax, idempotent, matched); invoice PDFs through receipt upload"
   ],
+  "RCP-13": [
+    "done",
+    "ReceiptDto.likelyDuplicates: same date, total and currency, same store when both name one (ignoring case, punctuation and a store number); flagged in the web and phone lists and review screens, with Discard this copy (soft delete, files kept to retention)"
+  ],
   "CUR-09": [
     "done",
     "trips page: dates and currency; transactions in the window are tagged (existing and new); receipts expect the trip currency"

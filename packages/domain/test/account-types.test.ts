@@ -9,7 +9,9 @@ import {
   balancesOn,
   bpsToPercent,
   calendarDate,
+  canSpendFrom,
   kindsWhere,
+  receiptAccountId,
   percentToBps,
 } from '../src/index.js';
 
@@ -51,6 +53,43 @@ describe('account types (ADR-0023)', () => {
       const t = ACCOUNT_PROFILES[kind];
       expect(t.balanceWord === 'owed').toBe(t.side === 'liability');
     }
+  });
+});
+
+describe('canSpendFrom', () => {
+  it('offers what purchases are paid from, and not retirement plans, investments, property or loans', () => {
+    expect(kindsWhere((t) => t.spending)).toEqual([
+      'checking',
+      'savings',
+      'cash',
+      'credit_card',
+      'line_of_credit',
+      'liability',
+    ]);
+    expect(canSpendFrom({ kind: 'investment' })).toBe(false);
+    expect(canSpendFrom({ kind: 'loan' })).toBe(false);
+    expect(canSpendFrom({ kind: 'credit_card' })).toBe(true);
+  });
+
+  it('never offers an archived account', () => {
+    expect(canSpendFrom({ kind: 'checking', archived: true })).toBe(false);
+    expect(canSpendFrom({ kind: 'checking', archived: false })).toBe(true);
+  });
+});
+
+describe('receiptAccountId', () => {
+  const accounts = [
+    { id: 'chk', last4: '1111' },
+    { id: 'visa', last4: '4242' },
+    { id: 'amex', last4: null },
+  ];
+  it('picks the card whose last four digits the receipt shows', () => {
+    expect(receiptAccountId(accounts, '4242', ['chk'])).toBe('visa');
+  });
+  it('otherwise the most recently used, then the first', () => {
+    expect(receiptAccountId(accounts, '9999', [null, 'gone', 'amex', 'chk'])).toBe('amex');
+    expect(receiptAccountId(accounts, null)).toBe('chk');
+    expect(receiptAccountId([], '4242')).toBeNull();
   });
 });
 

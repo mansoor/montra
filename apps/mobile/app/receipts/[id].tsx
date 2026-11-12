@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { canSpendFrom, receiptAccountId } from '@montra/domain';
 import type { CategoryDto, ReceiptDto } from '@montra/schemas';
 import { config } from '../../src/config';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
@@ -19,6 +20,8 @@ import {
 } from '../../src/features/receipt-capture';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
+import { Icon } from '../../src/ui/icons';
+import { SidePanel } from '../../src/ui/SidePanel';
 import { useTheme } from '../../src/ui/theme';
 
 export default function ReceiptReview() {
@@ -28,7 +31,11 @@ export default function ReceiptReview() {
   const { state: session, api, token } = useSession();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
-  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter((a) => !a.archived);
+  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(canSpendFrom);
+  const history = useLocal((s) => s.listTransactions({ limit: 200 })) ?? [];
+  // Which account a new transaction from this receipt is paid from: chosen, else the card the receipt names.
+  const [chosenAccount, setChosenAccount] = useState<string | null>(null);
+  const [choosingAccount, setChoosingAccount] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
   const [bearer, setBearer] = useState<string | null>(null);
   const [picked, setPicked] = useState<Map<string, string | null>>(new Map());
@@ -75,6 +82,15 @@ export default function ReceiptReview() {
   if (!receipt)
     return <Screen>{error ? <Banner tone="danger" text={error} /> : <Body muted>…</Body>}</Screen>;
   const open = receipt.status === 'inbox' || receipt.status === 'needs_review';
+  const twin = receipt.likelyDuplicates[0];
+  const payFromId =
+    chosenAccount ??
+    receiptAccountId(
+      accounts,
+      receipt.cardLast4,
+      history.map((h) => h.accountId),
+    );
+  const payFrom = accounts.find((a) => a.id === payFromId);
   const missing = uncategorizedLines(receipt).length;
   const stalled = stalledMessage(receipt);
 
@@ -96,6 +112,41 @@ export default function ReceiptReview() {
           tone="warning"
           text={t('mobile.receipts.gap', { amount: fmtMoney(receipt.validationGap, receipt.currency) })}
         />
+      ) : null}
+      {twin ? (
+        <Card>
+          <Banner tone="warning" text={t('mobile.receipts.duplicate_note')} />
+          <Row
+            title={t('mobile.receipts.duplicate_open')}
+            subtitle={[
+              twin.merchant,
+              twin.receiptDate ? fmtDate(twin.receiptDate) : null,
+              twin.total ? fmtMoney(twin.total, receipt.currency) : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+            onPress={() => router.push(`/receipts/${twin.id}`)}
+            testID="receipt-duplicate"
+          />
+          {receipt.status !== 'matched' ? (
+            <Button
+              kind="danger"
+              label={t('mobile.receipts.discard_copy')}
+              busy={busy}
+              onPress={() => {
+                setBusy(true);
+                api.deleteReceipt(ws, receipt.id).then(
+                  () => router.back(),
+                  (err: unknown) => {
+                    setError((err as Error).message);
+                    setBusy(false);
+                  },
+                );
+              }}
+              testID="receipt-discard"
+            />
+          ) : null}
+        </Card>
       ) : null}
       {bearer
         ? receipt.fileIds.map((fileId, i) => (
@@ -177,20 +228,28 @@ export default function ReceiptReview() {
               }
             />
           ))}
-          {accounts[0] ? (
-            <Button
-              kind="secondary"
-              label={t('mobile.receipts.record', { account: accounts[0].name })}
-              busy={busy}
-              onPress={() =>
-                void act(() =>
-                  api.applyReceipt(ws, receipt.id, {
-                    createTransaction: { accountId: accounts[0]!.id },
-                    version: receipt.version,
-                  }),
-                )
-              }
-            />
+          {payFrom ? (
+            <>
+              <Row
+                title={t('mobile.receipts.paid_from')}
+                subtitle={payFrom.name}
+                onPress={() => setChoosingAccount(true)}
+                testID="receipt-paid-from"
+              />
+              <Button
+                kind="secondary"
+                label={t('mobile.receipts.record', { account: payFrom.name })}
+                busy={busy}
+                onPress={() =>
+                  void act(() =>
+                    api.applyReceipt(ws, receipt.id, {
+                      createTransaction: { accountId: payFrom.id },
+                      version: receipt.version,
+                    }),
+                  )
+                }
+              />
+            </>
           ) : null}
           <Button
             kind="secondary"
@@ -207,6 +266,27 @@ export default function ReceiptReview() {
         </>
       ) : null}
       {error ? <Banner tone="danger" text={error} /> : null}
+      <SidePanel
+        visible={choosingAccount}
+        title={t('mobile.receipts.paid_from')}
+        closeLabel={t('mobile.common.cancel')}
+        onClose={() => setChoosingAccount(false)}
+        testID="receipt-account-list"
+      >
+        {accounts.map((a, i) => (
+          <Row
+            key={a.id}
+            title={a.name}
+            subtitle={t(`account.kind.${a.kind}`)}
+            right={a.id === payFrom?.id ? <Icon name="check" size={18} color={th.primary} /> : undefined}
+            onPress={() => {
+              setChosenAccount(a.id);
+              setChoosingAccount(false);
+            }}
+            last={i === accounts.length - 1}
+          />
+        ))}
+      </SidePanel>
       <CategoryPicker
         visible={picking !== null}
         categories={categories}

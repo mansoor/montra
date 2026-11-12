@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { canSpendFrom } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { ReceiptReview } from '@/components/receipts/receipt-review';
@@ -37,7 +38,7 @@ export default async function ReceiptPage({
         receipt={receipt}
         categories={categories}
         members={members.filter((m) => m.status === 'active')}
-        accounts={accounts.filter((a) => !a.archived)}
+        accounts={accounts.filter(canSpendFrom)}
       />
     </div>
   );

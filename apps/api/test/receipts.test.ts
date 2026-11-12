@@ -328,6 +328,22 @@ describe('the inbox (IMP-11)', () => {
     expect(await splitsOf(applied.body.transactionId)).toEqual({ Groceries: '1100' });
   });
 
+  it('flags a receipt scanned twice as a likely duplicate, until one copy is discarded (RCP-13)', async () => {
+    const lines = ['11/02/2026', 'MUFFIN   4.50 N', 'COFFEE   3.00 N', 'TOTAL   7.50'];
+    const first = await capture(['CORNER BAKERY', ...lines]);
+    const again = await capture(['CORNER BAKERY #12', ...lines]);
+    const otherStore = await capture(['HILLTOP CAFE', ...lines]);
+    expect(again.likelyDuplicates).toEqual([
+      expect.objectContaining({ id: first.id, merchant: 'CORNER BAKERY', total: '750' }),
+    ]);
+    const firstNow = (await c.get(url(`/receipts/${first.id}`))).body;
+    expect(firstNow.likelyDuplicates.map((d: { id: string }) => d.id)).toEqual([again.id]);
+    expect(otherStore.likelyDuplicates).toEqual([]);
+
+    expect((await c.delete(url(`/receipts/${again.id}`))).status).toBe(204);
+    expect((await c.get(url(`/receipts/${first.id}`))).body.likelyDuplicates).toEqual([]);
+  });
+
   it('refuses to apply when the receipt differs from the charge', async () => {
     const receipt = await capture(['CVS', '10/25/2026', 'VITAMINS   12.00 T', 'TOTAL   12.00']);
     const other = await spend('2026-10-25', '-1500', 'CVS PHARMACY', checking);

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
 import type { CategoryDto, SuggestionDto } from '@montra/schemas';
-import { asCurrencyCode, minorUnits } from '@montra/domain';
+import { asCurrencyCode, canSpendFrom, minorUnits } from '@montra/domain';
 import { fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
@@ -125,8 +125,9 @@ export default function Capture() {
   const { state: session, api } = useSession();
   const { engine, store, state, touch } = useSync();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
+  // Only accounts purchases are paid from: no 401(k), IRA, brokerage, property or loans.
   const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(
-    (a) => !a.archived && !a.hidden,
+    (a) => !a.hidden && canSpendFrom(a),
   );
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
   const history = useLocal((s) => s.listTransactions({ limit: 500 })) ?? [];

@@ -1,10 +1,11 @@
 /**
- * Transaction detail and edit (DE-10 on the server): payee, date, category, memo, tags; splits are read-only. The receipt
- * button sits by the amount: it opens the receipt, or adds one.
+ * Transaction detail and edit (DE-10 on the server): payee, date, account, category, memo, tags; splits are read-only.
+ * The receipt button sits by the amount: it opens the receipt, or adds one.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { canSpendFrom } from '@montra/domain';
 import type { CategoryDto, TransactionDto, UpdateTransactionRequest } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
 import { expenseLines } from '../../src/features/business';
@@ -14,6 +15,7 @@ import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Banner, Body, Button, Card, Field, Row, Screen, Small } from '../../src/ui/components';
 import { Icon } from '../../src/ui/icons';
+import { SidePanel } from '../../src/ui/SidePanel';
 import { useTheme } from '../../src/ui/theme';
 
 export default function TransactionDetail() {
@@ -25,8 +27,10 @@ export default function TransactionDetail() {
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const row = useLocal((s) => s.getTransaction(id), [id]);
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
+  const allAccounts = useLocal((s) => s.getReference('accounts')) ?? [];
   const [draft, setDraft] = useState<LocalTransaction | null>(null);
   const [picking, setPicking] = useState(false);
+  const [choosingAccount, setChoosingAccount] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The receipt, fresh from the server: linking one doesn't always change the synced transaction.
   const [fresh, setFresh] = useState<TransactionDto['receipt'] | undefined>(undefined);
@@ -66,6 +70,13 @@ export default function TransactionDetail() {
   const categoryName = draft.categoryId
     ? (categories.find((c) => c.id === draft.categoryId)?.name ?? draft.categoryName)
     : null;
+  // The paying account can change on an income or expense nothing else manages, to another in the same currency.
+  const standard = row.server ? row.server.entries.some((e) => e.kind === 'standard') : true;
+  const canMove = standard && !row.server?.managedBy && row.amount !== null && row.accountId !== null;
+  const account = allAccounts.find((a) => a.id === draft.accountId);
+  const accountChoices = allAccounts.filter(
+    (a) => a.id === row.accountId || (canSpendFrom(a) && a.currency === row.currency),
+  );
   // How the category was chosen ("Chosen by you", a rule, the AI): only while it is still that category.
   const how = draft.categoryId === row.categoryId ? row.explanation : null;
   const receipt = fresh !== undefined ? fresh : (row.server?.receipt ?? null);
@@ -90,6 +101,7 @@ export default function TransactionDetail() {
     if (draft.payee !== row.payee) patch.payee = draft.payee;
     if (draft.date !== row.date) patch.date = draft.date as UpdateTransactionRequest['date'];
     if (draft.memo !== row.memo) patch.memo = draft.memo;
+    if (draft.accountId && draft.accountId !== row.accountId) patch.accountId = draft.accountId;
     if (draft.tags.join(',') !== row.tags.join(',')) patch.tags = draft.tags;
     if (!isSplit && draft.categoryId && draft.categoryId !== row.categoryId)
       patch.categoryId = draft.categoryId;
@@ -155,6 +167,14 @@ export default function TransactionDetail() {
         placeholder="YYYY-MM-DD"
         keyboardType="numbers-and-punctuation"
       />
+      <Row
+        title={t('mobile.txn.account')}
+        subtitle={[account?.name ?? '', canMove ? null : t('mobile.txn.account_fixed')]
+          .filter(Boolean)
+          .join(' · ')}
+        onPress={canMove ? () => setChoosingAccount(true) : undefined}
+        testID="ed-account"
+      />
       {isSplit ? (
         <Card>
           <Small>{t('mobile.txn.splits')}</Small>
@@ -196,6 +216,27 @@ export default function TransactionDetail() {
         autoCapitalize="none"
       />
       <Button label={t('mobile.txn.save')} onPress={() => void save()} testID="ed-save" />
+      <SidePanel
+        visible={choosingAccount}
+        title={t('mobile.txn.account')}
+        closeLabel={t('mobile.common.cancel')}
+        onClose={() => setChoosingAccount(false)}
+        testID="ed-account-list"
+      >
+        {accountChoices.map((a, i) => (
+          <Row
+            key={a.id}
+            title={a.name}
+            subtitle={t(`account.kind.${a.kind}`)}
+            right={a.id === draft.accountId ? <Icon name="check" size={18} color={th.primary} /> : undefined}
+            onPress={() => {
+              setDraft({ ...draft, accountId: a.id });
+              setChoosingAccount(false);
+            }}
+            last={i === accountChoices.length - 1}
+          />
+        ))}
+      </SidePanel>
       <CategoryPicker
         visible={picking}
         categories={categories}
