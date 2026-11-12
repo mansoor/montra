@@ -3,6 +3,7 @@
  * they're unit-tested.
  */
 import type { PayrollPersonDto } from '@montra/api-client';
+import { addDays, calendarDate } from '@montra/domain';
 
 export type OnboardingStep = 'details' | 'w4' | 'i9_section1' | 'i9_section2' | 'w9';
 
@@ -95,4 +96,38 @@ export function parseHours(text: string): string | undefined {
   const m = text.trim().match(/^(\d{1,6})(?:[.,](\d{1,3}))?$/);
   if (!m) return undefined;
   return String(BigInt(m[1]!) * 1000n + BigInt((m[2] ?? '').padEnd(3, '0') || '0'));
+}
+
+// ----- Staff time (PRL-23..28; ADR-0036) -----------------------------------------------------------------------------
+
+/** Every day of a pay period, for the daily hours grid. */
+export function periodDays(start: string, end: string): string[] {
+  const out: string[] = [];
+  for (let d = calendarDate(start); d <= end && out.length < 31; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+
+/** Like `hoursText`, keeping a minus sign: "-5600" → "-5.6". */
+export const signedHoursText = (milli: string): string =>
+  milli.startsWith('-') ? `-${hoursText(milli.slice(1))}` : hoursText(milli);
+
+/** "-2.5" → "-2500"; undefined when it isn't a number of hours. */
+export function parseSignedHours(text: string): string | undefined {
+  const t = text.trim();
+  const negative = t.startsWith('-');
+  const h = parseHours(negative ? t.slice(1) : t);
+  if (h === undefined) return undefined;
+  return negative && h !== '0' ? `-${h}` : h;
+}
+
+/** The hours in a daily grid, as thousandths, or undefined when a day isn't a number of hours (24 at most). */
+export function gridDays(values: Record<string, string>): { date: string; hoursMilli: string }[] | undefined {
+  const out: { date: string; hoursMilli: string }[] = [];
+  for (const [date, text] of Object.entries(values).sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (!text.trim()) continue;
+    const h = parseHours(text);
+    if (h === undefined || BigInt(h) > 24000n) return undefined;
+    if (h !== '0') out.push({ date, hoursMilli: h });
+  }
+  return out;
 }

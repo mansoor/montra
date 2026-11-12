@@ -21,6 +21,7 @@ export function InvoiceEditor({
   incomeCategories,
   today,
   invoice,
+  initialCustomerId,
 }: {
   workspaceId: string;
   entityId: string;
@@ -29,6 +30,8 @@ export function InvoiceEditor({
   incomeCategories: CategoryDto[];
   today: string;
   invoice?: InvoiceDto;
+  /** A customer to start with, such as the one a contractor timesheet links from. */
+  initialCustomerId?: string;
 }) {
   const router = useRouter();
   const { locale } = useI18n();
@@ -39,7 +42,9 @@ export function InvoiceEditor({
   const [rows, setRows] = useState<InvoiceRow[]>(
     invoice ? rowsOf(invoice) : [emptyRow('new-0', defaultCategory)],
   );
-  const [partyId, setPartyId] = useState(invoice?.partyId ?? customers.find((c) => c.id)?.id ?? NEW);
+  const [partyId, setPartyId] = useState(
+    invoice?.partyId ?? initialCustomerId ?? customers.find((c) => c.id)?.id ?? NEW,
+  );
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [issueDate, setIssueDate] = useState<string>(invoice?.issueDate ?? today);

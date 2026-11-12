@@ -231,6 +231,11 @@ export interface PaycheckTable {
   net_minor: Int8Default;
   employer_taxes_minor: Int8Default;
   transaction_id: string | null;
+  vacation_hours_milli: Int8Default;
+  sick_hours_milli: Int8Default;
+  vacation_payout_milli: Int8Default;
+  overtime_method: ColumnType<'manual' | 'daily', 'manual' | 'daily' | undefined, 'manual' | 'daily'>;
+  leave_over_allowed: Generated<boolean>;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -312,6 +317,7 @@ export interface PayrollSettingsTable {
   contact_name: string | null;
   contact_phone: string | null;
   contact_email: string | null;
+  workweek_starts: Generated<number>;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -362,6 +368,69 @@ export interface PayrollDepositTable {
   updated_at: Generated<Date>;
 }
 
+// ----- Staff time (migration 0036) ---------------------------------------------------------------------------------
+
+export type LeaveKindCol = 'vacation' | 'sick';
+export type LeaveMethodCol = 'none' | 'accrual' | 'grant';
+export type LeaveSourceCol = 'opening' | 'adjustment' | 'accrual' | 'grant' | 'carryover' | 'used' | 'payout';
+
+export interface LeavePolicyTable {
+  workspace_id: string;
+  entity_id: string;
+  kind: LeaveKindCol;
+  method: LeaveMethodCol;
+  accrue_milli: Int8 | null;
+  per_hours_milli: Int8 | null;
+  grant_milli: Int8 | null;
+  max_balance_milli: Int8 | null;
+  carryover_max_milli: Int8 | null;
+  use_cap_milli: Int8 | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface LeaveEntryTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  person_id: string;
+  kind: LeaveKindCol;
+  entry_date: CalendarDateCol;
+  source: LeaveSourceCol;
+  hours_milli: Int8;
+  leave_year: number | null;
+  paycheck_id: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface PaycheckDayTable {
+  workspace_id: string;
+  entity_id: string;
+  paycheck_id: string;
+  work_date: CalendarDateCol;
+  hours_milli: Int8;
+}
+
+export interface ContractorTimeTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  person_id: string;
+  work_date: CalendarDateCol;
+  hours_milli: Int8;
+  note: string | null;
+  customer_party_id: string | null;
+  rate_minor: Int8 | null;
+  bill_id: string | null;
+  version: Int8Default;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface PayrollDatabase {
   'app.payroll_person': PayrollPersonTable;
   'app.payroll_w4': PayrollW4Table;
@@ -376,6 +445,10 @@ export interface PayrollDatabase {
   'app.payroll_settings': PayrollSettingsTable;
   'app.payroll_de4': PayrollDe4Table;
   'app.payroll_deposit': PayrollDepositTable;
+  'app.leave_policy': LeavePolicyTable;
+  'app.leave_entry': LeaveEntryTable;
+  'app.paycheck_day': PaycheckDayTable;
+  'app.contractor_time': ContractorTimeTable;
 }
 
 export type PayrollPersonRow = Selectable<PayrollPersonTable>;
@@ -391,3 +464,7 @@ export type ReimbursementRow = Selectable<ReimbursementTable>;
 export type PayrollSettingsRow = Selectable<PayrollSettingsTable>;
 export type PayrollDe4Row = Selectable<PayrollDe4Table>;
 export type PayrollDepositRow = Selectable<PayrollDepositTable>;
+export type LeavePolicyRow = Selectable<LeavePolicyTable>;
+export type LeaveEntryRow = Selectable<LeaveEntryTable>;
+export type PaycheckDayRow = Selectable<PaycheckDayTable>;
+export type ContractorTimeRow = Selectable<ContractorTimeTable>;

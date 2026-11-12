@@ -137,6 +137,10 @@ export function PayrollHome({
         <Link href={`${base}/year-end`} className="underline">
           {t('payroll.year_end.link')}
         </Link>
+        {' · '}
+        <Link href={`${base}/time-off`} className="underline">
+          {t('payroll.time.link')}
+        </Link>
       </p>
 
       <section className="space-y-2" aria-labelledby="pay-runs">

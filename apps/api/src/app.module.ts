@@ -101,6 +101,8 @@ import { ReimbursementsService } from './payroll/reimbursements.service.js';
 import { BuiltInTaxEngine, PAYROLL_TAX_ENGINE } from './payroll/tax-engine.js';
 import { PayrollController } from './payroll/payroll.controller.js';
 import { PeopleService } from './payroll/people.service.js';
+import { LeaveService } from './payroll/leave.service.js';
+import { ContractorTimeService } from './payroll/contractor-time.service.js';
 import { BackupService } from './data/backup.service.js';
 import { AccountDataController, DataController, RestoresController } from './data/data.controller.js';
 import { OwnershipService } from './data/ownership.service.js';
@@ -261,6 +263,8 @@ export class AppModule {
         { provide: PAYROLL_TAX_ENGINE, useClass: BuiltInTaxEngine },
         PayrollTaxesService,
         YearEndService,
+        LeaveService,
+        ContractorTimeService,
         PropertiesService,
         RentService,
         LoansService,
