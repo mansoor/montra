@@ -1,7 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { nav, onboardHousehold } from './phase3-helpers';
 
-const open = (page: Page, summary: string) => page.locator('summary', { hasText: summary }).click();
+/** Opens a collapsed section; one left open after a save stays open. */
+const open = async (page: Page, summary: string) => {
+  const s = page.locator('summary', { hasText: summary }).first();
+  if (!(await s.evaluate((el) => (el.parentElement as HTMLDetailsElement).open))) await s.click();
+};
 
 /** A one-page PDF, enough for the upload to recognize it. */
 const PDF = Buffer.from(
