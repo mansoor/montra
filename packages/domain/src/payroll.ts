@@ -115,7 +115,7 @@ export const salaryPerPeriod = (annualMinor: bigint, frequency: PayFrequency): b
 export const hoursPay = (hoursMilli: bigint, rateMinor: bigint): bigint =>
   divRound(hoursMilli * rateMinor, 1000n);
 
-/** Overtime is paid at one and a half times the regular rate (FLSA; California daily overtime is entered as hours). */
+/** Overtime is paid at one and a half times the regular rate (FLSA and California; daily hours are split in `overtime.ts`). */
 export const overtimeRate = (rateMinor: bigint): bigint => divRound(rateMinor * 3n, 2n);
 
 export type PaycheckLineKind =
