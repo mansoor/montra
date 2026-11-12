@@ -47,8 +47,17 @@ export default async function MissingReceiptsPage({
                     {r.categoryId && name.get(r.categoryId) ? ` · ${name.get(r.categoryId)}` : ''}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <Money amount={r.amount} currency={list.currency} />
+                  {r.assetCandidate && (
+                    <Link
+                      href={`/w/${workspaceId}/business/${entityId}/assets?transactionId=${r.transactionId}`}
+                      className="text-sm underline"
+                      data-testid="record-as-asset"
+                    >
+                      {t('expense.record_as_asset')}
+                    </Link>
+                  )}
                   <Link
                     href={`/w/${workspaceId}/transactions/${r.transactionId}#receipt`}
                     className="btn-secondary"

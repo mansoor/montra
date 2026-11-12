@@ -3,6 +3,7 @@ import { CalendarDateDto, Id, MoneyDto } from './common.js';
 import { CategorizationDto, MerchantDto } from './ai.js';
 import { ForeignAmountDto, ForeignAmountInput, RateDto } from './fx.js';
 import { RECEIPT_STATUSES } from './receipts.js';
+import { ExpenseDetailDto } from './assets.js';
 
 export const SplitInput = z.object({
   /** A category, or any ledger account (e.g. mortgage principal, escrow) for advanced splits. */
@@ -120,7 +121,17 @@ export const TransactionDto = z.object({
   recurringItemId: z.string().nullable(),
   /** What owns this transaction's money side, if anything: it changes there, not here (ADR-0016..18). */
   managedBy: z
-    .enum(['payslip', 'invoice', 'bill', 'lease', 'security_deposit', 'loan', 'paycheck', 'payroll_deposit'])
+    .enum([
+      'payslip',
+      'invoice',
+      'bill',
+      'lease',
+      'security_deposit',
+      'loan',
+      'paycheck',
+      'payroll_deposit',
+      'asset',
+    ])
     .nullable(),
   /** CUR-03: the original foreign amount and rate when the purchase was made in another currency. */
   foreign: ForeignAmountDto.nullable(),
@@ -148,6 +159,11 @@ export const TransactionDto = z.object({
       }),
     )
     .nullable(),
+  /**
+   * Who spent, attendees and purpose when it's spending in a business (BIZ-18, ADR-0035 §7); null otherwise. Only the
+   * first business it touches.
+   */
+  expenseDetail: ExpenseDetailDto.nullable(),
   /** Signed amount from the paying account's view (negative = money out); null for manual journals. */
   amount: MoneyDto.nullable(),
   /** Scheduled occurrences have no entries until confirmed. */

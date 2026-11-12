@@ -8,6 +8,7 @@ import { JournalView } from '@/components/journal-view';
 import { TransactionFx } from '@/components/receipts/transaction-fx';
 import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 import { ReceiptButton, receiptButtonState } from '@/components/receipts/receipt-button';
+import { ExpenseDetailPanel } from '@/components/business/expense-detail';
 
 export const metadata: Metadata = { title: 'Transaction' };
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,16 @@ export default async function TransactionPage({
     ]),
   );
   const allProperties = properties.flat();
+  // BIZ-18: who spent and, for a meal, who was there and why. Payroll people need write access to the business.
+  const detail = transaction.expenseDetail;
+  const [people, parties] = detail
+    ? await load((api) =>
+        Promise.all([
+          api.listPayrollPeople(workspaceId, { entityId: detail.entityId }).catch(() => []),
+          api.listParties(workspaceId, { entityId: detail.entityId }).catch(() => []),
+        ]),
+      )
+    : [[], []];
   const splitEntity = categories.find((c) => c.id === transaction.splits?.[0]?.accountId)?.entityId;
   const canAllocate =
     transaction.amount !== null &&
@@ -124,6 +135,16 @@ export default async function TransactionPage({
           {line.deductibleBps < 10000 && ` ${t('tax_hint.partly', { percent: line.deductibleBps / 100 })}`}
         </p>
       ))}
+      {detail && (
+        <ExpenseDetailPanel
+          workspaceId={workspaceId}
+          transactionId={transaction.id}
+          detail={detail}
+          people={people.map((p) => ({ id: p.id, name: p.displayName }))}
+          parties={parties.flatMap((p) => (p.id ? [{ id: p.id, name: p.name }] : []))}
+          canEdit={workspace.role !== 'viewer'}
+        />
+      )}
       <TransactionFx workspaceId={workspaceId} transaction={transaction} foreignAccount={foreignAccount} />
       {receiptState === 'add' && (
         <section id="receipt" aria-labelledby="receipt-heading" className="card space-y-2">

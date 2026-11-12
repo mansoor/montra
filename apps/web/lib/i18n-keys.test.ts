@@ -117,6 +117,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'employers.frequency_': ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'yearly'],
   'members_report.range_': ['month', 'ytd', 'last_year'],
   'imports.kept_reason.': [
+    'asset',
     'bill',
     'invoice',
     'lease',
@@ -164,6 +165,11 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'rentals.type_': ['sfh', 'multi_family', 'condo', 'str', 'commercial'],
   'rentals.unit_': ['occupied', 'vacant', 'under_repair'],
   'rentals.method_': ['SL_27_5', 'SL_39'],
+  // Business assets and trips by driver (ADR-0035).
+  'assets.category_': ['computers', 'equipment', 'furniture', 'vehicle', 'software', 'other'],
+  'assets.method_': ['macrs_half_year', 'straight_line', 'expense_now'],
+  'assets.state_': ['in_use', 'assigned', 'disposed'],
+  'mileage.reimbursement_': ['submitted', 'approved', 'declined', 'paid'],
   'rentals.lease_': ['upcoming', 'active', 'ended'],
   'rentals.rent_': ['paid', 'partial', 'upcoming', 'due', 'late', 'waived'],
   'rentals.deposit_': ['received', 'returned', 'forfeited'],

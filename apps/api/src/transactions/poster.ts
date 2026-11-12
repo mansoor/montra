@@ -75,6 +75,8 @@ export type TransactionSpec =
       paycheckId?: string;
       /** The same for a payroll tax deposit (ADR-0034 §7). */
       payrollDepositId?: string;
+      /** The same for a business asset it bought or the sale of one (ADR-0035 §2, §5). */
+      assetId?: string;
       /** The payslip's employer: this deposit is the pay its expected income is waiting for (PAY-07). */
       employerId?: string;
       /**
@@ -98,7 +100,15 @@ export type TransactionSpec =
     };
 
 export type TransactionOwner =
-  'payslip' | 'invoice' | 'bill' | 'lease' | 'security_deposit' | 'loan' | 'paycheck' | 'payroll_deposit';
+  | 'payslip'
+  | 'invoice'
+  | 'bill'
+  | 'lease'
+  | 'security_deposit'
+  | 'loan'
+  | 'paycheck'
+  | 'payroll_deposit'
+  | 'asset';
 
 const OWNER_FIELDS: readonly (readonly [string, TransactionOwner])[] = [
   ['payslipId', 'payslip'],
@@ -109,6 +119,7 @@ const OWNER_FIELDS: readonly (readonly [string, TransactionOwner])[] = [
   ['loanId', 'loan'],
   ['paycheckId', 'paycheck'],
   ['payrollDepositId', 'payroll_deposit'],
+  ['assetId', 'asset'],
 ];
 
 /** What owns this transaction, if anything (ADR-0016..18). Its ledger side changes only through the owner. */
@@ -126,6 +137,7 @@ const OWNER_WORDS: Record<TransactionOwner, string> = {
   loan: 'a mortgage',
   paycheck: 'a pay run',
   payroll_deposit: 'a payroll tax deposit',
+  asset: 'an asset',
 };
 
 export function assertNotOwned(spec: unknown): void {

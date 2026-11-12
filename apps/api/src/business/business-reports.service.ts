@@ -39,6 +39,8 @@ import type {
 import { AiService } from '../ai/ai.service.js';
 import { Db } from '../db/database.js';
 import { BusinessService } from './business.service.js';
+import { GAIN_LOSS_SUBTYPE, MILEAGE_REIMBURSEMENTS_SUBTYPE } from './asset-accounts.js';
+import { assetCandidates } from './expense-details.js';
 import {
   businessEntity,
   taxedEntity,
@@ -333,9 +335,10 @@ export class BusinessReportsService {
         type: 'income' | 'expense';
         code: string | null;
         system_role: string | null;
+        subtype: string;
         amount: string;
       }>`
-        select a.id, a.name, a.type, a.tax_line_code as code, a.system_role,
+        select a.id, a.name, a.type, a.tax_line_code as code, a.system_role, a.subtype,
                sum(case when a.type = 'income' then -p.functional_amount_minor else p.functional_amount_minor end)::text as amount
           from app.posting p
           join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
@@ -359,6 +362,8 @@ export class BusinessReportsService {
         .where('entity_id', '=', e.id)
         .where('trip_date', '>=', `${y}-01-01`)
         .where('trip_date', '<=', `${y}-12-31`)
+        // Only the owner's own trips: a payroll person's is reimbursed through payroll instead (ADR-0035 §8).
+        .where('driver', '=', 'owner')
         .executeTakeFirst();
       const mileage = BigInt(trips?.total ?? '0');
 
@@ -366,8 +371,17 @@ export class BusinessReportsService {
       const unmapped: ScheduleCDto['unmapped'] = [];
       let grossReceipts = 0n;
       let otherIncome = 0n;
+      let assetSales = 0n;
+      // Car and truck expenses of the owner's vehicle: mileage paid back to staff isn't one (ADR-0035 §8).
+      let actualCar = 0n;
       for (const r of rows) {
         const amount = BigInt(r.amount);
+        // A sale of business property goes on Form 4797, not here (ADR-0035 §5).
+        if (r.subtype === GAIN_LOSS_SUBTYPE) {
+          assetSales += amount;
+          continue;
+        }
+        if (r.code === CAR_AND_TRUCK && r.subtype !== MILEAGE_REIMBURSEMENTS_SUBTYPE) actualCar += amount;
         if (r.code && known.has(r.code)) {
           const cur = byCode.get(r.code) ?? { amount: 0n, ids: [] };
           cur.amount += amount;
@@ -405,7 +419,6 @@ export class BusinessReportsService {
         if (rows.find((r) => r.id === u.categoryId)?.type === 'expense') totalExpenses += BigInt(u.amount);
       }
       const income = grossReceipts + otherIncome;
-      const actualCar = byCode.get(CAR_AND_TRUCK);
       return {
         entityId: e.id,
         year: y,
@@ -415,7 +428,8 @@ export class BusinessReportsService {
         totalExpenses: String(totalExpenses),
         netProfit: String(income - totalExpenses),
         unmapped,
-        warnings: mileage > 0n && actualCar && actualCar.amount !== 0n ? ['mileage_and_actual_car'] : [],
+        assetSales: String(assetSales),
+        warnings: mileage > 0n && actualCar !== 0n ? ['mileage_and_actual_car'] : [],
       };
     });
   }
@@ -494,7 +508,7 @@ export class BusinessReportsService {
         union all
         select trip_date::text, -deduction_minor
           from app.mileage_trip
-         where workspace_id = ${ctx.workspaceId} and entity_id = ${entityId}
+         where workspace_id = ${ctx.workspaceId} and entity_id = ${entityId} and driver = 'owner'
            and trip_date between ${start} and ${through}
       ) x group by d order by d`.execute(trx);
     const taxableProfit =
@@ -640,6 +654,16 @@ export class BusinessReportsService {
                             and cardinality(b.attachment_ids) > 0)
          order by t.txn_date desc, t.id
          limit 500`.execute(trx);
+      const candidates = new Set(
+        (
+          await assetCandidates(
+            trx,
+            ctx,
+            e.id,
+            rows.map((r) => r.id),
+          )
+        ).map((c) => c.transactionId),
+      );
       return {
         entityId: e.id,
         threshold: String(threshold),
@@ -650,6 +674,7 @@ export class BusinessReportsService {
           payee: r.payee,
           amount: r.amount,
           categoryId: r.category,
+          assetCandidate: candidates.has(r.id),
         })),
       };
     });

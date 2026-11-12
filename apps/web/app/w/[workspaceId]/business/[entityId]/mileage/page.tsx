@@ -25,6 +25,8 @@ export default async function MileagePage({
   const thisYear = Number(today.slice(0, 4));
   const year = /^\d{4}$/.test(rawYear ?? '') ? Number(rawYear) : thisYear;
   const summary = await load((api) => api.getMileage(workspaceId, { entityId, year }));
+  // BIZ-19: drivers other than the owner. Payroll people need write access to the business.
+  const people = await load((api) => api.listPayrollPeople(workspaceId, { entityId }).catch(() => []));
   const { t } = await getI18n();
   const base = `/w/${workspaceId}/business/${entityId}/mileage`;
   return (
@@ -43,7 +45,13 @@ export default async function MileagePage({
           value={<Money amount={summary.deduction} currency={summary.currency} />}
         />
       </section>
-      <MileageLog workspaceId={workspaceId} entityId={entityId} summary={summary} today={today} />
+      <MileageLog
+        workspaceId={workspaceId}
+        entityId={entityId}
+        summary={summary}
+        today={today}
+        people={people.map((p) => ({ id: p.id, name: p.displayName }))}
+      />
     </div>
   );
 }

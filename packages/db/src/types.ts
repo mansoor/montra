@@ -3,6 +3,7 @@
  * kysely-codegen output checked in CI once the schema grows.
  */
 import type { ColumnType, Generated, Insertable, Selectable, Updateable } from 'kysely';
+import type { AssetDatabase } from './asset-types.js';
 import type { PayrollDatabase } from './payroll-types.js';
 
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
@@ -1423,7 +1424,7 @@ export interface RestoreJobTable {
   expires_at: Timestamp;
 }
 
-export interface Database extends PayrollDatabase {
+export interface Database extends PayrollDatabase, AssetDatabase {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
   'app.workspace_member': WorkspaceMemberTable;
@@ -1680,6 +1681,10 @@ export interface MileageTripTable {
   miles_tenths: number;
   tenths_of_cent: number;
   deduction_minor: Int8;
+  driver: Generated<'owner' | 'person'>;
+  driver_person_id: string | null;
+  driver_name: string | null;
+  reimbursement_id: string | null;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;

@@ -44,6 +44,8 @@ const ListQuery = z.object({
   /** A member, or "household" for what isn't tagged to anyone (FAM-09). */
   memberId: z.union([z.uuid(), z.literal('household')]).optional(),
   propertyId: z.uuid().optional(),
+  /** BIZ-18: who spent it, in a business: the owner, a payroll person, or "none" for nobody named. */
+  spentBy: z.union([z.uuid(), z.enum(['owner', 'none'])]).optional(),
   /** RPT-05: `coffee >20 tag:travel`. */
   q: z.string().max(500).optional(),
   categoryIds: z
