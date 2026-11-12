@@ -92,6 +92,26 @@
     "done",
     "in-place / reclassification / reversal rules"
   ],
+  "DE-11": [
+    "done",
+    "opening balance from the previous statement, cleared deposits and payments, next date suggested, a warning when the reconciled lines no longer add up (ADR-0039)"
+  ],
+  "DE-12": [
+    "done",
+    "adjustment on finishing, Uncategorized by default or a picked category, reconciled with the statement and flagged in the history (ADR-0039)"
+  ],
+  "DE-13": [
+    "done",
+    "owners and accountants, latest only, reason in the audit log, refused in a closed period; the posting trigger refuses any other un-reconcile (migration 0039)"
+  ],
+  "DE-14": [
+    "done",
+    "history page per account with Undo on the latest; \"Reconciled through\" and \"statement due\" on the accounts list and account page"
+  ],
+  "DE-15": [
+    "partial",
+    "reconciled flag on TransactionDto and sync; the phone locks account, amount and date with a note; no reconcile screen on the phone; not run on a device"
+  ],
   "FAM-01": [
     "done",
     ""
@@ -266,7 +286,7 @@
   ],
   "DE-08": [
     "done",
-    "reconciliation UI + API; reconciled entries locked"
+    "reconciliation UI + API; reconciled entries locked; statement chain, adjustments, undo and history (DE-11..15, ADR-0039)"
   ],
   "UP-01": [
     "done",

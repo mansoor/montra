@@ -790,6 +790,25 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Reconciliation: the statement chain, adjustments, undo and history, web and phone** (DE-11..15,
+  [ADR-0039](design/adr/0039-reconciliation-chain-adjustment-undo.md), migration 0039):
+  - **Chain**: each statement opens at the last completed one's ending balance (0 for the first) and shows opening,
+    cleared deposits, cleared payments, ending balance and difference. A new statement must be dated after the last one;
+    the start form suggests the next date (a card's statement day, else a month on, keeping month ends). A warning shows
+    when the lines reconciled up to the previous statement no longer add up to the opening balance.
+  - **Adjustment**: with a difference left, Finish with an adjustment posts a "Reconciliation adjustment" on the statement
+    date (Uncategorized income or expense unless another category is picked), reconciled with the statement and flagged
+    in the history.
+  - **Undo**: owners and accountants, the account's latest completed reconciliation only, with a reason (audit action
+    `reconciliation.undo`) and a recent sign-in; refused in a closed period. Lines go back to cleared and entries unlock
+    unless another statement still reconciles them. `app.guard_posting` now refuses every other un-reconcile, even under
+    `app.allow_locked_edit`; only the undo sets `app.allow_unreconcile`. `journal-entries/:id/unlock` refuses entries
+    with a reconciled line (`journal_entry.reconciled`).
+  - **History**: `/accounts/:id/reconcile/history`, linked from the account page; "Reconciled through <date>" on the
+    account page and the accounts list, with "statement due" a month after the last statement
+    (`AccountDto.reconciledThrough`).
+  - **Phone**: `TransactionDto.reconciled` syncs; the transaction screen shows a lock and keeps the account, amount and date
+    (`editRules`). No reconcile screen on the phone; not run on a device.
 - **Rentals: tenant details, the people on a lease, lease set-up costs and property contacts, web and phone**
   (RNT-17..22, [ADR-0038](design/adr/0038-rental-people-and-contacts.md), migration 0038):
   - **Tenant details**: second phone, mailing address, emergency contact, employer and monthly income (optional screening

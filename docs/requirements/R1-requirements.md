@@ -205,6 +205,11 @@ Every money movement posts as a balanced journal entry: total debits always equa
 | DE-08 | Reconciliation against statements: postings marked cleared, reconciled entries locked unless unlocked with an audit note. | M |
 | DE-09 | Period close: lock a month or year per entity. | S |
 | DE-10 | Changes to a closed or reconciled period create reversing entries instead of silent edits. | S |
+| DE-11 | Statement chain: a reconciliation opens at the previous completed statement's ending balance (0 for the first) and shows the opening balance, cleared deposits, cleared payments, ending balance and difference. Starting the next one suggests a month after the last statement date. A warning shows when the lines reconciled up to the previous statement no longer add up to the opening balance. | S |
+| DE-12 | Finishing a reconciliation with a difference can add a balance adjustment for it: payee "Reconciliation adjustment", a category the user picks (Uncategorized income or expense by default), dated on the statement date, reconciled with that statement and flagged in the history. | S |
+| DE-13 | Undo a reconciliation: owners and accountants, only the account's latest completed one, with a reason kept in the audit log. Its lines go back to cleared and their entries unlock unless another statement still reconciles them; refused while a line is in a closed period. Nothing else can un-reconcile a line. | S |
+| DE-14 | Reconciliation history per account, linked from the account page: statement date, ending balance, who finished it and when, any adjustment, and Undo on the latest. The accounts list shows "Reconciled through <date>" and a quiet "statement due" hint once more than a month has passed since the last statement. | S |
+| DE-15 | Phone: a reconciled transaction shows a lock and keeps its account, amount and date, with a note to undo the reconciliation on the web. | S |
 
 ### 3.7 Family members and payslips
 
