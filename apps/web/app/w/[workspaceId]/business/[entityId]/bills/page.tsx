@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { todayIn } from '@montra/domain';
+import { canSpendFrom, todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { BillManager } from '@/components/business/bill-manager';
 
@@ -31,7 +31,7 @@ export default async function BillsPage({
       bills={bills}
       vendors={vendors}
       expenseCategories={categories.filter((c) => c.entityId === entityId && c.type === 'expense')}
-      accounts={accounts.filter((a) => !a.archived)}
+      accounts={accounts.filter(canSpendFrom)}
       defaultAccountId={business.defaultDepositAccountId}
       today={todayIn(workspace.timeZone)}
     />

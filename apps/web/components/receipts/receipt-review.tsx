@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { receiptAccountId } from '@montra/domain';
 import type { AccountDto, CategoryDto, FamilyMemberDto, ReceiptDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import {
@@ -42,7 +43,8 @@ export function ReceiptReview({
   const [header, setHeader] = useState<HeaderFields>(initial.header);
   const [lines, setLines] = useState<LineRow[]>(initial.lines);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
+  // The card the receipt names, when one of the accounts has those last four digits.
+  const [accountId, setAccountId] = useState(receiptAccountId(accounts, receipt.cardLast4) ?? '');
   useEffect(() => {
     setHeader(initial.header);
     setLines(initial.lines);
@@ -133,6 +135,52 @@ export function ReceiptReview({
           <p role="alert" className="text-sm text-warn">
             {t('receipts.gap')} <Money amount={gap} currency={currency} />
           </p>
+        )}
+
+        {receipt.likelyDuplicates.length > 0 && (
+          <div role="alert" className="card space-y-2 border-warn" data-testid="receipt-duplicate">
+            <p className="text-sm font-medium">{t('receipts.likely_duplicate')}</p>
+            <p className="text-sm">{t('receipts.duplicate_note')}</p>
+            <ul className="space-y-1 text-sm">
+              {receipt.likelyDuplicates.map((d) => (
+                <li key={d.id}>
+                  <Link href={`/w/${ws}/receipts/${d.id}`} className="underline">
+                    {d.merchant ?? t('receipts.unknown_merchant')}
+                  </Link>
+                  {d.receiptDate && (
+                    <>
+                      {' · '}
+                      <DateText date={d.receiptDate} />
+                    </>
+                  )}
+                  {d.total && (
+                    <>
+                      {' · '}
+                      <Money amount={BigInt(d.total)} currency={currency} />
+                    </>
+                  )}
+                  {' · '}
+                  {t(`receipts.status.${d.status}`)}
+                </li>
+              ))}
+            </ul>
+            {receipt.status !== 'matched' && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    () =>
+                      browserApi.deleteReceipt(ws, receipt.id).then(() => router.push(`/w/${ws}/receipts`)),
+                    t('receipts.discarded'),
+                  )
+                }
+              >
+                {t('receipts.discard_copy')}
+              </button>
+            )}
+          </div>
         )}
 
         <div className="card grid gap-3 sm:grid-cols-3">

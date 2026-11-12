@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { todayIn } from '@montra/domain';
+import { canSpendFrom, todayIn } from '@montra/domain';
 import type { TransactionListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -92,7 +92,7 @@ export default async function TransactionsPage({
       )}
       <QuickAdd
         workspace={workspace}
-        accounts={open}
+        accounts={open.filter(canSpendFrom)}
         categories={categories}
         members={members}
         today={today}

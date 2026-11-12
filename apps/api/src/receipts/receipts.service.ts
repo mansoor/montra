@@ -412,6 +412,37 @@ export class ReceiptsService {
     return null;
   }
 
+  /**
+   * RCP-13: other receipts with the same date and total in the same currency, from the same store when both name one.
+   * The user compares and discards one; nothing is removed automatically. Rejected and deleted receipts don't count.
+   */
+  private async likelyDuplicates(trx: Trx, ctx: Ctx, r: ReceiptRow): Promise<ReceiptDto['likelyDuplicates']> {
+    if (r.status === 'rejected' || r.total_minor === null || r.receipt_date === null) return [];
+    const others = await trx
+      .selectFrom('app.receipt')
+      .select(['id', 'merchant', 'receipt_date', 'total_minor', 'status', 'created_at'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('deleted_at', 'is', null)
+      .where('id', '<>', r.id)
+      .where('status', '<>', 'rejected')
+      .where('receipt_date', '=', r.receipt_date)
+      .where('total_minor', '=', r.total_minor)
+      .where('currency', 'is not distinct from', r.currency)
+      .orderBy('created_at')
+      .limit(5)
+      .execute();
+    return others
+      .filter((o) => sameStore(r.merchant, o.merchant))
+      .map((o) => ({
+        id: o.id,
+        merchant: o.merchant,
+        receiptDate: o.receipt_date,
+        total: o.total_minor?.toString() ?? null,
+        status: o.status,
+        createdAt: o.created_at.toISOString(),
+      }));
+  }
+
   async dto(trx: Trx, ctx: Ctx, r: ReceiptRow): Promise<ReceiptDto> {
     const lines = await this.lines(trx, ctx, r.id);
     const groups = r.currency ? groupsOf(r, lines) : [];
@@ -445,6 +476,7 @@ export class ReceiptsService {
       orderRef: r.order_ref,
       extraction: extraction ?? null,
       stalled: r.status === 'processing' ? await this.stalled(trx, ctx, r.id) : null,
+      likelyDuplicates: await this.likelyDuplicates(trx, ctx, r),
       retainUntil: r.retain_until,
       createdAt: r.created_at.toISOString(),
       version: r.version.toString(),
@@ -1658,3 +1690,15 @@ function reasonsOf(f: {
 }
 
 const trimRate = (s: string) => (s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s);
+
+/**
+ * Whether two receipts' store names are the same store: letters and digits only, ignoring case, and one starting with
+ * the other ("Trader Joe's" and "TRADER JOES #552"). A receipt with no store name read matches on date and total alone.
+ */
+export function sameStore(a: string | null, b: string | null): boolean {
+  const norm = (s: string | null) => (s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return true;
+  return x.startsWith(y) || y.startsWith(x);
+}

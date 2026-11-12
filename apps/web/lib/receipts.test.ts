@@ -49,6 +49,7 @@ const receipt: ReceiptDto = {
   orderRef: null,
   extraction: null,
   stalled: null,
+  likelyDuplicates: [],
   retainUntil: '2033-11-02',
   createdAt: '2026-11-02T10:00:00.000Z',
   version: '3',
