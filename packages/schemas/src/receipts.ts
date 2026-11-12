@@ -103,6 +103,17 @@ export const ReceiptStalledDto = z.object({
 });
 export type ReceiptStalledDto = z.infer<typeof ReceiptStalledDto>;
 
+/** Another receipt with the same store, date and total: probably the same one scanned twice. */
+export const ReceiptDuplicateDto = z.object({
+  id: Id,
+  merchant: z.string().nullable(),
+  receiptDate: z.string().nullable(),
+  total: Minor.nullable(),
+  status: ReceiptStatus,
+  createdAt: z.string(),
+});
+export type ReceiptDuplicateDto = z.infer<typeof ReceiptDuplicateDto>;
+
 export const ReceiptDto = z.object({
   id: Id,
   entityId: Id,
@@ -142,6 +153,8 @@ export const ReceiptDto = z.object({
     })
     .nullable(),
   stalled: ReceiptStalledDto.nullable(),
+  /** Receipts that look like this one scanned again, for the user to compare and discard one (RCP-13). */
+  likelyDuplicates: z.array(ReceiptDuplicateDto),
   retainUntil: z.string(),
   createdAt: z.string(),
   version: z.string(),

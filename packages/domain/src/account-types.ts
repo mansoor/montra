@@ -58,6 +58,11 @@ export interface AccountProfile {
   statement: boolean;
   /** Whether it has statements to import and reconcile. Cash doesn't (ADR-0027). */
   imports: boolean;
+  /**
+   * Whether purchases are paid from it, so expense forms offer it: quick add, receipts, bills. Investments and
+   * retirement plans, property, loans and mortgages aren't; money reaches them by transfer.
+   */
+  spending: boolean;
 }
 
 const CASH_DETAILS: readonly AccountDetail[] = ['lowBalance'];
@@ -76,6 +81,7 @@ const bank = {
   installment: false,
   statement: false,
   imports: true,
+  spending: true,
 } as const;
 
 const debt = {
@@ -90,6 +96,7 @@ const debt = {
   installment: true,
   statement: false,
   imports: true,
+  spending: false,
 } as const;
 
 export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
@@ -103,6 +110,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     details: [],
     forecast: null,
     moneyFlow: 'savings',
+    spending: false,
   },
   asset: {
     ...bank,
@@ -112,6 +120,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     details: ['purchase'],
     forecast: null,
     imports: false,
+    spending: false,
   },
   credit_card: {
     ...debt,
@@ -122,6 +131,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     schedule: false,
     installment: false,
     statement: true,
+    spending: true,
   },
   // Revolving like a card: forecast down to its limit, billed by statement. Rental loans could already hold a schedule on one.
   line_of_credit: {
@@ -130,6 +140,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     installment: false,
     statement: true,
     forecast: 'card',
+    spending: true,
   },
   loan: debt,
   mortgage: debt,
@@ -142,11 +153,32 @@ export const ACCOUNT_PROFILES: Readonly<Record<AccountKind, AccountProfile>> = {
     moneyFlow: null,
     schedule: false,
     installment: false,
+    // An IOU: someone else paid, and you owe them.
+    spending: true,
   },
 };
 
 /** The type of a stored kind. The database only allows the kinds above. */
 export const accountProfile = (kind: string): AccountProfile => ACCOUNT_PROFILES[kind as AccountKind];
+
+/** Whether expense forms offer this account: not a retirement plan, an investment, property or a loan. */
+export const canSpendFrom = (account: { kind: string; archived?: boolean }): boolean =>
+  !account.archived && accountProfile(account.kind).spending;
+
+/**
+ * The account a receipt was most likely paid from: the card or account whose last four digits the receipt shows, else
+ * the most recently used, else the first. Null when there's none.
+ */
+export function receiptAccountId(
+  accounts: readonly { id: string; last4?: string | null }[],
+  cardLast4: string | null | undefined,
+  recentIds: readonly (string | null)[] = [],
+): string | null {
+  const byDigits = cardLast4 ? accounts.find((a) => a.last4 === cardLast4) : undefined;
+  if (byDigits) return byDigits.id;
+  const ids = new Set(accounts.map((a) => a.id));
+  return recentIds.find((id): id is string => id !== null && ids.has(id)) ?? accounts[0]?.id ?? null;
+}
 
 /** Every kind with this trait. */
 export const kindsWhere = (test: (t: AccountProfile) => boolean): AccountKind[] =>
