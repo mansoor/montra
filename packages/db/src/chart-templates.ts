@@ -58,6 +58,8 @@ const PERSONAL: GroupTemplate[] = [
       expense('Electronics'),
       expense('Education'),
       expense('Childcare'),
+      // ACC-12: for the small things that fit nowhere else (a bag fee at the till).
+      expense('Miscellaneous'),
     ],
   },
   {

@@ -17,6 +17,8 @@ import { PlanningSettings } from '@/components/settings/planning-settings';
 import { NotificationSettings } from '@/components/settings/notification-settings';
 import { PrivacyPanel, SecurityActivity } from '@/components/settings/privacy-security';
 import { StorageSettings } from '@/components/settings/storage-settings';
+import { CategorySettings } from '@/components/settings/category-settings';
+import { SETTINGS_TABS, settingsGroupOf, settingsTabOf } from '@/lib/settings-sections';
 import {
   BackupPanel,
   DeleteAccountPanel,
@@ -27,34 +29,6 @@ import {
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
 
-const TABS = {
-  profile: 'settings.tab.profile',
-  appearance: 'settings.tab.appearance',
-  entities: 'settings.tab.entities',
-  family: 'settings.tab.family',
-  accounts: 'settings.tab.accounts',
-  sharing: 'settings.tab.sharing',
-  planning: 'settings.tab.planning',
-  ai: 'settings.tab.ai',
-  'ai-activity': 'settings.tab.ai_activity',
-  notifications: 'settings.tab.notifications',
-  security: 'settings.tab.security',
-  data: 'settings.tab.data',
-  storage: 'settings.tab.storage',
-  privacy: 'settings.tab.privacy',
-  billing: 'settings.tab.billing',
-  support: 'settings.tab.support',
-} as const;
-type Tab = keyof typeof TABS;
-
-/** Sections grouped like the rest of the app: you, the workspace, AI. */
-const GROUPS: { label: string; tabs: Tab[] }[] = [
-  { label: 'settings.group.you', tabs: ['profile', 'appearance', 'notifications', 'security'] },
-  { label: 'settings.group.workspace', tabs: ['entities', 'family', 'accounts', 'sharing', 'planning'] },
-  { label: 'settings.group.ai', tabs: ['ai', 'ai-activity'] },
-  { label: 'settings.group.data', tabs: ['data', 'storage', 'privacy', 'support', 'billing'] },
-];
-
 export default async function SettingsPage({
   params,
   searchParams,
@@ -63,8 +37,8 @@ export default async function SettingsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { workspaceId } = await params;
-  const raw = (await searchParams).tab;
-  const tab: Tab = raw && raw in TABS ? (raw as Tab) : 'profile';
+  const tab = settingsTabOf((await searchParams).tab);
+  const group = settingsGroupOf(tab);
   const workspace = await load((api) => api.getWorkspace(workspaceId));
   const base = `/w/${workspaceId}/settings`;
   const isOwner = workspace.role === 'owner';
@@ -106,6 +80,26 @@ export default async function SettingsPage({
   } else if (tab === 'accounts') {
     const accounts = await load((api) => api.listAccounts(workspaceId, { include: 'all' }));
     body = <AccountSettings workspace={workspace} accounts={accounts} today={todayIn(workspace.timeZone)} />;
+  } else if (tab === 'categories') {
+    const entities = await load((api) => api.listEntities(workspaceId));
+    const has = (type: string) => entities.some((e) => e.type === type);
+    const [categories, groups, business, rental] = await load((api) =>
+      Promise.all([
+        api.listCategories(workspaceId, undefined, { includeArchived: true }),
+        api.listCategoryGroups(workspaceId),
+        has('business') ? api.listTaxLines(workspaceId, 'schedule_c') : Promise.resolve([]),
+        has('rental') ? api.listTaxLines(workspaceId, 'schedule_e') : Promise.resolve([]),
+      ]),
+    );
+    body = (
+      <CategorySettings
+        workspaceId={workspaceId}
+        entities={entities}
+        categories={categories}
+        groups={groups}
+        taxLines={{ business, rental }}
+      />
+    );
   } else if (tab === 'ai') {
     const settings = await load((api) => api.getAiSettings(workspaceId));
     body = <AiSettings workspaceId={workspaceId} initial={settings} isOwner={isOwner} />;
@@ -190,45 +184,25 @@ export default async function SettingsPage({
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="page-title">{t('nav.settings')}</h1>
+        <h1 className="page-title">
+          {t('nav.settings')}
+          <span className="text-muted"> · {t(group.label)}</span>
+        </h1>
       </header>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav aria-label={t('settings.sections')} className="lg:sticky lg:top-20 lg:self-start">
-          <div className="tabs lg:hidden">
-            {GROUPS.flatMap((g) => g.tabs).map((k) => (
-              <Link
-                key={k}
-                href={`${base}?tab=${k}`}
-                aria-current={tab === k ? 'page' : undefined}
-                className="tab"
-              >
-                {t(TABS[k])}
-              </Link>
-            ))}
-          </div>
-          <div className="hidden space-y-5 lg:block">
-            {GROUPS.map((g) => (
-              <div key={g.label}>
-                <div className="section-h mb-1.5 px-3">{t(g.label)}</div>
-                <ul className="space-y-0.5">
-                  {g.tabs.map((k) => (
-                    <li key={k}>
-                      <Link
-                        href={`${base}?tab=${k}`}
-                        aria-current={tab === k ? 'page' : undefined}
-                        className="subnav-link"
-                      >
-                        {t(TABS[k])}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </nav>
-        <div className="min-w-0">{body}</div>
-      </div>
+      {/* The group's sections as tabs; the groups themselves are menu items under Settings in the sidebar. */}
+      <nav aria-label={t('settings.sections')} className="settings-tabs">
+        {group.tabs.map((k) => (
+          <Link
+            key={k}
+            href={`${base}?tab=${k}`}
+            aria-current={tab === k ? 'page' : undefined}
+            className="settings-tab"
+          >
+            {t(SETTINGS_TABS[k])}
+          </Link>
+        ))}
+      </nav>
+      <div className="min-w-0">{body}</div>
     </div>
   );
 }

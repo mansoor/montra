@@ -156,6 +156,9 @@ import type {
   BulkEditRequest,
   BulkEditResult,
   CategoryDto,
+  CategoryGroupDto,
+  CreateCategoryRequest,
+  UpdateCategoryRequest,
   ChangeDto,
   ConfirmOccurrenceRequest,
   CreateAccountRequest,
@@ -435,6 +438,8 @@ export type AnalyzeMigrationInput = z.input<typeof AnalyzeMigrationRequest>;
 export type StartMigrationInput = z.input<typeof StartMigrationRequest>;
 export type CreateAccountInput = z.input<typeof CreateAccountRequest>;
 export type UpdateAccountInput = z.input<typeof UpdateAccountRequest>;
+export type CreateCategoryInput = z.input<typeof CreateCategoryRequest>;
+export type UpdateCategoryInput = z.input<typeof UpdateCategoryRequest>;
 export type BalanceAdjustmentInput = z.input<typeof BalanceAdjustmentRequest>;
 export type CreateTransactionInput = z.input<typeof CreateTransactionRequest>;
 export type UpdateTransactionInput = z.input<typeof UpdateTransactionRequest>;
@@ -1098,11 +1103,26 @@ export class ApiClient {
       input,
     );
   }
-  listCategories(workspaceId: string, entityId?: string) {
+  listCategories(workspaceId: string, entityId?: string, opts: { includeArchived?: boolean } = {}) {
     return this.request<{ data: CategoryDto[] }>(
       'GET',
-      this.ws(workspaceId, `/categories${query({ entityId })}`),
+      this.ws(
+        workspaceId,
+        `/categories${query({ entityId, include: opts.includeArchived ? 'archived' : undefined })}`,
+      ),
     ).then((r) => r.data);
+  }
+  listCategoryGroups(workspaceId: string, entityId?: string) {
+    return this.request<{ data: CategoryGroupDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/category-groups${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createCategory(workspaceId: string, input: CreateCategoryInput) {
+    return this.request<CategoryDto>('POST', this.ws(workspaceId, '/categories'), input);
+  }
+  updateCategory(workspaceId: string, categoryId: string, input: UpdateCategoryInput) {
+    return this.request<CategoryDto>('PATCH', this.ws(workspaceId, `/categories/${enc(categoryId)}`), input);
   }
   interestEarned(workspaceId: string, accountId: string) {
     return this.request<InterestEarnedDto>(
@@ -3104,6 +3124,7 @@ export type {
   InterestEarnedDto,
   BulkEditResult,
   CategoryDto,
+  CategoryGroupDto,
   ChangeDto,
   FamilyMemberDto,
   MeDto,

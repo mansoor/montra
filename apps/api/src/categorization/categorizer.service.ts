@@ -52,7 +52,15 @@ export interface Prepared {
   categories: CategoryOption[];
   categoryById: Map<string, CategoryOption>;
   members: MemberOption[];
+  /** ACC-10: archived categories. Rules and history that would set one are skipped until it's unarchived. */
+  archivedCategoryIds: Set<string>;
 }
+
+/** Rules whose category is archived stop applying (ACC-10); the rest keep their order. */
+export const withoutArchived = (rules: CompiledRule[], archived: ReadonlySet<string>): CompiledRule[] =>
+  archived.size === 0
+    ? rules
+    : rules.filter((r) => !r.record.actions.categoryId || !archived.has(r.record.actions.categoryId));
 
 export const payeeKeyOf = (payee: string | null | undefined, description?: string | null): string | null => {
   const key = normalizeDescription(payee || description || '');
@@ -119,7 +127,15 @@ export class Categorizer {
       .where('enabled', '=', true)
       .where('scope', '=', 'transaction')
       .execute();
-    const { rules } = compileRules(ruleRows.map(ruleRecord));
+    const archived = await trx
+      .selectFrom('app.ledger_account')
+      .select('id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('is_category', '=', true)
+      .where('archived_at', 'is not', null)
+      .execute();
+    const archivedCategoryIds = new Set(archived.map((a) => a.id));
+    const rules = withoutArchived(compileRules(ruleRows.map(ruleRecord)).rules, archivedCategoryIds);
     const cats = await trx
       .selectFrom('app.ledger_account as la')
       .innerJoin('app.entity as e', (j) => j.onRef('e.id', '=', 'la.entity_id'))
@@ -152,6 +168,7 @@ export class Categorizer {
       categories,
       categoryById: new Map(categories.map((c) => [c.id, c])),
       members: members.map((m) => ({ id: m.id, name: m.name, relationship: m.relationship })),
+      archivedCategoryIds,
     };
   }
 
@@ -297,7 +314,8 @@ export class Categorizer {
         : undefined;
     const decisions = await runPipeline(items, {
       rules: prepared.rules,
-      history: (key) => history.get(key) ?? [],
+      history: (key) =>
+        (history.get(key) ?? []).filter((h) => !prepared.archivedCategoryIds.has(h.categoryId)),
       transferCandidates: (item) => [
         ...candidates.filter(
           (c) =>

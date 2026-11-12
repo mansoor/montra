@@ -34,7 +34,9 @@ export const nav = (page: Page, name: string) =>
 
 /** Settings → AI: optionally change the mode and the review threshold, then save. */
 export async function setAi(page: Page, opts: { mode?: RegExp; threshold?: number }) {
+  // Settings → AI: the AI group under Settings in the menu, then its AI tab.
   await nav(page, 'Settings');
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'AI', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Settings sections' })
     .getByRole('link', { name: 'AI', exact: true })

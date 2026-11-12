@@ -11,6 +11,7 @@ import { AppShell, type NavGroup } from '@/components/shell/app-shell';
 import { GlobalSearchBox, NotificationBell } from '@/components/shell/header-tools';
 import { ClientErrorReporter } from '@/components/shell/error-reporter';
 import { HelpLink, Tour } from '@/components/help';
+import { SETTINGS_GROUPS } from '@/lib/settings-sections';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,6 +92,11 @@ export default async function WorkspaceLayout({
         navLabel={t('shell.nav')}
         groups={groups}
         settingsHref={`${base}/settings`}
+        settingsSections={SETTINGS_GROUPS.map((g) => ({
+          href: `${base}/settings?tab=${g.tabs[0]}`,
+          label: t(g.label),
+          tabs: g.tabs,
+        }))}
         userName={me.displayName}
         userEmail={me.email}
         status={<Realtime workspaceId={workspace.id} wsUrl={wsUrl()} />}

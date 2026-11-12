@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   CalendarCheck,
@@ -86,6 +86,14 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+/** A group of settings sections, shown as a menu item under Settings. */
+export interface SettingsNavItem {
+  href: string;
+  label: string;
+  /** The `?tab=` values this item covers; the first is where it opens. */
+  tabs: string[];
+}
+
 const COLLAPSED_KEY = 'montra.sidebar.collapsed';
 
 /**
@@ -99,6 +107,7 @@ export function AppShell({
   navLabel,
   groups,
   settingsHref,
+  settingsSections = [],
   userName,
   userEmail,
   status,
@@ -110,6 +119,8 @@ export function AppShell({
   navLabel: string;
   groups: NavGroup[];
   settingsHref: string;
+  /** Menu items under Settings: each opens a group of settings sections. */
+  settingsSections?: SettingsNavItem[];
   userName: string;
   userEmail: string;
   /** Live-update indicator (realtime). */
@@ -120,6 +131,7 @@ export function AppShell({
 }) {
   const { t } = useI18n();
   const pathname = usePathname();
+  const tab = useSearchParams()?.get('tab') ?? null;
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
 
@@ -146,6 +158,11 @@ export function AppShell({
 
   const isActive = (i: Pick<NavItem, 'href' | 'exact'>) =>
     i.exact ? pathname === i.href : pathname === i.href || pathname.startsWith(`${i.href}/`);
+  const inSettings = isActive({ href: settingsHref });
+  // Which group of settings is open: the one holding the tab, else the first (Profile is the default tab).
+  const openSection = inSettings
+    ? (settingsSections.find((g) => tab !== null && g.tabs.includes(tab)) ?? settingsSections[0])
+    : undefined;
 
   const sidebar = (rail: boolean) => (
     <div className="flex h-full flex-col">
@@ -189,9 +206,35 @@ export function AppShell({
           <li>
             <SideLink
               item={{ href: settingsHref, label: t('nav.settings'), icon: 'settings' }}
-              active={isActive({ href: settingsHref })}
+              // With its groups listed beneath, the open group is the current page, not Settings itself.
+              active={inSettings && (rail || settingsSections.length === 0)}
               rail={rail}
             />
+            {!rail && settingsSections.length > 0 && (
+              <ul
+                className="mt-0.5 ml-[21px] flex flex-col gap-0.5 border-l border-line pl-2"
+                data-testid="settings-menu"
+              >
+                {settingsSections.map((g) => {
+                  const active = g === openSection;
+                  return (
+                    <li key={g.href}>
+                      <Link
+                        href={g.href}
+                        aria-current={active ? 'page' : undefined}
+                        className={`flex min-h-8 items-center rounded-[var(--radius-m)] px-3 py-1 text-sm transition-colors ${
+                          active
+                            ? 'bg-brand-100 font-bold text-brand-600'
+                            : 'font-medium text-ink-soft hover:bg-canvas hover:text-ink'
+                        }`}
+                      >
+                        <span className="truncate">{g.label}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </li>
         </ul>
       </nav>
