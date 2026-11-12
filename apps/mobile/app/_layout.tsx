@@ -69,7 +69,6 @@ function Gate() {
         <Stack.Screen name="business/payroll" options={{ title: t('business.tab_payroll') }} />
         <Stack.Screen name="business/pay-run" options={{ title: t('payroll.run.title') }} />
         <Stack.Screen name="business/reimbursement" options={{ title: t('payroll.claim.new') }} />
-        <Stack.Screen name="business/settings" options={{ title: t('mobile.business.settings') }} />
         <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
         <Stack.Screen name="notification-settings" options={{ title: t('notifications.settings') }} />
         <Stack.Screen name="your-data" options={{ title: t('settings.tab.data') }} />
