@@ -16,6 +16,7 @@ import { AccountMoveService } from './accounts/account-move.service.js';
 import { AccountsService } from './accounts/accounts.service.js';
 import { ValuationsService } from './accounts/valuations.service.js';
 import { CardsService } from './accounts/cards.service.js';
+import { CategoriesService } from './accounts/categories.service.js';
 import { AccountsController } from './accounts/accounts.controller.js';
 import { TransactionsService } from './transactions/transactions.service.js';
 import { TransactionsController } from './transactions/transactions.controller.js';
@@ -202,6 +203,7 @@ export class AppModule {
         AccountMoveService,
         ValuationsService,
         CardsService,
+        CategoriesService,
         TransactionsService,
         TransactionPoster,
         RecurringService,

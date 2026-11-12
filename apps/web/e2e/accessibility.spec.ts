@@ -56,6 +56,7 @@ const WORKSPACE_PAGES = [
   '/settings?tab=entities',
   '/settings?tab=family',
   '/settings?tab=accounts',
+  '/settings?tab=categories',
   '/settings?tab=sharing',
   '/settings?tab=planning',
   '/settings?tab=ai',

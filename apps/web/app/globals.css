@@ -223,15 +223,27 @@ h3 {
   }
 
   /* ----- Tabs (underline) and vertical section nav --------------------------------------------------- */
+  /* The base line is an inset shadow, not a border, so the tabs' underlines sit on it without hanging out of the
+     box: a tab pulled 1px over a border made every tab bar scrollable up and down by that pixel. */
   .tabs {
-    @apply flex gap-1 overflow-x-auto border-b border-line;
+    @apply flex gap-1 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:thin];
   }
   .tab {
-    @apply -mb-px border-b-[3px] border-transparent px-3 py-2 text-sm font-semibold whitespace-nowrap text-muted hover:text-ink;
+    @apply border-b-[3px] border-transparent px-3 py-2 text-sm font-semibold whitespace-nowrap text-muted hover:text-ink;
   }
   .tab[aria-current='page'],
   .tab[aria-selected='true'] {
     @apply border-brand-600 text-brand-600;
+  }
+  /* Settings sections: bordered folder tabs; the open one joins the page below and carries the brand colour. */
+  .settings-tabs {
+    @apply flex gap-1 overflow-x-auto overflow-y-hidden px-1 shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:thin];
+  }
+  .settings-tab {
+    @apply rounded-t-[var(--radius-m)] border border-line bg-surface px-4 py-2 text-sm font-semibold whitespace-nowrap text-ink-soft hover:text-ink;
+  }
+  .settings-tab[aria-current='page'] {
+    @apply border-t-[3px] border-t-brand-600 border-b-canvas bg-canvas text-brand-600;
   }
   .subnav-link {
     @apply flex items-center gap-2.5 rounded-[var(--radius-m)] px-3 py-2 text-sm font-semibold text-ink-soft hover:bg-surface hover:text-ink;

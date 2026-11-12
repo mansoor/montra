@@ -218,8 +218,56 @@ export const CategoryDto = z.object({
   type: z.enum(['income', 'expense']),
   group: z.string().nullable(),
   taxLineCode: z.string().nullable(),
+  /** The group's id (ACC-08). Optional: categories cached on a phone before ACC-08 don't carry it. */
+  groupId: z.string().nullable().optional(),
+  /** Archived (ACC-10): only listed with `?include=archived`; history and reports keep it. */
+  archived: z.boolean().optional(),
+  /** A built-in system category (Uncategorized, FX, bank fees): it can't be renamed or archived (ACC-09). */
+  fixed: z.boolean().optional(),
 });
 export type CategoryDto = z.infer<typeof CategoryDto>;
+
+/** A category group of one entity (BUD-04), for choosing where a new category goes (ACC-08). */
+export const CategoryGroupDto = z.object({
+  id: z.string(),
+  entityId: z.string(),
+  name: z.string(),
+  kind: z.enum(['income', 'fixed', 'daily', 'fun', 'savings', 'debt', 'business', 'rental', 'system']),
+});
+export type CategoryGroupDto = z.infer<typeof CategoryGroupDto>;
+
+const CategoryName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .refine((s) => [...s].every((ch) => ch >= ' '), 'No control characters');
+
+/**
+ * `POST categories` (ACC-08). Without a group it goes in the entity's first group for its type (income, or the
+ * entity's spending groups). Business and rental categories get the "other" tax line of their form unless one is given.
+ */
+export const CreateCategoryRequest = z.object({
+  entityId: Id,
+  name: CategoryName,
+  type: z.enum(['income', 'expense']),
+  groupId: Id.optional(),
+  taxLineCode: z.string().max(40).nullable().optional(),
+});
+export type CreateCategoryRequest = z.output<typeof CreateCategoryRequest>;
+
+/** `PATCH categories/:id` (ACC-09, ACC-10): rename, move to another group of the same entity, archive or unarchive. */
+export const UpdateCategoryRequest = z
+  .object({
+    name: CategoryName.optional(),
+    groupId: Id.optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine(
+    (r) => r.name !== undefined || r.groupId !== undefined || r.archived !== undefined,
+    'Nothing to change',
+  );
+export type UpdateCategoryRequest = z.output<typeof UpdateCategoryRequest>;
 
 export const RegisterView = z.enum(['ledger', 'simple']);
 

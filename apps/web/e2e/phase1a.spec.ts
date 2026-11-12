@@ -104,6 +104,7 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
 
   // Invite a partner and accept in a second browser context (AUTH-10, UP-04).
   await nav(page, 'Settings');
+  await nav(page, 'Workspace');
   await page.getByRole('link', { name: 'Sharing' }).click();
   await page.getByLabel('Email', { exact: true }).fill(partner);
   await page.getByLabel('Role', { exact: true }).selectOption('partner');
