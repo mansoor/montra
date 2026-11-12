@@ -609,12 +609,24 @@ export interface ReconciliationTable {
   ledger_account_id: string;
   statement_date: CalendarDateCol;
   statement_balance_minor: Int8;
-  status: Generated<'in_progress' | 'completed'>;
+  status: Generated<'in_progress' | 'completed' | 'undone'>;
   completed_at: Date | null;
   completed_by: string | null;
   created_by: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+  /** DE-11 (migration 0039): the previous completed statement's ending balance, natural terms; 0 for the first. */
+  opening_balance_minor: Int8;
+  /** Set on completion: what the statement's cleared lines added and took away, natural terms. */
+  deposits_minor: Int8 | null;
+  payments_minor: Int8 | null;
+  /** DE-12: the balance adjustment posted on finishing with a difference (natural terms, signed). */
+  adjustment_transaction_id: string | null;
+  adjustment_minor: Int8 | null;
+  /** DE-13: undone by an owner or accountant, with their reason. */
+  undone_at: Date | null;
+  undone_by: string | null;
+  undo_reason: string | null;
 }
 
 export interface RefImportProfileTable {

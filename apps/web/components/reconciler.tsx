@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import type { AccountDto, ReconciliationDto } from '@montra/api-client';
+import type { AccountDto, CategoryDto, ReconciliationDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage, toFormErrors, type FormErrors } from '@/lib/errors';
 import { parseAmountInput } from '@/lib/money';
@@ -12,19 +12,26 @@ import { DateText, useI18n } from './i18n';
 import { Money } from './money';
 
 /**
- * Statement reconciliation (DE-08): enter the statement's date and ending balance, tick the lines that appear
- * on it, and complete once the cleared balance equals the statement. Completed lines are locked.
+ * Statement reconciliation (DE-08, DE-11, DE-12): enter the statement's date and ending balance, tick the lines that
+ * appear on it, and complete once the cleared balance equals the statement. The statement opens at the last one's
+ * ending balance. A difference left can be booked as a "Reconciliation adjustment". Completed lines are locked.
  */
 export function Reconciler({
   workspaceId,
   account,
   initial,
   today,
+  next,
+  categories,
 }: {
   workspaceId: string;
   account: AccountDto;
   initial: ReconciliationDto | null;
   today: string;
+  /** What the next statement starts with: suggested date (null for the first) and opening balance. */
+  next: { statementDate: string | null; openingBalance: string };
+  /** The account's books' categories, for an adjustment. */
+  categories: CategoryDto[];
 }) {
   const router = useRouter();
   const { t, locale } = useI18n();
@@ -32,7 +39,10 @@ export function Reconciler({
   const [errors, setErrors] = useState<FormErrors>({ fields: {} });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [categoryId, setCategoryId] = useState<string>('');
   const base = `/w/${workspaceId}/accounts/${account.id}/reconcile`;
+  const historyHref = `${base}/history`;
 
   async function start(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -75,9 +85,25 @@ export function Reconciler({
     return (
       <form onSubmit={start} className="card max-w-lg space-y-4" noValidate>
         <p className="text-sm text-muted">{t('reconcile.intro')}</p>
-        <Field id="statementDate" label={t('reconcile.statement_date')} error={errors.fields.statementDate}>
+        <p className="text-sm" data-testid="reconcile-opening">
+          {t('reconcile.opening')}:{' '}
+          <Money amount={next.openingBalance} currency={account.currency} className="font-semibold" />
+        </p>
+        <Field
+          id="statementDate"
+          label={t('reconcile.statement_date')}
+          error={errors.fields.statementDate}
+          hint={next.statementDate ? t('reconcile.next_hint') : undefined}
+        >
           {(p) => (
-            <input {...p} name="statementDate" type="date" defaultValue={today} className="input" required />
+            <input
+              {...p}
+              name="statementDate"
+              type="date"
+              defaultValue={next.statementDate ?? today}
+              className="input"
+              required
+            />
           )}
         </Field>
         <Field
@@ -101,65 +127,157 @@ export function Reconciler({
 
   return (
     <div className="space-y-4">
-      <dl className="grid gap-3 sm:grid-cols-4" data-testid="reconcile-totals">
-        <div className="card">
-          <dt className="text-xs uppercase tracking-wide text-muted">{t('reconcile.statement_on')}</dt>
-          <dd className="font-semibold">
-            <DateText date={rec.statementDate} />
-          </dd>
-        </div>
-        <div className="card">
-          <dt className="text-xs uppercase tracking-wide text-muted">{t('reconcile.statement')}</dt>
-          <dd className="font-semibold">
-            <Money amount={rec.statementBalance.amount} currency={rec.statementBalance.currency} />
-          </dd>
-        </div>
-        <div className="card">
-          <dt className="text-xs uppercase tracking-wide text-muted">{t('reconcile.cleared')}</dt>
-          <dd className="font-semibold" data-testid="cleared-balance">
-            <Money amount={rec.clearedBalance.amount} currency={rec.clearedBalance.currency} />
-          </dd>
-        </div>
-        <div className="card">
-          <dt className="text-xs uppercase tracking-wide text-muted">{t('reconcile.difference')}</dt>
-          <dd
-            className={`font-semibold ${balanced ? 'text-good' : 'text-bad'}`}
-            data-testid="reconcile-difference"
-            aria-live="polite"
-          >
-            <Money amount={rec.difference.amount} currency={rec.difference.currency} />
-          </dd>
-        </div>
+      <p className="text-sm text-muted">
+        {t('reconcile.statement_on')}: <DateText date={rec.statementDate} />
+        {rec.previousStatementDate && (
+          <>
+            {' · '}
+            {t('reconcile.previous_on')} <DateText date={rec.previousStatementDate} />
+          </>
+        )}
+      </p>
+      <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5" data-testid="reconcile-totals">
+        {(
+          [
+            ['opening', rec.openingBalance, 'reconcile-opening-balance'],
+            ['cleared_deposits', rec.clearedDeposits, 'cleared-deposits'],
+            ['cleared_payments', rec.clearedPayments, 'cleared-payments'],
+            ['ending', rec.statementBalance, 'ending-balance'],
+            ['difference', rec.difference, 'reconcile-difference'],
+          ] as const
+        ).map(([key, value, testId]) => (
+          <div key={key} className="card">
+            <dt className="text-xs uppercase tracking-wide text-muted">{t(`reconcile.${key}`)}</dt>
+            <dd
+              className={`font-semibold ${key === 'difference' ? (balanced ? 'text-good' : 'text-bad') : ''}`}
+              data-testid={testId}
+              aria-live={key === 'difference' ? 'polite' : undefined}
+            >
+              <Money amount={value.amount} currency={value.currency} />
+            </dd>
+          </div>
+        ))}
       </dl>
+      <p className="text-xs text-muted">
+        {t('reconcile.cleared_balance')}:{' '}
+        <span data-testid="cleared-balance">
+          <Money amount={rec.clearedBalance.amount} currency={rec.clearedBalance.currency} />
+        </span>
+      </p>
+      {rec.chainBreak && (
+        <p
+          role="alert"
+          className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm"
+          data-testid="chain-break"
+        >
+          {t('reconcile.chain_break')}{' '}
+          <Money amount={rec.chainBreak.reconciledBalance.amount} currency={account.currency} />
+        </p>
+      )}
 
       {completed ? (
         <p role="status" className="rounded-md border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">
           {t('reconcile.completed')}{' '}
+          {rec.adjustment && (
+            <span data-testid="reconcile-adjusted">
+              {t('reconcile.adjusted')}{' '}
+              <Money amount={rec.adjustment.amount.amount} currency={account.currency} />{' '}
+            </span>
+          )}
+          <Link className="font-medium underline" href={historyHref}>
+            {t('reconcile.history_link')}
+          </Link>
+          {' · '}
           <Link className="font-medium underline" href={`/w/${workspaceId}/accounts/${account.id}`}>
             {t('reconcile.back')}
           </Link>
         </p>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy || !balanced}
-            onClick={() => run(() => browserApi.completeReconciliation(workspaceId, rec.id))}
-          >
-            {t('reconcile.complete')}
-          </button>
-          {open.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="btn-secondary"
-              disabled={busy}
-              onClick={() => run(() => browserApi.setCleared(workspaceId, rec.id, { clear: open }))}
+              className="btn-primary"
+              disabled={busy || !balanced}
+              onClick={() => run(() => browserApi.completeReconciliation(workspaceId, rec.id))}
             >
-              {t('reconcile.clear_all')}
+              {t('reconcile.complete')}
             </button>
+            {open.length > 0 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() => run(() => browserApi.setCleared(workspaceId, rec.id, { clear: open }))}
+              >
+                {t('reconcile.clear_all')}
+              </button>
+            )}
+            {!balanced && !adjusting && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() => {
+                  setCategoryId(rec.adjustmentCategoryId ?? categories[0]?.id ?? '');
+                  setAdjusting(true);
+                }}
+              >
+                {t('reconcile.adjust')}
+              </button>
+            )}
+            {!balanced && <span className="text-sm text-muted">{t('reconcile.complete_hint')}</span>}
+          </div>
+          {!balanced && adjusting && (
+            <div className="card max-w-lg space-y-3" data-testid="reconcile-adjustment">
+              <p className="text-sm">
+                {t('reconcile.adjust_intro')}{' '}
+                <Money amount={rec.difference.amount} currency={account.currency} className="font-semibold" />
+              </p>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium" htmlFor="adjustmentCategory">
+                  {t('reconcile.adjust_category')}
+                </label>
+                <select
+                  id="adjustmentCategory"
+                  className="input"
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                >
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-muted">{t('reconcile.adjust_hint')}</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={busy}
+                  onClick={() =>
+                    run(() =>
+                      browserApi.completeReconciliation(workspaceId, rec.id, {
+                        adjustment: categoryId ? { categoryId } : {},
+                      }),
+                    )
+                  }
+                >
+                  {t('reconcile.adjust_finish')}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={busy}
+                  onClick={() => setAdjusting(false)}
+                >
+                  {t('reconcile.adjust_cancel')}
+                </button>
+              </div>
+            </div>
           )}
-          {!balanced && <span className="text-sm text-muted">{t('reconcile.complete_hint')}</span>}
         </div>
       )}
       {error && (

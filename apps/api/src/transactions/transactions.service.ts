@@ -1278,6 +1278,7 @@ export class TransactionsService {
             'p.currency',
             'p.member_id',
             'p.memo',
+            'p.cleared',
           ])
           .where('p.workspace_id', '=', ctx.workspaceId)
           .where(
@@ -1300,6 +1301,7 @@ export class TransactionsService {
     const details = await loadExpenseDetails(trx, ctx, ids);
     const order = new Map(ids.map((id, i) => [id, i]));
     const merchants = await this.merchants.load(trx);
+    const entryIds = new Map(entries.map((e) => [e.id, e.transaction_id]));
     const result: TransactionDto[] = [];
     for (const t of txns.sort((a, b) => order.get(a.id)! - order.get(b.id)!)) {
       result.push({
@@ -1325,6 +1327,9 @@ export class TransactionsService {
         splits: specSplits(t.spec as TransactionSpec | null),
         managedBy: ownerOf(t.spec),
         expenseDetail: details.get(t.id) ?? null,
+        reconciled: postings.some(
+          (p) => p.cleared === 'reconciled' && entryIds.get(p.journal_entry_id) === t.id,
+        ),
         entries: entries
           .filter((e) => e.transaction_id === t.id)
           .map((e) => ({

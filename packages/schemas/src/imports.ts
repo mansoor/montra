@@ -240,14 +240,43 @@ export const ToggleClearedRequest = z.object({
 });
 export type ToggleClearedRequest = z.output<typeof ToggleClearedRequest>;
 
+export const RECONCILIATION_STATUSES = ['in_progress', 'completed', 'undone'] as const;
+export const ReconciliationStatus = z.enum(RECONCILIATION_STATUSES);
+
+/** Who did something on a reconciliation, by the name other members of the workspace see. */
+export const ReconciliationActorDto = z.object({ userId: z.string(), name: z.string() });
+
+/** DE-12: the balance adjustment posted on finishing with a difference; natural terms, signed. */
+export const ReconciliationAdjustmentDto = z.object({ transactionId: z.string(), amount: MoneyDto });
+
+/**
+ * A statement reconciliation (DE-08, DE-11). Amounts are natural terms (held for assets, owed for liabilities):
+ * opening (the previous completed statement's ending balance, 0 for the first) + cleared deposits − cleared payments
+ * = the cleared balance, and the difference is the statement's ending balance less the cleared balance.
+ */
 export const ReconciliationDto = z.object({
   id: z.string(),
   accountId: z.string(),
   statementDate: z.string(),
+  /** The statement's ending balance. */
   statementBalance: MoneyDto,
+  /** DE-11: the ending balance of the previous completed statement, or 0 for the first. */
+  openingBalance: MoneyDto,
+  previousStatementDate: z.string().nullable(),
+  /** What this statement's cleared lines add to and take from the balance; both ≥ 0. */
+  clearedDeposits: MoneyDto,
+  clearedPayments: MoneyDto,
   clearedBalance: MoneyDto,
   difference: MoneyDto,
-  status: z.enum(['in_progress', 'completed']),
+  /**
+   * DE-11: set while in progress when the reconciled lines up to the previous statement date no longer add up to the
+   * opening balance (one was changed, deleted or un-reconciled since): what they add up to now.
+   */
+  chainBreak: z.object({ reconciledBalance: MoneyDto }).nullable(),
+  /** DE-12: while the difference isn't 0, the category an adjustment would use unless another is picked. */
+  adjustmentCategoryId: z.string().nullable(),
+  adjustment: ReconciliationAdjustmentDto.nullable(),
+  status: ReconciliationStatus,
   lines: z.array(
     z.object({
       postingId: z.string(),
@@ -261,6 +290,51 @@ export const ReconciliationDto = z.object({
   completedAt: z.string().nullable(),
 });
 export type ReconciliationDto = z.infer<typeof ReconciliationDto>;
+
+/**
+ * POST reconciliations/:id/complete. With a difference left, `adjustment` posts a "Reconciliation adjustment" for it
+ * on the statement date, reconciled with the statement (DE-12); without one, a difference is refused.
+ */
+export const CompleteReconciliationRequest = z.object({
+  adjustment: z.object({ categoryId: Id.optional() }).optional(),
+});
+export type CompleteReconciliationRequest = z.output<typeof CompleteReconciliationRequest>;
+
+/** POST reconciliations/:id/undo (DE-13): owners and accountants, the account's latest completed one only. */
+export const UndoReconciliationRequest = z.object({ reason: z.string().trim().min(3).max(500) });
+export type UndoReconciliationRequest = z.output<typeof UndoReconciliationRequest>;
+
+/** One reconciliation on an account's history page (DE-14), newest statement first. */
+export const ReconciliationHistoryItemDto = z.object({
+  id: z.string(),
+  statementDate: z.string(),
+  openingBalance: MoneyDto,
+  statementBalance: MoneyDto,
+  status: ReconciliationStatus,
+  startedAt: z.string(),
+  startedBy: ReconciliationActorDto.nullable(),
+  completedAt: z.string().nullable(),
+  completedBy: ReconciliationActorDto.nullable(),
+  adjustment: ReconciliationAdjustmentDto.nullable(),
+  undoneAt: z.string().nullable(),
+  undoneBy: ReconciliationActorDto.nullable(),
+  undoReason: z.string().nullable(),
+  /** The account's latest completed reconciliation, and the caller may undo (owner or accountant). */
+  canUndo: z.boolean(),
+});
+export type ReconciliationHistoryItemDto = z.infer<typeof ReconciliationHistoryItemDto>;
+
+/** GET accounts/:accountId/reconciliations/history (DE-11, DE-14). */
+export const ReconciliationHistoryDto = z.object({
+  accountId: z.string(),
+  /** The last completed statement's date: "Reconciled through". */
+  reconciledThrough: z.string().nullable(),
+  /** What starting the next one suggests: a month after the last statement date, opening at its ending balance. */
+  next: z.object({ statementDate: z.string().nullable(), openingBalance: MoneyDto }),
+  inProgressId: z.string().nullable(),
+  items: z.array(ReconciliationHistoryItemDto),
+});
+export type ReconciliationHistoryDto = z.infer<typeof ReconciliationHistoryDto>;
 
 // ----- Switching from another app (IMP-13, ADR-0029) ----------------------------------------------------------
 

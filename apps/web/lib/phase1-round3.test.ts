@@ -119,6 +119,7 @@ describe('closed contract gaps', () => {
       tags: [],
       recurringItemId: 'r',
       managedBy: null,
+      reconciled: false,
       expenseDetail: null,
       foreign: null,
       tripId: null,

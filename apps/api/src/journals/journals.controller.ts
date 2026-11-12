@@ -29,7 +29,7 @@ import {
 } from '../auth/auth.js';
 import { Db } from '../db/database.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
-import { notFound, unprocessable } from '../common/errors.js';
+import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { requireRole } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { LedgerService } from '../ledger/ledger.service.js';
@@ -328,7 +328,10 @@ export class JournalsController {
     };
   }
 
-  /** Audited unlock of a reconciled entry (DE-08): the only path that bypasses the lock guard. */
+  /**
+   * Audited unlock of a locked entry (DE-08). A line still reconciled with a statement is refused: un-reconciling is
+   * the reconciliation's undo alone (DE-13, ADR-0039), so the statement chain stays whole.
+   */
   @Post('journal-entries/:entryId/unlock')
   async unlockEntry(@Ctx() ctx: RequestContext, @Param('entryId') entryId: string, @Body() body: unknown) {
     requireRole(ctx, 'owner');
@@ -336,6 +339,19 @@ export class JournalsController {
     const { note } = parse(AuditedNoteRequest, body);
     const id = parse(z.uuid(), entryId);
     await this.db.run({ ...dbCtx(ctx), allowLockedEdit: true }, async (trx) => {
+      const reconciled = await trx
+        .selectFrom('app.posting')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId!)
+        .where('journal_entry_id', '=', id)
+        .where('cleared', '=', 'reconciled')
+        .executeTakeFirst();
+      if (reconciled)
+        throw new AppError(
+          409,
+          'journal_entry.reconciled',
+          "A line of this entry is reconciled. Undo the statement's reconciliation from the account's reconciliation history",
+        );
       const res = await trx
         .updateTable('app.journal_entry')
         .set({ locked: false })
@@ -343,13 +359,6 @@ export class JournalsController {
         .where('id', '=', id)
         .executeTakeFirst();
       if (res.numUpdatedRows === 0n) throw notFound('Journal entry');
-      await trx
-        .updateTable('app.posting')
-        .set({ cleared: 'cleared', reconciliation_id: null })
-        .where('workspace_id', '=', ctx.workspaceId!)
-        .where('journal_entry_id', '=', id)
-        .where('cleared', '=', 'reconciled')
-        .execute();
       await trx
         .insertInto('app.audit_log')
         .values({

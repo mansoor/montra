@@ -55,6 +55,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'card.rule_': PAY_RULES,
   'card.choice_': ['due', 'minimum', 'other'],
   'account.balance_word.': ['balance', 'value', 'owed'],
+  'reconcile.': ['opening', 'cleared_deposits', 'cleared_payments', 'ending', 'difference'],
   'account.details_empty.': ['creditLimit', 'interestRate', 'lowBalance'],
   'account.history.': ['balance', 'value', 'owed'],
   'account.history.range_': BALANCE_RANGES,

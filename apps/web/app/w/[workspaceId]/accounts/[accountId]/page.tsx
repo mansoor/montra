@@ -28,7 +28,7 @@ export default async function RegisterPage({
   const range = (BALANCE_RANGES as readonly string[]).includes(query.range ?? '')
     ? (query.range as BalanceRange)
     : '1y';
-  const [[workspace, accounts, register, history], { t }] = await Promise.all([
+  const [[workspace, accounts, register, history], { t, date }] = await Promise.all([
     load((api) =>
       Promise.all([
         api.getWorkspace(workspaceId),
@@ -99,6 +99,12 @@ export default async function RegisterPage({
               className="font-semibold text-ink"
             />
           </p>
+          {account.reconciledThrough && (
+            <p className="text-sm text-muted" data-testid="account-reconciled-through">
+              <span aria-hidden="true">🔒 </span>
+              {t('accounts.reconciled_through', { date: date(account.reconciledThrough) })}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {type.imports && (
@@ -108,6 +114,9 @@ export default async function RegisterPage({
               </Link>
               <Link href={`${base}/reconcile`} className="btn-secondary">
                 {t('register.reconcile')}
+              </Link>
+              <Link href={`${base}/reconcile/history`} className="btn-secondary">
+                {t('register.reconcile_history')}
               </Link>
               <Link href={`/w/${workspaceId}/imports?account=${accountId}`} className="btn-secondary">
                 {t('register.imports')}

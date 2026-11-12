@@ -166,6 +166,11 @@ export const TransactionDto = z.object({
   expenseDetail: ExpenseDetailDto.nullable(),
   /** Signed amount from the paying account's view (negative = money out); null for manual journals. */
   amount: MoneyDto.nullable(),
+  /**
+   * DE-15: a line of it is reconciled with a statement. Its amount, account and date stay as they are until the
+   * reconciliation is undone (on the web); the category, payee, memo and tags can still change.
+   */
+  reconciled: z.boolean(),
   /** Scheduled occurrences have no entries until confirmed. */
   entries: z.array(JournalEntryDto),
 });

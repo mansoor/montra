@@ -41,6 +41,11 @@ const CODE_KEYS: Record<string, string> = {
   'reconciliation.in_progress': 'errors.reconciliation_in_progress',
   'reconciliation.completed': 'errors.reconciliation_completed',
   'reconciliation.difference': 'errors.reconciliation_difference',
+  'reconciliation.not_completed': 'errors.reconciliation_not_completed',
+  'reconciliation.not_latest': 'errors.reconciliation_not_latest',
+  'reconciliation.period_closed': 'errors.reconciliation_period_closed',
+  'reconciliation.statement_date_order': 'errors.reconciliation_statement_date_order',
+  'journal_entry.reconciled': 'errors.journal_entry_reconciled',
   'account.not_a_bank_account': 'errors.not_a_bank_account',
 };
 

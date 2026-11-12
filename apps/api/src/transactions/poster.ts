@@ -194,7 +194,7 @@ export class ReconciledError extends AppError {
     super(
       409,
       'transaction.reconciled',
-      'This transaction is reconciled. Its cash amount, account and date can only change after un-reconciling it.',
+      "This transaction is reconciled. Its cash amount, account and date can only change after undoing the statement's reconciliation from the account's reconciliation history.",
     );
   }
 }
