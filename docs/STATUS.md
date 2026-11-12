@@ -813,7 +813,8 @@ Phase 11 leftovers:
   - **The owner on payroll**: a person can be marked as an owner (`payroll_person.is_owner`). As an employee,
     `ownerNote` warns a sole proprietor (draws) or partner (guaranteed payments), and reminds an S-corp owner of a
     reasonable salary; shown on the add form and the person's page. A warning, not a refusal.
-  - **Phone**: More → Business shows the entity type, return form and masked EIN, read-only; editing is web only. Not run
+  - **Phone**: Business → Business settings (the collapsible section, #71) shows the entity type, return form and masked
+    EIN, read-only; editing is web only. Not run
     on a device.
   - Tests: `apps/api/test/business-registration.test.ts` (backfill, payroll and EFW2 reading the moved EIN, fiscal-year
     ranges, the owner rule, renewal reminders, reveal), `payroll-tax` and `payroll-year-end` now set the numbers on the

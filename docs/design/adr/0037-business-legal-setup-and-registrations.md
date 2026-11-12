@@ -137,7 +137,8 @@ it's sent once per date and again after a renewal changes it. No new notificatio
 
 ### 7. The phone
 
-Business on the phone shows the entity type, the return form and the masked EIN, read-only. Editing is on the web.
+The phone's Business settings section (the collapsible one at the foot of the Business screen) shows the entity type,
+the return form and the masked EIN, read-only. Editing is on the web.
 
 ## Consequences
 
