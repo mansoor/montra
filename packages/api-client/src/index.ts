@@ -47,6 +47,22 @@ import type {
   W2BoxesDto,
   W2Dto,
   YearEndDto,
+  BillContractorTimeRequest,
+  BillContractorTimeResponse,
+  ContractorTimeDto,
+  ContractorTimesheetDto,
+  CreateContractorTimeRequest,
+  CreateLeaveEntryRequest,
+  LeaveBalanceDto,
+  LeaveBalancesRowDto,
+  LeaveEntryDto,
+  LeaveKind,
+  LeavePolicyDto,
+  LeaveSettingsDto,
+  PaycheckLeaveDto,
+  PersonLeaveDto,
+  UpdateContractorTimeRequest,
+  UpdateLeaveSettingsRequest,
 } from '@montra/schemas';
 import type {
   AcceptRecommendationRequest,
@@ -360,6 +376,24 @@ export type UpdatePayrollSettingsInput = z.input<typeof UpdatePayrollSettingsReq
 export type RecordDepositInput = z.input<typeof RecordDepositRequest>;
 export type WorksheetForm = '941' | '940' | 'de9' | 'de9c';
 export type { Form1099NecDto, W2BoxesDto, W2Dto, YearEndDto };
+export type UpdateLeaveSettingsInput = z.input<typeof UpdateLeaveSettingsRequest>;
+export type CreateLeaveEntryInput = z.input<typeof CreateLeaveEntryRequest>;
+export type CreateContractorTimeInput = z.input<typeof CreateContractorTimeRequest>;
+export type UpdateContractorTimeInput = z.input<typeof UpdateContractorTimeRequest>;
+export type BillContractorTimeInput = z.input<typeof BillContractorTimeRequest>;
+export type {
+  BillContractorTimeResponse,
+  ContractorTimeDto,
+  ContractorTimesheetDto,
+  LeaveBalanceDto,
+  LeaveBalancesRowDto,
+  LeaveEntryDto,
+  LeaveKind,
+  LeavePolicyDto,
+  LeaveSettingsDto,
+  PaycheckLeaveDto,
+  PersonLeaveDto,
+};
 export type {
   De4Dto,
   DepositObligationDto,
@@ -2607,6 +2641,79 @@ export class ApiClient {
       form,
     );
   }
+  // ----- Staff time (PRL-23..28; ADR-0036) --------------------------------------------------------------------
+
+  getLeaveSettings(workspaceId: string, entityId: string) {
+    return this.request<LeaveSettingsDto>(
+      'GET',
+      this.ws(workspaceId, `/payroll/leave-settings${query({ entityId })}`),
+    );
+  }
+  updateLeaveSettings(workspaceId: string, entityId: string, input: UpdateLeaveSettingsInput) {
+    return this.request<LeaveSettingsDto>(
+      'PUT',
+      this.ws(workspaceId, `/payroll/leave-settings${query({ entityId })}`),
+      input,
+    );
+  }
+  /** Current employees' vacation and sick balances. */
+  listLeaveBalances(workspaceId: string, entityId: string) {
+    return this.request<{ data: LeaveBalancesRowDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/payroll/leave${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  getPersonLeave(workspaceId: string, personId: string) {
+    return this.request<PersonLeaveDto>(
+      'GET',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/leave`),
+    );
+  }
+  addLeaveEntry(workspaceId: string, personId: string, input: CreateLeaveEntryInput) {
+    return this.request<PersonLeaveDto>(
+      'POST',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/leave`),
+      input,
+    );
+  }
+  deleteLeaveEntry(workspaceId: string, personId: string, entryId: string) {
+    return this.request<PersonLeaveDto>(
+      'DELETE',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/leave/${enc(entryId)}`),
+    );
+  }
+  getTimesheet(workspaceId: string, personId: string) {
+    return this.request<ContractorTimesheetDto>(
+      'GET',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/time`),
+    );
+  }
+  addTimeEntry(workspaceId: string, personId: string, input: CreateContractorTimeInput) {
+    return this.request<ContractorTimesheetDto>(
+      'POST',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/time`),
+      input,
+    );
+  }
+  updateTimeEntry(workspaceId: string, id: string, input: UpdateContractorTimeInput) {
+    return this.request<ContractorTimesheetDto>(
+      'PATCH',
+      this.ws(workspaceId, `/payroll/time/${enc(id)}`),
+      input,
+    );
+  }
+  deleteTimeEntry(workspaceId: string, id: string) {
+    return this.request<ContractorTimesheetDto>('DELETE', this.ws(workspaceId, `/payroll/time/${enc(id)}`));
+  }
+  /** "Bill these hours": one bill to the contractor's vendor record. */
+  billTime(workspaceId: string, personId: string, input: BillContractorTimeInput) {
+    return this.request<BillContractorTimeResponse>(
+      'POST',
+      this.ws(workspaceId, `/payroll/people/${enc(personId)}/time/bill`),
+      input,
+    );
+  }
+
   // ----- Payroll, stage 3: employer tax (PRL-12..16) -------------------------------------------------------------
 
   listDe4(workspaceId: string, personId: string) {

@@ -401,10 +401,12 @@ describe('approving and posting (PRL-08, PRL-09)', () => {
       { name: 'Travel', type: 'expense', amount: '2400' },
       { name: 'Wages', type: 'expense', amount: '186625' },
     ]);
-    // Employer taxes are owed, not yet posted (cash basis, ADR-0034 §6).
+    // Employer taxes are owed, not yet posted (cash basis, ADR-0034 §6). Only this business's books: other suites
+    // record deposits to their own Payroll taxes accounts in the same database at the same time.
     const all = await admin.query(
       `select count(*)::int as n from app.posting p join app.ledger_account a on a.id = p.ledger_account_id
-        where a.name = 'Payroll taxes'`,
+        where a.name = 'Payroll taxes' and a.entity_id = $1`,
+      [biz],
     );
     expect(all.rows[0].n).toBe(0);
     const t = (await c.get(url(`/transactions/${pc.transactionId}`))).body;

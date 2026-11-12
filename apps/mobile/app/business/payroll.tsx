@@ -1,11 +1,13 @@
 /**
  * Payroll on the phone (PRL-22): the business's pay runs and reimbursement requests, and a way to submit one with a
  * receipt photo. Pay is personal, so it's read live and never kept on the device (as payslips, PAY-09). Pay runs are
- * made and approved on the web.
+ * made and approved on the web. Vacation and sick leave balances are shown read-only (PRL-25, ADR-0036); they change
+ * on the web.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import type { PayRunDto, ReimbursementDto } from '@montra/schemas';
+import type { LeaveBalancesRowDto, PayRunDto, ReimbursementDto } from '@montra/schemas';
+import { signedHoursLabel, trackedBalances } from '../../src/features/payroll';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
@@ -17,6 +19,7 @@ export default function Payroll() {
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [runs, setRuns] = useState<PayRunDto[] | null>(null);
   const [claims, setClaims] = useState<ReimbursementDto[]>([]);
+  const [leave, setLeave] = useState<LeaveBalancesRowDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -25,6 +28,8 @@ export default function Payroll() {
       setRuns(r);
       setClaims(c);
       setError(null);
+      // Balances name people, so a read-only grant gets none: leave the section out.
+      setLeave(await api.leaveBalances(ws, entityId).catch(() => []));
     } catch (err) {
       setError((err as Error).message);
     }
@@ -68,6 +73,30 @@ export default function Payroll() {
           testID="payroll-run"
         />
       ))}
+      {leave.some((p) => trackedBalances(p.balances).length > 0) ? (
+        <>
+          <Title>{t('payroll.time.balances')}</Title>
+          {leave.map((p, i) => (
+            <Row
+              key={p.personId}
+              title={p.personName}
+              subtitle={
+                trackedBalances(p.balances)
+                  .map((b) =>
+                    t('mobile.payroll.balance', {
+                      kind: b.kind === 'vacation' ? t('payroll.time.vacation') : t('payroll.time.sick'),
+                      hours: signedHoursLabel(b.balanceMilli),
+                    }),
+                  )
+                  .join(' · ') || t('payroll.time.not_tracked')
+              }
+              last={i === leave.length - 1}
+              testID="payroll-leave"
+            />
+          ))}
+          <Small>{t('mobile.payroll.leave_on_web')}</Small>
+        </>
+      ) : null}
       <Title>{t('payroll.claim.title')}</Title>
       {claims.length === 0 ? <Body muted>{t('payroll.claim.none')}</Body> : null}
       {claims.map((c, i) => (

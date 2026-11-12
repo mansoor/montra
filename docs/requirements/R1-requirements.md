@@ -344,6 +344,10 @@ The owner decided on 2026-11-10 to bring payroll into scope for business entitie
 
 Calculations are estimates for the owner's records and are not tax advice (worded as AI-10's tax hints are).
 
+On 2026-11-11 the owner asked to track employee vacation and contractor hours "so they are fairly paid" (ADR-0036):
+PRL-23..29 add leave balances, California paid sick leave and daily overtime, and contractor timesheets. The owner
+enters everything; employees don't sign in.
+
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | PRL-01 | Employees and contractors per business: legal name, address, contact, SSN or TIN, hire and end dates, pay type (hourly or salary) and rate, work state, and bank details for reference. | M |
@@ -368,6 +372,13 @@ Calculations are estimates for the owner's records and are not tax advice (worde
 | PRL-20 | An EFW2 file for upload to SSA Business Services Online. | C |
 | PRL-21 | The tax engine sits behind a port, so a payroll provider (for example Check or Gusto Embedded) can replace it without changing pay runs or the ledger. | M |
 | PRL-22 | On the phone: pay runs, payslips, and a reimbursement request with a receipt photo. | S |
+| PRL-23 | Vacation (PTO) policy per business: none, accrual per hour worked, or a yearly grant, with an optional balance cap and carry-over limit. A California employee's earned vacation is never forfeited. | M |
+| PRL-24 | California paid sick leave on by default for California employees at the statutory minimum (accrual or front-loading, balance cap, use limit, carry-over), pinned in a dated table with its source; a policy below the minimum is refused. | M |
+| PRL-25 | Leave balances per employee, with an opening balance for people hired before Montra and adjustments. Accrued leave is hours, not posted to the books (cash basis). | M |
+| PRL-26 | Vacation and sick hours on a paycheck, paid at the regular rate (a salary doesn't change). Using more than the balance warns and needs the owner's allowance; accrual is written when a pay run is approved and reversed when it's reopened; the payslip shows each balance; a final paycheck offers to pay out unused vacation (sick leave isn't paid out). | M |
+| PRL-27 | California daily overtime: hours per day for an hourly employee's period, with over 8 a day or 40 a week at 1.5×, over 12 a day at 2×, and the seventh consecutive day in a workweek; entering totals stays, and the paycheck says which was used. | M |
+| PRL-28 | Contractor timesheets: an hourly rate and time entries (date, hours, project or client, optional customer). "Bill these hours" makes one bill to the contractor's vendor record; billed hours are locked while the bill stands. | M |
+| PRL-29 | On the phone: leave balances, read-only. | C |
 
 ## 6. Rental property management
 

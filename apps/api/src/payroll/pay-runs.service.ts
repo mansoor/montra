@@ -10,6 +10,7 @@ import {
   newId,
   type PaycheckLineRow,
   type PaycheckRow,
+  type PayrollPersonRow,
   type PayRunRow,
   type PayScheduleRow,
   type Trx,
@@ -18,6 +19,8 @@ import {
   addDays,
   asCurrencyCode,
   calendarDate,
+  deemedHoursMilli,
+  doubleTimeRate,
   hoursPay,
   nextPayPeriod,
   overtimeRate,
@@ -25,14 +28,18 @@ import {
   payPeriodContaining,
   PERIODS_PER_YEAR,
   PRE_TAX_CODES,
+  salaryHourlyRate,
   salaryPerPeriod,
+  splitOvertime,
   todayIn,
+  workweekStart,
   type CalendarDate,
   type JournalEntryDraft,
   type PaycheckTotals,
   type PostingDraft,
   type PreTaxCode,
   type WageParts,
+  type WorkDay,
 } from '@montra/domain';
 import type {
   ApprovePayRunRequest,
@@ -54,6 +61,7 @@ import { usd, usDate } from './form-pdf.js';
 import { liabilityFor, payrollAccount } from './payroll-accounts.js';
 import { renderPayslipPdf } from './payslip-pdf.js';
 import { conflict, formatAddress, payrollEntity, personName, type Ctx } from './shared.js';
+import { LeaveService, type LeavePerson, type LeavePlans, type PaycheckLeaveInput } from './leave.service.js';
 import {
   EMPLOYEE_TAX_CODES,
   EMPLOYER_TAX_CODES,
@@ -100,8 +108,26 @@ const rowTotals = (p: PaycheckRow): PaycheckTotals => ({
   employerTaxes: BigInt(p.employer_taxes_minor),
 });
 
-/** Earnings worked out from hours or salary; everything else on a paycheck is entered, a reimbursement, or a tax. */
-const COMPUTED_EARNINGS = new Set(['regular', 'overtime', 'salary']);
+/** Earnings worked out from hours, leave or salary; everything else on a paycheck is entered, a reimbursement, or a tax. */
+const COMPUTED_EARNINGS = new Set([
+  'regular',
+  'overtime',
+  'double_time',
+  'salary',
+  'vacation',
+  'sick',
+  'vacation_payout',
+]);
+/** Hours that are work, for overtime and leave accrual (ADR-0036 §2). Leave hours never are. */
+const WORKED_CODES = new Set(['regular', 'overtime', 'double_time']);
+const hoursText = (milli: bigint) => {
+  const whole = milli / 1000n;
+  const frac = (milli < 0n ? -milli : milli) % 1000n;
+  const sign = milli < 0n && whole === 0n ? '-' : '';
+  return frac === 0n
+    ? `${sign}${whole}`
+    : `${sign}${whole}.${String(frac).padStart(3, '0').replace(/0+$/, '')}`;
+};
 
 @Injectable()
 export class PayRunsService {
@@ -109,6 +135,7 @@ export class PayRunsService {
     @Inject(Db) private readonly db: Db,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
     @Inject(PAYROLL_TAX_ENGINE) private readonly engine: PayrollTaxEngine,
+    @Inject(LeaveService) private readonly leave: LeaveService,
   ) {}
 
   // ----- Schedules (PRL-06) ---------------------------------------------------------------------------------------
@@ -333,6 +360,7 @@ export class PayRunsService {
       const lines = await this.lines(trx, ctx, [paycheckId]);
       const hoursOf = (code: string) =>
         lines.find((l) => l.code === code && l.kind === 'earning')?.hours_milli ?? null;
+      await this.saveTime(trx, ctx, r, pc, req);
       const replace = async (
         kind: 'earning' | 'pre_tax_deduction' | 'employee_tax' | 'post_tax_deduction' | 'employer_tax',
         given: { code: string; label: string; amount: string }[] | undefined,
@@ -443,6 +471,30 @@ export class PayRunsService {
         live.map((p) => p.id),
       );
       const reimbursementAccounts = await this.reimbursementAccounts(trx, ctx, lines);
+      // PRL-26: leave is checked against each balance, then written with the pay.
+      const leave: { person: LeavePerson; input: PaycheckLeaveInput; plans: LeavePlans }[] = [];
+      for (const p of live) {
+        const person = await this.personRow(trx, ctx, p.person_id);
+        if (!person) continue;
+        const lp = this.leavePerson(person);
+        const input = this.leaveInput(
+          r,
+          p,
+          person,
+          lines.filter((l) => l.paycheck_id === p.id),
+          await this.frequency(trx, ctx, r),
+        );
+        const plans = await this.leave.plan(trx, ctx, lp, input);
+        const over = Object.values(plans).some((x) => x?.warnings.includes('over_balance'));
+        if (over && !p.leave_over_allowed) {
+          throw unprocessable(
+            'payroll.leave_over_balance',
+            `${p.person_name} would use more leave than they have; allow it on their paycheck or change the hours`,
+          );
+        }
+        leave.push({ person: lp, input, plans });
+      }
+      for (const l of leave) await this.leave.write(trx, ctx, l.person, l.input, l.plans);
       for (const p of live) {
         await this.post(
           trx,
@@ -482,6 +534,11 @@ export class PayRunsService {
           );
         }
       }
+      await this.leave.reverse(
+        trx,
+        ctx,
+        paychecks.map((p) => p.id),
+      );
       for (const p of paychecks) {
         if (!p.transaction_id) continue;
         await trx
@@ -583,6 +640,14 @@ export class PayRunsService {
       gross: { current: money(p.gross), ytd: money(p.ytd.gross) },
       net: { current: money(p.net), ytd: money(p.ytd.net) },
       employerTaxes: rows('employer_tax'),
+      leave: p.leave.map((l) => ({
+        label: l.kind === 'vacation' ? 'Vacation' : 'Sick leave',
+        before: hoursText(BigInt(l.beforeMilli)),
+        used: hoursText(BigInt(l.usedMilli)),
+        earned: hoursText(BigInt(l.accruedMilli)),
+        paidOut: hoursText(BigInt(l.paidOutMilli)),
+        after: hoursText(BigInt(l.afterMilli)),
+      })),
       draft: run.status === 'draft',
     });
     return { bytes, fileName: `Payslip ${p.personName} ${run.payDate}.pdf` };
@@ -804,7 +869,7 @@ export class PayRunsService {
         })
         .execute();
 
-    // Regular pay.
+    // Regular pay: hours as totals, or worked out day by day (PRL-27).
     const rate = person.rate_minor !== null ? BigInt(person.rate_minor) : null;
     if (person.pay_type === 'salary' && rate !== null && schedule) {
       await insert({
@@ -815,7 +880,15 @@ export class PayRunsService {
         sort: 1,
       });
     } else if (person.pay_type === 'hourly' && rate !== null) {
-      const regular = hours.hours !== null ? BigInt(hours.hours) : 0n;
+      let regular = hours.hours !== null ? BigInt(hours.hours) : 0n;
+      let ot = hours.overtime !== null ? BigInt(hours.overtime) : 0n;
+      let dt = 0n;
+      if (pc.overtime_method === 'daily') {
+        const split = await this.dailySplit(trx, ctx, run, pc, person);
+        regular = split.regular;
+        ot = split.overtime;
+        dt = split.doubleTime;
+      }
       await insert({
         kind: 'earning',
         code: 'regular',
@@ -825,7 +898,6 @@ export class PayRunsService {
         rate,
         sort: 1,
       });
-      const ot = hours.overtime !== null ? BigInt(hours.overtime) : 0n;
       if (ot > 0n) {
         const otRate = overtimeRate(rate);
         await insert({
@@ -838,6 +910,57 @@ export class PayRunsService {
           sort: 2,
         });
       }
+      if (dt > 0n) {
+        const dtRate = doubleTimeRate(rate);
+        await insert({
+          kind: 'earning',
+          code: 'double_time',
+          label: 'Double time',
+          amount: hoursPay(dt, dtRate),
+          hours: dt,
+          rate: dtRate,
+          sort: 3,
+        });
+      }
+      // PRL-26: leave at the regular rate. A salary already pays for it.
+      const vacation = BigInt(pc.vacation_hours_milli);
+      if (vacation > 0n) {
+        await insert({
+          kind: 'earning',
+          code: 'vacation',
+          label: 'Vacation',
+          amount: hoursPay(vacation, rate),
+          hours: vacation,
+          rate,
+          sort: 4,
+        });
+      }
+      const sick = BigInt(pc.sick_hours_milli);
+      if (sick > 0n) {
+        await insert({
+          kind: 'earning',
+          code: 'sick',
+          label: 'Sick pay',
+          amount: hoursPay(sick, rate),
+          hours: sick,
+          rate,
+          sort: 5,
+        });
+      }
+    }
+    // A final paycheck's unused vacation, at the final rate (ADR-0036 §6).
+    const payout = BigInt(pc.vacation_payout_milli);
+    const payoutRate = this.finalRate(person);
+    if (payout > 0n && payoutRate !== null) {
+      await insert({
+        kind: 'earning',
+        code: 'vacation_payout',
+        label: 'Vacation payout',
+        amount: hoursPay(payout, payoutRate),
+        hours: payout,
+        rate: payoutRate,
+        sort: 6,
+      });
     }
 
     // PRL-11: approved reimbursements waiting for a pay run, untaxed.
@@ -1204,15 +1327,16 @@ export class PayRunsService {
       paychecks.map((p) => p.id),
     );
     const payDate = dateOf(r.pay_date);
+    const frequency = await this.frequency(trx, ctx, r);
+    const weekStartsOn = await this.leave.workweekStarts(trx, ctx, r.entity_id);
     const out: PaycheckDto[] = [];
     for (const p of paychecks) {
       const before = await this.yearToDate(trx, ctx, p.person_id, payDate, r.id);
-      const payType = await trx
-        .selectFrom('app.payroll_person')
-        .select('pay_type')
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', p.person_id)
-        .executeTakeFirst();
+      // Readers of the run can't see the person's record: no rules, plan or final pay for them.
+      const person = await this.personRow(trx, ctx, p.person_id);
+      const payType = person ? { pay_type: person.pay_type } : undefined;
+      const mine = lines.filter((l) => l.paycheck_id === p.id);
+      const time = await this.timeDto(trx, ctx, r, p, person, mine, frequency, weekStartsOn);
       out.push({
         id: p.id,
         payRunId: p.pay_run_id,
@@ -1237,9 +1361,283 @@ export class PayRunsService {
         ytd: totalsDto(add(before, rowTotals(p))),
         taxNotes: p.tax_notes ?? [],
         transactionId: p.transaction_id,
+        ...time,
         version: Number(p.version),
       });
     }
     return out;
+  }
+
+  // ----- Staff time (PRL-26, PRL-27; ADR-0036) ---------------------------------------------------------------------
+
+  private async personRow(trx: Trx, ctx: Ctx, personId: string): Promise<PayrollPersonRow | undefined> {
+    return trx
+      .selectFrom('app.payroll_person')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', personId)
+      .executeTakeFirst();
+  }
+
+  private leavePerson(p: PayrollPersonRow): LeavePerson {
+    return {
+      id: p.id,
+      entityId: p.entity_id,
+      workState: p.work_state,
+      hireDate: p.hire_date ? dateOf(p.hire_date) : null,
+    };
+  }
+
+  private async frequency(trx: Trx, ctx: Ctx, r: PayRunRow) {
+    return r.schedule_id ? (await this.schedule(trx, ctx, r.schedule_id)).frequency : 'monthly';
+  }
+
+  /** The rate a vacation payout uses: the hourly rate, or the salary over 2,080 hours. */
+  private finalRate(p: PayrollPersonRow): bigint | null {
+    if (p.rate_minor === null) return null;
+    const rate = BigInt(p.rate_minor);
+    if (p.pay_type === 'hourly') return rate;
+    if (p.pay_type === 'salary') return salaryHourlyRate(rate);
+    return null;
+  }
+
+  /** Hours worked for accrual: hourly from the lines, salaried deemed 40 a week less leave taken. */
+  private leaveInput(
+    r: PayRunRow,
+    p: PaycheckRow,
+    person: PayrollPersonRow,
+    lines: PaycheckLineRow[],
+    frequency: 'biweekly' | 'semimonthly' | 'monthly',
+  ): PaycheckLeaveInput {
+    const vacation = BigInt(p.vacation_hours_milli);
+    const sick = BigInt(p.sick_hours_milli);
+    const worked =
+      person.pay_type === 'salary'
+        ? deemedHoursMilli(frequency, vacation + sick)
+        : lines
+            .filter((l) => l.kind === 'earning' && WORKED_CODES.has(l.code))
+            .reduce((t, l) => t + BigInt(l.hours_milli ?? 0), 0n);
+    return {
+      paycheckId: p.id,
+      payDate: dateOf(r.pay_date),
+      periodStart: dateOf(r.period_start),
+      workedMilli: worked,
+      vacationMilli: vacation,
+      sickMilli: sick,
+      payoutMilli: BigInt(p.vacation_payout_milli),
+    };
+  }
+
+  private async days(trx: Trx, ctx: Ctx, paycheckId: string): Promise<WorkDay[]> {
+    const rows = await trx
+      .selectFrom('app.paycheck_day')
+      .select(['work_date', 'hours_milli'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('paycheck_id', '=', paycheckId)
+      .orderBy('work_date')
+      .execute();
+    return rows.map((d) => ({ date: dateOf(d.work_date), hoursMilli: BigInt(d.hours_milli) }));
+  }
+
+  /**
+   * Splits the paycheck's days into regular, overtime and double time. Days of the first workweek already paid on the
+   * person's earlier paychecks count toward its 40 hours and seventh day.
+   */
+  private async dailySplit(
+    trx: Trx,
+    ctx: Ctx,
+    run: PayRunRow,
+    pc: PaycheckRow,
+    person: PayrollPersonRow,
+    weekStartsOn?: number,
+  ) {
+    const starts = weekStartsOn ?? (await this.leave.workweekStarts(trx, ctx, run.entity_id));
+    const periodStart = dateOf(run.period_start);
+    const from = workweekStart(periodStart, starts);
+    const earlier =
+      from < periodStart
+        ? (
+            await trx
+              .selectFrom('app.paycheck_day as d')
+              .innerJoin('app.paycheck as p', (j) =>
+                j.onRef('p.workspace_id', '=', 'd.workspace_id').onRef('p.id', '=', 'd.paycheck_id'),
+              )
+              .select(['d.work_date', 'd.hours_milli'])
+              .where('d.workspace_id', '=', ctx.workspaceId)
+              .where('p.person_id', '=', pc.person_id)
+              .where('p.id', '!=', pc.id)
+              .where('d.work_date', '>=', from)
+              .where('d.work_date', '<', periodStart)
+              .execute()
+          ).map((d) => ({ date: dateOf(d.work_date), hoursMilli: BigInt(d.hours_milli) }))
+        : [];
+    return splitOvertime(await this.days(trx, ctx, pc.id), {
+      rules: person.work_state === 'CA' ? 'california' : 'federal',
+      weekStartsOn: starts,
+      earlier,
+    });
+  }
+
+  /** Saves the leave hours, payout, allowance and daily grid a draft paycheck was given. */
+  private async saveTime(trx: Trx, ctx: Ctx, r: PayRunRow, pc: PaycheckRow, req: UpdatePaycheckRequest) {
+    const person = await this.personRow(trx, ctx, pc.person_id);
+    if (!person) throw notFound('Person');
+    if (req.vacationPayoutHoursMilli !== undefined && BigInt(req.vacationPayoutHoursMilli) > 0n) {
+      if (!person.end_date || dateOf(person.end_date) > dateOf(r.period_end)) {
+        throw unprocessable(
+          'payroll.payout_not_final',
+          'Vacation is paid out only on the final paycheck: set the end date first',
+        );
+      }
+    }
+    if (req.days) {
+      if (person.pay_type !== 'hourly') {
+        throw unprocessable('payroll.daily_hours_hourly', 'Daily hours are for hourly pay');
+      }
+      const seen = new Set<string>();
+      for (const d of req.days) {
+        if (d.date < dateOf(r.period_start) || d.date > dateOf(r.period_end) || seen.has(d.date)) {
+          throw unprocessable('payroll.daily_hours_date', `${d.date} isn't a day of this pay period`);
+        }
+        seen.add(d.date);
+      }
+    }
+    if (req.days !== undefined) {
+      await trx
+        .deleteFrom('app.paycheck_day')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('paycheck_id', '=', pc.id)
+        .execute();
+      for (const d of req.days ?? []) {
+        await trx
+          .insertInto('app.paycheck_day')
+          .values({
+            workspace_id: ctx.workspaceId,
+            entity_id: pc.entity_id,
+            paycheck_id: pc.id,
+            work_date: d.date,
+            hours_milli: BigInt(d.hoursMilli),
+          })
+          .execute();
+      }
+    }
+    const changes = {
+      ...(req.vacationHoursMilli !== undefined
+        ? { vacation_hours_milli: BigInt(req.vacationHoursMilli) }
+        : {}),
+      ...(req.sickHoursMilli !== undefined ? { sick_hours_milli: BigInt(req.sickHoursMilli) } : {}),
+      ...(req.vacationPayoutHoursMilli !== undefined
+        ? { vacation_payout_milli: BigInt(req.vacationPayoutHoursMilli) }
+        : {}),
+      ...(req.allowLeaveOverBalance !== undefined ? { leave_over_allowed: req.allowLeaveOverBalance } : {}),
+      ...(req.days !== undefined
+        ? { overtime_method: req.days ? ('daily' as const) : ('manual' as const) }
+        : {}),
+    };
+    if (!Object.keys(changes).length) return;
+    await trx
+      .updateTable('app.paycheck')
+      .set(changes)
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', pc.id)
+      .execute();
+  }
+
+  /** The staff-time part of a paycheck's DTO. */
+  private async timeDto(
+    trx: Trx,
+    ctx: Ctx,
+    r: PayRunRow,
+    p: PaycheckRow,
+    person: PayrollPersonRow | undefined,
+    lines: PaycheckLineRow[],
+    frequency: 'biweekly' | 'semimonthly' | 'monthly',
+    weekStartsOn: number,
+  ): Promise<
+    Pick<
+      PaycheckDto,
+      | 'vacationHoursMilli'
+      | 'sickHoursMilli'
+      | 'vacationPayoutHoursMilli'
+      | 'overtimeMethod'
+      | 'days'
+      | 'overtimeRules'
+      | 'leaveOverAllowed'
+      | 'leave'
+      | 'finalPay'
+    >
+  > {
+    const payDate = dateOf(r.pay_date);
+    let days: PaycheckDto['days'] = [];
+    if (p.overtime_method === 'daily' && person) {
+      days = (await this.dailySplit(trx, ctx, r, p, person, weekStartsOn)).days.map((d) => ({
+        date: d.date,
+        hoursMilli: String(d.hoursMilli),
+        regularMilli: String(d.regular),
+        overtimeMilli: String(d.overtime),
+        doubleTimeMilli: String(d.doubleTime),
+        seventhDay: d.seventhDay,
+      }));
+    } else if (p.overtime_method === 'daily') {
+      days = (await this.days(trx, ctx, p.id)).map((d) => ({
+        date: d.date,
+        hoursMilli: String(d.hoursMilli),
+        regularMilli: '0',
+        overtimeMilli: '0',
+        doubleTimeMilli: '0',
+        seventhDay: false,
+      }));
+    }
+    let leave: PaycheckDto['leave'] = [];
+    let payable: bigint | null = null;
+    if (r.status === 'approved') {
+      leave = await this.leave.written(trx, ctx, p.person_id, p.id, payDate);
+    } else if (person) {
+      const plans = await this.leave.plan(
+        trx,
+        ctx,
+        this.leavePerson(person),
+        this.leaveInput(r, p, person, lines, frequency),
+      );
+      payable = plans.vacation?.payable ?? null;
+      leave = (['vacation', 'sick'] as const)
+        .filter((k) => plans[k])
+        .map((k) => {
+          const x = plans[k]!;
+          return {
+            kind: k,
+            beforeMilli: String(x.before),
+            usedMilli: String(x.used),
+            accruedMilli: String(x.accrued),
+            paidOutMilli: String(x.paidOut),
+            afterMilli: String(x.after),
+            warnings: x.warnings,
+          };
+        });
+    }
+    const finalRate = person ? this.finalRate(person) : null;
+    const ending = person?.end_date && dateOf(person.end_date) <= dateOf(r.period_end);
+    return {
+      vacationHoursMilli: String(p.vacation_hours_milli),
+      sickHoursMilli: String(p.sick_hours_milli),
+      vacationPayoutHoursMilli: String(p.vacation_payout_milli),
+      overtimeMethod: p.overtime_method,
+      days,
+      overtimeRules:
+        person?.pay_type === 'hourly' ? (person.work_state === 'CA' ? 'california' : 'federal') : null,
+      leaveOverAllowed: p.leave_over_allowed,
+      leave,
+      finalPay:
+        person && ending && finalRate !== null
+          ? {
+              endDate: dateOf(person.end_date!),
+              vacationPayableMilli: String(
+                payable ?? BigInt(leave.find((l) => l.kind === 'vacation')?.afterMilli ?? 0),
+              ),
+              rate: String(finalRate),
+              payoutRequired: person.work_state === 'CA',
+            }
+          : null,
+    };
   }
 }

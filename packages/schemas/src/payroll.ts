@@ -523,6 +523,42 @@ const Totals = {
   employerTaxes: MinorDto,
 };
 
+// ----- Staff time on a paycheck (PRL-26, PRL-27; ADR-0036) ----------------------------------------------------------
+
+export const LeaveKind = z.enum(['vacation', 'sick']);
+export type LeaveKind = z.infer<typeof LeaveKind>;
+/** Signed thousandths of an hour. */
+const SignedHoursMilli = z.string().regex(/^-?\d{1,9}$/, 'Hours in thousandths');
+export const LeaveWarning = z.enum(['over_balance', 'over_use_cap', 'waiting_period']);
+export type LeaveWarning = z.infer<typeof LeaveWarning>;
+
+export const PaycheckLeaveDto = z.object({
+  kind: LeaveKind,
+  beforeMilli: z.string(),
+  usedMilli: z.string(),
+  /** Accrual and the yearly grant, less any carry-over cut. */
+  accruedMilli: z.string(),
+  paidOutMilli: z.string(),
+  afterMilli: z.string(),
+  /** Over the balance (approving needs the owner's allowance), over the yearly use limit, before the 90th day. */
+  warnings: z.array(LeaveWarning),
+});
+export type PaycheckLeaveDto = z.infer<typeof PaycheckLeaveDto>;
+
+export const OvertimeMethod = z.enum(['manual', 'daily']);
+export type OvertimeMethod = z.infer<typeof OvertimeMethod>;
+
+export const PaycheckDayDto = z.object({
+  date: CalendarDateDto,
+  hoursMilli: z.string(),
+  regularMilli: z.string(),
+  overtimeMilli: z.string(),
+  doubleTimeMilli: z.string(),
+  /** The seventh consecutive day worked in its workweek (California). */
+  seventhDay: z.boolean(),
+});
+export type PaycheckDayDto = z.infer<typeof PaycheckDayDto>;
+
 export const PaycheckDto = z.object({
   id: Id,
   payRunId: Id,
@@ -536,6 +572,33 @@ export const PaycheckDto = z.object({
   /** What the tax engine wants the owner to know, such as a missing W-4 or another state's taxes to enter. */
   taxNotes: z.array(z.string()),
   transactionId: Id.nullable(),
+  /** Staff time (PRL-26, PRL-27; ADR-0036): leave hours taken and paid out on this paycheck, thousandths. */
+  vacationHoursMilli: z.string(),
+  sickHoursMilli: z.string(),
+  vacationPayoutHoursMilli: z.string(),
+  /** `daily`: regular, overtime and double time were worked out from `days`; `manual`: entered as totals. */
+  overtimeMethod: OvertimeMethod,
+  days: z.array(PaycheckDayDto),
+  /** Which overtime rules a daily grid uses (by work state); null when daily hours don't apply (salary). */
+  overtimeRules: z.enum(['california', 'federal']).nullable(),
+  /** The owner allowed using more leave than the balance. */
+  leaveOverAllowed: z.boolean(),
+  /** Vacation and sick balances through this paycheck; a draft shows what approving would do. */
+  leave: z.array(PaycheckLeaveDto),
+  /**
+   * Their last paycheck: employment ends on or before the period's end. In California unused vacation is wages and is
+   * paid out at the final rate; sick leave isn't. Null for someone who can't see payroll records.
+   */
+  finalPay: z
+    .object({
+      endDate: CalendarDateDto,
+      vacationPayableMilli: z.string(),
+      /** The hourly rate a payout uses: the hourly rate, or the salary over 2,080 hours. */
+      rate: MinorDto,
+      /** California: vacation is wages and must be paid out. */
+      payoutRequired: z.boolean(),
+    })
+    .nullable(),
   version: z.number().int(),
 });
 export type PaycheckDto = z.infer<typeof PaycheckDto>;
@@ -597,6 +660,30 @@ export const UpdatePaycheckRequest = z.object({
   employeeTaxes: z.array(EditableLine).max(20).optional(),
   postTaxDeductions: z.array(EditableLine).max(20).optional(),
   employerTaxes: z.array(EditableLine).max(20).optional(),
+  /** Leave taken in the period, paid at the regular rate (a salary doesn't change). */
+  vacationHoursMilli: HoursMilli.optional(),
+  sickHoursMilli: HoursMilli.optional(),
+  /** Unused vacation paid out on a final paycheck. */
+  vacationPayoutHoursMilli: HoursMilli.optional(),
+  /**
+   * Hours worked each day of the period (hourly pay): regular, overtime and double time are worked out from them, and
+   * `hoursMilli` / `overtimeHoursMilli` are ignored. Null goes back to entering totals.
+   */
+  days: z
+    .array(
+      z.object({
+        date: CalendarDateDto,
+        hoursMilli: z
+          .string()
+          .regex(/^\d{1,5}$/, 'Hours in thousandths')
+          .refine((v) => BigInt(v) <= 24000n, 'At most 24 hours a day'),
+      }),
+    )
+    .max(31)
+    .nullable()
+    .optional(),
+  /** Allow using more vacation or sick leave than the balance. */
+  allowLeaveOverBalance: z.boolean().optional(),
   version: Version,
 });
 export type UpdatePaycheckRequest = z.output<typeof UpdatePaycheckRequest>;
@@ -937,3 +1024,221 @@ export const YearEndDto = z.object({
   notes: z.array(z.string()),
 });
 export type YearEndDto = z.infer<typeof YearEndDto>;
+
+// ----- Staff time: leave policies and balances (PRL-23..25; ADR-0036) ----------------------------------------------
+
+export const LeaveMethod = z.enum(['none', 'accrual', 'grant']);
+export type LeaveMethod = z.infer<typeof LeaveMethod>;
+export const LeaveSource = z.enum([
+  'opening',
+  'adjustment',
+  'accrual',
+  'grant',
+  'carryover',
+  'used',
+  'payout',
+]);
+export type LeaveSource = z.infer<typeof LeaveSource>;
+export const SickShortfall = z.enum([
+  'method',
+  'accrual_rate',
+  'balance_cap',
+  'use_cap',
+  'grant',
+  'carryover',
+]);
+export type SickShortfall = z.infer<typeof SickShortfall>;
+
+export const LeavePolicyDto = z.object({
+  kind: LeaveKind,
+  method: LeaveMethod,
+  /** Accrual: `accrueMilli` hours earned per `perHoursMilli` worked (1 per 30 = "1000" per "30000"). */
+  accrueMilli: z.string().nullable(),
+  perHoursMilli: z.string().nullable(),
+  /** Grant: hours given on 1 January each year (front-loading). */
+  grantMilli: z.string().nullable(),
+  maxBalanceMilli: z.string().nullable(),
+  /** Balance above this is forfeited on 1 January; never applied to California vacation. */
+  carryoverMaxMilli: z.string().nullable(),
+  useCapMilli: z.string().nullable(),
+  /** No policy saved: sick leave uses California's minimum, vacation isn't tracked. */
+  isDefault: z.boolean(),
+  /** Sick only: where the policy gives less than California's minimum. */
+  shortfalls: z.array(SickShortfall),
+});
+export type LeavePolicyDto = z.infer<typeof LeavePolicyDto>;
+
+/** California's paid sick leave minimum in force today, with where it comes from (ADR-0036 §2). */
+export const CaSickLeaveRuleDto = z.object({
+  from: CalendarDateDto,
+  minHoursMilli: z.string(),
+  minDays: z.number().int(),
+  accrueMilli: z.string(),
+  perHoursMilli: z.string(),
+  accrualCapHoursMilli: z.string(),
+  accrualCapDays: z.number().int(),
+  useCapHoursMilli: z.string(),
+  useCapDays: z.number().int(),
+  usableFromDay: z.number().int(),
+  source: z.string(),
+});
+export type CaSickLeaveRuleDto = z.infer<typeof CaSickLeaveRuleDto>;
+
+export const LeaveSettingsDto = z.object({
+  entityId: Id,
+  vacation: LeavePolicyDto,
+  sick: LeavePolicyDto,
+  /** The day a workweek starts for overtime: ISO weekday, 0 = Monday … 6 = Sunday. */
+  workweekStarts: z.number().int().min(0).max(6),
+  caSickRule: CaSickLeaveRuleDto,
+});
+export type LeaveSettingsDto = z.infer<typeof LeaveSettingsDto>;
+
+const PolicyHours = z
+  .string()
+  .regex(/^\d{1,8}$/, 'Hours in thousandths')
+  .refine((v) => BigInt(v) <= 10_000_000n, 'Too many hours');
+export const LeavePolicyInput = z
+  .object({
+    method: LeaveMethod,
+    accrueMilli: PolicyHours.nullable().optional(),
+    perHoursMilli: PolicyHours.nullable().optional(),
+    grantMilli: PolicyHours.nullable().optional(),
+    maxBalanceMilli: PolicyHours.nullable().optional(),
+    carryoverMaxMilli: PolicyHours.nullable().optional(),
+    useCapMilli: PolicyHours.nullable().optional(),
+  })
+  .refine(
+    (p) =>
+      p.method !== 'accrual' ||
+      (!!p.accrueMilli && !!p.perHoursMilli && BigInt(p.accrueMilli) > 0n && BigInt(p.perHoursMilli) > 0n),
+    { message: 'Accrual needs hours earned and hours worked', path: ['accrueMilli'] },
+  )
+  .refine((p) => p.method !== 'grant' || p.grantMilli != null, {
+    message: 'A yearly grant needs its hours',
+    path: ['grantMilli'],
+  });
+export type LeavePolicyInput = z.output<typeof LeavePolicyInput>;
+
+export const UpdateLeaveSettingsRequest = z.object({
+  vacation: LeavePolicyInput.optional(),
+  /** Refused while it gives less than California's minimum; sick leave can't be `none`. */
+  sick: LeavePolicyInput.optional(),
+  workweekStarts: z.number().int().min(0).max(6).optional(),
+});
+export type UpdateLeaveSettingsRequest = z.output<typeof UpdateLeaveSettingsRequest>;
+
+export const LeaveBalanceDto = z.object({
+  kind: LeaveKind,
+  /** A policy applies to the person, or hours were entered for them. */
+  tracked: z.boolean(),
+  method: LeaveMethod,
+  balanceMilli: z.string(),
+  usedThisYearMilli: z.string(),
+  accruedThisYearMilli: z.string(),
+});
+export type LeaveBalanceDto = z.infer<typeof LeaveBalanceDto>;
+
+export const LeaveEntryDto = z.object({
+  id: Id,
+  kind: LeaveKind,
+  date: CalendarDateDto,
+  source: LeaveSource,
+  hoursMilli: z.string(),
+  payRunId: Id.nullable(),
+  note: z.string().nullable(),
+  /** Opening balances and adjustments can be removed; a pay run's entries go when it's reopened. */
+  canDelete: z.boolean(),
+});
+export type LeaveEntryDto = z.infer<typeof LeaveEntryDto>;
+
+export const PersonLeaveDto = z.object({
+  personId: Id,
+  balances: z.array(LeaveBalanceDto),
+  entries: z.array(LeaveEntryDto),
+});
+export type PersonLeaveDto = z.infer<typeof PersonLeaveDto>;
+
+/** Every current employee's balances, for the payroll page and the phone. */
+export const LeaveBalancesRowDto = z.object({
+  personId: Id,
+  personName: z.string(),
+  balances: z.array(LeaveBalanceDto),
+});
+export type LeaveBalancesRowDto = z.infer<typeof LeaveBalancesRowDto>;
+
+export const CreateLeaveEntryRequest = z.object({
+  kind: LeaveKind,
+  /** One opening balance per kind, for someone hired before Montra; adjustments add or take away hours. */
+  source: z.enum(['opening', 'adjustment']),
+  date: CalendarDateDto,
+  hoursMilli: SignedHoursMilli.refine((v) => BigInt(v) !== 0n, 'Enter some hours'),
+  note: OptionalText(500),
+});
+export type CreateLeaveEntryRequest = z.output<typeof CreateLeaveEntryRequest>;
+
+// ----- Contractor timesheets (PRL-28; ADR-0036 §5) -----------------------------------------------------------------
+
+export const ContractorTimeDto = z.object({
+  id: Id,
+  personId: Id,
+  workDate: CalendarDateDto,
+  hoursMilli: z.string(),
+  note: z.string().nullable(),
+  customerPartyId: Id.nullable(),
+  customerName: z.string().nullable(),
+  /** The bill the hours are on, while it stands (a voided bill frees them). */
+  billId: Id.nullable(),
+  billStatus: z.enum(['open', 'paid', 'overdue']).nullable(),
+  /** The rate billed at, or the contractor's rate now while unbilled. */
+  rate: MinorDto.nullable(),
+  amount: MinorDto.nullable(),
+  version: z.number().int(),
+});
+export type ContractorTimeDto = z.infer<typeof ContractorTimeDto>;
+
+export const ContractorTimesheetDto = z.object({
+  personId: Id,
+  /** The contractor's hourly rate: their pay rate when the pay type is hourly. */
+  rate: MinorDto.nullable(),
+  vendorPartyId: Id.nullable(),
+  entries: z.array(ContractorTimeDto),
+  unbilledHoursMilli: z.string(),
+  unbilledAmount: MinorDto.nullable(),
+});
+export type ContractorTimesheetDto = z.infer<typeof ContractorTimesheetDto>;
+
+const DayHours = z
+  .string()
+  .regex(/^\d{1,5}$/, 'Hours in thousandths')
+  .refine((v) => BigInt(v) > 0n && BigInt(v) <= 24000n, 'Between 0 and 24 hours');
+
+export const CreateContractorTimeRequest = z.object({
+  workDate: CalendarDateDto,
+  hoursMilli: DayHours,
+  note: OptionalText(500),
+  customerPartyId: Id.nullable().optional(),
+});
+export type CreateContractorTimeRequest = z.output<typeof CreateContractorTimeRequest>;
+
+export const UpdateContractorTimeRequest = CreateContractorTimeRequest.partial().extend({ version: Version });
+export type UpdateContractorTimeRequest = z.output<typeof UpdateContractorTimeRequest>;
+
+export const BillContractorTimeRequest = z.object({
+  entryIds: z.array(Id).min(1).max(500),
+  billDate: CalendarDateDto,
+  /** The bill date when left out. */
+  dueDate: CalendarDateDto.optional(),
+  /** The business's Contract labor category (Schedule C line 11) when left out. */
+  expenseAccountId: Id.optional(),
+  reference: OptionalText(100),
+});
+export type BillContractorTimeRequest = z.output<typeof BillContractorTimeRequest>;
+
+export const BillContractorTimeResponse = z.object({
+  billId: Id,
+  amount: MinorDto,
+  hoursMilli: z.string(),
+  timesheet: ContractorTimesheetDto,
+});
+export type BillContractorTimeResponse = z.infer<typeof BillContractorTimeResponse>;
