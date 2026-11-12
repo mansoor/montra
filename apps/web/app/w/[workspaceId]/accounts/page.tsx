@@ -1,6 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { summarizeAccounts, withOtherAssets, type CurrencyTotal } from '@montra/domain';
+import {
+  calendarDate,
+  reconciliationDue,
+  summarizeAccounts,
+  todayIn,
+  withOtherAssets,
+  type CurrencyTotal,
+} from '@montra/domain';
 import { getI18n } from '@/lib/i18n-server';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
@@ -28,13 +35,14 @@ function Totals({ totals }: { totals: CurrencyTotal[] }) {
 /** Every account by kind, with totals for each kind and for everything. */
 export default async function AccountsPage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
-  const [workspace, accounts, worth, { t }] = await Promise.all([
+  const [workspace, accounts, worth, { t, date }] = await Promise.all([
     load((api) => api.getWorkspace(workspaceId)),
     load((api) => api.listAccounts(workspaceId)),
     load((api) => api.getNetWorth(workspaceId, { months: 1 })),
     getI18n(),
   ]);
   const base = `/w/${workspaceId}`;
+  const today = todayIn(workspace.timeZone);
   // Rental properties aren't accounts, but net worth on Home counts your share of them, so this does too (ADR-0027).
   const properties = worth.properties.filter((p) => BigInt(p.value) !== 0n);
   const summary = withOtherAssets(
@@ -92,6 +100,14 @@ export default async function AccountsPage({ params }: { params: Promise<{ works
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
+                    {a.reconciledThrough && (
+                      <span className="block truncate text-xs text-muted" data-testid="accounts-reconciled">
+                        {t('accounts.reconciled_through', { date: date(a.reconciledThrough) })}
+                        {reconciliationDue(calendarDate(a.reconciledThrough), today) && (
+                          <span data-testid="accounts-statement-due"> · {t('accounts.statement_due')}</span>
+                        )}
+                      </span>
+                    )}
                   </span>
                   <span className="shrink-0 text-right">
                     <Money amount={a.balance.amount} currency={a.currency} />

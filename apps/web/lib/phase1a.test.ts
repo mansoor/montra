@@ -41,6 +41,7 @@ const txn = (postings: ReturnType<typeof posting>[], over: Partial<TransactionDt
   tags: ['food'],
   recurringItemId: null,
   managedBy: null,
+  reconciled: false,
   expenseDetail: null,
   foreign: null,
   tripId: null,

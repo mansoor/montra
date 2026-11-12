@@ -81,26 +81,69 @@ test('imports a bank statement, skips a row, commits, warns on re-upload and und
   await expect(page.getByRole('row', { name: /ACME CORP PAYROLL/ })).toHaveCount(0);
 });
 
-test('reconciles an account against a statement and locks the lines', async ({ page }) => {
+test('reconciles statement after statement, adjusts a difference and undoes the latest', async ({ page }) => {
+  test.setTimeout(120_000);
   await onboard(page, `reconcile-${Date.now()}@example.com`, 'Savings');
 
-  await page.getByRole('link', { name: 'Reconcile' }).click();
+  // DE-08, DE-11: the first statement opens at 0.
+  await page.getByRole('link', { name: 'Reconcile', exact: true }).click();
+  await expect(page.getByTestId('reconcile-opening')).toContainText('$0.00');
   await page.getByLabel('Statement date').fill('2026-10-31');
   await page.getByLabel('Statement ending balance (USD)').fill('2,500.00');
   await page.getByRole('button', { name: 'Start reconciling' }).click();
 
   const difference = page.getByTestId('reconcile-difference');
   await expect(difference).toHaveText('$2,500.00');
+  await expect(page.getByTestId('reconcile-opening-balance')).toHaveText('$0.00');
   const finish = page.getByRole('button', { name: 'Finish reconciliation' });
   await expect(finish).toBeDisabled();
   await page.getByTestId('reconcile-line').getByRole('checkbox').check();
   await expect(difference).toHaveText('$0.00');
+  await expect(page.getByTestId('cleared-deposits')).toHaveText('$2,500.00');
+  await expect(page.getByTestId('ending-balance')).toHaveText('$2,500.00');
   await finish.click();
   await expect(page.getByText('Reconciled. These lines are now locked.')).toBeVisible();
   await expect(page.getByTestId('reconcile-line').getByRole('img', { name: 'Reconciled' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Back to account' }).first().click();
   await expect(page.getByTestId('reconciled-lock')).toHaveCount(1);
+  await expect(page.getByTestId('account-reconciled-through')).toContainText('Reconciled through');
+
+  // DE-11, DE-12: the next statement opens at the last ending balance, a month on; a difference is adjusted.
+  await page.getByRole('link', { name: 'Reconcile', exact: true }).click();
+  await expect(page.getByTestId('reconcile-opening')).toContainText('$2,500.00');
+  await expect(page.getByLabel('Statement date')).toHaveValue('2026-11-30');
+  await page.getByLabel('Statement date').fill('2026-11-10');
+  await page.getByLabel('Statement ending balance (USD)').fill('2,490.00');
+  await page.getByRole('button', { name: 'Start reconciling' }).click();
+  await expect(page.getByTestId('reconcile-opening-balance')).toHaveText('$2,500.00');
+  await expect(difference).toHaveText('-$10.00');
+  await page.getByRole('button', { name: 'Finish with an adjustment' }).click();
+  await expect(page.getByLabel('Category')).toHaveValue(/.+/);
+  await page.getByRole('button', { name: 'Add adjustment and finish' }).click();
+  await expect(page.getByText('Reconciled. These lines are now locked.')).toBeVisible();
+  await expect(page.getByTestId('reconcile-adjusted')).toContainText('-$10.00');
+
+  // DE-14: the history, newest first, flags the adjustment; DE-13: undo the latest, with a reason.
+  await page.getByRole('link', { name: 'Reconciliation history' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Reconciliation history: Savings' })).toBeVisible();
+  const rows = page.getByTestId('reconciliation-row');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toHaveAttribute('data-status', 'completed');
+  await expect(rows.first().getByTestId('history-adjustment')).toContainText('-$10.00');
+  await expect(rows.nth(1).getByRole('button', { name: 'Undo' })).toHaveCount(0);
+  await rows.first().getByRole('button', { name: 'Undo' }).click();
+  await page.getByRole('button', { name: 'Undo reconciliation' }).click();
+  await expect(page.getByText('Say why, in a few words.')).toBeVisible();
+  await page.getByLabel('Reason').fill('Entered the wrong statement balance');
+  await page.getByRole('button', { name: 'Undo reconciliation' }).click();
+  await expect(rows.first()).toHaveAttribute('data-status', 'undone');
+  await expect(rows.first().getByTestId('undo-reason')).toContainText('Entered the wrong statement balance');
+  await expect(rows.nth(1).getByRole('button', { name: 'Undo' })).toBeVisible();
+
+  // The accounts list says how far the account is reconciled.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Accounts' }).click();
+  await expect(page.getByTestId('accounts-reconciled')).toContainText('Reconciled through');
 });
 
 test('maps the columns of an unfamiliar file before previewing it', async ({ page }) => {

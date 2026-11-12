@@ -142,8 +142,12 @@ import type {
   ImportBatchDto,
   ImportRowDto,
   JobDto,
+  CompleteReconciliationRequest,
   ReconciliationDto,
+  ReconciliationHistoryDto,
+  ReconciliationHistoryItemDto,
   StartReconciliationRequest,
+  UndoReconciliationRequest,
   UndoResultDto,
   UpdateImportRowRequest,
   UpdateMappingRequest,
@@ -454,6 +458,8 @@ export type CreateImportInput = z.input<typeof CreateImportRequest>;
 export type UpdateMappingInput = z.input<typeof UpdateMappingRequest>;
 export type UpdateImportRowInput = z.input<typeof UpdateImportRowRequest>;
 export type StartReconciliationInput = z.input<typeof StartReconciliationRequest>;
+export type CompleteReconciliationInput = z.input<typeof CompleteReconciliationRequest>;
+export type UndoReconciliationInput = z.input<typeof UndoReconciliationRequest>;
 export type BulkImportRowsInput = z.input<typeof BulkImportRowsRequest>;
 export type UpdateAiSettingsInput = z.input<typeof UpdateAiSettingsRequest>;
 export type CreateRuleInput = z.input<typeof CreateRuleRequest>;
@@ -1380,10 +1386,27 @@ export class ApiClient {
       input,
     );
   }
-  completeReconciliation(workspaceId: string, id: string) {
+  /** With a difference left, `adjustment` posts a balance adjustment for it (DE-12). */
+  completeReconciliation(workspaceId: string, id: string, input: CompleteReconciliationInput = {}) {
     return this.request<ReconciliationDto>(
       'POST',
       this.ws(workspaceId, `/reconciliations/${enc(id)}/complete`),
+      input,
+    );
+  }
+  /** DE-13: owners and accountants, the account's latest completed reconciliation only. */
+  undoReconciliation(workspaceId: string, id: string, input: UndoReconciliationInput) {
+    return this.request<ReconciliationDto>(
+      'POST',
+      this.ws(workspaceId, `/reconciliations/${enc(id)}/undo`),
+      input,
+    );
+  }
+  /** DE-14: an account's reconciliations, newest statement first, and what the next one would start with. */
+  reconciliationHistory(workspaceId: string, accountId: string) {
+    return this.request<ReconciliationHistoryDto>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/reconciliations/history`),
     );
   }
 
@@ -1410,7 +1433,11 @@ export class ApiClient {
     );
   }
   /** An account's reconciliations, newest first; `in_progress` finds the one to resume. */
-  listReconciliations(workspaceId: string, accountId: string, status?: 'in_progress' | 'completed') {
+  listReconciliations(
+    workspaceId: string,
+    accountId: string,
+    status?: 'in_progress' | 'completed' | 'undone',
+  ) {
     return this.request<{ data: ReconciliationDto[] }>(
       'GET',
       this.ws(workspaceId, `/accounts/${enc(accountId)}/reconciliations${query({ status })}`),
@@ -3064,6 +3091,8 @@ export type {
   ImportRowDto,
   JobDto,
   ReconciliationDto,
+  ReconciliationHistoryDto,
+  ReconciliationHistoryItemDto,
   UndoResultDto,
   UploadDto,
   LedgerAccountDto,
