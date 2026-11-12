@@ -30,6 +30,7 @@ export default async function TransactionsPage({
     entityId?: string;
     memberId?: string;
     propertyId?: string;
+    spentBy?: string;
     q?: string;
     categoryIds?: string;
     accountIds?: string;
@@ -46,6 +47,7 @@ export default async function TransactionsPage({
     entityId: sp.entityId,
     memberId: sp.memberId,
     propertyId: sp.propertyId,
+    spentBy: sp.spentBy,
     q: sp.q,
     categoryIds: sp.categoryIds ? sp.categoryIds.split(',').filter(Boolean) : undefined,
     accountIds: sp.accountIds ? sp.accountIds.split(',').filter(Boolean) : undefined,

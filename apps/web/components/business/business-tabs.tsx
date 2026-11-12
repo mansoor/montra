@@ -9,6 +9,7 @@ const TABS = [
   ['/invoices', 'business.tab_invoices'],
   ['/bills', 'business.tab_bills'],
   ['/parties', 'business.tab_parties'],
+  ['/assets', 'business.tab_assets'],
   ['/mileage', 'business.tab_mileage'],
   ['/people', 'business.tab_people'],
   ['/payroll', 'business.tab_payroll'],

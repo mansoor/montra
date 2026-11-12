@@ -27,6 +27,7 @@ import {
   type TransactionSpec,
 } from './poster.js';
 import { searchFilter } from './search-filter.js';
+import { loadExpenseDetails } from '../business/expense-details.js';
 import {
   Categorizer,
   payeeKeyOf,
@@ -748,6 +749,7 @@ export class TransactionsService {
       entityId?: string;
       memberId?: string;
       propertyId?: string;
+      spentBy?: string;
       q?: string;
       categoryIds?: string[];
       accountIds?: string[];
@@ -802,6 +804,19 @@ export class TransactionsService {
               .$if(!!opts.accountIds, (s) => s.where('p.ledger_account_id', 'in', opts.accountIds!)),
           ),
         );
+      }
+      if (opts.spentBy) {
+        const spentBy = opts.spentBy;
+        const scope = opts.entityId ? sql`and d.entity_id = ${opts.entityId}` : sql``;
+        const who =
+          spentBy === 'none'
+            ? sql`d.spent_by is not null`
+            : spentBy === 'owner'
+              ? sql`d.spent_by = 'owner'`
+              : sql`d.spent_by_person_id = ${spentBy}`;
+        const named = sql<boolean>`exists (select 1 from app.expense_detail d
+          where d.workspace_id = t.workspace_id and d.transaction_id = t.id ${scope} and ${who})`;
+        q = q.where(spentBy === 'none' ? sql<boolean>`not ${named}` : named);
       }
       if (opts.q) {
         const { where } = await searchFilter(trx, ctx, this.crypto, opts.q);
@@ -1282,6 +1297,7 @@ export class TransactionsService {
       .orderBy('t.name')
       .execute();
     const receipts = await this.receiptsFor(trx, ctx, ids);
+    const details = await loadExpenseDetails(trx, ctx, ids);
     const order = new Map(ids.map((id, i) => [id, i]));
     const merchants = await this.merchants.load(trx);
     const result: TransactionDto[] = [];
@@ -1308,6 +1324,7 @@ export class TransactionsService {
         receipt: receipts.get(t.id) ?? null,
         splits: specSplits(t.spec as TransactionSpec | null),
         managedBy: ownerOf(t.spec),
+        expenseDetail: details.get(t.id) ?? null,
         entries: entries
           .filter((e) => e.transaction_id === t.id)
           .map((e) => ({

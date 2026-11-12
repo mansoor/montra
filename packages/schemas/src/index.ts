@@ -20,3 +20,4 @@ export * from './data-ownership.js';
 export * from './storage.js';
 export * from './operations.js';
 export * from './payroll.js';
+export * from './assets.js';

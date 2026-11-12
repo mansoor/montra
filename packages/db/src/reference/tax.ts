@@ -18,6 +18,12 @@ export const US_TAX_LINES: TaxLine[] = [
   { code: 'US_SCH_C_L9', form: 'schedule_c', line: '9', label: 'Car and truck expenses' },
   { code: 'US_SCH_C_L10', form: 'schedule_c', line: '10', label: 'Commissions and fees' },
   { code: 'US_SCH_C_L11', form: 'schedule_c', line: '11', label: 'Contract labor' },
+  {
+    code: 'US_SCH_C_L13',
+    form: 'schedule_c',
+    line: '13',
+    label: 'Depreciation and section 179 expense deduction',
+  },
   { code: 'US_SCH_C_L15', form: 'schedule_c', line: '15', label: 'Insurance (other than health)' },
   { code: 'US_SCH_C_L16B', form: 'schedule_c', line: '16b', label: 'Interest (other)' },
   { code: 'US_SCH_C_L17', form: 'schedule_c', line: '17', label: 'Legal and professional services' },

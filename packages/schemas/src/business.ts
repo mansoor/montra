@@ -309,7 +309,14 @@ export const MileageTripDto = z.object({
   miles: z.string(),
   /** Cents per mile at the trip's date, such as "72.5". */
   centsPerMile: z.string(),
+  /** Miles at the rate. The owner's deduction for their own trips; for a person's, what reimbursing it would pay. */
   deduction: MinorDto,
+  /** BIZ-19: the owner's trips are the mileage deduction; a payroll person's aren't (ADR-0035 §8). */
+  driver: z.enum(['owner', 'person']),
+  driverPersonId: Id.nullable(),
+  driverName: z.string().nullable(),
+  reimbursementId: Id.nullable(),
+  reimbursementStatus: z.enum(['submitted', 'approved', 'declined', 'paid']).nullable(),
   version: z.number().int(),
 });
 export type MileageTripDto = z.infer<typeof MileageTripDto>;
@@ -324,6 +331,8 @@ export const CreateTripRequest = z.object({
   purpose: Text(500).min(1),
   vehicle: Text(100).nullable().optional(),
   miles: Miles,
+  /** A payroll person of this business who drove; null or left out for the owner. */
+  driverPersonId: Id.nullable().optional(),
 });
 export type CreateTripRequest = z.output<typeof CreateTripRequest>;
 
@@ -335,9 +344,22 @@ export type UpdateTripRequest = z.output<typeof UpdateTripRequest>;
 export const MileageSummaryDto = z.object({
   year: z.number().int(),
   trips: z.array(MileageTripDto),
+  /** The owner's trips: these are the deduction. */
   miles: z.string(),
   deduction: MinorDto,
   currency: CurrencyCodeDto,
+  /** BIZ-19: per driver, the owner first. `amount` is the deduction for the owner, and the value at the rate for others. */
+  byDriver: z.array(
+    z.object({
+      driver: z.enum(['owner', 'person']),
+      personId: Id.nullable(),
+      name: z.string().nullable(),
+      trips: z.number().int(),
+      miles: z.string(),
+      amount: MinorDto,
+      reimbursed: MinorDto,
+    }),
+  ),
 });
 export type MileageSummaryDto = z.infer<typeof MileageSummaryDto>;
 
@@ -513,6 +535,8 @@ export const ScheduleCDto = z.object({
   netProfit: MinorDto,
   /** Spending in categories mapped to no line: not on the form until it's mapped. */
   unmapped: z.array(z.object({ categoryId: Id, name: z.string(), amount: MinorDto })),
+  /** Gain (positive) or loss on assets sold: Form 4797, so not in these totals (ADR-0035 §5). */
+  assetSales: MinorDto,
   warnings: z.array(z.enum(['mileage_and_actual_car'])),
 });
 export type ScheduleCDto = z.infer<typeof ScheduleCDto>;
@@ -544,6 +568,8 @@ export const MissingReceiptsDto = z.object({
       payee: z.string().nullable(),
       amount: MinorDto,
       categoryId: Id.nullable(),
+      /** Over the de minimis limit on an equipment-like category, with no asset: "Record as an asset?" (BIZ-16). */
+      assetCandidate: z.boolean(),
     }),
   ),
 });

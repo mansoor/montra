@@ -170,6 +170,7 @@ describe('view models', () => {
       tags: ['bulk'],
       recurringItemId: null,
       managedBy: null,
+      expenseDetail: null,
       foreign: null,
       tripId: null,
       localTime: null,
