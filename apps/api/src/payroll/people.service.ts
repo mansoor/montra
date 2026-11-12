@@ -12,6 +12,7 @@ import {
   i9Section2Due,
   lastFour,
   maskTin,
+  ownerEmployeeNote,
   todayIn,
   type CalendarDate,
 } from '@montra/domain';
@@ -58,7 +59,7 @@ export class PeopleService {
         rows.map((r) => r.id),
         today,
       );
-      return rows.map((r) => this.dto(r, onboarding.get(r.id)!, today));
+      return rows.map((r) => this.dto(r, onboarding.get(r.id)!, today, e.businessType));
     });
   }
 
@@ -71,7 +72,7 @@ export class PeopleService {
     const e = await payrollEntity(trx, ctx, r.entity_id);
     const today = todayIn(e.timeZone);
     const onboarding = await this.onboarding(trx, ctx, [r.id], today);
-    return this.dto(r, onboarding.get(r.id)!, today);
+    return this.dto(r, onboarding.get(r.id)!, today, e.businessType);
   }
 
   /** The row, under RLS: without write access to its business, it doesn't exist. */
@@ -135,6 +136,7 @@ export class PeopleService {
             req.payScheduleId ?? null,
           ),
           default_hours_milli: req.defaultHoursMilli != null ? BigInt(req.defaultHoursMilli) : null,
+          is_owner: req.isOwner ?? false,
           created_by: ctx.userId,
         })
         .execute();
@@ -175,6 +177,7 @@ export class PeopleService {
       copy('notes', 'notes', (v) => v || null);
       copy('vendorPartyId', 'vendor_party_id');
       copy('defaultHoursMilli', 'default_hours_milli', (v) => (v == null ? null : BigInt(v as string)));
+      copy('isOwner', 'is_owner');
       if (req.payScheduleId !== undefined) {
         set.pay_schedule_id = await this.scheduleFor(trx, ctx, r.entity_id, r.kind, req.payScheduleId);
       }
@@ -527,7 +530,12 @@ export class PeopleService {
     return out;
   }
 
-  private dto(r: PayrollPersonRow, onboarding: OnboardingDto, today: CalendarDate): PayrollPersonDto {
+  private dto(
+    r: PayrollPersonRow,
+    onboarding: OnboardingDto,
+    today: CalendarDate,
+    businessType: string | null,
+  ): PayrollPersonDto {
     const hire = dateOrNull(r.hire_date);
     const end = dateOrNull(r.end_date);
     return {
@@ -567,6 +575,9 @@ export class PeopleService {
       payScheduleId: r.pay_schedule_id,
       defaultHoursMilli: r.default_hours_milli !== null ? String(r.default_hours_milli) : null,
       onboarding,
+      isOwner: r.is_owner,
+      // ADR-0037 §4: whether an owner can be on payroll as an employee depends on the entity type.
+      ownerNote: r.is_owner && r.kind === 'employee' ? ownerEmployeeNote(businessType) : null,
       version: Number(r.version),
     };
   }

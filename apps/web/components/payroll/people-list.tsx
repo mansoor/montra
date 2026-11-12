@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { PayrollPersonDto } from '@montra/api-client';
+import { ownerEmployeeNote } from '@montra/domain';
 import { browserApi } from '@/lib/browser-api';
 import { parseAmountInput } from '@/lib/money';
 import { i9Overdue, missingSteps, type OnboardingStep } from '@/lib/payroll';
@@ -17,12 +18,15 @@ export function PeopleList({
   currency,
   people,
   today,
+  businessType,
 }: {
   workspaceId: string;
   entityId: string;
   currency: string;
   people: PayrollPersonDto[];
   today: string;
+  /** ADR-0037 §4: whether an owner can be on payroll depends on it. */
+  businessType: string | null;
 }) {
   const { run, busy, message, setMessage, t } = useAction();
   const { locale } = useI18n();
@@ -36,7 +40,9 @@ export function PeopleList({
     payType: 'hourly' as 'hourly' | 'salary',
     rate: '',
     workState: '',
+    isOwner: false,
   });
+  const ownerNote = adding === 'employee' && form.isOwner ? ownerEmployeeNote(businessType) : null;
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
   const base = `/w/${workspaceId}/business/${entityId}/people`;
@@ -77,6 +83,7 @@ export function PeopleList({
           payType: kind === 'employee' ? form.payType : null,
           rate,
           workState: form.workState.trim() || null,
+          isOwner: form.isOwner,
         }),
       (p) => t('payroll.added', { name: p.displayName }),
     ).then((p) => {
@@ -180,6 +187,23 @@ export function PeopleList({
                 />
               </label>
             </>
+          )}
+          <label className="flex items-center gap-2 text-sm sm:col-span-2 lg:col-span-3">
+            <input
+              type="checkbox"
+              checked={form.isOwner}
+              onChange={(e) => setForm((f) => ({ ...f, isOwner: e.target.checked }))}
+            />
+            {t('payroll.is_owner')}
+          </label>
+          {ownerNote && (
+            <p
+              className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn sm:col-span-2 lg:col-span-3"
+              role="alert"
+              data-testid="owner-warning"
+            >
+              {t(`payroll.owner_note.${ownerNote}`)}
+            </p>
           )}
           <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3">
             <button type="submit" className="btn-primary" disabled={busy}>

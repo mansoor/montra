@@ -100,4 +100,14 @@ describe('rangeOf', () => {
     expect(rangeOf('ytd', today)).toEqual({ from: '2026-01-01', to: today });
     expect(rangeOf('last_year', today)).toEqual({ from: '2025-01-01', to: '2025-12-31' });
   });
+
+  it('runs this year and last year on the fiscal year (ADR-0037)', () => {
+    expect(rangeOf('ytd', today, 7)).toEqual({ from: '2026-07-01', to: today });
+    expect(rangeOf('last_year', today, 7)).toEqual({ from: '2025-07-01', to: '2026-06-30' });
+    const spring = calendarDate('2026-03-15');
+    expect(rangeOf('ytd', spring, 7)).toEqual({ from: '2025-07-01', to: spring });
+    expect(rangeOf('last_year', spring, 10)).toEqual({ from: '2024-10-01', to: '2025-09-30' });
+    // A month or quarter doesn't depend on it.
+    expect(rangeOf('month', today, 7)).toEqual(rangeOf('month', today));
+  });
 });

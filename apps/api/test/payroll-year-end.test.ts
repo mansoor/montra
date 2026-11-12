@@ -79,11 +79,15 @@ beforeAll(async () => {
     entityGrants: [{ entityId: biz, access: 'read' }],
   });
   await accountant.post(`/v1/invites/${acc.body.token}/accept`);
-  const settings = await c.put(url(`/payroll/settings?entityId=${biz}`), {
+  // ADR-0037: the EIN, EDD account and filing address are set on the business; the forms read them from there.
+  const registrations = await c.patch(url(`/businesses/${biz}`), {
     ein: '12-3456789',
     caEmployerAccount: '123-4567-8',
-    caUiRate: '2.5',
     filingAddress: { line1: '1 Harbor Rd', city: 'Monterey', state: 'ca', zip: '93940' },
+  });
+  expect(registrations.status).toBe(200);
+  const settings = await c.put(url(`/payroll/settings?entityId=${biz}`), {
+    caUiRate: '2.5',
     ssaUserId: 'TEST1234',
     contactName: 'Pat Owner',
     contactPhone: '831-555-0100',

@@ -147,6 +147,13 @@ export const PayrollPersonDto = z.object({
   /** Thousandths of an hour an hourly employee usually works in a period. */
   defaultHoursMilli: z.string().nullable(),
   onboarding: OnboardingDto,
+  /** An owner of the business (ADR-0037 §4). */
+  isOwner: z.boolean(),
+  /**
+   * For an owner who is an employee, what their entity type means: a sole proprietor or partner can't be a W-2
+   * employee (draws or guaranteed payments instead); an S-corp owner-employee needs a reasonable salary.
+   */
+  ownerNote: z.enum(['not_an_employee_draws', 'not_an_employee_partner', 'reasonable_salary']).nullable(),
   version: z.number().int(),
 });
 export type PayrollPersonDto = z.infer<typeof PayrollPersonDto>;
@@ -175,6 +182,7 @@ const PersonFields = z.object({
     .regex(/^\d{1,9}$/)
     .nullable()
     .optional(),
+  isOwner: z.boolean().optional(),
 });
 
 export const CreatePersonRequest = PersonFields.extend({
@@ -700,9 +708,12 @@ const RatePercent = z.string().regex(/^\d{1,2}(\.\d{1,3})?$/, 'A percent such as
 
 export const PayrollSettingsDto = z.object({
   entityId: Id,
-  /** Nine digits, shown as 12-3456789. */
-  ein: z.string().nullable(),
-  caEmployerAccount: z.string().nullable(),
+  /**
+   * ADR-0037: the EIN, EDD account and filing address are the business's registrations (Business → Settings), read
+   * here. The numbers are masked to their last four ("••-•••6789", "••••5678").
+   */
+  einMasked: z.string().nullable(),
+  caEmployerAccountMasked: z.string().nullable(),
   /** Null: the new-employer rate (`caUiRateDefault`) is used. */
   caUiRate: z.string().nullable(),
   caUiRateDefault: z.string(),
@@ -711,7 +722,7 @@ export const PayrollSettingsDto = z.object({
   caDepositSchedule: CaDepositSchedule,
   /** The tax years Montra has tables for. */
   taxYears: z.array(z.number().int()),
-  /** Stage 4: the employer's address in parts, for W-2s, 1099s and the EFW2 file. */
+  /** Stage 4: the employer's address in parts, for W-2s, 1099s and the EFW2 file. From the business (ADR-0037). */
   filingAddress: z
     .object({
       line1: z.string(),
@@ -730,36 +741,12 @@ export const PayrollSettingsDto = z.object({
 });
 export type PayrollSettingsDto = z.infer<typeof PayrollSettingsDto>;
 
+/** The EIN, EDD account and filing address are set on the business since ADR-0037, not here. */
 export const UpdatePayrollSettingsRequest = z.object({
-  ein: z
-    .string()
-    .transform((s) => s.replace(/[\s-]/g, ''))
-    .pipe(z.string().regex(/^\d{9}$/, 'An EIN has nine digits'))
-    .nullable()
-    .optional(),
-  caEmployerAccount: z
-    .string()
-    .transform((s) => s.replace(/[\s-]/g, ''))
-    .pipe(z.string().regex(/^\d{8}$/, 'An EDD account number has eight digits'))
-    .nullable()
-    .optional(),
   caUiRate: RatePercent.nullable().optional(),
   caEttRate: RatePercent.optional(),
   federalDepositSchedule: FederalDepositSchedule.optional(),
   caDepositSchedule: CaDepositSchedule.optional(),
-  filingAddress: z
-    .object({
-      line1: Text(100).min(1),
-      line2: OptionalText(100),
-      city: Text(60).min(1),
-      state: StateCode,
-      zip: z
-        .string()
-        .transform((v) => v.replace(/[\s-]/g, ''))
-        .pipe(z.string().regex(/^\d{5}(\d{4})?$/, 'A ZIP code has 5 or 9 digits')),
-    })
-    .nullable()
-    .optional(),
   ssaUserId: z
     .string()
     .trim()

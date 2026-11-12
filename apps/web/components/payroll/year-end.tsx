@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { PayrollSettingsDto, YearEndDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { zipText } from '@/lib/business-registration';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
@@ -252,11 +253,6 @@ function FilingDetails({
   const { run, busy, message, t } = useAction();
   const a = settings.filingAddress;
   const [f, setF] = useState({
-    line1: a?.line1 ?? '',
-    line2: a?.line2 ?? '',
-    city: a?.city ?? '',
-    state: a?.state ?? 'CA',
-    zip: a?.zip ?? '',
     ssaUserId: settings.ssaUserId ?? '',
     contactName: settings.contactName ?? '',
     contactPhone: settings.contactPhone ?? '',
@@ -269,9 +265,6 @@ function FilingDetails({
     void run(
       () =>
         browserApi.updatePayrollSettings(workspaceId, entityId, {
-          filingAddress: f.line1.trim()
-            ? { line1: f.line1, line2: f.line2.trim() || null, city: f.city, state: f.state, zip: f.zip }
-            : null,
           ssaUserId: f.ssaUserId.trim() || null,
           contactName: f.contactName.trim() || null,
           contactPhone: f.contactPhone.trim() || null,
@@ -288,6 +281,25 @@ function FilingDetails({
         {t('payroll.year_end.filing_details')}
       </h2>
       <p className="text-xs text-muted">{t('payroll.year_end.filing_hint')}</p>
+      {/* ADR-0037: the address is the business's, set with its registrations. */}
+      <div className="text-sm" data-testid="filing-address">
+        <span className="field-label">{t('registrations.filing_address')}</span>
+        {a ? (
+          <p>
+            {[a.line1, a.line2].filter(Boolean).join(', ')}
+            <br />
+            {a.city}, {a.state} {zipText(a.zip)}
+          </p>
+        ) : (
+          <p className="text-muted">{t('payroll.taxes.not_set')}</p>
+        )}
+        <Link
+          href={`/w/${workspaceId}/business/${entityId}/settings#registrations`}
+          className="text-xs underline"
+        >
+          {t('payroll.taxes.edit_in_settings')}
+        </Link>
+      </div>
       <form
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
         aria-label={t('payroll.year_end.filing_details')}
@@ -296,27 +308,6 @@ function FilingDetails({
           save();
         }}
       >
-        <Field label={t('payroll.year_end.street')}>
-          <input className="input" maxLength={100} value={f.line1} onChange={set('line1')} />
-        </Field>
-        <Field label={t('payroll.year_end.suite')}>
-          <input className="input" maxLength={100} value={f.line2} onChange={set('line2')} />
-        </Field>
-        <Field label={t('payroll.year_end.city')}>
-          <input className="input" maxLength={60} value={f.city} onChange={set('city')} />
-        </Field>
-        <Field label={t('payroll.year_end.state')}>
-          <input className="input" maxLength={2} value={f.state} onChange={set('state')} />
-        </Field>
-        <Field label={t('payroll.year_end.zip')}>
-          <input
-            className="input num"
-            inputMode="numeric"
-            maxLength={10}
-            value={f.zip}
-            onChange={set('zip')}
-          />
-        </Field>
         <Field label={t('payroll.year_end.ssa_user_id')}>
           <input className="input" maxLength={8} value={f.ssaUserId} onChange={set('ssaUserId')} />
         </Field>

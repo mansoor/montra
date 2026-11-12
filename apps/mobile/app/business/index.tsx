@@ -10,7 +10,14 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { BUSINESS_CHART_MONTHS, type InvoiceDto } from '@montra/schemas';
 import { useCached } from '../../src/features/use-cached';
-import { invoicePdfName, newestFirst, openBills, openInvoices, sumMinor } from '../../src/features/business';
+import {
+  invoicePdfName,
+  legalSetup,
+  newestFirst,
+  openBills,
+  openInvoices,
+  sumMinor,
+} from '../../src/features/business';
 import { currentLocale, fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { MiniLineChart } from '../../src/ui/charts';
@@ -58,6 +65,8 @@ export default function Business() {
   const bills = d ? openBills(d.bills) : [];
   const ccy = dash?.currency ?? list.find((b) => b.entityId === entityId)?.currency;
   const m = dash?.monthly[dash.monthly.length - 1];
+  const current = list.find((b) => b.entityId === entityId);
+  const setup = current ? legalSetup(current) : null;
 
   const monthName = useMemo(() => {
     try {
@@ -128,6 +137,17 @@ export default function Business() {
             setMonth(null);
           }}
         />
+      ) : null}
+      {setup ? (
+        <Card testID="business-legal">
+          <Small>{t('setup.entity_type')}</Small>
+          <Body>{t(setup.typeKey)}</Body>
+          <Small>{t('setup.return_form')}</Small>
+          <Body>{t(setup.formKey)}</Body>
+          <Small>{t('registrations.ein')}</Small>
+          <Body>{setup.ein ?? t('payroll.taxes.not_set')}</Body>
+          <Small>{t('mobile.business.legal_on_web')}</Small>
+        </Card>
       ) : null}
 
       {dash && m && ccy ? (

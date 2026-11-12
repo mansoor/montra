@@ -37,6 +37,8 @@ const person = (over: Partial<PayrollPersonDto> = {}): PayrollPersonDto => ({
   payScheduleId: null,
   defaultHoursMilli: null,
   onboarding: { w4: null, w9: null, i9: null },
+  isOwner: false,
+  ownerNote: null,
   version: 1,
   ...over,
 });
