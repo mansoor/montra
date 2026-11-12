@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { normalizeDomain, type BusinessProfileDto } from '@montra/schemas';
+import { legalSetup } from '../features/business';
 import { t } from '../i18n';
 import { useSession } from '../session/SessionProvider';
 import { Banner, Body, Button, Card, Field, Small } from './components';
@@ -77,6 +78,8 @@ export function BusinessSettings({ entityId }: { entityId: string }) {
   if (!profile) {
     return error ? <Banner tone="danger" text={error} /> : <Small>{t('mobile.common.loading')}</Small>;
   }
+  // BIZ-21, BIZ-26 (ADR-0037): read-only here; set in Business → Settings on the web.
+  const setup = legalSetup(profile);
 
   return (
     <View style={{ gap: th.space(3) }} testID="business-settings">
@@ -146,6 +149,16 @@ export function BusinessSettings({ entityId }: { entityId: string }) {
         {profile.email ? <Body>{profile.email}</Body> : null}
         {profile.address ? <Small>{profile.address}</Small> : null}
         <Small>{t('mobile.business.profile_on_web')}</Small>
+      </Card>
+
+      <Card testID="business-legal">
+        <Small>{t('setup.entity_type')}</Small>
+        <Body>{t(setup.typeKey)}</Body>
+        <Small>{t('setup.return_form')}</Small>
+        <Body>{t(setup.formKey)}</Body>
+        <Small>{t('registrations.ein')}</Small>
+        <Body>{setup.ein ?? t('payroll.taxes.not_set')}</Body>
+        <Small>{t('mobile.business.legal_on_web')}</Small>
       </Card>
     </View>
   );

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BUSINESS_TYPES, LEGACY_BUSINESS_TYPES } from '@montra/domain';
 import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
 import { ForeignAmountInput, RateDto } from './fx.js';
 import { SplitInput } from './transactions.js';
@@ -103,9 +104,7 @@ export const CreateEntityRequest = z.object({
   type: z.enum(['business', 'rental']),
   name: z.string().trim().min(1).max(200),
   functionalCurrency: CurrencyCodeDto.optional(),
-  businessType: z
-    .enum(['sole_prop', 'llc', 'single_member_llc', 's_corp', 'partnership', 'other'])
-    .optional(),
+  businessType: z.enum([...BUSINESS_TYPES, ...LEGACY_BUSINESS_TYPES]).optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
 });
 export type CreateEntityRequest = z.output<typeof CreateEntityRequest>;
@@ -113,9 +112,7 @@ export type CreateEntityRequest = z.output<typeof CreateEntityRequest>;
 export const UpdateEntityRequest = z
   .object({
     name: z.string().trim().min(1).max(200),
-    businessType: z
-      .enum(['sole_prop', 'llc', 'single_member_llc', 's_corp', 'partnership', 'other'])
-      .nullable(),
+    businessType: z.enum([...BUSINESS_TYPES, ...LEGACY_BUSINESS_TYPES]).nullable(),
     fiscalYearStartMonth: z.number().int().min(1).max(12),
     archived: z.boolean(),
   })

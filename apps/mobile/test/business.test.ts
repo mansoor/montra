@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { BillDto, ExpenseDetailDto, InvoiceDto } from '@montra/schemas';
+import { catalogs } from '@montra/i18n';
 import {
   expenseLines,
   invoicePdfName,
+  legalSetup,
   newestFirst,
   normalizeMiles,
   openBills,
@@ -116,5 +118,26 @@ describe('a business expense on the transaction screen (BIZ-18)', () => {
     expect(expenseLines(detail({ isMeal: true, needsMealDetail: true }))?.mealHint).toBe(true);
     expect(expenseLines(detail({}))).toBeNull();
     expect(expenseLines(null)).toBeNull();
+  });
+});
+
+describe('the legal setup on the phone (BIZ-21, BIZ-26)', () => {
+  const registrations = { einMasked: '••-•••6789' } as never;
+
+  it('shows the type, the return it files and the masked EIN from the server', () => {
+    const s = legalSetup({ businessType: 's_corp', returnForm: 'form_1120s', registrations });
+    expect(s).toEqual({ typeKey: 'setup.type.s_corp', formKey: 'setup.form.form_1120s', ein: '••-•••6789' });
+    for (const key of [s.typeKey, s.formKey]) expect(catalogs.en![key]).toBeTruthy();
+  });
+
+  it('says what is assumed while the type is not set', () => {
+    const s = legalSetup({
+      businessType: null,
+      returnForm: null,
+      registrations: { einMasked: null } as never,
+    });
+    expect(s).toEqual({ typeKey: 'setup.type_unset_line', formKey: 'setup.form_unknown', ein: null });
+    for (const key of [s.typeKey, s.formKey, 'mobile.business.legal_on_web'])
+      expect(catalogs.en![key]).toBeTruthy();
   });
 });

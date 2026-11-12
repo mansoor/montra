@@ -2,7 +2,7 @@
  * The business on the phone (08 §3): what's owed either way, and logging a trip. The numbers all come from the server,
  * and no ledger or tax logic lives here; invoices and bills are written on the web.
  */
-import type { BillDto, ExpenseDetailDto, InvoiceDto } from '@montra/schemas';
+import type { BillDto, BusinessProfileDto, ExpenseDetailDto, InvoiceDto } from '@montra/schemas';
 
 const OPEN_INVOICE: readonly InvoiceDto['status'][] = ['sent', 'partial', 'overdue'];
 const OPEN_BILL: readonly BillDto['status'][] = ['open', 'overdue'];
@@ -47,6 +47,22 @@ export function expenseLines(
   const attendees = d.attendees.length ? d.attendees.map((a) => a.name).join(', ') : null;
   const out = { spentBy, attendees, purpose: d.businessPurpose, mealHint: d.needsMealDetail };
   return spentBy || attendees || out.purpose || out.mealHint ? out : null;
+}
+
+/**
+ * BIZ-21, BIZ-26 (ADR-0037): the entity type, the return it files and the masked EIN, as message keys and values, all
+ * from the server. Read-only on the phone: they're set in Business → Settings on the web.
+ */
+export function legalSetup(p: Pick<BusinessProfileDto, 'businessType' | 'returnForm' | 'registrations'>): {
+  typeKey: string;
+  formKey: string;
+  ein: string | null;
+} {
+  return {
+    typeKey: p.businessType ? `setup.type.${p.businessType}` : 'setup.type_unset_line',
+    formKey: p.returnForm ? `setup.form.${p.returnForm}` : 'setup.form_unknown',
+    ein: p.registrations.einMasked,
+  };
 }
 
 /** The dashboard's months for the table, newest first. */

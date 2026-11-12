@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BUSINESS_TYPES } from '@montra/domain';
 import { CalendarDateDto, CurrencyCodeDto, Id } from './common.js';
 import { MinorDto } from './budgets.js';
 
@@ -57,11 +58,127 @@ export const BusinessLogoDto = z.object({
 });
 export type BusinessLogoDto = z.infer<typeof BusinessLogoDto>;
 
+// ----- Legal and tax setup, and registrations (BIZ-21..26, ADR-0037) ---------------------------------------------
+
+/** Entity types the owner can choose. An LLC's tax treatment is part of its type (ADR-0037 §1). */
+export const BusinessTypeInput = z.enum(BUSINESS_TYPES);
+export type BusinessTypeInput = z.infer<typeof BusinessTypeInput>;
+
+/** The federal return the entity type files (derived; Montra doesn't prepare it). */
+export const ReturnFormDto = z.enum(['schedule_c', 'form_1065', 'form_1120s', 'form_1120']);
+export type ReturnFormDto = z.infer<typeof ReturnFormDto>;
+
+const digitsOnly = (s: string) => s.replace(/[\s-]/g, '');
+const StateCode = z
+  .string()
+  .trim()
+  .transform((s) => s.toUpperCase())
+  .pipe(z.string().regex(/^[A-Z]{2}$/, 'Use the two-letter state code'));
+/** Blank is the same as null. */
+const OptionalText = (max: number) =>
+  Text(max)
+    .transform((s) => s || null)
+    .nullable();
+
+export const EinInput = z
+  .string()
+  .transform(digitsOnly)
+  .pipe(z.string().regex(/^\d{9}$/, 'An EIN has nine digits'));
+export const EddAccountInput = z
+  .string()
+  .transform(digitsOnly)
+  .pipe(z.string().regex(/^\d{8}$/, 'An EDD account number has eight digits'));
+
+/** The address the IRS and SSA have, in parts: W-2s, 1099s and the EFW2 file print it (moved from payroll). */
+export const FilingAddressDto = z.object({
+  line1: z.string(),
+  line2: z.string().nullable(),
+  city: z.string(),
+  state: z.string(),
+  zip: z.string(),
+});
+export type FilingAddressDto = z.infer<typeof FilingAddressDto>;
+export const FilingAddressInput = z.object({
+  line1: Text(100).min(1),
+  line2: OptionalText(100).optional(),
+  city: Text(60).min(1),
+  state: StateCode,
+  zip: z
+    .string()
+    .transform(digitsOnly)
+    .pipe(z.string().regex(/^\d{5}(\d{4})?$/, 'A ZIP code has 5 or 9 digits')),
+});
+
+/** A registration beyond the named ones: a county permit, a professional licence, another state's account. */
+export const OtherRegistrationDto = z.object({
+  id: Id,
+  label: z.string(),
+  number: z.string().nullable(),
+  issuer: z.string().nullable(),
+  expiresOn: CalendarDateDto.nullable(),
+  version: z.number().int(),
+});
+export type OtherRegistrationDto = z.infer<typeof OtherRegistrationDto>;
+
+export const OtherRegistrationInput = z.object({
+  label: Text(200).min(1),
+  number: OptionalText(100).optional(),
+  issuer: OptionalText(200).optional(),
+  expiresOn: CalendarDateDto.nullable().optional(),
+});
+export type OtherRegistrationInput = z.output<typeof OtherRegistrationInput>;
+export const UpdateOtherRegistrationRequest = OtherRegistrationInput.partial().extend({ version: Version });
+export type UpdateOtherRegistrationRequest = z.output<typeof UpdateOtherRegistrationRequest>;
+
+/**
+ * Federal, state and local registrations. Tax account numbers come back masked to their last four (ADR-0037 §5); the
+ * full value is a separate, logged `reveal`. Public-record numbers (the SOS file number, a city licence) are shown.
+ */
+export const BusinessRegistrationsDto = z.object({
+  /** "••-•••6789". */
+  einMasked: z.string().nullable(),
+  /** The name exactly as the IRS has it (the EIN letter, CP 575). */
+  irsName: z.string().nullable(),
+  naicsCode: z.string().nullable(),
+  formationState: z.string().nullable(),
+  /** In California, the Secretary of State's entity (file) number. */
+  sosEntityNumber: z.string().nullable(),
+  formationDate: CalendarDateDto.nullable(),
+  ftbEntityIdMasked: z.string().nullable(),
+  caEmployerAccountMasked: z.string().nullable(),
+  cdtfaPermitMasked: z.string().nullable(),
+  registeredAgentName: z.string().nullable(),
+  registeredAgentAddress: z.string().nullable(),
+  dbaName: z.string().nullable(),
+  dbaCounty: z.string().nullable(),
+  dbaExpiresOn: CalendarDateDto.nullable(),
+  cityLicenseNumber: z.string().nullable(),
+  cityLicenseExpiresOn: CalendarDateDto.nullable(),
+  filingAddress: FilingAddressDto.nullable(),
+  other: z.array(OtherRegistrationDto),
+});
+export type BusinessRegistrationsDto = z.infer<typeof BusinessRegistrationsDto>;
+
+/** Which full number to show. Each reveal needs a recent sign-in and is written to the audit log. */
+export const BusinessRevealField = z.enum(['ein', 'ftbEntityId', 'caEmployerAccount', 'cdtfaPermit']);
+export type BusinessRevealField = z.infer<typeof BusinessRevealField>;
+export const BusinessRevealRequest = z.object({ field: BusinessRevealField });
+export type BusinessRevealRequest = z.output<typeof BusinessRevealRequest>;
+export const BusinessRevealResponse = z.object({ field: BusinessRevealField, value: z.string().nullable() });
+export type BusinessRevealResponse = z.infer<typeof BusinessRevealResponse>;
+
 export const BusinessProfileDto = z.object({
   entityId: Id,
   name: z.string(),
+  /** One of `BusinessTypeInput`, or `llc`/`other` from before the owner could choose (ADR-0037 §1); null: not set. */
   businessType: z.string().nullable(),
+  /** 1 = January. Sets the P&L's year and the Schedule C summary's year (ADR-0037 §2). */
   fiscalYearStartMonth: z.number().int(),
+  /** Null while the type doesn't say; Montra then assumes Schedule C, as it always has. */
+  returnForm: ReturnFormDto.nullable(),
+  /** Form 2553's effective date, for the S-corp types. */
+  sCorpElectionDate: CalendarDateDto.nullable(),
+  registrations: BusinessRegistrationsDto,
   currency: CurrencyCodeDto,
   legalName: z.string().nullable(),
   address: z.string().nullable(),
@@ -95,6 +212,31 @@ export const UpdateBusinessProfileRequest = z
     taxSavingsAccountId: Id.nullable(),
     receiptThreshold: NonNegativeMinor,
     domain: DomainInput.nullable(),
+    // ADR-0037. The type and fiscal year are on the entity, so only an owner changes them.
+    businessType: BusinessTypeInput,
+    fiscalYearStartMonth: z.number().int().min(1).max(12),
+    sCorpElectionDate: CalendarDateDto.nullable(),
+    ein: EinInput.nullable(),
+    irsName: OptionalText(200),
+    naicsCode: z
+      .string()
+      .trim()
+      .regex(/^\d{2,6}$/, 'A NAICS code has two to six digits')
+      .nullable(),
+    formationState: StateCode.nullable(),
+    sosEntityNumber: OptionalText(30),
+    formationDate: CalendarDateDto.nullable(),
+    ftbEntityId: OptionalText(30),
+    caEmployerAccount: EddAccountInput.nullable(),
+    cdtfaPermit: OptionalText(30),
+    registeredAgentName: OptionalText(200),
+    registeredAgentAddress: OptionalText(1000),
+    dbaName: OptionalText(200),
+    dbaCounty: OptionalText(60),
+    dbaExpiresOn: CalendarDateDto.nullable(),
+    cityLicenseNumber: OptionalText(50),
+    cityLicenseExpiresOn: CalendarDateDto.nullable(),
+    filingAddress: FilingAddressInput.nullable(),
   })
   .partial();
 export type UpdateBusinessProfileRequest = z.output<typeof UpdateBusinessProfileRequest>;
@@ -514,7 +656,10 @@ export type TaxLineDto = z.infer<typeof TaxLineDto>;
 
 export const ScheduleCDto = z.object({
   entityId: Id,
+  /** The fiscal year, named by the year it begins in; `from`..`to` are its dates (ADR-0037 §2). */
   year: z.number().int(),
+  from: CalendarDateDto,
+  to: CalendarDateDto,
   currency: CurrencyCodeDto,
   lines: z.array(
     z.object({

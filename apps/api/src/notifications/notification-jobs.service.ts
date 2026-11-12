@@ -11,8 +11,11 @@ import {
   formatMoney,
   localClock,
   money,
+  renewalDue,
   type CalendarDate,
 } from '@montra/domain';
+import { businessEntities } from '../business/shared.js';
+import { expiringRegistrations, otherRegistrations } from '../business/registrations.js';
 import { Db } from '../db/database.js';
 import { Worker, type Job } from '../jobs/queue.js';
 import { FlowService } from '../planning/flow.service.js';
@@ -89,6 +92,7 @@ export class NotificationJobs {
       () => this.large(ctx, base, today, prefs.largeTransaction),
       () => this.rentals(ctx, base, today),
       () => this.payrollDeposits(ctx, base, today, now),
+      () => this.registrationRenewals(ctx, base, today),
       () => this.importReminder(ctx, base, today, prefs.importReminderDays),
       () => this.recommendations(ctx, base, today),
       ...(weekday === prefs.digestWeekday ? [() => this.digest(ctx, base, today)] : []),
@@ -227,6 +231,40 @@ export class NotificationJobs {
       }
     }
     return out;
+  }
+
+  /**
+   * BIZ-24: a registration that expires (a DBA, a city licence, any other) is a "renew by" reminder from 30 days
+   * before, once per expiry date; a new date after renewing reminds again in its turn.
+   */
+  private async registrationRenewals(
+    ctx: Ctx,
+    base: string,
+    today: CalendarDate,
+  ): Promise<NewNotification[]> {
+    return this.db.run(ctx, async (trx) => {
+      const out: NewNotification[] = [];
+      for (const e of await businessEntities(trx, ctx)) {
+        const profile = await trx
+          .selectFrom('app.business_profile')
+          .selectAll()
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('entity_id', '=', e.id)
+          .executeTakeFirst();
+        const other = await otherRegistrations(trx, ctx, e.id);
+        const items = profile ? expiringRegistrations(profile, other) : [];
+        for (const r of items) {
+          if (!renewalDue(r.expiresOn, today)) continue;
+          out.push({
+            type: 'reminder',
+            dedupeKey: `registration_renewal:${e.id}:${r.key}:${r.expiresOn}`,
+            title: `${e.name}: renew ${r.label} by ${r.expiresOn}${r.expiresOn < today ? ' (expired)' : ''}`,
+            link: `${base}/business/${e.id}/settings#registrations`,
+          });
+        }
+      }
+      return out;
+    });
   }
 
   private async rentals(ctx: Ctx, base: string, today: CalendarDate): Promise<NewNotification[]> {

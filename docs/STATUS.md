@@ -620,7 +620,8 @@ Phase 8 leftovers, not blocking:
 - ~~Invoice PDFs print Latin text only.~~ Done: embedded Noto fonts (ADR-0032, §7g). Korean and emoji still print "?".
 - A deposit pays one invoice: one cheque for two invoices needs splitting by hand. Bills can't be part paid.
 - Foreign-currency invoices and bills are refused.
-- Estimated-tax periods assume a calendar tax year, even for a business with another fiscal year.
+- Estimated-tax periods are calendar-based on purpose: they're the owner's Form 1040-ES payments. Since ADR-0037 the
+  business's fiscal year sets the P&L's year and the Schedule C summary (§7g).
 - The mileage rate editor is the admin screen in Phase 11; until then a new rate is a reference-data change.
 - Reminders appear on the calendar and as suggestions, and since Phase 10 by push and email too.
 - Mobile: invoices and bills are read-only (an invoice's PDF can be shared), and there's no device run yet.
@@ -788,6 +789,37 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **A business's legal and tax setup and its registrations, web, read-only on the phone** (BIZ-21..26,
+  [ADR-0037](design/adr/0037-business-legal-setup-and-registrations.md), migration 0037):
+  - **Legal and tax setup** (Business → Settings): the entity type, with an LLC's tax treatment part of the type (sole
+    proprietor; single-member LLC as a sole proprietor or S-corp; multi-member LLC as a partnership or S-corp;
+    partnership; S-corporation; C-corporation), the federal return it files (Schedule C, 1065, 1120-S or 1120, derived;
+    off Schedule C the summary and tax lines say they're a guide only), the Form 2553 election date for the S-corp types,
+    and the fiscal year start. Only a workspace owner can change the type or fiscal year (`business.owner_only`); the old
+    `llc` and `other` types stay valid until the owner picks one. Overview and Taxes show the type and return form.
+  - **Fiscal year**: the P&L's "Year to date" and "Last year" and the Schedule C summary (named by the year it begins in,
+    `ScheduleCDto.from`/`to`) follow it. Estimated-tax dates and the payroll year stay calendar-based on purpose.
+  - **Registrations**: EIN, IRS name, NAICS; state of formation, SOS entity number, formation date, FTB entity ID, EDD
+    employer account, CDTFA seller's permit, registered agent; DBA (county, expiry), city licence (expiry); and any other
+    registration (`app.business_registration`). Tax account numbers are masked to their last four; Show
+    (`POST /businesses/:id/reveal`) needs a recent sign-in and logs `business.revealed`. They're stored as text, as payroll
+    kept the EIN. Expiry dates get a `reminder` notification 30 days ahead from the nightly job.
+  - **One source of truth**: the EIN, EDD account and filing address moved from `payroll_settings` to `business_profile`
+    with a backfill (the business's own value wins). Payroll's Employer details and Year-end → Filing details show them
+    read-only with a link to Settings; the worksheets, W-4/I-9 PDFs, W-2s, 1099s and EFW2 read `employerIdentity()`.
+    `PayrollSettingsDto.ein`/`caEmployerAccount` became `einMasked`/`caEmployerAccountMasked`, and the payroll PUT no
+    longer takes them. Payroll keeps its rates, deposit schedules, BSO user ID and SSA contact. The old payroll columns
+    are left unused (commented in 0037) for a later contract step.
+  - **The owner on payroll**: a person can be marked as an owner (`payroll_person.is_owner`). As an employee,
+    `ownerNote` warns a sole proprietor (draws) or partner (guaranteed payments), and reminds an S-corp owner of a
+    reasonable salary; shown on the add form and the person's page. A warning, not a refusal.
+  - **Phone**: Business → Business settings (the collapsible section, #71) shows the entity type, return form and masked
+    EIN, read-only; editing is web only. Not run
+    on a device.
+  - Tests: `apps/api/test/business-registration.test.ts` (backfill, payroll and EFW2 reading the moved EIN, fiscal-year
+    ranges, the owner rule, renewal reminders, reveal), `payroll-tax` and `payroll-year-end` now set the numbers on the
+    business, `packages/domain/test/business-registration.test.ts`, `apps/web/lib/business-registration.test.ts`,
+    `apps/web/e2e/business-registration.spec.ts`, phone `test/business.test.ts`.
 - **Staff time: vacation and sick leave, California daily overtime, contractor timesheets, web and phone** (PRL-23..29,
   [ADR-0036](design/adr/0036-staff-time.md), migration 0036): Business → Payroll → Time off sets each business's vacation
   policy (none, accrual per hour worked, or a yearly grant, with a balance cap and carry-over limit) and its sick leave

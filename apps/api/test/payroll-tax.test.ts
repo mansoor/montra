@@ -100,7 +100,8 @@ describe('payroll tax settings', () => {
   it('starts on the defaults, saves the employer numbers and rates, and checks the version', async () => {
     const start = (await c.get(url(`/payroll/settings?entityId=${biz}`))).body;
     expect(start).toMatchObject({
-      ein: null,
+      einMasked: null,
+      caEmployerAccountMasked: null,
       caUiRate: null,
       caUiRateDefault: '3.4',
       caEttRate: '0.1',
@@ -109,22 +110,23 @@ describe('payroll tax settings', () => {
       version: 0,
     });
     expect(start.taxYears).toContain(2026);
-    const res = await c.put(url(`/payroll/settings?entityId=${biz}`), {
+    // ADR-0037: the employer's numbers are the business's registrations; payroll reads them, masked.
+    const numbers = await c.patch(url(`/businesses/${biz}`), {
       ein: '12-3456789',
       caEmployerAccount: '123-4567-8',
-      caUiRate: '2.5',
-      version: 0,
     });
+    expect(numbers.status).toBe(200);
+    const res = await c.put(url(`/payroll/settings?entityId=${biz}`), { caUiRate: '2.5', version: 0 });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      ein: '123456789',
-      caEmployerAccount: '12345678',
+      einMasked: '••-•••6789',
+      caEmployerAccountMasked: '••••5678',
       caUiRate: '2.5',
       version: 1,
     });
     const stale = await c.put(url(`/payroll/settings?entityId=${biz}`), { caUiRate: '3', version: 0 });
     expect(stale.status).toBe(409);
-    const bad = await c.put(url(`/payroll/settings?entityId=${biz}`), { ein: '12-345', version: 1 });
+    const bad = await c.patch(url(`/businesses/${biz}`), { ein: '12-345' });
     expect(bad.status).toBe(400);
     // An accountant with read access sees the settings but can't change them.
     expect((await accountant.get(url(`/payroll/settings?entityId=${biz}`))).body.caUiRate).toBe('2.5');

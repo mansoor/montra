@@ -4,11 +4,15 @@ import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { BusinessLogoForm, BusinessProfileForm, ExportForm } from '@/components/business/business-settings';
+import { LegalSetupForm, OtherRegistrations, RegistrationsForm } from '@/components/business/legal-setup';
 
 export const metadata: Metadata = { title: 'Business settings' };
 export const dynamic = 'force-dynamic';
 
-/** The business's profile, the export for an accountant, and how to give one access (BIZ-01, BIZ-13). */
+/**
+ * The business's profile, its legal and tax setup and registrations (BIZ-21..24), the export for an accountant, and how
+ * to give one access (BIZ-01, BIZ-13).
+ */
 export default async function BusinessSettingsPage({
   params,
 }: {
@@ -23,7 +27,8 @@ export default async function BusinessSettingsPage({
     ]),
   );
   const { t } = await getI18n();
-  const year = todayIn(workspace.timeZone).slice(0, 4);
+  const today = todayIn(workspace.timeZone);
+  const year = today.slice(0, 4);
   return (
     <div className="space-y-5">
       <BusinessLogoForm workspaceId={workspaceId} profile={business} />
@@ -31,6 +36,14 @@ export default async function BusinessSettingsPage({
         workspaceId={workspaceId}
         profile={business}
         accounts={accounts.filter((a) => !a.archived)}
+      />
+      <LegalSetupForm workspaceId={workspaceId} profile={business} />
+      <RegistrationsForm workspaceId={workspaceId} profile={business} />
+      <OtherRegistrations
+        workspaceId={workspaceId}
+        entityId={entityId}
+        items={business.registrations.other}
+        today={today}
       />
       <p className="text-sm">
         <Link href={`/w/${workspaceId}/accounts/new?entityId=${entityId}`} className="underline">

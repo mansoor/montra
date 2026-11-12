@@ -46,6 +46,8 @@ export interface PayrollPersonTable {
   /** Stage 2 (migration 0032). */
   pay_schedule_id: string | null;
   default_hours_milli: Int8 | null;
+  /** Migration 0037: an owner of the business on payroll (ADR-0037 §4). */
+  is_owner: Generated<boolean>;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;
@@ -294,6 +296,7 @@ export type CaDepositScheduleCol = 'quarterly' | 'monthly' | 'semiweekly';
 export interface PayrollSettingsTable {
   workspace_id: string;
   entity_id: string;
+  /** Unused since migration 0037: the EIN, EDD account and filing address are on `app.business_profile` (ADR-0037). */
   ein: string | null;
   ca_employer_account: string | null;
   ca_ui_rate_ppm: number | null;

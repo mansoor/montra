@@ -55,7 +55,17 @@ export default async function PersonPage({
         <span className="chip">
           {person.kind === 'employee' ? t('payroll.employee') : t('payroll.contractor')}
         </span>
+        {person.isOwner && <span className="chip">{t('payroll.owner')}</span>}
       </div>
+      {person.ownerNote && (
+        <p
+          className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn"
+          role="note"
+          data-testid="owner-note"
+        >
+          {t(`payroll.owner_note.${person.ownerNote}`)}
+        </p>
+      )}
       <PersonDetails
         workspaceId={workspaceId}
         currency={business.currency}
