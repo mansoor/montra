@@ -788,6 +788,27 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Staff time: vacation and sick leave, California daily overtime, contractor timesheets, web and phone** (PRL-23..29,
+  [ADR-0036](design/adr/0036-staff-time.md), migration 0036): Business → Payroll → Time off sets each business's vacation
+  policy (none, accrual per hour worked, or a yearly grant, with a balance cap and carry-over limit) and its sick leave
+  policy, and the day workweeks start. With no sick policy saved, California employees get the statutory minimum (40
+  hours / 5 days, 1 hour per 30 worked, 80-hour cap, 40 usable a year, from the 90th day), pinned in
+  `CA_PAID_SICK_LEAVE` in `@montra/domain` from the Labor Commissioner's FAQ (updated 2025-12-31) and shown with its
+  source; a policy below it is refused. A person's page shows balances and the hours behind them and takes an opening
+  balance or adjustment. A paycheck takes vacation and sick hours, paid at the regular rate (a salary doesn't change);
+  using more than the balance warns and approving needs "Allow" on that paycheck. Approving writes the year's grant and
+  carry-over cut, the use and the accrual (exempt staff deemed 40 hours a week), and reopening removes them. The payslip
+  has a time-off block (the sick leave notice). Accrued leave isn't posted. When the end date falls in the period, the
+  paycheck offers to pay out unused vacation at the final rate (required in California); sick leave isn't paid out.
+  Hourly employees can enter hours per day instead of totals: `splitOvertime` gives California's over 8 / over 12 /
+  40-a-week / seventh-day split (federal: 40 a week), counting days of a workweek already paid on the last paycheck; the
+  paycheck says which method it used. A contractor has an hourly rate and a timesheet (date, hours, project, optional
+  customer with a link to a new invoice for them); "Bill these hours" makes one bill to their vendor record (Contract
+  labor, Schedule C line 11) and locks the hours until the bill is voided; 1099s see it through the bill as before. The
+  phone shows balances on Business → Payroll and leave on each paycheck, read-only; contractor time entry is web-only.
+  Owner to check: the sourced California figures in ADR-0036 §2 (the statute pages on leginfo refused automated reads),
+  that sick leave at the base rate suits anyone with overtime or commissions (FAQ 30 allows a 90-day blended rate), and
+  that leave years run by calendar year.
 - **Payroll, stage 4: year-end forms, web** (PRL-17..20, [ADR-0034](design/adr/0034-payroll.md) §7b): Business → Payroll →
   Year-end forms works out each employee's W-2 from the year's approved paychecks (box 1 less both kinds of before-tax
   deduction, Social Security and Medicare wages per person in pay-date order, box 12 code D and box 13 from retirement

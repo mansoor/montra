@@ -5,7 +5,15 @@ import type { PaycheckDto, PayRunDto } from '@montra/api-client';
 import { calendarDate } from '@montra/domain';
 import { browserApi } from '@/lib/browser-api';
 import { minorToInput, parseAmountInput } from '@/lib/money';
-import { hoursText, parseHours, PAYCHECK_SECTIONS, type EditableKind } from '@/lib/payroll';
+import {
+  gridDays,
+  hoursText,
+  parseHours,
+  PAYCHECK_SECTIONS,
+  periodDays,
+  signedHoursText,
+  type EditableKind,
+} from '@/lib/payroll';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
@@ -182,9 +190,24 @@ export function PayRunEditor({
               ))}
             </ul>
           )}
+          {editing !== pc.id && (
+            <TimeSummary
+              paycheck={pc}
+              editable={editable}
+              busy={busy}
+              onUpdate={(input) =>
+                void act(
+                  () =>
+                    browserApi.updatePaycheck(workspaceId, run.id, pc.id, { ...input, version: pc.version }),
+                  t('payroll.saved'),
+                )
+              }
+            />
+          )}
           {editing === pc.id ? (
             <PaycheckForm
               paycheck={pc}
+              period={{ start: run.periodStart, end: run.periodEnd }}
               currency={currency}
               taxNames={TAX_NAMES}
               busy={busy}
@@ -358,9 +381,129 @@ function Total({
   );
 }
 
+/**
+ * Staff time on a paycheck (PRL-26, PRL-27; ADR-0036): how overtime was worked out, vacation and sick balances with
+ * their warnings, and on a final paycheck the vacation that can be paid out.
+ */
+function TimeSummary({
+  paycheck: pc,
+  editable,
+  busy,
+  onUpdate,
+}: {
+  paycheck: PaycheckDto;
+  editable: boolean;
+  busy: boolean;
+  onUpdate: (input: { vacationPayoutHoursMilli?: string; allowLeaveOverBalance?: boolean }) => void;
+}) {
+  const { t } = useI18n();
+  const KIND: Record<string, string> = { vacation: t('payroll.time.vacation'), sick: t('payroll.time.sick') };
+  const over = pc.leave.some((l) => l.warnings.includes('over_balance'));
+  const payable = pc.finalPay ? BigInt(pc.finalPay.vacationPayableMilli) : 0n;
+  const paidOut = BigInt(pc.vacationPayoutHoursMilli);
+  return (
+    <div className="space-y-2">
+      {pc.overtimeRules && (
+        <p className="text-xs text-muted" data-testid="overtime-method">
+          {pc.overtimeMethod === 'daily'
+            ? pc.overtimeRules === 'california'
+              ? t('payroll.time.method_daily_ca')
+              : t('payroll.time.method_daily_federal')
+            : t('payroll.time.method_manual')}
+        </p>
+      )}
+      {pc.leave.length > 0 && (
+        <table className="w-full text-sm" aria-label={t('payroll.time.leave')}>
+          <thead className="text-xs text-muted">
+            <tr>
+              <th className="text-left font-normal">{t('payroll.time.leave')}</th>
+              <th className="text-right font-normal">{t('payroll.time.before')}</th>
+              <th className="text-right font-normal">{t('payroll.time.used')}</th>
+              <th className="text-right font-normal">{t('payroll.time.earned')}</th>
+              <th className="text-right font-normal">{t('payroll.time.paid_out_col')}</th>
+              <th className="text-right font-normal">{t('payroll.time.available')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pc.leave.map((l) => (
+              <tr key={l.kind} data-testid={`leave-${l.kind}`}>
+                <td>{KIND[l.kind]}</td>
+                <td className="num text-right">{signedHoursText(l.beforeMilli)}</td>
+                <td className="num text-right">{signedHoursText(l.usedMilli)}</td>
+                <td className="num text-right">{signedHoursText(l.accruedMilli)}</td>
+                <td className="num text-right">{signedHoursText(l.paidOutMilli)}</td>
+                <td className="num text-right font-semibold">{signedHoursText(l.afterMilli)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {pc.leave.flatMap((l) =>
+        l.warnings.map((w) => (
+          <p key={`${l.kind}-${w}`} className="text-xs text-warn" role="status">
+            {t(`payroll.time.warning_${w}`, { kind: KIND[l.kind] ?? l.kind })}
+          </p>
+        )),
+      )}
+      {over &&
+        (pc.leaveOverAllowed ? (
+          <p className="text-xs text-muted">{t('payroll.time.allowed_over')}</p>
+        ) : (
+          editable && (
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy}
+              onClick={() => onUpdate({ allowLeaveOverBalance: true })}
+            >
+              {t('payroll.time.allow_over')}
+            </button>
+          )
+        ))}
+      {pc.finalPay && (
+        <div className="rounded border border-line p-2 text-sm" data-testid="final-pay">
+          <p>
+            {t('payroll.time.final_pay', { date: pc.finalPay.endDate })}{' '}
+            {pc.finalPay.payoutRequired ? t('payroll.time.final_pay_ca') : t('payroll.time.final_pay_other')}{' '}
+            {t('payroll.time.sick_not_paid')}
+          </p>
+          {paidOut > 0n ? (
+            <p className="mt-1">
+              {t('payroll.time.paid_out', { hours: hoursText(String(paidOut)) })}{' '}
+              {editable && (
+                <button
+                  type="button"
+                  className="underline"
+                  disabled={busy}
+                  onClick={() => onUpdate({ vacationPayoutHoursMilli: '0' })}
+                >
+                  {t('payroll.time.undo_payout')}
+                </button>
+              )}
+            </p>
+          ) : (
+            editable &&
+            payable > 0n && (
+              <button
+                type="button"
+                className="btn-secondary mt-1 text-sm"
+                disabled={busy}
+                onClick={() => onUpdate({ vacationPayoutHoursMilli: String(payable) })}
+              >
+                {t('payroll.time.pay_out', { hours: hoursText(String(payable)) })}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Hours and the lines entered by hand on one draft paycheck. */
 function PaycheckForm({
   paycheck,
+  period,
   currency,
   taxNames,
   busy,
@@ -370,6 +513,7 @@ function PaycheckForm({
   parse,
 }: {
   paycheck: PaycheckDto;
+  period: { start: string; end: string };
   currency: string;
   taxNames: Record<string, string>;
   busy: boolean;
@@ -387,6 +531,13 @@ function PaycheckForm({
   const overtime = paycheck.lines.find((l) => l.code === 'overtime');
   const [hours, setHours] = useState(regular?.hoursMilli ? hoursText(regular.hoursMilli) : '');
   const [ot, setOt] = useState(overtime?.hoursMilli ? hoursText(overtime.hoursMilli) : '');
+  const leaveText = (milli: string) => (milli === '0' ? '' : hoursText(milli));
+  const [vacation, setVacation] = useState(leaveText(paycheck.vacationHoursMilli));
+  const [sick, setSick] = useState(leaveText(paycheck.sickHoursMilli));
+  const [daily, setDaily] = useState(paycheck.overtimeMethod === 'daily');
+  const [grid, setGrid] = useState<Record<string, string>>(
+    Object.fromEntries(paycheck.days.map((d) => [d.date, hoursText(d.hoursMilli)])),
+  );
   const [rows, setRows] = useState<Record<EditableKind, Row[]>>({
     earning: manual('earning'),
     pre_tax_deduction: manual('pre_tax_deduction'),
@@ -435,9 +586,17 @@ function PaycheckForm({
     }
     const h = hours.trim() ? parseHours(hours) : null;
     const o = ot.trim() ? parseHours(ot) : null;
-    if (h === undefined || o === undefined) return onError(t('payroll.run.bad_hours'));
+    const v = vacation.trim() ? parseHours(vacation) : '0';
+    const s = sick.trim() ? parseHours(sick) : '0';
+    if (h === undefined || o === undefined || v === undefined || s === undefined) {
+      return onError(t('payroll.run.bad_hours'));
+    }
+    const days = daily ? gridDays(grid) : paycheck.overtimeMethod === 'daily' ? null : undefined;
+    if (days === undefined && daily) return onError(t('payroll.run.bad_hours'));
     onSave({
-      ...(paycheck.payType === 'hourly' ? { hoursMilli: h, overtimeHoursMilli: o } : {}),
+      ...(paycheck.payType === 'hourly' && !daily ? { hoursMilli: h, overtimeHoursMilli: o } : {}),
+      ...(paycheck.payType ? { vacationHoursMilli: v, sickHoursMilli: s } : {}),
+      ...(days !== undefined ? { days } : {}),
       earnings: out.earning,
       preTaxDeductions: out.pre_tax_deduction,
       employeeTaxes: out.employee_tax,
@@ -456,7 +615,63 @@ function PaycheckForm({
         submit();
       }}
     >
-      {paycheck.payType === 'hourly' && (
+      {paycheck.overtimeRules && (
+        <fieldset className="space-y-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={daily} onChange={(e) => setDaily(e.target.checked)} />
+            {t('payroll.time.daily_toggle')}
+          </label>
+          {daily && (
+            <>
+              <p className="text-xs text-muted">
+                {paycheck.overtimeRules === 'california'
+                  ? t('payroll.time.daily_hint_ca')
+                  : t('payroll.time.daily_hint_federal')}
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-7">
+                {periodDays(period.start, period.end).map((d) => (
+                  <label key={d} className="text-xs">
+                    <span className="field-label">
+                      <DateText date={d} />
+                    </span>
+                    <input
+                      className="input num"
+                      inputMode="decimal"
+                      aria-label={t('payroll.time.hours_on', { date: d })}
+                      value={grid[d] ?? ''}
+                      onChange={(e) => setGrid((g) => ({ ...g, [d]: e.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </fieldset>
+      )}
+      {paycheck.payType && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label={t('payroll.time.vacation_hours')}>
+            <input
+              className="input num"
+              inputMode="decimal"
+              value={vacation}
+              onChange={(e) => setVacation(e.target.value)}
+            />
+          </Field>
+          <Field label={t('payroll.time.sick_hours')}>
+            <input
+              className="input num"
+              inputMode="decimal"
+              value={sick}
+              onChange={(e) => setSick(e.target.value)}
+            />
+          </Field>
+          {paycheck.payType === 'salary' && (
+            <p className="self-end text-xs text-muted sm:col-span-1">{t('payroll.time.salary_leave_hint')}</p>
+          )}
+        </div>
+      )}
+      {paycheck.payType === 'hourly' && !daily && (
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label={t('payroll.run.regular_hours')}>
             <input

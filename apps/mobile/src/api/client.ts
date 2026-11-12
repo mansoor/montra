@@ -6,6 +6,7 @@ import type {
   BudgetDto,
   CreateReimbursementRequest,
   PayRunDto,
+  LeaveBalancesRowDto,
   PayrollPersonDto,
   PayrollFileDto,
   ReimbursementDto,
@@ -440,6 +441,10 @@ export function createApi(opts: ApiOptions) {
           `${ws(w)}/payroll/reimbursements?entityId=${entityId}`,
         )
       ).data,
+    /** Current employees' vacation and sick balances (PRL-25); refused without write access to the business. */
+    leaveBalances: async (w: string, entityId: string) =>
+      (await request<{ data: LeaveBalancesRowDto[] }>('GET', `${ws(w)}/payroll/leave?entityId=${entityId}`))
+        .data,
     payrollPeople: async (w: string, entityId: string) =>
       (await request<{ data: PayrollPersonDto[] }>('GET', `${ws(w)}/payroll/people?entityId=${entityId}`))
         .data,
