@@ -14,7 +14,19 @@ import { invoicePdfName, newestFirst, openBills, openInvoices, sumMinor } from '
 import { currentLocale, fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { MiniLineChart } from '../../src/ui/charts';
-import { Banner, Body, Button, Card, Row, Screen, Segmented, Small, Title } from '../../src/ui/components';
+import { BusinessSettings } from '../../src/ui/BusinessSettings';
+import {
+  Banner,
+  Body,
+  Button,
+  Card,
+  Disclosure,
+  Row,
+  Screen,
+  Segmented,
+  Small,
+  Title,
+} from '../../src/ui/components';
 import { haptic } from '../../src/ui/haptics';
 import { PeriodPicker } from '../../src/ui/PeriodPicker';
 import { useTheme } from '../../src/ui/theme';
@@ -32,6 +44,7 @@ export default function Business() {
   const [month, setMonth] = useState<string | null>(null);
   const [sharing, setSharing] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const list = businesses.data ?? [];
   const entityId = picked ?? list[0]?.entityId ?? '';
   const data = useCached(
@@ -278,24 +291,12 @@ export default function Business() {
                 <Small key={p.quarter}>{t('mobile.business.next_tax_date', { date: fmtDate(p.due) })}</Small>
               ))}
           </Card>
-          <View style={{ flexDirection: 'row', gap: th.space(2) }}>
-            <View style={{ flex: 1 }}>
-              <Button
-                kind="secondary"
-                label={t('mobile.business.log_trip')}
-                onPress={() => router.push({ pathname: '/business/mileage', params: { entityId } })}
-                testID="business-mileage"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button
-                kind="secondary"
-                label={t('mobile.business.settings')}
-                onPress={() => router.push({ pathname: '/business/settings', params: { entityId } })}
-                testID="business-settings"
-              />
-            </View>
-          </View>
+          <Button
+            kind="secondary"
+            label={t('mobile.business.log_trip')}
+            onPress={() => router.push({ pathname: '/business/mileage', params: { entityId } })}
+            testID="business-mileage"
+          />
           <Button
             kind="secondary"
             label={t('mobile.payroll.open')}
@@ -346,6 +347,17 @@ export default function Business() {
           ))}
           <Small>{t('mobile.business.write_on_web')}</Small>
         </>
+      ) : null}
+      {entityId ? (
+        <Disclosure
+          title={t('mobile.business.settings_title')}
+          summary={t('mobile.business.settings_summary')}
+          open={settingsOpen}
+          onToggle={() => setSettingsOpen((o) => !o)}
+          testID="business-settings-toggle"
+        >
+          <BusinessSettings key={entityId} entityId={entityId} />
+        </Disclosure>
       ) : null}
     </Screen>
   );
