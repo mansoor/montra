@@ -1,21 +1,20 @@
 /**
- * A business's logo and domain on the phone (ADR-0032), as they print on invoices. The logo is picked from Files or
+ * The business's settings on the phone, inside the Business screen's collapsible "Business settings" section: the logo
+ * and domain as they print on invoices (ADR-0032), and the contact details read-only. The logo is picked from Files or
  * Photos and checked by the server; the domain is checked here the same way the server does (`normalizeDomain`). The
  * rest of the profile is changed on the web.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { normalizeDomain, type BusinessProfileDto } from '@montra/schemas';
-import { t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
-import { Banner, Body, Button, Card, Field, Screen, Small, Title } from '../../src/ui/components';
-import { useTheme } from '../../src/ui/theme';
+import { t } from '../i18n';
+import { useSession } from '../session/SessionProvider';
+import { Banner, Body, Button, Card, Field, Small } from './components';
+import { useTheme } from './theme';
 
-export default function BusinessSettings() {
+export function BusinessSettings({ entityId }: { entityId: string }) {
   const th = useTheme();
-  const { entityId } = useLocalSearchParams<{ entityId: string }>();
   const { state: session, api } = useSession();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [profile, setProfile] = useState<BusinessProfileDto | null>(null);
@@ -76,18 +75,13 @@ export default function BusinessSettings() {
   };
 
   if (!profile) {
-    return (
-      <Screen testID="business-settings-screen">
-        {error ? <Banner tone="danger" text={error} /> : <Small>{t('mobile.common.loading')}</Small>}
-      </Screen>
-    );
+    return error ? <Banner tone="danger" text={error} /> : <Small>{t('mobile.common.loading')}</Small>;
   }
 
   return (
-    <Screen testID="business-settings-screen">
+    <View style={{ gap: th.space(3) }} testID="business-settings">
       {error ? <Banner tone="danger" text={error} /> : null}
       {notice ? <Banner text={notice} /> : null}
-      <Title>{profile.legalName ?? profile.name}</Title>
 
       <Card testID="business-logo">
         <Body style={{ fontWeight: '700' }}>{t('business.logo')}</Body>
@@ -147,11 +141,12 @@ export default function BusinessSettings() {
         <Button label={t('business.save_profile')} onPress={() => void saveDomain()} busy={busy} />
       </Card>
 
-      <Card>
+      <Card testID="business-details">
+        <Body style={{ fontWeight: '700' }}>{profile.legalName ?? profile.name}</Body>
         {profile.email ? <Body>{profile.email}</Body> : null}
         {profile.address ? <Small>{profile.address}</Small> : null}
         <Small>{t('mobile.business.profile_on_web')}</Small>
       </Card>
-    </Screen>
+    </View>
   );
 }
