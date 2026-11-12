@@ -339,6 +339,7 @@ export function createApi(opts: ApiOptions) {
       request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/apply`, input),
     matchReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/match`),
     rejectReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/reject`),
+    deleteReceipt: (w: string, id: string) => request<void>('DELETE', `${ws(w)}/receipts/${id}`),
 
     // ----- Business (08 §3): reads, and logging a trip. Invoices and bills are written on the web. ------------
     businesses: async (w: string) =>
