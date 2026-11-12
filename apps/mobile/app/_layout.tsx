@@ -74,6 +74,7 @@ function Gate() {
         <Stack.Screen name="your-data" options={{ title: t('settings.tab.data') }} />
         <Stack.Screen name="rentals/index" options={{ title: t('nav.rentals') }} />
         <Stack.Screen name="rentals/log" options={{ title: t('rentals.record_payment') }} />
+        <Stack.Screen name="rentals/contacts" options={{ title: t('mobile.rentals.contacts_title') }} />
         <Stack.Screen name="payslips/index" options={{ title: t('nav.payslips') }} />
         <Stack.Screen name="payslips/capture" options={{ title: t('mobile.payslips.capture_title') }} />
         <Stack.Screen name="payslips/[id]" options={{ title: t('mobile.payslips.review_title') }} />

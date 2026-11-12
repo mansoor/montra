@@ -128,6 +128,9 @@ const RENTAL: GroupTemplate[] = [
       expense('Taxes', 'US_SCH_E_L16'),
       expense('Utilities', 'US_SCH_E_L17'),
       expense('Depreciation', 'US_SCH_E_L18'),
+      // RNT-20: on line 19 (Other), which the return asks to be listed. Migration 0038 adds them to existing books.
+      expense('HOA dues', 'US_SCH_E_L19'),
+      expense('Home warranty', 'US_SCH_E_L19'),
       expense('Other', 'US_SCH_E_L19'),
     ],
   },

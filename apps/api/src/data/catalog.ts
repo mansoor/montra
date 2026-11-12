@@ -67,6 +67,9 @@ export const ENCRYPTED: Readonly<Record<string, Readonly<Record<string, string>>
     passport_number_enc: 'payroll_i9.passport_number',
   },
   payroll_i9_document: { number_enc: 'payroll_i9_document.number' },
+  // Rentals (ADR-0038 §1).
+  tenant: { birth_date_enc: 'tenant.birth_date' },
+  lease_person: { birth_date_enc: 'lease_person.birth_date' },
 };
 
 export const plainName = (column: string) => column.replace(/_enc$/, '');

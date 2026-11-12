@@ -1,6 +1,7 @@
 /**
- * Rentals on the phone (08 §3, RNT-04, RNT-05): this month's rent, who's behind, and logging a payment. Reads are kept for
- * offline viewing like other planning screens. Properties and leases are managed on the web.
+ * Rentals on the phone (08 §3, RNT-04, RNT-05, RNT-22): this month's rent, who's behind, logging a payment, and the
+ * portfolio's contacts and tenants. Reads are kept for offline viewing like other planning screens. Properties, leases
+ * and contacts are managed on the web.
  */
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -61,6 +62,13 @@ export default function Rentals() {
               {t('rentals.still_open')}: {fmtMoney(d.roll.open, ccy)}
             </Small>
           </Card>
+
+          <Row
+            title={t('mobile.rentals.contacts_title')}
+            subtitle={t('mobile.rentals.contacts_hint')}
+            onPress={() => router.push({ pathname: '/rentals/contacts', params: { entityId } })}
+            testID="rentals-contacts"
+          />
 
           <Title>{t('rentals.tab_rent_roll')}</Title>
           {d.roll.rows.length === 0 ? <Body muted>{t('rentals.roll_empty')}</Body> : null}

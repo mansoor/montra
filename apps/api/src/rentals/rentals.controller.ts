@@ -26,19 +26,25 @@ import {
   CreateMaintenanceRequest,
   CreatePropertyRequest,
   CreateReminderRequest,
+  CreateRentalContactRequest,
   CreateTenantRequest,
   CreateUnitRequest,
   DepositEventRequest,
+  LeaseCostRequest,
+  LeasePersonRequest,
   LoanPaymentRequest,
+  RentalContactRole,
   RentPaymentRequest,
   SavePropertyBudgetRequest,
   ScheduleEExportFormat,
   UpdateChargeRequest,
+  UpdateLeasePersonRequest,
   UpdateLeaseRequest,
   UpdateLoanRequest,
   UpdateMaintenanceRequest,
   UpdatePropertyRequest,
   UpdateReminderRequest,
+  UpdateRentalContactRequest,
   UpdateTenantRequest,
   UpdateUnitRequest,
 } from '@montra/schemas';
@@ -61,6 +67,7 @@ import { LoansService } from './loans.service.js';
 import { PropertiesService } from './properties.service.js';
 import { RentService } from './rent.service.js';
 import { RentalOpsService } from './rental-ops.service.js';
+import { RentalPeopleService } from './rental-people.service.js';
 import { RentalReportsService } from './rental-reports.service.js';
 
 const Id = z.uuid();
@@ -81,6 +88,7 @@ export class RentalsController {
     @Inject(LoansService) private readonly loans: LoansService,
     @Inject(RentalOpsService) private readonly ops: RentalOpsService,
     @Inject(RentalReportsService) private readonly reports: RentalReportsService,
+    @Inject(RentalPeopleService) private readonly people: RentalPeopleService,
   ) {}
 
   // ----- Properties and units (RNT-01, RNT-02) -----------------------------------------------------------------
@@ -132,6 +140,93 @@ export class RentalsController {
   @Patch('tenants/:id')
   updateTenant(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
     return this.properties.updateTenant(dbCtx(ctx), parse(Id, id), parse(UpdateTenantRequest, body));
+  }
+
+  /** RNT-17: a tenant's details and every lease they sign or co-sign, current first. */
+  @Get('tenants/:id')
+  getTenant(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.properties.getTenant(dbCtx(ctx), parse(Id, id));
+  }
+
+  /** ADR-0038 §1: a sealed date of birth, after a recent sign-in, written to the audit log. */
+  @Post('tenants/:id/reveal')
+  @HttpCode(200)
+  revealTenant(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    requireRecentAuth(ctx);
+    return this.properties.revealTenant(dbCtx(ctx), parse(Id, id));
+  }
+
+  // ----- Co-signers, occupants and set-up costs (RNT-18, RNT-19) ------------------------------------------------
+
+  @Post('leases/:id/people')
+  addLeasePerson(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.people.addPerson(dbCtx(ctx), parse(Id, id), parse(LeasePersonRequest, body));
+  }
+
+  @Patch('lease-people/:id')
+  updateLeasePerson(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.people.updatePerson(dbCtx(ctx), parse(Id, id), parse(UpdateLeasePersonRequest, body));
+  }
+
+  @Delete('lease-people/:id')
+  @HttpCode(204)
+  async removeLeasePerson(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {
+    await this.people.removePerson(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Post('lease-people/:id/reveal')
+  @HttpCode(200)
+  revealLeasePerson(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    requireRecentAuth(ctx);
+    return this.people.revealPerson(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Post('leases/:id/costs')
+  addLeaseCost(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.people.addCost(dbCtx(ctx), parse(Id, id), parse(LeaseCostRequest, body));
+  }
+
+  @Delete('leases/:id/costs/:costId')
+  @HttpCode(204)
+  async removeLeaseCost(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Param('costId') costId: string,
+  ): Promise<void> {
+    await this.people.removeCost(dbCtx(ctx), parse(Id, id), parse(Id, costId));
+  }
+
+  // ----- Contacts (RNT-21) --------------------------------------------------------------------------------------
+
+  @Get('rental-contacts')
+  async listContacts(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    const opts = parse(
+      EntityQuery.extend({
+        propertyId: z.uuid().optional(),
+        role: RentalContactRole.optional(),
+        archived: z.enum(['true', 'false']).optional(),
+      }),
+      q,
+    );
+    return {
+      data: await this.people.listContacts(dbCtx(ctx), { ...opts, archived: opts.archived === 'true' }),
+    };
+  }
+
+  @Post('rental-contacts')
+  createContact(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.people.createContact(dbCtx(ctx), parse(CreateRentalContactRequest, body));
+  }
+
+  @Patch('rental-contacts/:id')
+  updateContact(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.people.updateContact(dbCtx(ctx), parse(Id, id), parse(UpdateRentalContactRequest, body));
+  }
+
+  @Delete('rental-contacts/:id')
+  @HttpCode(204)
+  async deleteContact(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {
+    await this.people.deleteContact(dbCtx(ctx), parse(Id, id));
   }
 
   @Get('leases')
