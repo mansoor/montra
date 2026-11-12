@@ -398,6 +398,11 @@ function TimeSummary({
 }) {
   const { t } = useI18n();
   const KIND: Record<string, string> = { vacation: t('payroll.time.vacation'), sick: t('payroll.time.sick') };
+  const WARNING: Record<PaycheckDto['leave'][number]['warnings'][number], (kind: string) => string> = {
+    over_balance: (kind) => t('payroll.time.warning_over_balance', { kind }),
+    over_use_cap: (kind) => t('payroll.time.warning_over_use_cap', { kind }),
+    waiting_period: (kind) => t('payroll.time.warning_waiting_period', { kind }),
+  };
   const over = pc.leave.some((l) => l.warnings.includes('over_balance'));
   const payable = pc.finalPay ? BigInt(pc.finalPay.vacationPayableMilli) : 0n;
   const paidOut = BigInt(pc.vacationPayoutHoursMilli);
@@ -441,7 +446,7 @@ function TimeSummary({
       {pc.leave.flatMap((l) =>
         l.warnings.map((w) => (
           <p key={`${l.kind}-${w}`} className="text-xs text-warn" role="status">
-            {t(`payroll.time.warning_${w}`, { kind: KIND[l.kind] ?? l.kind })}
+            {WARNING[w](KIND[l.kind] ?? l.kind)}
           </p>
         )),
       )}
