@@ -132,7 +132,11 @@ export default function Receipts() {
           key={r.id}
           testID="receipt-row"
           title={r.merchant ?? t('mobile.receipts.unknown_merchant')}
-          subtitle={[r.receiptDate ? fmtDate(r.receiptDate) : null, t(receiptStatusKey(r))]
+          subtitle={[
+            r.receiptDate ? fmtDate(r.receiptDate) : null,
+            t(receiptStatusKey(r)),
+            r.likelyDuplicates.length ? t('mobile.receipts.likely_duplicate') : null,
+          ]
             .filter(Boolean)
             .join(' · ')}
           right={<Small>{fmtMoney(r.total, r.currency)}</Small>}

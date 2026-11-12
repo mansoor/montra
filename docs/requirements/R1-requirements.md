@@ -179,6 +179,7 @@ Example (8% tax on non-food items):
 | RCP-10 | Receipt images and extracted data kept 7 years by default and searchable by OCR text. | M |
 | RCP-11 | With no receipt, merchant-based categorization applies. Multi-department stores (Walmart, Target, Costco, Amazon) above a threshold (default $50) are flagged "receipt recommended". | S |
 | RCP-12 | Online orders: import order-history files or invoice PDFs (e.g., Amazon) and categorize them line by line the same way. | S |
+| RCP-13 | Duplicate receipts: a receipt with the same store, date and total as another is flagged as a likely duplicate, so the user can compare the two and discard one. Nothing is discarded automatically. | S |
 
 ### 3.6 Double-entry ledger
 

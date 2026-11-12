@@ -146,6 +146,9 @@ export default async function ReceiptsPage({
                   </td>
                   <td className="py-2">
                     <span className={STATUS_CHIP[r.status]}>{t(`receipts.status.${r.status}`)}</span>
+                    {r.likelyDuplicates.length > 0 && (
+                      <span className="chip chip-warn ml-1">{t('receipts.likely_duplicate')}</span>
+                    )}
                   </td>
                 </tr>
               ))}

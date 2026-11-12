@@ -165,6 +165,21 @@ export const accountProfile = (kind: string): AccountProfile => ACCOUNT_PROFILES
 export const canSpendFrom = (account: { kind: string; archived?: boolean }): boolean =>
   !account.archived && accountProfile(account.kind).spending;
 
+/**
+ * The account a receipt was most likely paid from: the card or account whose last four digits the receipt shows, else
+ * the most recently used, else the first. Null when there's none.
+ */
+export function receiptAccountId(
+  accounts: readonly { id: string; last4?: string | null }[],
+  cardLast4: string | null | undefined,
+  recentIds: readonly (string | null)[] = [],
+): string | null {
+  const byDigits = cardLast4 ? accounts.find((a) => a.last4 === cardLast4) : undefined;
+  if (byDigits) return byDigits.id;
+  const ids = new Set(accounts.map((a) => a.id));
+  return recentIds.find((id): id is string => id !== null && ids.has(id)) ?? accounts[0]?.id ?? null;
+}
+
 /** Every kind with this trait. */
 export const kindsWhere = (test: (t: AccountProfile) => boolean): AccountKind[] =>
   ACCOUNT_KINDS.filter((k) => test(ACCOUNT_PROFILES[k]));

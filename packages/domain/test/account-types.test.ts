@@ -11,6 +11,7 @@ import {
   calendarDate,
   canSpendFrom,
   kindsWhere,
+  receiptAccountId,
   percentToBps,
 } from '../src/index.js';
 
@@ -73,6 +74,22 @@ describe('canSpendFrom', () => {
   it('never offers an archived account', () => {
     expect(canSpendFrom({ kind: 'checking', archived: true })).toBe(false);
     expect(canSpendFrom({ kind: 'checking', archived: false })).toBe(true);
+  });
+});
+
+describe('receiptAccountId', () => {
+  const accounts = [
+    { id: 'chk', last4: '1111' },
+    { id: 'visa', last4: '4242' },
+    { id: 'amex', last4: null },
+  ];
+  it('picks the card whose last four digits the receipt shows', () => {
+    expect(receiptAccountId(accounts, '4242', ['chk'])).toBe('visa');
+  });
+  it('otherwise the most recently used, then the first', () => {
+    expect(receiptAccountId(accounts, '9999', [null, 'gone', 'amex', 'chk'])).toBe('amex');
+    expect(receiptAccountId(accounts, null)).toBe('chk');
+    expect(receiptAccountId([], '4242')).toBeNull();
   });
 });
 
