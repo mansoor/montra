@@ -62,7 +62,9 @@ export async function categoryOnLine(trx: Trx, ctx: Ctx, entityId: string, code:
 
 export const SCH_E = {
   RENTS: 'US_SCH_E_L3',
+  COMMISSIONS: 'US_SCH_E_L8',
   INSURANCE: 'US_SCH_E_L9',
+  LEGAL: 'US_SCH_E_L10',
   MORTGAGE_INTEREST: 'US_SCH_E_L12',
   OTHER_INTEREST: 'US_SCH_E_L13',
   TAXES: 'US_SCH_E_L16',

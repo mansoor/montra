@@ -101,30 +101,171 @@ export type UpdatePropertyRequest = z.output<typeof UpdatePropertyRequest>;
 
 // ----- Tenants and leases (RNT-03) ---------------------------------------------------------------------------
 
+/** Where a tenant lives now: the lease they sign that's active today (RNT-17). */
+export const TenantHomeDto = z.object({
+  leaseId: Id,
+  propertyId: Id,
+  propertyName: z.string(),
+  unitId: Id,
+  unitLabel: z.string(),
+});
+export type TenantHomeDto = z.infer<typeof TenantHomeDto>;
+
+/**
+ * RNT-17. The date of birth is sealed and never in this DTO: `hasDateOfBirth` says one is on file, and Show
+ * (`POST tenants/:id/reveal`, a recent sign-in, logged) reads it. No SSN is collected (ADR-0038 §1).
+ */
 export const TenantDto = z.object({
   id: Id,
   entityId: Id,
   name: z.string(),
   email: z.string().nullable(),
   phone: z.string().nullable(),
+  phoneAlt: z.string().nullable(),
+  mailingAddress: z.string().nullable(),
+  hasDateOfBirth: z.boolean(),
+  emergencyName: z.string().nullable(),
+  emergencyRelationship: z.string().nullable(),
+  emergencyPhone: z.string().nullable(),
+  /** Screening notes, optional. */
+  employer: z.string().nullable(),
+  monthlyIncome: MinorDto.nullable(),
+  /** Make, model, colour and plate, as the landlord writes it. */
+  vehicle: z.string().nullable(),
   notes: z.string().nullable(),
+  /** Null when they sign no lease that's active today. */
+  current: TenantHomeDto.nullable(),
   version: z.number().int(),
 });
 export type TenantDto = z.infer<typeof TenantDto>;
 
-export const CreateTenantRequest = z.object({
-  entityId: Id,
+/** A lease a tenant is on, as a tenant who signs or as a co-signer. */
+export const TenantLeaseDto = z.object({
+  leaseId: Id,
+  role: z.enum(['signer', 'cosigner']),
+  propertyId: Id,
+  propertyName: z.string(),
+  unitId: Id,
+  unitLabel: z.string(),
+  status: z.enum(['upcoming', 'active', 'ended']),
+  startDate: CalendarDateDto,
+  endDate: CalendarDateDto.nullable(),
+  endedOn: CalendarDateDto.nullable(),
+  rent: MinorDto,
+  currency: CurrencyCodeDto,
+});
+export type TenantLeaseDto = z.infer<typeof TenantLeaseDto>;
+
+/** One tenant's page: their details and their leases, current first (active, then upcoming, then ended). */
+export const TenantDetailDto = TenantDto.extend({ leases: z.array(TenantLeaseDto) });
+export type TenantDetailDto = z.infer<typeof TenantDetailDto>;
+
+const TenantFields = {
   name: Text(200).min(1),
   email: z.email().max(320).nullable().optional(),
   phone: Text(50).nullable().optional(),
+  phoneAlt: Text(50).nullable().optional(),
+  mailingAddress: Text(1000).nullable().optional(),
+  dateOfBirth: CalendarDateDto.nullable().optional(),
+  emergencyName: Text(200).nullable().optional(),
+  emergencyRelationship: Text(100).nullable().optional(),
+  emergencyPhone: Text(50).nullable().optional(),
+  employer: Text(200).nullable().optional(),
+  monthlyIncome: NonNegativeMinor.nullable().optional(),
+  vehicle: Text(200).nullable().optional(),
   notes: Text(2000).nullable().optional(),
-});
+};
+
+export const CreateTenantRequest = z.object({ entityId: Id, ...TenantFields });
 export type CreateTenantRequest = z.output<typeof CreateTenantRequest>;
 
 export const UpdateTenantRequest = CreateTenantRequest.omit({ entityId: true })
   .partial()
   .extend({ version: Version });
 export type UpdateTenantRequest = z.output<typeof UpdateTenantRequest>;
+
+/** A sealed date of birth, shown once after a recent sign-in and written to the audit log (RNT-17). */
+export const RevealDateOfBirthResponse = z.object({ dateOfBirth: CalendarDateDto.nullable() });
+export type RevealDateOfBirthResponse = z.infer<typeof RevealDateOfBirthResponse>;
+
+// ----- People on a lease (RNT-18) ------------------------------------------------------------------------------
+
+/** Tenants who sign are `LeaseDto.tenants` and are the only payers; these are the others named on the lease. */
+export const LeasePersonRole = z.enum(['cosigner', 'occupant']);
+export type LeasePersonRole = z.infer<typeof LeasePersonRole>;
+
+export const LeasePersonDto = z.object({
+  id: Id,
+  role: LeasePersonRole,
+  /** A co-signer can be one of the portfolio's tenants; their name and contact details then come from there. */
+  tenantId: Id.nullable(),
+  name: z.string(),
+  relationship: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  mailingAddress: z.string().nullable(),
+  hasDateOfBirth: z.boolean(),
+  notes: z.string().nullable(),
+  version: z.number().int(),
+});
+export type LeasePersonDto = z.infer<typeof LeasePersonDto>;
+
+const LeasePersonFields = {
+  tenantId: Id.nullable().optional(),
+  name: Text(200).min(1).nullable().optional(),
+  relationship: Text(100).nullable().optional(),
+  email: z.email().max(320).nullable().optional(),
+  phone: Text(50).nullable().optional(),
+  mailingAddress: Text(1000).nullable().optional(),
+  dateOfBirth: CalendarDateDto.nullable().optional(),
+  notes: Text(2000).nullable().optional(),
+};
+
+export const LeasePersonRequest = z
+  .object({ role: LeasePersonRole, ...LeasePersonFields })
+  .refine((p) => !!p.tenantId || !!p.name, { message: 'Enter a name', path: ['name'] })
+  .refine((p) => p.role === 'cosigner' || !p.tenantId, {
+    message: 'Only a co-signer can be one of your tenants',
+    path: ['tenantId'],
+  });
+export type LeasePersonRequest = z.output<typeof LeasePersonRequest>;
+
+export const UpdateLeasePersonRequest = z
+  .object(LeasePersonFields)
+  .omit({ tenantId: true })
+  .extend({ version: Version });
+export type UpdateLeasePersonRequest = z.output<typeof UpdateLeasePersonRequest>;
+
+// ----- Lease set-up costs (RNT-19) ------------------------------------------------------------------------------
+
+/** A broker's fee posts to Commissions (Schedule E line 8), legal or document fees to Legal & professional (line 10). */
+export const LeaseCostKind = z.enum(['broker_fee', 'legal_fee']);
+export type LeaseCostKind = z.infer<typeof LeaseCostKind>;
+
+export const LeaseCostDto = z.object({
+  id: Id,
+  kind: LeaseCostKind,
+  date: CalendarDateDto,
+  amount: MinorDto,
+  contactId: Id.nullable(),
+  contactName: z.string().nullable(),
+  transactionId: Id,
+  notes: z.string().nullable(),
+});
+export type LeaseCostDto = z.infer<typeof LeaseCostDto>;
+
+const LeaseCostCommon = {
+  kind: LeaseCostKind,
+  contactId: Id.nullable().optional(),
+  notes: Text(500).nullable().optional(),
+};
+
+/** Record it as paid from an account, or take over a bank line already in the books. */
+export const LeaseCostRequest = z.union([
+  z.object({ ...LeaseCostCommon, transactionId: Id }),
+  z.object({ ...LeaseCostCommon, accountId: Id, date: CalendarDateDto, amount: PositiveMinor }),
+]);
+export type LeaseCostRequest = z.output<typeof LeaseCostRequest>;
 
 export const LeaseStatus = z.enum(['upcoming', 'active', 'ended']);
 export type LeaseStatus = z.infer<typeof LeaseStatus>;
@@ -147,7 +288,10 @@ export const LeaseDto = z.object({
   propertyName: z.string(),
   unitId: Id,
   unitLabel: z.string(),
+  /** The tenants who sign. They're the payers: rent, arrears and matching read only them (RNT-18). */
   tenants: z.array(z.object({ id: Id, name: z.string() })),
+  /** Co-signers and occupants, in the order added. */
+  people: z.array(LeasePersonDto),
   status: LeaseStatus,
   startDate: CalendarDateDto,
   /** Null: month to month. */
@@ -165,7 +309,13 @@ export const LeaseDto = z.object({
   depositHeld: MinorDto,
   depositEvents: z.array(DepositEventDto),
   depositAccountId: Id.nullable(),
+  /** The signed lease and anything else attached: PDF or photo (RNT-19). */
   fileIds: z.array(Id),
+  /** The broker or agent, a contact with role `broker`. */
+  brokerContactId: Id.nullable(),
+  brokerName: z.string().nullable(),
+  /** Broker's fee and legal fees, posted as expenses (RNT-19). */
+  costs: z.array(LeaseCostDto),
   notes: z.string().nullable(),
   currency: CurrencyCodeDto,
   version: z.number().int(),
@@ -186,9 +336,15 @@ const LeaseFields = {
   depositAccountId: Id.nullable().optional(),
   fileIds: z.array(Id).max(20).default([]),
   notes: Text(2000).nullable().optional(),
+  brokerContactId: Id.nullable().optional(),
 };
 
-export const CreateLeaseRequest = z.object({ unitId: Id, ...LeaseFields });
+/** `people` adds co-signers and occupants with the lease; later ones are added on the lease. */
+export const CreateLeaseRequest = z.object({
+  unitId: Id,
+  ...LeaseFields,
+  people: z.array(LeasePersonRequest).max(20).default([]),
+});
 export type CreateLeaseRequest = z.output<typeof CreateLeaseRequest>;
 
 /** Terms apply to charges not yet made; an existing charge is edited on its own. */
@@ -207,6 +363,7 @@ export const UpdateLeaseRequest = z
     depositAccountId: Id.nullable(),
     fileIds: z.array(Id).max(20),
     notes: Text(2000).nullable(),
+    brokerContactId: Id.nullable(),
   })
   .partial()
   .extend({ version: Version });
@@ -592,6 +749,9 @@ export const MaintenanceDto = z.object({
   unitLabel: z.string().nullable(),
   issue: z.string(),
   vendor: z.string().nullable(),
+  /** RNT-21: the vendor as one of the portfolio's contacts. `vendor` stays for free text. */
+  contactId: Id.nullable(),
+  contactName: z.string().nullable(),
   cost: MinorDto.nullable(),
   status: MaintenanceStatus,
   reportedOn: CalendarDateDto,
@@ -608,6 +768,7 @@ export const CreateMaintenanceRequest = z.object({
   unitId: Id.nullable().optional(),
   issue: Text(500).min(1),
   vendor: Text(200).nullable().optional(),
+  contactId: Id.nullable().optional(),
   cost: NonNegativeMinor.nullable().optional(),
   reportedOn: CalendarDateDto,
   fileIds: z.array(Id).max(20).default([]),
@@ -627,6 +788,77 @@ export const UpdateMaintenanceRequest = CreateMaintenanceRequest.omit({ property
     version: Version,
   });
 export type UpdateMaintenanceRequest = z.output<typeof UpdateMaintenanceRequest>;
+
+// ----- Property contacts (RNT-21) ------------------------------------------------------------------------------
+
+export const RENTAL_CONTACT_ROLES = [
+  'property_manager',
+  'handyman',
+  'insurance',
+  'home_warranty',
+  'hoa',
+  'landscaping',
+  'broker',
+  'attorney',
+  'water',
+  'electricity',
+  'gas',
+  'garbage',
+  'internet',
+  'other',
+] as const;
+export const RentalContactRole = z.enum(RENTAL_CONTACT_ROLES);
+export type RentalContactRole = z.infer<typeof RentalContactRole>;
+
+/** A contact belongs to the portfolio and serves any number of its properties (one insurer for many). */
+export const RentalContactDto = z.object({
+  id: Id,
+  entityId: Id,
+  role: RentalContactRole,
+  companyName: z.string(),
+  contactPerson: z.string().nullable(),
+  website: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  /** An account, policy or membership number. */
+  accountNumber: z.string().nullable(),
+  notes: z.string().nullable(),
+  propertyIds: z.array(Id),
+  archived: z.boolean(),
+  version: z.number().int(),
+});
+export type RentalContactDto = z.infer<typeof RentalContactDto>;
+
+/** A website as typed ("acme.com" or "https://..."); a scheme other than http or https is refused. */
+const Website = Text(500).refine(
+  (s) => !/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(s) || /^https?:\/\//i.test(s),
+  'Enter a web address such as example.com',
+);
+
+const RentalContactFields = {
+  role: RentalContactRole,
+  companyName: Text(200).min(1),
+  contactPerson: Text(200).nullable().optional(),
+  website: Website.nullable().optional(),
+  email: z.email().max(320).nullable().optional(),
+  phone: Text(50).nullable().optional(),
+  accountNumber: Text(100).nullable().optional(),
+  notes: Text(2000).nullable().optional(),
+};
+
+export const CreateRentalContactRequest = z.object({
+  entityId: Id,
+  ...RentalContactFields,
+  propertyIds: z.array(Id).max(500).default([]),
+});
+export type CreateRentalContactRequest = z.output<typeof CreateRentalContactRequest>;
+
+/** `propertyIds` replaces the links. */
+export const UpdateRentalContactRequest = z
+  .object({ ...RentalContactFields, propertyIds: z.array(Id).max(500) })
+  .partial()
+  .extend({ archived: z.boolean().optional(), version: Version });
+export type UpdateRentalContactRequest = z.output<typeof UpdateRentalContactRequest>;
 
 // ----- Budgets per property (RNT-14) ---------------------------------------------------------------------------
 

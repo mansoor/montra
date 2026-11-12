@@ -35,6 +35,7 @@ import { Db } from '../db/database.js';
 import { ownerOf, type SplitSpec, type TransactionSpec } from '../transactions/poster.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { leaseStatus, PropertiesService } from './properties.service.js';
+import { portfolioContact } from './lease-people.js';
 import { rentalEntity, todayOf, type Ctx } from './shared.js';
 
 const iso = (v: unknown): CalendarDate => calendarDate(String(v).slice(0, 10));
@@ -354,6 +355,15 @@ export class RentalOpsService {
           .where('id', 'in', unitIds)
           .execute()
       : [];
+    const contactIds = [...new Set(rows.map((r) => r.contact_id).filter((c): c is string => !!c))];
+    const contacts = contactIds.length
+      ? await trx
+          .selectFrom('app.rental_contact')
+          .select(['id', 'company_name'])
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', 'in', contactIds)
+          .execute()
+      : [];
     return rows.map((r) => ({
       id: r.id,
       entityId: r.entity_id,
@@ -363,6 +373,8 @@ export class RentalOpsService {
       unitLabel: units.find((u) => u.id === r.unit_id)?.label ?? null,
       issue: r.issue,
       vendor: r.vendor,
+      contactId: r.contact_id,
+      contactName: contacts.find((c) => c.id === r.contact_id)?.company_name ?? null,
       cost: r.cost_minor !== null ? String(r.cost_minor) : null,
       status: r.status,
       reportedOn: iso(r.reported_on),
@@ -381,7 +393,12 @@ export class RentalOpsService {
     unitId: string | null | undefined,
     fileIds: string[] | undefined,
     transactionIds: string[] | undefined,
+    contactId?: string | null,
   ): Promise<void> {
+    if (contactId) {
+      const p = await this.properties.row(trx, ctx, propertyId);
+      await portfolioContact(trx, ctx, p.entity_id, contactId);
+    }
     if (unitId) {
       const u = await this.properties.unitRow(trx, ctx, unitId);
       if (u.property_id !== propertyId)
@@ -410,7 +427,15 @@ export class RentalOpsService {
   async createMaintenance(ctx: Ctx, req: CreateMaintenanceRequest): Promise<MaintenanceDto> {
     return this.db.run(ctx, async (trx) => {
       const p = await this.properties.row(trx, ctx, req.propertyId);
-      await this.checkMaintenanceLinks(trx, ctx, p.id, req.unitId, req.fileIds, req.transactionIds);
+      await this.checkMaintenanceLinks(
+        trx,
+        ctx,
+        p.id,
+        req.unitId,
+        req.fileIds,
+        req.transactionIds,
+        req.contactId,
+      );
       const row = await trx
         .insertInto('app.maintenance_log')
         .values({
@@ -421,6 +446,7 @@ export class RentalOpsService {
           unit_id: req.unitId ?? null,
           issue: req.issue,
           vendor: req.vendor ?? null,
+          contact_id: req.contactId ?? null,
           cost_minor: req.cost ?? null,
           reported_on: req.reportedOn,
           attachment_ids: req.fileIds,
@@ -443,13 +469,22 @@ export class RentalOpsService {
         .executeTakeFirst();
       if (!r) throw notFound('Maintenance item');
       if (BigInt(r.version) !== BigInt(req.version)) throw conflict();
-      await this.checkMaintenanceLinks(trx, ctx, r.property_id, req.unitId, req.fileIds, req.transactionIds);
+      await this.checkMaintenanceLinks(
+        trx,
+        ctx,
+        r.property_id,
+        req.unitId,
+        req.fileIds,
+        req.transactionIds,
+        req.contactId,
+      );
       const row = await trx
         .updateTable('app.maintenance_log')
         .set({
           ...(req.unitId !== undefined ? { unit_id: req.unitId } : {}),
           ...(req.issue !== undefined ? { issue: req.issue } : {}),
           ...(req.vendor !== undefined ? { vendor: req.vendor } : {}),
+          ...(req.contactId !== undefined ? { contact_id: req.contactId } : {}),
           ...(req.cost !== undefined ? { cost_minor: req.cost } : {}),
           ...(req.reportedOn !== undefined ? { reported_on: req.reportedOn } : {}),
           ...(req.fileIds !== undefined ? { attachment_ids: req.fileIds } : {}),

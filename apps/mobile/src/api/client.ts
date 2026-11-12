@@ -60,6 +60,9 @@ import type {
   BusinessProfileDto,
   UpdateBusinessProfileRequest,
   LeaseDto,
+  PropertyDto,
+  RentalContactDto,
+  TenantDto,
   RentPaymentRequest,
   RentRollDto,
   ConfirmPayslipRequest,
@@ -387,6 +390,14 @@ export function createApi(opts: ApiOptions) {
       (await request<{ data: AccountDto[] }>('GET', `${ws(w)}/accounts`)).data,
     recordRent: (w: string, leaseId: string, input: RentPaymentRequest) =>
       request<LeaseDto>('POST', `${ws(w)}/leases/${leaseId}/payments`, input),
+    /** RNT-22: read-only on the phone; contacts and tenants are edited on the web. */
+    rentalProperties: async (w: string, entityId: string) =>
+      (await request<{ data: PropertyDto[] }>('GET', `${ws(w)}/properties?entityId=${entityId}`)).data,
+    rentalContacts: async (w: string, entityId: string) =>
+      (await request<{ data: RentalContactDto[] }>('GET', `${ws(w)}/rental-contacts?entityId=${entityId}`))
+        .data,
+    rentalTenants: async (w: string, entityId: string) =>
+      (await request<{ data: TenantDto[] }>('GET', `${ws(w)}/tenants?entityId=${entityId}`)).data,
 
     // ----- Account details by type (ADR-0024…0027): read live; recording a loan payment needs a connection. ------
     loans: async (w: string, entityId: string) =>

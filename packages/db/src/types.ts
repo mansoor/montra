@@ -1509,6 +1509,10 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.tenant': TenantTable;
   'app.lease': LeaseTable;
   'app.lease_tenant': LeaseTenantTable;
+  'app.lease_person': LeasePersonTable;
+  'app.lease_cost': LeaseCostTable;
+  'app.rental_contact': RentalContactTable;
+  'app.rental_contact_property': RentalContactPropertyTable;
   'app.rent_charge': RentChargeTable;
   'app.rent_payment': RentPaymentTable;
   'app.security_deposit_event': SecurityDepositEventTable;
@@ -1800,6 +1804,16 @@ export interface TenantTable {
   phone: string | null;
   payee_keys: Generated<string[]>;
   notes: string | null;
+  /** RNT-17 (migration 0038): sealed under the workspace key as `tenant.birth_date`. */
+  birth_date_enc: Buffer | null;
+  phone_alt: string | null;
+  mailing_address: string | null;
+  emergency_name: string | null;
+  emergency_relationship: string | null;
+  emergency_phone: string | null;
+  employer: string | null;
+  monthly_income_minor: Int8 | null;
+  vehicle: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -1824,6 +1838,8 @@ export interface LeaseTable {
   deposit_account_id: string | null;
   attachment_ids: Generated<string[]>;
   notes: string | null;
+  /** RNT-19: the broker or agent, a contact with role `broker`. */
+  broker_contact_id: string | null;
   version: Int8Default;
   created_by: string | null;
   created_at: Generated<Date>;
@@ -1834,6 +1850,86 @@ export interface LeaseTenantTable {
   workspace_id: string;
   lease_id: string;
   tenant_id: string;
+}
+
+/** RNT-18: a co-signer or occupant. The tenants who sign and pay stay in `lease_tenant`. */
+export interface LeasePersonTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  lease_id: string;
+  role: 'cosigner' | 'occupant';
+  tenant_id: string | null;
+  name: string | null;
+  relationship: string | null;
+  email: string | null;
+  phone: string | null;
+  mailing_address: string | null;
+  /** Sealed as `lease_person.birth_date`. */
+  birth_date_enc: Buffer | null;
+  notes: string | null;
+  sort_order: Generated<number>;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** RNT-19: a broker's fee or legal fees, posted as an expense the lease owns. */
+export interface LeaseCostTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  lease_id: string;
+  kind: 'broker_fee' | 'legal_fee';
+  contact_id: string | null;
+  amount_minor: Int8;
+  transaction_id: string;
+  previous_spec: unknown;
+  notes: string | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export type RentalContactRoleCol =
+  | 'property_manager'
+  | 'handyman'
+  | 'insurance'
+  | 'home_warranty'
+  | 'hoa'
+  | 'landscaping'
+  | 'broker'
+  | 'attorney'
+  | 'water'
+  | 'electricity'
+  | 'gas'
+  | 'garbage'
+  | 'internet'
+  | 'other';
+
+/** RNT-21: a contact of a rental portfolio. */
+export interface RentalContactTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  role: RentalContactRoleCol;
+  company_name: string;
+  contact_person: string | null;
+  website: string | null;
+  email: string | null;
+  phone: string | null;
+  account_number: string | null;
+  notes: string | null;
+  archived_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface RentalContactPropertyTable {
+  workspace_id: string;
+  contact_id: string;
+  property_id: string;
+  entity_id: string;
 }
 
 export interface RentChargeTable {
@@ -1990,6 +2086,8 @@ export interface MaintenanceLogTable {
   attachment_ids: Generated<string[]>;
   transaction_ids: Generated<string[]>;
   notes: string | null;
+  /** RNT-21: the vendor as a contact; `vendor` stays for free text. */
+  contact_id: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -2034,6 +2132,9 @@ export type PropertyRow = Selectable<PropertyTable>;
 export type UnitRow = Selectable<UnitTable>;
 export type TenantRow = Selectable<TenantTable>;
 export type LeaseRow = Selectable<LeaseTable>;
+export type LeasePersonRow = Selectable<LeasePersonTable>;
+export type LeaseCostRow = Selectable<LeaseCostTable>;
+export type RentalContactRow = Selectable<RentalContactTable>;
 export type RentChargeRow = Selectable<RentChargeTable>;
 export type LoanRow = Selectable<LoanScheduleTable>;
 export type DepreciationRow = Selectable<DepreciationScheduleTable>;

@@ -234,7 +234,9 @@ import type {
   DepositEventRequest,
   DepreciationDto,
   LeaseCandidateDto,
+  LeaseCostRequest,
   LeaseDto,
+  LeasePersonRequest,
   LoanDto,
   LoanPaymentRequest,
   MaintenanceDto,
@@ -246,16 +248,29 @@ import type {
   RentPaymentDto,
   RentPaymentRequest,
   RentRollDto,
+  CreateRentalContactRequest,
+  RentalContactDto,
+  RevealDateOfBirthResponse,
   SavePropertyBudgetRequest,
   ScheduleEDto,
   ScheduleEExportFormat,
+  TenantDetailDto,
+  LeaseCostDto,
+  LeaseCostKind,
+  LeasePersonDto,
+  LeasePersonRole,
+  RentalContactRole,
+  TenantHomeDto,
+  TenantLeaseDto,
   TenantDto,
   UpdateChargeRequest,
+  UpdateLeasePersonRequest,
   UpdateLeaseRequest,
   UpdateLoanRequest,
   UpdateMaintenanceRequest,
   UpdatePropertyRequest,
   UpdateReminderRequest,
+  UpdateRentalContactRequest,
   UpdateTenantRequest,
   UpdateUnitRequest,
   AskAnswerDto,
@@ -504,6 +519,11 @@ export type CreateTenantInput = z.input<typeof CreateTenantRequest>;
 export type UpdateTenantInput = z.input<typeof UpdateTenantRequest>;
 export type CreateLeaseInput = z.input<typeof CreateLeaseRequest>;
 export type UpdateLeaseInput = z.input<typeof UpdateLeaseRequest>;
+export type LeasePersonInput = z.input<typeof LeasePersonRequest>;
+export type UpdateLeasePersonInput = z.input<typeof UpdateLeasePersonRequest>;
+export type LeaseCostInput = z.input<typeof LeaseCostRequest>;
+export type CreateRentalContactInput = z.input<typeof CreateRentalContactRequest>;
+export type UpdateRentalContactInput = z.input<typeof UpdateRentalContactRequest>;
 export type UpdateChargeInput = z.input<typeof UpdateChargeRequest>;
 export type RentPaymentInput = z.input<typeof RentPaymentRequest>;
 export type DepositEventInput = z.input<typeof DepositEventRequest>;
@@ -1840,6 +1860,18 @@ export class ApiClient {
   updateTenant(workspaceId: string, id: string, input: UpdateTenantInput) {
     return this.request<TenantDto>('PATCH', this.ws(workspaceId, `/tenants/${enc(id)}`), input);
   }
+  /** RNT-17: a tenant's details and their leases, current first. */
+  getTenant(workspaceId: string, id: string) {
+    return this.request<TenantDetailDto>('GET', this.ws(workspaceId, `/tenants/${enc(id)}`));
+  }
+  /** Needs a recent sign-in; logged. */
+  revealTenantDateOfBirth(workspaceId: string, id: string) {
+    return this.request<RevealDateOfBirthResponse>(
+      'POST',
+      this.ws(workspaceId, `/tenants/${enc(id)}/reveal`),
+      {},
+    );
+  }
   listLeases(workspaceId: string, opts: { entityId: string; propertyId?: string }) {
     return this.request<{ data: LeaseDto[] }>('GET', this.ws(workspaceId, `/leases${query(opts)}`)).then(
       (r) => r.data,
@@ -1853,6 +1885,30 @@ export class ApiClient {
   }
   updateLease(workspaceId: string, id: string, input: UpdateLeaseInput) {
     return this.request<LeaseDto>('PATCH', this.ws(workspaceId, `/leases/${enc(id)}`), input);
+  }
+  /** RNT-18: a co-signer or occupant. */
+  addLeasePerson(workspaceId: string, leaseId: string, input: LeasePersonInput) {
+    return this.request<LeaseDto>('POST', this.ws(workspaceId, `/leases/${enc(leaseId)}/people`), input);
+  }
+  updateLeasePerson(workspaceId: string, id: string, input: UpdateLeasePersonInput) {
+    return this.request<LeaseDto>('PATCH', this.ws(workspaceId, `/lease-people/${enc(id)}`), input);
+  }
+  removeLeasePerson(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/lease-people/${enc(id)}`));
+  }
+  revealLeasePersonDateOfBirth(workspaceId: string, id: string) {
+    return this.request<RevealDateOfBirthResponse>(
+      'POST',
+      this.ws(workspaceId, `/lease-people/${enc(id)}/reveal`),
+      {},
+    );
+  }
+  /** RNT-19: a broker's fee or legal fees, posted as an expense tagged to the lease's property and unit. */
+  addLeaseCost(workspaceId: string, leaseId: string, input: LeaseCostInput) {
+    return this.request<LeaseDto>('POST', this.ws(workspaceId, `/leases/${enc(leaseId)}/costs`), input);
+  }
+  removeLeaseCost(workspaceId: string, leaseId: string, costId: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/leases/${enc(leaseId)}/costs/${enc(costId)}`));
   }
   getRentRoll(workspaceId: string, entityId: string, month?: string) {
     return this.request<RentRollDto>('GET', this.ws(workspaceId, `/rent-roll${query({ entityId, month })}`));
@@ -1975,6 +2031,32 @@ export class ApiClient {
   }
   updateMaintenance(workspaceId: string, id: string, input: UpdateMaintenanceInput) {
     return this.request<MaintenanceDto>('PATCH', this.ws(workspaceId, `/maintenance/${enc(id)}`), input);
+  }
+  /** RNT-21: the portfolio's contacts; `propertyId` keeps those linked to one property. */
+  listRentalContacts(
+    workspaceId: string,
+    opts: { entityId: string; propertyId?: string; role?: string; archived?: boolean },
+  ) {
+    return this.request<{ data: RentalContactDto[] }>(
+      'GET',
+      this.ws(
+        workspaceId,
+        `/rental-contacts${query({ ...opts, archived: opts.archived ? 'true' : undefined })}`,
+      ),
+    ).then((r) => r.data);
+  }
+  createRentalContact(workspaceId: string, input: CreateRentalContactInput) {
+    return this.request<RentalContactDto>('POST', this.ws(workspaceId, '/rental-contacts'), input);
+  }
+  updateRentalContact(workspaceId: string, id: string, input: UpdateRentalContactInput) {
+    return this.request<RentalContactDto>(
+      'PATCH',
+      this.ws(workspaceId, `/rental-contacts/${enc(id)}`),
+      input,
+    );
+  }
+  deleteRentalContact(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/rental-contacts/${enc(id)}`));
   }
   uploadRentalFile(workspaceId: string, file: Blob, fileName: string) {
     const form = new FormData();
@@ -2918,7 +3000,11 @@ export type {
   ArrearsDto,
   DepreciationDto,
   LeaseCandidateDto,
+  LeaseCostDto,
+  LeaseCostKind,
   LeaseDto,
+  LeasePersonDto,
+  LeasePersonRole,
   LoanDto,
   MaintenanceDto,
   PortfolioReportDto,
@@ -2930,7 +3016,13 @@ export type {
   RentRollDto,
   ScheduleEDto,
   ScheduleEExportFormat,
+  RentalContactDto,
+  RentalContactRole,
+  RevealDateOfBirthResponse,
+  TenantDetailDto,
   TenantDto,
+  TenantHomeDto,
+  TenantLeaseDto,
   BillDto,
   AccountMovePreviewDto,
   BusinessDashboardDto,

@@ -13,11 +13,12 @@ export default async function MaintenancePage({
   params: Promise<{ workspaceId: string; entityId: string }>;
 }) {
   const { workspaceId, entityId } = await params;
-  const [workspace, properties, items] = await load((api) =>
+  const [workspace, properties, items, contacts] = await load((api) =>
     Promise.all([
       api.getWorkspace(workspaceId),
       api.listProperties(workspaceId, entityId),
       api.listMaintenance(workspaceId, { entityId }),
+      api.listRentalContacts(workspaceId, { entityId }),
     ]),
   );
   return (
@@ -25,6 +26,7 @@ export default async function MaintenancePage({
       workspaceId={workspaceId}
       properties={properties}
       items={items}
+      contacts={contacts}
       currency={workspace.entities.find((e) => e.id === entityId)?.functionalCurrency ?? 'USD'}
       today={todayIn(workspace.timeZone)}
       fileHref={`/api/v1/workspaces/${workspaceId}/rentals`}

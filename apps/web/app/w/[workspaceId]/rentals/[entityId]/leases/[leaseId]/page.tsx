@@ -7,23 +7,26 @@ import { percentLabel } from '@/lib/rentals';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
 import { DepositPanel, EndLeaseForm, PaymentList, RecordRent } from '@/components/rentals/lease-forms';
+import { LeaseCosts, LeaseDocuments, LeasePeople } from '@/components/rentals/lease-people';
 
 export const metadata: Metadata = { title: 'Lease' };
 export const dynamic = 'force-dynamic';
 
-/** One lease: its terms, payments and security deposit (RNT-03, RNT-04, RNT-10). */
+/** One lease: its dates and terms, the signed lease, who's on it, set-up costs, payments and deposit (RNT-03..19). */
 export default async function LeasePage({
   params,
 }: {
   params: Promise<{ workspaceId: string; entityId: string; leaseId: string }>;
 }) {
   const { workspaceId, entityId, leaseId } = await params;
-  const [workspace, lease, payments, accounts] = await load((api) =>
+  const [workspace, lease, payments, accounts, tenants, contacts] = await load((api) =>
     Promise.all([
       api.getWorkspace(workspaceId),
       api.getLease(workspaceId, leaseId),
       api.listRentPayments(workspaceId, leaseId),
       api.listAccounts(workspaceId),
+      api.listTenants(workspaceId, entityId),
+      api.listRentalContacts(workspaceId, { entityId }),
     ]),
   );
   const { t } = await getI18n();
@@ -44,6 +47,29 @@ export default async function LeasePage({
         <h2 className="text-lg font-semibold">
           {lease.tenants.map((x) => x.name).join(', ')} · {lease.unitLabel}
         </h2>
+        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-base" data-testid="lease-dates">
+          <span>
+            <span className="text-muted">{t('rentals.starts')}</span>{' '}
+            <strong>
+              <DateText date={lease.startDate} />
+            </strong>
+          </span>
+          <span>
+            <span className="text-muted">{t('rentals.ends')}</span>{' '}
+            <strong>
+              {lease.endedOn ? (
+                <DateText date={lease.endedOn} />
+              ) : lease.endDate ? (
+                <DateText date={lease.endDate} />
+              ) : (
+                t('rentals.month_to_month')
+              )}
+            </strong>
+          </span>
+          <span className={lease.status === 'active' ? 'chip chip-good' : 'chip'}>
+            {t(`rentals.lease_${lease.status}`)}
+          </span>
+        </p>
       </div>
       <section className="card" aria-labelledby="terms-title">
         <h2 id="terms-title" className="mb-2 text-base font-semibold">
@@ -88,27 +114,28 @@ export default async function LeasePage({
             </dd>
           </div>
         </dl>
-        {lease.fileIds.length > 0 && (
-          <p className="mt-2 text-sm">
-            {lease.fileIds.map((id, i) => (
-              <a
-                key={id}
-                className="mr-3 underline"
-                href={`/api/v1/workspaces/${workspaceId}/rentals/leases/${lease.id}/files/${id}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {t('rentals.lease_file_n', { n: i + 1 })}
-              </a>
-            ))}
-          </p>
-        )}
         {lease.status !== 'ended' && (
           <div className="mt-3 border-t border-line pt-3">
             <EndLeaseForm workspaceId={workspaceId} lease={lease} today={today} />
           </div>
         )}
       </section>
+      <LeaseDocuments workspaceId={workspaceId} lease={lease} />
+      <LeasePeople
+        workspaceId={workspaceId}
+        lease={lease}
+        tenants={tenants}
+        tenantHref={`${here}/tenants`}
+        today={today}
+      />
+      <LeaseCosts
+        workspaceId={workspaceId}
+        lease={lease}
+        contacts={contacts}
+        accounts={bank}
+        today={today}
+        base={base}
+      />
       <section className="card space-y-3" aria-labelledby="payments-title">
         <h2 id="payments-title" className="text-base font-semibold">
           {t('rentals.payments')}

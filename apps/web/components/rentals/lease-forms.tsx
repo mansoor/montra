@@ -1,17 +1,27 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import type {
   AccountDto,
   LeaseCandidateDto,
   LeaseDto,
+  LeasePersonInput,
   PropertyDto,
+  RentalContactDto,
   RentPaymentDto,
   TenantDto,
 } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
-import { buildLease, positiveMinor } from '@/lib/rentals';
-import { DateText } from '../i18n';
+import {
+  brokerContacts,
+  buildLease,
+  buildLeasePerson,
+  emptyPerson,
+  positiveMinor,
+  type PersonFormFields,
+} from '@/lib/rentals';
+import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 
@@ -29,6 +39,7 @@ export function TenantManager({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const here = `/w/${workspaceId}/rentals/${entityId}`;
   return (
     <div className="space-y-5">
       <form
@@ -83,6 +94,7 @@ export function TenantManager({
             <thead>
               <tr>
                 <th className="px-4 py-2">{t('rentals.tenant_name')}</th>
+                <th className="px-2 py-2">{t('rentals.lives_at')}</th>
                 <th className="px-2 py-2">{t('rentals.email')}</th>
                 <th className="px-4 py-2">{t('rentals.phone')}</th>
               </tr>
@@ -90,7 +102,20 @@ export function TenantManager({
             <tbody className="divide-y divide-line">
               {tenants.map((x) => (
                 <tr key={x.id} data-testid="tenant-row">
-                  <td className="px-4 py-2 font-medium">{x.name}</td>
+                  <td className="px-4 py-2 font-medium">
+                    <Link className="underline" href={`${here}/tenants/${x.id}`}>
+                      {x.name}
+                    </Link>
+                  </td>
+                  <td className="px-2 py-2 text-sm" data-testid="tenant-home">
+                    {x.current ? (
+                      <Link className="underline" href={`${here}/properties/${x.current.propertyId}`}>
+                        {x.current.propertyName} · {x.current.unitLabel}
+                      </Link>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="px-2 py-2 text-sm">{x.email ?? '—'}</td>
                   <td className="px-4 py-2 text-sm">{x.phone ?? '—'}</td>
                 </tr>
@@ -111,6 +136,7 @@ export function NewLeaseForm({
   accounts,
   currency,
   today,
+  contacts = [],
 }: {
   workspaceId: string;
   property: PropertyDto;
@@ -118,8 +144,13 @@ export function NewLeaseForm({
   accounts: AccountDto[];
   currency: string;
   today: string;
+  /** The portfolio's contacts; brokers are offered as the lease's broker (RNT-19). */
+  contacts?: RentalContactDto[];
 }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const [people, setPeople] = useState<PersonFormFields[]>([]);
+  const [brokerContactId, setBrokerContactId] = useState('');
+  const brokers = brokerContacts(contacts);
   const [unitId, setUnitId] = useState(property.units.find((u) => u.status !== 'occupied')?.id ?? '');
   const [tenantIds, setTenantIds] = useState<string[]>([]);
   const [newTenant, setNewTenant] = useState('');
@@ -171,6 +202,12 @@ export function NewLeaseForm({
             t,
           );
           if (!res.ok) return setMessage({ tone: 'bad', text: res.error });
+          const others: LeasePersonInput[] = [];
+          for (const p of people) {
+            const built = buildLeasePerson(p, today, t);
+            if (!built.ok) return setMessage({ tone: 'bad', text: built.error });
+            others.push(built.value);
+          }
           void run(async () => {
             const ids = [...tenantIds];
             if (typed) {
@@ -181,13 +218,21 @@ export function NewLeaseForm({
             const fileIds = file
               ? [(await browserApi.uploadRentalFile(workspaceId, file, file.name)).fileId]
               : [];
-            return browserApi.createLease(workspaceId, { ...res.value, tenantIds: ids, fileIds });
+            return browserApi.createLease(workspaceId, {
+              ...res.value,
+              tenantIds: ids,
+              fileIds,
+              people: others,
+              brokerContactId: brokerContactId || null,
+            });
           }, t('rentals.lease_added')).then((r) => {
             if (r) {
               setNewTenant('');
               setTenantIds([]);
               setRent('');
               setFile(null);
+              setPeople([]);
+              setBrokerContactId('');
             }
           });
         }}
@@ -230,7 +275,7 @@ export function NewLeaseForm({
             </select>
           </label>
           <label>
-            <span className="field-label">{t('rentals.lease_document')}</span>
+            <span className="field-label">{t('rentals.signed_lease')}</span>
             <input
               className="input"
               type="file"
@@ -238,6 +283,24 @@ export function NewLeaseForm({
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </label>
+          {brokers.length > 0 && (
+            <label>
+              <span className="field-label">{t('rentals.broker')}</span>
+              <select
+                className="input"
+                value={brokerContactId}
+                onChange={(e) => setBrokerContactId(e.target.value)}
+              >
+                <option value="">{t('rentals.no_broker')}</option>
+                {brokers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.companyName}
+                    {c.contactPerson ? ` (${c.contactPerson})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         {tenants.length > 0 && (
           <fieldset>
@@ -260,6 +323,7 @@ export function NewLeaseForm({
             </div>
           </fieldset>
         )}
+        <PeopleDrafts people={people} onChange={setPeople} tenants={tenants} />
         <button type="submit" className="btn-primary" disabled={busy}>
           {t('rentals.add_lease')}
         </button>
@@ -676,5 +740,101 @@ export function WaiveCharge({
       </button>
       <StatusLine message={message} />
     </>
+  );
+}
+
+/**
+ * Co-signers and occupants typed with a new lease (RNT-18). Neither pays: rent and arrears follow the tenants who sign.
+ */
+function PeopleDrafts({
+  people,
+  onChange,
+  tenants,
+}: {
+  people: PersonFormFields[];
+  onChange: (next: PersonFormFields[]) => void;
+  tenants: TenantDto[];
+}) {
+  const { t } = useI18n();
+  const set = (i: number, patch: Partial<PersonFormFields>) =>
+    onChange(people.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const numbered = (role: PersonFormFields['role'], i: number) =>
+    people.slice(0, i + 1).filter((p) => p.role === role).length;
+  return (
+    <div className="space-y-2">
+      {people.map((p, i) => {
+        const n = numbered(p.role, i);
+        const legend =
+          p.role === 'cosigner' ? t('rentals.cosigner_n', { n }) : t('rentals.occupant_n', { n });
+        const field = (label: string, key: keyof PersonFormFields, extra: object = {}) => (
+          <label>
+            <span className="field-label">{label}</span>
+            <input
+              className="input"
+              value={p[key]}
+              onChange={(e) => set(i, { [key]: e.target.value })}
+              {...extra}
+            />
+          </label>
+        );
+        return (
+          <fieldset
+            key={i}
+            className="rounded border border-line p-3"
+            aria-label={legend}
+            data-testid="person-draft"
+          >
+            <legend className="field-label px-1">{legend}</legend>
+            <div className="flex flex-wrap items-end gap-2">
+              {p.role === 'cosigner' && tenants.length > 0 && (
+                <label>
+                  <span className="field-label">{t('rentals.existing_tenant')}</span>
+                  <select
+                    className="input"
+                    value={p.tenantId}
+                    onChange={(e) => set(i, { tenantId: e.target.value })}
+                  >
+                    <option value="">{t('rentals.someone_new')}</option>
+                    {tenants.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!p.tenantId && field(t('rentals.person_name'), 'name', { maxLength: 200 })}
+              {p.role === 'occupant' && field(t('rentals.relationship'), 'relationship', { maxLength: 100 })}
+              {p.role === 'cosigner' && !p.tenantId && field(t('rentals.phone'), 'phone', { maxLength: 50 })}
+              {p.role === 'cosigner' && !p.tenantId && field(t('rentals.email'), 'email', { type: 'email' })}
+              {p.role === 'occupant' && field(t('rentals.date_of_birth'), 'dateOfBirth', { type: 'date' })}
+              <button
+                type="button"
+                className="text-sm underline"
+                onClick={() => onChange(people.filter((_, j) => j !== i))}
+              >
+                {t('rentals.remove')}
+              </button>
+            </div>
+          </fieldset>
+        );
+      })}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => onChange([...people, emptyPerson('cosigner')])}
+        >
+          {t('rentals.add_cosigner')}
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => onChange([...people, emptyPerson('occupant')])}
+        >
+          {t('rentals.add_occupant')}
+        </button>
+      </div>
+    </div>
   );
 }
