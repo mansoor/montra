@@ -123,6 +123,7 @@ import { PropertiesService } from './rentals/properties.service.js';
 import { RentService } from './rentals/rent.service.js';
 import { RentalJobs } from './rentals/rental-jobs.service.js';
 import { RentalOpsService } from './rentals/rental-ops.service.js';
+import { RentalPeopleService } from './rentals/rental-people.service.js';
 import { RentalReportsService } from './rentals/rental-reports.service.js';
 import { RentalsController } from './rentals/rentals.controller.js';
 import { PayslipsService } from './payslips/payslips.service.js';
@@ -270,6 +271,7 @@ export class AppModule {
         LoansService,
         RentalOpsService,
         RentalReportsService,
+        RentalPeopleService,
         RentalJobs,
         BackupService,
         StorageDestinationsService,

@@ -408,6 +408,12 @@ R1 serves self-managing landlords with 1–20 units. It covers per-property book
 | RNT-14 | Rental budget per property (expected rent minus planned expenses and reserves), with a capex reserve per unit per month. | M |
 | RNT-15 | Short-term rental support: import payout CSVs from Airbnb/VRBO, split into gross booking, platform fees and cleaning fees. | C |
 | RNT-16 | Tenant portal, online rent collection, applications/screening, e-signature. | C (future) |
+| RNT-17 | Tenant details: date of birth (optional, stored encrypted, shown masked and in full only after a recent sign-in, each view logged), a second phone, mailing address, emergency contact (name, relationship, phone), employer and monthly income (optional screening notes) and vehicle or plate. No SSN is collected. A tenant's page lists their leases (property, unit, dates, rent, status, signer or co-signer), current first; the tenants list shows where each lives now. | M |
+| RNT-18 | People on a lease by role: tenants who sign (the only payers for rent, arrears and matching), co-signers or guarantors (responsible but not living there; name and contact, or one of the portfolio's tenants) and occupants (household members named on the lease: name, relationship, optional date of birth). Shown grouped by role. | M |
+| RNT-19 | Lease documents and set-up costs: attach and download the signed lease (PDF or photo); an optional broker or agent (a contact); a broker's fee posted to Commissions (Schedule E line 8) and legal or document fees to Legal & professional (line 10), tagged to the property and unit, recorded as paid or taken over from a bank line. A note says a leasing commission may need to be spread over the lease term; it isn't amortized. | M |
+| RNT-20 | "HOA dues" and "Home warranty" rental expense categories on Schedule E line 19 (Other), in new portfolios and added once to existing ones without duplicating a category of the same name. | S |
+| RNT-21 | Property contacts: role (property manager, maintenance or handyman, insurance, home warranty, HOA, gardener or landscaping, broker or agent, attorney, water, electricity, gas, garbage, internet or cable, other), company, optional contact person, website, email, phone, account or policy number and notes; one contact can serve several properties; the maintenance log's vendor can be a contact. | M |
+| RNT-22 | Phone: a portfolio's contacts per property with tap-to-call and tap-to-email, and each tenant's current property, read-only; editing is on the web. | S |
 
 ## 7. Reports, search and notifications
 

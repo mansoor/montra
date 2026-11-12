@@ -12,11 +12,12 @@ import {
   UnitList,
 } from '@/components/rentals/property-forms';
 import { NewLeaseForm } from '@/components/rentals/lease-forms';
+import { PropertyContacts } from '@/components/rentals/contacts';
 
 export const metadata: Metadata = { title: 'Property' };
 export const dynamic = 'force-dynamic';
 
-/** One property: its units, leases, depreciation and budget (RNT-01..03, RNT-09, RNT-14). */
+/** One property: its units, leases, contacts, depreciation and budget (RNT-01..03, RNT-09, RNT-14, RNT-21). */
 export default async function PropertyPage({
   params,
 }: {
@@ -26,16 +27,18 @@ export default async function PropertyPage({
   const workspace = await load((api) => api.getWorkspace(workspaceId));
   const today = todayIn(workspace.timeZone);
   const year = Number(today.slice(0, 4));
-  const [property, leases, tenants, accounts, categories, depreciation, budget] = await load((api) =>
-    Promise.all([
-      api.getProperty(workspaceId, propertyId),
-      api.listLeases(workspaceId, { entityId, propertyId }),
-      api.listTenants(workspaceId, entityId),
-      api.listAccounts(workspaceId),
-      api.listCategories(workspaceId),
-      api.listDepreciation(workspaceId, propertyId, year),
-      api.getPropertyBudget(workspaceId, propertyId),
-    ]),
+  const [property, leases, tenants, accounts, categories, depreciation, budget, contacts] = await load(
+    (api) =>
+      Promise.all([
+        api.getProperty(workspaceId, propertyId),
+        api.listLeases(workspaceId, { entityId, propertyId }),
+        api.listTenants(workspaceId, entityId),
+        api.listAccounts(workspaceId),
+        api.listCategories(workspaceId),
+        api.listDepreciation(workspaceId, propertyId, year),
+        api.getPropertyBudget(workspaceId, propertyId),
+        api.listRentalContacts(workspaceId, { entityId }),
+      ]),
   );
   const { t } = await getI18n();
   const currency = budget.currency;
@@ -57,6 +60,7 @@ export default async function PropertyPage({
         accounts={accounts.filter((a) => a.entityId === entityId)}
         currency={currency}
         today={today}
+        contacts={contacts}
       />
       {leases.length > 0 && (
         <section className="card-flush overflow-x-auto" aria-labelledby="leases-title">
@@ -104,6 +108,12 @@ export default async function PropertyPage({
           </table>
         </section>
       )}
+      <PropertyContacts
+        workspaceId={workspaceId}
+        entityId={entityId}
+        propertyId={propertyId}
+        contacts={contacts}
+      />
       <BudgetPanel
         workspaceId={workspaceId}
         budget={budget}

@@ -667,8 +667,9 @@ Phase 9 leftovers, not blocking:
 - A detected recurring bill for the same payee as a mortgage can show twice on the calendar. Invoices and bills have the same limit.
 - Foreign-currency leases aren't handled separately: a portfolio's rent is in its own currency.
 - Reminders are on a list and the calendar, and since Phase 10 by push and email too.
-- Mobile: only logging rent. Everything else is managed on the web.
+- Mobile: logging rent, and (since RNT-22) contacts and tenants read-only. Everything else is managed on the web.
 - RNT-15 and RNT-16 (could-haves) aren't started.
+- Tenant details, co-signers and occupants, lease set-up costs, HOA and home warranty categories and property contacts came later (RNT-17..22, ADR-0038; see §7g).
 
 ---
 
@@ -789,6 +790,35 @@ Phase 11 leftovers:
 
 ## 7g. Since Phase 11
 
+- **Rentals: tenant details, the people on a lease, lease set-up costs and property contacts, web and phone**
+  (RNT-17..22, [ADR-0038](design/adr/0038-rental-people-and-contacts.md), migration 0038):
+  - **Tenant details**: second phone, mailing address, emergency contact, employer and monthly income (optional screening
+    notes), vehicle or plate, and a date of birth sealed under the workspace key (`tenant.birth_date`), shown masked with a
+    logged Show after a recent sign-in (`POST tenants/:id/reveal`, audit action `rental.revealed`). No SSN is collected.
+    Rentals → Tenants shows where each tenant lives now; a tenant's page lists their leases (signer or co-signer), current
+    first.
+  - **People on a lease**: `lease_person` holds co-signers (name and contact, or one of the portfolio's tenants) and
+    occupants (name, relationship, sealed date of birth). `lease_tenant` stays the tenants who sign, and they're the only
+    payers: the rent roll, arrears, matching and payee-name learning are unchanged. The lease form and page group people
+    by role.
+  - **Lease documents and set-up costs**: the lease page leads with the start and end dates, has a "Signed lease" section
+    (attach a PDF or photo, download), an optional broker (a contact with role broker), and a broker's fee or legal fees
+    recorded as paid or taken over from a bank line. They post to Commissions (Schedule E line 8) and Legal & professional
+    (line 10), tagged to the property and unit and owned by the lease (`lease_cost`). An accountant note says a leasing
+    commission may need spreading over the lease term; Montra doesn't amortize it.
+  - **Categories for tax**: "HOA dues" and "Home warranty" on Schedule E line 19 (Other), in the rental template and added
+    to existing books by `app.add_rental_categories` (skips a category of the same name, any case). Property tax (line 16,
+    including the mortgage escrow split), insurance (line 9, including escrow) and utilities (line 17) already reach
+    Schedule E by tax line.
+  - **Property contacts**: a Contacts card on the property page (`rental_contact`, 14 roles, company, optional contact
+    person, website, email, phone, account or policy number, notes), one contact for several properties. The maintenance
+    log's vendor can be a contact; free text stays, and deleting a contact keeps its name on old entries.
+  - **Phone**: Rentals → Contacts and tenants, read-only, with tap-to-call and tap-to-email and each tenant's current
+    property. Editing is web only. Not run on a device.
+  - Fixed on the way: `PATCH leases/:id` with only `tenantIds` failed with an empty `UPDATE`.
+  - Tests: `apps/api/test/rental-people.test.ts` (details and masking, roles with signers as the only payers, fees on lines
+    8 and 10 with property tags, the idempotent category add, contacts with several properties and the maintenance link),
+    `apps/web/lib/rentals.test.ts`, `apps/web/e2e/rentals-people.spec.ts`, phone `test/rentals.test.ts`.
 - **A business's legal and tax setup and its registrations, web, read-only on the phone** (BIZ-21..26,
   [ADR-0037](design/adr/0037-business-legal-setup-and-registrations.md), migration 0037):
   - **Legal and tax setup** (Business → Settings): the entity type, with an LLC's tax treatment part of the type (sole

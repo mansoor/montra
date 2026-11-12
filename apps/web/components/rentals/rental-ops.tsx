@@ -10,17 +10,20 @@ import type {
   MaintenanceDto,
   PropertyDto,
   ReminderDto,
+  RentalContactDto,
 } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import {
   ALLOCATION_BASES,
   MAINTENANCE_CHIP,
   MAINTENANCE_STATUSES,
+  maintenanceVendor,
   optionalBps,
   optionalMinor,
   percentTotal,
   positiveMinor,
   REMINDER_KINDS,
+  vendorContacts,
 } from '@/lib/rentals';
 import { percentToBps } from '@/lib/business';
 import { DateText } from '../i18n';
@@ -332,6 +335,7 @@ export function MaintenanceLog({
   currency,
   today,
   fileHref,
+  contacts = [],
 }: {
   workspaceId: string;
   properties: PropertyDto[];
@@ -339,12 +343,16 @@ export function MaintenanceLog({
   currency: string;
   today: string;
   fileHref: string;
+  /** The portfolio's contacts: a vendor can be one of them (RNT-21). */
+  contacts?: RentalContactDto[];
 }) {
   const { run, busy, message, setMessage, t } = useAction();
   const [propertyId, setPropertyId] = useState(properties[0]?.id ?? '');
   const [unitId, setUnitId] = useState('');
   const [issue, setIssue] = useState('');
   const [vendor, setVendor] = useState('');
+  const [contactId, setContactId] = useState('');
+  const vendors = vendorContacts(contacts, propertyId);
   const [cost, setCost] = useState('');
   const [reportedOn, setReportedOn] = useState(today);
   const [file, setFile] = useState<File | null>(null);
@@ -367,6 +375,7 @@ export function MaintenanceLog({
               unitId: unitId || null,
               issue: issue.trim(),
               vendor: vendor.trim() || null,
+              contactId: contactId || null,
               cost: c.value,
               reportedOn: reportedOn as never,
               fileIds,
@@ -375,6 +384,7 @@ export function MaintenanceLog({
             if (r) {
               setIssue('');
               setVendor('');
+              setContactId('');
               setCost('');
               setFile(null);
             }
@@ -422,6 +432,19 @@ export function MaintenanceLog({
               onChange={(e) => setIssue(e.target.value)}
             />
           </label>
+          {vendors.length > 0 && (
+            <label>
+              <span className="field-label">{t('rentals.vendor_contact')}</span>
+              <select className="input" value={contactId} onChange={(e) => setContactId(e.target.value)}>
+                <option value="">{t('rentals.no_contact')}</option>
+                {vendors.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.companyName} ({t(`rentals.contact_role_${c.role}`)})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             <span className="field-label">{t('rentals.vendor')}</span>
             <input
@@ -498,7 +521,7 @@ export function MaintenanceLog({
                       </a>
                     ))}
                   </td>
-                  <td className="px-2 py-2 text-sm">{m.vendor ?? '—'}</td>
+                  <td className="px-2 py-2 text-sm">{maintenanceVendor(m) ?? '—'}</td>
                   <td className="px-2 py-2 text-right">
                     {m.cost ? <Money amount={m.cost} currency={currency} /> : '—'}
                   </td>

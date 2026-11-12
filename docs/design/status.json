@@ -856,6 +856,30 @@
     "done",
     "expected rent less planned expenses and capex reserve per unit per month, against actuals"
   ],
+  "RNT-17": [
+    "done",
+    "second phone, mailing address, emergency contact, employer and monthly income, vehicle; date of birth sealed under the workspace key, masked, Show after a recent sign-in and logged; no SSN; tenant page lists leases current first; tenants list shows where each lives (ADR-0038)"
+  ],
+  "RNT-18": [
+    "done",
+    "lease_person holds co-signers (or a tenant record) and occupants; lease_tenant stays the signers, the only payers for the rent roll, arrears and matching; lease form and page group people by role"
+  ],
+  "RNT-19": [
+    "done",
+    "signed lease attach and download on the lease page; broker contact on the lease; broker fee to Commissions (L8) and legal fees to Legal & professional (L10), tagged to property and unit, owned by the lease, recorded or taken over from a bank line; no amortization, accountant note"
+  ],
+  "RNT-20": [
+    "done",
+    "HOA dues and Home warranty on Schedule E line 19 in the rental template; app.add_rental_categories adds them to existing books once, skipping a same-named category"
+  ],
+  "RNT-21": [
+    "done",
+    "rental_contact with 14 roles, linked to many properties; Contacts card on the property page; maintenance vendor can be a contact (free text kept); deleting a contact keeps its name on maintenance entries"
+  ],
+  "RNT-22": [
+    "partial",
+    "phone: Rentals → Contacts and tenants, read-only, tap-to-call and tap-to-email, each tenant's current property; editing is web only; not run on a device"
+  ],
   "UP-10": [
     "done",
     "per-property books on Schedule E lines, and the tax package"
