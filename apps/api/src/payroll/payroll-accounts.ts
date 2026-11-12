@@ -7,7 +7,7 @@ import { newId, type Trx } from '@montra/db';
 import type { Ctx } from './shared.js';
 
 export type PayrollAccountRole =
-  'wages' | 'employer_taxes' | 'federal_withholding' | 'fica' | 'state' | 'deductions';
+  'wages' | 'employer_taxes' | 'federal_withholding' | 'fica' | 'state' | 'deductions' | 'contract_labor';
 
 const ACCOUNTS: Record<
   PayrollAccountRole,
@@ -15,6 +15,8 @@ const ACCOUNTS: Record<
 > = {
   wages: { name: 'Wages', type: 'expense', taxLine: 'US_SCH_C_L26' },
   employer_taxes: { name: 'Payroll taxes', type: 'expense', taxLine: 'US_SCH_C_L23' },
+  // Contractors' billed hours (ADR-0036 §5), when the business has no Contract labor category of its own.
+  contract_labor: { name: 'Contract labor', type: 'expense', taxLine: 'US_SCH_C_L11' },
   federal_withholding: { name: 'Federal income tax withheld', type: 'liability', taxLine: null },
   fica: { name: 'Social Security and Medicare owed', type: 'liability', taxLine: null },
   state: { name: 'California withholding owed', type: 'liability', taxLine: null },

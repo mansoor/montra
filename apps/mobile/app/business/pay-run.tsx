@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import type { PayRunDto } from '@montra/schemas';
-import { hoursLabel, payslipSections, signedAmount } from '../../src/features/payroll';
+import { hoursLabel, payslipSections, signedAmount, signedHoursLabel } from '../../src/features/payroll';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Card, Screen, Small, Title } from '../../src/ui/components';
@@ -72,6 +72,16 @@ export default function PayRun() {
                     </View>
                   ))}
                 </View>
+              ))}
+              {pc.leave.map((l) => (
+                <Small key={l.kind} color={th.muted}>
+                  {t('mobile.payroll.leave_line', {
+                    kind: l.kind === 'vacation' ? t('payroll.time.vacation') : t('payroll.time.sick'),
+                    used: signedHoursLabel(l.usedMilli),
+                    earned: signedHoursLabel(l.accruedMilli),
+                    hours: signedHoursLabel(l.afterMilli),
+                  })}
+                </Small>
               ))}
               <Small color={th.muted}>
                 {t('mobile.payroll.ytd', {

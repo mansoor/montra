@@ -22,6 +22,8 @@ export interface PayslipPdfData {
   gross: { current: string; ytd: string };
   net: { current: string; ytd: string };
   employerTaxes: PayslipRow[];
+  /** Vacation and sick leave in hours (PRL-26): California asks for the sick leave balance on the wage statement. */
+  leave: { label: string; before: string; used: string; earned: string; paidOut: string; after: string }[];
   draft: boolean;
 }
 
@@ -128,6 +130,31 @@ export async function renderPayslipPdf(d: PayslipPdfData): Promise<Uint8Array> {
   right(d.net.current, COLS.current, 12, bold);
   right(d.net.ytd, COLS.ytd, 10, regular, MUTED);
   y -= 36;
+
+  if (d.leave.length) {
+    ensure(40);
+    const L = { before: 300, used: 360, earned: 420, paidOut: 480, after: WIDTH - MARGIN };
+    text('Time off (hours)', MARGIN, 10, bold);
+    right('Before', L.before, 7.5, regular, MUTED);
+    right('Used', L.used, 7.5, regular, MUTED);
+    right('Earned', L.earned, 7.5, regular, MUTED);
+    right('Paid out', L.paidOut, 7.5, regular, MUTED);
+    right('Available', L.after, 7.5, regular, MUTED);
+    y -= 6;
+    page.drawLine({ start: { x: MARGIN, y }, end: { x: WIDTH - MARGIN, y }, thickness: 0.5, color: LINE });
+    y -= 12;
+    for (const l of d.leave) {
+      ensure(14);
+      text(l.label, MARGIN + 4);
+      right(l.before, L.before);
+      right(l.used, L.used);
+      right(l.earned, L.earned);
+      right(l.paidOut, L.paidOut);
+      right(l.after, L.after, 9.5, bold);
+      y -= 14;
+    }
+    y -= 8;
+  }
 
   if (d.employerTaxes.length) {
     head('Paid by the employer (not taken from pay)');

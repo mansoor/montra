@@ -77,7 +77,8 @@ export function PersonDetails({
       },
       hireDate: form.hireDate || null,
       endDate: form.endDate || null,
-      payType: isEmployee ? (form.payType as 'hourly' | 'salary') : null,
+      // A contractor's rate is per hour, for their timesheet (ADR-0036 section 5).
+      payType: isEmployee ? (form.payType as 'hourly' | 'salary') : rate ? 'hourly' : null,
       rate,
       workState: form.workState.trim() || null,
       notes: form.notes.trim() || null,
@@ -204,6 +205,11 @@ export function PersonDetails({
             <Field label={t('payroll.end_date')}>
               <input className="input" type="date" value={form.endDate} onChange={set('endDate')} />
             </Field>
+            {!isEmployee && (
+              <Field label={t('payroll.time.rate')}>
+                <input className="input" inputMode="decimal" value={form.rate} onChange={set('rate')} />
+              </Field>
+            )}
             {isEmployee && (
               <>
                 <Field label={t('payroll.pay_type')}>
@@ -275,6 +281,15 @@ export function PersonDetails({
               {p.hireDate ? <DateText date={p.hireDate} /> : null}
             </Item>
             <Item label={t('payroll.end_date')}>{p.endDate ? <DateText date={p.endDate} /> : null}</Item>
+            {!isEmployee && (
+              <Item label={t('payroll.time.rate')}>
+                {p.rate ? (
+                  <>
+                    <Money amount={p.rate} currency={currency} /> {t('payroll.per_hour')}
+                  </>
+                ) : null}
+              </Item>
+            )}
             {isEmployee && (
               <>
                 <Item label={t('payroll.pay')}>

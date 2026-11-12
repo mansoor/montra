@@ -38,6 +38,11 @@ import {
   SaveI9Section1Request,
   SaveI9Section2Request,
   UpdatePersonRequest,
+  BillContractorTimeRequest,
+  CreateContractorTimeRequest,
+  CreateLeaveEntryRequest,
+  UpdateContractorTimeRequest,
+  UpdateLeaveSettingsRequest,
 } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -58,6 +63,8 @@ import { PayrollTaxesService } from './payroll-taxes.service.js';
 import { YearEndService } from './year-end.service.js';
 import { PeopleService } from './people.service.js';
 import { ReimbursementsService } from './reimbursements.service.js';
+import { LeaveService } from './leave.service.js';
+import { ContractorTimeService } from './contractor-time.service.js';
 
 const Id = z.uuid();
 const EntityQuery = z.object({ entityId: z.uuid() });
@@ -85,6 +92,8 @@ export class PayrollController {
     @Inject(ReimbursementsService) private readonly reimbursements: ReimbursementsService,
     @Inject(PayrollTaxesService) private readonly taxes: PayrollTaxesService,
     @Inject(YearEndService) private readonly yearEnd: YearEndService,
+    @Inject(LeaveService) private readonly leave: LeaveService,
+    @Inject(ContractorTimeService) private readonly time: ContractorTimeService,
   ) {}
 
   // ----- People (PRL-01) -----------------------------------------------------------------------------------------
@@ -515,6 +524,70 @@ export class PayrollController {
     void reply.header('cache-control', 'private, no-store');
     void reply.header('x-content-type-options', 'nosniff');
     return f.text;
+  }
+
+  // ----- Staff time (PRL-23..28; ADR-0036) -------------------------------------------------------------------------
+
+  /** Vacation and sick leave policies and the workweek; readable with read access, like the pay runs they shape. */
+  @Get('leave-settings')
+  leaveSettings(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    return this.leave.settings(dbCtx(ctx), parse(EntityQuery, q).entityId);
+  }
+
+  @Put('leave-settings')
+  updateLeaveSettings(@Ctx() ctx: RequestContext, @Query() q: unknown, @Body() body: unknown) {
+    return this.leave.updateSettings(
+      dbCtx(ctx),
+      parse(EntityQuery, q).entityId,
+      parse(UpdateLeaveSettingsRequest, body),
+    );
+  }
+
+  /** Current employees' vacation and sick balances. */
+  @Get('leave')
+  async leaveBalances(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    return { data: await this.leave.balances(dbCtx(ctx), parse(EntityQuery, q).entityId) };
+  }
+
+  @Get('people/:id/leave')
+  personLeave(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.leave.personLeave(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Post('people/:id/leave')
+  addLeave(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.leave.addEntry(dbCtx(ctx), parse(Id, id), parse(CreateLeaveEntryRequest, body));
+  }
+
+  @Delete('people/:id/leave/:entryId')
+  removeLeave(@Ctx() ctx: RequestContext, @Param('id') id: string, @Param('entryId') entryId: string) {
+    return this.leave.removeEntry(dbCtx(ctx), parse(Id, id), parse(Id, entryId));
+  }
+
+  @Get('people/:id/time')
+  timesheet(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.time.timesheet(dbCtx(ctx), parse(Id, id));
+  }
+
+  @Post('people/:id/time')
+  addTime(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.time.add(dbCtx(ctx), parse(Id, id), parse(CreateContractorTimeRequest, body));
+  }
+
+  /** "Bill these hours": one bill to the contractor's vendor record. */
+  @Post('people/:id/time/bill')
+  billTime(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.time.bill(dbCtx(ctx), parse(Id, id), parse(BillContractorTimeRequest, body));
+  }
+
+  @Patch('time/:id')
+  updateTime(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.time.update(dbCtx(ctx), parse(Id, id), parse(UpdateContractorTimeRequest, body));
+  }
+
+  @Delete('time/:id')
+  removeTime(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.time.remove(dbCtx(ctx), parse(Id, id));
   }
 }
 

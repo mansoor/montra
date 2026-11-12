@@ -2,7 +2,7 @@
  * Payroll on the phone (PRL-22): pay runs and payslips to look at, and a reimbursement with a receipt photo to submit.
  * Pay and tax figures all come from the server; this only groups and formats them.
  */
-import type { PaycheckDto } from '@montra/schemas';
+import type { LeaveBalanceDto, PaycheckDto } from '@montra/schemas';
 
 export type PayslipSection =
   'earning' | 'pre_tax_deduction' | 'employee_tax' | 'post_tax_deduction' | 'reimbursement' | 'employer_tax';
@@ -46,3 +46,10 @@ export function hoursLabel(milli: string): string {
   const frac = (n % 1000n).toString().padStart(3, '0').replace(/0+$/, '');
   return frac ? `${n / 1000n}.${frac}` : String(n / 1000n);
 }
+
+/** Like `hoursLabel`, keeping a minus sign for a balance used past zero: "-5600" → "-5.6". */
+export const signedHoursLabel = (milli: string): string =>
+  milli.startsWith('-') ? `-${hoursLabel(milli.slice(1))}` : hoursLabel(milli);
+
+/** The balances worth showing for one employee: those a policy or entered hours track (PRL-25). */
+export const trackedBalances = (balances: readonly LeaveBalanceDto[]) => balances.filter((b) => b.tracked);

@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { PayrollPersonDto } from '@montra/api-client';
 import { calendarDate as d } from '@montra/domain';
-import { formatTinInput, hoursText, i9Overdue, missingSteps, parseHours } from './payroll';
+import {
+  formatTinInput,
+  gridDays,
+  hoursText,
+  i9Overdue,
+  missingSteps,
+  parseHours,
+  parseSignedHours,
+  periodDays,
+  signedHoursText,
+} from './payroll';
 
 const person = (over: Partial<PayrollPersonDto> = {}): PayrollPersonDto => ({
   id: '00000000-0000-4000-8000-000000000001',
@@ -106,5 +116,36 @@ describe('hours', () => {
     expect(hoursText('37500')).toBe('37.5');
     expect(hoursText('80000')).toBe('80');
     expect(hoursText('1250')).toBe('1.25');
+  });
+});
+
+describe('staff time helpers (PRL-26..28)', () => {
+  it('lists every day of a pay period for the daily grid', () => {
+    expect(periodDays('2026-03-15', '2026-03-28')).toHaveLength(14);
+    expect(periodDays('2026-02-16', '2026-02-28').at(-1)).toBe('2026-02-28');
+    expect(periodDays('2026-03-01', '2026-03-01')).toEqual(['2026-03-01']);
+  });
+
+  it('shows and reads balances that can go below zero', () => {
+    expect(signedHoursText('-5600')).toBe('-5.6');
+    expect(signedHoursText('2667')).toBe('2.667');
+    expect(parseSignedHours('-2.5')).toBe('-2500');
+    expect(parseSignedHours('8')).toBe('8000');
+    expect(parseSignedHours('-0')).toBe('0');
+    expect(parseSignedHours('ten')).toBeUndefined();
+  });
+
+  it('turns the grid into days with hours, leaving out blank and zero days', () => {
+    expect(
+      gridDays({ '2026-03-17': '13', '2026-03-16': '10.5', '2026-03-18': '', '2026-03-19': '0' }),
+    ).toEqual([
+      { date: '2026-03-16', hoursMilli: '10500' },
+      { date: '2026-03-17', hoursMilli: '13000' },
+    ]);
+  });
+
+  it('refuses a day that isn’t hours, or more than 24', () => {
+    expect(gridDays({ '2026-03-16': 'x' })).toBeUndefined();
+    expect(gridDays({ '2026-03-16': '25' })).toBeUndefined();
   });
 });

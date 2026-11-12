@@ -1095,5 +1095,33 @@
   "PRL-22": [
     "partial",
     "Phone: pay runs, payslip lines and reimbursements with a receipt photo; not run on a device"
+  ],
+  "PRL-23": [
+    "done",
+    "leave_policy per business (none, accrual, grant), balance cap and carry-over; carry-over never applied to California vacation (ADR-0036 §2)"
+  ],
+  "PRL-24": [
+    "done",
+    "CA_PAID_SICK_LEAVE dated table in @montra/domain (Labor Commissioner FAQ, SB 616); statutory default for CA employees; policies below the minimum refused; UI note with the source"
+  ],
+  "PRL-25": [
+    "done",
+    "leave_entry ledger of hours: opening balance, adjustments, and each approved paycheck’s grant, carry-over cut, use, accrual and payout; not posted"
+  ],
+  "PRL-26": [
+    "done",
+    "Vacation and sick hours on paychecks at the regular rate; over-balance needs the owner’s allowance; written on approve, removed on reopen; payslip time-off block; final-pay vacation payout"
+  ],
+  "PRL-27": [
+    "done",
+    "Daily grid per paycheck (paycheck_day); splitOvertime: CA over 8/12 a day, 40 a week, seventh day; federal 40 a week; workweek start per business; earlier days of a crossing workweek counted"
+  ],
+  "PRL-28": [
+    "done",
+    "contractor_time with optional customer; one bill to the vendor record at hours × rate (Contract labor, Sch. C line 11); locked by trigger while the bill stands; link to New invoice for the customer"
+  ],
+  "PRL-29": [
+    "partial",
+    "Phone: balances on the payroll screen and leave lines on each paycheck, read-only; contractor time entry is web-only; not run on a device"
   ]
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { dollarsToMinor, hoursLabel, payslipSections, signedAmount } from '../src/features/payroll';
+import {
+  dollarsToMinor,
+  hoursLabel,
+  payslipSections,
+  signedAmount,
+  signedHoursLabel,
+  trackedBalances,
+} from '../src/features/payroll';
 
 const line = (kind: string, amount: string) => ({
   id: kind + amount,
@@ -39,5 +46,27 @@ describe('payslips on the phone', () => {
   it('writes hours', () => {
     expect(hoursLabel('80000')).toBe('80');
     expect(hoursLabel('37500')).toBe('37.5');
+  });
+});
+
+describe('leave balances on the phone (PRL-25)', () => {
+  const balance = (kind: 'vacation' | 'sick', tracked: boolean, balanceMilli: string) => ({
+    kind,
+    tracked,
+    method: 'accrual' as const,
+    balanceMilli,
+    usedThisYearMilli: '0',
+    accruedThisYearMilli: '0',
+  });
+
+  it('keeps the sign of a balance used past zero', () => {
+    expect(signedHoursLabel('-5600')).toBe('-5.6');
+    expect(signedHoursLabel('2400')).toBe('2.4');
+  });
+
+  it('shows only the kinds tracked for the person', () => {
+    expect(trackedBalances([balance('vacation', false, '0'), balance('sick', true, '2400')])).toEqual([
+      balance('sick', true, '2400'),
+    ]);
   });
 });
