@@ -70,6 +70,7 @@ export function makeDto(t: TxInput, version = 1): TransactionDto {
     tags: [],
     recurringItemId: null,
     managedBy: null,
+    reconciled: false,
     expenseDetail: null,
     foreign: null,
     tripId: null,

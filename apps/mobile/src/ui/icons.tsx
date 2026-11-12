@@ -25,6 +25,7 @@ import {
   Lightbulb,
   Mic,
   List,
+  Lock,
   type LucideIcon,
   House,
   PieChart,
@@ -89,6 +90,7 @@ const ICONS = {
   mic: Mic,
   stop: Square,
   keyboard: Keyboard,
+  locked: Lock,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

@@ -53,6 +53,12 @@ const overrides = {
   'AI-10': 8,
   'RCP-09': 10,
   'DE-08': 2,
+  // Reconciliation, extended after Phase 11 (ADR-0039).
+  'DE-11': 2,
+  'DE-12': 2,
+  'DE-13': 2,
+  'DE-14': 2,
+  'DE-15': 2,
   'FAM-05': 3,
   'FAM-06': 6,
   'FAM-07': 6,

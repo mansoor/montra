@@ -9,6 +9,7 @@ import { canSpendFrom } from '@montra/domain';
 import type { CategoryDto, TransactionDto, UpdateTransactionRequest } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
 import { expenseLines } from '../../src/features/business';
+import { editRules } from '../../src/features/transaction-edit';
 import { fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
@@ -70,9 +71,9 @@ export default function TransactionDetail() {
   const categoryName = draft.categoryId
     ? (categories.find((c) => c.id === draft.categoryId)?.name ?? draft.categoryName)
     : null;
-  // The paying account can change on an income or expense nothing else manages, to another in the same currency.
-  const standard = row.server ? row.server.entries.some((e) => e.kind === 'standard') : true;
-  const canMove = standard && !row.server?.managedBy && row.amount !== null && row.accountId !== null;
+  // The paying account can change on an income or expense nothing else manages, to another in the same currency;
+  // a reconciled one keeps its account, amount and date (DE-15).
+  const { reconciled, canMove, canChangeDate } = editRules(row);
   const account = allAccounts.find((a) => a.id === draft.accountId);
   const accountChoices = allAccounts.filter(
     (a) => a.id === row.accountId || (canSpendFrom(a) && a.currency === row.currency),
@@ -99,9 +100,9 @@ export default function TransactionDetail() {
     setError(null);
     const patch: UpdateTransactionRequest = {};
     if (draft.payee !== row.payee) patch.payee = draft.payee;
-    if (draft.date !== row.date) patch.date = draft.date as UpdateTransactionRequest['date'];
+    if (canChangeDate && draft.date !== row.date) patch.date = draft.date as UpdateTransactionRequest['date'];
     if (draft.memo !== row.memo) patch.memo = draft.memo;
-    if (draft.accountId && draft.accountId !== row.accountId) patch.accountId = draft.accountId;
+    if (canMove && draft.accountId && draft.accountId !== row.accountId) patch.accountId = draft.accountId;
     if (draft.tags.join(',') !== row.tags.join(',')) patch.tags = draft.tags;
     if (!isSplit && draft.categoryId && draft.categoryId !== row.categoryId)
       patch.categoryId = draft.categoryId;
@@ -123,6 +124,7 @@ export default function TransactionDetail() {
       {error ? <Banner tone="danger" text={error} /> : null}
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: th.space(3) }}>
+          {reconciled ? <Icon name="locked" size={20} color={th.muted} /> : null}
           <Body style={{ flex: 1, fontSize: 28, fontWeight: '700' }}>
             {fmtMoney(row.amount, row.currency)}
           </Body>
@@ -140,6 +142,7 @@ export default function TransactionDetail() {
         {receiptState && receiptState !== 'add' && receiptState !== 'view' ? (
           <Small>{t(RECEIPT_LABEL[receiptState])}</Small>
         ) : null}
+        {reconciled ? <Small>{t('mobile.txn.reconciled_note')}</Small> : null}
       </Card>
       {business ? (
         <Card testID="txn-expense-detail">
@@ -160,13 +163,17 @@ export default function TransactionDetail() {
         onChangeText={(v) => setDraft({ ...draft, payee: v || null })}
         testID="ed-payee"
       />
-      <Field
-        label={t('mobile.txn.date')}
-        value={draft.date}
-        onChangeText={(v) => setDraft({ ...draft, date: v })}
-        placeholder="YYYY-MM-DD"
-        keyboardType="numbers-and-punctuation"
-      />
+      {canChangeDate ? (
+        <Field
+          label={t('mobile.txn.date')}
+          value={draft.date}
+          onChangeText={(v) => setDraft({ ...draft, date: v })}
+          placeholder="YYYY-MM-DD"
+          keyboardType="numbers-and-punctuation"
+        />
+      ) : (
+        <Row title={t('mobile.txn.date')} subtitle={row.date} icon="locked" testID="ed-date-locked" />
+      )}
       <Row
         title={t('mobile.txn.account')}
         subtitle={[account?.name ?? '', canMove ? null : t('mobile.txn.account_fixed')]

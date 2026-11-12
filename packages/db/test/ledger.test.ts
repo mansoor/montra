@@ -203,6 +203,32 @@ describe('locks (DE-08..10)', () => {
         ),
       ),
     ).toBe('period.locked');
+
+    // DE-13 (migration 0039): not even the locked-edit path un-reconciles; only the undo's setting does.
+    expect(
+      await errorHint(
+        withContext(db, { ...ctx(), allowLockedEdit: true }, (trx) =>
+          trx
+            .updateTable('app.posting')
+            .set({ cleared: 'cleared' })
+            .where('journal_entry_id', '=', entryId)
+            .execute(),
+        ),
+      ),
+    ).toBe('period.locked');
+    await withContext(db, ctx(), async (trx) => {
+      await sql`select set_config('app.allow_unreconcile', 'on', true)`.execute(trx);
+      await trx
+        .updateTable('app.posting')
+        .set({ cleared: 'cleared' })
+        .where('journal_entry_id', '=', entryId)
+        .execute();
+      await trx.updateTable('app.journal_entry').set({ locked: false }).where('id', '=', entryId).execute();
+    });
+    const after = await withContext(db, ctx(), (trx) =>
+      trx.selectFrom('app.posting').select('cleared').where('journal_entry_id', '=', entryId).execute(),
+    );
+    expect(after.map((p) => p.cleared)).toEqual(['cleared', 'cleared']);
   });
 });
 

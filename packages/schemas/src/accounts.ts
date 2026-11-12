@@ -97,6 +97,8 @@ export const AccountDto = z.object({
   purchaseDate: CalendarDateDto.nullable(),
   loanAccountId: z.string().nullable(),
   dueDate: CalendarDateDto.nullable(),
+  /** DE-14: the last completed reconciliation's statement date ("Reconciled through"); null if never reconciled. */
+  reconciledThrough: CalendarDateDto.nullable(),
   /** Planning inputs (Phase 6): debt payoff and forecast warnings. Minor units in the account currency. */
   planning: z.object({
     creditLimit: z.string().nullable(),

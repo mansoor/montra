@@ -18,11 +18,13 @@ export default async function ReconcilePage({
 }) {
   const { workspaceId, accountId } = await params;
   const reconciliationId = (await searchParams).r;
-  const [[workspace, accounts, reconciliation], { t }] = await Promise.all([
+  const [[workspace, accounts, history, categories, reconciliation], { t }] = await Promise.all([
     load((api) =>
       Promise.all([
         api.getWorkspace(workspaceId),
         api.listAccounts(workspaceId),
+        api.reconciliationHistory(workspaceId, accountId),
+        api.listCategories(workspaceId),
         // Without ?r=, resume the account's unfinished reconciliation, if any.
         reconciliationId
           ? api.getReconciliation(workspaceId, reconciliationId)
@@ -38,18 +40,31 @@ export default async function ReconcilePage({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="page-title">{t('reconcile.title', { account: account.name })}</h1>
-        <Link
-          href={`/w/${workspaceId}/accounts/${accountId}`}
-          className="text-sm font-medium text-brand-600 underline"
-        >
-          {t('reconcile.back')}
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href={`/w/${workspaceId}/accounts/${accountId}/reconcile/history`}
+            className="text-sm font-medium text-brand-600 underline"
+          >
+            {t('reconcile.history_link')}
+          </Link>
+          <Link
+            href={`/w/${workspaceId}/accounts/${accountId}`}
+            className="text-sm font-medium text-brand-600 underline"
+          >
+            {t('reconcile.back')}
+          </Link>
+        </div>
       </div>
       <Reconciler
         workspaceId={workspaceId}
         account={account}
         initial={reconciliation}
         today={todayIn(workspace.timeZone)}
+        next={{
+          statementDate: history.next.statementDate,
+          openingBalance: history.next.openingBalance.amount,
+        }}
+        categories={categories.filter((c) => c.entityId === account.entityId)}
       />
     </div>
   );

@@ -362,6 +362,15 @@ export class AccountsService {
           'b.employer_id',
           'b.employer_contributions',
           'v.hidden',
+          // DE-14: the last statement reconciled.
+          (eb) =>
+            eb
+              .selectFrom('app.reconciliation as rc')
+              .select((x) => x.fn.max('rc.statement_date').as('d'))
+              .whereRef('rc.workspace_id', '=', 'a.workspace_id')
+              .whereRef('rc.ledger_account_id', '=', 'a.id')
+              .where('rc.status', '=', 'completed')
+              .as('reconciled_through'),
         ])
         .where('b.workspace_id', '=', ctx.workspaceId)
         .$if(!opts.includeHidden, (q) =>
@@ -399,6 +408,9 @@ export class AccountsService {
         purchaseDate: r.purchase_date ? calendarDate(String(r.purchase_date).slice(0, 10)) : null,
         loanAccountId: r.loan_account_id,
         dueDate: r.due_date ? calendarDate(String(r.due_date).slice(0, 10)) : null,
+        reconciledThrough: r.reconciled_through
+          ? calendarDate(String(r.reconciled_through).slice(0, 10))
+          : null,
         cycle: {
           statementDay: r.statement_day,
           dueDay: r.due_day,
