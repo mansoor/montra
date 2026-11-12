@@ -503,7 +503,7 @@
   "assets.post_hint": "Not in the books yet: {years}. Each year is a journal entry dated December 31.",
   "assets.post_through": "Post depreciation through",
   "assets.post_title": "Post depreciation",
-  "assets.posted": "Posted {n} entries",
+  "assets.posted": "Depreciation entries posted: {n}",
   "assets.posted_no": "Not yet",
   "assets.posted_yes": "Posted",
   "assets.proceeds": "Proceeds",

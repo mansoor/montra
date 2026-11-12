@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import { CalendarDateDto, CurrencyCodeDto, Id } from './common.js';
-import { MinorDto } from './budgets.js';
 
 // ----- Business assets, who spent and meal details (BIZ-16..20, ADR-0035). ----------------------------------------
 // Depreciation figures are estimates for the owner's records, not tax advice.
+
+// Minor units as on the rest of the wire. Not imported from budgets.ts: transactions.ts imports this file, and budgets.ts
+// reaches transactions.ts through ledger.ts, so that import would be a cycle.
+const MinorDto = z.string().regex(/^-?\d{1,19}$/, 'Amount must be an integer number of minor units');
 
 const PositiveMinor = MinorDto.refine((s) => BigInt(s) > 0n, 'Amount must be more than zero');
 const NonNegativeMinor = MinorDto.refine((s) => BigInt(s) >= 0n, 'Amount must not be negative');

@@ -324,6 +324,11 @@ R1 targets sole proprietors, freelancers and single-member LLCs with up to about
 | BIZ-13 | Accountant access: an invited user with read-only or edit access to selected entities only; export to CSV/XLSX and QuickBooks/Xero-compatible formats. | S |
 | BIZ-14 | Sales tax/VAT tracking per transaction. | C |
 | BIZ-15 | Payroll summary import (from a payroll provider CSV). Payroll itself is 5.1. | C |
+| BIZ-16 | Asset register per business (added 2026-11-11, ADR-0035): record a purchase as an asset (name, kind, cost, date placed in service, serial or tag, the purchase it came from), moving its cost into a fixed-asset account; expense now under the $2,500 de minimis rule, straight line over the IRS recovery period, or MACRS half-year, with an optional Section 179 amount the owner types; yearly depreciation posted as journal entries to Schedule C line 13; disposal with proceeds, book value written off and the gain or loss shown; a "Record as an asset?" hint on large equipment purchases. Not tax advice. Resale inventory and cost of goods sold are out of scope. | S |
+| BIZ-17 | Assets assigned to people: an asset is handed to an employee or contractor (payroll people), with handed-over and returned dates and its history; the person's page lists what they hold, and an end date can't be saved while they hold something. | S |
+| BIZ-18 | Expense details on business transactions: "spent by" (the owner or a payroll person, separate from household members); for meals, attendees (customers, vendors and free text) and the business purpose, with a hint when the IRS's who and why are missing; a filter and report of expenses by person. | S |
+| BIZ-19 | Mileage by driver: a trip's driver is the owner or a payroll person; only the owner's trips are the standard-mileage deduction; someone else's trip can be reimbursed through payroll at the IRS rate for its date; a mileage report by driver. | S |
+| BIZ-20 | On the phone: "spent by" and meal attendees on the transaction screen, and the driver on Log a trip. | C |
 
 ### 5.1 Payroll (moved into scope on 2026-11-10)
 

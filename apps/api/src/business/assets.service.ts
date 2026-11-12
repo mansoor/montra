@@ -55,9 +55,6 @@ const conflict = () =>
 
 const yearOf = (d: CalendarDate | string) => Number(String(d).slice(0, 4));
 
-/** Fields whose change means booking the asset again: only while nothing is posted or disposed of. */
-const MONEY_FIELDS = ['cost', 'inServiceDate', 'method', 'lifeYears', 'section179'] as const;
-
 @Injectable()
 export class AssetsService {
   constructor(

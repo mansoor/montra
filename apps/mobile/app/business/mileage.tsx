@@ -1,15 +1,16 @@
 /**
  * The mileage log on the phone (BIZ-07): logging a trip right after driving it is the case for having this here. Each trip
- * gets the IRS rate for its date from the server. Needs a connection, like budget writes.
+ * gets the IRS rate for its date from the server. Needs a connection, like budget writes. A trip has a driver (BIZ-19):
+ * only the owner's are the deduction, and someone else's is reimbursed on the web.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { calendarDate } from '@montra/domain';
-import type { MileageSummaryDto } from '@montra/schemas';
+import type { MileageSummaryDto, PayrollPersonDto } from '@montra/schemas';
 import { normalizeMiles } from '../../src/features/business';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
-import { Banner, Body, Button, Card, Field, Row, Screen, Small } from '../../src/ui/components';
+import { Banner, Body, Button, Card, Field, Row, Screen, Segmented, Small } from '../../src/ui/components';
 
 const todayLocal = (): string => {
   const d = new Date();
@@ -25,6 +26,8 @@ export default function Mileage() {
   const [date, setDate] = useState(todayLocal);
   const [miles, setMiles] = useState('');
   const [purpose, setPurpose] = useState('');
+  const [people, setPeople] = useState<PayrollPersonDto[]>([]);
+  const [driver, setDriver] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -42,6 +45,15 @@ export default function Mileage() {
     void load();
   }, [load]);
 
+  // Drivers other than the owner. Payroll needs write access to the business; without it, only the owner's trips.
+  useEffect(() => {
+    if (!ws || !entityId) return;
+    api.payrollPeople(ws, entityId).then(
+      (list) => setPeople(list.filter((p) => !p.endDate)),
+      () => setPeople([]),
+    );
+  }, [api, ws, entityId]);
+
   const add = async () => {
     const m = normalizeMiles(miles);
     if (!m) return setError(t('mileage.miles_hint'));
@@ -54,6 +66,7 @@ export default function Mileage() {
         date: calendarDate(date.trim()),
         miles: m,
         purpose: purpose.trim(),
+        driverPersonId: driver || null,
       });
       setNotice(t('mileage.added', { rate: trip.centsPerMile }));
       setMiles('');
@@ -85,8 +98,35 @@ export default function Mileage() {
           onChangeText={setPurpose}
           testID="mileage-purpose"
         />
+        {people.length > 0 ? (
+          people.length <= 3 ? (
+            <Segmented
+              label={t('mileage.driver')}
+              value={driver}
+              options={[
+                { value: '', label: t('mileage.driver_owner') },
+                ...people.map((p) => ({ value: p.id, label: p.displayName })),
+              ]}
+              onChange={setDriver}
+            />
+          ) : (
+            <>
+              <Small>{t('mileage.driver')}</Small>
+              {[{ id: '', displayName: t('mileage.driver_owner') }, ...people].map((p, i) => (
+                <Row
+                  key={p.id || 'owner'}
+                  title={p.displayName}
+                  right={p.id === driver ? <Small>✓</Small> : undefined}
+                  last={i === people.length}
+                  onPress={() => setDriver(p.id)}
+                />
+              ))}
+            </>
+          )
+        ) : null}
         <Button label={t('mileage.add')} busy={busy} onPress={() => void add()} testID="mileage-add" />
         <Small>{t('mileage.deduction_note')}</Small>
+        {driver ? <Small>{t('mileage.driver_note')}</Small> : null}
       </Card>
       {summary ? (
         <>
@@ -100,7 +140,14 @@ export default function Mileage() {
             <Row
               key={r.id}
               title={r.purpose}
-              subtitle={`${fmtDate(r.date)} · ${r.miles} · ${t('mileage.cents', { rate: r.centsPerMile })}`}
+              subtitle={[
+                fmtDate(r.date),
+                r.miles,
+                t('mileage.cents', { rate: r.centsPerMile }),
+                r.driver === 'person' ? r.driverName : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
               right={<Small>{fmtMoney(r.deduction, summary.currency)}</Small>}
               testID="mileage-trip"
             />
