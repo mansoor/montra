@@ -809,6 +809,41 @@ Phase 11 leftovers:
   Owner to check: the sourced California figures in ADR-0036 §2 (the statute pages on leginfo refused automated reads),
   that sick leave at the base rate suits anyone with overtime or commissions (FAQ 30 allows a 90-day blended rate), and
   that leave years run by calendar year.
+- **Business assets, who spent, meal details and mileage by driver, web and phone** (BIZ-16..20,
+  [ADR-0035](design/adr/0035-business-assets-and-expense-details.md), migration 0035):
+  - **Asset register** (Business → Assets). Record an asset from a purchase (the transaction's "Record as an asset?" hint,
+    the missing-receipt list or the Assets tab's "Purchases that may be assets": business purchases over $2,500 on
+    equipment-like categories) or one the owner brought in (posted as an owner contribution). Methods: expense now under the
+    $2,500 de minimis safe harbor (the purchase stays an expense), straight line with the half-year convention (software:
+    36 months from the month in service), or MACRS half-year from Publication 946 Table A-1; recovery periods 5 years for
+    computers and vehicles, 7 for furniture, equipment and other, 3 for software. Section 179 is an amount the owner types:
+    no yearly limit is held. Capitalizing takes over the purchase like a bill payment (`asset.managed`): its cost moves
+    from the expense category to "Equipment and fixed assets" through the poster, so the DE-08..10 rules apply. "Post
+    depreciation through" a year writes one `depreciation` entry per asset and year (December 31), debit Depreciation
+    (Schedule C line 13, new in `tax.ts`) and credit Accumulated depreciation, so Schedule C, the P&L and the tax estimate
+    include it. Disposal needs the earlier years posted, posts the disposal year's half (or its months for software),
+    writes off book value to "Gain or loss on assets sold", takes the proceeds as a deposit (an existing line or a new
+    one), and shows the gain or loss. Schedule C leaves that account out (`assetSales`, Form 4797). Everything undoes:
+    un-post the latest year, undo a disposal, delete an asset (the purchase gets its categories back).
+  - **Assigned to people**: an asset is handed to a payroll person and returned, with its history. The person's page lists
+    what they hold, and saving an end date (or deleting the person) is refused until it's returned (`payroll.assets_held`).
+  - **Expense details** beside a business transaction (`app.expense_detail`, `TransactionDto.expenseDetail`): spent by
+    (you or a payroll person, not the household member), attendees (customers, vendors, free text) and business purpose. A
+    meal (line 24b) without attendees or a purpose shows "The IRS expects who and why". The transaction list filters by
+    `spentBy`, and Business → Taxes has Expenses by person, linking to that filter.
+  - **Mileage by driver**: a trip's driver is you or a payroll person. Only your trips reach line 9 and the tax estimate.
+    Reimburse this trip makes an approved payroll reimbursement at the trip's IRS rate to a "Mileage reimbursements"
+    category (line 9, kept out of the mileage-and-actual-car warning); an employee's is paid on the next pay run, a
+    contractor's becomes a bill. A reimbursed trip's date, miles and driver are fixed. Mileage shows totals by driver.
+  - **Phone**: the transaction screen shows spent by, attendees and purpose (read-only; entered on the web) and the meal
+    hint; Log a trip has a driver. Assets are web only. Not run on a device.
+  - Rules (don't undo): one purchase makes one asset; a purchase another owner holds (a bill, a paycheck) can't be
+    capitalized. Expense details live outside the transaction spec, so editing them never re-posts it, and their change-feed
+    key starts with the transaction id so phones pull it again.
+  - Out of scope: **resale inventory and cost of goods sold**, stock counts, bonus depreciation, the mid-quarter convention,
+    Section 280F car limits, part-personal use, several assets from one purchase, and Forms 4562 and 4797 themselves.
+  - Tests: `apps/api/test/business-assets.test.ts` (24), `packages/domain/test/business-assets.test.ts`,
+    `apps/web/lib/assets.test.ts`, `apps/web/e2e/assets.spec.ts`, phone `test/business.test.ts`.
 - **Payroll, stage 4: year-end forms, web** (PRL-17..20, [ADR-0034](design/adr/0034-payroll.md) §7b): Business → Payroll →
   Year-end forms works out each employee's W-2 from the year's approved paychecks (box 1 less both kinds of before-tax
   deduction, Social Security and Medicare wages per person in pay-date order, box 12 code D and box 13 from retirement

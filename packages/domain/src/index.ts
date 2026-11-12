@@ -7,6 +7,7 @@ export * from './receipt.js';
 export * from './receipt-habit.js';
 export * from './payslip.js';
 export * from './business.js';
+export * from './business-assets.js';
 export * from './rental.js';
 export * from './search.js';
 export * from './notifications.js';

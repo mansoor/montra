@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './payroll-types.js';
+export * from './asset-types.js';
 export * from './pool.js';
 export * from './ids.js';
 export * from './context.js';

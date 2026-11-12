@@ -150,6 +150,8 @@ export class PeopleService {
       const hire = req.hireDate !== undefined ? req.hireDate : dateOrNull(r.hire_date);
       const end = req.endDate !== undefined ? req.endDate : dateOrNull(r.end_date);
       this.checkDates(hire, end);
+      // What they hold comes back before they leave (BIZ-17, ADR-0035 §6).
+      if (end && end !== dateOrNull(r.end_date)) await this.checkNothingHeld(trx, ctx, id);
       if (req.vendorPartyId && r.kind !== 'contractor') {
         throw unprocessable('payroll.vendor_for_employee', 'Only a contractor is paid as a vendor');
       }
@@ -202,6 +204,7 @@ export class PeopleService {
     await this.db.run(ctx, async (trx) => {
       const r = await this.row(trx, ctx, id);
       const e = await payrollEntity(trx, ctx, r.entity_id);
+      await this.checkNothingHeld(trx, ctx, id);
       const i9 = await trx
         .selectFrom('app.payroll_i9')
         .select('id')
@@ -226,6 +229,28 @@ export class PeopleService {
         .where('id', '=', id)
         .execute();
     });
+  }
+
+  /** Refuses while the person holds a business asset: it's marked returned first. */
+  private async checkNothingHeld(trx: Trx, ctx: Ctx, personId: string): Promise<void> {
+    const held = await trx
+      .selectFrom('app.asset_assignment as a')
+      .innerJoin('app.business_asset as b', (j) =>
+        j.onRef('b.workspace_id', '=', 'a.workspace_id').onRef('b.id', '=', 'a.asset_id'),
+      )
+      .select('b.name')
+      .where('a.workspace_id', '=', ctx.workspaceId)
+      .where('a.person_id', '=', personId)
+      .where('a.returned_on', 'is', null)
+      .orderBy('b.name')
+      .execute();
+    if (held.length) {
+      throw new AppError(
+        409,
+        'payroll.assets_held',
+        `They still have ${held.map((h) => h.name).join(', ')}. Mark it returned first`,
+      );
+    }
   }
 
   /** One full value, logged (PRL-05). The caller has checked for a recent sign-in. */

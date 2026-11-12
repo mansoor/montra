@@ -333,6 +333,24 @@ import type {
   UpdateEmployerRequest,
   UpdatePayslipRequest,
 } from '@montra/schemas';
+// Business assets and expense details (BIZ-16..19, ADR-0035).
+import type {
+  AssetAssignmentDto,
+  AssetCandidateDto,
+  AssetCategory,
+  AssetListDto,
+  AssetMethod,
+  AssignAssetRequest,
+  BusinessAssetDto,
+  CreateAssetRequest,
+  DisposeAssetRequest,
+  ExpenseDetailDto,
+  ExpensesByPersonDto,
+  PostDepreciationDto,
+  ReturnAssetRequest,
+  SetExpenseDetailRequest,
+  UpdateAssetRequest,
+} from '@montra/schemas';
 
 // ----- Payroll (PRL-01..05, ADR-0034) -----
 export type CreatePersonInput = z.input<typeof CreatePersonRequest>;
@@ -439,6 +457,23 @@ export type CreateBillInput = z.input<typeof CreateBillRequest>;
 export type UpdateBillInput = z.input<typeof UpdateBillRequest>;
 export type CreateTripInput = z.input<typeof CreateTripRequest>;
 export type UpdateTripInput = z.input<typeof UpdateTripRequest>;
+export type CreateAssetInput = z.input<typeof CreateAssetRequest>;
+export type UpdateAssetInput = z.input<typeof UpdateAssetRequest>;
+export type DisposeAssetInput = z.input<typeof DisposeAssetRequest>;
+export type AssignAssetInput = z.input<typeof AssignAssetRequest>;
+export type ReturnAssetInput = z.input<typeof ReturnAssetRequest>;
+export type SetExpenseDetailInput = z.input<typeof SetExpenseDetailRequest>;
+export type {
+  AssetAssignmentDto,
+  AssetCandidateDto,
+  AssetCategory,
+  AssetListDto,
+  AssetMethod,
+  BusinessAssetDto,
+  ExpenseDetailDto,
+  ExpensesByPersonDto,
+  PostDepreciationDto,
+};
 export type UpdateBusinessInput = z.input<typeof UpdateBusinessProfileRequest>;
 export type ReportFiltersInput = z.input<typeof ReportFilters>;
 export type CreateSavedReportInput = z.input<typeof CreateSavedReportRequest>;
@@ -627,6 +662,8 @@ export interface TransactionListOptions {
   memberId?: string;
   /** RNT-11: what's on one property. */
   propertyId?: string;
+  /** BIZ-18: who spent it in a business: `owner`, a payroll person's id, or `none`. */
+  spentBy?: string;
   /** RPT-05: `coffee >20 tag:travel`. */
   q?: string;
   categoryIds?: string[];
@@ -1625,6 +1662,88 @@ export class ApiClient {
   }
   getScheduleC(workspaceId: string, opts: { entityId: string; year?: number }) {
     return this.request<ScheduleCDto>('GET', this.ws(workspaceId, `/reports/schedule-c${query(opts)}`));
+  }
+  // ----- Business assets, expense details, trips by driver (BIZ-16..19, ADR-0035) -----
+  listAssets(workspaceId: string, opts: { entityId: string; personId?: string }) {
+    return this.request<AssetListDto>('GET', this.ws(workspaceId, `/business-assets${query(opts)}`));
+  }
+  getAsset(workspaceId: string, id: string) {
+    return this.request<BusinessAssetDto>('GET', this.ws(workspaceId, `/business-assets/${enc(id)}`));
+  }
+  createAsset(workspaceId: string, input: CreateAssetInput) {
+    return this.request<BusinessAssetDto>('POST', this.ws(workspaceId, '/business-assets'), input);
+  }
+  updateAsset(workspaceId: string, id: string, input: UpdateAssetInput) {
+    return this.request<BusinessAssetDto>(
+      'PATCH',
+      this.ws(workspaceId, `/business-assets/${enc(id)}`),
+      input,
+    );
+  }
+  deleteAsset(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/business-assets/${enc(id)}`));
+  }
+  postDepreciation(workspaceId: string, input: { entityId: string; throughYear: number }) {
+    return this.request<PostDepreciationDto>(
+      'POST',
+      this.ws(workspaceId, '/business-assets/depreciation'),
+      input,
+    );
+  }
+  unpostDepreciation(workspaceId: string, id: string, year: number) {
+    return this.request<BusinessAssetDto>(
+      'DELETE',
+      this.ws(workspaceId, `/business-assets/${enc(id)}/depreciation/${year}`),
+    );
+  }
+  disposeAsset(workspaceId: string, id: string, input: DisposeAssetInput) {
+    return this.request<BusinessAssetDto>(
+      'POST',
+      this.ws(workspaceId, `/business-assets/${enc(id)}/disposal`),
+      input,
+    );
+  }
+  undoAssetDisposal(workspaceId: string, id: string) {
+    return this.request<BusinessAssetDto>(
+      'DELETE',
+      this.ws(workspaceId, `/business-assets/${enc(id)}/disposal`),
+    );
+  }
+  assignAsset(workspaceId: string, id: string, input: AssignAssetInput) {
+    return this.request<BusinessAssetDto>(
+      'POST',
+      this.ws(workspaceId, `/business-assets/${enc(id)}/assignments`),
+      input,
+    );
+  }
+  returnAsset(workspaceId: string, assignmentId: string, input: ReturnAssetInput) {
+    return this.request<BusinessAssetDto>(
+      'POST',
+      this.ws(workspaceId, `/asset-assignments/${enc(assignmentId)}/return`),
+      input,
+    );
+  }
+  deleteAssetAssignment(workspaceId: string, assignmentId: string) {
+    return this.request<BusinessAssetDto>(
+      'DELETE',
+      this.ws(workspaceId, `/asset-assignments/${enc(assignmentId)}`),
+    );
+  }
+  setExpenseDetail(workspaceId: string, transactionId: string, input: SetExpenseDetailInput) {
+    return this.request<ExpenseDetailDto>(
+      'PUT',
+      this.ws(workspaceId, `/transactions/${enc(transactionId)}/expense-detail`),
+      input,
+    );
+  }
+  getExpensesByPerson(workspaceId: string, opts: { entityId: string; from?: string; to?: string }) {
+    return this.request<ExpensesByPersonDto>(
+      'GET',
+      this.ws(workspaceId, `/reports/expenses-by-person${query(opts)}`),
+    );
+  }
+  reimburseMileageTrip(workspaceId: string, id: string) {
+    return this.request<MileageTripDto>('POST', this.ws(workspaceId, `/mileage-trips/${enc(id)}/reimburse`));
   }
   getMissingReceipts(workspaceId: string, opts: { entityId: string; year?: number }) {
     return this.request<MissingReceiptsDto>(

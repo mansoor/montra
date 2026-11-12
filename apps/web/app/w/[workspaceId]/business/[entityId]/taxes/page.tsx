@@ -26,12 +26,13 @@ export default async function TaxesPage({
   const workspace = await load((api) => api.getWorkspace(workspaceId));
   const thisYear = Number(todayIn(workspace.timeZone).slice(0, 4));
   const year = /^\d{4}$/.test(rawYear ?? '') ? Number(rawYear) : thisYear;
-  const [business, estimate, schedule, lines] = await load((api) =>
+  const [business, estimate, schedule, lines, byPerson] = await load((api) =>
     Promise.all([
       api.getBusiness(workspaceId, entityId),
       api.getTaxEstimate(workspaceId, { entityId, year }),
       api.getScheduleC(workspaceId, { entityId, year }),
       api.listTaxLines(workspaceId, 'schedule_c'),
+      api.getExpensesByPerson(workspaceId, { entityId, from: `${year}-01-01`, to: `${year}-12-31` }),
     ]),
   );
   const { t } = await getI18n();
@@ -194,8 +195,61 @@ export default async function TaxesPage({
             lines={lines}
           />
         )}
+        {BigInt(schedule.assetSales) !== 0n && (
+          <p className="text-sm" data-testid="asset-sales">
+            {BigInt(schedule.assetSales) > 0n ? t('taxes.asset_gain') : t('taxes.asset_loss')}{' '}
+            <Money amount={schedule.assetSales.replace('-', '')} currency={ccy} /> ·{' '}
+            {t('taxes.asset_sales_note')}
+          </p>
+        )}
         <p className="text-xs text-muted">{t('taxes.disclaimer')}</p>
       </section>
+
+      {byPerson.rows.length > 0 && (
+        <section className="space-y-3" aria-labelledby="by-person-title">
+          <h2 id="by-person-title" className="text-lg font-semibold">
+            {t('expense.by_person_title', { year })}
+          </h2>
+          <div className="card-flush">
+            <table className="tbl" data-testid="expenses-by-person">
+              <thead>
+                <tr>
+                  <th className="px-4 py-2">{t('expense.spent_by')}</th>
+                  <th className="px-2 py-2 text-right">{t('expense.count')}</th>
+                  <th className="px-4 py-2 text-right">{t('taxes.amount')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {byPerson.rows.map((r) => (
+                  <tr key={r.personId ?? r.spentBy ?? 'none'}>
+                    <td className="px-4 py-1.5">
+                      {r.spentBy === 'owner'
+                        ? t('expense.spent_by_owner')
+                        : r.spentBy === 'person'
+                          ? (r.name ?? t('expense.spent_by_someone'))
+                          : t('expense.spent_by_none')}
+                    </td>
+                    <td className="num px-2 py-1.5 text-right">{r.count}</td>
+                    <td className="px-4 py-1.5 text-right">
+                      <Link
+                        className="underline"
+                        href={`${base}/transactions?${new URLSearchParams({
+                          entityId,
+                          spentBy: r.spentBy === 'owner' ? 'owner' : (r.personId ?? 'none'),
+                          from: `${year}-01-01`,
+                          to: `${year}-12-31`,
+                        }).toString()}`}
+                      >
+                        <Money amount={r.amount} currency={ccy} />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

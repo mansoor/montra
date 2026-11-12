@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { BillDto, InvoiceDto } from '@montra/schemas';
+import type { BillDto, ExpenseDetailDto, InvoiceDto } from '@montra/schemas';
 import {
+  expenseLines,
   invoicePdfName,
   newestFirst,
   normalizeMiles,
@@ -69,5 +70,51 @@ describe('the business landing page', () => {
   it('lists the months newest first for the table', () => {
     const months = [{ start: '2026-09-01' }, { start: '2026-11-01' }, { start: '2026-10-01' }];
     expect(newestFirst(months).map((m) => m.start)).toEqual(['2026-11-01', '2026-10-01', '2026-09-01']);
+  });
+});
+
+describe('a business expense on the transaction screen (BIZ-18)', () => {
+  const detail = (over: Partial<ExpenseDetailDto>): ExpenseDetailDto => ({
+    entityId: 'e',
+    spentBy: null,
+    spentByPersonId: null,
+    spentByName: null,
+    attendees: [],
+    businessPurpose: null,
+    isMeal: false,
+    needsMealDetail: false,
+    assetCandidate: false,
+    assetId: null,
+    version: 0,
+    ...over,
+  });
+
+  it('shows who spent, who was there and why', () => {
+    expect(
+      expenseLines(
+        detail({
+          spentBy: 'person',
+          spentByName: 'Casey Example',
+          attendees: [
+            { partyId: 'p', name: 'Northwind Co' },
+            { partyId: null, name: 'Jordan' },
+          ],
+          businessPurpose: 'Kick-off',
+          isMeal: true,
+        }),
+      ),
+    ).toEqual({
+      spentBy: 'Casey Example',
+      attendees: 'Northwind Co, Jordan',
+      purpose: 'Kick-off',
+      mealHint: false,
+    });
+    expect(expenseLines(detail({ spentBy: 'owner' }))?.spentBy).toBe('owner');
+  });
+
+  it('keeps the meal hint, and shows nothing when there is nothing to say', () => {
+    expect(expenseLines(detail({ isMeal: true, needsMealDetail: true }))?.mealHint).toBe(true);
+    expect(expenseLines(detail({}))).toBeNull();
+    expect(expenseLines(null)).toBeNull();
   });
 });
