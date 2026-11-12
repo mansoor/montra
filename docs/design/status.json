@@ -532,6 +532,10 @@
     "done",
     "ReceiptDto.likelyDuplicates: same date, total and currency, same store when both name one (ignoring case, punctuation and a store number); flagged in the web and phone lists and review screens, with Discard this copy (soft delete, files kept to retention)"
   ],
+  "RCP-14": [
+    "done",
+    "Phone receipt review: tap a page (or Zoom in on the receipt) for a full-screen viewer with pinch-to-zoom around the fingers (1-5x), drag within the page edges, double-tap to zoom in or out, and page arrows (src/ui/ReceiptViewer.tsx, src/features/zoom.ts)"
+  ],
   "CUR-09": [
     "done",
     "trips page: dates and currency; transactions in the window are tagged (existing and new); receipts expect the trip currency"
