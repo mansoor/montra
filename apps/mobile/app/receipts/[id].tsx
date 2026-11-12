@@ -4,7 +4,7 @@
  * web review screen.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Image, View } from 'react-native';
+import { Image, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { canSpendFrom, receiptAccountId } from '@montra/domain';
 import type { CategoryDto, ReceiptDto } from '@montra/schemas';
@@ -21,6 +21,7 @@ import {
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { Icon } from '../../src/ui/icons';
+import { ReceiptViewer } from '../../src/ui/ReceiptViewer';
 import { SidePanel } from '../../src/ui/SidePanel';
 import { useTheme } from '../../src/ui/theme';
 
@@ -40,6 +41,8 @@ export default function ReceiptReview() {
   const [bearer, setBearer] = useState<string | null>(null);
   const [picked, setPicked] = useState<Map<string, string | null>>(new Map());
   const [picking, setPicking] = useState<string | null>(null);
+  // The receipt page open full screen for zooming, if any.
+  const [viewing, setViewing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const names = new Map(categories.map((c) => [c.id, c.name]));
@@ -93,6 +96,12 @@ export default function ReceiptReview() {
   const payFrom = accounts.find((a) => a.id === payFromId);
   const missing = uncategorizedLines(receipt).length;
   const stalled = stalledMessage(receipt);
+  const pages = bearer
+    ? receipt.fileIds.map((fileId) => ({
+        uri: `${config.apiUrl}${api.receiptFilePath(ws, receipt.id, fileId)}`,
+        headers: { authorization: `Bearer ${bearer}` },
+      }))
+    : [];
 
   return (
     <Screen testID="receipt-review">
@@ -148,23 +157,34 @@ export default function ReceiptReview() {
           ) : null}
         </Card>
       ) : null}
-      {bearer
-        ? receipt.fileIds.map((fileId, i) => (
-            <Image
-              key={fileId}
-              accessibilityLabel={t('mobile.receipts.page_n', { n: i + 1 })}
-              source={{
-                uri: `${config.apiUrl}${api.receiptFilePath(ws, receipt.id, fileId)}`,
-                headers: { authorization: `Bearer ${bearer}` },
-              }}
-              style={{ height: 320, borderRadius: th.radius, backgroundColor: th.surface }}
-              resizeMode="contain"
-            />
-          ))
-        : null}
+      {pages.map((source, i) => (
+        <Pressable
+          key={source.uri}
+          accessibilityRole="imagebutton"
+          accessibilityLabel={t('mobile.receipts.page_n', { n: i + 1 })}
+          accessibilityHint={t('mobile.receipts.zoom_hint')}
+          onPress={() => setViewing(i)}
+          testID="receipt-page"
+        >
+          <Image
+            source={source}
+            style={{ height: 320, borderRadius: th.radius, backgroundColor: th.surface }}
+            resizeMode="contain"
+          />
+        </Pressable>
+      ))}
+      {pages.length ? <Small>{t('mobile.receipts.zoom_hint')}</Small> : null}
 
       {receipt.lines.length ? <Title>{t('mobile.receipts.lines')}</Title> : null}
       {missing > 0 ? <Small>{t('mobile.receipts.uncategorized_count', { count: missing })}</Small> : null}
+      {pages.length && receipt.lines.length ? (
+        <Button
+          kind="secondary"
+          label={t('mobile.receipts.zoom_open')}
+          onPress={() => setViewing(0)}
+          testID="receipt-zoom"
+        />
+      ) : null}
       {receipt.lines.map((l) => {
         const categoryId = picked.has(l.id) ? picked.get(l.id) : l.categoryId;
         return (
@@ -266,6 +286,7 @@ export default function ReceiptReview() {
         </>
       ) : null}
       {error ? <Banner tone="danger" text={error} /> : null}
+      <ReceiptViewer pages={pages} page={viewing} onPage={setViewing} onClose={() => setViewing(null)} />
       <SidePanel
         visible={choosingAccount}
         title={t('mobile.receipts.paid_from')}
