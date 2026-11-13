@@ -18,6 +18,7 @@
     "@montra/api-client": "workspace:*",
     "@montra/domain": "workspace:*",
     "@montra/i18n": "workspace:*",
+    "@montra/password": "workspace:*",
     "@montra/schemas": "workspace:*",
     "lucide-react": "^1.67.0",
     "next": "15.5.28",

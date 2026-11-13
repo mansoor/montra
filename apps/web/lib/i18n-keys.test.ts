@@ -34,7 +34,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'ai.problem.': ['no_key', 'no_endpoint', 'not_configured'],
   'receipts.stalled.': ['documents_waiting', 'documents_failed', 'jobs_waiting', 'jobs_failed'],
   'help.status_': ['open', 'closed'],
-  'admin.tab.': ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'reference'],
+  'admin.tab.': ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'security', 'reference'],
+  'auth.password_strength_': ['0', '1', '2', '3', '4'],
   'account.kind.': [
     'checking',
     'savings',

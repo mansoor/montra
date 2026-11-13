@@ -5,11 +5,12 @@ import {
   AccountLookup,
   FlagsPanel,
   NoticesPanel,
+  PasswordPolicyPanel,
   ReferencePanel,
   SupportRequestsPanel,
 } from '@/components/admin/console';
 
-const TABS = ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'reference'] as const;
+const TABS = ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'security', 'reference'] as const;
 type Tab = (typeof TABS)[number];
 
 /** OPS-01, OPS-05: for staff, who can't see financial data here. Anyone else gets the 404 the API gives them. */
@@ -95,6 +96,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       Promise.all([api.adminNotices(), api.adminAppVersions()]),
     );
     body = <NoticesPanel notices={notices} versions={versions} canChange={canChange} />;
+  } else if (tab === 'security') {
+    body = (
+      <PasswordPolicyPanel policy={await load((api) => api.adminPasswordPolicy())} canChange={canChange} />
+    );
   } else {
     const [merchants, rates] = await load((api) =>
       Promise.all([api.adminMerchants(''), api.adminMileageRates()]),
