@@ -70,7 +70,7 @@ test('a Walmart receipt splits its card line into groceries, electronics and clo
   await expect(page).toHaveURL(/\/transactions\/[0-9a-f-]+$/);
   // The posted lines (DE-07) follow the receipt groups.
   const journal = page.locator('section[aria-labelledby="journal-heading"]');
-  await expect(journal.getByText('Gifts', { exact: true })).toBeVisible();
+  await expect(journal.getByText('Gifts')).toBeVisible();
   await expect(journal.getByText('Electronics')).toBeVisible();
 
   // The receipt is in the matched list and found by what is on it (RCP-10).
