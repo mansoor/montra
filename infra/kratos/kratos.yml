@@ -153,6 +153,11 @@ session:
   whoami:
     required_aal: aal1 # the API applies AAL2 per role (owners, accountants), see WorkspaceGuard
 
+# ADR-0046: the phone's recovery and settings flows answer with `continue_with` (its session token and the next
+# flow) instead of asking it to open a browser. Browser flows still redirect as before.
+feature_flags:
+  use_continue_with_transitions: true
+
 hashers:
   algorithm: argon2 # AUTH-02: Argon2id
   argon2:

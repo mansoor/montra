@@ -1,6 +1,7 @@
 /** Sign-in (AUTH-01/02): email + password through Kratos (TOTP when required), or dev sign-in. */
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { config } from '../src/config';
 import { t } from '../src/i18n';
 import { useSession } from '../src/session/SessionProvider';
@@ -8,6 +9,8 @@ import { Banner, Body, Button, Field, Row, Screen, Small, Title } from '../src/u
 
 export default function SignIn() {
   const s = useSession();
+  const router = useRouter();
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -31,13 +34,16 @@ export default function SignIn() {
           <Body muted>{t('mobile.starting')}</Body>
         ) : st.status === 'needs_totp' ? (
           <>
-            <Body muted>{t('mobile.signin.totp_hint')}</Body>
+            <Body muted>
+              {t(useRecoveryCode ? 'mobile.auth.recovery_code_hint' : 'mobile.signin.totp_hint')}
+            </Body>
             {st.error ? <Banner tone="danger" text={st.error} /> : null}
             <Field
-              label={t('mobile.signin.totp')}
+              label={t(useRecoveryCode ? 'mobile.auth.recovery_code' : 'mobile.signin.totp')}
               value={code}
               onChangeText={setCode}
-              keyboardType="number-pad"
+              autoCapitalize="none"
+              keyboardType={useRecoveryCode ? 'default' : 'number-pad'}
               textContentType="oneTimeCode"
               autoComplete="one-time-code"
               testID="totp"
@@ -45,7 +51,19 @@ export default function SignIn() {
             <Button
               label={t('mobile.signin.verify')}
               busy={busy}
-              onPress={() => void run(() => s.submitTotp(code))}
+              onPress={() =>
+                void run(() => (useRecoveryCode ? s.submitRecoveryCode(code) : s.submitTotp(code)))
+              }
+            />
+            {/* AUTH-06: a lost authenticator, with a saved recovery code. */}
+            <Button
+              kind="secondary"
+              label={t(useRecoveryCode ? 'mobile.auth.use_authenticator' : 'mobile.auth.use_recovery_code')}
+              onPress={() => {
+                setCode('');
+                setUseRecoveryCode(!useRecoveryCode);
+              }}
+              testID="use-recovery-code"
             />
           </>
         ) : st.status === 'choose_workspace' ? (
@@ -95,6 +113,22 @@ export default function SignIn() {
               onPress={() => void run(() => s.signIn(email, password))}
               testID="sign-in-submit"
             />
+            {config.authMode === 'kratos' ? (
+              <>
+                <Button
+                  kind="secondary"
+                  label={t('mobile.auth.forgot')}
+                  onPress={() => router.push('/forgot-password')}
+                  testID="sign-in-forgot"
+                />
+                <Button
+                  kind="secondary"
+                  label={t('mobile.auth.sign_up')}
+                  onPress={() => router.push('/sign-up')}
+                  testID="sign-in-sign-up"
+                />
+              </>
+            ) : null}
           </>
         )}
       </Screen>

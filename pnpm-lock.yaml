@@ -183,6 +183,9 @@ importers:
       '@montra/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
+      '@montra/password':
+        specifier: workspace:*
+        version: link:../../packages/password
       '@montra/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- fake Kratos bodies are untyped JSON */
 import { describe, expect, it } from 'vitest';
 import { ApiError, createApi } from '../src/api/client';
 import { KratosClient, devToken } from '../src/auth/kratos';
@@ -137,9 +138,8 @@ describe('sign-in', () => {
       if (c.url.endsWith('/self-service/login/api')) return { status: 200, body: { id: 'flow1' } };
       if (c.url.includes('/self-service/login?flow=flow1'))
         return { status: 200, body: { session_token: 'tok' } };
-      if (c.url.endsWith('/sessions/whoami'))
-        return { status: 403, body: { error: { id: 'session_aal2_required' } } };
-      if (c.url.endsWith('/self-service/login/api?aal=aal2')) return { status: 200, body: { id: 'flow2' } };
+      if (c.url.endsWith('/self-service/login/api?aal=aal2'))
+        return { status: 200, body: { id: 'flow2', ui: { nodes: [{ attributes: { name: 'totp_code' } }] } } };
       if (c.url.includes('flow=flow2')) return { status: 200, body: { session_token: 'tok2' } };
       return { status: 404 };
     });
@@ -168,6 +168,216 @@ describe('sign-in', () => {
       kind: 'error',
       message: 'The provided credentials are invalid.',
     });
+  });
+});
+
+describe('account flows on the phone (AUTH-01..06, ADR-0046)', () => {
+  /** Answers by URL path and query, with the JSON body each request sent. */
+  const kratos = (
+    routes: Record<
+      string,
+      (body: any, headers: Record<string, string>) => { status: number; body?: unknown }
+    >,
+  ) => {
+    const { f, calls } = fakeFetch((c) => {
+      const key = `${c.init.method ?? 'GET'} ${c.url.replace('http://k', '')}`;
+      const route = routes[key];
+      if (!route) return { status: 404, body: { error: { message: key } } };
+      return route(
+        c.init.body ? JSON.parse(String(c.init.body)) : undefined,
+        (c.init.headers ?? {}) as Record<string, string>,
+      );
+    });
+    return { k: new KratosClient('http://k', f), calls };
+  };
+  const twoStepNodes = {
+    ui: { nodes: [{ attributes: { name: 'totp_code' } }, { attributes: { name: 'lookup_secret' } }] },
+  };
+
+  it('asks for the second step only when the account offers one', async () => {
+    const withFactor = kratos({
+      'GET /self-service/login/api': () => ({ status: 200, body: { id: 'l1' } }),
+      'POST /self-service/login?flow=l1': () => ({ status: 200, body: { session_token: 't' } }),
+      'GET /self-service/login/api?aal=aal2': () => ({ status: 200, body: { id: 'l2', ...twoStepNodes } }),
+      'POST /self-service/login?flow=l2': (b) =>
+        b.lookup_secret === 'abcd1234'
+          ? { status: 200, body: { session_token: 't' } }
+          : { status: 400, body: {} },
+    });
+    const step = await withFactor.k.login('a@b.co', 'pw');
+    expect(step).toEqual({ kind: 'needs_totp', token: 't', flowId: 'l2' });
+    expect(await withFactor.k.recoveryCode('t', 'l2', ' abcd1234 ')).toEqual({
+      kind: 'signed_in',
+      token: 't',
+    });
+    const without = kratos({
+      'GET /self-service/login/api': () => ({ status: 200, body: { id: 'l1' } }),
+      'POST /self-service/login?flow=l1': () => ({ status: 200, body: { session_token: 't' } }),
+      'GET /self-service/login/api?aal=aal2': () => ({ status: 200, body: { id: 'l2', ui: { nodes: [] } } }),
+    });
+    expect(await without.k.login('a@b.co', 'pw')).toEqual({ kind: 'signed_in', token: 't' });
+  });
+
+  it('signs up with a name and password, then confirms the email with the code', async () => {
+    const { k, calls } = kratos({
+      'GET /self-service/registration/api': () => ({ status: 200, body: { id: 'r1' } }),
+      'POST /self-service/registration?flow=r1': (b) =>
+        b.password === 'weak'
+          ? {
+              status: 400,
+              body: {
+                ui: {
+                  messages: [{ id: 4000901, type: 'error', text: 'This password is too easy to guess.' }],
+                },
+              },
+            }
+          : {
+              status: 200,
+              body: {
+                session_token: 'new',
+                continue_with: [{ action: 'show_verification_ui', flow: { id: 'v1' } }],
+              },
+            },
+      'POST /self-service/verification?flow=v1': (b) =>
+        b.code === '123456'
+          ? { status: 200, body: { state: 'passed_challenge' } }
+          : { status: 400, body: { ui: { messages: [{ type: 'error', text: 'The code is invalid.' }] } } },
+    });
+    // The gateway's refusal reads like Kratos's own.
+    expect(await k.signUp({ email: 'a@b.co', first: 'A', last: 'B', password: 'weak' })).toEqual({
+      kind: 'error',
+      message: 'This password is too easy to guess.',
+    });
+    expect(
+      await k.signUp({ email: ' a@b.co ', first: ' Ann ', last: 'Bee', password: 'long and strong' }),
+    ).toEqual({
+      kind: 'signed_up',
+      token: 'new',
+      verificationFlowId: 'v1',
+    });
+    expect(JSON.parse(String(calls.at(-1)!.init.body))).toEqual({
+      method: 'password',
+      password: 'long and strong',
+      traits: { email: 'a@b.co', name: { first: 'Ann', last: 'Bee' } },
+    });
+    expect(await k.verifyEmail('v1', '000000')).toEqual({ kind: 'error', message: 'The code is invalid.' });
+    expect(await k.verifyEmail('v1', '123 456')).toEqual({ kind: 'ok' });
+  });
+
+  it('resets a password, asking for the second factor first when the account has one', async () => {
+    const { k } = kratos({
+      'GET /self-service/recovery/api': () => ({ status: 200, body: { id: 'c1' } }),
+      'POST /self-service/recovery?flow=c1': (b) =>
+        b.email
+          ? { status: 200, body: { state: 'sent_email' } }
+          : {
+              status: 200,
+              body: {
+                continue_with: [
+                  { action: 'set_ory_session_token', ory_session_token: 'rec' },
+                  { action: 'show_settings_ui', flow: { id: 's1' } },
+                ],
+              },
+            },
+      'GET /self-service/login/api?aal=aal2': () => ({ status: 200, body: { id: 'l2', ...twoStepNodes } }),
+      'GET /self-service/settings/api': () => ({ status: 200, body: { id: 's2' } }),
+      'POST /self-service/settings?flow=s2': (b, h) =>
+        h['x-session-token'] === 'rec' && b.password
+          ? { status: 200, body: { state: 'success' } }
+          : { status: 400, body: {} },
+    });
+    expect(await k.startRecovery('a@b.co')).toEqual({ kind: 'sent', flowId: 'c1' });
+    // The settings flow from before the second factor isn't used after it.
+    expect(await k.finishRecovery('c1', '111111')).toEqual({
+      kind: 'recovered',
+      token: 'rec',
+      settingsFlowId: null,
+      secondStepFlowId: 'l2',
+    });
+    expect(await k.setPassword('rec', 'a new one', null)).toEqual({ kind: 'ok' });
+  });
+
+  it('sets up an authenticator and recovery codes, asking for the password when the session is old', async () => {
+    let fresh = false;
+    const settingsNodes = {
+      ui: {
+        nodes: [
+          { attributes: { id: 'totp_secret_key', text: { context: { secret: 'ABCDEF' } } } },
+          { attributes: { id: 'totp_qr', src: 'data:image/png;base64,xx' } },
+        ],
+      },
+    };
+    const { k } = kratos({
+      'GET /self-service/settings/api': () =>
+        fresh
+          ? { status: 200, body: { id: 's1', ...settingsNodes } }
+          : { status: 403, body: { error: { id: 'session_refresh_required' } } },
+      'GET /self-service/login/api?refresh=true': () => ({ status: 200, body: { id: 'l9' } }),
+      'POST /self-service/login?flow=l9': (b) => {
+        fresh = b.password === 'right';
+        return fresh
+          ? { status: 200, body: {} }
+          : { status: 400, body: { ui: { messages: [{ type: 'error', text: 'Wrong password.' }] } } };
+      },
+      'POST /self-service/settings?flow=s1': (b) =>
+        b.method === 'totp'
+          ? { status: 200, body: { state: 'success' } }
+          : b.lookup_secret_regenerate
+            ? {
+                status: 200,
+                body: {
+                  id: 's1',
+                  ui: {
+                    nodes: [
+                      {
+                        attributes: {
+                          id: 'lookup_secret_codes',
+                          text: { context: { secrets: [{ text: 'aaaa1111' }, { text: 'bbbb2222' }] } },
+                        },
+                      },
+                    ],
+                  },
+                },
+              }
+            : { status: 200, body: { state: 'success' } },
+    });
+    expect(await k.startAuthenticator('t')).toEqual({ kind: 'reauth' });
+    expect(await k.reauthenticate('t', 'a@b.co', 'wrong')).toEqual({
+      kind: 'error',
+      message: 'Wrong password.',
+    });
+    expect(await k.reauthenticate('t', 'a@b.co', 'right')).toEqual({ kind: 'ok' });
+    expect(await k.startAuthenticator('t')).toEqual({
+      kind: 'setup',
+      flowId: 's1',
+      secret: 'ABCDEF',
+      qr: 'data:image/png;base64,xx',
+    });
+    expect(await k.confirmAuthenticator('t', 's1', '123 456')).toEqual({ kind: 'ok' });
+    expect(await k.newRecoveryCodes('t')).toEqual({
+      kind: 'codes',
+      flowId: 's1',
+      codes: ['aaaa1111', 'bbbb2222'],
+    });
+    expect(await k.confirmRecoveryCodes('t', 's1')).toEqual({ kind: 'ok' });
+  });
+});
+
+describe('two-step required by the workspace (ADR-0044)', () => {
+  it('tells the app when the server asks for two-step verification', async () => {
+    let asked = 0;
+    const { f } = fakeFetch(() => ({
+      status: 403,
+      body: { code: 'mfa.setup_required', detail: 'Set it up' },
+    }));
+    const api = createApi({
+      baseUrl: 'http://api',
+      token: async () => 't',
+      fetch: f,
+      onTwoStepRequired: () => asked++,
+    });
+    await expect(api.me()).rejects.toBeInstanceOf(ApiError);
+    expect(asked).toBe(1);
   });
 });
 

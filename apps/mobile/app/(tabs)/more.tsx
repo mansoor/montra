@@ -1,6 +1,7 @@
 /** More (08 §3): review, planning, accounts and registers, import, sync activity, settings, grouped by what they're for. */
 import { useRouter, type Href } from 'expo-router';
 import { t } from '../../src/i18n';
+import { config } from '../../src/config';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { Card, Row, Screen, SectionLabel, Small, Title } from '../../src/ui/components';
@@ -94,6 +95,16 @@ export default function More() {
         },
         { title: t('settings.tab.data'), icon: 'data', href: '/your-data', testID: 'more-your-data' },
         { title: t('mobile.more.settings'), icon: 'settings', href: '/settings', testID: 'more-settings' },
+        ...(config.authMode === 'kratos'
+          ? [
+              {
+                title: t('mobile.auth.two_step'),
+                icon: 'locked' as IconName,
+                href: '/two-step' as Href,
+                testID: 'more-two-step',
+              },
+            ]
+          : []),
       ],
     },
   ];
