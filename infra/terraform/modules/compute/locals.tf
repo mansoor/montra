@@ -128,6 +128,48 @@ locals {
     SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE = "KRATOS_WEBHOOK_SECRET"
   }
 
+  # AUTH-12 (ADR-0045): after a password or two-step change, Kratos tells the API, which logs and emails it.
+  # Each list is repeated whole here, as setting one item by index replaces the list from kratos.yml.
+  kratos_settings_hooks = {
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_0_HOOK                         = "revoke_active_sessions"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_HOOK                         = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_URL                   = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_METHOD                = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_BODY                  = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncGFzc3dvcmRfY2hhbmdlZCcsIGlkZW50aXR5X2lkOiBjdHguaWRlbnRpdHkuaWQgfQ=="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_TYPE             = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_NAME      = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_IN        = "header"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_HOOK                             = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_URL                       = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_METHOD                    = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_BODY                      = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_TYPE                 = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_NAME          = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_IN            = "header"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_HOOK                         = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_URL                   = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_METHOD                = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_BODY                  = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_TYPE             = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_NAME      = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_IN        = "header"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_HOOK                    = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_URL              = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_METHOD           = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_BODY             = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_TYPE        = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_NAME = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_IN   = "header"
+  }
+
+  # The hook secret for each of those webhooks.
+  kratos_settings_hook_secrets = {
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE      = "KRATOS_WEBHOOK_SECRET"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE          = "KRATOS_WEBHOOK_SECRET"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE      = "KRATOS_WEBHOOK_SECRET"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE = "KRATOS_WEBHOOK_SECRET"
+  }
+
   # One entry per long-running service. `secrets` maps an environment variable to the secret holding its value.
   services = {
     api = {
@@ -199,8 +241,8 @@ locals {
       cpu          = var.services.kratos.cpu
       memory       = var.services.kratos.memory
       desired      = var.services.kratos.desired
-      environment  = local.kratos_environment
-      secrets      = local.kratos_secret_environment
+      environment  = merge(local.kratos_environment, local.kratos_settings_hooks)
+      secrets      = merge(local.kratos_secret_environment, local.kratos_settings_hook_secrets)
       collector    = false
       stop_timeout = 30
     }
@@ -213,8 +255,8 @@ locals {
       cpu          = var.services.kratos_courier.cpu
       memory       = var.services.kratos_courier.memory
       desired      = 1
-      environment  = local.kratos_environment
-      secrets      = local.kratos_secret_environment
+      environment  = merge(local.kratos_environment, local.kratos_settings_hooks)
+      secrets      = merge(local.kratos_secret_environment, local.kratos_settings_hook_secrets)
       collector    = false
       stop_timeout = 30
     }
