@@ -13,6 +13,7 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 const today = todayIn('UTC');
 const EMAIL = 'payroll-runs@example.test';
 const ACCOUNTANT = 'payroll-runs-accountant@example.test';
+const MEMBER = 'payroll-runs-member@example.test';
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/iZvQWQAAAABJRU5ErkJggg==',
   'base64',
@@ -38,12 +39,18 @@ const auth = (email = EMAIL) => ({ authorization: `Bearer dev:${email}` });
 const paycheckOf = (r: any, person: any) => r.paychecks.find((p: any) => p.personId === person.id);
 const line = (pc: any, code: string) => pc.lines.find((l: any) => l.code === code);
 
-async function uploadReceipt() {
+async function uploadReceipt(email = EMAIL) {
+  const res = await upload(email, 'receipt');
+  expect(res.statusCode).toBe(201);
+  return JSON.parse(res.body).fileId as string;
+}
+
+async function upload(email: string, purpose: 'receipt' | 'identity') {
   const boundary = '----montra-receipt';
-  const res = await h.app.inject({
+  return await h.app.inject({
     method: 'POST',
-    url: url(`/payroll/files?entityId=${biz}&purpose=receipt`),
-    headers: { ...auth(), 'content-type': `multipart/form-data; boundary=${boundary}` },
+    url: url(`/payroll/files?entityId=${biz}&purpose=${purpose}`),
+    headers: { ...auth(email), 'content-type': `multipart/form-data; boundary=${boundary}` },
     payload: Buffer.concat([
       Buffer.from(
         `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="parking.png"\r\nContent-Type: image/png\r\n\r\n`,
@@ -52,8 +59,6 @@ async function uploadReceipt() {
       Buffer.from(`\r\n--${boundary}--\r\n`),
     ]),
   });
-  expect(res.statusCode).toBe(201);
-  return JSON.parse(res.body).fileId as string;
 }
 
 const postings = async (transactionId: string) =>
@@ -498,5 +503,36 @@ describe('a read-only accountant', () => {
     expect(
       (await accountant.post(url(`/payroll/runs/${run.id}/reopen`), { version: run.version })).status,
     ).toBe(403);
+  });
+});
+
+describe('a member of the business (AUTH-17)', () => {
+  it('submits a spending claim with its receipt, but can’t upload identity documents or decide claims', async () => {
+    const member = h.as(MEMBER);
+    const inv = await c.post(url('/sharing/invites'), {
+      email: MEMBER,
+      role: 'member',
+      entityGrants: [{ entityId: biz, access: 'write' }],
+    });
+    expect((await member.post(`/v1/invites/${inv.body.token}/accept`)).status).toBeLessThan(300);
+    const fileId = await uploadReceipt(MEMBER);
+    const res = await member.post(url('/payroll/reimbursements'), {
+      entityId: biz,
+      personId: salaried.id,
+      spentOn: today,
+      description: 'Flour run to the wholesaler',
+      amount: '3150',
+      expenseAccountId: category('Supplies'),
+      fileIds: [fileId],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ status: 'submitted', files: [{ id: fileId }] });
+    const identity = await upload(MEMBER, 'identity');
+    expect(identity.statusCode).toBe(403);
+    const decided = await member.post(url(`/payroll/reimbursements/${res.body.id}/decision`), {
+      decision: 'approve',
+      version: res.body.version,
+    });
+    expect(decided.body.code).toBe('role.member');
   });
 });

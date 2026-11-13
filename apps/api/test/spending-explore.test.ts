@@ -54,7 +54,7 @@ beforeAll(async () => {
     await post(addDays(month(back), 9), '-6000', 'Dining out', 'Bistro');
     await post(addDays(month(back), 12), '-2000', 'Dining out', 'Cafe');
     await post(addDays(month(back), 5), '-30000', 'Groceries', 'Whole Foods');
-    await post(addDays(month(back), 7), '-5000', 'Fuel & transport', 'Shell');
+    await post(addDays(month(back), 7), '-5000', 'Fuel', 'Shell');
   }
   await post(addDays(month(1), 1), '-150000', 'Rent', 'Oak Street Apartments');
   await post(thisMonth, '-3000', 'Dining out', 'Cafe');
@@ -71,7 +71,7 @@ describe('Explore spending (FLOW-01)', () => {
     expect(r.status).toBe(200);
     const d = r.body;
     expect(d.periods).toEqual([2, 1, 0].map((b) => ({ start: month(b), end: endOfMonth(month(b)) })));
-    expect(d.categories.map((x: any) => x.name)).toEqual(['Groceries', 'Dining out', 'Fuel & transport']);
+    expect(d.categories.map((x: any) => x.name)).toEqual(['Groceries', 'Dining out', 'Fuel']);
     expect(d.income).toEqual(['500000', '500000', '0']);
     // Rent is the biggest, but a bill: it's a choice, not a default pick.
     expect(d.spending).toEqual(['47000', '197000', '12900']);
@@ -79,7 +79,7 @@ describe('Explore spending (FLOW-01)', () => {
       ['Rent', '150000'],
       ['Groceries', '60000'],
       ['Dining out', '36900'],
-      ['Fuel & transport', '10000'],
+      ['Fuel', '10000'],
     ]);
   });
 

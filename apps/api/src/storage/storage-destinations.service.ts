@@ -28,6 +28,7 @@ import {
   type HostPolicy,
   type StorageDestination,
 } from './destinations/index.js';
+import { isAdmin } from '../common/roles.js';
 
 type Ctx = { workspaceId: string; userId: string };
 export type DestinationRow = Selectable<StorageDestinationTable>;
@@ -36,7 +37,7 @@ export type DestinationRow = Selectable<StorageDestinationTable>;
 export const SECRET_COLUMN = 'storage_destination.secret';
 
 const ownersOnly = () =>
-  new AppError(403, 'storage.not_allowed', 'Only an owner can manage the workspace’s storage');
+  new AppError(403, 'storage.not_allowed', 'Only an owner or admin can manage the workspace’s storage');
 const conflict = () =>
   new AppError(
     409,
@@ -68,7 +69,7 @@ export class StorageDestinationsService {
   // ----- Reading ---------------------------------------------------------------------------------------------------
 
   async get(ctx: Ctx, role: string): Promise<StorageDestinationDto | null> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     return this.db.run(ctx, async (trx) => {
       const row = await this.row(trx, ctx);
       return row ? this.dto(trx, row) : null;
@@ -149,7 +150,7 @@ export class StorageDestinationsService {
   }
 
   async items(ctx: Ctx, role: string, q: StorageItemsQuery): Promise<StorageItemDto[]> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     return this.db.run(ctx, async (trx) => {
       const rows = await trx
         .selectFrom('app.storage_mirror_item as i')
@@ -195,7 +196,7 @@ export class StorageDestinationsService {
     connection: StorageConnection,
     folder?: string,
   ): Promise<StorageTestResultDto> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     const { row, name } = await this.db.run(ctx, async (trx) => ({
       row: await this.row(trx, ctx),
       name: await this.workspaceName(trx, ctx),
@@ -235,7 +236,7 @@ export class StorageDestinationsService {
   // ----- Changing ----------------------------------------------------------------------------------------------------
 
   async connect(ctx: Ctx, role: string, req: ConnectStorageRequest): Promise<StorageDestinationDto> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     if (!req.connection.secret)
       throw new AppError(400, 'storage.secret_required', 'Enter the password or secret key');
     const name = await this.db.run(ctx, (trx) => this.workspaceName(trx, ctx));
@@ -278,7 +279,7 @@ export class StorageDestinationsService {
   }
 
   async update(ctx: Ctx, role: string, req: UpdateStorageRequest): Promise<StorageDestinationDto> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     const current = await this.db.run(ctx, (trx) => this.row(trx, ctx));
     if (!current) throw new AppError(404, 'not_found', 'No storage is connected');
     if (BigInt(current.version) !== BigInt(req.version)) throw conflict();
@@ -350,7 +351,7 @@ export class StorageDestinationsService {
 
   /** Copies stay where they are. Montra forgets the connection, its secret and what it copied. */
   async disconnect(ctx: Ctx, role: string): Promise<void> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     await this.db.run(ctx, async (trx) => {
       const row = await this.row(trx, ctx);
       if (!row) return;
@@ -375,7 +376,7 @@ export class StorageDestinationsService {
 
   /** Copies the files already in Montra that aren't there yet. */
   async backfill(ctx: Ctx, role: string): Promise<{ queued: number }> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     return this.db.run(ctx, async (trx) => {
       const row = await this.row(trx, ctx);
       if (!row) throw new AppError(404, 'not_found', 'No storage is connected');
@@ -388,7 +389,7 @@ export class StorageDestinationsService {
 
   /** Everything that gave up gets another go now: files, and backups whose download hasn't expired. */
   async retry(ctx: Ctx, role: string): Promise<{ queued: number }> {
-    if (role !== 'owner') throw ownersOnly();
+    if (!isAdmin(role)) throw ownersOnly();
     return this.db.run(ctx, async (trx) => {
       const row = await this.row(trx, ctx);
       if (!row) throw new AppError(404, 'not_found', 'No storage is connected');

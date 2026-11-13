@@ -198,6 +198,8 @@ import type {
   ManualJournalRequest,
   MeDto,
   MemberDto,
+  MemberRole,
+  InviteRole,
   PeriodLockRequest,
   ProblemDto,
   RecurringDto,
@@ -669,9 +671,11 @@ export interface PeriodLockEventDto {
 export interface InviteDto {
   id: string;
   email: string;
-  role: 'partner' | 'viewer' | 'accountant';
+  role: 'admin' | 'partner' | 'member' | 'viewer' | 'accountant';
   expiresAt: string;
   status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  /** The Family list person the invite is for (AUTH-16). */
+  familyMemberId: string | null;
 }
 
 /** The token is returned once, to the owner, until email delivery is wired up. */
@@ -3129,6 +3133,8 @@ export type {
   FamilyMemberDto,
   MeDto,
   MemberDto,
+  MemberRole,
+  InviteRole,
   RecurringDto,
   TransactionDto,
   WorkspaceDto,

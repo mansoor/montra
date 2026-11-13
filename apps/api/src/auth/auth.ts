@@ -11,6 +11,7 @@ import type { MemberRole } from '@montra/db';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { AppError, forbidden } from '../common/errors.js';
+import { isAdmin, memberMayRequest } from '../common/roles.js';
 
 export interface AuthUser {
   id: string;
@@ -200,11 +201,18 @@ export class WorkspaceGuard implements CanActivate {
     );
     // Same response whether the workspace exists or not.
     if (!member) throw forbidden();
-    // AUTH-04: MFA is required for accountants, and for owners unless the deployment turns it off.
-    const needsMfa =
-      member.role === 'accountant' || (member.role === 'owner' && this.config.REQUIRE_OWNER_MFA);
+    // AUTH-04: MFA is required for accountants, and for owners and admins unless the deployment turns it off.
+    const needsMfa = member.role === 'accountant' || (isAdmin(member.role) && this.config.REQUIRE_OWNER_MFA);
     if (needsMfa && ctx.user.aal !== 'aal2') {
       throw new AppError(403, 'mfa.required', 'Sign in with your second factor to open this workspace');
+    }
+    // AUTH-17: members change transactions, receipts and trips only.
+    if (member.role === 'member' && !memberMayRequest(req.method, req.routeOptions?.url)) {
+      throw new AppError(
+        403,
+        'role.member',
+        'Members can add and edit transactions, receipts and trips only',
+      );
     }
     ctx.workspaceId = workspaceId;
     ctx.role = member.role;

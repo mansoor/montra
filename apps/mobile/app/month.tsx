@@ -7,7 +7,7 @@ import { Alert, Pressable, Text, View } from 'react-native';
 import type { MonthSummaryDto } from '@montra/schemas';
 import { useCached } from '../src/features/use-cached';
 import { currentLocale, fmtMoney, t } from '../src/i18n';
-import { useSession } from '../src/session/SessionProvider';
+import { useAbilities, useSession } from '../src/session/SessionProvider';
 import { Body, Button, Card, Row, Screen, Small, useToast } from '../src/ui/components';
 import { haptic } from '../src/ui/haptics';
 import { Icon } from '../src/ui/icons';
@@ -19,6 +19,7 @@ type Line = NonNullable<MonthSummaryDto['suggestions']>['lines'][number];
 export default function MonthReview() {
   const th = useTheme();
   const { state: session, api } = useSession();
+  const canBudget = useAbilities().setUp; // AUTH-18
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   /** Null: last month, the server's default. */
   const [month, setMonth] = useState<string | null>(null);
@@ -216,13 +217,15 @@ export default function MonthReview() {
                   ? t('month.no_budget_now')
                   : t('month.budget_now', { amount: fmtMoney(l.current, ccy) })}
               </Small>
-              <Button
-                kind="secondary"
-                label={t('explore.make_budget')}
-                busy={saving === l.categoryId}
-                disabled={saving !== null || review.stale}
-                onPress={() => makeBudget(l)}
-              />
+              {canBudget ? (
+                <Button
+                  kind="secondary"
+                  label={t('explore.make_budget')}
+                  busy={saving === l.categoryId}
+                  disabled={saving !== null || review.stale}
+                  onPress={() => makeBudget(l)}
+                />
+              ) : null}
             </View>
           ))}
         </Card>

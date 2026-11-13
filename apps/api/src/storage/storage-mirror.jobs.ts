@@ -480,7 +480,7 @@ export class StorageMirrorJobs {
         .selectFrom('app.workspace_member')
         .select('user_id')
         .where('workspace_id', '=', ctx.workspaceId)
-        .where('role', '=', 'owner')
+        .where('role', 'in', ['owner', 'admin'])
         .where('status', '=', 'active')
         .execute(),
     );

@@ -52,6 +52,10 @@
     "done",
     "Miscellaneous in the personal template's Daily living; migration 0040 adds it once to existing personal books (app.add_miscellaneous_category)"
   ],
+  "ACC-13": [
+    "done",
+    "Personal template in chart-templates.ts (Home, Transportation and Taxes groups, insurance split, more income); migration 0042 adds the missing groups and categories once to existing personal books and renames Fuel & transport and Gifts & donations (app.add_personal_categories)"
+  ],
   "TXN-01": [
     "done",
     "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"
@@ -215,6 +219,26 @@
   "AUTH-10": [
     "done",
     "invites by email with roles and entity grants, 7-day expiry, hashed tokens"
+  ],
+  "AUTH-14": [
+    "done",
+    "admin role through app.is_admin() in RLS and requireWorkspaceAdmin in the API (ADR-0041)"
+  ],
+  "AUTH-15": [
+    "done",
+    "RLS keeps the owner row to the owner; hand-over to an active admin with a recent sign-in"
+  ],
+  "AUTH-16": [
+    "done",
+    "workspace_invite.family_member_id, linked on accept; one person per login; Family list shows sign-in status and invites"
+  ],
+  "AUTH-17": [
+    "done",
+    "member role: write allowlist in WorkspaceGuard, narrow RLS, setup pages and settings hidden on web"
+  ],
+  "AUTH-18": [
+    "done",
+    "EntityDto.access (app.entity_access) on the workspace; mobile abilitiesOf/useAbilities (src/features/roles.ts) hides the Add tab, swipe and edit actions, review, capture, setup and backup per role and per book; NotAllowed on screens reached by link or share"
   ],
   "NFR-01": [
     "partial",

@@ -26,11 +26,26 @@ export interface SystemAccountTemplate {
 const expense = (name: string, taxLine?: string): CategoryTemplate => ({ name, type: 'expense', taxLine });
 const income = (name: string, taxLine?: string): CategoryTemplate => ({ name, type: 'income', taxLine });
 
+/**
+ * The personal chart (UP-03, ACC-13). Migration 0042 brings personal books made from an older version of this list up
+ * to it; keep the two in step when it changes.
+ */
 const PERSONAL: GroupTemplate[] = [
   {
     name: 'Income',
     kind: 'income',
-    categories: [income('Salary'), income('Interest income'), income('Other income')],
+    categories: [
+      income('Salary'),
+      income('Bonus'),
+      income('Interest income'),
+      income('Dividends'),
+      income('Side income'),
+      income('Pension & Social Security'),
+      income('Tax refund'),
+      income('Refunds & reimbursements'),
+      income('Gifts received'),
+      income('Other income'),
+    ],
   },
   {
     name: 'Fixed bills',
@@ -38,10 +53,15 @@ const PERSONAL: GroupTemplate[] = [
     categories: [
       expense('Rent'),
       expense('Mortgage interest'),
+      expense('HOA dues'),
       expense('Utilities'),
-      expense('Insurance'),
       expense('Phone & internet'),
       expense('Subscriptions'),
+      expense('Home & renters insurance'),
+      expense('Auto insurance'),
+      expense('Life insurance'),
+      // Any other cover: umbrella, travel, pet.
+      expense('Insurance'),
     ],
   },
   {
@@ -50,16 +70,44 @@ const PERSONAL: GroupTemplate[] = [
     categories: [
       expense('Groceries'),
       expense('Dining out'),
-      expense('Fuel & transport'),
       expense('Household'),
       expense('Healthcare'),
+      expense('Gym & fitness'),
       expense('Personal care'),
       expense('Clothing'),
       expense('Electronics'),
       expense('Education'),
       expense('Childcare'),
+      expense("Kids' activities"),
+      expense('Allowance'),
+      expense('Pets'),
+      expense('Legal & professional fees'),
       // ACC-12: for the small things that fit nowhere else (a bag fee at the till).
       expense('Miscellaneous'),
+    ],
+  },
+  {
+    name: 'Home',
+    kind: 'daily',
+    categories: [
+      expense('Home improvement'),
+      expense('Home maintenance & repairs'),
+      expense('Furniture & furnishings'),
+      expense('House cleaning'),
+      expense('Gardener & landscaping'),
+      expense('Pest control & pool service'),
+      expense('Laundry & dry cleaning'),
+    ],
+  },
+  {
+    name: 'Transportation',
+    kind: 'daily',
+    categories: [
+      expense('Fuel'),
+      expense('Public transit & rideshare'),
+      expense('Parking & tolls'),
+      expense('Car maintenance & repairs'),
+      expense('Registration & DMV'),
     ],
   },
   {
@@ -68,9 +116,15 @@ const PERSONAL: GroupTemplate[] = [
     categories: [
       expense('Entertainment'),
       expense('Travel'),
-      expense('Gifts & donations'),
+      expense('Gifts'),
+      expense('Charitable donations'),
       expense('Hobbies'),
     ],
+  },
+  {
+    name: 'Taxes',
+    kind: 'fixed',
+    categories: [expense('Property tax'), expense('Income tax payments'), expense('Tax preparation')],
   },
   { name: 'Debt', kind: 'debt', categories: [expense('Interest & finance charges')] },
 ];

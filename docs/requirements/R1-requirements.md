@@ -96,6 +96,7 @@ Priority key: **M** = must for R1, **S** = should for R1, **C** = could / later.
 | ACC-10 | Archive a category instead of deleting it: it leaves the pickers, its rules pause and its history stops suggesting it, while past transactions, budgets and reports keep it. Unarchive brings it back. | S |
 | ACC-11 | On the phone, add a category from the category picker (the search text becomes its name) and use it straight away. Needs a connection. | S |
 | ACC-12 | A "Miscellaneous" spending category in personal books' Daily living group, in new books and added once to existing ones. | S |
+| ACC-13 | Personal books start with a fuller list of categories: home (improvement, maintenance, cleaning, gardener, furniture), transportation (fuel, transit and rideshare, parking, car upkeep, registration), taxes (property tax, income tax payments, preparation), kinds of insurance, kids, pets, fitness, charity apart from gifts, and more kinds of income. Existing personal books get the missing ones once. | S |
 
 ### 3.2 Manual entry and camera capture
 
@@ -581,6 +582,11 @@ The recommendation is a TypeScript monorepo: Next.js on web, React Native (Expo)
 | AUTH-11 | Changing the account email requires confirmation from both old and new addresses. | M |
 | AUTH-12 | Security activity log visible to the user (sign-ins, MFA changes, exports, support access). | S |
 | AUTH-13 | SSO (SAML/OIDC) for accounting firms. | C |
+| AUTH-14 | An admin role that can do everything the owner can, except change or remove the owner. | S |
+| AUTH-15 | The owner can hand the workspace over to an admin. Nobody else can change or remove the owner. | S |
+| AUTH-16 | An invite can name the family member it is for, and accepting it links that person to the login, so each person appears once in the Family list and Sharing. Their own payslips become visible to them. | S |
+| AUTH-17 | A member role, for children or staff, that adds and edits transactions, receipts and trips, and submits staff spending claims, in the books it is given, with no access to settings, rules, imports or sharing. | S |
+| AUTH-18 | The phone app shows each role only what it may do: a viewer, or books shared read-only, show without the add, edit, review or capture actions; a member records transactions, receipts and trips but gets no setup (categories, budgets, goals, payslips, imports, business settings); a whole-workspace backup is offered to owners and admins only. | S |
 
 ### 13.2 Backup, restore and storage
 

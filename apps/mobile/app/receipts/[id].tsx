@@ -10,7 +10,7 @@ import { canSpendFrom, receiptAccountId } from '@montra/domain';
 import type { CategoryDto, ReceiptDto } from '@montra/schemas';
 import { config } from '../../src/config';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import {
   receiptStatusKey,
@@ -32,7 +32,11 @@ export default function ReceiptReview() {
   const { state: session, api, token } = useSession();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
-  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(canSpendFrom);
+  const can = useAbilities();
+  // Paid from an account in books this login writes (AUTH-18).
+  const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(
+    (a) => canSpendFrom(a) && can.writes(a.entityId),
+  );
   const history = useLocal((s) => s.listTransactions({ limit: 200 })) ?? [];
   // Which account a new transaction from this receipt is paid from: chosen, else the card the receipt names.
   const [chosenAccount, setChosenAccount] = useState<string | null>(null);
@@ -84,7 +88,8 @@ export default function ReceiptReview() {
 
   if (!receipt)
     return <Screen>{error ? <Banner tone="danger" text={error} /> : <Body muted>…</Body>}</Screen>;
-  const open = receipt.status === 'inbox' || receipt.status === 'needs_review';
+  // A viewer sees the receipt and its lines; matching and changing them is for those who record.
+  const open = can.record && (receipt.status === 'inbox' || receipt.status === 'needs_review');
   const twin = receipt.likelyDuplicates[0];
   const payFromId =
     chosenAccount ??
@@ -137,7 +142,7 @@ export default function ReceiptReview() {
             onPress={() => router.push(`/receipts/${twin.id}`)}
             testID="receipt-duplicate"
           />
-          {receipt.status !== 'matched' ? (
+          {can.record && receipt.status !== 'matched' ? (
             <Button
               kind="danger"
               label={t('mobile.receipts.discard_copy')}
@@ -194,7 +199,7 @@ export default function ReceiptReview() {
             title={l.expandedName ?? l.rawText}
             subtitle={categoryId ? (names.get(categoryId) ?? '') : t('mobile.receipts.uncategorized')}
             right={<Small>{fmtMoney(l.lineTotal, receipt.currency)}</Small>}
-            onPress={() => setPicking(l.id)}
+            onPress={can.record ? () => setPicking(l.id) : undefined}
           />
         );
       })}

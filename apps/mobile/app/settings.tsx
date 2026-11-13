@@ -9,7 +9,7 @@ import { fmtMoney, t } from '../src/i18n';
 import { LOCK_TIMEOUTS } from '../src/lock/policy';
 import { useLockSettings } from '../src/lock/AppLock';
 import { registerForPush, type PushStatus } from '../src/push/register';
-import { useSession } from '../src/session/SessionProvider';
+import { useAbilities, useSession } from '../src/session/SessionProvider';
 import { Body, Button, Card, Row, Screen, Segmented, Small } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 
@@ -18,6 +18,7 @@ export default function Settings() {
   const router = useRouter();
   const lock = useLockSettings();
   const session = useSession();
+  const can = useAbilities();
   const { state, api } = session;
   const [ai, setAi] = useState<string | null>(null);
   const [push, setPush] = useState<PushStatus | null>(null);
@@ -85,7 +86,8 @@ export default function Settings() {
         ) : null}
       </Card>
 
-      {planning ? (
+      {/* Receipt reminders are the workspace's planning settings (AUTH-18). */}
+      {planning && can.setUp ? (
         <Card testID="settings-receipt-reminders">
           <Body>{t('mobile.settings.receipt_reminders')}</Body>
           <Small>{t('mobile.settings.receipt_reminders_hint')}</Small>

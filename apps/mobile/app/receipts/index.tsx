@@ -7,7 +7,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import type { QueuedReceipt } from '@montra/sync';
 import type { ReceiptDto, ReceiptRecommendationDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { queuedStatus, receiptStatusKey } from '../../src/features/receipt-capture';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
@@ -47,6 +47,7 @@ export default function Receipts() {
     }, [load, version]),
   );
 
+  const can = useAbilities();
   const open = (list ?? []).filter((r) => r.status !== 'rejected');
   return (
     <Screen testID="receipts">
@@ -57,11 +58,14 @@ export default function Receipts() {
           }
         />
       ) : null}
-      <Button
-        label={t('mobile.receipts.scan')}
-        onPress={() => router.push('/receipt-capture')}
-        testID="scan"
-      />
+      {/* A viewer looks at receipts; capturing them is for those who record (AUTH-18). */}
+      {can.record ? (
+        <Button
+          label={t('mobile.receipts.scan')}
+          onPress={() => router.push('/receipt-capture')}
+          testID="scan"
+        />
+      ) : null}
       <Button
         kind="secondary"
         label={t('mobile.activity.sync_now')}
@@ -106,7 +110,7 @@ export default function Receipts() {
           </Card>
         );
       })}
-      {worth.length ? (
+      {can.record && worth.length ? (
         <Card testID="receipts-worth">
           <Body style={{ fontWeight: '700' }}>{t('mobile.receipts.waiting_title')}</Body>
           <Small>{t('mobile.receipts.waiting_hint')}</Small>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CurrencyCodeDto } from './common.js';
+import { CurrencyCodeDto, MemberRole } from './common.js';
 
 export const WorkspaceTemplate = z.enum(['household', 'freelancer', 'landlord', 'hybrid']);
 
@@ -21,6 +21,11 @@ export const EntityDto = z.object({
   functionalCurrency: z.string(),
   /** Books are closed through this date (DE-09); null when open. */
   lockedThrough: z.string().nullable(),
+  /**
+   * What the signed-in login may do in these books (AUTH-18): `read` for a viewer or a read-only grant. Books with no
+   * access aren't listed. Clients hide what a read-only book can't take; the server still decides.
+   */
+  access: z.enum(['read', 'write']),
 });
 export type EntityDto = z.infer<typeof EntityDto>;
 
@@ -29,7 +34,7 @@ export const WorkspaceDto = z.object({
   name: z.string(),
   baseCurrency: z.string(),
   timeZone: z.string(),
-  role: z.enum(['owner', 'partner', 'viewer', 'accountant']),
+  role: MemberRole,
   entities: z.array(EntityDto),
 });
 export type WorkspaceDto = z.infer<typeof WorkspaceDto>;

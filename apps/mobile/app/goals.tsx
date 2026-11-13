@@ -10,7 +10,7 @@ import { fmtDate, fmtMoney, t } from '../src/i18n';
 import { goalDraft, goalPatch, linkableAccounts, type GoalDraft } from '../src/features/goals';
 import { percentOf } from '../src/features/planning';
 import { useCached } from '../src/features/use-cached';
-import { useSession } from '../src/session/SessionProvider';
+import { useAbilities, useSession } from '../src/session/SessionProvider';
 import {
   Banner,
   Body,
@@ -44,6 +44,8 @@ export default function Goals() {
   const toast = useToast();
   const { state: session, api } = useSession();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
+  // Goals are kept by those who set the books up; others follow them (AUTH-18).
+  const canEdit = useAbilities().setUp;
   const goals = useCached(ws, 'goals', () => api.goals(ws), Boolean(ws));
   const accounts = useCached(ws, 'goal-accounts', () => api.accountList(ws), Boolean(ws));
   const members = useCached(ws, 'family-members', () => api.familyMembers(ws), Boolean(ws));
@@ -81,16 +83,17 @@ export default function Goals() {
           <Small>{t('goal.empty_hint')}</Small>
         </Card>
       ) : null}
-      {active.length > 0 ? <Small>{t('mobile.goal.tap_to_edit')}</Small> : null}
+      {canEdit && active.length > 0 ? <Small>{t('mobile.goal.tap_to_edit')}</Small> : null}
       {active.map((g) => (
         <Pressable
           key={g.id}
           testID="goal"
+          disabled={!canEdit}
           onPress={() => {
             setNotice(null);
             setEditingId(g.id);
           }}
-          accessibilityRole="button"
+          accessibilityRole={canEdit ? 'button' : undefined}
           accessibilityLabel={t('goal.edit_named', { name: g.name })}
           style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
         >
@@ -164,20 +167,22 @@ export default function Goals() {
                     {g.target ? ` · ${fmtMoney(g.target, g.currency)}` : ''}
                   </Small>
                 </View>
-                <Button
-                  kind="secondary"
-                  label={t('common.restore')}
-                  hint={t('goal.restore_named', { name: g.name })}
-                  busy={restoring === g.id}
-                  disabled={goals.stale}
-                  onPress={() => void restore(g)}
-                />
+                {canEdit ? (
+                  <Button
+                    kind="secondary"
+                    label={t('common.restore')}
+                    hint={t('goal.restore_named', { name: g.name })}
+                    busy={restoring === g.id}
+                    disabled={goals.stale}
+                    onPress={() => void restore(g)}
+                  />
+                ) : null}
               </View>
             ))}
           </View>
         </Disclosure>
       ) : null}
-      {editing ? (
+      {editing && canEdit ? (
         <GoalSheet
           key={`${editing.id}-${editing.version}`}
           goal={editing}

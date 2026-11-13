@@ -15,6 +15,7 @@ import type {
   LoanDto,
 } from '@montra/schemas';
 import type { Api } from '../api/client';
+import { useAbilities } from '../session/SessionProvider';
 import {
   assetFigures,
   isOverdue,
@@ -301,6 +302,9 @@ function LoanCard({
   const th = useTheme();
   const toast = useToast();
   const ccy = loan.currency;
+  const can = useAbilities();
+  // Recording a payment posts to the books: for those who keep them (AUTH-18).
+  const canPay = can.setUp && can.writes(loan.entityId);
   const next = loan.next;
   const paying = loanPayingAccounts(loan, accounts);
   const paidFrom = accounts.find((a) => a.id === loan.payingAccountId);
@@ -377,7 +381,7 @@ function LoanCard({
         ) : null}
       </Card>
 
-      {next ? (
+      {next && canPay ? (
         <Card testID="account-loan-record">
           <Title>{t('account.loan.record')}</Title>
           {error ? <Banner tone="danger" text={error} /> : null}

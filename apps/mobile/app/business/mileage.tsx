@@ -9,8 +9,9 @@ import { calendarDate } from '@montra/domain';
 import type { MileageSummaryDto, PayrollPersonDto } from '@montra/schemas';
 import { normalizeMiles } from '../../src/features/business';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Field, Row, Screen, Segmented, Small } from '../../src/ui/components';
+import { NotAllowed } from '../../src/ui/NotAllowed';
 
 const todayLocal = (): string => {
   const d = new Date();
@@ -21,6 +22,7 @@ const todayLocal = (): string => {
 export default function Mileage() {
   const { entityId } = useLocalSearchParams<{ entityId: string }>();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [summary, setSummary] = useState<MileageSummaryDto | null>(null);
   const [date, setDate] = useState(todayLocal);
@@ -79,6 +81,12 @@ export default function Mileage() {
     }
   };
 
+  if (!can.record || !can.writes(entityId))
+    return (
+      <Screen>
+        <NotAllowed />
+      </Screen>
+    );
   return (
     <Screen testID="mileage">
       {error ? <Banner tone="danger" text={error} /> : null}

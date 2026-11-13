@@ -5,7 +5,8 @@ import { friendlyMessage, toFormErrors } from './errors';
 import { evaluateJournal, toJournalLines, type JournalLine } from './journal';
 import { maxSeq, needsRefresh } from './sync';
 import { buildPatch, isEmptyPatch, parseTags, toEditState } from './transaction-edit';
-import { defaultAccess, grantsFor, inviteLink } from './settings';
+import { defaultAccess, grantsFor, inviteLink, isAdminRole } from './settings';
+import { settingsGroupsFor, settingsTabOf } from './settings-sections';
 
 const posting = (
   accountId: string,
@@ -262,8 +263,16 @@ describe('settings helpers', () => {
         name: 'Personal',
         functionalCurrency: 'USD',
         lockedThrough: null,
+        access: 'write' as const,
       },
-      { id: 'B', type: 'business' as const, name: 'Studio', functionalCurrency: 'USD', lockedThrough: null },
+      {
+        id: 'B',
+        type: 'business' as const,
+        name: 'Studio',
+        functionalCurrency: 'USD',
+        lockedThrough: null,
+        access: 'write' as const,
+      },
     ],
   };
 
@@ -276,5 +285,22 @@ describe('settings helpers', () => {
     expect(defaultAccess('partner', 'business')).toBe('none');
     expect(grantsFor(ws, 'partner', { P: 'write', B: 'read' })).toEqual([{ entityId: 'B', access: 'read' }]);
     expect(grantsFor(ws, 'accountant', { B: 'read' })).toEqual([{ entityId: 'B', access: 'read' }]);
+  });
+
+  it('mirrors the admin and member defaults (AUTH-14, AUTH-17)', () => {
+    expect(defaultAccess('admin', 'business')).toBe('write');
+    expect(defaultAccess('owner', 'rental')).toBe('write');
+    expect(defaultAccess('member', 'personal')).toBe('write');
+    expect(defaultAccess('member', 'business')).toBe('none');
+    expect(isAdminRole('admin')).toBe(true);
+    expect(isAdminRole('partner')).toBe(false);
+  });
+
+  it('shows members only their own settings (AUTH-17)', () => {
+    expect(settingsGroupsFor('member').map((g) => g.key)).toEqual(['you']);
+    expect(settingsGroupsFor('partner').map((g) => g.key)).toEqual(['you', 'workspace', 'ai', 'data']);
+    expect(settingsTabOf('sharing', 'member')).toBe('profile');
+    expect(settingsTabOf('notifications', 'member')).toBe('notifications');
+    expect(settingsTabOf('sharing', 'admin')).toBe('sharing');
   });
 });

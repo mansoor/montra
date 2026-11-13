@@ -14,7 +14,9 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import jpeg from 'jpeg-js';
 import type { ReceiptPageType } from '@montra/sync';
 import { t } from '../src/i18n';
+import { useAbilities } from '../src/session/SessionProvider';
 import { useSync } from '../src/sync/SyncProvider';
+import { NotAllowed } from '../src/ui/NotAllowed';
 import { assessFrame } from '../src/features/camera-metrics';
 import { base64ToBytes } from '../src/features/base64';
 import { frameVerdict, type FrameVerdict } from '../src/features/receipt-capture';
@@ -42,6 +44,7 @@ export default function ReceiptCapture() {
   const { transactionId } = useLocalSearchParams<{ transactionId?: string }>();
   const { receipts, state, touch } = useSync();
   const camera = useRef<CameraView>(null);
+  const can = useAbilities();
   const [permission, requestPermission] = useCameraPermissions();
   const [pages, setPages] = useState<Shot[]>([]);
   const [doubtful, setDoubtful] = useState<Shot | null>(null);
@@ -109,6 +112,12 @@ export default function ReceiptCapture() {
     await finish(shots);
   };
 
+  if (!can.record)
+    return (
+      <Screen testID="receipt-capture">
+        <NotAllowed />
+      </Screen>
+    );
   if (!permission?.granted)
     return (
       <Screen testID="receipt-capture">

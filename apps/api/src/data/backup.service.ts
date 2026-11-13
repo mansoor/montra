@@ -41,6 +41,7 @@ import {
   withParents,
   type TableInfo,
 } from './catalog.js';
+import { isAdmin } from '../common/roles.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -157,18 +158,22 @@ export class BackupService {
 
   async createBackup(ctx: Ctx, role: string, req: CreateBackupRequest): Promise<ExportJobDto> {
     // An owner's archive is the workspace. Others may take books they can read; RLS decides which rows that is.
-    if (role !== 'owner' && role !== 'partner') {
-      throw new AppError(403, 'export.not_allowed', 'Only owners and partners can take a backup');
+    if (!isAdmin(role) && role !== 'partner') {
+      throw new AppError(403, 'export.not_allowed', 'Only owners, admins and partners can take a backup');
     }
-    if (role !== 'owner' && !req.entityId) {
-      throw new AppError(403, 'export.not_allowed', 'Only an owner can take a backup of the whole workspace');
+    if (!isAdmin(role) && !req.entityId) {
+      throw new AppError(
+        403,
+        'export.not_allowed',
+        'Only an owner or admin can take a backup of the whole workspace',
+      );
     }
     // Derived here, so what's queued can't reveal the password.
-    if (req.saveToStorage && role !== 'owner') {
+    if (req.saveToStorage && !isAdmin(role)) {
       throw new AppError(
         403,
         'storage.not_allowed',
-        'Only an owner can save backups to the workspace’s storage',
+        'Only an owner or admin can save backups to the workspace’s storage',
       );
     }
     const kdf: KdfParams | null = req.password ? newKdfParams() : null;
@@ -177,7 +182,7 @@ export class BackupService {
       if (req.entityId) await this.requireEntity(trx, ctx, req.entityId);
       // ADR-0031 §7: a copy goes to the owner's storage too, unless they said not to.
       const destination =
-        role === 'owner' && req.saveToStorage !== false ? await this.destinationIn(trx, ctx) : undefined;
+        isAdmin(role) && req.saveToStorage !== false ? await this.destinationIn(trx, ctx) : undefined;
       if (req.saveToStorage && !destination) {
         throw new AppError(409, 'storage.not_connected', 'Connect your own storage first');
       }
@@ -381,7 +386,8 @@ export class BackupService {
   }
 
   async saveSchedule(ctx: Ctx, role: string, req: SaveBackupScheduleRequest): Promise<BackupScheduleDto> {
-    if (role !== 'owner') throw new AppError(403, 'export.not_allowed', 'Only an owner can schedule backups');
+    if (!isAdmin(role))
+      throw new AppError(403, 'export.not_allowed', 'Only an owner or admin can schedule backups');
     // ADR-0031 §7: the key derived here is kept, wrapped by the KMS port. The password isn't.
     let key: { wrapped_key: Buffer | null; kdf: string | null } | undefined;
     if (req.password === null) key = { wrapped_key: null, kdf: null };
@@ -655,7 +661,7 @@ export class BackupService {
         const catalog = await readCatalog(trx);
         const tables = exportedTables(catalog);
         const { order } = insertOrder(catalog, tables);
-        const partial = member?.role !== 'owner';
+        const partial = !isAdmin(member?.role);
         // Rows are checked against their parents only when something was left out, since that's the only way one can be missing.
         const filtering = partial || Boolean(entityId);
         const needed = new Set(

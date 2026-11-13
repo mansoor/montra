@@ -36,7 +36,7 @@ import { requireRole } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { ReceiptsService } from './receipts.service.js';
 
-const WRITERS = ['owner', 'partner', 'accountant'] as const;
+const WRITERS = ['owner', 'admin', 'partner', 'accountant', 'member'] as const;
 
 /** Receipts API (RCP-01..12, IMP-11; 05 §receipts). */
 @Controller('v1/workspaces/:workspaceId/receipts')

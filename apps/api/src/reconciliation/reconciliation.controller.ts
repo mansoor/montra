@@ -32,7 +32,7 @@ type Ctx = { workspaceId: string; userId: string };
 export const ADJUSTMENT_PAYEE = 'Reconciliation adjustment';
 
 /** Who may undo a reconciliation (DE-13): the owner, and an accountant (who may also close periods). */
-const UNDO_ROLES = ['owner', 'accountant'] as const;
+const UNDO_ROLES = ['owner', 'admin', 'accountant'] as const;
 
 /**
  * Statement reconciliation (DE-08, DE-11..14; ADR-0039): tick cleared lines until the cleared balance equals the

@@ -6,12 +6,14 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { EmployerDto, PayslipDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 
 export default function Payslips() {
   const router = useRouter();
   const { state: session, api } = useSession();
+  // Recording payslips sets up pay: not for members or viewers (AUTH-18).
+  const canAdd = useAbilities().setUp;
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [employers, setEmployers] = useState<EmployerDto[] | null>(null);
   const [list, setList] = useState<PayslipDto[]>([]);
@@ -39,11 +41,13 @@ export default function Payslips() {
       {(employers ?? []).map((e) => (
         <Card key={e.id} testID="payslip-employer">
           <Body>{e.name}</Body>
-          <Button
-            label={t('mobile.payslips.add')}
-            onPress={() => router.push({ pathname: '/payslips/capture', params: { employerId: e.id } })}
-            testID="payslip-add"
-          />
+          {canAdd ? (
+            <Button
+              label={t('mobile.payslips.add')}
+              onPress={() => router.push({ pathname: '/payslips/capture', params: { employerId: e.id } })}
+              testID="payslip-add"
+            />
+          ) : null}
         </Card>
       ))}
       {list.length ? <Title>{t('mobile.payslips.title')}</Title> : null}
