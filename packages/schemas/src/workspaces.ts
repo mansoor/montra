@@ -29,6 +29,19 @@ export const EntityDto = z.object({
 });
 export type EntityDto = z.infer<typeof EntityDto>;
 
+/**
+ * A workspace's security rules (AUTH-04, AUTH-07, ADR-0044). `standard` requires two-step verification of owners,
+ * admins, partners, accountants and anyone who can see business books; `everyone` of every login.
+ */
+export const MfaPolicy = z.enum(['standard', 'everyone']);
+export type MfaPolicy = z.infer<typeof MfaPolicy>;
+
+export const WorkspaceSecurityDto = z.object({
+  mfaPolicy: MfaPolicy,
+  idleTimeoutMinutes: z.number().int().min(5).max(30),
+});
+export type WorkspaceSecurityDto = z.infer<typeof WorkspaceSecurityDto>;
+
 export const WorkspaceDto = z.object({
   id: z.string(),
   name: z.string(),
@@ -36,5 +49,6 @@ export const WorkspaceDto = z.object({
   timeZone: z.string(),
   role: MemberRole,
   entities: z.array(EntityDto),
+  security: WorkspaceSecurityDto,
 });
 export type WorkspaceDto = z.infer<typeof WorkspaceDto>;

@@ -33,6 +33,9 @@ describe('session modes (ADR-0006)', () => {
     expect(stepUpHref('reauth.required', 'http://localhost:3000/w/1')).toBe(
       `/sign-in?refresh=true&return_to=${encodeURIComponent('http://localhost:3000/w/1')}`,
     );
+    expect(stepUpHref('mfa.setup_required', '/w/1')).toBe(
+      `/settings/security?setup=mfa&return_to=${encodeURIComponent('http://localhost:3000/w/1')}`,
+    );
     expect(stepUpHref('email.unverified', '/')).toBe('/auth/verification');
     expect(stepUpHref('forbidden', '/')).toBeNull();
   });

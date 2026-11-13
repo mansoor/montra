@@ -29,6 +29,7 @@ const CODE_KEYS: Record<string, string> = {
   'invite.email_mismatch': 'errors.invite_email_mismatch',
   forbidden: 'errors.forbidden',
   'mfa.required': 'errors.mfa_required',
+  'mfa.setup_required': 'errors.mfa_setup_required',
   'reauth.required': 'errors.reauth_required',
   'email.unverified': 'errors.email_unverified',
   'import.not_ready': 'errors.import_not_ready',
@@ -51,6 +52,7 @@ const CODE_KEYS: Record<string, string> = {
 
 const ACTION_KEYS: Record<string, string> = {
   'mfa.required': 'errors.action_step_up',
+  'mfa.setup_required': 'errors.action_set_up_mfa',
   'reauth.required': 'errors.action_reauth',
   'email.unverified': 'errors.action_verify',
 };

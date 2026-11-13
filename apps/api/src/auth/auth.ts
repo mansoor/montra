@@ -11,7 +11,7 @@ import type { MemberRole } from '@montra/db';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { AppError, forbidden } from '../common/errors.js';
-import { isAdmin, memberMayRequest } from '../common/roles.js';
+import { memberMayRequest } from '../common/roles.js';
 
 export interface AuthUser {
   id: string;
@@ -46,6 +46,32 @@ export interface AuthPort {
   changeEmail(identityId: string, newEmail: string): Promise<void>;
   /** Removes TOTP, passkey/WebAuthn and recovery-code credentials and signs out everywhere (AUTH-06). */
   removeSecondFactors(identityId: string): Promise<void>;
+  /**
+   * Whether the identity has a second factor set up: an authenticator app, a security key or recovery codes
+   * (ADR-0044). Null when the sign-in service can't say.
+   */
+  hasSecondFactor(identityId: string): Promise<boolean | null>;
+}
+
+/** The roles that must use two-step verification under a workspace's `standard` policy (ADR-0044). */
+const MFA_ROLES: readonly MemberRole[] = ['owner', 'admin', 'partner', 'accountant'];
+
+/**
+ * Whether this login must have signed in with a second factor to open the workspace (AUTH-04, ADR-0044).
+ * Accountants always must. `everyone` means every login. Otherwise owners, admins and partners must, and so does
+ * anyone who can see business books, where payroll lives, unless the deployment turns the default off
+ * (`REQUIRE_OWNER_MFA=false`, for development).
+ */
+export function mfaRequired(args: {
+  role: MemberRole;
+  policy: 'standard' | 'everyone';
+  defaultsOn: boolean;
+  seesBusinessBooks: () => Promise<boolean>;
+}): Promise<boolean> | boolean {
+  if (args.role === 'accountant' || args.policy === 'everyone') return true;
+  if (!args.defaultsOn) return false;
+  if (MFA_ROLES.includes(args.role)) return true;
+  return args.seesBusinessBooks();
 }
 export const AUTH_PORT = Symbol('AUTH_PORT');
 
@@ -113,6 +139,10 @@ export class DevAuthAdapter implements AuthPort {
   async changeEmail(): Promise<void> {}
 
   async removeSecondFactors(): Promise<void> {}
+
+  async hasSecondFactor(): Promise<boolean> {
+    return true;
+  }
 }
 
 export interface RequestContext {
@@ -172,6 +202,7 @@ export class WorkspaceGuard implements CanActivate {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(AUTH_PORT) private readonly auth: AuthPort,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -184,6 +215,13 @@ export class WorkspaceGuard implements CanActivate {
       trx
         .selectFrom('app.workspace_member')
         .select('role')
+        .select((eb) =>
+          eb
+            .selectFrom('app.workspace as w')
+            .select('w.mfa_policy')
+            .whereRef('w.id', '=', 'app.workspace_member.workspace_id')
+            .as('mfa_policy'),
+        )
         .where('workspace_id', '=', workspaceId)
         .where('user_id', '=', ctx.user.id)
         .where('status', '=', 'active')
@@ -201,9 +239,24 @@ export class WorkspaceGuard implements CanActivate {
     );
     // Same response whether the workspace exists or not.
     if (!member) throw forbidden();
-    // AUTH-04: MFA is required for accountants, and for owners and admins unless the deployment turns it off.
-    const needsMfa = member.role === 'accountant' || (isAdmin(member.role) && this.config.REQUIRE_OWNER_MFA);
-    if (needsMfa && ctx.user.aal !== 'aal2') {
+    // AUTH-04, ADR-0044: who must have signed in with a second factor. Only asked of a session without one.
+    if (
+      ctx.user.aal !== 'aal2' &&
+      (await mfaRequired({
+        role: member.role,
+        policy: member.mfa_policy ?? 'standard',
+        defaultsOn: this.config.REQUIRE_OWNER_MFA,
+        seesBusinessBooks: () => this.seesBusinessBooks(workspaceId, ctx.user.id),
+      }))
+    ) {
+      // Someone with no second factor yet is sent to set one up, not to a sign-in step they can't complete.
+      if ((await this.auth.hasSecondFactor(ctx.user.identityId).catch(() => null)) === false) {
+        throw new AppError(
+          403,
+          'mfa.setup_required',
+          'This workspace needs two-step verification. Set it up to open the workspace',
+        );
+      }
       throw new AppError(403, 'mfa.required', 'Sign in with your second factor to open this workspace');
     }
     // AUTH-17: members change transactions, receipts and trips only.
@@ -217,6 +270,19 @@ export class WorkspaceGuard implements CanActivate {
     ctx.workspaceId = workspaceId;
     ctx.role = member.role;
     return true;
+  }
+
+  /** Whether any business books are open to this login, read-only included (payroll lives there). */
+  private seesBusinessBooks(workspaceId: string, userId: string): Promise<boolean> {
+    return this.db.run({ workspaceId, userId }, async (trx) => {
+      const { rows } = await sql<{ yes: boolean }>`
+        select exists (
+          select 1 from app.entity e
+           where e.workspace_id = ${workspaceId} and e.type = 'business' and e.archived_at is null
+             and app.entity_access(e.id) <> 'none'
+        ) as yes`.execute(trx);
+      return rows[0]?.yes === true;
+    });
   }
 }
 

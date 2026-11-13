@@ -189,10 +189,7 @@
     "done",
     ""
   ],
-  "AUTH-04": [
-    "done",
-    "AAL2 for owners/accountants; TOTP, passkeys, recovery codes"
-  ],
+  "AUTH-04": ["done", "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes"],
   "AUTH-05": [
     "partial",
     "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change"
@@ -201,10 +198,7 @@
     "done",
     "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11)"
   ],
-  "AUTH-07": [
-    "done",
-    "device list, remote sign-out"
-  ],
+  "AUTH-07": ["done", "device list, remote sign-out; web idle sign-out per workspace (5-30 min, warning first) and a 30-minute server limit on browser sessions (ADR-0044)"],
   "AUTH-08": [
     "partial",
     "Auth gateway in front of Kratos (ADR-0042): per-account, per-address, per-session and per-flow counts, delays after 5 failures, a 15-minute pause after 10, owner alert email and security event; new-device alerts. No CAPTCHA yet; the Cloudflare challenge is in Terraform, never applied"

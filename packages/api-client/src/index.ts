@@ -214,6 +214,7 @@ import type {
   UpdateRecurringRequest,
   UpdateTransactionRequest,
   WorkspaceDto,
+  WorkspaceSecurityDto,
   ApplyReceiptRequest,
   CreateReceiptRequest,
   FxRateDto,
@@ -890,6 +891,10 @@ export class ApiClient {
   }
   getWorkspace(workspaceId: string) {
     return this.request<WorkspaceDto>('GET', this.ws(workspaceId));
+  }
+  /** ADR-0044: who must use two-step verification, and the web's idle sign-out. Owners and admins. */
+  setWorkspaceSecurity(workspaceId: string, input: WorkspaceSecurityDto) {
+    return this.request<WorkspaceSecurityDto>('PUT', this.ws(workspaceId, '/security'), input);
   }
   listEntities(workspaceId: string) {
     return this.request<{ data: EntityDetailDto[] }>('GET', this.ws(workspaceId, '/entities')).then(
@@ -3149,6 +3154,7 @@ export type {
   RecurringDto,
   TransactionDto,
   WorkspaceDto,
+  WorkspaceSecurityDto,
   FxRateDto,
   OrderImportResultDto,
   ReceiptDto,

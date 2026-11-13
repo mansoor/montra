@@ -36,6 +36,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'help.status_': ['open', 'closed'],
   'admin.tab.': ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'security', 'reference'],
   'auth.password_strength_': ['0', '1', '2', '3', '4'],
+  'sharing.mfa_': ['standard', 'everyone'],
   'account.kind.': [
     'checking',
     'savings',
