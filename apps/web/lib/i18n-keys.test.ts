@@ -34,7 +34,9 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'ai.problem.': ['no_key', 'no_endpoint', 'not_configured'],
   'receipts.stalled.': ['documents_waiting', 'documents_failed', 'jobs_waiting', 'jobs_failed'],
   'help.status_': ['open', 'closed'],
-  'admin.tab.': ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'reference'],
+  'admin.tab.': ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'security', 'reference'],
+  'auth.password_strength_': ['0', '1', '2', '3', '4'],
+  'sharing.mfa_': ['standard', 'everyone'],
   'account.kind.': [
     'checking',
     'savings',
@@ -326,6 +328,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'storage_connected',
     'storage_changed',
     'storage_disconnected',
+    'sign_in_locked',
   ],
   'data.kind_': ['backup', 'tax_package'],
   'storage.kind_': ['s3', 'webdav'],

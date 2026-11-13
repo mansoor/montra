@@ -1,5 +1,14 @@
 import type { Message, RenderItem, RenderModel } from '@/lib/kratos-ui';
+import type { PasswordPolicy } from '@montra/password';
+import { PasswordField, type PasswordFieldLabels } from './password-field';
 import { TriggerButton } from './trigger-button';
+
+/** For forms that set a new password (sign-up, settings): the policy and the meter's wording (ADR-0043). */
+export interface NewPassword {
+  policy: PasswordPolicy;
+  words: string[];
+  labels: PasswordFieldLabels;
+}
 
 /** Kratos messages, rendered as text with a tone. */
 export function FlowMessages({ messages }: { messages: Message[] }) {
@@ -19,13 +28,33 @@ export function FlowMessages({ messages }: { messages: Message[] }) {
   );
 }
 
-function Item({ item, index }: { item: RenderItem; index: number }) {
+function Item({ item, index, newPassword }: { item: RenderItem; index: number; newPassword?: NewPassword }) {
   switch (item.kind) {
     case 'hidden':
       return <input type="hidden" name={item.name} value={item.value} />;
     case 'input': {
       const id = `k-${index}-${item.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
       const errorId = item.messages.length ? `${id}-msg` : undefined;
+      if (newPassword && item.type === 'password' && item.name === 'password') {
+        return (
+          <div>
+            <PasswordField
+              id={id}
+              name={item.name}
+              label={item.label}
+              autoComplete={item.autoComplete}
+              required={item.required}
+              describedBy={errorId}
+              {...newPassword}
+            />
+            {errorId && (
+              <div id={errorId} className="mt-1">
+                <FlowMessages messages={item.messages} />
+              </div>
+            )}
+          </div>
+        );
+      }
       return (
         <div>
           <label htmlFor={id} className="field-label">
@@ -139,7 +168,15 @@ function Item({ item, index }: { item: RenderItem; index: number }) {
  * Renders a Kratos flow (or one group of a settings flow) as a native form that POSTs straight to Kratos.
  * Everything from Kratos is rendered as text; see lib/kratos-ui for the validation rules.
  */
-export function FlowForm({ model, label }: { model: RenderModel; label: string }) {
+export function FlowForm({
+  model,
+  label,
+  newPassword,
+}: {
+  model: RenderModel;
+  label: string;
+  newPassword?: NewPassword;
+}) {
   if (!model.action) {
     // A finished flow has nothing to submit: its action is the next page, with method GET, offered as a link too.
     const links = model.items.filter((item) => item.kind === 'link');
@@ -161,7 +198,12 @@ export function FlowForm({ model, label }: { model: RenderModel; label: string }
     <form action={model.action} method={model.method} className="space-y-4" aria-label={label}>
       <FlowMessages messages={model.messages} />
       {model.items.map((item, i) => (
-        <Item key={`${item.kind}-${'name' in item ? item.name : ''}-${i}`} item={item} index={i} />
+        <Item
+          key={`${item.kind}-${'name' in item ? item.name : ''}-${i}`}
+          item={item}
+          index={i}
+          newPassword={newPassword}
+        />
       ))}
     </form>
   );

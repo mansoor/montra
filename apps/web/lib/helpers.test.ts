@@ -68,6 +68,7 @@ describe('view models', () => {
     baseCurrency: 'USD',
     timeZone: 'UTC',
     role: 'owner',
+    security: { mfaPolicy: 'standard' as const, idleTimeoutMinutes: 30 },
     entities: [
       {
         id: 'P',

@@ -182,35 +182,26 @@
   ],
   "AUTH-01": [
     "partial",
-    "Kratos password, passkey and OIDC, with web sign-in and sign-up. Passkey sign-up and sign-in tested in Chromium with a virtual authenticator against local Kratos; no live Kratos, real device or real OIDC provider yet"
+    "Kratos password, passkey and OIDC, with web sign-in and sign-up. Passkey sign-up and sign-in tested in Chromium with a virtual authenticator against local Kratos; no live Kratos, real device or real OIDC provider yet; phone sign-up and email code (ADR-0046)"
   ],
-  "AUTH-02": [
-    "done",
-    "Kratos: 12+ chars, HIBP, Argon2id"
-  ],
+  "AUTH-02": ["done", "Kratos: 12+ chars, HIBP, Argon2id. Admin-set minimum length and zxcvbn strength score enforced by the auth gateway, with a meter on web sign-up and security settings (ADR-0043)"],
   "AUTH-03": [
     "done",
     ""
   ],
-  "AUTH-04": [
-    "done",
-    "AAL2 for owners/accountants; TOTP, passkeys, recovery codes"
-  ],
+  "AUTH-04": ["done", "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes; authenticator and recovery codes on the phone, and the phone leads a required login to set them up (ADR-0046)"],
   "AUTH-05": [
     "partial",
-    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change"
+    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
   ],
   "AUTH-06": [
     "done",
-    "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11)"
+    "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11); recovery code at sign-in on the phone (ADR-0046)"
   ],
-  "AUTH-07": [
-    "done",
-    "device list, remote sign-out"
-  ],
+  "AUTH-07": ["done", "device list, remote sign-out; web idle sign-out per workspace (5-30 min, warning first) and a 30-minute server limit on browser sessions (ADR-0044)"],
   "AUTH-08": [
     "partial",
-    "Kratos rate limits, new-device alerts, and a Cloudflare challenge in Terraform, never applied"
+    "Auth gateway in front of Kratos (ADR-0042): per-account, per-address, per-session and per-flow counts, delays after 5 failures, a 15-minute pause after 10, owner alert email and security event; new-device alerts. No CAPTCHA yet; the Cloudflare challenge is in Terraform, never applied"
   ],
   "AUTH-09": [
     "done",
@@ -988,10 +979,7 @@
     "done",
     "quiet hours hold email and push until they end, in the person's time zone; past the daily cap they wait in the app"
   ],
-  "AUTH-12": [
-    "partial",
-    "sign-ins from new devices, MFA and email changes, exports, restores, deletion and support access. Password changes and session revocations aren’t logged yet"
-  ],
+  "AUTH-12": ["done", "sign-ins from new devices, lockouts, password and two-step changes (emailed too), device sign-outs, email changes, exports, restores, deletion and support access (ADR-0045)"],
   "NFR-05": [
     "done",
     "no ads or data sale stated in Settings → Privacy with what each AI mode sends; export and delete are self-service. Legal text comes with launch"

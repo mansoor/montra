@@ -3,6 +3,7 @@
  * source so it is unit-testable; the sync endpoints themselves go through `FetchTransport` in @montra/sync.
  */
 import type {
+  PasswordPolicyDto,
   BudgetDto,
   CreateReimbursementRequest,
   PayRunDto,
@@ -141,6 +142,11 @@ export interface ApiOptions {
   /** OPS-04: sent with every request, so the server can turn away a version too old to be safe. */
   app?: { version: string; platform: string };
   onUpdateRequired?: () => void;
+  /**
+   * ADR-0044: the workspace needs two-step verification: not set up yet (`mfa.setup_required`), or this session
+   * didn't use it (`mfa.required`).
+   */
+  onTwoStepRequired?: () => void;
 }
 
 /** A file picked from Files, the share sheet or the camera (React Native's FormData file shape). */
@@ -178,6 +184,8 @@ export function createApi(opts: ApiOptions) {
     if (status < 200 || status >= 300) {
       if (status === 426) opts.onUpdateRequired?.();
       const p = (json ?? {}) as { code?: string; title?: string; detail?: string };
+      if (status === 403 && (p.code === 'mfa.setup_required' || p.code === 'mfa.required'))
+        opts.onTwoStepRequired?.();
       throw new ApiError(status, p.code ?? `http_${status}`, p.detail ?? p.title ?? `HTTP ${status}`);
     }
     return json as T;
@@ -225,6 +233,8 @@ export function createApi(opts: ApiOptions) {
   return {
     request,
     me: () => request<MeDto>('GET', '/v1/me'),
+    /** AUTH-02 (ADR-0043): the service's password policy, for the strength meter. Needs no sign-in. */
+    passwordPolicy: () => request<PasswordPolicyDto>('GET', '/v1/password-policy'),
     workspaces: async () => (await request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces')).data,
     aiSettings: (w: string) => request<{ mode: string }>('GET', `${ws(w)}/ai/settings`),
 

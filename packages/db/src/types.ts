@@ -37,6 +37,10 @@ export interface WorkspaceTable {
   ai_settings: Json<Record<string, unknown>>;
   priorities: Json<Record<string, unknown>>;
   inter_entity_mode: Generated<'equity' | 'due_to_from'>;
+  /** AUTH-04 (ADR-0044): who must use two-step verification. */
+  mfa_policy: Generated<'standard' | 'everyone'>;
+  /** AUTH-07 (ADR-0044): the web's idle sign-out, 5–30 minutes. */
+  idle_timeout_minutes: Generated<number>;
   plan: Generated<string>;
   storage_quota_bytes: Int8Default;
   deleted_at: Date | null;
@@ -1279,6 +1283,15 @@ export interface SystemNoticeTable {
   created_at: Generated<Date>;
 }
 
+/** AUTH-08 (ADR-0042): failed attempts per keyed hash, kept by the auth gateway. */
+export interface AuthThrottleTable {
+  key: string;
+  failures: Generated<number>;
+  window_started: Generated<Date>;
+  locked_until: Date | null;
+  updated_at: Generated<Date>;
+}
+
 export interface SystemSettingTable {
   key: string;
   value: string;
@@ -1553,6 +1566,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.feature_flag_override': FeatureFlagOverrideTable;
   'app.system_notice': SystemNoticeTable;
   'app.system_setting': SystemSettingTable;
+  'app.auth_throttle': AuthThrottleTable;
   'app.support_grant': SupportGrantTable;
   'app.support_request': SupportRequestTable;
   'app.admin_log': AdminLogTable;

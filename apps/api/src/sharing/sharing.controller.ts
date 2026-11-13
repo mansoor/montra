@@ -17,18 +17,20 @@ import { newId, type Trx } from '@montra/db';
 import { CreateInviteRequest, SetGrantsRequest, UpdateMemberRequest, type MemberDto } from '@montra/schemas';
 import { z } from 'zod';
 import {
+  AUTH_PORT,
   AuthGuard,
   Ctx,
   dbCtx,
   requireRecentAuth,
   WorkspaceGuard,
+  type AuthPort,
   type RequestContext,
 } from '../auth/auth.js';
 import { Db } from '../db/database.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
+import { isAdmin, requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -41,6 +43,7 @@ export class SharingController {
     @Inject(Db) private readonly db: Db,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(AUTH_PORT) private readonly auth: AuthPort,
   ) {}
 
   @Get('members')
@@ -283,7 +286,7 @@ export class SharingController {
       const members = await trx
         .selectFrom('app.workspace_member as m')
         .innerJoin('app.app_user as u', 'u.id', 'm.user_id')
-        .select(['m.user_id', 'u.email', 'u.display_name', 'm.role', 'm.status'])
+        .select(['m.user_id', 'u.email', 'u.display_name', 'u.identity_id', 'm.role', 'm.status'])
         .where('m.workspace_id', '=', ctx.workspaceId!)
         .orderBy('m.created_at')
         .execute();
@@ -298,6 +301,17 @@ export class SharingController {
         .where('workspace_id', '=', ctx.workspaceId!)
         .where('linked_user_id', 'is not', null)
         .execute();
+      // ADR-0044: owners and admins see who has two-step verification set up.
+      const factors = new Map<string, boolean | null>();
+      if (isAdmin(ctx.role)) {
+        await Promise.all(
+          members
+            .filter((m) => m.status === 'active' && m.identity_id)
+            .map(async (m) =>
+              factors.set(m.user_id, await this.auth.hasSecondFactor(m.identity_id!).catch(() => null)),
+            ),
+        );
+      }
       return members.map((m) => ({
         userId: m.user_id,
         email: m.email,
@@ -308,6 +322,7 @@ export class SharingController {
         grants: grants
           .filter((g) => g.user_id === m.user_id)
           .map((g) => ({ entityId: g.entity_id, access: g.access })),
+        twoFactor: factors.get(m.user_id) ?? null,
       }));
     });
   }

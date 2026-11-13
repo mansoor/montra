@@ -243,6 +243,11 @@ export const MemberDto = z.object({
   /** The Family list person this login is (AUTH-16). */
   familyMemberId: z.string().nullable(),
   grants: z.array(z.object({ entityId: z.string(), access: z.enum(['none', 'read', 'write']) })),
+  /**
+   * Whether the login has two-step verification set up (ADR-0044). Shown to owners and admins only; null for others,
+   * for invites, and when the sign-in service can't say.
+   */
+  twoFactor: z.boolean().nullable(),
 });
 export type MemberDto = z.infer<typeof MemberDto>;
 

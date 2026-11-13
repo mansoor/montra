@@ -2,9 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { groupTemplates, newId, systemAccountTemplates, type Trx } from '@montra/db';
 import { sql } from 'kysely';
 import type { EntityType } from '@montra/domain';
-import type { CreateWorkspaceRequest, WorkspaceDto } from '@montra/schemas';
+import type { CreateWorkspaceRequest, WorkspaceDto, WorkspaceSecurityDto } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import type { AuthUser } from '../auth/auth.js';
+import { forbidden } from '../common/errors.js';
 
 @Injectable()
 export class WorkspacesService {
@@ -133,7 +134,15 @@ export class WorkspacesService {
         .innerJoin('app.workspace_member as m', (j) =>
           j.onRef('m.workspace_id', '=', 'w.id').on('m.user_id', '=', user.id),
         )
-        .select(['w.id', 'w.name', 'w.base_currency', 'w.time_zone', 'm.role'])
+        .select([
+          'w.id',
+          'w.name',
+          'w.base_currency',
+          'w.time_zone',
+          'w.mfa_policy',
+          'w.idle_timeout_minutes',
+          'm.role',
+        ])
         .where('w.id', '=', workspaceId)
         .where('w.deleted_at', 'is', null)
         .executeTakeFirst();
@@ -155,6 +164,7 @@ export class WorkspacesService {
         baseCurrency: ws.base_currency,
         timeZone: ws.time_zone,
         role: ws.role,
+        security: { mfaPolicy: ws.mfa_policy, idleTimeoutMinutes: ws.idle_timeout_minutes },
         entities: entities.map((e) => ({
           id: e.id,
           type: e.type,
@@ -164,6 +174,24 @@ export class WorkspacesService {
           access: e.access === 'write' ? ('write' as const) : ('read' as const),
         })),
       };
+    });
+  }
+
+  /** AUTH-04, AUTH-07 (ADR-0044): owners and admins set who needs two-step verification and the web's idle sign-out. */
+  async setSecurity(
+    user: AuthUser,
+    workspaceId: string,
+    req: WorkspaceSecurityDto,
+  ): Promise<WorkspaceSecurityDto> {
+    return this.db.run({ workspaceId, userId: user.id }, async (trx) => {
+      const row = await trx
+        .updateTable('app.workspace')
+        .set({ mfa_policy: req.mfaPolicy, idle_timeout_minutes: req.idleTimeoutMinutes })
+        .where('id', '=', workspaceId)
+        .returning(['mfa_policy', 'idle_timeout_minutes'])
+        .executeTakeFirst();
+      if (!row) throw forbidden();
+      return { mfaPolicy: row.mfa_policy, idleTimeoutMinutes: row.idle_timeout_minutes };
     });
   }
 }

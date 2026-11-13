@@ -170,6 +170,7 @@ import type {
   AdminWorkspaceDto,
   AiAccuracyRowDto,
   AppVersionsDto,
+  PasswordPolicyDto,
   BillingDto,
   BillingLinkDto,
   ClientErrorRequest,
@@ -213,6 +214,7 @@ import type {
   UpdateRecurringRequest,
   UpdateTransactionRequest,
   WorkspaceDto,
+  WorkspaceSecurityDto,
   ApplyReceiptRequest,
   CreateReceiptRequest,
   FxRateDto,
@@ -890,6 +892,10 @@ export class ApiClient {
   getWorkspace(workspaceId: string) {
     return this.request<WorkspaceDto>('GET', this.ws(workspaceId));
   }
+  /** ADR-0044: who must use two-step verification, and the web's idle sign-out. Owners and admins. */
+  setWorkspaceSecurity(workspaceId: string, input: WorkspaceSecurityDto) {
+    return this.request<WorkspaceSecurityDto>('PUT', this.ws(workspaceId, '/security'), input);
+  }
   listEntities(workspaceId: string) {
     return this.request<{ data: EntityDetailDto[] }>('GET', this.ws(workspaceId, '/entities')).then(
       (r) => r.data,
@@ -959,6 +965,10 @@ export class ApiClient {
   getStatus() {
     return this.request<StatusDto>('GET', '/v1/status');
   }
+  /** AUTH-02: the service's password policy, for strength meters. Needs no sign-in. */
+  passwordPolicy() {
+    return this.request<PasswordPolicyDto>('GET', '/v1/password-policy');
+  }
 
   // ----- The staff console (OPS-01) ----------------------------------------------------------------
   adminMe() {
@@ -1007,6 +1017,12 @@ export class ApiClient {
   }
   adminSaveAppVersions(input: AppVersionsDto) {
     return this.request<void>('PUT', '/v1/admin/app-versions', input);
+  }
+  adminPasswordPolicy() {
+    return this.request<PasswordPolicyDto>('GET', '/v1/admin/password-policy');
+  }
+  adminSavePasswordPolicy(input: PasswordPolicyDto) {
+    return this.request<void>('PUT', '/v1/admin/password-policy', input);
   }
   adminImportFailures(days: number) {
     return this.request<{ data: ImportFailureRowDto[] }>(
@@ -3138,6 +3154,7 @@ export type {
   RecurringDto,
   TransactionDto,
   WorkspaceDto,
+  WorkspaceSecurityDto,
   FxRateDto,
   OrderImportResultDto,
   ReceiptDto,
@@ -3181,6 +3198,7 @@ export type {
   AppVersionsDto,
   BillingDto,
   FeatureFlagDto,
+  PasswordPolicyDto,
   StatusDto,
   SupportGrantDto,
   SystemNoticeDto,

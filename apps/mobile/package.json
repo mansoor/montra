@@ -14,6 +14,7 @@
   "dependencies": {
     "@montra/domain": "workspace:*",
     "@montra/i18n": "workspace:*",
+    "@montra/password": "workspace:*",
     "@montra/schemas": "workspace:*",
     "@montra/sync": "workspace:*",
     "@react-native-community/datetimepicker": "9.2.1",

@@ -29,10 +29,10 @@ describe('contentSecurityPolicy', () => {
     expect(csp).not.toContain('some/path');
   });
 
-  it('falls back to local Kratos when the address is unset or empty, as in a build without one', () => {
+  it('falls back to the local auth gateway when the address is unset or empty, as in a build without one', () => {
     for (const kratosUrl of [undefined, '']) {
       expect(directive(contentSecurityPolicy({ kratosUrl }), 'script-src')).toContain(
-        'http://localhost:4433',
+        'http://localhost:4455',
       );
     }
   });

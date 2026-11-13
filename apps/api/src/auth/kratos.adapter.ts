@@ -25,7 +25,15 @@ interface KratosSession {
 interface Credentials {
   headers: Record<string, string>;
   cacheKey: string;
+  /** A browser's cookie (through the web server) or the phone's token. */
+  kind: 'cookie' | 'token';
 }
+
+/**
+ * A browser session unused for this long is ended on the server (AUTH-07, ADR-0044). The web signs out sooner on its
+ * own, after the workspace's idle timeout; this catches a tab that stopped running. The phone has its app lock.
+ */
+export const WEB_IDLE_LIMIT_MS = 30 * 60_000;
 
 /**
  * Ory Kratos session validation (ADR-0006). Mobile sends `Authorization: Bearer <session token>`; the web
@@ -36,6 +44,11 @@ interface Credentials {
 export class KratosAuthAdapter implements AuthPort {
   private readonly logger = new Logger('KratosAuthAdapter');
   private readonly cache = new Map<string, { user: AuthUser; identityId: string; until: number }>();
+  /**
+   * Identities known to have a second factor, for a minute (ADR-0044). A "no" isn't kept: someone who has just set one
+   * up must get in at once.
+   */
+  private readonly factors = new Map<string, { value: boolean; until: number }>();
   private readonly baseUrl: string;
 
   constructor(
@@ -81,6 +94,12 @@ export class KratosAuthAdapter implements AuthPort {
       authenticatedAt: new Date(session.authenticated_at),
       sessionId: session.id,
     };
+    if (creds.kind === 'cookie' && (await this.idleTooLong(user))) {
+      await this.admin('DELETE', `/admin/sessions/${encodeURIComponent(session.id)}`, undefined, [404]).catch(
+        (err: Error) => this.logger.warn(`Could not end an idle session: ${err.message}`),
+      );
+      return null;
+    }
     await this.recordDevice(req, user);
     if (this.config.SESSION_CACHE_SECONDS > 0) {
       this.cache.set(creds.cacheKey, {
@@ -90,6 +109,20 @@ export class KratosAuthAdapter implements AuthPort {
       });
     }
     return user;
+  }
+
+  /** When this browser session was last used, from the device list; idle past the limit means it's over. */
+  private async idleTooLong(user: AuthUser): Promise<boolean> {
+    if (!user.sessionId) return false;
+    const row = await this.db.run({ userId: user.id }, (trx) =>
+      trx
+        .selectFrom('app.session_device')
+        .select('last_seen_at')
+        .where('user_id', '=', user.id)
+        .where('kratos_session_id', '=', user.sessionId!)
+        .executeTakeFirst(),
+    );
+    return Boolean(row && Date.now() - row.last_seen_at.getTime() > WEB_IDLE_LIMIT_MS);
   }
 
   /**
@@ -212,6 +245,31 @@ export class KratosAuthAdapter implements AuthPort {
     }
     await this.admin('DELETE', `${base}/sessions`, undefined, [404]);
     this.evictIdentity(identityId);
+    this.factors.delete(identityId);
+  }
+
+  /** From the identity's credential types: TOTP, a security key or recovery codes count (ADR-0044). */
+  async hasSecondFactor(identityId: string): Promise<boolean | null> {
+    const hit = this.factors.get(identityId);
+    if (hit && hit.until > Date.now()) return hit.value;
+    const base = this.config.KRATOS_ADMIN_URL?.replace(/\/$/, '');
+    if (!base) return null;
+    try {
+      const res = await fetch(`${base}/admin/identities/${encodeURIComponent(identityId)}`, {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { credentials?: Record<string, unknown> };
+      const value = Object.keys(body.credentials ?? {}).some((t) =>
+        ['totp', 'webauthn', 'lookup_secret'].includes(t),
+      );
+      if (value) this.factors.set(identityId, { value, until: Date.now() + 60_000 });
+      return value;
+    } catch (err) {
+      this.logger.warn(`Could not read the second factors of an identity: ${(err as Error).message}`);
+      return null;
+    }
   }
 
   private async admin(
@@ -271,14 +329,14 @@ export class KratosAuthAdapter implements AuthPort {
     if (auth?.startsWith('Bearer ')) {
       const token = auth.slice(7).trim();
       if (!token || token.startsWith('dev:')) return null;
-      return { headers: { 'x-session-token': token }, cacheKey: hash(`t:${token}`) };
+      return { headers: { 'x-session-token': token }, cacheKey: hash(`t:${token}`), kind: 'token' };
     }
     const cookie = req.headers.cookie;
     const session = cookie
       ?.split(';')
       .map((c) => c.trim())
       .find((c) => c.startsWith('ory_kratos_session='));
-    if (session) return { headers: { cookie: session }, cacheKey: hash(`c:${session}`) };
+    if (session) return { headers: { cookie: session }, cacheKey: hash(`c:${session}`), kind: 'cookie' };
     return null;
   }
 

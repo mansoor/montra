@@ -28,7 +28,7 @@ output "target_group_arn_suffixes" {
   value = merge(
     { for name, group in aws_lb_target_group.blue : "${name}-blue" => group.arn_suffix },
     { for name, group in aws_lb_target_group.green : "${name}-green" => group.arn_suffix },
-    { kratos = aws_lb_target_group.kratos.arn_suffix },
+    { "auth-gateway" = aws_lb_target_group.auth_gateway.arn_suffix },
   )
 }
 

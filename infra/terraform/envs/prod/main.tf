@@ -43,6 +43,7 @@ module "stack" {
     web            = { cpu = 1024, memory = 2048, min = 2, max = 8 }
     doc_worker     = { cpu = 2048, memory = 4096, desired = 2 }
     kratos         = { cpu = 512, memory = 1024, desired = 2 }
+    auth_gateway   = { cpu = 256, memory = 512, desired = 2 }
     kratos_courier = { cpu = 256, memory = 512 }
   }
 }

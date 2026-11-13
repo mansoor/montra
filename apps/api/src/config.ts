@@ -15,6 +15,10 @@ const Env = z.object({
     .transform((v) => v === 'true'),
   /** Ory Kratos admin API (private network only), e.g. http://kratos:4434. Needed for AUTH-06/11. */
   KRATOS_ADMIN_URL: z.string().url().optional(),
+  /** AUTH-08 (ADR-0042): the auth gateway's port, in front of Kratos's public API. */
+  AUTH_GATEWAY_PORT: z.coerce.number().int().default(4455),
+  /** Keys the gateway's attempt counters (HMAC), so the database holds no email or IP address. */
+  AUTH_GATEWAY_SECRET: z.string().min(32).optional(),
   /** Shared secret Kratos sends in `x-montra-hook-secret` when calling /internal/kratos/hooks. */
   KRATOS_WEBHOOK_SECRET: z.string().min(32).optional(),
   /** How long a validated session is cached; revocation clears it immediately (AUTH-05/07). */
@@ -116,7 +120,14 @@ const Env = z.object({
 
 export type AppConfig = z.infer<typeof Env>;
 
-export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
+/**
+ * @param opts.process `auth-gateway` checks only what the gateway uses (ADR-0042): it holds no data key and no staff
+ *   connection, so it isn't given their secrets.
+ */
+export function loadConfig(
+  env: Record<string, string | undefined> = process.env,
+  opts: { process?: 'api' | 'auth-gateway' } = {},
+): AppConfig {
   // ECS needs a value in every secret, so one that isn't in use arrives empty, which means not set.
   const config = Env.parse(Object.fromEntries(Object.entries(env).filter(([, v]) => v !== '')));
   if (config.NODE_ENV === 'production' && config.AUTH_MODE === 'dev') {
@@ -124,6 +135,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   if (config.AUTH_MODE === 'kratos' && !config.KRATOS_PUBLIC_URL) {
     throw new Error('KRATOS_PUBLIC_URL is required when AUTH_MODE=kratos');
+  }
+  if (opts.process === 'auth-gateway') {
+    if (!config.KRATOS_PUBLIC_URL) throw new Error('KRATOS_PUBLIC_URL is required for the auth gateway');
+    if (config.NODE_ENV === 'production' && !config.AUTH_GATEWAY_SECRET)
+      throw new Error('AUTH_GATEWAY_SECRET is required in production');
+    if (config.MAIL_MODE === 'smtp' && !config.MAIL_URL)
+      throw new Error('MAIL_URL is required when MAIL_MODE=smtp');
+    return config;
   }
   if (config.STORAGE_MODE === 's3' && !config.S3_BUCKET)
     throw new Error('S3_BUCKET is required when STORAGE_MODE=s3');

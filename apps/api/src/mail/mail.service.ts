@@ -111,4 +111,37 @@ export const templates = {
     ].join('\n');
     return { to: args.to, subject: 'New sign-in to your Montra account', text, category: 'security' };
   },
+  /** AUTH-12 (ADR-0045): the password changed, so an attacker who changed it is noticed. */
+  passwordChanged(args: { to: string; at: Date; url: string }): MailMessage {
+    const text = [
+      `The password for your Montra account was changed at ${args.at.toISOString()}, and your other devices were signed out.`,
+      '',
+      `If this was you, no action is needed. If not, reset your password now and check your devices: ${args.url}`,
+    ].join('\n');
+    return { to: args.to, subject: 'Your Montra password was changed', text, category: 'security' };
+  },
+  /** AUTH-12 (ADR-0045): an authenticator app, security key or recovery codes were added, changed or removed. */
+  twoStepChanged(args: { to: string; at: Date; url: string }): MailMessage {
+    const text = [
+      `The two-step verification for your Montra account changed at ${args.at.toISOString()}: an authenticator app, security key or set of recovery codes was added, replaced or removed.`,
+      '',
+      `If this was you, no action is needed. If not, reset your password and review your two-step verification now: ${args.url}`,
+    ].join('\n');
+    return {
+      to: args.to,
+      subject: 'Two-step verification changed on your Montra account',
+      text,
+      category: 'security',
+    };
+  },
+  /** AUTH-08: sign-in paused for this email after too many wrong passwords (ADR-0042). */
+  signInLocked(args: { to: string; ip: string | null; until: Date; url: string }): MailMessage {
+    const text = [
+      `Someone entered the wrong password for your Montra account too many times${args.ip ? ` (from ${args.ip})` : ''}, so signing in with a password is paused until ${args.until.toISOString()}.`,
+      '',
+      'If this was you, wait and try again, or reset your password now; the reset works while sign-in is paused.',
+      `If it wasn't you, your password still kept them out. Consider changing it and turning on two-step verification: ${args.url}`,
+    ].join('\n');
+    return { to: args.to, subject: 'Sign-in to your Montra account was paused', text, category: 'security' };
+  },
 };

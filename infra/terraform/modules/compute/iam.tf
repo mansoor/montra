@@ -44,7 +44,7 @@ resource "aws_iam_role_policy" "execution" {
 # ----- Task roles: what the code inside a task may do -----------------------------------------------------------------
 
 resource "aws_iam_role" "task" {
-  for_each = toset(["api", "worker", "doc-worker", "web", "kratos"])
+  for_each = toset(["api", "worker", "doc-worker", "web", "kratos", "auth-gateway"])
 
   name               = "${var.name}-task-${each.key}"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json

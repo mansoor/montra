@@ -136,6 +136,7 @@ variable "services" {
     web            = object({ cpu = number, memory = number, min = number, max = number })
     doc_worker     = object({ cpu = number, memory = number, desired = number })
     kratos         = object({ cpu = number, memory = number, desired = number })
+    auth_gateway   = object({ cpu = number, memory = number, desired = number })
     kratos_courier = object({ cpu = number, memory = number })
   })
 }

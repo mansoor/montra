@@ -215,7 +215,7 @@ resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
   ip_protocol                  = "tcp"
 }
 
-# The API, worker and web reach Kratos' public and admin ports directly over the private network.
+# The auth gateway, API, worker and web reach Kratos' public and admin ports directly over the private network.
 resource "aws_vpc_security_group_ingress_rule" "app_kratos" {
   security_group_id            = aws_security_group.app.id
   description                  = "Kratos public and admin ports, between application tasks"

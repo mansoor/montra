@@ -157,10 +157,11 @@ jobs:
         run: bash infra/deploy/ecs-run-task.sh "$CONFIG" "$(jq -r .kratosMigrate "$CONFIG")" "$KRATOS_IMAGE"
       - name: Migrate the ledger database as the owner role
         run: bash infra/deploy/ecs-run-task.sh "$CONFIG" "$(jq -r .migrate "$CONFIG")" "$API_IMAGE"
-      - name: Roll out Kratos
+      - name: Roll out Kratos and the auth gateway in front of it
         run: |
           bash infra/deploy/ecs-deploy-rolling.sh "$CONFIG" kratos "$KRATOS_IMAGE"
           bash infra/deploy/ecs-deploy-rolling.sh "$CONFIG" kratos-courier "$KRATOS_IMAGE"
+          bash infra/deploy/ecs-deploy-rolling.sh "$CONFIG" auth-gateway "$API_IMAGE"
       - name: Roll out the workers
         run: |
           bash infra/deploy/ecs-deploy-rolling.sh "$CONFIG" worker "$API_IMAGE"

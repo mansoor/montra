@@ -13,4 +13,5 @@ export const sourceAliases = {
   '@montra/ai-gateway': pkg('ai-gateway'),
   '@montra/categorize': pkg('categorize'),
   '@montra/sync': pkg('sync'),
+  '@montra/password': pkg('password'),
 };

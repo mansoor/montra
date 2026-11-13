@@ -17,6 +17,7 @@ locals {
   secret_names = toset([
     "ADMIN_DATABASE_URL",
     "ANTHROPIC_API_KEY",
+    "AUTH_GATEWAY_SECRET",
     "DATABASE_ADMIN_URL",
     "DATABASE_URL",
     "KRATOS_CIPHER_SECRET",
@@ -58,6 +59,19 @@ locals {
     # Cloudflare, then the load balancer: without this, the API sees the load balancer as every client.
     TRUST_PROXY_HOPS = "2"
   }, var.extra_environment)
+
+  # The auth gateway (AUTH-08, ADR-0042) gets only what it uses: the counters' database, the alert email, its HMAC key.
+  auth_gateway_environment = {
+    NODE_ENV          = "production"
+    AUTH_MODE         = "kratos"
+    AUTH_GATEWAY_PORT = "4455"
+    KRATOS_PUBLIC_URL = local.kratos_public_url
+    WEB_URL           = local.web_url
+    MAIL_MODE         = "smtp"
+    MAIL_FROM         = var.mail_from
+    TRUST_PROXY_HOPS  = "2"
+  }
+  auth_gateway_secrets = { for name in ["AUTH_GATEWAY_SECRET", "DATABASE_URL", "MAIL_URL"] : name => name }
 
   api_secrets = [
     "ADMIN_DATABASE_URL",
@@ -114,6 +128,48 @@ locals {
     SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE = "KRATOS_WEBHOOK_SECRET"
   }
 
+  # AUTH-12 (ADR-0045): after a password or two-step change, Kratos tells the API, which logs and emails it.
+  # Each list is repeated whole here, as setting one item by index replaces the list from kratos.yml.
+  kratos_settings_hooks = {
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_0_HOOK                         = "revoke_active_sessions"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_HOOK                         = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_URL                   = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_METHOD                = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_BODY                  = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncGFzc3dvcmRfY2hhbmdlZCcsIGlkZW50aXR5X2lkOiBjdHguaWRlbnRpdHkuaWQgfQ=="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_TYPE             = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_NAME      = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_IN        = "header"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_HOOK                             = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_URL                       = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_METHOD                    = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_BODY                      = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_TYPE                 = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_NAME          = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_IN            = "header"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_HOOK                         = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_URL                   = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_METHOD                = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_BODY                  = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_TYPE             = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_NAME      = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_IN        = "header"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_HOOK                    = "web_hook"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_URL              = "${local.api_url}/internal/kratos/hooks"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_METHOD           = "POST"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_BODY             = "base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0="
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_TYPE        = "api_key"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_NAME = "x-montra-hook-secret"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_IN   = "header"
+  }
+
+  # The hook secret for each of those webhooks.
+  kratos_settings_hook_secrets = {
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE      = "KRATOS_WEBHOOK_SECRET"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE          = "KRATOS_WEBHOOK_SECRET"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE      = "KRATOS_WEBHOOK_SECRET"
+    SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE = "KRATOS_WEBHOOK_SECRET"
+  }
+
   # One entry per long-running service. `secrets` maps an environment variable to the secret holding its value.
   services = {
     api = {
@@ -164,6 +220,20 @@ locals {
       collector    = false
       stop_timeout = 30
     }
+    # The only public way in to Kratos: it counts and pauses guessed passwords and codes (AUTH-08, ADR-0042).
+    auth-gateway = {
+      repository   = "api"
+      command      = ["node", "dist/auth-gateway-main.js"]
+      port         = 4455
+      cpu          = var.services.auth_gateway.cpu
+      memory       = var.services.auth_gateway.memory
+      desired      = var.services.auth_gateway.desired
+      environment  = local.auth_gateway_environment
+      secrets      = local.auth_gateway_secrets
+      collector    = false
+      stop_timeout = 30
+    }
+    # Kratos itself is on the private network only: the gateway, the API and the web server reach it through Cloud Map.
     kratos = {
       repository   = "kratos"
       command      = ["serve", "-c", "/etc/config/kratos/kratos.yml"]
@@ -171,8 +241,8 @@ locals {
       cpu          = var.services.kratos.cpu
       memory       = var.services.kratos.memory
       desired      = var.services.kratos.desired
-      environment  = local.kratos_environment
-      secrets      = local.kratos_secret_environment
+      environment  = merge(local.kratos_environment, local.kratos_settings_hooks)
+      secrets      = merge(local.kratos_secret_environment, local.kratos_settings_hook_secrets)
       collector    = false
       stop_timeout = 30
     }
@@ -185,17 +255,18 @@ locals {
       cpu          = var.services.kratos_courier.cpu
       memory       = var.services.kratos_courier.memory
       desired      = 1
-      environment  = local.kratos_environment
-      secrets      = local.kratos_secret_environment
+      environment  = merge(local.kratos_environment, local.kratos_settings_hooks)
+      secrets      = merge(local.kratos_secret_environment, local.kratos_settings_hook_secrets)
       collector    = false
       stop_timeout = 30
     }
   }
 
   # CodeDeploy blue/green needs a load balancer, so only services that take traffic through the ALB can use it, and
-  # it rules out Cloud Map on those services. Kratos stays rolling because the API reaches it through Cloud Map.
+  # it rules out Cloud Map on those services. Kratos stays rolling because the API reaches it through Cloud Map, and
+  # the auth gateway rolls with it. The gateway's health check passes through to Kratos's.
   blue_green_services = { api = var.hostnames.api, web = var.hostnames.web }
-  health_check_paths  = { api = "/readyz", web = "/", kratos = "/health/ready" }
+  health_check_paths  = { api = "/readyz", web = "/", "auth-gateway" = "/health/ready" }
 
   rolling_services = {
     for name, service in local.services : name => service if !contains(keys(local.blue_green_services), name)

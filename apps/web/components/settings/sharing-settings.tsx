@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { FamilyMemberDto, InviteDto, MemberDto, WorkspaceDto } from '@montra/api-client';
+import type { MfaPolicy } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import {
   defaultAccess,
@@ -50,6 +51,8 @@ export function SharingSettings({
           ))}
         </ul>
       </section>
+
+      {canManage && <SecurityRules workspace={workspace} />}
 
       {canManage && (
         <section className="card space-y-3" aria-labelledby="invite-heading">
@@ -130,6 +133,16 @@ function MemberItem({
           {member.status !== 'active' && ` (${t(`sharing.member_status.${member.status}`)})`}
         </span>
         {person && <span className="chip">{t('sharing.is_person', { name: person })}</span>}
+        {member.twoFactor === true && (
+          <span className="chip" data-testid="member-2fa">
+            {t('sharing.two_factor_on')}
+          </span>
+        )}
+        {member.twoFactor === false && (
+          <span className="chip text-bad" data-testid="member-2fa">
+            {t('sharing.two_factor_off')}
+          </span>
+        )}
         {editable && role && (
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <label htmlFor={`role-${member.userId}`} className="sr-only">
@@ -227,5 +240,63 @@ function MemberItem({
       )}
       <StatusLine message={message} />
     </li>
+  );
+}
+
+const IDLE_CHOICES = [5, 10, 15, 20, 30] as const;
+
+/** Who must use two-step verification here, and the web's idle sign-out (AUTH-04, AUTH-07, ADR-0044). */
+function SecurityRules({ workspace }: { workspace: WorkspaceDto }) {
+  const { busy, message, run, t } = useAction();
+  const [policy, setPolicy] = useState<MfaPolicy>(workspace.security.mfaPolicy);
+  const [idle, setIdle] = useState(workspace.security.idleTimeoutMinutes);
+  return (
+    <section className="card space-y-3" aria-labelledby="security-rules-heading">
+      <h2 id="security-rules-heading" className="text-base font-semibold">
+        {t('sharing.security_title')}
+      </h2>
+      <fieldset className="space-y-2">
+        <legend className="field-label">{t('sharing.mfa_title')}</legend>
+        {(['standard', 'everyone'] as const).map((p) => (
+          <label key={p} className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              name="mfa-policy"
+              value={p}
+              checked={policy === p}
+              onChange={() => setPolicy(p)}
+              className="mt-1"
+            />
+            <span>{t(`sharing.mfa_${p}`)}</span>
+          </label>
+        ))}
+      </fieldset>
+      <label className="block max-w-xs">
+        <span className="field-label">{t('sharing.idle_title')}</span>
+        <select className="input" value={idle} onChange={(e) => setIdle(Number(e.target.value))}>
+          {IDLE_CHOICES.map((m) => (
+            <option key={m} value={m}>
+              {t('sharing.idle_minutes', { minutes: m })}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-xs text-muted">{t('sharing.security_hint')}</p>
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={busy}
+        onClick={() =>
+          run(
+            () =>
+              browserApi.setWorkspaceSecurity(workspace.id, { mfaPolicy: policy, idleTimeoutMinutes: idle }),
+            t('sharing.security_saved'),
+          )
+        }
+      >
+        {t('sharing.security_save')}
+      </button>
+      <StatusLine message={message} />
+    </section>
   );
 }

@@ -5,6 +5,7 @@ import type {
   AdminSupportRequestDto,
   AdminWorkspaceDto,
   AppVersionsDto,
+  PasswordPolicyDto,
   FeatureFlagDto,
   SystemNoticeDto,
 } from '@montra/api-client';
@@ -364,6 +365,72 @@ export function NoticesPanel({
             {t('admin.save')}
           </button>
         )}
+      </form>
+      <StatusLine message={message} />
+    </section>
+  );
+}
+
+/** AUTH-02 (ADR-0043): the password policy the auth gateway enforces for everyone, within a minute of saving. */
+export function PasswordPolicyPanel({
+  policy,
+  canChange,
+}: {
+  policy: PasswordPolicyDto;
+  canChange: boolean;
+}) {
+  const { run, busy, message, t } = useAction();
+  const [minLength, setMinLength] = useState(String(policy.minLength));
+  const [minScore, setMinScore] = useState(policy.minScore);
+  return (
+    <section className="space-y-3" aria-label={t('admin.tab.security')}>
+      <form
+        className="card space-y-3"
+        aria-label={t('admin.password_policy')}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(
+            () => browserApi.adminSavePasswordPolicy({ minLength: Number(minLength), minScore }),
+            t('admin.saved'),
+          );
+        }}
+      >
+        <h2 className="text-base font-semibold">{t('admin.password_policy')}</h2>
+        <p className="text-sm text-muted">{t('admin.password_policy_hint')}</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label>
+            <span className="field-label">{t('admin.password_min_length')}</span>
+            <input
+              className="input w-24"
+              type="number"
+              min={12}
+              max={64}
+              disabled={!canChange}
+              value={minLength}
+              onChange={(e) => setMinLength(e.target.value)}
+            />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.password_min_score')}</span>
+            <select
+              className="input"
+              disabled={!canChange}
+              value={minScore}
+              onChange={(e) => setMinScore(Number(e.target.value))}
+            >
+              {[0, 1, 2, 3, 4].map((n) => (
+                <option key={n} value={n}>
+                  {t(`auth.password_strength_${n}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {canChange && (
+            <button type="submit" className="btn-secondary" disabled={busy}>
+              {t('admin.save')}
+            </button>
+          )}
+        </div>
       </form>
       <StatusLine message={message} />
     </section>

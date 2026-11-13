@@ -47,8 +47,11 @@ export const KRATOS_PUBLIC_URL = (process.env.KRATOS_PUBLIC_URL ?? 'http://local
   /\/+$/,
   '',
 );
-/** Kratos public API as reached from the browser (flow init redirects, form actions, scripts). */
-export const KRATOS_BROWSER_URL = (process.env.NEXT_PUBLIC_KRATOS_URL ?? 'http://localhost:4433').replace(
+/**
+ * Kratos public API as reached from the browser (flow init redirects, form actions, scripts): the auth gateway in
+ * front of it (AUTH-08, ADR-0042).
+ */
+export const KRATOS_BROWSER_URL = (process.env.NEXT_PUBLIC_KRATOS_URL ?? 'http://localhost:4455').replace(
   /\/+$/,
   '',
 );
@@ -59,6 +62,8 @@ export const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:300
 export function stepUpHref(code: string, returnTo: string): string | null {
   const back = encodeURIComponent(returnTo.startsWith('/') ? APP_URL + returnTo : returnTo);
   if (code === 'mfa.required') return `/sign-in?aal=aal2&return_to=${back}`;
+  // ADR-0044: required but not set up yet, so set it up, then come back.
+  if (code === 'mfa.setup_required') return `/settings/security?setup=mfa&return_to=${back}`;
   if (code === 'reauth.required') return `/sign-in?refresh=true&return_to=${back}`;
   if (code === 'email.unverified') return '/auth/verification';
   if (code === 'account.deleting') return '/account-deleting';

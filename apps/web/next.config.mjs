@@ -30,7 +30,13 @@ const nextConfig = {
     ];
   },
   // Workspace packages ship ESM in dist/ (built first by Turbo's ^build).
-  transpilePackages: ['@montra/api-client', '@montra/domain', '@montra/i18n', '@montra/schemas'],
+  transpilePackages: [
+    '@montra/api-client',
+    '@montra/domain',
+    '@montra/i18n',
+    '@montra/password',
+    '@montra/schemas',
+  ],
 };
 
 export default nextConfig;
