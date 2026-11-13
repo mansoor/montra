@@ -23,6 +23,8 @@ let h: Harness;
 const sessions = new Map<string, FakeSession>();
 let whoamiCalls = 0;
 const adminCalls: string[] = [];
+/** The credential types each identity has (ADR-0044); a password only unless set. */
+const factors = new Map<string, string[]>();
 const HOOK_SECRET = 'test-hook-secret-0123456789abcdef0123';
 
 const sessionJson = (s: FakeSession, id = `sess-${s.token}`) => ({
@@ -61,6 +63,14 @@ beforeAll(async () => {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(body === undefined ? '' : JSON.stringify(body));
     };
+    const endSession = /^\/admin\/sessions\/(.+)$/.exec(req.url ?? '');
+    if (endSession && req.method === 'DELETE') {
+      const id = decodeURIComponent(endSession[1]!);
+      adminCalls.push(`DELETE session ${id}`);
+      const target = [...sessions.values()].find((o) => `sess-${o.token}` === id);
+      if (target) target.active = false;
+      return send(204);
+    }
     const admin = /^\/admin\/identities\/([^/]+)(\/.*)?$/.exec(req.url ?? '');
     if (admin) {
       const identityId = decodeURIComponent(admin[1]!);
@@ -81,6 +91,13 @@ beforeAll(async () => {
           return send(204);
         }
         if (req.method === 'DELETE' && rest.startsWith('/credentials/')) return send(204);
+        if (req.method === 'GET' && !rest) {
+          const types = factors.get(identityId) ?? ['password'];
+          return send(200, {
+            id: identityId,
+            credentials: Object.fromEntries(types.map((t) => [t, { type: t }])),
+          });
+        }
         send(404, {});
       });
       return;
@@ -182,6 +199,7 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
   });
 
   it('requires a second factor for owners (AUTH-04)', async () => {
+    factors.set('id-owner', ['password', 'totp']);
     add('owner-mfa', { identityId: 'id-owner', email: 'owner-mfa@example.com' });
     add('owner-aal1', { identityId: 'id-owner', email: 'owner-mfa@example.com', aal: 'aal1' });
     const ws = await call('POST', '/v1/workspaces', 'owner-mfa', { name: 'Home', baseCurrency: 'USD' });
@@ -343,5 +361,108 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
       status: 'cancelled',
     });
     expect((await call('GET', '/v1/me/mfa-reset', 'cancel-me')).body).toEqual({ status: 'none' });
+  });
+});
+
+describe('a workspace’s security rules (AUTH-04, AUTH-07, ADR-0044)', () => {
+  let ws: string;
+  const url = (p: string) => `/v1/workspaces/${ws}${p}`;
+  const join = async (token: string, role: string, entityGrants?: { entityId: string; access: string }[]) => {
+    add(token, { aal: 'aal1' });
+    const invite = await call('POST', url('/sharing/invites'), 'sec-owner', {
+      email: `${token}@example.com`,
+      role,
+      ...(entityGrants ? { entityGrants } : {}),
+    });
+    expect(invite.status).toBe(201);
+    expect((await call('POST', `/v1/invites/${invite.body.token}/accept`, token)).status).toBeLessThan(300);
+  };
+  const opens = async (token: string) => (await call('GET', url('/accounts'), token)).body?.code ?? 'ok';
+
+  beforeAll(async () => {
+    factors.set('id-sec-owner', ['password', 'totp']);
+    add('sec-owner');
+    const created = await call('POST', '/v1/workspaces', 'sec-owner', {
+      name: 'Bakery',
+      baseCurrency: 'USD',
+      template: 'freelancer',
+    });
+    ws = created.body.id;
+    const business = created.body.entities.find((e: any) => e.type === 'business').id;
+    await join('sec-kid', 'member');
+    await join('sec-clerk', 'member', [{ entityId: business, access: 'read' }]);
+    await join('sec-partner', 'partner');
+    await join('sec-viewer', 'viewer');
+  });
+
+  it('asks partners and anyone who sees business books for a second factor, by default', async () => {
+    expect(await opens('sec-kid')).toBe('ok');
+    expect(await opens('sec-viewer')).toBe('ok');
+    // Neither has one set up yet, so they're sent to set one up rather than to a step they can't complete.
+    expect(await opens('sec-clerk')).toBe('mfa.setup_required');
+    expect(await opens('sec-partner')).toBe('mfa.setup_required');
+    factors.set('id-sec-partner', ['password', 'totp']);
+    expect(await opens('sec-partner')).toBe('mfa.required');
+    const ws0 = await call('GET', `/v1/workspaces/${ws}`, 'sec-owner');
+    expect(ws0.body.security).toEqual({ mfaPolicy: 'standard', idleTimeoutMinutes: 30 });
+  });
+
+  it('asks everyone once the owner says so, and only owners and admins with a recent sign-in can say so', async () => {
+    const set = (token: string, body: unknown) => call('PUT', url('/security'), token, body);
+    expect((await set('sec-kid', { mfaPolicy: 'everyone', idleTimeoutMinutes: 15 })).body.code).toBe(
+      'role.member',
+    );
+    expect((await set('sec-owner', { mfaPolicy: 'everyone', idleTimeoutMinutes: 60 })).status).toBe(400);
+    add('sec-owner-stale', {
+      identityId: 'id-sec-owner',
+      email: 'sec-owner@example.com',
+      authenticatedAt: new Date(Date.now() - 30 * 60_000),
+    });
+    expect((await set('sec-owner-stale', { mfaPolicy: 'everyone', idleTimeoutMinutes: 15 })).body.code).toBe(
+      'reauth.required',
+    );
+    const ok = await set('sec-owner', { mfaPolicy: 'everyone', idleTimeoutMinutes: 15 });
+    expect(ok.body).toEqual({ mfaPolicy: 'everyone', idleTimeoutMinutes: 15 });
+    expect(await opens('sec-kid')).toBe('mfa.setup_required');
+    expect(await opens('sec-viewer')).toBe('mfa.setup_required');
+    const list = await call('GET', '/v1/workspaces', 'sec-owner');
+    expect(list.body.data.find((w: any) => w.id === ws).security.idleTimeoutMinutes).toBe(15);
+    await set('sec-owner', { mfaPolicy: 'standard', idleTimeoutMinutes: 30 });
+    expect(await opens('sec-kid')).toBe('ok');
+  });
+
+  it('shows owners and admins who has two-step verification, and no one else', async () => {
+    const byEmail = (rows: any[]) => Object.fromEntries(rows.map((m) => [m.email, m.twoFactor]));
+    const seen = byEmail((await call('GET', url('/sharing/members'), 'sec-owner')).body.data);
+    expect(seen).toMatchObject({
+      'sec-owner@example.com': true,
+      'sec-partner@example.com': true,
+      'sec-kid@example.com': false,
+    });
+    const asKid = byEmail((await call('GET', url('/sharing/members'), 'sec-kid')).body.data);
+    expect(new Set(Object.values(asKid))).toEqual(new Set([null]));
+  });
+
+  it('ends a browser session left unused for half an hour, but not the phone’s', async () => {
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    try {
+      const backdate = (token: string) =>
+        admin.query(
+          `update app.session_device set last_seen_at = now() - interval '31 minutes' where kratos_session_id = $1`,
+          [`sess-${token}`],
+        );
+      add('idle-web');
+      expect((await call('GET', '/v1/me', 'idle-web')).status).toBe(200);
+      await backdate('idle-web');
+      expect((await call('GET', '/v1/me', 'idle-web', undefined, true)).status).toBe(401);
+      expect(adminCalls).toContain('DELETE session sess-idle-web');
+      add('idle-phone');
+      expect((await call('GET', '/v1/me', 'idle-phone', undefined, true)).status).toBe(200);
+      await backdate('idle-phone');
+      expect((await call('GET', '/v1/me', 'idle-phone')).status).toBe(200);
+    } finally {
+      await admin.end();
+    }
   });
 });

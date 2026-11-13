@@ -37,6 +37,10 @@ export interface WorkspaceTable {
   ai_settings: Json<Record<string, unknown>>;
   priorities: Json<Record<string, unknown>>;
   inter_entity_mode: Generated<'equity' | 'due_to_from'>;
+  /** AUTH-04 (ADR-0044): who must use two-step verification. */
+  mfa_policy: Generated<'standard' | 'everyone'>;
+  /** AUTH-07 (ADR-0044): the web's idle sign-out, 5–30 minutes. */
+  idle_timeout_minutes: Generated<number>;
   plan: Generated<string>;
   storage_quota_bytes: Int8Default;
   deleted_at: Date | null;

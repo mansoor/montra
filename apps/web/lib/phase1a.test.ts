@@ -256,6 +256,7 @@ describe('settings helpers', () => {
     baseCurrency: 'USD',
     timeZone: 'UTC',
     role: 'owner' as const,
+    security: { mfaPolicy: 'standard' as const, idleTimeoutMinutes: 30 },
     entities: [
       {
         id: 'P',
