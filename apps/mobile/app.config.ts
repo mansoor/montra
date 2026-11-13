@@ -4,7 +4,7 @@ import type { ExpoConfig } from 'expo/config';
  * Montra mobile (PLT-02, ADR-0009). Runtime settings come from the environment at build time and are read in
  * the app through `expo-constants` (src/config.ts):
  *   MONTRA_API_URL     API origin, e.g. https://api.montra.app (dev: http://10.0.2.2:4000 on the Android emulator)
- *   MONTRA_KRATOS_URL  Ory Kratos public URL (AUTH_MODE=kratos)
+ *   MONTRA_KRATOS_URL  The auth gateway in front of Ory Kratos (AUTH_MODE=kratos, ADR-0042)
  *   MONTRA_AUTH_MODE   'dev' | 'kratos'
  *   EAS_PROJECT_ID     EAS project (push tokens, updates); optional in development
  */

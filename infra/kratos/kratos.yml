@@ -6,7 +6,9 @@ dsn: memory # overridden by DSN env (Postgres database `kratos`, separate from t
 
 serve:
   public:
-    base_url: http://localhost:4433/
+    # Browsers and the phone reach Kratos only through the auth gateway (AUTH-08, ADR-0042), so the URLs Kratos puts
+    # in flows (form actions, redirects) are the gateway's. Its own port 4433 is for the gateway and the API.
+    base_url: http://localhost:4455/
     cors:
       enabled: true
       allowed_origins: [http://localhost:3000]

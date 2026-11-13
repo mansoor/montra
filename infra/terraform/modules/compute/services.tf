@@ -177,7 +177,7 @@ resource "aws_ecs_service" "rolling" {
   deployment_minimum_healthy_percent = each.key == "kratos-courier" ? 0 : 100
   deployment_maximum_percent         = each.key == "kratos-courier" ? 100 : 200
   propagate_tags                     = "SERVICE"
-  health_check_grace_period_seconds  = each.key == "kratos" ? 60 : null
+  health_check_grace_period_seconds  = each.key == "auth-gateway" ? 60 : null
 
   deployment_circuit_breaker {
     enable   = true
@@ -190,12 +190,12 @@ resource "aws_ecs_service" "rolling" {
   }
 
   dynamic "load_balancer" {
-    for_each = each.key == "kratos" ? [aws_lb_target_group.kratos.arn] : []
+    for_each = each.key == "auth-gateway" ? [aws_lb_target_group.auth_gateway.arn] : []
 
     content {
       target_group_arn = load_balancer.value
-      container_name   = "kratos"
-      container_port   = 4433
+      container_name   = "auth-gateway"
+      container_port   = 4455
     }
   }
 
@@ -212,5 +212,5 @@ resource "aws_ecs_service" "rolling" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [aws_lb_listener_rule.kratos]
+  depends_on = [aws_lb_listener_rule.auth_gateway]
 }

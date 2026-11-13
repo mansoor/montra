@@ -6,6 +6,7 @@ import { AUTH_MODE } from '@/lib/session';
 import { staticT as t } from '@/lib/i18n-static';
 import { AuthShell } from './auth-shell';
 import { FlowForm } from './flow-form';
+import { GatewayNotice } from './gateway-notice';
 
 /** Sign-up, recovery and verification pages: start the flow if needed, then render its nodes. */
 export async function SelfServicePage({
@@ -34,6 +35,7 @@ export async function SelfServicePage({
   const flow = await fetchFlow(kind, params.flow, init);
   return (
     <AuthShell title={title} intro={intro}>
+      <GatewayNotice params={params} />
       <FlowForm model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })} label={title} />
       <p className="text-sm">
         <Link href="/sign-in" className="text-brand-600 underline">

@@ -13,6 +13,8 @@
     "test:perf": "vitest run --mode perf",
     "start:worker": "node dist/worker-main.js",
     "dev:worker": "tsx watch --conditions=@montra/source src/worker-main.ts",
+    "start:auth-gateway": "node dist/auth-gateway-main.js",
+    "dev:auth-gateway": "tsx watch --conditions=@montra/source src/auth-gateway-main.ts",
     "fx:load": "tsx --conditions=@montra/source src/fx-cli.ts",
     "staff:add": "tsx --conditions=@montra/source src/staff-cli.ts"
   },

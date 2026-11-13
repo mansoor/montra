@@ -56,5 +56,5 @@ variable "deletion_protection" {
 variable "app_ports" {
   description = "Ports on the application tasks that the ALB may reach."
   type        = list(number)
-  default     = [3000, 4000, 4433]
+  default     = [3000, 4000, 4455] # web, API, auth gateway (ADR-0042). Kratos's 4433 is reachable only from tasks.
 }

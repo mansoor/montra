@@ -326,6 +326,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'storage_connected',
     'storage_changed',
     'storage_disconnected',
+    'sign_in_locked',
   ],
   'data.kind_': ['backup', 'tax_package'],
   'storage.kind_': ['s3', 'webdav'],

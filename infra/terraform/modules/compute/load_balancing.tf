@@ -36,16 +36,16 @@ resource "aws_lb_target_group" "green" {
   }
 }
 
-resource "aws_lb_target_group" "kratos" {
-  name                 = "${var.name}-kratos"
-  port                 = 4433
+resource "aws_lb_target_group" "auth_gateway" {
+  name                 = "${var.name}-auth-gateway"
+  port                 = 4455
   protocol             = "HTTP"
   target_type          = "ip"
   vpc_id               = var.vpc_id
   deregistration_delay = 30
 
   health_check {
-    path                = local.health_check_paths["kratos"]
+    path                = local.health_check_paths["auth-gateway"]
     matcher             = "200"
     interval            = 15
     healthy_threshold   = 2
@@ -128,13 +128,14 @@ resource "aws_lb_listener_rule" "blue_green_test" {
   }
 }
 
-resource "aws_lb_listener_rule" "kratos" {
+# The auth hostname goes to the gateway, never to Kratos (ADR-0042).
+resource "aws_lb_listener_rule" "auth_gateway" {
   listener_arn = var.https_listener_arn
   priority     = 200
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.kratos.arn
+    target_group_arn = aws_lb_target_group.auth_gateway.arn
   }
 
   condition {

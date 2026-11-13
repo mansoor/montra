@@ -1279,6 +1279,15 @@ export interface SystemNoticeTable {
   created_at: Generated<Date>;
 }
 
+/** AUTH-08 (ADR-0042): failed attempts per keyed hash, kept by the auth gateway. */
+export interface AuthThrottleTable {
+  key: string;
+  failures: Generated<number>;
+  window_started: Generated<Date>;
+  locked_until: Date | null;
+  updated_at: Generated<Date>;
+}
+
 export interface SystemSettingTable {
   key: string;
   value: string;
@@ -1553,6 +1562,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.feature_flag_override': FeatureFlagOverrideTable;
   'app.system_notice': SystemNoticeTable;
   'app.system_setting': SystemSettingTable;
+  'app.auth_throttle': AuthThrottleTable;
   'app.support_grant': SupportGrantTable;
   'app.support_request': SupportRequestTable;
   'app.admin_log': AdminLogTable;
