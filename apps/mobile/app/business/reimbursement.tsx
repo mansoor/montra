@@ -117,7 +117,7 @@ export default function Reimbursement() {
     }
   };
 
-  if (!can.setUp || !can.writes(entityId))
+  if (!can.record || !can.writes(entityId))
     return (
       <Screen>
         <NotAllowed />

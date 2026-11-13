@@ -50,7 +50,7 @@ export default function Payroll() {
   return (
     <Screen testID="payroll">
       {error ? <Banner tone="danger" text={error} /> : null}
-      {can.setUp && can.writes(entityId) ? (
+      {can.record && can.writes(entityId) ? (
         <Button
           label={t('mobile.payroll.submit_claim')}
           icon="receipt"

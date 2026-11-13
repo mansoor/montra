@@ -175,6 +175,11 @@ describe('members (AUTH-17)', () => {
     expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/receipts/')).toBe(true);
     expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/imports')).toBe(false);
     expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/budgets')).toBe(false);
+    expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/payroll/reimbursements')).toBe(true);
+    expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/payroll/reimbursements/:id/decision')).toBe(
+      false,
+    );
+    expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/payroll/people')).toBe(false);
     expect(memberMayRequest('POST', undefined)).toBe(false);
   });
 });

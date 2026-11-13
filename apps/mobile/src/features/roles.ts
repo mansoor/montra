@@ -5,7 +5,7 @@ import type { EntityDto, MemberRole } from '@montra/schemas';
  * It only decides what to show: the API refuses anything else (AUTH-14..17), so this mirrors the server's rules:
  *
  * - **record**: add and edit transactions, work the review queue, capture and match receipts, log trips. Everyone but
- *   a viewer, in books they can write.
+ *   a viewer, in books they can write. Members also submit staff spending claims (PRL-11) under this.
  * - **setUp**: categories, budgets, goals, suggestions, payslips, rent and loan payments, a business's profile,
  *   planning settings. Not members (the server's member allowlist) or viewers.
  * - **importFiles**: statement imports, which the server allows owners, admins, partners and accountants.

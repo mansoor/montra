@@ -25,7 +25,8 @@ and so read that person's payslips.
   - **The owner** stays a single account: the one that created the workspace or was handed it.
   - **Partner** is unchanged: daily use of the personal books plus any granted. No sharing, AI, storage or billing.
   - **Member** (AUTH-17) writes the personal books by default (any others by grant), but only through transactions,
-    receipts, trips and the review queue.
+    receipts, trips, the review queue and staff spending claims (PRL-11). A member may upload a claim's receipt but
+    not an identity document, and can't approve or decline claims.
   - **Viewer** and **accountant** are unchanged.
 - **The owner's row is the owner's** (AUTH-15).
   - RLS lets an admin manage members but not update, delete or create an `owner` row. Only the owner can make someone

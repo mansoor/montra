@@ -54,7 +54,7 @@ import {
   type RequestContext,
 } from '../auth/auth.js';
 import { CONFIG, type AppConfig } from '../config.js';
-import { AppError } from '../common/errors.js';
+import { AppError, forbidden } from '../common/errors.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { parse } from '../common/zod.js';
 import { FormsService } from './forms.service.js';
@@ -269,13 +269,19 @@ export class PayrollController {
     return pdf(reply, await this.forms.i9Pdf(dbCtx(ctx), parse(Id, id)));
   }
 
-  /** A copy of an identity document; sealed before it's stored. */
+  /**
+   * A copy of an identity document (sealed before it's stored) or a receipt for a spending claim. Members may send
+   * receipts only: they can claim spending (AUTH-17) but not handle anyone's identity documents.
+   */
   @Post('files')
   async upload(@Ctx() ctx: RequestContext, @Query() q: unknown, @Req() req: FastifyRequest) {
     const { entityId, purpose } = parse(
       EntityQuery.extend({ purpose: z.enum(['identity', 'receipt']).default('identity') }),
       q,
     );
+    if (purpose === 'identity' && ctx.role === 'member') {
+      throw forbidden('Members can upload receipts for spending claims only');
+    }
     if (!req.isMultipart()) {
       throw new AppError(415, 'upload.multipart_required', 'Send the file as multipart/form-data');
     }

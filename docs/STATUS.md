@@ -1043,6 +1043,8 @@ Phase 11 leftovers:
       capture.
     - A member records but gets no setup: categories, budgets, goals, suggestions, payslips, rent and loan payments,
       business settings, receipt reminders and imports.
+    - A member with a business's books can submit a staff spending claim with its receipt (`POST payroll/reimbursements`
+      and receipt uploads are on `MEMBER_WRITES`). Identity uploads and deciding claims stay closed to them.
     - Backups are for owners and admins.
     - A screen reached by a link or a file shared from another app shows a short "your role can't do this" note.
 - **Fuller personal categories** (ACC-13, migration 0042): personal books now start with these groups:

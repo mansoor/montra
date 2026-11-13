@@ -20,7 +20,8 @@ export function requireWorkspaceAdmin(ctx: RequestContext): void {
 }
 
 /**
- * What a member may change (AUTH-17): transactions, receipts and trips, and what recording them needs. Everything
+ * What a member may change (AUTH-17): transactions, receipts, trips and their own spending claims, and what recording
+ * them needs. Everything
  * else that writes is closed to them, so a new endpoint stays closed until it is added here. Paths are the route
  * patterns after `/v1/workspaces/:workspaceId/`.
  */
@@ -52,6 +53,9 @@ const MEMBER_WRITES = new Set([
   'POST mileage-trips',
   'PATCH mileage-trips/:id',
   'DELETE mileage-trips/:id',
+  // Staff spending claims and their receipts (PRL-11); identity documents stay closed (see PayrollController.upload).
+  'POST payroll/files',
+  'POST payroll/reimbursements',
   'POST ai/tasks/:id/result',
   'POST notifications/:id/read',
   'POST notifications/read-all',
