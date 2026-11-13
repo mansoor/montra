@@ -705,8 +705,7 @@ Phase 10 leftovers, not blocking:
   transaction).
 - **BAK-05** is the emailed link only. Drive, OneDrive, Dropbox and iCloud need OAuth apps.
 - **OPS-13**: profile, family, entities, currency, time zone, AI mode and quiet hours are read-only on the phone.
-- **AUTH-12**: password changes and session revocations aren't logged (the first happens in Kratos, the second in `sessions.controller.ts`);
-  support access waits for the Phase 11 tool.
+- **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
 - **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
 - **CUR-06**: net worth revalues at the period-end rate, but no report shows unrealized gain or loss yet.
@@ -782,7 +781,7 @@ Phase 11 leftovers:
 - **Staff sign-in** is the ordinary one with a second factor, not SSO.
 - **Reference data:** merchants and mileage rates are editable. Tax lines, import profiles and currencies need a migration.
 - **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
-- **A password change or session revocation** isn't in the security log (AUTH-12), and profile, family and entities are read-only on the phone (OPS-13). A session card covers both.
+- **Profile, family and entities** are read-only on the phone (OPS-13).
 - **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
 - Import parse p95 was 5.7 to 9.0 s locally for 5,000 rows, close to the 10 s limit, and worth watching.
 
@@ -1098,6 +1097,11 @@ Phase 11 leftovers:
   - The web signs out after the workspace's idle timeout (5–30 minutes, a one-minute warning first). The API ends a
     browser session unused for 30 minutes. The phone keeps its app lock.
   - Tested against the fake Kratos in `kratos.test.ts`. The phone doesn't yet lead someone to set up a second factor.
+- **Password, two-step and device alerts** (AUTH-12, AUTH-05, [ADR-0045](design/adr/0045-identity-change-alerts.md),
+  migration 0045): Kratos tells the API after a new password or a change to an authenticator app, security key or
+  recovery codes. The API logs it in security activity and emails the owner. A new password signs out the other devices.
+  Signing devices out from the device list is logged too. The Kratos config was checked to load in Kratos v26.2.0;
+  the hooks are tested against the API, not yet end to end.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page (or **Zoom in on the receipt** under the lines) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

@@ -466,3 +466,62 @@ describe('a workspace’s security rules (AUTH-04, AUTH-07, ADR-0044)', () => {
     }
   });
 });
+describe('security activity for password, two-step and device changes (AUTH-12, ADR-0045)', () => {
+  const hook = (event: string, identityId: string, secret = HOOK_SECRET) =>
+    h.app.inject({
+      method: 'POST',
+      url: '/internal/kratos/hooks',
+      headers: { 'x-montra-hook-secret': secret, 'content-type': 'application/json' },
+      payload: { event, identity_id: identityId },
+    });
+  const events = async (email: string) => {
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    try {
+      return (
+        await admin.query(
+          `select e.kind, e.detail from app.security_event e join app.app_user u on u.id = e.user_id
+            where u.email = $1 order by e.at`,
+          [email],
+        )
+      ).rows;
+    } finally {
+      await admin.end();
+    }
+  };
+
+  it('notes a password or two-step change on the account and emails its owner', async () => {
+    const outbox = (h.app.get(MAIL_PORT) as MemoryMail).outbox;
+    add('changer', { identityId: 'id-changer', email: 'changer@example.com' });
+    expect((await call('GET', '/v1/me', 'changer')).status).toBe(200);
+    expect((await hook('password_changed', 'id-changer')).statusCode).toBe(200);
+    expect((await hook('mfa_changed', 'id-changer')).statusCode).toBe(200);
+    expect((await events('changer@example.com')).map((e) => e.kind)).toEqual([
+      'password_changed',
+      'mfa_changed',
+    ]);
+    const mail = outbox.filter((m) => m.to === 'changer@example.com').map((m) => [m.category, m.subject]);
+    expect(mail).toEqual([
+      ['security', 'Your Montra password was changed'],
+      ['security', 'Two-step verification changed on your Montra account'],
+    ]);
+    // A wrong secret changes nothing; an identity with no account is quietly ignored.
+    expect((await hook('password_changed', 'id-changer', 'x'.repeat(HOOK_SECRET.length))).statusCode).toBe(
+      401,
+    );
+    expect((await hook('password_changed', 'id-nobody')).statusCode).toBe(200);
+    expect(await events('changer@example.com')).toHaveLength(2);
+  });
+
+  it('notes signing devices out', async () => {
+    add('desk', { identityId: 'id-desk', email: 'desk@example.com' });
+    add('couch', { identityId: 'id-desk', email: 'desk@example.com' });
+    add('car', { identityId: 'id-desk', email: 'desk@example.com' });
+    expect((await call('DELETE', '/v1/me/sessions/sess-couch', 'desk')).status).toBe(200);
+    expect((await call('DELETE', '/v1/me/sessions', 'desk')).body).toEqual({ revoked: 1 });
+    expect(await events('desk@example.com')).toEqual([
+      { kind: 'session_revoked', detail: { count: 1 } },
+      { kind: 'session_revoked', detail: { count: 1 } },
+    ]);
+  });
+});
