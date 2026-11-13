@@ -192,6 +192,9 @@ describe('book access for clients (AUTH-18)', () => {
     const viewer = h.as('roles-viewer@example.test');
     await join(owner, viewer, { email: 'roles-viewer@example.test', role: 'viewer' });
     expect(await accessOf(viewer)).toEqual({ personal: 'read' });
+    // The phone's offline copy says the same.
+    const pulled = (await viewer.get(url('/sync/pull?since=0'))).body.entities;
+    expect(pulled.map((e: any) => [e.type, e.access])).toEqual([['personal', 'read']]);
   });
 });
 
