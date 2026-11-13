@@ -7,7 +7,7 @@ import { FlatList, Modal, ScrollView, View } from 'react-native';
 import type { CategoryDto, CategoryGroupDto } from '@montra/schemas';
 import { defaultEntityId, groupChoices, nameTaken, suggestedName } from '../features/categories';
 import { t } from '../i18n';
-import { useSession } from '../session/SessionProvider';
+import { useAbilities, useSession } from '../session/SessionProvider';
 import { useLocal, useSync } from '../sync/SyncProvider';
 import { Banner, Button, Field, Row, Segmented, Small, Title } from './components';
 import { Icon } from './icons';
@@ -29,6 +29,7 @@ export function CategoryPicker({
 }) {
   const th = useTheme();
   const [q, setQ] = useState('');
+  const canAdd = useAbilities().setUp;
   const [adding, setAdding] = useState(false);
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -81,17 +82,20 @@ export function CategoryPicker({
               )}
               ListEmptyComponent={<Small>{t('mobile.txn.empty')}</Small>}
               ListFooterComponent={
-                <Row
-                  icon="add"
-                  title={
-                    q.trim()
-                      ? t('mobile.categories.add_named', { name: suggestedName(q) })
-                      : t('mobile.categories.add')
-                  }
-                  onPress={() => setAdding(true)}
-                  testID="category-add"
-                  last
-                />
+                // Adding a category is setting the books up: not for members (AUTH-18).
+                !canAdd ? undefined : (
+                  <Row
+                    icon="add"
+                    title={
+                      q.trim()
+                        ? t('mobile.categories.add_named', { name: suggestedName(q) })
+                        : t('mobile.categories.add')
+                    }
+                    onPress={() => setAdding(true)}
+                    testID="category-add"
+                    last
+                  />
+                )
               }
             />
             <Button kind="secondary" label={t('mobile.common.cancel')} onPress={close} />

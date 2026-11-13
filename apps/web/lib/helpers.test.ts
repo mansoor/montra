@@ -69,8 +69,22 @@ describe('view models', () => {
     timeZone: 'UTC',
     role: 'owner',
     entities: [
-      { id: 'P', type: 'personal', name: 'Personal', functionalCurrency: 'USD', lockedThrough: null },
-      { id: 'B', type: 'business', name: 'Studio', functionalCurrency: 'USD', lockedThrough: null },
+      {
+        id: 'P',
+        type: 'personal',
+        name: 'Personal',
+        functionalCurrency: 'USD',
+        lockedThrough: null,
+        access: 'write' as const,
+      },
+      {
+        id: 'B',
+        type: 'business',
+        name: 'Studio',
+        functionalCurrency: 'USD',
+        lockedThrough: null,
+        access: 'write' as const,
+      },
     ],
   };
   const acct = (

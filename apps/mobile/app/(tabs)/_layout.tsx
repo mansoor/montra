@@ -2,6 +2,7 @@
 import { Tabs } from 'expo-router';
 import { View, type ColorValue } from 'react-native';
 import { t } from '../../src/i18n';
+import { useAbilities } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { haptic } from '../../src/ui/haptics';
 import { Icon, type IconName } from '../../src/ui/icons';
@@ -40,7 +41,9 @@ function AddIcon() {
 export default function TabsLayout() {
   const th = useTheme();
   const { state } = useSync();
-  const review = state?.reviewCount ?? 0;
+  // A viewer, or a login with only read-only books, has nothing to add or review (AUTH-18).
+  const { record } = useAbilities();
+  const review = record ? (state?.reviewCount ?? 0) : 0;
   return (
     <Tabs
       screenListeners={{ tabPress: () => haptic.select() }}
@@ -65,6 +68,7 @@ export default function TabsLayout() {
           tabBarLabel: () => null,
           tabBarAccessibilityLabel: t('mobile.capture.title'),
           tabBarButtonTestID: 'tab-add',
+          href: record ? undefined : null,
         }}
       />
       <Tabs.Screen name="budget" options={{ title: t('mobile.tab.budget'), tabBarIcon: icon('budget') }} />

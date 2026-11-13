@@ -263,8 +263,16 @@ describe('settings helpers', () => {
         name: 'Personal',
         functionalCurrency: 'USD',
         lockedThrough: null,
+        access: 'write' as const,
       },
-      { id: 'B', type: 'business' as const, name: 'Studio', functionalCurrency: 'USD', lockedThrough: null },
+      {
+        id: 'B',
+        type: 'business' as const,
+        name: 'Studio',
+        functionalCurrency: 'USD',
+        lockedThrough: null,
+        access: 'write' as const,
+      },
     ],
   };
 

@@ -19,7 +19,7 @@ import {
   storageStatusLine,
 } from '../src/features/data-settings';
 import { t } from '../src/i18n';
-import { useSession } from '../src/session/SessionProvider';
+import { useAbilities, useSession } from '../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Field, Row, Screen, Small, Title } from '../src/ui/components';
 
 const POLL_MS = 3000;
@@ -28,6 +28,7 @@ const failure = (err: unknown) => (needsFreshSignIn(err) ? t('mobile.data.reauth
 
 export default function YourData() {
   const session = useSession();
+  const can = useAbilities();
   const { state, api } = session;
   const ws = state.status === 'signed_in' ? state.workspace.id : '';
   const [jobs, setJobs] = useState<ExportJobDto[]>([]);
@@ -145,18 +146,23 @@ export default function YourData() {
         </Card>
       ) : null}
 
-      <Title>{t('data.backup')}</Title>
-      <Card>
-        <Small>{t('data.backup_hint')}</Small>
-        <Field label={t('data.password')} value={password} onChangeText={setPassword} secureTextEntry />
-        <Small>{t('data.password_hint')}</Small>
-        <Button
-          label={t('data.backup_now')}
-          onPress={() => void backUp()}
-          disabled={busy}
-          testID="your-data-backup"
-        />
-      </Card>
+      {/* A whole-workspace backup is for the owner and admins (AUTH-14). */}
+      {can.backUp ? (
+        <>
+          <Title>{t('data.backup')}</Title>
+          <Card>
+            <Small>{t('data.backup_hint')}</Small>
+            <Field label={t('data.password')} value={password} onChangeText={setPassword} secureTextEntry />
+            <Small>{t('data.password_hint')}</Small>
+            <Button
+              label={t('data.backup_now')}
+              onPress={() => void backUp()}
+              disabled={busy}
+              testID="your-data-backup"
+            />
+          </Card>
+        </>
+      ) : null}
       {jobs.map((j) => (
         <Row
           key={j.id}

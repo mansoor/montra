@@ -9,8 +9,9 @@ import type { AccountDto } from '@montra/schemas';
 import { assignedInput, parseAssigned } from '../../src/features/planning';
 import { rentAccounts } from '../../src/features/rentals';
 import { fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Field, Screen, Segmented, Small } from '../../src/ui/components';
+import { NotAllowed } from '../../src/ui/NotAllowed';
 
 const todayLocal = (): string => {
   const d = new Date();
@@ -28,6 +29,7 @@ export default function LogRent() {
   }>();
   const router = useRouter();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const owed = BigInt(params.open ?? '0');
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
@@ -64,6 +66,13 @@ export default function LogRent() {
     }
   };
 
+  // Rent posts to the rental books: for those who keep them (AUTH-18).
+  if (!can.setUp || !can.writes(params.entityId))
+    return (
+      <Screen>
+        <NotAllowed />
+      </Screen>
+    );
   return (
     <Screen testID="rentals-log">
       {error ? <Banner tone="danger" text={error} /> : null}

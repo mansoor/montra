@@ -179,6 +179,22 @@ describe('members (AUTH-17)', () => {
   });
 });
 
+describe('book access for clients (AUTH-18)', () => {
+  const accessOf = async (c: Client) =>
+    Object.fromEntries((await c.get(url(''))).body.entities.map((e: any) => [e.type, e.access]));
+
+  it('says which books a login may write', async () => {
+    const all = await accessOf(owner);
+    expect(Object.keys(all)).toContain('business');
+    expect(new Set(Object.values(all))).toEqual(new Set(['write']));
+    // A member sees only the personal books, writable by default.
+    expect(await accessOf(member)).toEqual({ personal: 'write' });
+    const viewer = h.as('roles-viewer@example.test');
+    await join(owner, viewer, { email: 'roles-viewer@example.test', role: 'viewer' });
+    expect(await accessOf(viewer)).toEqual({ personal: 'read' });
+  });
+});
+
 describe('handing over ownership (AUTH-15)', () => {
   it('needs an admin to hand to', async () => {
     const res = await owner.patch(url(`/sharing/members/${await userIdOf(PARTNER)}`), { role: 'owner' });

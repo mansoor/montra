@@ -1037,6 +1037,14 @@ Phase 11 leftovers:
     person to the login. The Family list shows "Signs in as …" or "Invite … to sign in" per person, and Sharing shows
     "In the family as …".
   - A linked login sees its own payslips. Only owners and admins can change a person's link.
+  - **On the phone** (AUTH-18): each book in the workspace says whether this login may write it (`access`), and
+    `useAbilities()` (`apps/mobile/src/features/roles.ts`) decides what each screen shows.
+    - A viewer, or books shared read-only, has no Add tab, no swipe or edit actions, no Review, and no receipt or trip
+      capture.
+    - A member records but gets no setup: categories, budgets, goals, suggestions, payslips, rent and loan payments,
+      business settings, receipt reminders and imports.
+    - Backups are for owners and admins.
+    - A screen reached by a link or a file shared from another app shows a short "your role can't do this" note.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page (or **Zoom in on the receipt** under the lines) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

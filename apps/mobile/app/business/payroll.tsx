@@ -9,13 +9,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { LeaveBalancesRowDto, PayRunDto, ReimbursementDto } from '@montra/schemas';
 import { signedHoursLabel, trackedBalances } from '../../src/features/payroll';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 
 export default function Payroll() {
   const router = useRouter();
   const { entityId, currency = 'USD' } = useLocalSearchParams<{ entityId: string; currency?: string }>();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [runs, setRuns] = useState<PayRunDto[] | null>(null);
   const [claims, setClaims] = useState<ReimbursementDto[]>([]);
@@ -49,12 +50,14 @@ export default function Payroll() {
   return (
     <Screen testID="payroll">
       {error ? <Banner tone="danger" text={error} /> : null}
-      <Button
-        label={t('mobile.payroll.submit_claim')}
-        icon="receipt"
-        onPress={() => router.push({ pathname: '/business/reimbursement', params: { entityId } })}
-        testID="payroll-new-claim"
-      />
+      {can.setUp && can.writes(entityId) ? (
+        <Button
+          label={t('mobile.payroll.submit_claim')}
+          icon="receipt"
+          onPress={() => router.push({ pathname: '/business/reimbursement', params: { entityId } })}
+          testID="payroll-new-claim"
+        />
+      ) : null}
       <Title>{t('payroll.run.runs')}</Title>
       {runs && runs.length === 0 ? (
         <Card>

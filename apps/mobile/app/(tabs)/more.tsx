@@ -1,7 +1,7 @@
 /** More (08 §3): review, planning, accounts and registers, import, sync activity, settings, grouped by what they're for. */
 import { useRouter, type Href } from 'expo-router';
 import { t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { Card, Row, Screen, SectionLabel, Small, Title } from '../../src/ui/components';
 import type { IconName } from '../../src/ui/icons';
@@ -18,24 +18,39 @@ export default function More() {
   const router = useRouter();
   const { state } = useSession();
   const { state: sync } = useSync();
+  const can = useAbilities();
   const queued = sync ? sync.pending + sync.drafts : 0;
   const sections: Array<{ label: string; items: Item[] }> = [
     {
       label: t('mobile.more.section.everyday'),
       items: [
-        {
-          title: t('mobile.tab.review'),
-          icon: 'review',
-          href: '/review',
-          testID: 'more-review',
-          ...(sync?.reviewCount
-            ? { subtitle: t('mobile.more.review_count', { count: sync.reviewCount }) }
-            : {}),
-        },
+        ...(can.record
+          ? [
+              {
+                title: t('mobile.tab.review'),
+                icon: 'review',
+                href: '/review',
+                testID: 'more-review',
+                ...(sync?.reviewCount
+                  ? { subtitle: t('mobile.more.review_count', { count: sync.reviewCount }) }
+                  : {}),
+              } as Item,
+            ]
+          : []),
         { title: t('mobile.more.accounts'), icon: 'accounts', href: '/accounts', testID: 'more-accounts' },
         { title: t('mobile.more.receipts'), icon: 'receipt', href: '/receipts', testID: 'more-receipts' },
         { title: t('nav.payslips'), icon: 'payslips', href: '/payslips', testID: 'more-payslips' },
-        { title: t('mobile.more.import'), icon: 'import', href: '/import', testID: 'more-import' },
+        // Imports are for those who set the books up (AUTH-18).
+        ...(can.importFiles
+          ? [
+              {
+                title: t('mobile.more.import'),
+                icon: 'import',
+                href: '/import',
+                testID: 'more-import',
+              } as Item,
+            ]
+          : []),
       ],
     },
     {
@@ -102,7 +117,10 @@ export default function More() {
         </Card>
       ))}
       {state.status === 'signed_in' ? (
-        <Small>{t('mobile.more.signed_in_as', { email: state.me.email })}</Small>
+        <Small>
+          {t('mobile.more.signed_in_as_role', { email: state.me.email, role: t(`role.${can.role}`) })}
+          {can.record ? '' : ` ${t('mobile.more.read_only')}`}
+        </Small>
       ) : null}
     </Screen>
   );

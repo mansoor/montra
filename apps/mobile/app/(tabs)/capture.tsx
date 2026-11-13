@@ -11,7 +11,8 @@ import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
 import type { CategoryDto, SuggestionDto } from '@montra/schemas';
 import { asCurrencyCode, canSpendFrom, minorUnits } from '@montra/domain';
 import { fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
+import { NotAllowed } from '../../src/ui/NotAllowed';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import {
   buildCreateRequest,
@@ -125,9 +126,10 @@ export default function Capture() {
   const { state: session, api } = useSession();
   const { engine, store, state, touch } = useSync();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
-  // Only accounts purchases are paid from: no 401(k), IRA, brokerage, property or loans.
+  const can = useAbilities();
+  // Only accounts purchases are paid from (no 401(k), IRA, brokerage, property or loans), in books this login writes.
   const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter(
-    (a) => !a.hidden && canSpendFrom(a),
+    (a) => !a.hidden && canSpendFrom(a) && can.writes(a.entityId),
   );
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
   const history = useLocal((s) => s.listTransactions({ limit: 500 })) ?? [];
@@ -277,6 +279,13 @@ export default function Capture() {
     }
   };
 
+  if (!can.record)
+    return (
+      <Screen>
+        <Title>{t('mobile.capture.title')}</Title>
+        <NotAllowed />
+      </Screen>
+    );
   if (accounts.length === 0)
     return (
       <Screen>

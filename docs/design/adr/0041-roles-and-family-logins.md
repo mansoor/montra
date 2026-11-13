@@ -64,8 +64,10 @@ and so read that person's payslips.
 - The jobs that act as "the owner" (nightly, storage mirror, support grant) still pick the single owner. Storage
   failure notices now go to admins too.
 - Payslips stay private as before. A linked login now sees its own, and admins see all, as owners do.
-- Mobile has no role checks. A member's phone gets 403 `role.member` from the API on the few setup actions it offers
-  (adding a category from the picker), with the API's message.
+- The phone follows the roles too (AUTH-18). Each book in the workspace DTO carries `access` (`read` or `write`, from
+  `app.entity_access`), and `abilitiesOf` in `apps/mobile/src/features/roles.ts` turns the role and those into what to
+  show. It only hides; the API still refuses. When adding a member route to `MEMBER_WRITES`, check the phone's
+  `setUp`/`record` split still matches.
 
 ## Alternatives considered
 

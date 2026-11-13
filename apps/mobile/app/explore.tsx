@@ -8,7 +8,7 @@ import { categoryStats, parseMoney, whatIf, whatIfTarget, type WhatIfChange } fr
 import { CHART_MONTHS, EXPLORE_MAX_CATEGORIES } from '@montra/schemas';
 import { useCached } from '../src/features/use-cached';
 import { currentLocale, fmtMoney, t } from '../src/i18n';
-import { useSession } from '../src/session/SessionProvider';
+import { useAbilities, useSession } from '../src/session/SessionProvider';
 import { MiniLineChart } from '../src/ui/charts';
 import { Body, Button, Card, Field, Row, Screen, Segmented, Small, useToast } from '../src/ui/components';
 import { haptic } from '../src/ui/haptics';
@@ -29,6 +29,7 @@ type Plan = { kind: 'none' } | { kind: 'cut'; percent: number } | { kind: 'cap';
 export default function Explore() {
   const th = useTheme();
   const { state: session, api } = useSession();
+  const canBudget = useAbilities().setUp; // AUTH-18
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [months, setMonths] = useState<Months>(6);
   /** Null until chosen: the server picks the three biggest everyday categories. */
@@ -356,7 +357,7 @@ export default function Explore() {
                       }
                     />
                   ) : null}
-                  {target !== null ? (
+                  {canBudget && target !== null ? (
                     <Button
                       kind="secondary"
                       label={t('explore.make_budget')}

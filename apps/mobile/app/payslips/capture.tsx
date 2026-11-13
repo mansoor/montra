@@ -10,8 +10,9 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
 import { t } from '../../src/i18n';
 import { removePage } from '../../src/receipts/files';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Screen, Small } from '../../src/ui/components';
+import { NotAllowed } from '../../src/ui/NotAllowed';
 import { useTheme } from '../../src/ui/theme';
 
 interface Page {
@@ -29,6 +30,7 @@ export default function PayslipCapture() {
   const router = useRouter();
   const { employerId } = useLocalSearchParams<{ employerId: string }>();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const camera = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
@@ -88,6 +90,12 @@ export default function PayslipCapture() {
     await finish(picked);
   };
 
+  if (!can.setUp)
+    return (
+      <Screen>
+        <NotAllowed />
+      </Screen>
+    );
   if (!permission?.granted)
     return (
       <Screen testID="payslip-capture">

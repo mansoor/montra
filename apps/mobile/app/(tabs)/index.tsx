@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { summarizeMonths } from '@montra/domain';
 import { CHART_MONTHS } from '@montra/schemas';
 import { currentLocale, fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { monthSummary, todayLocal } from '../../src/features/home';
 import { useCached } from '../../src/features/use-cached';
@@ -34,6 +34,7 @@ export default function Home() {
   const th = useTheme();
   const router = useRouter();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const { state, refresh } = useSync();
   const [months, setMonths] = useState<Months>(6);
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
@@ -288,7 +289,8 @@ export default function Home() {
           )}
         </Card>
 
-        {habit && habit.waiting > 0 ? (
+        {/* Receipts to keep are asked of those who record them (AUTH-18). */}
+        {can.record && habit && habit.waiting > 0 ? (
           <Card testID="home-receipts">
             <Body style={{ fontWeight: '700' }}>{t('mobile.receipts.habit_title')}</Body>
             <Small>

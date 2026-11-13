@@ -9,6 +9,8 @@ import * as Haptics from 'expo-haptics';
 import type { CategoryDto } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
 import { fmtDate, fmtMoney, t } from '../src/i18n';
+import { canChangeOn } from '../src/features/roles';
+import { useAbilities } from '../src/session/SessionProvider';
 import { useLocal, useSync } from '../src/sync/SyncProvider';
 import { confidenceLabel, effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
 import { CategoryPicker } from '../src/ui/CategoryPicker';
@@ -22,8 +24,14 @@ export default function Review() {
   const { engine, touch } = useSync();
   const rows = useLocal((s) => s.listTransactions({ reviewState: 'needs_review', limit: 500 })) ?? [];
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
+  const accounts = useLocal((s) => s.getReference('accounts')) ?? [];
+  const can = useAbilities();
   const byId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
-  const queue = useMemo(() => reviewQueue(rows), [rows]);
+  // Only what this login may settle: a viewer's queue is empty (AUTH-18).
+  const queue = useMemo(
+    () => reviewQueue(rows.filter((r) => canChangeOn(can, accounts, r.accountId))),
+    [rows, can, accounts],
+  );
   const [picking, setPicking] = useState<LocalTransaction | null>(null);
   const current = queue[0];
   const x = useRef(new Animated.Value(0)).current;

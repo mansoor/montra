@@ -232,6 +232,10 @@
     "done",
     "member role: write allowlist in WorkspaceGuard, narrow RLS, setup pages and settings hidden on web"
   ],
+  "AUTH-18": [
+    "done",
+    "EntityDto.access (app.entity_access) on the workspace; mobile abilitiesOf/useAbilities (src/features/roles.ts) hides the Add tab, swipe and edit actions, review, capture, setup and backup per role and per book; NotAllowed on screens reached by link or share"
+  ],
   "NFR-01": [
     "partial",
     "field encryption; AWS KMS adapter tested with a stubbed client; Postgres TLS worked locally with a test CA; TLS 1.2+ at the load balancer and encryption at rest in Terraform, never applied"
