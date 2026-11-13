@@ -46,7 +46,8 @@ export interface WorkspaceTable {
   updated_at: Generated<Date>;
 }
 
-export type MemberRole = 'owner' | 'partner' | 'viewer' | 'accountant';
+export type MemberRole = 'owner' | 'admin' | 'partner' | 'member' | 'viewer' | 'accountant';
+export type InviteRole = Exclude<MemberRole, 'owner'>;
 
 export interface WorkspaceMemberTable {
   workspace_id: string;
@@ -364,7 +365,7 @@ export interface WorkspaceInviteTable {
   workspace_id: string;
   id: string;
   email: string;
-  role: 'partner' | 'viewer' | 'accountant';
+  role: InviteRole;
   entity_grants: Json<{ entityId: string; access: 'none' | 'read' | 'write' }[]>;
   token_hash: string;
   invited_by: string | null;
@@ -372,6 +373,7 @@ export interface WorkspaceInviteTable {
   accepted_at: Date | null;
   accepted_by: string | null;
   revoked_at: Date | null;
+  family_member_id: Generated<string | null>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }

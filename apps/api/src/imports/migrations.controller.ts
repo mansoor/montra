@@ -31,13 +31,13 @@ export class MigrationsController {
   @Post('analyze')
   @HttpCode(200)
   analyze(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, 'owner', 'partner', 'accountant');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'accountant');
     return this.migrations.analyze(dbCtx(ctx), parse(AnalyzeMigrationRequest, body));
   }
 
   @Post()
   start(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, 'owner', 'partner', 'accountant');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'accountant');
     return this.migrations.start(dbCtx(ctx), parse(StartMigrationRequest, body));
   }
 
@@ -49,7 +49,7 @@ export class MigrationsController {
   @Post(':id/commit')
   @HttpCode(200)
   commit(@Ctx() ctx: RequestContext, @Param('id') id: string) {
-    requireRole(ctx, 'owner', 'partner', 'accountant');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'accountant');
     return this.migrations.commit(dbCtx(ctx), parse(Id, id));
   }
 
@@ -57,7 +57,7 @@ export class MigrationsController {
   @Post(':id/transfers')
   @HttpCode(200)
   transfers(@Ctx() ctx: RequestContext, @Param('id') id: string) {
-    requireRole(ctx, 'owner', 'partner', 'accountant');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'accountant');
     return this.migrations.makeTransfers(dbCtx(ctx), parse(Id, id));
   }
 }

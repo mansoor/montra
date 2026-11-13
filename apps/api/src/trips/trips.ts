@@ -194,20 +194,20 @@ export class TripsController {
 
   @Post()
   create(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<TripDto> {
-    requireRole(ctx, 'owner', 'partner');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'member');
     return this.trips.create(dbCtx(ctx), parse(TripInput, body));
   }
 
   @Patch(':id')
   update(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown): Promise<TripDto> {
-    requireRole(ctx, 'owner', 'partner');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'member');
     return this.trips.update(dbCtx(ctx), parse(z.uuid(), id), parse(UpdateTripRequest, body));
   }
 
   @Delete(':id')
   @HttpCode(204)
   async remove(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {
-    requireRole(ctx, 'owner', 'partner');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'member');
     await this.trips.remove(dbCtx(ctx), parse(z.uuid(), id));
   }
 }

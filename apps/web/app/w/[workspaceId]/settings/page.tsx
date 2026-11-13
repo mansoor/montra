@@ -19,6 +19,7 @@ import { PrivacyPanel, SecurityActivity } from '@/components/settings/privacy-se
 import { StorageSettings } from '@/components/settings/storage-settings';
 import { CategorySettings } from '@/components/settings/category-settings';
 import { SETTINGS_TABS, settingsGroupOf, settingsTabOf } from '@/lib/settings-sections';
+import { isAdminRole } from '@/lib/settings';
 import {
   BackupPanel,
   DeleteAccountPanel,
@@ -37,11 +38,12 @@ export default async function SettingsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { workspaceId } = await params;
-  const tab = settingsTabOf((await searchParams).tab);
-  const group = settingsGroupOf(tab);
   const workspace = await load((api) => api.getWorkspace(workspaceId));
+  const tab = settingsTabOf((await searchParams).tab, workspace.role);
+  const group = settingsGroupOf(tab);
   const base = `/w/${workspaceId}/settings`;
-  const isOwner = workspace.role === 'owner';
+  // Owners and admins manage the workspace (AUTH-14).
+  const isOwner = isAdminRole(workspace.role);
   const { t } = await getI18n();
 
   let body: ReactNode;
@@ -73,10 +75,23 @@ export default async function SettingsPage({
       />
     );
   } else if (tab === 'family') {
-    const [members, accounts] = await load((api) =>
-      Promise.all([api.listFamilyMembers(workspaceId), api.listAccounts(workspaceId, { include: 'all' })]),
+    const [members, accounts, logins, invites] = await load((api) =>
+      Promise.all([
+        api.listFamilyMembers(workspaceId),
+        api.listAccounts(workspaceId, { include: 'all' }),
+        api.listMembers(workspaceId),
+        isOwner ? api.listInvites(workspaceId) : Promise.resolve([]),
+      ]),
     );
-    body = <FamilySettings workspaceId={workspaceId} members={members} accounts={accounts} />;
+    body = (
+      <FamilySettings
+        workspace={workspace}
+        members={members}
+        accounts={accounts}
+        logins={logins}
+        invites={invites}
+      />
+    );
   } else if (tab === 'accounts') {
     const accounts = await load((api) => api.listAccounts(workspaceId, { include: 'all' }));
     body = <AccountSettings workspace={workspace} accounts={accounts} today={todayIn(workspace.timeZone)} />;
@@ -172,13 +187,23 @@ export default async function SettingsPage({
     const settings = await load((api) => api.getAiSettings(workspaceId));
     body = <PrivacyPanel disclosures={settings.disclosures} currentMode={settings.mode} />;
   } else {
-    const [members, invites] = await load((api) =>
+    const [members, invites, family, me] = await load((api) =>
       Promise.all([
         api.listMembers(workspaceId),
         isOwner ? api.listInvites(workspaceId) : Promise.resolve([]),
+        api.listFamilyMembers(workspaceId),
+        api.getMe(),
       ]),
     );
-    body = <SharingSettings workspace={workspace} members={members} invites={invites} isOwner={isOwner} />;
+    body = (
+      <SharingSettings
+        workspace={workspace}
+        members={members}
+        invites={invites}
+        family={family}
+        currentUserId={me.id}
+      />
+    );
   }
 
   return (

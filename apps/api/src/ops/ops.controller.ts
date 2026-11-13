@@ -32,7 +32,7 @@ import {
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { AppError, badRequest } from '../common/errors.js';
-import { requireRole } from '../common/roles.js';
+import { requireWorkspaceAdmin, isAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { AdminService } from './admin.service.js';
 import { BillingService } from './billing.service.js';
@@ -53,19 +53,19 @@ export class WorkspaceOpsController {
 
   @Get('billing')
   getBilling(@Ctx() ctx: RequestContext) {
-    return this.billing.get(dbCtx(ctx), ctx.role === 'owner');
+    return this.billing.get(dbCtx(ctx), isAdmin(ctx.role));
   }
 
   @Post('billing/checkout')
   async checkout(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const { interval } = parse(CheckoutRequest, body);
     return { url: await this.billing.checkoutUrl(dbCtx(ctx), ctx.user.email, interval) };
   }
 
   @Post('billing/portal')
   async portal(@Ctx() ctx: RequestContext) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     return { url: await this.billing.portalUrl(dbCtx(ctx)) };
   }
 
@@ -76,14 +76,14 @@ export class WorkspaceOpsController {
 
   @Post('support-grants')
   createGrant(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     return this.support.createGrant(dbCtx(ctx), parse(CreateSupportGrantRequest, body));
   }
 
   @Delete('support-grants/:id')
   @HttpCode(204)
   async revokeGrant(@Ctx() ctx: RequestContext, @Param('id') id: string) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     await this.support.revokeGrant(dbCtx(ctx), parse(Id, id));
   }
 }

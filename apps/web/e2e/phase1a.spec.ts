@@ -108,6 +108,9 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
   await page.getByRole('link', { name: 'Sharing' }).click();
   await page.getByLabel('Email', { exact: true }).fill(partner);
   await page.getByLabel('Role', { exact: true }).selectOption('partner');
+  // AUTH-16: the partner joins the Family list as the same person.
+  await page.getByLabel('Who is this?').selectOption({ label: 'Someone new in the family' });
+  await page.getByLabel('Their name').fill('Pat');
   await page.getByRole('button', { name: 'Create invite' }).click();
   const linkField = page.getByLabel(`Invite link for ${partner}`);
   await expect(linkField).toHaveValue(/\/invite\/[A-Za-z0-9_-]{20,}$/);
@@ -128,6 +131,7 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
   await page.reload();
   await expect(page.getByRole('list', { name: 'Members' })).toContainText(partner);
   await expect(page.getByRole('list', { name: 'Members' })).toContainText('Partner');
+  await expect(page.getByRole('list', { name: 'Members' })).toContainText('In the family as Pat');
 
   // Real-time (PLT-06): the partner's open page updates when the owner records a transaction, no reload.
   await expect(p2.getByTestId('realtime-status')).toHaveAttribute('data-status', 'live');

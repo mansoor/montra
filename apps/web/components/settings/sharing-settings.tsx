@@ -1,54 +1,36 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import type { CreatedInviteDto, InviteDto, MemberDto, WorkspaceDto } from '@montra/api-client';
+import { useState } from 'react';
+import type { FamilyMemberDto, InviteDto, MemberDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
-import { defaultAccess, grantsFor, inviteLink, type Access } from '@/lib/settings';
+import {
+  defaultAccess,
+  grantsFor,
+  INVITE_ROLES,
+  isAdminRole,
+  type Access,
+  type InviteRole,
+} from '@/lib/settings';
 import { StatusLine, useAction } from '../use-action';
+import { InviteForm } from './invite-form';
 
-type InviteRole = 'partner' | 'viewer' | 'accountant';
-
-/** Household and accountant sharing (UP-04, AUTH-10, BIZ-13). */
+/** Household and accountant sharing, and who in the Family list each login is (UP-04, AUTH-10, AUTH-14..16). */
 export function SharingSettings({
   workspace,
   members,
   invites,
-  isOwner,
+  family,
+  currentUserId,
 }: {
   workspace: WorkspaceDto;
   members: MemberDto[];
   invites: InviteDto[];
-  isOwner: boolean;
+  family: FamilyMemberDto[];
+  currentUserId: string;
 }) {
-  const { busy, message, run, t } = useAction();
-  const [role, setRole] = useState<InviteRole>('partner');
-  const [access, setAccess] = useState<Record<string, Access>>({});
-  const [created, setCreated] = useState<CreatedInviteDto | null>(null);
-  const [copied, setCopied] = useState(false);
-  const link = created
-    ? inviteLink(typeof window === 'undefined' ? '' : window.location.origin, created.token)
-    : '';
-
-  async function onInvite(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const email = String(new FormData(form).get('email') ?? '').trim();
-    const invite = await run(
-      () =>
-        browserApi.createInvite(workspace.id, {
-          email,
-          role,
-          entityGrants: grantsFor(workspace, role, access),
-        }),
-      (r) => t('sharing.invite_sent', { email: r.email }),
-    );
-    if (invite) {
-      setCreated(invite);
-      setCopied(false);
-      form.reset();
-      setAccess({});
-    }
-  }
+  const { busy, run, t } = useAction();
+  const canManage = isAdminRole(workspace.role);
+  const personName = (id: string | null) => family.find((f) => f.id === id)?.name ?? null;
 
   return (
     <div className="space-y-6">
@@ -58,107 +40,27 @@ export function SharingSettings({
         </h2>
         <ul className="divide-y divide-line" aria-label={t('sharing.members')}>
           {members.map((m) => (
-            <MemberItem key={m.userId} workspace={workspace} member={m} isOwner={isOwner} />
+            <MemberItem
+              key={m.userId}
+              workspace={workspace}
+              member={m}
+              person={personName(m.familyMemberId)}
+              canManage={canManage && m.userId !== currentUserId}
+            />
           ))}
         </ul>
       </section>
 
-      {isOwner && (
-        <form onSubmit={onInvite} className="card space-y-4" aria-labelledby="invite-heading" noValidate>
+      {canManage && (
+        <section className="card space-y-3" aria-labelledby="invite-heading">
           <h2 id="invite-heading" className="text-base font-semibold">
             {t('sharing.invite_title')}
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="inv-email" className="field-label">
-                {t('auth.email')}
-              </label>
-              <input id="inv-email" name="email" type="email" className="input" required />
-            </div>
-            <div>
-              <label htmlFor="inv-role" className="field-label">
-                {t('sharing.role')}
-              </label>
-              <select
-                id="inv-role"
-                className="input"
-                value={role}
-                onChange={(e) => {
-                  setRole(e.target.value as InviteRole);
-                  setAccess({});
-                }}
-                aria-describedby="inv-role-hint"
-              >
-                <option value="partner">{t('role.partner')}</option>
-                <option value="viewer">{t('role.viewer')}</option>
-                <option value="accountant">{t('role.accountant')}</option>
-              </select>
-              <p id="inv-role-hint" className="mt-1 text-xs text-muted">
-                {t(`sharing.role_hint.${role}`)}
-              </p>
-            </div>
-          </div>
-          <fieldset>
-            <legend className="field-label">{t('sharing.access_per_book')}</legend>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {workspace.entities.map((e) => (
-                <div key={e.id}>
-                  <label htmlFor={`inv-acc-${e.id}`} className="text-sm">
-                    {e.name}
-                  </label>
-                  <select
-                    id={`inv-acc-${e.id}`}
-                    className="input"
-                    value={access[e.id] ?? defaultAccess(role, e.type)}
-                    onChange={(ev) => setAccess((a) => ({ ...a, [e.id]: ev.target.value as Access }))}
-                  >
-                    <option value="none">{t('access.none')}</option>
-                    <option value="read">{t('access.read')}</option>
-                    <option value="write">{t('access.write')}</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-          </fieldset>
-          <button type="submit" className="btn-primary" disabled={busy}>
-            {t('sharing.create_invite')}
-          </button>
-          <StatusLine message={message} />
-          {created && (
-            <div className="space-y-2 rounded-md border border-line bg-brand-50 p-3">
-              <label htmlFor="inv-link" className="field-label">
-                {t('sharing.invite_link_for', { email: created.email })}
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="inv-link"
-                  className="input font-mono text-xs"
-                  readOnly
-                  value={link}
-                  onFocus={(e) => e.target.select()}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(link);
-                      setCopied(true);
-                    } catch {
-                      setCopied(false);
-                    }
-                  }}
-                >
-                  {copied ? t('common.copied') : t('common.copy')}
-                </button>
-              </div>
-              <p className="text-xs text-muted">{t('sharing.link_once')}</p>
-            </div>
-          )}
-        </form>
+          <InviteForm workspace={workspace} family={family} />
+        </section>
       )}
 
-      {isOwner && invites.length > 0 && (
+      {canManage && invites.length > 0 && (
         <section className="card space-y-2" aria-labelledby="invites-heading">
           <h2 id="invites-heading" className="text-base font-semibold">
             {t('sharing.invites')}
@@ -168,6 +70,7 @@ export function SharingSettings({
               <li key={i.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
                 <span className="font-medium">{i.email}</span>
                 <span className="text-muted">
+                  {personName(i.familyMemberId) && `${personName(i.familyMemberId)} · `}
                   {t(`role.${i.role}`)} · {t(`sharing.invite_status.${i.status}`)}
                 </span>
                 {i.status === 'pending' && (
@@ -197,28 +100,28 @@ export function SharingSettings({
 function MemberItem({
   workspace,
   member,
-  isOwner,
+  person,
+  canManage,
 }: {
   workspace: WorkspaceDto;
   member: MemberDto;
-  isOwner: boolean;
+  person: string | null;
+  canManage: boolean;
 }) {
   const { busy, message, run, t } = useAction();
-  const editable = isOwner && member.role !== 'owner';
+  // Nobody but the owner changes the owner, and that is by handing over (AUTH-15).
+  const editable = canManage && member.role !== 'owner' && member.status === 'active';
   const granted = new Map(member.grants.map((g) => [g.entityId, g.access]));
   const [grants, setGrants] = useState<Record<string, Access>>(() =>
     Object.fromEntries(
-      workspace.entities.map((e) => [
-        e.id,
-        granted.get(e.id) ??
-          (member.role === 'owner' ? 'write' : defaultAccess(member.role as InviteRole, e.type)),
-      ]),
+      workspace.entities.map((e) => [e.id, granted.get(e.id) ?? defaultAccess(member.role, e.type)]),
     ),
   );
   const role = member.role === 'owner' ? null : (member.role as InviteRole);
+  const canHandOver = workspace.role === 'owner' && member.role === 'admin' && member.status === 'active';
 
   return (
-    <li className="space-y-2 py-3">
+    <li className="space-y-2 py-3" data-testid="sharing-member">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{member.displayName || member.email}</span>
         <span className="text-sm text-muted">{member.email}</span>
@@ -226,8 +129,9 @@ function MemberItem({
           · {t(`role.${member.role}`)}
           {member.status !== 'active' && ` (${t(`sharing.member_status.${member.status}`)})`}
         </span>
-        {editable && role && member.status === 'active' && (
-          <div className="ml-auto flex items-center gap-2">
+        {person && <span className="chip">{t('sharing.is_person', { name: person })}</span>}
+        {editable && role && (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <label htmlFor={`role-${member.userId}`} className="sr-only">
               {t('sharing.role_for', { email: member.email })}
             </label>
@@ -246,10 +150,29 @@ function MemberItem({
                 )
               }
             >
-              <option value="partner">{t('role.partner')}</option>
-              <option value="viewer">{t('role.viewer')}</option>
-              <option value="accountant">{t('role.accountant')}</option>
+              {INVITE_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {t(`role.${r}`)}
+                </option>
+              ))}
             </select>
+            {canHandOver && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm(t('sharing.confirm_hand_over', { email: member.email }))) {
+                    void run(
+                      () => browserApi.updateMember(workspace.id, member.userId, { role: 'owner' }),
+                      t('sharing.handed_over', { email: member.email }),
+                    );
+                  }
+                }}
+              >
+                {t('sharing.hand_over')}
+              </button>
+            )}
             <button
               type="button"
               className="btn-secondary"
@@ -268,7 +191,7 @@ function MemberItem({
           </div>
         )}
       </div>
-      {editable && role && member.status === 'active' && (
+      {editable && role && !isAdminRole(role) && (
         <div className="flex flex-wrap items-end gap-2">
           {workspace.entities.map((e) => (
             <div key={e.id}>

@@ -58,7 +58,7 @@ export class UploadsController {
 
   @Post()
   async upload(@Ctx() ctx: RequestContext, @Req() req: FastifyRequest): Promise<UploadDto> {
-    requireRole(ctx, 'owner', 'partner', 'accountant');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'accountant');
     if (!req.isMultipart())
       throw new AppError(415, 'upload.multipart_required', 'Send the file as multipart/form-data');
     const part = await req.file({ limits: { fileSize: this.config.MAX_UPLOAD_BYTES, files: 1 } });

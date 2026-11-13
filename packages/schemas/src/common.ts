@@ -31,3 +31,13 @@ export const ProblemDto = z.object({
   errors: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
 });
 export type ProblemDto = z.infer<typeof ProblemDto>;
+
+/**
+ * Workspace roles (AUTH-14). The owner is the one account that created or was handed the workspace; an admin can do
+ * everything else the owner can. A member adds transactions, receipts and trips in the books granted to them.
+ */
+export const MemberRole = z.enum(['owner', 'admin', 'partner', 'member', 'viewer', 'accountant']);
+export type MemberRole = z.infer<typeof MemberRole>;
+/** Roles an invite can give; ownership is only handed over. */
+export const InviteRole = z.enum(['admin', 'partner', 'member', 'viewer', 'accountant']);
+export type InviteRole = z.infer<typeof InviteRole>;

@@ -41,12 +41,16 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   { key: 'data', label: 'settings.group.data', tabs: ['data', 'storage', 'privacy', 'support', 'billing'] },
 ];
 
+/** Members (AUTH-17) see only their own settings: the workspace's setup isn't theirs to change. */
+export const settingsGroupsFor = (role: string): SettingsGroup[] =>
+  role === 'member' ? SETTINGS_GROUPS.filter((g) => g.key === 'you') : SETTINGS_GROUPS;
+
 export const isSettingsTab = (raw: string | null | undefined): raw is SettingsTab =>
   Boolean(raw && Object.prototype.hasOwnProperty.call(SETTINGS_TABS, raw));
 
-/** The tab a settings URL shows: the one asked for, else Profile. */
-export const settingsTabOf = (raw: string | null | undefined): SettingsTab =>
-  isSettingsTab(raw) ? raw : 'profile';
+/** The tab a settings URL shows: the one asked for (if the role sees it), else Profile. */
+export const settingsTabOf = (raw: string | null | undefined, role = 'owner'): SettingsTab =>
+  isSettingsTab(raw) && settingsGroupsFor(role).some((g) => g.tabs.includes(raw)) ? raw : 'profile';
 
 export const settingsGroupOf = (tab: SettingsTab): SettingsGroup =>
   SETTINGS_GROUPS.find((g) => g.tabs.includes(tab)) ?? SETTINGS_GROUPS[0]!;

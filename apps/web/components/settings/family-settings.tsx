@@ -1,23 +1,33 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import type { AccountDto, FamilyMemberDto } from '@montra/api-client';
+import type { AccountDto, FamilyMemberDto, InviteDto, MemberDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { isAdminRole } from '@/lib/settings';
 import { StatusLine, useAction } from '../use-action';
+import { InviteForm } from './invite-form';
 
 const RELATIONSHIPS = ['self', 'spouse_partner', 'child', 'parent', 'other'] as const;
 type Relationship = (typeof RELATIONSHIPS)[number];
 
-/** Family members are profiles, not logins (FAM-01, FAM-02, FAM-04, FAM-11). */
+/**
+ * Family members are profiles; inviting one links them to a login, so each person is one entry here and under
+ * Sharing (FAM-01, FAM-02, FAM-04, FAM-11, AUTH-16).
+ */
 export function FamilySettings({
-  workspaceId,
+  workspace,
   members,
   accounts,
+  logins,
+  invites,
 }: {
-  workspaceId: string;
+  workspace: WorkspaceDto;
   members: FamilyMemberDto[];
   accounts: AccountDto[];
+  logins: MemberDto[];
+  invites: InviteDto[];
 }) {
+  const workspaceId = workspace.id;
   const { busy, message, run, t } = useAction();
   const active = members.filter((m) => m.status === 'active');
 
@@ -46,7 +56,14 @@ export function FamilySettings({
         <p className="text-sm text-muted">{t('members.intro')}</p>
         <ul className="divide-y divide-line">
           {members.map((m) => (
-            <MemberRow key={m.id} workspaceId={workspaceId} member={m} />
+            <MemberRow
+              key={m.id}
+              workspace={workspace}
+              member={m}
+              family={members}
+              login={logins.find((l) => l.userId === m.linkedUserId && l.status === 'active') ?? null}
+              invite={invites.find((i) => i.familyMemberId === m.id && i.status === 'pending') ?? null}
+            />
           ))}
         </ul>
         <form
@@ -125,8 +142,24 @@ export function FamilySettings({
   );
 }
 
-function MemberRow({ workspaceId, member }: { workspaceId: string; member: FamilyMemberDto }) {
+function MemberRow({
+  workspace,
+  member,
+  family,
+  login,
+  invite,
+}: {
+  workspace: WorkspaceDto;
+  member: FamilyMemberDto;
+  family: FamilyMemberDto[];
+  login: MemberDto | null;
+  invite: InviteDto | null;
+}) {
+  const workspaceId = workspace.id;
   const { busy, message, run, t } = useAction();
+  const [inviting, setInviting] = useState(false);
+  const canInvite =
+    isAdminRole(workspace.role) && member.status === 'active' && member.relationship !== 'self' && !login;
   const [name, setName] = useState(member.name);
   const [relationship, setRelationship] = useState<Relationship>(member.relationship);
   const dirty = name.trim() !== member.name || relationship !== member.relationship;
@@ -191,6 +224,31 @@ function MemberRow({ workspaceId, member }: { workspaceId: string; member: Famil
       </button>
       {member.status === 'inactive' && (
         <span className="pb-2 text-xs text-muted">{t('common.archived')}</span>
+      )}
+      <p className="w-full text-sm text-muted" data-testid="family-login">
+        {login
+          ? t('members.signs_in_as', { role: t(`role.${login.role}`), email: login.email })
+          : invite
+            ? t('members.invited_as', { role: t(`role.${invite.role}`), email: invite.email })
+            : member.relationship === 'self'
+              ? null
+              : t('members.no_login')}
+      </p>
+      {canInvite && !inviting && (
+        <button type="button" className="btn-secondary" onClick={() => setInviting(true)}>
+          {invite ? t('members.invite_again') : t('members.invite', { name: member.name })}
+        </button>
+      )}
+      {inviting && (
+        <div className="w-full rounded-md border border-line p-3">
+          <InviteForm
+            workspace={workspace}
+            family={family}
+            person={member}
+            idPrefix={`fam-inv-${member.id}`}
+            onCancel={() => setInviting(false)}
+          />
+        </div>
       )}
       <div className="w-full">
         <StatusLine message={message} />

@@ -30,13 +30,12 @@ import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { Db } from '../db/database.js';
 import { parse } from '../common/zod.js';
-import { requireRole } from '../common/roles.js';
+import { requireRole, RULE_EDITORS } from '../common/roles.js';
 import { RulesService } from './rules.service.js';
 import { ReviewService } from './review.service.js';
 import { InsightsService } from './insights.service.js';
 
 const uuid = (v: string) => parse(z.uuid(), v);
-const EDITORS = ['owner', 'partner', 'accountant'] as const;
 
 /** Rules, rule suggestions, review queue, suggestions, quick add, category proposals and insights (ADR-0012). */
 @Controller('v1/workspaces/:workspaceId')
@@ -59,7 +58,7 @@ export class CategorizationController {
 
   @Post('rules')
   createRule(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS);
     const req = parse(CreateRuleRequest, body);
     const c = dbCtx(ctx);
     return this.db.run(c, (trx) => this.rules.create(trx, c, req));
@@ -86,7 +85,7 @@ export class CategorizationController {
     @Body() body: unknown,
     @Headers('if-match') ifMatch?: string,
   ) {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS);
     const req = parse(UpdateRuleRequest, body);
     const c = dbCtx(ctx);
     return this.db.run(c, (trx) => this.rules.update(trx, c, uuid(id), req, ifMatch));
@@ -95,7 +94,7 @@ export class CategorizationController {
   @Delete('rules/:id')
   @HttpCode(204)
   async deleteRule(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS);
     const c = dbCtx(ctx);
     await this.db.run(c, (trx) => this.rules.remove(trx, c, uuid(id)));
   }
@@ -113,7 +112,7 @@ export class CategorizationController {
   @Post('rules/:id/apply')
   @HttpCode(202)
   async applyRule(@Ctx() ctx: RequestContext, @Param('id') id: string) {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS);
     const c = dbCtx(ctx);
     const jobId = await this.db.run(c, (trx) => this.rules.startApply(trx, c, uuid(id)));
     return this.job(c, jobId);
@@ -127,7 +126,7 @@ export class CategorizationController {
 
   @Post('rule-suggestions/:id/accept')
   async acceptSuggestion(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS);
     const req = parse(AcceptRuleSuggestionRequest, body ?? {});
     const c = dbCtx(ctx);
     const { rule, jobId } = await this.db.run(c, (trx) =>
@@ -168,7 +167,7 @@ export class CategorizationController {
   @Post('review/accept')
   @HttpCode(200)
   reviewAccept(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS, 'member');
     const req = parse(AcceptReviewRequest, body);
     const c = dbCtx(ctx);
     return this.db.run(c, (trx) => this.review.accept(trx, c, req));
@@ -177,7 +176,7 @@ export class CategorizationController {
   @Post('review/:transactionId/resolve')
   @HttpCode(200)
   reviewResolve(@Ctx() ctx: RequestContext, @Param('transactionId') id: string, @Body() body: unknown) {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS, 'member');
     const req = parse(ResolveReviewRequest, body);
     const c = dbCtx(ctx);
     return this.db.run(c, (trx) => this.review.resolve(trx, c, uuid(id), req));
@@ -212,7 +211,7 @@ export class CategorizationController {
   @Post('imports/:id/category-proposals/accept')
   @HttpCode(200)
   acceptProposals(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
-    requireRole(ctx, ...EDITORS);
+    requireRole(ctx, ...RULE_EDITORS);
     const req = parse(AcceptCategoryProposalsRequest, body);
     const c = dbCtx(ctx);
     return this.db.run(c, (trx) => this.review.acceptProposals(trx, c, uuid(id), req.names));

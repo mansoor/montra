@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { sql } from 'kysely';
-import { newId } from '@montra/db';
+import { newId, type Trx } from '@montra/db';
 import { CreateInviteRequest, SetGrantsRequest, UpdateMemberRequest, type MemberDto } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -28,7 +28,7 @@ import { Db } from '../db/database.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { requireRole } from '../common/roles.js';
+import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -54,13 +54,16 @@ export class SharingController {
    */
   @Post('invites')
   async invite(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const req = parse(CreateInviteRequest, body);
-    // AUTH-09: inviting an accountant is a sensitive action.
-    if (req.role === 'accountant') requireRecentAuth(ctx);
+    // AUTH-09: inviting an accountant or an admin is a sensitive action.
+    if (req.role === 'accountant' || req.role === 'admin') requireRecentAuth(ctx);
     const token = randomBytes(32).toString('base64url');
     const id = newId();
     const invite = await this.db.run(dbCtx(ctx), async (trx) => {
+      const familyMemberId = req.familyMember
+        ? await this.familyMemberFor(trx, ctx, req.familyMember, req.email)
+        : null;
       await trx
         .updateTable('app.workspace_invite')
         .set({ revoked_at: new Date() })
@@ -79,8 +82,9 @@ export class SharingController {
           entity_grants: JSON.stringify(req.entityGrants),
           token_hash: hashToken(token),
           invited_by: ctx.user.id,
+          family_member_id: familyMemberId,
         })
-        .returning(['id', 'email', 'role', 'expires_at'])
+        .returning(['id', 'email', 'role', 'expires_at', 'family_member_id'])
         .executeTakeFirstOrThrow();
     });
     const ws = await this.db.run(dbCtx(ctx), (trx) =>
@@ -105,17 +109,18 @@ export class SharingController {
       email: invite.email,
       role: invite.role,
       expiresAt: invite.expires_at,
+      familyMemberId: invite.family_member_id,
       ...(this.config.NODE_ENV === 'production' ? {} : { token }),
     };
   }
 
   @Get('invites')
   async invites(@Ctx() ctx: RequestContext) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const rows = await this.db.run(dbCtx(ctx), (trx) =>
       trx
         .selectFrom('app.workspace_invite')
-        .select(['id', 'email', 'role', 'expires_at', 'accepted_at', 'revoked_at'])
+        .select(['id', 'email', 'role', 'expires_at', 'accepted_at', 'revoked_at', 'family_member_id'])
         .where('workspace_id', '=', ctx.workspaceId!)
         .orderBy('created_at', 'desc')
         .execute(),
@@ -126,6 +131,7 @@ export class SharingController {
         email: r.email,
         role: r.role,
         expiresAt: r.expires_at,
+        familyMemberId: r.family_member_id,
         status: r.accepted_at
           ? 'accepted'
           : r.revoked_at
@@ -139,7 +145,7 @@ export class SharingController {
 
   @Delete('invites/:inviteId')
   async revokeInvite(@Ctx() ctx: RequestContext, @Param('inviteId') inviteId: string) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     await this.db.run(dbCtx(ctx), (trx) =>
       trx
         .updateTable('app.workspace_invite')
@@ -153,10 +159,15 @@ export class SharingController {
 
   @Patch('members/:userId')
   async update(@Ctx() ctx: RequestContext, @Param('userId') userId: string, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const req = parse(UpdateMemberRequest, body);
     const id = parse(z.uuid(), userId);
     if (id === ctx.user.id) throw unprocessable('member.self', 'You cannot change your own role');
+    if (req.role === 'owner') {
+      await this.handOver(ctx, id, req.status);
+      return (await this.loadMembers(ctx)).find((m) => m.userId === id);
+    }
+    if (req.role === 'admin') requireRecentAuth(ctx);
     await this.db.run(dbCtx(ctx), async (trx) => {
       const res = await trx
         .updateTable('app.workspace_member')
@@ -170,10 +181,78 @@ export class SharingController {
     return (await this.loadMembers(ctx)).find((m) => m.userId === id);
   }
 
+  /**
+   * AUTH-15: the owner hands the workspace to an active admin and becomes an admin. The new owner is made first:
+   * once the old one steps down, RLS no longer lets them touch the owner's row.
+   */
+  private async handOver(ctx: RequestContext, id: string, status: string | undefined): Promise<void> {
+    requireRole(ctx, 'owner');
+    requireRecentAuth(ctx);
+    if (status === 'revoked')
+      throw unprocessable('member.owner_revoked', 'The new owner must keep their access');
+    await this.db.run(dbCtx(ctx), async (trx) => {
+      const promoted = await trx
+        .updateTable('app.workspace_member')
+        .set({ role: 'owner' })
+        .where('workspace_id', '=', ctx.workspaceId!)
+        .where('user_id', '=', id)
+        .where('role', '=', 'admin')
+        .where('status', '=', 'active')
+        .executeTakeFirst();
+      if (promoted.numUpdatedRows === 0n) {
+        throw unprocessable('member.not_admin', 'Make them an admin before handing the workspace over');
+      }
+      await trx
+        .updateTable('app.workspace_member')
+        .set({ role: 'admin' })
+        .where('workspace_id', '=', ctx.workspaceId!)
+        .where('user_id', '=', ctx.user.id)
+        .execute();
+    });
+  }
+
+  /** The Family list person an invite is for: one already there (and not someone else's login), or a new one. */
+  private async familyMemberFor(
+    trx: Trx,
+    ctx: RequestContext,
+    who: NonNullable<CreateInviteRequest['familyMember']>,
+    email: string,
+  ): Promise<string> {
+    if ('name' in who) {
+      const created = await trx
+        .insertInto('app.family_member')
+        .values({
+          workspace_id: ctx.workspaceId!,
+          id: newId(),
+          name: who.name,
+          relationship: who.relationship,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      return created.id;
+    }
+    const person = await trx
+      .selectFrom('app.family_member as f')
+      .leftJoin('app.app_user as u', 'u.id', 'f.linked_user_id')
+      .select(['f.id', 'f.linked_user_id', 'u.email'])
+      .where('f.workspace_id', '=', ctx.workspaceId!)
+      .where('f.id', '=', who.id)
+      .executeTakeFirst();
+    if (!person) throw notFound('Family member');
+    if (person.linked_user_id && person.email?.toLowerCase() !== email) {
+      throw new AppError(
+        409,
+        'invite.family_linked',
+        'That person already signs in with another email. Remove their access first.',
+      );
+    }
+    return person.id;
+  }
+
   /** Per-entity access for a member (none / read / write), replacing previous grants. */
   @Put('members/:userId/grants')
   async grants(@Ctx() ctx: RequestContext, @Param('userId') userId: string, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const { grants } = parse(SetGrantsRequest, body);
     const id = parse(z.uuid(), userId);
     await this.db.run(dbCtx(ctx), async (trx) => {
@@ -213,12 +292,19 @@ export class SharingController {
         .selectAll()
         .where('workspace_id', '=', ctx.workspaceId!)
         .execute();
+      const people = await trx
+        .selectFrom('app.family_member')
+        .select(['id', 'linked_user_id'])
+        .where('workspace_id', '=', ctx.workspaceId!)
+        .where('linked_user_id', 'is not', null)
+        .execute();
       return members.map((m) => ({
         userId: m.user_id,
         email: m.email,
         displayName: m.display_name,
         role: m.role,
         status: m.status,
+        familyMemberId: people.find((p) => p.linked_user_id === m.user_id)?.id ?? null,
         grants: grants
           .filter((g) => g.user_id === m.user_id)
           .map((g) => ({ entityId: g.entity_id, access: g.access })),

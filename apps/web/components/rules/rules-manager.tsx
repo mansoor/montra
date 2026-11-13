@@ -39,7 +39,7 @@ export function RulesManager({
   const [editing, setEditing] = useState<RuleDto | 'new' | null>(null);
   const [message, setMessage] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null);
   const [jobs, setJobs] = useState<Record<string, JobDto>>({});
-  const canEdit = workspace.role !== 'viewer';
+  const canEdit = workspace.role !== 'viewer' && workspace.role !== 'member';
 
   useEffect(() => setRules(sortRules(initialRules)), [initialRules]);
   useEffect(() => setSuggestions(initialSuggestions), [initialSuggestions]);

@@ -262,7 +262,7 @@ export default async function RegisterPage({
           </table>
         </div>
       )}
-      {workspace.role === 'owner' && !account.archived && (
+      {(workspace.role === 'owner' || workspace.role === 'admin') && !account.archived && (
         <MoveBooks
           // A fresh form once the account is in other books: its choices change with them.
           key={account.entityId}
