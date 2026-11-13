@@ -61,20 +61,16 @@ test('a Walmart receipt splits its card line into groceries, electronics and clo
   await expect(page.getByRole('img', { name: 'Receipt page 1' })).toBeVisible();
 
   // Review (RCP-06): the T-shirt was a gift; the transaction follows.
-  await page.getByLabel('Category for TS MENS TEE').selectOption({ label: 'Gifts & donations' });
+  await page.getByLabel('Category for TS MENS TEE').selectOption({ label: 'Gifts' });
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText(/^Saved\./)).toBeVisible();
-  await expect(splits).toHaveText([
-    /Groceries\s*\$5\.10/,
-    /Electronics\s*\$13\.91/,
-    /Gifts & donations\s*\$9\.70/,
-  ]);
+  await expect(splits).toHaveText([/Groceries\s*\$5\.10/, /Electronics\s*\$13\.91/, /Gifts\s*\$9\.70/]);
 
   await page.getByRole('link', { name: 'Open the transaction' }).click();
   await expect(page).toHaveURL(/\/transactions\/[0-9a-f-]+$/);
   // The posted lines (DE-07) follow the receipt groups.
   const journal = page.locator('section[aria-labelledby="journal-heading"]');
-  await expect(journal.getByText('Gifts & donations')).toBeVisible();
+  await expect(journal.getByText('Gifts', { exact: true })).toBeVisible();
   await expect(journal.getByText('Electronics')).toBeVisible();
 
   // The receipt is in the matched list and found by what is on it (RCP-10).

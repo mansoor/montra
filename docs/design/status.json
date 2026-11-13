@@ -52,6 +52,10 @@
     "done",
     "Miscellaneous in the personal template's Daily living; migration 0040 adds it once to existing personal books (app.add_miscellaneous_category)"
   ],
+  "ACC-13": [
+    "done",
+    "Personal template in chart-templates.ts (Home, Transportation and Taxes groups, insurance split, more income); migration 0042 adds the missing groups and categories once to existing personal books and renames Fuel & transport and Gifts & donations (app.add_personal_categories)"
+  ],
   "TXN-01": [
     "done",
     "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"

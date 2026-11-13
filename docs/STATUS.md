@@ -1037,6 +1037,26 @@ Phase 11 leftovers:
     person to the login. The Family list shows "Signs in as …" or "Invite … to sign in" per person, and Sharing shows
     "In the family as …".
   - A linked login sees its own payslips. Only owners and admins can change a person's link.
+- **Fuller personal categories** (ACC-13, migration 0042): personal books now start with these groups:
+  - **Income**, with Bonus, Dividends, Side income, Pension & Social Security, Tax refund, Refunds & reimbursements and
+    Gifts received added.
+  - **Fixed bills**, with HOA dues and Home & renters, Auto and Life insurance added. "Insurance" stays as the
+    catch-all.
+  - **Daily living**, with Gym & fitness, Kids' activities, Allowance, Pets and Legal & professional fees added.
+  - **Home** (new): Improvement, Maintenance & repairs, Furniture, House cleaning, Gardener & landscaping, Pest control
+    & pool service, Laundry & dry cleaning.
+  - **Transportation** (new): Fuel, Public transit & rideshare, Parking & tolls, Car maintenance & repairs, Registration
+    & DMV.
+  - **Fun**, where Gifts and Charitable donations are now separate.
+  - **Taxes** (new): Property tax, Income tax payments, Tax preparation.
+  - **Debt**, unchanged.
+
+  Migration 0042 (`app.add_personal_categories`) adds what's missing to existing personal books once and renames "Fuel &
+  transport" to "Fuel" and "Gifts & donations" to "Gifts" unless those names are taken. It never deletes, archives or
+  moves a transaction. Keep it and `chart-templates.ts` in step. Merchant hints follow the new names (Home Depot →
+  Home improvement, Uber → Public transit & rideshare). A mortgage's escrowed property tax now lands in Property tax
+  (it used to match the first category with "tax" in its name, such as a payslip's Federal income tax), and escrowed
+  insurance in Home & renters insurance.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page (or **Zoom in on the receipt** under the lines) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

@@ -46,12 +46,12 @@ beforeAll(async () => {
     await post(month(back), '500000', 'Salary', 'ACME PAYROLL');
     await post(addDays(month(back), 3), '-40000', 'Groceries', 'Whole Foods');
     await post(addDays(month(back), 6), '-10000', 'Dining out', 'Bistro');
-    await post(addDays(month(back), 8), '-6000', 'Fuel & transport', 'Shell');
+    await post(addDays(month(back), 8), '-6000', 'Fuel', 'Shell');
   }
   await post(month(1), '500000', 'Salary', 'ACME PAYROLL');
   await post(addDays(month(1), 3), '-42000', 'Groceries', 'Whole Foods');
   await post(addDays(month(1), 6), '-30000', 'Dining out', 'Bistro');
-  await post(addDays(month(1), 9), '-1000', 'Fuel & transport', 'Shell');
+  await post(addDays(month(1), 9), '-1000', 'Fuel', 'Shell');
   await post(addDays(month(1), 12), '-120000', 'Household', 'Best Buy');
 });
 
@@ -80,14 +80,14 @@ describe('Month in review (FLOW-01, AIA-01)', () => {
       ['Household', '120000', '0'],
       ['Groceries', '42000', '40000'],
       ['Dining out', '30000', '10000'],
-      ['Fuel & transport', '1000', '6000'],
+      ['Fuel', '1000', '6000'],
     ]);
     // New spending (Household had none before) is the biggest change; groceries moved too little to say.
     expect(d.changes.up.map((x: any) => [x.name, x.change])).toEqual([
       ['Household', '120000'],
       ['Dining out', '20000'],
     ]);
-    expect(d.changes.down.map((x: any) => [x.name, x.change])).toEqual([['Fuel & transport', '-5000']]);
+    expect(d.changes.down.map((x: any) => [x.name, x.change])).toEqual([['Fuel', '-5000']]);
     expect(d.largest[0]).toMatchObject({ payee: 'Best Buy', categoryName: 'Household', amount: '120000' });
     expect(d.budget).toBeNull();
   });

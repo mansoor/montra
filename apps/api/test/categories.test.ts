@@ -60,10 +60,10 @@ describe('Miscellaneous (ACC-12)', () => {
 describe('adding categories (ACC-08)', () => {
   it('adds one to the group chosen, or the usual group for its kind', async () => {
     const fun = (await groups(personal)).find((g) => g.name === 'Fun');
-    const pets = await create({ entityId: personal, name: '  Pets  ', type: 'expense', groupId: fun.id });
+    const pets = await create({ entityId: personal, name: '  Horses  ', type: 'expense', groupId: fun.id });
     expect(pets.status).toBe(201);
     expect(pets.body).toMatchObject({
-      name: 'Pets',
+      name: 'Horses',
       group: 'Fun',
       groupId: fun.id,
       archived: false,
@@ -123,17 +123,17 @@ describe('adding categories (ACC-08)', () => {
       type: 'expense',
     });
     expect(res.status).toBe(403);
-    const pets = (await categories()).find((x) => x.name === 'Pets');
+    const pets = (await categories()).find((x) => x.name === 'Horses');
     expect((await viewer.patch(url(`/categories/${pets.id}`), { name: 'Animals' })).status).toBe(403);
   });
 });
 
 describe('renaming, moving and archiving (ACC-09, ACC-10)', () => {
   it('renames and moves a category, but not into a clash', async () => {
-    const pets = (await categories()).find((x) => x.name === 'Pets');
-    const renamed = await c.patch(url(`/categories/${pets.id}`), { name: 'Pet care' });
+    const pets = (await categories()).find((x) => x.name === 'Horses');
+    const renamed = await c.patch(url(`/categories/${pets.id}`), { name: 'Horse riding' });
     expect(renamed.status).toBe(200);
-    expect(renamed.body.name).toBe('Pet care');
+    expect(renamed.body.name).toBe('Horse riding');
     const daily = (await groups(personal)).find((g) => g.name === 'Daily living');
     const moved = await c.patch(url(`/categories/${pets.id}`), { groupId: daily.id });
     expect(moved.body.group).toBe('Daily living');
@@ -201,7 +201,7 @@ describe('renaming, moving and archiving (ACC-09, ACC-10)', () => {
   });
 
   it('refuses an empty change', async () => {
-    const pets = (await categories()).find((x) => x.name === 'Pet care');
+    const pets = (await categories()).find((x) => x.name === 'Horse riding');
     expect((await c.patch(url(`/categories/${pets.id}`), {})).status).toBe(400);
   });
 });
@@ -237,5 +237,124 @@ describe('the Miscellaneous migration (ACC-12)', () => {
       [entity],
     );
     expect(await add()).toBe(0);
+  });
+});
+
+describe('the personal categories migration (ACC-13)', () => {
+  // Every category 0042 adds, but for the two it makes by renaming.
+  const ADDED = [
+    'Bonus',
+    'Dividends',
+    'Side income',
+    'Pension & Social Security',
+    'Tax refund',
+    'Refunds & reimbursements',
+    'Gifts received',
+    'HOA dues',
+    'Home & renters insurance',
+    'Auto insurance',
+    'Life insurance',
+    'Gym & fitness',
+    "Kids' activities",
+    'Allowance',
+    'Pets',
+    'Legal & professional fees',
+    'Home improvement',
+    'Home maintenance & repairs',
+    'Furniture & furnishings',
+    'House cleaning',
+    'Gardener & landscaping',
+    'Pest control & pool service',
+    'Laundry & dry cleaning',
+    'Public transit & rideshare',
+    'Parking & tolls',
+    'Car maintenance & repairs',
+    'Registration & DMV',
+    'Charitable donations',
+    'Property tax',
+    'Income tax payments',
+    'Tax preparation',
+  ];
+
+  it('brings books made from the older list up to the new one, once', async () => {
+    const ws = (
+      await c.post('/v1/workspaces', { name: 'Older list', baseCurrency: 'USD', template: 'household' })
+    ).body;
+    const wsUrl = (p: string) => `/v1/workspaces/${ws.id}${p}`;
+    const entity = (await c.get(wsUrl('/entities'))).body.data.find((e: any) => e.type === 'personal').id;
+    const add = async () =>
+      (await admin.query(`select app.add_personal_categories($1, $2) as n`, [ws.id, entity])).rows[0]
+        .n as number;
+    const groupNames = async () =>
+      (await c.get(wsUrl(`/category-groups?entityId=${entity}`))).body.data.map((g: any) => g.name);
+    const template = await groupNames();
+    // Made from the template: nothing to do.
+    expect(await add()).toBe(0);
+
+    // Turn the book back into one made before 0042, with a group of the owner's own after Debt.
+    const q = (sql: string, extra: unknown[] = []) => admin.query(sql, [entity, ...extra]);
+    await q(
+      `update app.ledger_account set name = 'Fuel & transport',
+              category_group_id = (select id from app.category_group where entity_id = $1 and name = 'Daily living')
+        where entity_id = $1 and name = 'Fuel'`,
+    );
+    await q(
+      `update app.ledger_account set name = 'Gifts & donations' where entity_id = $1 and name = 'Gifts'`,
+    );
+    await q(`delete from app.ledger_account where entity_id = $1 and name = any($2)`, [ADDED]);
+    await q(
+      `delete from app.category_group where entity_id = $1 and name in ('Home', 'Transportation', 'Taxes')`,
+    );
+    for (const [name, pos] of [
+      ['Income', 0],
+      ['Fixed bills', 1],
+      ['Daily living', 2],
+      ['Fun', 3],
+      ['Debt', 4],
+    ] as const)
+      await q(`update app.category_group set sort_order = $2 where entity_id = $1 and name = $3`, [
+        pos,
+        name,
+      ]);
+    await q(
+      `insert into app.category_group (workspace_id, entity_id, name, kind, sort_order)
+       values ($2, $1, 'Side projects', 'daily', 5)`,
+      [ws.id],
+    );
+
+    // Two renames, three groups and the missing categories; then nothing more.
+    expect(await add()).toBe(2 + 3 + ADDED.length);
+    expect(await add()).toBe(0);
+    expect(await groupNames()).toEqual([...template, 'Side projects']);
+    const after = (await c.get(wsUrl(`/categories?entityId=${entity}`))).body.data;
+    const groupOf = (name: string) => after.find((x: any) => x.name === name)?.group;
+    expect(groupOf('Fuel')).toBe('Transportation');
+    expect(groupOf('Gifts')).toBe('Fun');
+    expect(groupOf('Property tax')).toBe('Taxes');
+    expect(groupOf('House cleaning')).toBe('Home');
+    expect(groupOf('Bonus')).toBe('Income');
+    expect(after.some((x: any) => /Fuel & transport|Gifts & donations/.test(x.name))).toBe(false);
+  });
+
+  it('leaves an old name alone when the new one is taken', async () => {
+    const ws = (
+      await c.post('/v1/workspaces', { name: 'Both names', baseCurrency: 'USD', template: 'household' })
+    ).body;
+    const entity = (await c.get(`/v1/workspaces/${ws.id}/entities`)).body.data.find(
+      (e: any) => e.type === 'personal',
+    ).id;
+    // The owner already split it: "Fuel" and their own "Fuel & transport" both stay.
+    await admin.query(
+      `insert into app.ledger_account (workspace_id, entity_id, type, subtype, name, currency, is_category)
+       values ($1, $2, 'expense', 'category', 'Fuel & transport', 'USD', true)`,
+      [ws.id, entity],
+    );
+    expect(
+      (await admin.query(`select app.add_personal_categories($1, $2) as n`, [ws.id, entity])).rows[0].n,
+    ).toBe(0);
+    const names = (await c.get(`/v1/workspaces/${ws.id}/categories?entityId=${entity}`)).body.data.map(
+      (x: any) => x.name,
+    );
+    expect(names).toEqual(expect.arrayContaining(['Fuel', 'Fuel & transport']));
   });
 });

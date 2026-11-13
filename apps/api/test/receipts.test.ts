@@ -219,18 +219,18 @@ describe('the Walmart receipt (Phase 5 exit criterion 1, requirements §3.5)', (
       lineTotal: l.lineTotal,
       discount: l.discount,
       taxable: l.taxable,
-      ...(l.rawText === 'TS MENS TEE' ? { categoryId: cat('Gifts & donations') } : {}),
+      ...(l.rawText === 'TS MENS TEE' ? { categoryId: cat('Gifts') } : {}),
     }));
     const updated = await c.patch(url(`/receipts/${receipt.id}`), { version: receipt.version, lines });
     expect(updated.status).toBe(200);
     expect(await splitsOf(txn.id)).toEqual({
       Groceries: '510',
       Electronics: '1391',
-      'Gifts & donations': '970',
+      Gifts: '970',
     });
     const rules = (await c.get(url('/rules'))).body.data;
     expect(rules).toContainEqual(
-      expect.objectContaining({ scope: 'receipt_line', name: "Men's T-shirt → Gifts & donations" }),
+      expect.objectContaining({ scope: 'receipt_line', name: "Men's T-shirt → Gifts" }),
     );
     // The same item on the next receipt follows the rule.
     const next = await capture([
@@ -241,7 +241,7 @@ describe('the Walmart receipt (Phase 5 exit criterion 1, requirements §3.5)', (
       'TOTAL 9.70',
     ]);
     expect(next.lines[0]).toMatchObject({
-      categoryId: cat('Gifts & donations'),
+      categoryId: cat('Gifts'),
       categorization: { step: 'rule' },
     });
   });
