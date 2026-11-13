@@ -20,6 +20,8 @@ import {
   type TxnFilters,
 } from '../../src/features/txn-filters';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
+import { canChangeOn } from '../../src/features/roles';
+import { useAbilities } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Field, FilterChip, Monogram, Small } from '../../src/ui/components';
@@ -109,7 +111,11 @@ export default function Transactions() {
     touch();
   };
 
+  const can = useAbilities();
+
   const renderItem = ({ item }: { item: LocalTransaction }) => {
+    // Swipe actions only where this login may change the row (AUTH-18).
+    const editable = canChangeOn(can, accounts, item.accountId);
     const name = item.merchantName ?? item.payee ?? item.description;
     const meta = [
       fmtDate(item.date),
@@ -122,6 +128,7 @@ export default function Transactions() {
       <Swipeable
         friction={2}
         onSwipeableWillOpen={() => haptic.select()}
+        enabled={editable}
         renderRightActions={() => (
           <View style={{ flexDirection: 'row' }}>
             <Action label={t('mobile.txn.categorize')} color={th.primary} onPress={() => setPicking(item)} />
@@ -133,10 +140,14 @@ export default function Transactions() {
           onPress={() => router.push(`/transaction/${item.id}`)}
           accessibilityRole="button"
           accessibilityLabel={`${name}, ${fmtMoney(item.amount, item.currency)}, ${meta}`}
-          accessibilityActions={[
-            { name: 'categorize', label: t('mobile.txn.categorize') },
-            { name: 'delete', label: t('mobile.txn.delete') },
-          ]}
+          accessibilityActions={
+            editable
+              ? [
+                  { name: 'categorize', label: t('mobile.txn.categorize') },
+                  { name: 'delete', label: t('mobile.txn.delete') },
+                ]
+              : []
+          }
           onAccessibilityAction={(e) =>
             e.nativeEvent.actionName === 'delete' ? remove(item) : setPicking(item)
           }

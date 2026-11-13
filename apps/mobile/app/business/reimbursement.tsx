@@ -13,10 +13,11 @@ import type { CategoryDto, PayrollPersonDto } from '@montra/schemas';
 import { dollarsToMinor } from '../../src/features/payroll';
 import { t } from '../../src/i18n';
 import { removePage } from '../../src/receipts/files';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Banner, Body, Button, Card, Field, Row, Screen, Segmented, Small } from '../../src/ui/components';
+import { NotAllowed } from '../../src/ui/NotAllowed';
 import { useTheme } from '../../src/ui/theme';
 
 type Photo = { uri: string; name: string; type: string; shot: boolean };
@@ -32,6 +33,7 @@ export default function Reimbursement() {
   const router = useRouter();
   const { entityId } = useLocalSearchParams<{ entityId: string }>();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const all = useLocal((s) => s.getReference('categories')) ?? [];
   const categories = useMemo(
@@ -115,6 +117,12 @@ export default function Reimbursement() {
     }
   };
 
+  if (!can.record || !can.writes(entityId))
+    return (
+      <Screen>
+        <NotAllowed />
+      </Screen>
+    );
   if (camera) {
     return (
       <Screen testID="reimbursement-camera">

@@ -13,7 +13,7 @@ import { useShareIntentContext } from 'expo-share-intent';
 import type { ImportBatchDto, ImportRowDto } from '@montra/schemas';
 import type { UploadFile } from '../src/api/client';
 import { fmtDate, fmtMoney, prefersDayFirst, t } from '../src/i18n';
-import { useSession } from '../src/session/SessionProvider';
+import { useAbilities, useSession } from '../src/session/SessionProvider';
 import { useLocal, useSync } from '../src/sync/SyncProvider';
 import {
   IMPORT_MIME_TYPES,
@@ -24,6 +24,7 @@ import {
   type GuidedChoices,
 } from '../src/features/import-mapping';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../src/ui/components';
+import { NotAllowed } from '../src/ui/NotAllowed';
 import { useTheme } from '../src/ui/theme';
 
 type Phase = 'pick' | 'scan' | 'working' | 'mapping' | 'preview' | 'done';
@@ -32,6 +33,8 @@ const WAITING = new Set(['uploaded', 'parsing', 'committing']);
 export default function ImportScreen() {
   const th = useTheme();
   const { state: session, api } = useSession();
+  // Imports are for owners, admins, partners and accountants (AUTH-18); a share from another app lands here too.
+  const allowed = useAbilities().importFiles;
   const { state: sync, refresh } = useSync();
   const share = useShareIntentContext();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
@@ -106,11 +109,12 @@ export default function ImportScreen() {
   // A file shared into Montra from another app.
   const shared = share.shareIntent.files?.[0];
   useEffect(() => {
-    if (shared && accountId && phase === 'pick') {
+    if (!allowed && shared) share.resetShareIntent();
+    else if (shared && accountId && phase === 'pick') {
       void start({ uri: shared.path, name: shared.fileName, type: shared.mimeType });
       share.resetShareIntent();
     }
-  }, [shared, accountId, phase, start, share]);
+  }, [allowed, shared, accountId, phase, start, share]);
 
   const pick = async () => {
     const r = await DocumentPicker.getDocumentAsync({
@@ -179,6 +183,12 @@ export default function ImportScreen() {
 
   const willImport = rows.filter((r) => r.effective === 'import' || r.effective === 'match').length;
 
+  if (!allowed)
+    return (
+      <Screen testID="import">
+        <NotAllowed />
+      </Screen>
+    );
   return (
     <Screen testID="import">
       {error ? <Banner tone="danger" text={error} /> : null}

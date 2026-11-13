@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { RecommendationDto } from '@montra/schemas';
 import { t } from '../src/i18n';
 import { useCached } from '../src/features/use-cached';
-import { useSession } from '../src/session/SessionProvider';
+import { useAbilities, useSession } from '../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Screen, Small, useToast } from '../src/ui/components';
 
 const applies = (r: RecommendationDto) =>
@@ -12,6 +12,8 @@ const applies = (r: RecommendationDto) =>
 export default function Suggestions() {
   const toast = useToast();
   const { state: session, api } = useSession();
+  // Acting on a suggestion changes budgets, goals or rules: for those who set the books up (AUTH-18).
+  const canAct = useAbilities().setUp;
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const recs = useCached(ws, 'recommendations', () => api.recommendations(ws), Boolean(ws));
   const [busy, setBusy] = useState(false);
@@ -28,12 +30,14 @@ export default function Suggestions() {
       <Small>{t('rec.subtitle')}</Small>
       {recs.stale ? <Banner tone="warning" text={t('mobile.plan.offline')} /> : null}
       {recs.error ? <Banner tone="danger" text={recs.error} /> : null}
-      <Button
-        kind="secondary"
-        label={t('rec.refresh')}
-        disabled={busy || recs.stale}
-        onPress={() => act(() => api.refreshRecommendations(ws), t('mobile.suggestions.checked'))}
-      />
+      {canAct ? (
+        <Button
+          kind="secondary"
+          label={t('rec.refresh')}
+          disabled={busy || recs.stale}
+          onPress={() => act(() => api.refreshRecommendations(ws), t('mobile.suggestions.checked'))}
+        />
+      ) : null}
       {recs.data?.length === 0 ? (
         <Card>
           <Body>{t('rec.empty')}</Body>
@@ -45,19 +49,21 @@ export default function Suggestions() {
           <Small>{t(`rec.type_${r.type}`)}</Small>
           <Body style={{ fontWeight: '700' }}>{r.title}</Body>
           {r.wording ? <Small>{r.wording}</Small> : null}
-          {applies(r) ? (
+          {canAct && applies(r) ? (
             <Button
               label={t('rec.apply')}
               disabled={busy || recs.stale}
               onPress={() => act(() => api.acceptRecommendation(ws, r.id), t('rec.applied'))}
             />
           ) : null}
-          <Button
-            kind="secondary"
-            label={t('rec.dismiss')}
-            disabled={busy || recs.stale}
-            onPress={() => act(() => api.dismissRecommendation(ws, r.id), t('rec.dismissed'))}
-          />
+          {canAct ? (
+            <Button
+              kind="secondary"
+              label={t('rec.dismiss')}
+              disabled={busy || recs.stale}
+              onPress={() => act(() => api.dismissRecommendation(ws, r.id), t('rec.dismissed'))}
+            />
+          ) : null}
         </Card>
       ))}
     </Screen>

@@ -11,7 +11,8 @@ import type { LocalTransaction } from '@montra/sync';
 import { expenseLines } from '../../src/features/business';
 import { editRules } from '../../src/features/transaction-edit';
 import { fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { canChangeOn } from '../../src/features/roles';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Banner, Body, Button, Card, Field, Row, Screen, Small } from '../../src/ui/components';
@@ -29,6 +30,7 @@ export default function TransactionDetail() {
   const row = useLocal((s) => s.getTransaction(id), [id]);
   const categories = useLocal((s) => s.getReference('categories')) ?? [];
   const allAccounts = useLocal((s) => s.getReference('accounts')) ?? [];
+  const can = useAbilities();
   const [draft, setDraft] = useState<LocalTransaction | null>(null);
   const [picking, setPicking] = useState(false);
   const [choosingAccount, setChoosingAccount] = useState(false);
@@ -73,7 +75,12 @@ export default function TransactionDetail() {
     : null;
   // The paying account can change on an income or expense nothing else manages, to another in the same currency;
   // a reconciled one keeps its account, amount and date (DE-15).
-  const { reconciled, canMove, canChangeDate } = editRules(row);
+  // A viewer, or books this login only reads, show the transaction without changing it (AUTH-18).
+  const editable = canChangeOn(can, allAccounts, row.accountId);
+  const rules = editRules(row);
+  const reconciled = rules.reconciled;
+  const canMove = editable && rules.canMove;
+  const canChangeDate = editable && rules.canChangeDate;
   const account = allAccounts.find((a) => a.id === draft.accountId);
   const accountChoices = allAccounts.filter(
     (a) => a.id === row.accountId || (canSpendFrom(a) && a.currency === row.currency),
@@ -83,7 +90,7 @@ export default function TransactionDetail() {
   const receipt = fresh !== undefined ? fresh : (row.server?.receipt ?? null);
   // BIZ-18: who spent and, for a meal, who was there and why. Entered on the web.
   const business = expenseLines(row.server?.expenseDetail);
-  const canAdd = !row.pending && Boolean(row.amount?.startsWith('-')) && !row.server?.managedBy;
+  const canAdd = editable && !row.pending && Boolean(row.amount?.startsWith('-')) && !row.server?.managedBy;
   const receiptState: ReceiptState | null = receipt
     ? receipt.status === 'processing'
       ? 'reading'
@@ -143,6 +150,7 @@ export default function TransactionDetail() {
           <Small>{t(RECEIPT_LABEL[receiptState])}</Small>
         ) : null}
         {reconciled ? <Small>{t('mobile.txn.reconciled_note')}</Small> : null}
+        {editable ? null : <Small>{t('mobile.role.read_only_books')}</Small>}
       </Card>
       {business ? (
         <Card testID="txn-expense-detail">
@@ -161,6 +169,7 @@ export default function TransactionDetail() {
         label={t('mobile.txn.payee')}
         value={draft.payee ?? ''}
         onChangeText={(v) => setDraft({ ...draft, payee: v || null })}
+        editable={editable}
         testID="ed-payee"
       />
       {canChangeDate ? (
@@ -198,7 +207,7 @@ export default function TransactionDetail() {
         <Row
           title={t('mobile.txn.category')}
           subtitle={[categoryName ?? t('mobile.txn.uncategorized'), how].filter(Boolean).join(' · ')}
-          onPress={() => setPicking(true)}
+          onPress={editable ? () => setPicking(true) : undefined}
           testID="ed-category"
         />
       )}
@@ -206,6 +215,7 @@ export default function TransactionDetail() {
         label={t('mobile.txn.memo')}
         value={draft.memo ?? ''}
         onChangeText={(v) => setDraft({ ...draft, memo: v || null })}
+        editable={editable}
         multiline
       />
       <Field
@@ -221,8 +231,9 @@ export default function TransactionDetail() {
           })
         }
         autoCapitalize="none"
+        editable={editable}
       />
-      <Button label={t('mobile.txn.save')} onPress={() => void save()} testID="ed-save" />
+      {editable ? <Button label={t('mobile.txn.save')} onPress={() => void save()} testID="ed-save" /> : null}
       <SidePanel
         visible={choosingAccount}
         title={t('mobile.txn.account')}

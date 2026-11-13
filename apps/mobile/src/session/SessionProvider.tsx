@@ -10,6 +10,7 @@ import { config } from '../config';
 import { createApi, type Api } from '../api/client';
 import { nativeUpload } from '../api/file-upload';
 import { KratosClient, devToken, type LoginResult } from '../auth/kratos';
+import { abilitiesOf, NO_ABILITIES, type Abilities } from '../features/roles';
 
 const TOKEN_KEY = 'montra.session.v1';
 const WORKSPACE_KEY = 'montra.workspace.v1';
@@ -49,6 +50,13 @@ export function useSession(): SessionApi {
   const v = useContext(Ctx);
   if (!v) throw new Error('useSession outside SessionProvider');
   return v;
+}
+
+/** What the signed-in login may change in the open workspace (AUTH-18); nothing until signed in. */
+export function useAbilities(): Abilities {
+  const { state } = useSession();
+  const workspace = state.status === 'signed_in' ? state.workspace : null;
+  return useMemo(() => (workspace ? abilitiesOf(workspace) : NO_ABILITIES), [workspace]);
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {

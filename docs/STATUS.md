@@ -1037,6 +1037,16 @@ Phase 11 leftovers:
     person to the login. The Family list shows "Signs in as …" or "Invite … to sign in" per person, and Sharing shows
     "In the family as …".
   - A linked login sees its own payslips. Only owners and admins can change a person's link.
+  - **On the phone** (AUTH-18): each book in the workspace says whether this login may write it (`access`), and
+    `useAbilities()` (`apps/mobile/src/features/roles.ts`) decides what each screen shows.
+    - A viewer, or books shared read-only, has no Add tab, no swipe or edit actions, no Review, and no receipt or trip
+      capture.
+    - A member records but gets no setup: categories, budgets, goals, suggestions, payslips, rent and loan payments,
+      business settings, receipt reminders and imports.
+    - A member with a business's books can submit a staff spending claim with its receipt (`POST payroll/reimbursements`
+      and receipt uploads are on `MEMBER_WRITES`). Identity uploads and deciding claims stay closed to them.
+    - Backups are for owners and admins.
+    - A screen reached by a link or a file shared from another app shows a short "your role can't do this" note.
 - **Fuller personal categories** (ACC-13, migration 0042): personal books now start with these groups:
   - **Income**, with Bonus, Dividends, Side income, Pension & Social Security, Tax refund, Refunds & reimbursements and
     Gifts received added.

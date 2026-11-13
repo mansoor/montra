@@ -585,7 +585,8 @@ The recommendation is a TypeScript monorepo: Next.js on web, React Native (Expo)
 | AUTH-14 | An admin role that can do everything the owner can, except change or remove the owner. | S |
 | AUTH-15 | The owner can hand the workspace over to an admin. Nobody else can change or remove the owner. | S |
 | AUTH-16 | An invite can name the family member it is for, and accepting it links that person to the login, so each person appears once in the Family list and Sharing. Their own payslips become visible to them. | S |
-| AUTH-17 | A member role, for children or staff, that adds and edits transactions, receipts and trips in the books it is given, with no access to settings, rules, imports or sharing. | S |
+| AUTH-17 | A member role, for children or staff, that adds and edits transactions, receipts and trips, and submits staff spending claims, in the books it is given, with no access to settings, rules, imports or sharing. | S |
+| AUTH-18 | The phone app shows each role only what it may do: a viewer, or books shared read-only, show without the add, edit, review or capture actions; a member records transactions, receipts and trips but gets no setup (categories, budgets, goals, payslips, imports, business settings); a whole-workspace backup is offered to owners and admins only. | S |
 
 ### 13.2 Backup, restore and storage
 

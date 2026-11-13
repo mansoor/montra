@@ -2,6 +2,7 @@
 import { useRouter } from 'expo-router';
 import type { OutboxItem } from '@montra/sync';
 import { t } from '../src/i18n';
+import { useAbilities } from '../src/session/SessionProvider';
 import { useLocal, useSync } from '../src/sync/SyncProvider';
 import { Body, Button, Card, Screen, Small, Title } from '../src/ui/components';
 
@@ -10,6 +11,7 @@ const opTarget = (o: OutboxItem): string | null => ('id' in o.op ? (o.op as { id
 export default function Activity() {
   const router = useRouter();
   const { engine, store, state, refresh, touch } = useSync();
+  const can = useAbilities();
   const conflicts = useLocal((s) => s.conflicts()) ?? [];
   const outbox = useLocal((s) => s.outbox()) ?? [];
   const drafts = outbox.filter((o) => o.status === 'draft');
@@ -38,10 +40,13 @@ export default function Activity() {
               onPress={() => router.push(`/transaction/${opTarget(d)}`)}
             />
           ) : null}
-          <Button
-            label={t('mobile.activity.retry')}
-            onPress={() => void engine.retryDraft(d.op.opId).then(refresh)}
-          />
+          {/* A change this login may no longer make would only fail again: it can be discarded (AUTH-18). */}
+          {can.record ? (
+            <Button
+              label={t('mobile.activity.retry')}
+              onPress={() => void engine.retryDraft(d.op.opId).then(refresh)}
+            />
+          ) : null}
           <Button
             kind="danger"
             label={t('mobile.activity.discard')}

@@ -25,7 +25,8 @@ and so read that person's payslips.
   - **The owner** stays a single account: the one that created the workspace or was handed it.
   - **Partner** is unchanged: daily use of the personal books plus any granted. No sharing, AI, storage or billing.
   - **Member** (AUTH-17) writes the personal books by default (any others by grant), but only through transactions,
-    receipts, trips and the review queue.
+    receipts, trips, the review queue and staff spending claims (PRL-11). A member may upload a claim's receipt but
+    not an identity document, and can't approve or decline claims.
   - **Viewer** and **accountant** are unchanged.
 - **The owner's row is the owner's** (AUTH-15).
   - RLS lets an admin manage members but not update, delete or create an `owner` row. Only the owner can make someone
@@ -64,8 +65,10 @@ and so read that person's payslips.
 - The jobs that act as "the owner" (nightly, storage mirror, support grant) still pick the single owner. Storage
   failure notices now go to admins too.
 - Payslips stay private as before. A linked login now sees its own, and admins see all, as owners do.
-- Mobile has no role checks. A member's phone gets 403 `role.member` from the API on the few setup actions it offers
-  (adding a category from the picker), with the API's message.
+- The phone follows the roles too (AUTH-18). Each book in the workspace DTO carries `access` (`read` or `write`, from
+  `app.entity_access`), and `abilitiesOf` in `apps/mobile/src/features/roles.ts` turns the role and those into what to
+  show. It only hides; the API still refuses. When adding a member route to `MEMBER_WRITES`, check the phone's
+  `setUp`/`record` split still matches.
 
 ## Alternatives considered
 

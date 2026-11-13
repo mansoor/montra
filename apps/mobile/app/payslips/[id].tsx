@@ -10,7 +10,7 @@ import type { PayslipDto } from '@montra/schemas';
 import { config } from '../../src/config';
 import { canConfirm, linesBySection } from '../../src/features/payslips';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
@@ -19,6 +19,7 @@ export default function PayslipReview() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { state: session, api, token } = useSession();
+  const canEdit = useAbilities().setUp; // AUTH-18
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const [payslip, setPayslip] = useState<PayslipDto | null>(null);
   const [bearer, setBearer] = useState<string | null>(null);
@@ -162,7 +163,7 @@ export default function PayslipReview() {
           {payslip.status !== 'posted' ? <Small>{t('mobile.payslips.change_split_on_web')}</Small> : null}
         </Card>
       ) : null}
-      {candidates.length > 0 ? (
+      {!canEdit ? null : candidates.length > 0 ? (
         <Card testID="payslip-candidates">
           <Body>{t('payslips.choose_deposit')}</Body>
           <Small>{t('payslips.choose_deposit_hint')}</Small>
@@ -200,11 +201,11 @@ export default function PayslipReview() {
           testID="payslip-confirm"
         />
       ) : null}
-      {payslip.status === 'needs_review' && !canConfirm(payslip) && candidates.length === 0 ? (
+      {canEdit && payslip.status === 'needs_review' && !canConfirm(payslip) && candidates.length === 0 ? (
         <Small>{t('mobile.payslips.fix_on_web')}</Small>
       ) : null}
       {error ? <Banner tone="danger" text={error} /> : null}
-      {payslip.status !== 'processing' ? (
+      {canEdit && payslip.status !== 'processing' ? (
         <Button
           kind="secondary"
           label={t('payslips.delete')}

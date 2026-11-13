@@ -175,7 +175,31 @@ describe('members (AUTH-17)', () => {
     expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/receipts/')).toBe(true);
     expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/imports')).toBe(false);
     expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/budgets')).toBe(false);
+    expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/payroll/reimbursements')).toBe(true);
+    expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/payroll/reimbursements/:id/decision')).toBe(
+      false,
+    );
+    expect(memberMayRequest('POST', '/v1/workspaces/:workspaceId/payroll/people')).toBe(false);
     expect(memberMayRequest('POST', undefined)).toBe(false);
+  });
+});
+
+describe('book access for clients (AUTH-18)', () => {
+  const accessOf = async (c: Client) =>
+    Object.fromEntries((await c.get(url(''))).body.entities.map((e: any) => [e.type, e.access]));
+
+  it('says which books a login may write', async () => {
+    const all = await accessOf(owner);
+    expect(Object.keys(all)).toContain('business');
+    expect(new Set(Object.values(all))).toEqual(new Set(['write']));
+    // A member sees only the personal books, writable by default.
+    expect(await accessOf(member)).toEqual({ personal: 'write' });
+    const viewer = h.as('roles-viewer@example.test');
+    await join(owner, viewer, { email: 'roles-viewer@example.test', role: 'viewer' });
+    expect(await accessOf(viewer)).toEqual({ personal: 'read' });
+    // The phone's offline copy says the same.
+    const pulled = (await viewer.get(url('/sync/pull?since=0'))).body.entities;
+    expect(pulled.map((e: any) => [e.type, e.access])).toEqual([['personal', 'read']]);
   });
 });
 

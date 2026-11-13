@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import type { BudgetPeriodDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import {
   assignedInput,
   lineTone,
@@ -44,6 +44,9 @@ export default function Budget() {
   const budgets = useCached(ws, 'budgets', () => api.budgets(ws), Boolean(ws));
   const budget = budgets.data?.find((b) => !b.archived && b.memberId === null && b.entityId === personal?.id);
   const [creating, setCreating] = useState(false);
+  // Budgets are set up by those who keep the books; others see them (AUTH-18).
+  const can = useAbilities();
+  const canEdit = can.setUp && can.writes(personal?.id);
 
   if (budgets.data && !budget) {
     return (
@@ -51,21 +54,23 @@ export default function Budget() {
         <Title>{t('nav.budget')}</Title>
         <Card>
           <Body>{t('budget.none_yet')}</Body>
-          <Small>{t('mobile.budget.setup_hint')}</Small>
-          <Button
-            label={t('budget.create')}
-            busy={creating}
-            disabled={budgets.stale || !personal}
-            testID="budget-create"
-            onPress={() => {
-              setCreating(true);
-              void api
-                .createBudget(ws, { entityId: personal!.id, name: t('budget.default_name') })
-                .then(() => budgets.reload())
-                .catch((e: Error) => toast.show(e.message))
-                .finally(() => setCreating(false));
-            }}
-          />
+          <Small>{canEdit ? t('mobile.budget.setup_hint') : t('mobile.role.not_allowed')}</Small>
+          {canEdit ? (
+            <Button
+              label={t('budget.create')}
+              busy={creating}
+              disabled={budgets.stale || !personal}
+              testID="budget-create"
+              onPress={() => {
+                setCreating(true);
+                void api
+                  .createBudget(ws, { entityId: personal!.id, name: t('budget.default_name') })
+                  .then(() => budgets.reload())
+                  .catch((e: Error) => toast.show(e.message))
+                  .finally(() => setCreating(false));
+              }}
+            />
+          ) : null}
         </Card>
       </Screen>
     );
@@ -79,10 +84,10 @@ export default function Budget() {
       </Screen>
     );
   }
-  return <BudgetPeriod ws={ws} budgetId={budget.id} />;
+  return <BudgetPeriod ws={ws} budgetId={budget.id} canEdit={canEdit} />;
 }
 
-function BudgetPeriod({ ws, budgetId }: { ws: string; budgetId: string }) {
+function BudgetPeriod({ ws, budgetId, canEdit }: { ws: string; budgetId: string; canEdit: boolean }) {
   const th = useTheme();
   const toast = useToast();
   const { api } = useSession();
@@ -169,17 +174,19 @@ function BudgetPeriod({ ws, budgetId }: { ws: string; budgetId: string }) {
           </Small>
         </Card>
       )}
-      <Button
-        kind="secondary"
-        label={t('budget.copy_last')}
-        disabled={busy || cached.stale}
-        onPress={() =>
-          void write(
-            () => api.copyBudget(ws, p.budget.id, p.start, 'last', p.budget.version),
-            t('budget.copied'),
-          )
-        }
-      />
+      {canEdit ? (
+        <Button
+          kind="secondary"
+          label={t('budget.copy_last')}
+          disabled={busy || cached.stale}
+          onPress={() =>
+            void write(
+              () => api.copyBudget(ws, p.budget.id, p.start, 'last', p.budget.version),
+              t('budget.copied'),
+            )
+          }
+        />
+      ) : null}
       {visibleGroups(p.groups, showAll).map((g) => (
         <Card key={g.id}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -196,7 +203,7 @@ function BudgetPeriod({ ws, budgetId }: { ws: string; budgetId: string }) {
               expanded={open === l.categoryId}
               lines={lines}
               disabled={busy || cached.stale}
-              onToggle={() => setOpen(open === l.categoryId ? null : l.categoryId)}
+              onToggle={() => canEdit && setOpen(open === l.categoryId ? null : l.categoryId)}
               onAssign={(assigned) =>
                 write(() =>
                   api.assignBudget(ws, p.budget.id, p.start, l.categoryId, assigned, p.budget.version),

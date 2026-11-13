@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Trx } from '@montra/db';
+import { sql } from 'kysely';
 import { addDays, calendarDate } from '@montra/domain';
 import {
   FIELD_GROUPS,
@@ -228,10 +229,18 @@ export class SyncService {
               )
               .selectAll('e')
               .select('pl.locked_through')
+              // What this login may do in the books (AUTH-18), as the workspace DTO says.
+              .select(sql<string>`app.entity_access(e.id)`.as('access'))
               .where('e.workspace_id', '=', ctx.workspaceId)
               .orderBy('e.created_at')
               .execute()
-          ).map((e) => toEntityDto(e) as SyncPullResponse['entities'][number])
+          ).map(
+            (e) =>
+              ({
+                ...toEntityDto(e),
+                access: e.access === 'write' ? 'write' : 'read',
+              }) as SyncPullResponse['entities'][number],
+          )
         : [],
     }));
     return { accounts, categories, members, entities };

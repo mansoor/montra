@@ -12,7 +12,7 @@ import { BUSINESS_CHART_MONTHS, type InvoiceDto } from '@montra/schemas';
 import { useCached } from '../../src/features/use-cached';
 import { invoicePdfName, newestFirst, openBills, openInvoices, sumMinor } from '../../src/features/business';
 import { currentLocale, fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { MiniLineChart } from '../../src/ui/charts';
 import { BusinessSettings } from '../../src/ui/BusinessSettings';
 import {
@@ -37,6 +37,7 @@ export default function Business() {
   const th = useTheme();
   const router = useRouter();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const businesses = useCached(ws, 'businesses', () => api.businesses(ws), Boolean(ws));
   const [picked, setPicked] = useState<string | null>(null);
@@ -291,12 +292,15 @@ export default function Business() {
                 <Small key={p.quarter}>{t('mobile.business.next_tax_date', { date: fmtDate(p.due) })}</Small>
               ))}
           </Card>
-          <Button
-            kind="secondary"
-            label={t('mobile.business.log_trip')}
-            onPress={() => router.push({ pathname: '/business/mileage', params: { entityId } })}
-            testID="business-mileage"
-          />
+          {/* Trips are recorded by anyone who records in these books; the profile is set up (AUTH-18). */}
+          {can.record && can.writes(entityId) ? (
+            <Button
+              kind="secondary"
+              label={t('mobile.business.log_trip')}
+              onPress={() => router.push({ pathname: '/business/mileage', params: { entityId } })}
+              testID="business-mileage"
+            />
+          ) : null}
           <Button
             kind="secondary"
             label={t('mobile.payroll.open')}
@@ -348,7 +352,7 @@ export default function Business() {
           <Small>{t('mobile.business.write_on_web')}</Small>
         </>
       ) : null}
-      {entityId ? (
+      {entityId && can.setUp && can.writes(entityId) ? (
         <Disclosure
           title={t('mobile.business.settings_title')}
           summary={t('mobile.business.settings_summary')}

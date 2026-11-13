@@ -8,7 +8,7 @@ import { useRouter } from 'expo-router';
 import { rollInOrder } from '../../src/features/rentals';
 import { useCached } from '../../src/features/use-cached';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
-import { useSession } from '../../src/session/SessionProvider';
+import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Card, Row, Screen, Segmented, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
@@ -16,6 +16,7 @@ export default function Rentals() {
   const th = useTheme();
   const router = useRouter();
   const { state: session, api } = useSession();
+  const can = useAbilities();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const portfolios = useCached(ws, 'rentals', () => api.rentalPortfolios(ws), Boolean(ws));
   const [picked, setPicked] = useState<string | null>(null);
@@ -82,17 +83,20 @@ export default function Rentals() {
                   {BigInt(r.open) > 0n ? fmtMoney(r.open, ccy) : t('rentals.rent_paid')}
                 </Small>
               }
-              onPress={() =>
-                router.push({
-                  pathname: '/rentals/log',
-                  params: {
-                    leaseId: r.leaseId,
-                    entityId,
-                    name: `${r.propertyName} · ${r.unitLabel}`,
-                    open: r.open,
-                    currency: d.roll.currency,
-                  },
-                })
+              onPress={
+                !can.setUp || !can.writes(entityId)
+                  ? undefined
+                  : () =>
+                      router.push({
+                        pathname: '/rentals/log',
+                        params: {
+                          leaseId: r.leaseId,
+                          entityId,
+                          name: `${r.propertyName} · ${r.unitLabel}`,
+                          open: r.open,
+                          currency: d.roll.currency,
+                        },
+                      })
               }
               testID="rentals-row"
             />

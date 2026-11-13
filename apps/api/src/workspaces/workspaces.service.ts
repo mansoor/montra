@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { groupTemplates, newId, systemAccountTemplates, type Trx } from '@montra/db';
+import { sql } from 'kysely';
 import type { EntityType } from '@montra/domain';
 import type { CreateWorkspaceRequest, WorkspaceDto } from '@montra/schemas';
 import { Db } from '../db/database.js';
@@ -143,6 +144,7 @@ export class WorkspacesService {
           j.onRef('pl.workspace_id', '=', 'e.workspace_id').onRef('pl.entity_id', '=', 'e.id'),
         )
         .select(['e.id', 'e.type', 'e.name', 'e.functional_currency', 'pl.locked_through'])
+        .select(sql<string>`app.entity_access(e.id)`.as('access'))
         .where('e.workspace_id', '=', workspaceId)
         .where('e.archived_at', 'is', null)
         .orderBy('e.created_at')
@@ -159,6 +161,7 @@ export class WorkspacesService {
           name: e.name,
           functionalCurrency: e.functional_currency,
           lockedThrough: e.locked_through,
+          access: e.access === 'write' ? ('write' as const) : ('read' as const),
         })),
       };
     });
