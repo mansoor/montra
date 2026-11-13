@@ -210,7 +210,7 @@
   ],
   "AUTH-08": [
     "partial",
-    "Kratos rate limits, new-device alerts, and a Cloudflare challenge in Terraform, never applied"
+    "Auth gateway in front of Kratos (ADR-0042): per-account, per-address, per-session and per-flow counts, delays after 5 failures, a 15-minute pause after 10, owner alert email and security event; new-device alerts. No CAPTCHA yet; the Cloudflare challenge is in Terraform, never applied"
   ],
   "AUTH-09": [
     "done",

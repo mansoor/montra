@@ -111,4 +111,14 @@ export const templates = {
     ].join('\n');
     return { to: args.to, subject: 'New sign-in to your Montra account', text, category: 'security' };
   },
+  /** AUTH-08: sign-in paused for this email after too many wrong passwords (ADR-0042). */
+  signInLocked(args: { to: string; ip: string | null; until: Date; url: string }): MailMessage {
+    const text = [
+      `Someone entered the wrong password for your Montra account too many times${args.ip ? ` (from ${args.ip})` : ''}, so signing in with a password is paused until ${args.until.toISOString()}.`,
+      '',
+      'If this was you, wait and try again, or reset your password now; the reset works while sign-in is paused.',
+      `If it wasn't you, your password still kept them out. Consider changing it and turning on two-step verification: ${args.url}`,
+    ].join('\n');
+    return { to: args.to, subject: 'Sign-in to your Montra account was paused', text, category: 'security' };
+  },
 };

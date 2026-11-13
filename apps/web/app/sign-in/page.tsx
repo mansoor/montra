@@ -8,6 +8,7 @@ import { toRenderModel } from '@/lib/kratos-ui';
 import { staticT as t } from '@/lib/i18n-static';
 import { AuthShell } from '@/components/kratos/auth-shell';
 import { FlowForm } from '@/components/kratos/flow-form';
+import { GatewayNotice } from '@/components/kratos/gateway-notice';
 
 export const metadata: Metadata = { title: 'Sign in' };
 export const dynamic = 'force-dynamic';
@@ -54,6 +55,7 @@ async function KratosSignIn({ params }: { params: Params }) {
       }
       intro={stepUp ? t('auth.step_up_intro') : flow.refresh ? t('auth.reauth_intro') : undefined}
     >
+      <GatewayNotice params={params} />
       <FlowForm
         model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })}
         label={t('auth.sign_in_title')}

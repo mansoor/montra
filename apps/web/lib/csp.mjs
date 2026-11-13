@@ -15,7 +15,7 @@ const OIDC_PROVIDERS = ['https://appleid.apple.com', 'https://accounts.google.co
  * @returns {string}
  */
 export function contentSecurityPolicy({ kratosUrl, dev = false } = {}) {
-  const kratos = new URL(kratosUrl || 'http://localhost:4433').origin;
+  const kratos = new URL(kratosUrl || 'http://localhost:4455').origin;
   return [
     "default-src 'self'",
     // Inline for the theme script and Next's own bootstrap. Kratos for webauthn.js, without which passkeys and security keys don't work.

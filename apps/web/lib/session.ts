@@ -47,8 +47,11 @@ export const KRATOS_PUBLIC_URL = (process.env.KRATOS_PUBLIC_URL ?? 'http://local
   /\/+$/,
   '',
 );
-/** Kratos public API as reached from the browser (flow init redirects, form actions, scripts). */
-export const KRATOS_BROWSER_URL = (process.env.NEXT_PUBLIC_KRATOS_URL ?? 'http://localhost:4433').replace(
+/**
+ * Kratos public API as reached from the browser (flow init redirects, form actions, scripts): the auth gateway in
+ * front of it (AUTH-08, ADR-0042).
+ */
+export const KRATOS_BROWSER_URL = (process.env.NEXT_PUBLIC_KRATOS_URL ?? 'http://localhost:4455').replace(
   /\/+$/,
   '',
 );

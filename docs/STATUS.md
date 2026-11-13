@@ -1067,6 +1067,18 @@ Phase 11 leftovers:
   Home improvement, Uber → Public transit & rideshare). A mortgage's escrowed property tax now lands in Property tax
   (it used to match the first category with "tax" in its name, such as a payslip's Federal income tax), and escrowed
   insurance in Home & renters insurance.
+- **Auth gateway** (AUTH-08, [ADR-0042](design/adr/0042-auth-gateway.md), migration 0043): self-hosted Kratos has no
+  limits on guessing, so browsers and the phone now reach it only through `apps/api/src/auth-gateway`, its own process
+  (`pnpm --filter @montra/api dev:auth-gateway`, port 4455; `auth-gateway` service in Terraform). Kratos's
+  `base_url` is the gateway's address, and its own port stays private.
+  - Counted: wrong passwords per email (pause after 10 in 15 minutes) and per address (30), wrong authenticator or
+    recovery codes per session (5), wrong emailed codes per address and flow (10), recovery and verification emails per
+    address (10 an hour), sign-ups per address (20 an hour). Past a few failures each attempt waits 1–8 s.
+  - A paused browser goes back to its form with a notice; the phone gets 429 and a flow message (id 4290001).
+  - A paused email's account gets a `sign_in_locked` security event and an email; a password reset still works.
+  - Counters are HMAC-keyed rows in `app.auth_throttle`, so they hold no email or address.
+  - Tried on 2026-11-13 against local Kratos v26.2.0 for native and browser password sign-in. Not yet run in
+    production, and the local dev mode (`AUTH_MODE=dev`) doesn't use it.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page (or **Zoom in on the receipt** under the lines) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.
