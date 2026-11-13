@@ -34,6 +34,7 @@
     "@montra/domain": "workspace:*",
     "@montra/i18n": "workspace:*",
     "@montra/importers": "workspace:*",
+    "@montra/password": "workspace:*",
     "@montra/schemas": "workspace:*",
     "@nestjs/common": "^11.2.8",
     "@nestjs/core": "^11.2.8",

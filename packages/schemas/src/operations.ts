@@ -192,6 +192,16 @@ export const AppVersionsDto = z.object({
 });
 export type AppVersionsDto = z.infer<typeof AppVersionsDto>;
 
+/**
+ * AUTH-02 (ADR-0043): the password policy for the whole service, set in the admin console and enforced by the auth
+ * gateway. The length can only rise above Kratos's floor of 12; the score is zxcvbn's 0–4 guessability estimate.
+ */
+export const PasswordPolicyDto = z.object({
+  minLength: z.number().int().min(12).max(64),
+  minScore: z.number().int().min(0).max(4),
+});
+export type PasswordPolicyDto = z.infer<typeof PasswordPolicyDto>;
+
 export const ImportFailureRowDto = z.object({
   institution: z.string(),
   fileType: z.string(),

@@ -2,7 +2,12 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { buildAuthGateway, TOO_MANY_ATTEMPTS_ID } from '../src/auth-gateway/gateway.js';
+import {
+  buildAuthGateway,
+  passwordChangeOf,
+  TOO_MANY_ATTEMPTS_ID,
+  WEAK_PASSWORD_ID,
+} from '../src/auth-gateway/gateway.js';
 import {
   afterFailure,
   delayFor,
@@ -121,8 +126,18 @@ function fakeKratos() {
     void reply.header('set-cookie', ['a=1; Path=/', 'b=2; Path=/']);
     return { headers: req.headers };
   });
-  for (const kind of ['login', 'recovery', 'verification']) {
+  for (const kind of ['login', 'recovery', 'verification', 'registration', 'settings']) {
     app.get(`/self-service/${kind}/flows`, async (req) => flowBody((req.query as any).id));
+  }
+  app.get('/sessions/whoami', async () => ({
+    identity: { traits: { email: EMAIL, name: 'Gateway Owner' } },
+  }));
+  for (const kind of ['registration', 'settings']) {
+    app.post(`/self-service/${kind}`, async (req, reply) =>
+      browser(req)
+        ? reply.code(303).header('location', `${WEB}/after-${kind}`).send()
+        : { id: (req.query as any).flow, ok: true },
+    );
   }
   const browser = (req: any) => !String(req.headers['content-type']).includes('json');
   app.post('/self-service/login', async (req, reply) => {
@@ -355,6 +370,140 @@ describe('the gateway', () => {
     const res = await down.inject({ method: 'GET', url: '/sessions/whoami' });
     expect(res.statusCode).toBe(502);
     await down.close();
+  });
+});
+
+describe('new passwords (AUTH-02, ADR-0043)', () => {
+  let kratos: ReturnType<typeof fakeKratos>;
+  let store: MemoryStore;
+  const STRONG = 'violet-tractor-mango-ledger-91';
+
+  beforeAll(async () => {
+    kratos = fakeKratos();
+    await kratos.app.listen({ port: 0, host: '127.0.0.1' });
+  });
+  afterAll(async () => {
+    await kratos.app.close();
+  });
+
+  const gatewayWith = (extra: Partial<Parameters<typeof buildAuthGateway>[0]> = {}) => {
+    store = new MemoryStore();
+    kratos.hits.length = 0;
+    const address = kratos.app.server.address() as { port: number };
+    return buildAuthGateway({
+      kratosUrl: `http://127.0.0.1:${address.port}`,
+      webUrl: WEB,
+      secret: SECRET,
+      store,
+      mail: new MemoryMail(),
+      ...extra,
+    });
+  };
+  const signUp = (g: FastifyInstance, password: string, json = true) =>
+    g.inject({
+      method: 'POST',
+      url: '/self-service/registration?flow=r9',
+      headers: json
+        ? { 'content-type': 'application/json', accept: 'application/json' }
+        : { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: json
+        ? { method: 'password', password, traits: { email: 'new.person@example.test' } }
+        : new URLSearchParams({
+            method: 'password',
+            password,
+            'traits.email': 'new.person@example.test',
+          }).toString(),
+    });
+
+  it('reads the password and the person’s email from either kind of form', () => {
+    const json = passwordChangeOf({
+      method: 'POST',
+      url: '/self-service/registration?flow=x',
+      headers: { 'content-type': 'application/json' },
+      body: Buffer.from(JSON.stringify({ method: 'password', password: 'p', traits: { email: 'a@b.test' } })),
+    });
+    expect(json).toMatchObject({
+      kind: 'registration',
+      flowId: 'x',
+      json: true,
+      password: 'p',
+      email: 'a@b.test',
+    });
+    expect(
+      passwordChangeOf({
+        method: 'POST',
+        url: '/self-service/settings?flow=y',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: Buffer.from('method=totp&totp_code=1'),
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses a long but guessable password before Kratos sees it, and lets a strong one through', async () => {
+    const g = gatewayWith();
+    const weak = await signUp(g, 'password12345678');
+    expect(weak.statusCode).toBe(400);
+    expect(weak.json()).toMatchObject({
+      id: 'r9',
+      ui: {
+        messages: [
+          {
+            id: WEAK_PASSWORD_ID,
+            text: expect.stringContaining('too easy to guess'),
+            context: { problems: ['too_weak'], min_length: 12, min_score: 3 },
+          },
+        ],
+      },
+    });
+    expect(kratos.hits).not.toContain('POST /self-service/registration');
+    expect((await signUp(g, STRONG)).statusCode).toBe(200);
+    expect(kratos.hits).toContain('POST /self-service/registration');
+    // Both count towards the address's sign-up limit.
+    expect([...store.buckets.values()][0]?.failures).toBe(2);
+    await g.close();
+  });
+
+  it('sends a browser back to the form saying what was wrong, under the admin’s policy', async () => {
+    const g = gatewayWith({ policy: async () => ({ minLength: 32, minScore: 3 }) });
+    const res = await signUp(g, STRONG, false);
+    expect(res.statusCode).toBe(303);
+    const to = new URL(res.headers.location as string);
+    expect(to.pathname).toBe('/sign-up');
+    expect(Object.fromEntries(to.searchParams)).toEqual({
+      notice: 'weak_password',
+      problems: 'too_short',
+      min: '32',
+      flow: 'r9',
+    });
+    await g.close();
+  });
+
+  it('checks a password change against the signed-in person’s own email and name', async () => {
+    const seen: string[][] = [];
+    const g = gatewayWith({
+      strength: async (_p, words) => {
+        seen.push(words);
+        return { score: 4, warning: null, suggestions: [] };
+      },
+    });
+    const res = await g.inject({
+      method: 'POST',
+      url: '/self-service/settings?flow=s1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: 'ory_kratos_session=abc' },
+      payload: `method=password&password=${STRONG}&csrf_token=x`,
+    });
+    expect(res.statusCode).toBe(303);
+    expect(res.headers.location).toBe(`${WEB}/after-settings`);
+    expect(kratos.hits).toContain('GET /sessions/whoami');
+    expect(seen[0]).toEqual(expect.arrayContaining(['gateway-owner@example.test', 'gateway', 'owner']));
+    await g.close();
+  });
+
+  it('still checks the length when scoring fails', async () => {
+    const g = gatewayWith({ strength: async () => Promise.reject(new Error('worker gone')) });
+    expect((await signUp(g, 'password12345678')).statusCode).toBe(200);
+    expect((await signUp(g, 'short')).json().ui.messages[0].context.problems).toEqual(['too_short']);
+    await g.close();
   });
 });
 

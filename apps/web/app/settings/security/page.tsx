@@ -8,6 +8,8 @@ import { getI18n } from '@/lib/i18n-server';
 import { FlowForm, FlowMessages } from '@/components/kratos/flow-form';
 import { I18nProvider } from '@/components/i18n';
 import { SessionsList } from '@/components/sessions-list';
+import { GatewayNotice } from '@/components/kratos/gateway-notice';
+import { newPasswordProps } from '@/lib/password-policy';
 
 export const metadata: Metadata = { title: 'Security' };
 export const dynamic = 'force-dynamic';
@@ -25,6 +27,8 @@ export default async function SecurityPage({
   const { me, t } = await getI18n();
   let sections: { group: string; model: ReturnType<typeof toRenderModel> }[] = [];
   let flowMessages: ReturnType<typeof toRenderModel>['messages'] = [];
+  const newPassword =
+    AUTH_MODE === 'kratos' ? await newPasswordProps({ email: me.email, name: me.displayName }) : undefined;
   if (AUTH_MODE === 'kratos') {
     const init = { return_to: safeReturnTo(params.return_to) };
     if (!params.flow) redirect(flowInitUrl('settings', init));
@@ -48,13 +52,18 @@ export default async function SecurityPage({
         </div>
         <p className="text-sm text-muted">{t('security.signed_in_as', { email: me.email })}</p>
         {AUTH_MODE !== 'kratos' && <p className="card text-sm">{t('security.dev_mode')}</p>}
+        <GatewayNotice params={params} />
         <FlowMessages messages={flowMessages} />
         {sections.map(({ group, model }) => (
           <section key={group} className="card space-y-3" aria-labelledby={`sec-${group}`}>
             <h2 id={`sec-${group}`} className="text-base font-semibold">
               {t(`security.group.${group}`)}
             </h2>
-            <FlowForm model={model} label={t(`security.group.${group}`)} />
+            <FlowForm
+              model={model}
+              label={t(`security.group.${group}`)}
+              newPassword={group === 'password' ? newPassword : undefined}
+            />
           </section>
         ))}
         <section className="card space-y-3" aria-labelledby="sec-devices">

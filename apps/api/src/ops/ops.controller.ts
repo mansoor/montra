@@ -20,6 +20,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   AdminSetPlanRequest,
   AppVersionsDto,
+  PasswordPolicyDto,
   CheckoutRequest,
   ClientErrorRequest,
   CreateNoticeRequest,
@@ -119,6 +120,12 @@ export class StatusController {
   @Get('status')
   getStatus() {
     return this.status.current();
+  }
+
+  /** AUTH-02: public, so the sign-up page can show the policy before anyone has an account. */
+  @Get('password-policy')
+  passwordPolicy() {
+    return this.status.passwordPolicy();
   }
 }
 
@@ -235,6 +242,18 @@ export class AdminController {
   async saveAppVersions(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireAdmin(req);
     await this.admin.saveAppVersions(ctx.user.id, parse(AppVersionsDto, body));
+  }
+
+  @Get('password-policy')
+  adminPasswordPolicy() {
+    return this.admin.passwordPolicy();
+  }
+
+  @Put('password-policy')
+  @HttpCode(204)
+  async saveAdminPasswordPolicy(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireAdmin(req);
+    await this.admin.savePasswordPolicy(ctx.user.id, parse(PasswordPolicyDto, body));
   }
 
   @Get('analytics/imports')

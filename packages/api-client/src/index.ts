@@ -170,6 +170,7 @@ import type {
   AdminWorkspaceDto,
   AiAccuracyRowDto,
   AppVersionsDto,
+  PasswordPolicyDto,
   BillingDto,
   BillingLinkDto,
   ClientErrorRequest,
@@ -959,6 +960,10 @@ export class ApiClient {
   getStatus() {
     return this.request<StatusDto>('GET', '/v1/status');
   }
+  /** AUTH-02: the service's password policy, for strength meters. Needs no sign-in. */
+  passwordPolicy() {
+    return this.request<PasswordPolicyDto>('GET', '/v1/password-policy');
+  }
 
   // ----- The staff console (OPS-01) ----------------------------------------------------------------
   adminMe() {
@@ -1007,6 +1012,12 @@ export class ApiClient {
   }
   adminSaveAppVersions(input: AppVersionsDto) {
     return this.request<void>('PUT', '/v1/admin/app-versions', input);
+  }
+  adminPasswordPolicy() {
+    return this.request<PasswordPolicyDto>('GET', '/v1/admin/password-policy');
+  }
+  adminSavePasswordPolicy(input: PasswordPolicyDto) {
+    return this.request<void>('PUT', '/v1/admin/password-policy', input);
   }
   adminImportFailures(days: number) {
     return this.request<{ data: ImportFailureRowDto[] }>(
@@ -3181,6 +3192,7 @@ export type {
   AppVersionsDto,
   BillingDto,
   FeatureFlagDto,
+  PasswordPolicyDto,
   StatusDto,
   SupportGrantDto,
   SystemNoticeDto,

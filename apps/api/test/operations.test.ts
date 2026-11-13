@@ -563,6 +563,7 @@ describe('notices, status and the app version (OPS-03, OPS-04)', () => {
   afterAll(async () => {
     await admin.query(`delete from app.system_notice`);
     await admin.query(`update app.system_setting set value = '0.0.0' where key like 'min_app_version%'`);
+    await admin.query(`delete from app.system_setting where key like 'password_%'`);
     await h.close();
   });
 
@@ -662,6 +663,30 @@ describe('notices, status and the app version (OPS-03, OPS-04)', () => {
     expect((await asPhone('android', '1.4.0')).statusCode).toBe(426);
     expect((await staff.get('/v1/me')).status).toBe(200);
     expect((await staff.put('/v1/admin/app-versions', { ios: 'soon', android: '1.0.0' })).status).toBe(400);
+  });
+
+  it('sets the password policy the gateway enforces, and shows it to anyone (AUTH-02, ADR-0043)', async () => {
+    const policy = async () => {
+      const res = await h.app.inject({ method: 'GET', url: '/v1/password-policy' });
+      expect(res.statusCode).toBe(200);
+      return JSON.parse(res.body);
+    };
+    expect(await policy()).toEqual({ minLength: 12, minScore: 3 });
+    expect((await staff.put('/v1/admin/password-policy', { minLength: 16, minScore: 4 })).status).toBe(204);
+    expect(await policy()).toEqual({ minLength: 16, minScore: 4 });
+    expect((await staff.get('/v1/admin/password-policy')).body).toEqual({ minLength: 16, minScore: 4 });
+    // Never below Kratos's own 12, nor above what a score can be.
+    for (const bad of [{ minLength: 8, minScore: 3 }, { minLength: 16, minScore: 5 }, { minLength: 16 }]) {
+      expect((await staff.put('/v1/admin/password-policy', bad)).status).toBe(400);
+    }
+    const log = await admin.query(`select detail from app.admin_log where action = 'password_policy.save'`);
+    expect(log.rows.map((r) => r.detail)).toEqual([{ minLength: 16, minScore: 4 }]);
+    // Support staff can read it but not change it, and customers can't reach the console at all.
+    const support = h.as('policy-support@example.com');
+    await makeStaff(support, 'policy-support@example.com', 'support');
+    expect((await support.put('/v1/admin/password-policy', { minLength: 12, minScore: 3 })).status).toBe(403);
+    expect((await h.as('policy-customer@example.com').get('/v1/admin/password-policy')).status).toBe(404);
+    await staff.put('/v1/admin/password-policy', { minLength: 12, minScore: 3 });
   });
 });
 

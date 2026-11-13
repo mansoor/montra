@@ -7,6 +7,7 @@ import { staticT as t } from '@/lib/i18n-static';
 import { AuthShell } from './auth-shell';
 import { FlowForm } from './flow-form';
 import { GatewayNotice } from './gateway-notice';
+import { newPasswordProps } from '@/lib/password-policy';
 
 /** Sign-up, recovery and verification pages: start the flow if needed, then render its nodes. */
 export async function SelfServicePage({
@@ -36,7 +37,11 @@ export async function SelfServicePage({
   return (
     <AuthShell title={title} intro={intro}>
       <GatewayNotice params={params} />
-      <FlowForm model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })} label={title} />
+      <FlowForm
+        model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })}
+        label={title}
+        newPassword={kind === 'registration' ? await newPasswordProps() : undefined}
+      />
       <p className="text-sm">
         <Link href="/sign-in" className="text-brand-600 underline">
           {t('auth.back_to_sign_in')}

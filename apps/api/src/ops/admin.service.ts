@@ -13,6 +13,7 @@ import type {
   AdminWorkspaceDto,
   AiAccuracyRowDto,
   AppVersionsDto,
+  PasswordPolicyDto,
   CreateNoticeRequest,
   FeatureFlagDto,
   ImportFailureRowDto,
@@ -24,6 +25,7 @@ import type {
 } from '@montra/schemas';
 import { notFound, unprocessable } from '../common/errors.js';
 import { AdminDb, SupportDb } from './staff.js';
+import { POLICY_KEYS, readPasswordPolicy } from '../auth-gateway/policy.js';
 
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null;
 
@@ -242,6 +244,27 @@ export class AdminService {
       const rows = await trx.selectFrom('app.system_setting').select(['key', 'value']).execute();
       const get = (k: string) => rows.find((r) => r.key === k)?.value ?? '0.0.0';
       return { ios: get('min_app_version_ios'), android: get('min_app_version_android') };
+    });
+  }
+
+  /** AUTH-02 (ADR-0043): the auth gateway rereads it within a minute. */
+  async passwordPolicy(): Promise<PasswordPolicyDto> {
+    return this.db.run((trx) => readPasswordPolicy(trx));
+  }
+
+  async savePasswordPolicy(staffId: string, req: PasswordPolicyDto): Promise<void> {
+    await this.db.run(async (trx) => {
+      for (const [key, value] of [
+        [POLICY_KEYS.minLength, String(req.minLength)],
+        [POLICY_KEYS.minScore, String(req.minScore)],
+      ] as const) {
+        await trx
+          .insertInto('app.system_setting')
+          .values({ key, value })
+          .onConflict((oc) => oc.column('key').doUpdateSet({ value, updated_at: sql`now()` }))
+          .execute();
+      }
+      await this.log(trx, staffId, 'password_policy.save', null, { ...req });
     });
   }
 

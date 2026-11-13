@@ -184,10 +184,7 @@
     "partial",
     "Kratos password, passkey and OIDC, with web sign-in and sign-up. Passkey sign-up and sign-in tested in Chromium with a virtual authenticator against local Kratos; no live Kratos, real device or real OIDC provider yet"
   ],
-  "AUTH-02": [
-    "done",
-    "Kratos: 12+ chars, HIBP, Argon2id"
-  ],
+  "AUTH-02": ["done", "Kratos: 12+ chars, HIBP, Argon2id. Admin-set minimum length and zxcvbn strength score enforced by the auth gateway, with a meter on web sign-up and security settings (ADR-0043)"],
   "AUTH-03": [
     "done",
     ""

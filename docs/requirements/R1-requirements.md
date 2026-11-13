@@ -570,7 +570,7 @@ The recommendation is a TypeScript monorepo: Next.js on web, React Native (Expo)
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | AUTH-01 | Sign up and sign in with email + password, passkeys (WebAuthn), Sign in with Apple and Google. | M |
-| AUTH-02 | Passwords: minimum 12 characters, checked against known-breached lists, no forced periodic resets (NIST SP 800-63B), stored with Argon2id. | M |
+| AUTH-02 | Passwords: minimum 12 characters (operators may require more, and a minimum strength score), checked against known-breached lists, no forced periodic resets (NIST SP 800-63B), stored with Argon2id. A strength meter shows as people type. | M |
 | AUTH-03 | Email verification before any financial data is added. | M |
 | AUTH-04 | MFA: authenticator app (TOTP) and passkeys; SMS only as a fallback; 10 single-use recovery codes. MFA on by default for workspace owners and required for accountant access. | M |
 | AUTH-05 | Forgot password: single-use emailed link valid 30 minutes; the same message is shown whether or not the email exists; MFA still required after reset; all other sessions signed out; a confirmation email sent. | M |

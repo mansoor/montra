@@ -6,6 +6,7 @@ import type {
   ClientErrorRequest,
   CreateSupportGrantRequest,
   CreateSupportRequest,
+  PasswordPolicyDto,
   StatusDto,
   SupportGrantDto,
   SystemNoticeDto,
@@ -16,6 +17,7 @@ import { Db } from '../db/database.js';
 import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import { JOB_STALL_MS } from '../jobs/queue.js';
 import { ERROR_REPORTER, type ErrorReporter } from './errors.js';
+import { readPasswordPolicy } from '../auth-gateway/policy.js';
 
 type Ctx = DbContext & { workspaceId: string; userId: string };
 
@@ -211,6 +213,11 @@ export class StatusService {
   /** Forgets the last answer, for tests and for right after staff post something. */
   forget(): void {
     this.cached = null;
+  }
+
+  /** AUTH-02 (ADR-0043): what the strength meters on the web and the phone measure against. */
+  async passwordPolicy(): Promise<PasswordPolicyDto> {
+    return this.db.run({}, (trx) => readPasswordPolicy(trx));
   }
 
   private async read(): Promise<StatusDto> {

@@ -1,4 +1,13 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import {
+  DEFAULT_POLICY,
+  judgePassword,
+  personalWords,
+  strengthOf,
+  type PasswordPolicy,
+  type PasswordProblem,
+  type Strength,
+} from '@montra/password';
 import type { MailPort } from '../mail/mail.service.js';
 import { templates } from '../mail/mail.service.js';
 import {
@@ -34,6 +43,8 @@ const UI_PATH: Record<FlowKind, string> = {
 
 /** Shown on a paused native (phone) flow, in Kratos's own message shape. */
 export const TOO_MANY_ATTEMPTS_ID = 4290001;
+/** Shown when a new password doesn't meet the policy (ADR-0043). */
+export const WEAK_PASSWORD_ID = 4000901;
 
 export interface Check {
   rule: Rule;
@@ -64,6 +75,20 @@ export interface GatewayOptions {
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
   logger?: boolean;
+  /** The admin console's password policy (ADR-0043). Defaults to 12 characters and a score of 3. */
+  policy?: () => Promise<PasswordPolicy>;
+  /** Scores a password; the entrypoint runs this on a worker thread. */
+  strength?: (password: string, words: string[]) => Promise<Strength>;
+}
+
+/** A new password being set: at sign-up, or in settings (including after a recovery). */
+export interface PasswordChange {
+  kind: 'registration' | 'settings';
+  flowId: string | null;
+  json: boolean;
+  password: string;
+  email: string | null;
+  name: string | null;
 }
 
 type Fields = Record<string, string>;
@@ -75,11 +100,15 @@ export function parseFields(contentType: string | undefined, raw: Buffer | undef
     try {
       const value: unknown = JSON.parse(text);
       if (!value || typeof value !== 'object') return {};
-      return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-          .filter(([, v]) => typeof v === 'string')
-          .map(([k, v]) => [k, v as string]),
-      );
+      // One level of nesting, named as the browser's form names it: `traits.email`.
+      const out: Fields = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        if (typeof v === 'string') out[k] = v;
+        else if (v && typeof v === 'object' && !Array.isArray(v))
+          for (const [k2, v2] of Object.entries(v as Record<string, unknown>))
+            if (typeof v2 === 'string') out[`${k}.${k2}`] = v2;
+      }
+      return out;
     } catch {
       return {};
     }
@@ -161,6 +190,47 @@ export function attemptOf(
   return null;
 }
 
+/** A password being set, when this request sets one; null otherwise. */
+export function passwordChangeOf(req: {
+  method: string;
+  url: string;
+  headers: FastifyRequest['headers'];
+  body?: Buffer;
+}): PasswordChange | null {
+  if (req.method !== 'POST') return null;
+  const [path, query = ''] = req.url.split('?', 2) as [string, string?];
+  const kind = SUBMIT.exec(path)?.[1];
+  if (kind !== 'registration' && kind !== 'settings') return null;
+  const contentType = header(req.headers, 'content-type');
+  const fields = parseFields(contentType, req.body);
+  if (fields.method !== 'password' || !fields.password) return null;
+  return {
+    kind,
+    flowId: new URLSearchParams(query).get('flow'),
+    json:
+      Boolean(contentType?.includes('application/json')) ||
+      Boolean(header(req.headers, 'accept')?.includes('application/json')),
+    password: fields.password,
+    email: fields['traits.email'] ?? null,
+    name: fields['traits.name'] ?? null,
+  };
+}
+
+/** What to tell someone whose new password doesn't meet the policy. */
+export function weakPasswordText(
+  problems: PasswordProblem[],
+  policy: PasswordPolicy,
+  warning: string | null,
+): string {
+  const parts: string[] = [];
+  if (problems.includes('too_short')) parts.push(`Use at least ${policy.minLength} characters.`);
+  if (problems.includes('too_weak'))
+    parts.push(
+      `This password is too easy to guess.${warning ? ` ${warning}` : ''} Try a few unrelated words together.`,
+    );
+  return parts.join(' ');
+}
+
 /** Hop-by-hop headers, and the ones the gateway sets itself. */
 const DROP_REQUEST = new Set([
   'host',
@@ -233,7 +303,10 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
   };
 
   /** The flow as Kratos holds it now, read with the client's own cookies or token. */
-  const readFlow = async (req: FastifyRequest, a: Attempt): Promise<FlowLike | null> => {
+  const readFlow = async (
+    req: FastifyRequest,
+    a: { kind: FlowKind; flowId: string | null },
+  ): Promise<FlowLike | null> => {
     if (!a.flowId) return null;
     const res = await forward(
       req,
@@ -263,6 +336,17 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
     if (!flow) return 'neutral';
     if (flow.state === 'passed_challenge') return 'success';
     return hasError(flow) ? 'failure' : 'neutral';
+  };
+
+  /** Who is changing their password, for words it shouldn't be built from. */
+  const whoami = async (req: FastifyRequest): Promise<{ email: string | null; name: string | null }> => {
+    const res = await forward(req, '/sessions/whoami', 'GET').catch(() => null);
+    const body = res?.ok
+      ? ((await res.json().catch(() => null)) as { identity?: { traits?: Record<string, unknown> } } | null)
+      : null;
+    const traits = body?.identity?.traits ?? {};
+    const str = (v: unknown) => (typeof v === 'string' ? v : null);
+    return { email: str(traits.email), name: str(traits.name) };
   };
 
   const lockedMessage = (seconds: number) => {
@@ -314,6 +398,56 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
         ...attempt.checks.map((c) => delayFor(liveFailures(buckets.get(c.key), c.rule, at), c.rule)),
       );
       if (wait > 0) await sleep(wait);
+    }
+
+    // A new password: the admin console's policy, before Kratos ever stores it (ADR-0043).
+    const change = passwordChangeOf({ method: req.method, url: req.url, headers: req.headers, body });
+    if (change) {
+      const policy = await (opts.policy ? opts.policy() : Promise.resolve(DEFAULT_POLICY)).catch(
+        () => DEFAULT_POLICY,
+      );
+      let { email, name } = change;
+      if (change.kind === 'settings') {
+        const who = await whoami(req);
+        email ??= who.email;
+        name ??= who.name;
+      }
+      const score = opts.strength ?? ((p: string, w: string[]) => Promise.resolve(strengthOf(p, w)));
+      const strength = await score(change.password, personalWords({ email, name })).catch((err: Error) => {
+        // Without a score only the length is checked here; Kratos still checks length and breach lists.
+        req.log.warn({ err }, 'Could not score a new password');
+        return null;
+      });
+      const judged = judgePassword(
+        change.password,
+        strength ? policy : { ...policy, minScore: 0 },
+        strength ?? { score: 4, warning: null, suggestions: [] },
+      );
+      if (!judged.ok) {
+        // A refused sign-up still counts towards the address's sign-up limit.
+        if (attempt?.countAlways) for (const c of attempt.checks) await opts.store.fail(c.key, c.rule, now());
+        const text = weakPasswordText(judged.problems, policy, strength?.warning ?? null);
+        if (!change.json) {
+          const q = new URLSearchParams({
+            notice: 'weak_password',
+            problems: judged.problems.join(','),
+            min: String(policy.minLength),
+          });
+          if (change.flowId) q.set('flow', change.flowId);
+          return reply.code(303).header('location', `${web}${UI_PATH[change.kind]}?${q}`).send();
+        }
+        const message = {
+          id: WEAK_PASSWORD_ID,
+          type: 'error',
+          text,
+          context: { problems: judged.problems, min_length: policy.minLength, min_score: policy.minScore },
+        };
+        const flow = await readFlow(req, change);
+        const payload = flow?.ui
+          ? { ...flow, ui: { ...flow.ui, messages: [message] } }
+          : { error: { id: 'weak_password', code: 400, status: 'Bad Request', message: text } };
+        return reply.code(400).header('content-type', 'application/json').send(JSON.stringify(payload));
+      }
     }
 
     let res: Response;
