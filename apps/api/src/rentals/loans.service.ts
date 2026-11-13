@@ -509,7 +509,16 @@ export class LoansService {
         ),
       taxes: () =>
         this.categoryLike(trx, ctx, r.entity_id, ['Property tax', 'Taxes'], '%tax%', 'property tax'),
-      insurance: () => this.categoryLike(trx, ctx, r.entity_id, ['Insurance'], '%insurance%', 'insurance'),
+      // Escrow pays the home's cover, so its own category comes before the catch-all (ACC-13).
+      insurance: () =>
+        this.categoryLike(
+          trx,
+          ctx,
+          r.entity_id,
+          ['Home & renters insurance', 'Insurance'],
+          '%insurance%',
+          'insurance',
+        ),
     };
   }
 

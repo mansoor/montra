@@ -253,8 +253,8 @@ describe('recording payments', () => {
   });
 
   it('posts escrow to its categories', async () => {
-    const loan = await mortgage({ name: 'Escrowed', escrowInsurance: '10000' });
-    expect(loan.totalPayment).toBe('129910');
+    const loan = await mortgage({ name: 'Escrowed', escrowInsurance: '10000', escrowTaxes: '5000' });
+    expect(loan.totalPayment).toBe('134910');
     const res = await c.post(url(`/loans/${loan.id}/payments`), {
       number: 1,
       accountId: checking,
@@ -262,9 +262,12 @@ describe('recording payments', () => {
     });
     expect(res.status).toBe(201);
     const [paid] = await scheduleOf(loan.id);
-    expect(paid.escrow).toBe('10000');
+    expect(paid.escrow).toBe('15000');
     const t = (await c.get(url(`/transactions/${paid.transactionId}`))).body;
-    expect(t.splits.map((s: any) => s.accountId)).toContain(cat('Insurance'));
+    // Home cover and property tax have categories of their own, so neither lands in a look-alike (ACC-13).
+    const posted = t.splits.map((s: any) => s.accountId);
+    expect(posted).toContain(cat('Home & renters insurance'));
+    expect(posted).toContain(cat('Property tax'));
   });
 
   it('uses the loan’s own interest category for a car loan', async () => {

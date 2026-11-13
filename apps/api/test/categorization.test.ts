@@ -99,7 +99,7 @@ describe('categorization pipeline, review and learning (AI-01..06, UP-02)', () =
     const bad = await c.post(w.url('/rules'), {
       name: 'Broken',
       conditions: { all: [{ field: 'payee', op: 'regex', value: '(unclosed' }] },
-      actions: { categoryId: w.cat('Fuel & transport') },
+      actions: { categoryId: w.cat('Fuel') },
     });
     expect(bad.status).toBe(422);
 
@@ -113,7 +113,7 @@ describe('categorization pipeline, review and learning (AI-01..06, UP-02)', () =
     expect(old.status).toBe(201);
 
     const conditions = { all: [{ field: 'payee', op: 'contains', value: 'shell' }] };
-    const actions = { categoryId: w.cat('Fuel & transport'), tags: ['fuel'] };
+    const actions = { categoryId: w.cat('Fuel'), tags: ['fuel'] };
     const preview = await c.post(w.url('/rules/preview'), { conditions, actions });
     expect(preview.status).toBe(200);
     expect(preview.body).toMatchObject({ matches: 1, changes: 1, skippedLocked: 0 });
@@ -125,7 +125,7 @@ describe('categorization pipeline, review and learning (AI-01..06, UP-02)', () =
     expect(job.status).toBe(202);
     await drain();
     const t = (await c.get(w.url(`/transactions/${old.body.id}`))).body;
-    expect(w.categoryOf(t)).toBe(w.cat('Fuel & transport'));
+    expect(w.categoryOf(t)).toBe(w.cat('Fuel'));
     expect(t.tags).toContain('fuel');
     expect(t.categorization).toMatchObject({ step: 'rule', ruleId });
     expect((await c.get(w.url('/rules'))).body.data[0].hitCount).toBeGreaterThanOrEqual(1);
@@ -142,7 +142,7 @@ describe('categorization pipeline, review and learning (AI-01..06, UP-02)', () =
     const { rows } = await importCsv(w, w.checking, 'oct.csv', csv);
     const shell = rows.find((r: any) => r.description.startsWith('SHELL'));
     expect(shell.suggestion.explanation).toContain('Shell → Fuel');
-    expect(shell.categoryId).toBe(w.cat('Fuel & transport'));
+    expect(shell.categoryId).toBe(w.cat('Fuel'));
 
     const txns = await w.txns();
     const byDesc = (p: string) => txns.find((t) => t.description.startsWith(p));
@@ -231,7 +231,7 @@ describe('categorization pipeline, review and learning (AI-01..06, UP-02)', () =
       date: '2026-10-28',
     });
     expect(s.status).toBe(200);
-    expect(s.body).toMatchObject({ categoryId: w.cat('Fuel & transport'), step: 'rule', confidence: 1 });
+    expect(s.body).toMatchObject({ categoryId: w.cat('Fuel'), step: 'rule', confidence: 1 });
 
     const q = await c.post(w.url('/transactions/parse'), {
       text: 'lunch 18.50 checking client meeting',
