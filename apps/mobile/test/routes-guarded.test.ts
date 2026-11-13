@@ -33,12 +33,12 @@ const declared = (guard: string) =>
 
 describe('root layout guards (AUTH-01)', () => {
   it('shows only sign-in to someone signed out', () => {
-    expect(declared('!signedIn')).toEqual(['sign-in']);
+    expect(declared('!signedIn')).toEqual(['sign-in', 'sign-up', 'forgot-password']);
   });
 
   it('guards every other route behind sign-in', () => {
     const all = new Set(routes(appDir)); // a group such as (tabs) counts as one route
-    all.delete('sign-in');
+    for (const open of ['sign-in', 'sign-up', 'forgot-password']) all.delete(open);
     expect(new Set(declared('signedIn'))).toEqual(all);
   });
 

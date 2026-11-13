@@ -1,6 +1,6 @@
 /** Root: providers (session, app lock, toasts, share intent, sync) and the auth gate. */
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { Stack, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,10 +11,11 @@ import { AppLock } from '../src/lock/AppLock';
 import { SyncProvider } from '../src/sync/SyncProvider';
 import { Body, Button, Title, ToastHost } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
+import { TwoStep } from '../src/ui/TwoStep';
 import { t } from '../src/i18n';
 
 function Gate() {
-  const { state, updateRequired } = useSession();
+  const { state, updateRequired, twoStepRequired, clearTwoStepRequired } = useSession();
   const router = useRouter();
   const th = useTheme();
   const share = useShareIntentContext();
@@ -41,6 +42,20 @@ function Gate() {
         <Title>{t('mobile.update.title')}</Title>
         <Body>{t('mobile.update.body')}</Body>
       </View>
+    );
+  }
+
+  // ADR-0044: the workspace won't open until two-step verification is set up, so that's all there is to do.
+  if (twoStepRequired && state.status === 'signed_in') {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: th.bg }}
+        contentContainerStyle={{ padding: th.space(4), gap: th.space(2) }}
+        testID="two-step-required"
+      >
+        <Title>{t('mobile.auth.two_step_title')}</Title>
+        <TwoStep required onDone={clearTwoStepRequired} />
+      </ScrollView>
     );
   }
 
@@ -87,10 +102,13 @@ function Gate() {
         <Stack.Screen name="suggestions" options={{ title: t('nav.suggestions') }} />
         <Stack.Screen name="activity" options={{ title: t('mobile.activity.title') }} />
         <Stack.Screen name="settings" options={{ title: t('mobile.settings.title') }} />
+        <Stack.Screen name="two-step" options={{ title: t('mobile.auth.two_step_title') }} />
         <Stack.Screen name="developer/camera" options={{ title: t('mobile.spike.title') }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+        <Stack.Screen name="sign-up" options={{ title: t('mobile.auth.sign_up') }} />
+        <Stack.Screen name="forgot-password" options={{ title: t('mobile.auth.forgot_title') }} />
       </Stack.Protected>
     </Stack>
   );

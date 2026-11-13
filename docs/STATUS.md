@@ -1102,6 +1102,15 @@ Phase 11 leftovers:
   recovery codes. The API logs it in security activity and emails the owner. A new password signs out the other devices.
   Signing devices out from the device list is logged too. The Kratos config was checked to load in Kratos v26.2.0;
   the hooks are tested against the API, not yet end to end.
+- **Account flows on the phone** ([ADR-0046](design/adr/0046-phone-account-flows.md)): sign-up with the strength meter
+  and email code, forgot password (with the second factor when there is one), an authenticator and recovery codes on
+  More, and a recovery code at sign-in.
+  - A workspace that needs two-step verification shows the setup screen in place of the workspace, ending with an
+    authenticator code that strengthens the session.
+  - Fixed: the phone skipped the authenticator at sign-in, because `whoami` accepts a one-factor session. It now asks
+    an `aal=aal2` login flow.
+  - Every flow was run against Kratos v26.2.0 (with `use_continue_with_transitions`, now on in `kratos.yml`). The
+    screens haven't been tried on a device. The LAN APK uses development sign-in, so they don't show there yet.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page (or **Zoom in on the receipt** under the lines) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

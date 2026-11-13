@@ -29,12 +29,22 @@ interface SessionApi {
   token: () => Promise<string | null>;
   signIn(email: string, password?: string): Promise<void>;
   submitTotp(code: string): Promise<void>;
+  /** The second sign-in step with a recovery code instead of the authenticator (AUTH-06). */
+  submitRecoveryCode(code: string): Promise<void>;
+  /** Signs in with a token from sign-up or a password reset (AUTH-01, AUTH-05). */
+  adopt(token: string): Promise<void>;
+  /** Kratos, for sign-up, recovery and two-step settings; null in development sign-in. */
+  kratos: KratosClient | null;
   chooseWorkspace(id: string): Promise<void>;
   /** Registered by the sync layer: runs before the token is dropped (wipe store, unregister push). */
   setSignOutHook(fn: (() => Promise<void>) | null): void;
   signOut(): Promise<void>;
   /** The server says this version is too old (OPS-04). */
   updateRequired: boolean;
+  /** The open workspace needs two-step verification this session hasn't used (ADR-0044). */
+  twoStepRequired: boolean;
+  /** After the second factor: reload the workspace with the stronger session. */
+  clearTwoStepRequired(): void;
 }
 
 const Ctx = createContext<SessionApi | null>(null);
@@ -64,6 +74,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [hook, setHook] = useState<{ fn: (() => Promise<void>) | null }>({ fn: null });
   const token = useCallback(() => SecureStore.getItemAsync(TOKEN_KEY), []);
   const [updateRequired, setUpdateRequired] = useState(false);
+  const [twoStepRequired, setTwoStepRequired] = useState(false);
   const api = useMemo(
     () =>
       createApi({
@@ -72,6 +83,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         app: { version: config.version, platform: Platform.OS },
         uploadFile: nativeUpload,
         onUpdateRequired: () => setUpdateRequired(true),
+        onTwoStepRequired: () => setTwoStepRequired(true),
       }),
     [token],
   );
@@ -127,8 +139,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       state,
       updateRequired,
+      twoStepRequired,
+      clearTwoStepRequired: () => {
+        setTwoStepRequired(false);
+        void load();
+      },
       api,
       token,
+      kratos,
       async signIn(email, password) {
         if (config.authMode === 'dev' || !kratos) {
           try {
@@ -144,6 +162,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const r = await kratos.totp(state.token, state.flowId, code);
         if (r.kind === 'error') return setState({ ...state, error: r.message });
         await finish(r);
+      },
+      async submitRecoveryCode(code) {
+        if (state.status !== 'needs_totp' || !kratos) return;
+        const r = await kratos.recoveryCode(state.token, state.flowId, code);
+        if (r.kind === 'error') return setState({ ...state, error: r.message });
+        await finish(r);
+      },
+      async adopt(t) {
+        await finish({ kind: 'signed_in', token: t });
       },
       async chooseWorkspace(id) {
         if (state.status !== 'choose_workspace' && state.status !== 'signed_in') return;
@@ -164,7 +191,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setState({ status: 'signed_out' });
       },
     }),
-    [updateRequired, state, api, token, kratos, finish, hook],
+    [updateRequired, twoStepRequired, state, api, token, kratos, finish, hook, load],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -182,21 +182,21 @@
   ],
   "AUTH-01": [
     "partial",
-    "Kratos password, passkey and OIDC, with web sign-in and sign-up. Passkey sign-up and sign-in tested in Chromium with a virtual authenticator against local Kratos; no live Kratos, real device or real OIDC provider yet"
+    "Kratos password, passkey and OIDC, with web sign-in and sign-up. Passkey sign-up and sign-in tested in Chromium with a virtual authenticator against local Kratos; no live Kratos, real device or real OIDC provider yet; phone sign-up and email code (ADR-0046)"
   ],
   "AUTH-02": ["done", "Kratos: 12+ chars, HIBP, Argon2id. Admin-set minimum length and zxcvbn strength score enforced by the auth gateway, with a meter on web sign-up and security settings (ADR-0043)"],
   "AUTH-03": [
     "done",
     ""
   ],
-  "AUTH-04": ["done", "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes"],
+  "AUTH-04": ["done", "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes; authenticator and recovery codes on the phone, and the phone leads a required login to set them up (ADR-0046)"],
   "AUTH-05": [
     "partial",
-    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset"
+    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
   ],
   "AUTH-06": [
     "done",
-    "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11)"
+    "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11); recovery code at sign-in on the phone (ADR-0046)"
   ],
   "AUTH-07": ["done", "device list, remote sign-out; web idle sign-out per workspace (5-30 min, warning first) and a 30-minute server limit on browser sessions (ADR-0044)"],
   "AUTH-08": [
