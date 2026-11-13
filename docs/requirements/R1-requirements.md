@@ -96,6 +96,7 @@ Priority key: **M** = must for R1, **S** = should for R1, **C** = could / later.
 | ACC-10 | Archive a category instead of deleting it: it leaves the pickers, its rules pause and its history stops suggesting it, while past transactions, budgets and reports keep it. Unarchive brings it back. | S |
 | ACC-11 | On the phone, add a category from the category picker (the search text becomes its name) and use it straight away. Needs a connection. | S |
 | ACC-12 | A "Miscellaneous" spending category in personal books' Daily living group, in new books and added once to existing ones. | S |
+| ACC-13 | Personal books start with a fuller list of categories: home (improvement, maintenance, cleaning, gardener, furniture), transportation (fuel, transit and rideshare, parking, car upkeep, registration), taxes (property tax, income tax payments, preparation), kinds of insurance, kids, pets, fitness, charity apart from gifts, and more kinds of income. Existing personal books get the missing ones once. | S |
 
 ### 3.2 Manual entry and camera capture
 

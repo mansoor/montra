@@ -3,7 +3,7 @@ import { expect, type Page } from '@playwright/test';
 
 /**
  * Shared steps for the Phase 3 specs. The API and worker run with AI_PROVIDER=fake, which categorizes by
- * keyword against the category names (e.g. STARBUCKS → Dining out, SHELL → Fuel & transport).
+ * keyword against the category names (e.g. STARBUCKS → Dining out, SHELL → Fuel).
  */
 export async function onboardHousehold(page: Page, email: string, account: string) {
   await page.goto('/');
