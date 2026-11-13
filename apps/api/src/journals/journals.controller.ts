@@ -30,7 +30,7 @@ import {
 import { Db } from '../db/database.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { requireRole } from '../common/roles.js';
+import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 
@@ -185,7 +185,7 @@ export class JournalsController {
   /** Manual journal entries for advanced users and accountants (DE-07): opening balances, depreciation, … */
   @Post('journal-entries')
   async create(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, 'owner', 'partner', 'accountant');
+    requireRole(ctx, 'owner', 'admin', 'partner', 'accountant');
     const req = parse(ManualJournalRequest, body);
     const [entryId] = await this.db.run(dbCtx(ctx), async (trx) => {
       const entity = await trx
@@ -235,7 +235,7 @@ export class JournalsController {
   /** Close the books through a date for one entity (DE-09). */
   @Put('entities/:entityId/period-lock')
   async lock(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Body() body: unknown) {
-    requireRole(ctx, 'owner', 'accountant');
+    requireRole(ctx, 'owner', 'admin', 'accountant');
     const req = parse(PeriodLockRequest, body);
     const id = parse(z.uuid(), entityId);
     await this.db.run(dbCtx(ctx), async (trx) => {
@@ -281,7 +281,7 @@ export class JournalsController {
   /** Re-open the books (owner only, recent re-authentication, recorded with a note). */
   @Delete('entities/:entityId/period-lock')
   async unlock(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     requireRecentAuth(ctx);
     const { note } = parse(AuditedNoteRequest, body);
     const id = parse(z.uuid(), entityId);
@@ -334,7 +334,7 @@ export class JournalsController {
    */
   @Post('journal-entries/:entryId/unlock')
   async unlockEntry(@Ctx() ctx: RequestContext, @Param('entryId') entryId: string, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     requireRecentAuth(ctx);
     const { note } = parse(AuditedNoteRequest, body);
     const id = parse(z.uuid(), entryId);
@@ -381,7 +381,7 @@ export class JournalsController {
     @Query('subjectId') subjectId?: string,
     @Query('limit') limit?: string,
   ) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const rows = await this.db.run(dbCtx(ctx), (trx) => {
       let q = trx
         .selectFrom('app.audit_log')

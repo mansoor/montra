@@ -512,6 +512,12 @@ export class Categorizer {
       rows.map((r) => ({ payeeKey: r.payee_key, payee, field: r.field, toValue: r.to_value })),
     );
     if (!proposal) return null;
+    // Members and viewers can't make rules, so a suggestion would only be a dead end for them (AUTH-17).
+    const { rows: may } = await sql<{ ok: boolean }>`
+      select coalesce(app.current_member_role() in ('owner', 'admin', 'partner', 'accountant'), false) as ok`.execute(
+      trx,
+    );
+    if (!may[0]?.ok) return null;
     const actions = JSON.stringify(proposal.actions);
     const existing = await sql<{ id: string }>`
       select id from app.rule_suggestion

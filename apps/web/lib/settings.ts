@@ -1,5 +1,12 @@
 /** Pure helpers for the settings pages. */
-import type { EntityGrantInput, WorkspaceDto } from '@montra/api-client';
+import type { EntityGrantInput, InviteRole, MemberRole, WorkspaceDto } from '@montra/api-client';
+
+export type { InviteRole };
+/** The roles an invite offers, most access first (AUTH-14). */
+export const INVITE_ROLES: InviteRole[] = ['admin', 'partner', 'member', 'viewer', 'accountant'];
+
+/** Owners and admins manage the workspace: sharing, AI, storage, billing (AUTH-14). */
+export const isAdminRole = (role: MemberRole): boolean => role === 'owner' || role === 'admin';
 
 /** Shareable accept link; email delivery isn't wired yet (AUTH-10). */
 export function inviteLink(origin: string, token: string): string {
@@ -8,16 +15,17 @@ export function inviteLink(origin: string, token: string): string {
 
 export type Access = 'none' | 'read' | 'write';
 
-/** Role defaults mirrored from the database policy (docs/design/07 §2, assumption 5). */
-export function defaultAccess(role: 'partner' | 'viewer' | 'accountant', entityType: string): Access {
+/** Role defaults mirrored from the database policy (docs/design/07 §2, assumption 5; ADR-0041). */
+export function defaultAccess(role: MemberRole, entityType: string): Access {
+  if (isAdminRole(role)) return 'write';
   if (entityType !== 'personal') return 'none';
-  return role === 'partner' ? 'write' : role === 'viewer' ? 'read' : 'none';
+  return role === 'partner' || role === 'member' ? 'write' : role === 'viewer' ? 'read' : 'none';
 }
 
 /** Only grants that differ from the role default are sent, so later default changes still apply. */
 export function grantsFor(
   workspace: WorkspaceDto,
-  role: 'partner' | 'viewer' | 'accountant',
+  role: MemberRole,
   chosen: Record<string, Access>,
 ): EntityGrantInput[] {
   return workspace.entities

@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { Db } from '../db/database.js';
 import { parse } from '../common/zod.js';
+import { isAdmin } from '../common/roles.js';
 
 const Query_ = z.object({
   since: z.coerce.bigint().min(0n).default(0n),
@@ -116,7 +117,7 @@ export class SyncController {
       // Clients re-read rows through the API, so one entry per row (latest operation) is enough.
       const byRow = new Map<string, (typeof page)[number]>();
       for (const r of page) {
-        if (r.restricted && ctx.role !== 'owner') continue;
+        if (r.restricted && !isAdmin(ctx.role)) continue;
         byRow.delete(`${r.table_name}:${r.row_id}`);
         byRow.set(`${r.table_name}:${r.row_id}`, r);
       }

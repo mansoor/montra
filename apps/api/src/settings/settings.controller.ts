@@ -14,7 +14,7 @@ import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../a
 import { Db } from '../db/database.js';
 import { BillingService } from '../ops/billing.service.js';
 import { notFound } from '../common/errors.js';
-import { requireRole } from '../common/roles.js';
+import { requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { WorkspacesService } from '../workspaces/workspaces.service.js';
 
@@ -77,7 +77,7 @@ export class EntitiesController {
 
   @Post()
   async create(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const req = parse(CreateEntityRequest, body);
     const id = await this.db.run(dbCtx(ctx), async (trx) => {
       await this.billing.assertCanAddEntity(trx, ctx.workspaceId!, req.type);
@@ -108,7 +108,7 @@ export class EntitiesController {
 
   @Patch(':entityId')
   async update(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Body() body: unknown) {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const req = parse(UpdateEntityRequest, body);
     await this.db.run(dbCtx(ctx), async (trx) => {
       const res = await trx
@@ -184,7 +184,7 @@ export const toEntityDto = (e: {
   lockedThrough: e.locked_through,
 });
 
-/** Family members are profiles, not logins (FAM-01, FAM-02, FAM-11). */
+/** Family members are profiles; an invite can link one to a login (FAM-01, FAM-02, FAM-11, AUTH-16). */
 @Controller('v1/workspaces/:workspaceId/family-members')
 @UseGuards(AuthGuard, WorkspaceGuard)
 export class FamilyMembersController {
@@ -206,6 +206,8 @@ export class FamilyMembersController {
   @Post()
   async create(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<FamilyMemberDto> {
     const req = parse(CreateFamilyMemberRequest, body);
+    // AUTH-16: which login a person is decides whose payslips that login sees, so only admins choose it.
+    if (req.linkedUserId !== undefined) requireWorkspaceAdmin(ctx);
     const id = newId();
     await this.db.run(dbCtx(ctx), (trx) =>
       trx
@@ -232,6 +234,7 @@ export class FamilyMembersController {
     @Body() body: unknown,
   ): Promise<FamilyMemberDto> {
     const req = parse(UpdateFamilyMemberRequest, body);
+    if (req.linkedUserId !== undefined) requireWorkspaceAdmin(ctx);
     const id = parse(z.uuid(), memberId);
     await this.db.run(dbCtx(ctx), async (trx) => {
       const res = await trx

@@ -31,7 +31,7 @@ import {
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
-import { requireRole } from '../common/roles.js';
+import { requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { AccountMoveService } from './account-move.service.js';
 import { AccountsService } from './accounts.service.js';
@@ -60,7 +60,7 @@ export class AccountsController {
     @Param('accountId') accountId: string,
     @Query() q: unknown,
   ): Promise<AccountMovePreviewDto> {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     return this.moves.preview(dbCtx(ctx), parse(z.uuid(), accountId), parse(MoveAccountRequest, q).entityId);
   }
 
@@ -71,7 +71,7 @@ export class AccountsController {
     @Param('accountId') accountId: string,
     @Body() body: unknown,
   ): Promise<AccountMovePreviewDto> {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     return this.moves.move(dbCtx(ctx), parse(z.uuid(), accountId), parse(MoveAccountRequest, body).entityId);
   }
 

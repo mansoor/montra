@@ -24,7 +24,7 @@ import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../a
 import { Db } from '../db/database.js';
 import { notFound } from '../common/errors.js';
 import { parse } from '../common/zod.js';
-import { requireRole } from '../common/roles.js';
+import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { AI_PROBLEM_TEXT, AiService } from './ai.service.js';
 
 const DEFAULT_PAGE = 50;
@@ -46,7 +46,7 @@ export class AiController {
 
   @Patch('settings')
   async update(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<AiSettingsDto> {
-    requireRole(ctx, 'owner');
+    requireWorkspaceAdmin(ctx);
     const req = parse(UpdateAiSettingsRequest, body);
     const c = dbCtx(ctx);
     return this.db.run(c, async (trx) => {
@@ -158,7 +158,7 @@ export class AiController {
 
   @Delete('events')
   async deleteAll(@Ctx() ctx: RequestContext): Promise<{ deleted: number }> {
-    requireRole(ctx, 'owner', 'partner');
+    requireRole(ctx, 'owner', 'admin', 'partner');
     const c = dbCtx(ctx);
     const res = await this.db.run(c, (trx) =>
       trx.deleteFrom('app.ai_event').where('workspace_id', '=', c.workspaceId).executeTakeFirst(),

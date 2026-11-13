@@ -73,7 +73,7 @@ export function BackupPanel({
 }) {
   const router = useRouter();
   const { run, busy, message, setMessage, t } = useAction();
-  const isOwner = workspace.role === 'owner';
+  const isOwner = workspace.role === 'owner' || workspace.role === 'admin';
   const [entityId, setEntityId] = useState(isOwner ? '' : (workspace.entities[0]?.id ?? ''));
   const [password, setPassword] = useState('');
   const [cadence, setCadence] = useState<'weekly' | 'monthly'>(schedule?.cadence ?? 'weekly');
@@ -478,6 +478,7 @@ export function RestorePanel({
               />
               {t('data.restore_new')}
             </label>
+            {/* Restoring over the workspace replaces everyone's data: the owner's call alone (AUTH-15). */}
             {workspace.role === 'owner' && (
               <label className="flex items-center gap-2 text-sm">
                 <input

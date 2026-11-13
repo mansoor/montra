@@ -26,7 +26,7 @@ export function StorageSettings({
   destination: StorageDestinationDto | null;
   failed: StorageItemDto[];
 }) {
-  if (workspace.role !== 'owner') return <OwnersOnly />;
+  if (workspace.role !== 'owner' && workspace.role !== 'admin') return <OwnersOnly />;
   return destination ? (
     <Connected workspace={workspace} d={destination} failed={failed} />
   ) : (

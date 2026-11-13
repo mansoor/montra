@@ -11,7 +11,7 @@ import { AppShell, type NavGroup } from '@/components/shell/app-shell';
 import { GlobalSearchBox, NotificationBell } from '@/components/shell/header-tools';
 import { ClientErrorReporter } from '@/components/shell/error-reporter';
 import { HelpLink, Tour } from '@/components/help';
-import { SETTINGS_GROUPS } from '@/lib/settings-sections';
+import { settingsGroupsFor } from '@/lib/settings-sections';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,15 +84,21 @@ export default async function WorkspaceLayout({
       ],
     },
   ];
+  // AUTH-17: members record money; setting the books up isn't theirs, so those pages stay out of their menu.
+  const setupOnly = new Set(['ask', 'journal', 'imports', 'rules'].map((p) => `${base}/${p}`));
+  const shown =
+    workspace.role === 'member'
+      ? groups.map((g) => ({ ...g, items: g.items.filter((i) => !setupOnly.has(i.href)) }))
+      : groups;
   return (
     <I18nProvider locale={me.locale} dateFormat={me.dateFormat}>
       <AppShell
         workspaceName={workspace.name}
         homeHref={base}
         navLabel={t('shell.nav')}
-        groups={groups}
+        groups={shown}
         settingsHref={`${base}/settings`}
-        settingsSections={SETTINGS_GROUPS.map((g) => ({
+        settingsSections={settingsGroupsFor(workspace.role).map((g) => ({
           href: `${base}/settings?tab=${g.tabs[0]}`,
           label: t(g.label),
           tabs: g.tabs,

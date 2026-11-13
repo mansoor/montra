@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BUSINESS_TYPES, LEGACY_BUSINESS_TYPES } from '@montra/domain';
-import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
+import { CalendarDateDto, CurrencyCodeDto, Id, InviteRole, MemberRole, MoneyDto } from './common.js';
 import { ForeignAmountInput, RateDto } from './fx.js';
 import { SplitInput } from './transactions.js';
 
@@ -212,15 +212,23 @@ export type FamilyMemberDto = z.infer<typeof FamilyMemberDto>;
 
 export const EntityGrant = z.object({ entityId: Id, access: z.enum(['none', 'read', 'write']) });
 
+/** Who an invite is for (AUTH-16): a person already in the Family list, a new one, or nobody (an accountant). */
+export const InviteFamilyMember = z.union([
+  z.object({ id: Id }),
+  z.object({ name: z.string().trim().min(1).max(100), relationship: FamilyRelationship }),
+]);
+
 export const CreateInviteRequest = z.object({
   email: z.email().transform((e) => e.toLowerCase()),
-  role: z.enum(['partner', 'viewer', 'accountant']),
+  role: InviteRole,
   entityGrants: z.array(EntityGrant).max(50).default([]),
+  familyMember: InviteFamilyMember.optional(),
 });
 export type CreateInviteRequest = z.output<typeof CreateInviteRequest>;
 
+/** `role: 'owner'` hands the workspace over to an admin; only the owner can (AUTH-15). */
 export const UpdateMemberRequest = z
-  .object({ role: z.enum(['partner', 'viewer', 'accountant']), status: z.enum(['active', 'revoked']) })
+  .object({ role: MemberRole, status: z.enum(['active', 'revoked']) })
   .partial();
 export type UpdateMemberRequest = z.output<typeof UpdateMemberRequest>;
 
@@ -230,8 +238,10 @@ export const MemberDto = z.object({
   userId: z.string(),
   email: z.string(),
   displayName: z.string(),
-  role: z.enum(['owner', 'partner', 'viewer', 'accountant']),
+  role: MemberRole,
   status: z.enum(['invited', 'active', 'revoked']),
+  /** The Family list person this login is (AUTH-16). */
+  familyMemberId: z.string().nullable(),
   grants: z.array(z.object({ entityId: z.string(), access: z.enum(['none', 'read', 'write']) })),
 });
 export type MemberDto = z.infer<typeof MemberDto>;
