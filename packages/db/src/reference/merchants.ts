@@ -97,9 +97,9 @@ export const MERCHANTS: MerchantSeed[] = [
   m('nordstrom', 'Nordstrom', 'NORDSTROM', 'Clothing', '5311'),
   m('tj-maxx', 'TJ Maxx', 'TJ MAXX', 'Clothing', '5651'),
   // Health and personal care
-  m('cvs', 'CVS Pharmacy', 'CVS PHARMACY', 'Healthcare', '5912'),
-  m('walgreens', 'Walgreens', 'WALGREENS', 'Healthcare', '5912'),
-  m('rite-aid', 'Rite Aid', 'RITE AID', 'Healthcare', '5912'),
+  m('cvs', 'CVS Pharmacy', 'CVS PHARMACY', 'Pharmacy & medicine', '5912'),
+  m('walgreens', 'Walgreens', 'WALGREENS', 'Pharmacy & medicine', '5912'),
+  m('rite-aid', 'Rite Aid', 'RITE AID', 'Pharmacy & medicine', '5912'),
   m('sephora', 'Sephora', 'SEPHORA', 'Personal care', '5977'),
   // Entertainment and travel
   m('amc', 'AMC Theatres', 'AMC', 'Entertainment', '7832'),

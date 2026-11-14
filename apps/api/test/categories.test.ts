@@ -336,6 +336,59 @@ describe('the personal categories migration (ACC-13)', () => {
     expect(after.some((x: any) => /Fuel & transport|Gifts & donations/.test(x.name))).toBe(false);
   });
 
+  it('adds the Health group and moves Healthcare into it (0046)', async () => {
+    const ws = (
+      await c.post('/v1/workspaces', { name: 'Before Health', baseCurrency: 'USD', template: 'household' })
+    ).body;
+    const wsUrl = (p: string) => `/v1/workspaces/${ws.id}${p}`;
+    const entity = (await c.get(wsUrl('/entities'))).body.data.find((e: any) => e.type === 'personal').id;
+    const add = async () =>
+      (await admin.query(`select app.add_personal_categories($1, $2) as n`, [ws.id, entity])).rows[0]
+        .n as number;
+    const groupNames = async () =>
+      (await c.get(wsUrl(`/category-groups?entityId=${entity}`))).body.data.map((g: any) => g.name);
+    const template = await groupNames();
+    expect(template.slice(2, 5)).toEqual(['Daily living', 'Health', 'Home']);
+
+    // A book made before 0046: Healthcare in Daily living, no Health group and none of its new categories.
+    const q = (sql: string, extra: unknown[] = []) => admin.query(sql, [entity, ...extra]);
+    await q(
+      `update app.ledger_account set category_group_id =
+              (select id from app.category_group where entity_id = $1 and name = 'Daily living')
+        where entity_id = $1 and name = 'Healthcare'`,
+    );
+    await q(`delete from app.ledger_account where entity_id = $1 and name = any($2)`, [
+      ['Pharmacy & medicine', 'Dental & vision', 'Health insurance'],
+    ]);
+    await q(`delete from app.category_group where entity_id = $1 and name = 'Health'`);
+
+    // One group and three categories; then nothing more.
+    expect(await add()).toBe(1 + 3);
+    expect(await add()).toBe(0);
+    expect(await groupNames()).toEqual(template);
+    const after = (await c.get(wsUrl(`/categories?entityId=${entity}`))).body.data;
+    const inHealth = after.filter((x: any) => x.group === 'Health').map((x: any) => x.name);
+    expect(inHealth).toEqual(['Healthcare', 'Pharmacy & medicine', 'Dental & vision', 'Health insurance']);
+  });
+
+  it('leaves Healthcare where the user put it', async () => {
+    const ws = (
+      await c.post('/v1/workspaces', { name: 'Own place', baseCurrency: 'USD', template: 'household' })
+    ).body;
+    const entity = (await c.get(`/v1/workspaces/${ws.id}/entities`)).body.data.find(
+      (e: any) => e.type === 'personal',
+    ).id;
+    await admin.query(
+      `update app.ledger_account set category_group_id =
+              (select id from app.category_group where entity_id = $1 and name = 'Fixed bills')
+        where entity_id = $1 and name = 'Healthcare'`,
+      [entity],
+    );
+    await admin.query(`select app.add_personal_categories($1, $2)`, [ws.id, entity]);
+    const after = (await c.get(`/v1/workspaces/${ws.id}/categories?entityId=${entity}`)).body.data;
+    expect(after.find((x: any) => x.name === 'Healthcare').group).toBe('Fixed bills');
+  });
+
   it('leaves an old name alone when the new one is taken', async () => {
     const ws = (
       await c.post('/v1/workspaces', { name: 'Both names', baseCurrency: 'USD', template: 'household' })

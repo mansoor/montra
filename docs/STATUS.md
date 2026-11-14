@@ -1001,7 +1001,7 @@ Phase 11 leftovers:
   - The Switch page has Quicken (Windows) and Your banks (OFX or QFX downloads) entries. Migration 0028 widens `import_batch.file_type`.
 - **Receipts worth keeping** (UP-09, RCP-11): `/receipts/recommended` now also lists deductible business spending (above the business's threshold) and, when set, everyday spending above the planning settings' reminder amount, cards and imports included. Bills, debt and savings never. Each row has a `reason`. `GET /receipts/habit` gives the week's receipts kept and missing and a streak (`receiptHabit` in `@montra/domain`: the week in progress never breaks it). The phone's Home shows a small card only when something is waiting (three at most, Add or Not needed), or one quiet line when all are kept. The Receipts screen lists them all, and Settings (phone) and Planning settings (web) set the reminder amount. No push notifications.
 - **Phone: quick add fits one screen, and asks for the receipt**: the three ways in (scan, type, say) are one row at the top, Expense/Income is a switch, the keypad is slimmer, and the account row shows the three most recently used (the chosen one always among them) with … for the rest (`recentAccountIds`), so nothing needs scrolling. After saving spending, a "Got the receipt?" card opens the camera for that transaction; the photo uploads linked to it (`offersReceipt` in `src/features/quick-add.ts`).
-- **Phone: voice entry** (TXN-07): quick add has **Say it** and a microphone beside the sentence box. The phone's speech service (`expo-speech-recognition`) fills the sentence as you speak, and the same parser as typing reads it. No audio is kept. Pure parts in `src/features/voice.ts`.
+- **Phone: voice entry** (TXN-07): quick add has **Say it** and a microphone beside the sentence box. The phone's speech service (`expo-speech-recognition`) fills the sentence as you speak, and the same parser as typing reads it. No audio is kept. Pure parts in `src/features/voice.ts`. The Android build used to block `RECORD_AUDIO` (left from the camera setup), so Android refused the microphone without asking; it now asks the first time, and a refusal shows **Open settings** for the app's permission page.
 - **Home charts, web and phone** (FLOW-01): `GET /dashboard/charts` feeds a money-over-time card (3, 6, 12 or 24 months: in, out and left over, plus net worth, with a summary sentence), the budget so far (ahead or behind its pace), where the money went this month, and last month's biggest changes from usual. The phone's Home has the same tiles and cards and a settings button. Shared arithmetic is `summarizeMonths`, `barShares` and `sharePercent` in `@montra/domain`. The web's "on pace to overspend" card and the small net-worth line are replaced by these.
 - **Receipts nothing is reading, and AI that can't run** (2026-11-09): two failures that used to be silent now say why and what fixes it.
   - A receipt whose images may not go to the AI (or in local mode) waits for the doc-worker's `receipt.ocr`. With no doc-worker running it said "Reading" forever. `ReceiptDto.stalled` is now set when a `processing` receipt's latest job has waited in its queue past `JOB_STALL_MS` (3 minutes, `apps/api/src/jobs/queue.ts`) or failed, naming the worker it needs (`documents` or `jobs`). The web lists receipts being read above the tabs, with the reason and a link to Settings → AI; the receipt page and the phone say the same ("Not being read").
@@ -1052,6 +1052,8 @@ Phase 11 leftovers:
   - **Fixed bills**, with HOA dues and Home & renters, Auto and Life insurance added. "Insurance" stays as the
     catch-all.
   - **Daily living**, with Gym & fitness, Kids' activities, Allowance, Pets and Legal & professional fees added.
+  - **Health** (new, migration 0046): Healthcare (moved from Daily living), Pharmacy & medicine, Dental & vision,
+    Health insurance.
   - **Home** (new): Improvement, Maintenance & repairs, Furniture, House cleaning, Gardener & landscaping, Pest control
     & pool service, Laundry & dry cleaning.
   - **Transportation** (new): Fuel, Public transit & rideshare, Parking & tolls, Car maintenance & repairs, Registration
@@ -1062,7 +1064,9 @@ Phase 11 leftovers:
 
   Migration 0042 (`app.add_personal_categories`) adds what's missing to existing personal books once and renames "Fuel &
   transport" to "Fuel" and "Gifts & donations" to "Gifts" unless those names are taken. It never deletes, archives or
-  moves a transaction. Keep it and `chart-templates.ts` in step. Merchant hints follow the new names (Home Depot →
+  moves a transaction. Migration 0046 replaces it with the Health group added and Healthcare moved there while it is
+  still in Daily living, and runs it again. Keep it and `chart-templates.ts` in step. CVS, Walgreens and Rite Aid hint
+  Pharmacy & medicine. Merchant hints follow the new names (Home Depot →
   Home improvement, Uber → Public transit & rideshare). A mortgage's escrowed property tax now lands in Property tax
   (it used to match the first category with "tax" in its name, such as a payslip's Federal income tax), and escrowed
   insurance in Home & renters insurance.

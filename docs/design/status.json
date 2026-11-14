@@ -54,7 +54,7 @@
   ],
   "ACC-13": [
     "done",
-    "Personal template in chart-templates.ts (Home, Transportation and Taxes groups, insurance split, more income); migration 0042 adds the missing groups and categories once to existing personal books and renames Fuel & transport and Gifts & donations (app.add_personal_categories)"
+    "Personal template in chart-templates.ts (Health, Home, Transportation and Taxes groups, insurance split, more income); migration 0042 (replaced in 0046 for the Health group) adds the missing groups and categories once to existing personal books and renames Fuel & transport and Gifts & donations (app.add_personal_categories)"
   ],
   "TXN-01": [
     "done",
