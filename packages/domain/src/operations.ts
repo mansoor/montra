@@ -192,6 +192,33 @@ export function aiUsedShare(spentMicroUsd: bigint, limitMicroUsd: bigint | null)
   return Number((spentMicroUsd * 10_000n) / limitMicroUsd) / 10_000;
 }
 
+/** A move or a new version that gives less has to be announced this far ahead (ADR-0049 §1). */
+export const PLAN_REDUCTION_NOTICE_DAYS = 30;
+
+/**
+ * Whether going from one version to another gives at least as much of everything. Null limits are no limit. Any
+ * single thing lower, or a feature taken away, makes it `less`, even if something else rises.
+ */
+export function compareEntitlements(from: PlanEntitlements, to: PlanEntitlements): 'more' | 'same' | 'less' {
+  const cmpLimit = (a: bigint | number | null, b: bigint | number | null): number => {
+    if (a === b) return 0;
+    if (a === null) return b === null ? 0 : -1;
+    if (b === null) return 1;
+    return BigInt(b) > BigInt(a) ? 1 : BigInt(b) < BigInt(a) ? -1 : 0;
+  };
+  const steps = [
+    cmpLimit(from.businessBooks, to.businessBooks),
+    cmpLimit(from.rentalPortfolios, to.rentalPortfolios),
+    cmpLimit(from.storageBytes, to.storageBytes),
+    cmpLimit(from.familyLogins, to.familyLogins),
+    cmpLimit(from.aiMonthlyMicroUsd, to.aiMonthlyMicroUsd),
+    cmpLimit(from.smsMonthly, to.smsMonthly),
+    ...PLAN_FEATURES.map((f) => Number(to.features.includes(f)) - Number(from.features.includes(f))),
+  ];
+  if (steps.some((s) => s < 0)) return 'less';
+  return steps.some((s) => s > 0) ? 'more' : 'same';
+}
+
 /** A small stable hash. This package runs in browsers and on phones too, and a rollout needs no cryptography. */
 function fnv1a(text: string): number {
   let hash = 0x811c9dc5;

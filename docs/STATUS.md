@@ -1192,7 +1192,7 @@ Phase 11 leftovers:
       `app.current_plan()`, so jobs get it too. Adding books, a payroll person, staff time, a scan, own storage or
       an invite checks it. `BILLING_MODE=off` still gives everything.
     - Checkout takes `{ plan, interval }`; the webhook finds the version from the price id. `STRIPE_PRICE_PRO_*` are
-      gone, from the API and Terraform. **Until the plans editor (step 2), prices are added with SQL.**
+      gone, from the API and Terraform. Prices are added in the console (step 2).
     - Built-in AI is held to min(plan allowance, the customer's budget). Owners get an `ai_allowance` notification at
       80% and 100%, once each a month (`ai_usage.alerted_pct`). The operator's ceiling (`ai_monthly_ceiling_micro_usd`,
       console → AI) stops built-in AI everywhere and emails staff once a month. Customers' own keys and local models
@@ -1201,6 +1201,22 @@ Phase 11 leftovers:
       and the AI usage bar are step 2.
     - Tests: `apps/api/test/plans.test.ts`. The ceiling is only ever set inside a rolled-back transaction there,
       because test files share a database.
+  - **Step 2, the owner and plans in the console** (migration 0052):
+    - Staff roles are `support`, `admin` and `owner`, each including the one below. `staff:add <email> owner` (or
+      `--role owner`) makes the first owner; after that, owners add, change and remove staff in the console's
+      **Staff** tab, through `admin_*` functions that check the role again. Every change is emailed to every owner.
+      The last owner can't be removed or demoted.
+    - Owner actions (staff, plans, the AI ceiling) need a sign-in in the last 10 minutes as well as a second factor.
+    - The console's **Plans** tab: plans, versions with what they allow, subscriber counts, Stripe prices, and moving
+      subscribers between versions. Admins see it; owners change it. Editing a plan adds a version. One that gives
+      less starts 30 or more days out, and moving subscribers onto it waits for each one's first renewal after a
+      date 30 or more days out. Customers are emailed either way (`app.plan_change_notice`, the `plans.notify` job).
+    - The plan picker: `GET /v1/plans`. Web: Settings → Plan lists the other plans with what they include and
+      their prices, with a checkout button for each interval. Phone: Settings lists them read-only, since the phone
+      doesn't sell.
+    - The AI usage bar: the web's AI settings and the phone's Settings show "N% of this month's AI used" from
+      `usage.share`. Under a plan's allowance, the web shows the share, not dollars.
+    - Tests: `apps/api/test/plans-console.test.ts`, and a look at the Plans tab in `e2e/operations.spec.ts`.
   - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
     and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
     with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and

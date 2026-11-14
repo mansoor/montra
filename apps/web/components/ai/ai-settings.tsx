@@ -306,11 +306,14 @@ export function AiSettings({
         </Field>
         <div className="sm:col-span-2 space-y-1" data-testid="ai-usage">
           <p className="text-sm">
-            {t('ai.usage', {
-              spent: formatUsd(settings.usage.spentUsd, locale),
-              calls: settings.usage.calls,
-              month: settings.usage.month,
-            })}
+            {/* ADR-0049 §2: under a plan's allowance, dollars stay inside, and the share is what's shown. */}
+            {settings.usage.planAllowance && pct !== null
+              ? t('ai.usage_share', { percent: pct, month: settings.usage.month })
+              : t('ai.usage', {
+                  spent: formatUsd(settings.usage.spentUsd, locale),
+                  calls: settings.usage.calls,
+                  month: settings.usage.month,
+                })}
           </p>
           {pct !== null && (
             <meter

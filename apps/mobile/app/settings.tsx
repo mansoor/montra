@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import type { BillingDto, FamilyMemberDto, MeDto, PlanningSettingsDto } from '@montra/schemas';
+import type { BillingDto, FamilyMemberDto, MeDto, PlanningSettingsDto, PlanOfferDto } from '@montra/schemas';
+import { aiUsedPercent, headlinePrice, otherPlans } from '../src/features/plans';
 import { reminderChoices } from '../src/features/receipt-capture';
 import { config } from '../src/config';
 import { fmtMoney, t } from '../src/i18n';
@@ -21,6 +22,8 @@ export default function Settings() {
   const can = useAbilities();
   const { state, api } = session;
   const [ai, setAi] = useState<string | null>(null);
+  const [aiUsed, setAiUsed] = useState<number | null>(null);
+  const [offers, setOffers] = useState<PlanOfferDto[]>([]);
   const [push, setPush] = useState<PushStatus | null>(null);
   const [me, setMe] = useState<MeDto | null>(null);
   const [family, setFamily] = useState<FamilyMemberDto[]>([]);
@@ -31,12 +34,16 @@ export default function Settings() {
   useEffect(() => {
     if (state.status !== 'signed_in') return;
     void api.aiSettings(state.workspace.id).then(
-      (s) => setAi(s.mode),
+      (s) => {
+        setAi(s.mode);
+        setAiUsed(aiUsedPercent(s.usage?.share));
+      },
       () => undefined,
     );
     void api.me().then(setMe, () => undefined);
     void api.familyMembers(state.workspace.id).then(setFamily, () => undefined);
     void api.billing(state.workspace.id).then(setPlan, () => undefined);
+    void api.plans().then(setOffers, () => undefined);
     void api.planningSettings(state.workspace.id).then(setPlanning, () => undefined);
     void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
   }, [api, state]);
@@ -161,6 +168,26 @@ export default function Settings() {
             <Body key={f.id}>{f.name}</Body>
           ))}
           {plan && plan.mode !== 'off' ? <Small>{plan.planName}</Small> : null}
+          {plan && plan.mode !== 'off'
+            ? otherPlans(offers, plan.plan).map((o) => {
+                const price = headlinePrice(o);
+                return (
+                  <Body key={o.key}>
+                    {price
+                      ? t(
+                          price.interval === 'year'
+                            ? 'mobile.settings.plan_yearly'
+                            : 'mobile.settings.plan_monthly',
+                          {
+                            name: o.name,
+                            price: fmtMoney(price.amountMinor, price.currency),
+                          },
+                        )
+                      : o.name}
+                  </Body>
+                );
+              })
+            : null}
           <Small>{t('mobile.settings.change_on_web')}</Small>
         </Card>
       ) : null}
@@ -177,6 +204,26 @@ export default function Settings() {
             />
           ))}
           {ai ? <Small>{t('mobile.settings.ai_mode', { mode: ai })}</Small> : null}
+          {aiUsed !== null ? (
+            <View
+              accessible
+              accessibilityRole="progressbar"
+              accessibilityLabel={t('mobile.settings.ai_used', { percent: aiUsed })}
+              accessibilityValue={{ min: 0, max: 100, now: aiUsed }}
+              testID="ai-usage-bar"
+            >
+              <Small>{t('mobile.settings.ai_used', { percent: aiUsed })}</Small>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: th.border, overflow: 'hidden' }}>
+                <View
+                  style={{
+                    width: `${aiUsed}%`,
+                    height: 6,
+                    backgroundColor: aiUsed >= 100 ? th.danger : aiUsed >= 80 ? th.warning : th.primary,
+                  }}
+                />
+              </View>
+            </View>
+          ) : null}
         </Card>
       ) : null}
 

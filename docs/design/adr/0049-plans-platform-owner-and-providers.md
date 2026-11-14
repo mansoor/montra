@@ -239,7 +239,24 @@ Each step is its own PR into `develop`, and works on its own:
     before.
   - A price id the webhook doesn't know is logged and sent to error reporting.
   - The ceiling is `ai_monthly_ceiling_micro_usd` in `app.system_setting`, set from the console's AI tab. Reaching
-    it emails every admin on staff (and owner, once that role exists) once a month.
+    it emails every admin on staff (and owner) once a month.
+- **Step 2 (migration 0052):**
+  - A version has a start (`effective_from`). A plan's current version is the newest that has started, and it's
+    what new customers and Free's workspaces get. A version that gives less than the current one starts at least
+    30 days out. For Free, every workspace without a paid plan is told by email.
+  - "Gives less" means any limit lower or any feature removed, even if something else rises
+    (`compareEntitlements`).
+  - A price stays with the plan until it's replaced. New customers pay the newest active price for the interval on
+    the current version or an earlier one, so a new version needn't repeat an unchanged price.
+  - The webhook uses a price id to find the plan. A subscriber already on that plan keeps the version they're held
+    on, so a move survives Stripe still charging the old price. A new subscriber, or a change of tier, gets the
+    plan's current version.
+  - Moves are between versions of one plan. A pending move applies in the hourly billing sweep, from the first
+    renewal on or after its date (`first_renewal` steps the period end by the interval). Customers are told by
+    the `plans.notify` job.
+  - Step-up uses the API's existing recent sign-in check (`requireRecentAuth`, 10 minutes), which is the one
+    revealing a tenant's date of birth uses.
+  - Listing staff is the owner's too, as managing them is. Admins can see plans but not change them.
 
 ## Consequences
 

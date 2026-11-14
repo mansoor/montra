@@ -18,7 +18,12 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
+  AddPlanPriceRequest,
+  AddPlanVersionRequest,
   AdminSetPlanRequest,
+  MoveSubscribersRequest,
+  SavePlanRequest,
+  SetStaffRequest,
   AppVersionsDto,
   PasswordPolicyDto,
   CheckoutRequest,
@@ -36,10 +41,13 @@ import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../a
 import { AppError, badRequest } from '../common/errors.js';
 import { requireWorkspaceAdmin, isAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
+import { Db } from '../db/database.js';
+import { AdminPlansService } from './admin-plans.service.js';
 import { AdminService } from './admin.service.js';
+import { Plans } from './plans.js';
 import { BillingService } from './billing.service.js';
 import { METRICS_CONTENT_TYPE, MetricsService } from './metrics.js';
-import { requireAdmin, StaffGuard, type StaffRequest } from './staff.js';
+import { requireAdmin, requireOwner, StaffGuard, type StaffRequest } from './staff.js';
 import { StatusService, SupportService } from './support.service.js';
 
 const Id = z.uuid();
@@ -87,6 +95,21 @@ export class WorkspaceOpsController {
   async revokeGrant(@Ctx() ctx: RequestContext, @Param('id') id: string) {
     requireWorkspaceAdmin(ctx);
     await this.support.revokeGrant(dbCtx(ctx), parse(Id, id));
+  }
+}
+
+/** The plan picker (ADR-0049 §1): what new customers can choose, on web and phone. */
+@Controller('v1/plans')
+@UseGuards(AuthGuard)
+export class PlansController {
+  constructor(
+    @Inject(Db) private readonly db: Db,
+    @Inject(Plans) private readonly plans: Plans,
+  ) {}
+
+  @Get()
+  async offers() {
+    return { data: await this.db.run({}, (trx) => this.plans.offers(trx)) };
   }
 }
 
@@ -162,7 +185,10 @@ export class MetricsController {
 @Controller('v1/admin')
 @UseGuards(AuthGuard, StaffGuard)
 export class AdminController {
-  constructor(@Inject(AdminService) private readonly admin: AdminService) {}
+  constructor(
+    @Inject(AdminService) private readonly admin: AdminService,
+    @Inject(AdminPlansService) private readonly owner: AdminPlansService,
+  ) {}
 
   @Get('me')
   me(@Req() req: StaffRequest) {
@@ -265,8 +291,77 @@ export class AdminController {
   @Put('ai-ceiling')
   @HttpCode(204)
   async saveAiCeiling(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireAdmin(req);
+    requireOwner(req, ctx);
     await this.admin.saveAiCeiling(ctx.user.id, parse(SaveAiCeilingRequest, body));
+  }
+
+  // ----- Staff and plans (ADR-0049 §1, §3) ------------------------------------------------------------
+
+  @Get('staff')
+  async staff(@Req() req: StaffRequest, @Ctx() ctx: RequestContext) {
+    if (req.staffRole !== 'owner') throw new AppError(403, 'forbidden', 'This needs the owner role');
+    return { data: await this.owner.staff(ctx.user.id) };
+  }
+
+  @Put('staff')
+  @HttpCode(204)
+  async setStaff(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireOwner(req, ctx);
+    await this.owner.setStaff(ctx.user.id, ctx.user.email, parse(SetStaffRequest, body));
+  }
+
+  @Delete('staff/:userId')
+  @HttpCode(204)
+  async removeStaff(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Param('userId') userId: string) {
+    requireOwner(req, ctx);
+    await this.owner.removeStaff(ctx.user.id, ctx.user.email, parse(Id, userId));
+  }
+
+  @Get('plans')
+  async adminPlans() {
+    return { data: await this.owner.plans() };
+  }
+
+  @Put('plans')
+  @HttpCode(204)
+  async savePlan(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireOwner(req, ctx);
+    await this.owner.savePlan(ctx.user.id, parse(SavePlanRequest, body));
+  }
+
+  @Post('plans/:key/versions')
+  addPlanVersion(
+    @Req() req: StaffRequest,
+    @Ctx() ctx: RequestContext,
+    @Param('key') key: string,
+    @Body() body: unknown,
+  ) {
+    requireOwner(req, ctx);
+    return this.owner.addVersion(ctx.user.id, key, parse(AddPlanVersionRequest, body));
+  }
+
+  @Post('plan-versions/:id/prices')
+  addPlanPrice(
+    @Req() req: StaffRequest,
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    requireOwner(req, ctx);
+    return this.owner.addPrice(ctx.user.id, parse(Id, id), parse(AddPlanPriceRequest, body));
+  }
+
+  @Post('plan-prices/:id/end')
+  @HttpCode(204)
+  async endPlanPrice(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Param('id') id: string) {
+    requireOwner(req, ctx);
+    await this.owner.endPrice(ctx.user.id, parse(Id, id));
+  }
+
+  @Post('plans/move')
+  moveSubscribers(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireOwner(req, ctx);
+    return this.owner.moveSubscribers(ctx.user.id, parse(MoveSubscribersRequest, body));
   }
 
   @Get('analytics/imports')

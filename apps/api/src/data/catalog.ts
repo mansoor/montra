@@ -16,6 +16,7 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   subscription:
     'Belongs to the payment provider and the original workspace, and a file must not bring a plan with it',
   feature_flag_override: 'How the service is run, not part of the books',
+  plan_change_notice: 'A notice about the service’s plans, not part of the books',
   support_grant: 'Access, as for workspace_member',
   support_request: 'A conversation with support, belonging to the person',
   workspace_key: 'A secret, and useless under another workspace',

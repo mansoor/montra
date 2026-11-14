@@ -1326,6 +1326,9 @@ export interface SubscriptionTable {
   updated_at: Generated<Date>;
   /** ADR-0049: the version of the plan it's on. Null only on rows written before migration 0051 by an old task. */
   plan_version_id: string | null;
+  /** A move to a version that gives less, from the first renewal on or after a date (migration 0052). */
+  pending_version_id: string | null;
+  pending_from: Date | null;
 }
 
 // Plans as data (migration 0051, ADR-0049 §1).
@@ -1348,6 +1351,8 @@ export interface PlanVersionTable {
   entitlements: Json<unknown>;
   created_by: string | null;
   created_at: Generated<Date>;
+  /** When it becomes the plan's current version (migration 0052). */
+  effective_from: Generated<Date>;
 }
 
 export interface PlanPriceTable {
@@ -1359,6 +1364,16 @@ export interface PlanPriceTable {
   amount_minor: Int8;
   currency: string;
   active: Generated<boolean>;
+  created_at: Generated<Date>;
+}
+
+/** A customer told about a plan change that gives them less, once (migration 0052). */
+export interface PlanChangeNoticeTable {
+  id: Generated<string>;
+  version_id: string;
+  workspace_id: string;
+  apply_at: Date;
+  sent_at: Date | null;
   created_at: Generated<Date>;
 }
 
@@ -1672,6 +1687,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.plan': PlanTable;
   'app.plan_version': PlanVersionTable;
   'app.plan_price': PlanPriceTable;
+  'app.plan_change_notice': PlanChangeNoticeTable;
   'app.feature_flag': FeatureFlagTable;
   'app.feature_flag_override': FeatureFlagOverrideTable;
   'app.system_notice': SystemNoticeTable;
