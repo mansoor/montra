@@ -641,7 +641,7 @@
   ],
   "FLOW-03": [
     "done",
-    "30/60/90-day forecast from schedules, expected income, open invoices and bills, and burn, with low-balance warnings. Split pay lands by the employer's plan (ADR-0022). Cards and lines of credit pay by their rule on the due date (ADR-0026)"
+    "30/60/90-day forecast from schedules, expected income, open invoices and bills, and burn, with low-balance warnings. Split pay lands by the employer's plan (ADR-0022). Cards and lines of credit pay by their rule on the due date (ADR-0026); bill providers named on the budget add their estimated next bills (ADR-0048)"
   ],
   "FLOW-04": [
     "done",

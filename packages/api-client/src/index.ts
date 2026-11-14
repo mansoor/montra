@@ -75,8 +75,11 @@ import type {
   CalendarDto,
   CopyBudgetRequest,
   CreateBudgetRequest,
+  CreateBillerRequest,
   CreateExpectedIncomeRequest,
   CreateGoalRequest,
+  UpdateBillerRequest,
+  BillerDto,
   DashboardDto,
   DraftBudgetDto,
   DraftBudgetRequest,
@@ -730,6 +733,8 @@ export type DraftBudgetInput = z.input<typeof DraftBudgetRequest>;
 export type CreateGoalInput = z.input<typeof CreateGoalRequest>;
 export type UpdateGoalInput = z.input<typeof UpdateGoalRequest>;
 export type CreateExpectedIncomeInput = z.input<typeof CreateExpectedIncomeRequest>;
+export type CreateBillerInput = z.input<typeof CreateBillerRequest>;
+export type UpdateBillerInput = z.input<typeof UpdateBillerRequest>;
 export type UpdateExpectedIncomeInput = z.input<typeof UpdateExpectedIncomeRequest>;
 export type AcceptRecommendationInput = z.input<typeof AcceptRecommendationRequest>;
 export type UpdatePlanningSettingsInput = z.input<typeof UpdatePlanningSettingsRequest>;
@@ -2494,6 +2499,19 @@ export class ApiClient {
   updateGoal(workspaceId: string, id: string, input: UpdateGoalInput) {
     return this.request<GoalDto>('PATCH', this.ws(workspaceId, `/goals/${enc(id)}`), input);
   }
+  /** ADR-0048 §4: the providers that send a budget's bills, with each one's next bill. */
+  listBillers(workspaceId: string, entityId?: string) {
+    return this.request<{ data: BillerDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/billers${query({ entityId })}`),
+    ).then((r) => r.data);
+  }
+  createBiller(workspaceId: string, input: CreateBillerInput) {
+    return this.request<BillerDto>('POST', this.ws(workspaceId, '/billers'), input);
+  }
+  updateBiller(workspaceId: string, id: string, input: UpdateBillerInput) {
+    return this.request<BillerDto>('PATCH', this.ws(workspaceId, `/billers/${enc(id)}`), input);
+  }
   listExpectedIncome(workspaceId: string, entityId?: string) {
     return this.request<{ data: ExpectedIncomeDto[] }>(
       'GET',
@@ -3186,6 +3204,7 @@ export type {
   DashboardDto,
   DraftBudgetDto,
   ExpectedIncomeDto,
+  BillerDto,
   DashboardChartsDto,
   SetCategoryBudgetDto,
   SetCategoryBudgetRequest,

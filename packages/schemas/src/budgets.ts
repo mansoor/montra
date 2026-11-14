@@ -457,3 +457,66 @@ export const ExpectedIncomeDto = z.object({
   version: z.number().int(),
 });
 export type ExpectedIncomeDto = z.infer<typeof ExpectedIncomeDto>;
+
+// ----- Billers (ADR-0048 §4) ------------------------------------------------------------------------------------------
+
+export const BILL_CADENCES = ['monthly', 'bimonthly', 'quarterly', 'semiannual', 'yearly'] as const;
+export const BillCadence = z.enum(BILL_CADENCES);
+
+/** A provider that sends a budget category's bills: "SDG&E" on Utilities. */
+export const CreateBillerRequest = z.object({
+  categoryId: Id,
+  name: z.string().trim().min(1).max(200),
+  memberId: Id.nullable().optional(),
+  /** The account number at the provider: only its last four digits. */
+  accountLast4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .nullable()
+    .optional(),
+  dueDay: z.number().int().min(1).max(31).nullable().optional(),
+  cadence: BillCadence.default('monthly'),
+});
+export type CreateBillerRequest = z.output<typeof CreateBillerRequest>;
+
+export const UpdateBillerRequest = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  categoryId: Id.optional(),
+  memberId: Id.nullable().optional(),
+  accountLast4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .nullable()
+    .optional(),
+  dueDay: z.number().int().min(1).max(31).nullable().optional(),
+  cadence: BillCadence.optional(),
+  archived: z.boolean().optional(),
+  version: z.number().int().positive(),
+});
+export type UpdateBillerRequest = z.output<typeof UpdateBillerRequest>;
+
+/** The biller's next bill: estimated from its recent payments (`basedOn` of them). */
+export const BillerNextDto = z.object({
+  date: CalendarDateDto,
+  amount: MinorDto,
+  currency: CurrencyCodeDto,
+  estimated: z.boolean(),
+  basedOn: z.number().int(),
+});
+export type BillerNextDto = z.infer<typeof BillerNextDto>;
+
+export const BillerDto = z.object({
+  id: Id,
+  entityId: Id,
+  categoryId: Id,
+  name: z.string(),
+  memberId: Id.nullable(),
+  accountLast4: z.string().nullable(),
+  dueDay: z.number().int().nullable(),
+  cadence: BillCadence,
+  archived: z.boolean(),
+  /** Null until it has a payment to go on. */
+  next: BillerNextDto.nullable(),
+  version: z.number().int(),
+});
+export type BillerDto = z.infer<typeof BillerDto>;

@@ -4,6 +4,7 @@
  */
 import type {
   PasswordPolicyDto,
+  BillerDto,
   BudgetDto,
   CreateReimbursementRequest,
   PayRunDto,
@@ -262,6 +263,18 @@ export function createApi(opts: ApiOptions) {
     dashboardCharts: (w: string, months: number) =>
       request<DashboardChartsDto>('GET', `${ws(w)}/dashboard/charts?months=${months}`),
     budgets: async (w: string) => (await request<{ data: BudgetDto[] }>('GET', `${ws(w)}/budgets`)).data,
+    /** ADR-0048 §4: bill providers on the budget, with each one's next bill. */
+    billers: async (w: string, entityId?: string) =>
+      (
+        await request<{ data: BillerDto[] }>(
+          'GET',
+          `${ws(w)}/billers${entityId ? `?entityId=${entityId}` : ''}`,
+        )
+      ).data,
+    createBiller: (
+      w: string,
+      input: { name: string; categoryId: string; dueDay: number | null; accountLast4: string | null },
+    ) => request<BillerDto>('POST', `${ws(w)}/billers`, input),
     createBudget: (w: string, input: { entityId: string; name: string }) =>
       request<BudgetDto>('POST', `${ws(w)}/budgets`, input),
     budgetPeriod: (w: string, id: string, start = 'current') =>

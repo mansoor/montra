@@ -3,6 +3,7 @@
  * net worth. Read-only; numbers come from the read models, budgets and schedules, and each one carries the
  * transactions-list filter (`drill`) that reproduces it.
  */
+import { BillersService } from './billers.service.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
@@ -92,6 +93,7 @@ export class FlowService {
     @Inject(FxRatesService) private readonly fx: FxRatesService,
     @Inject(InvoicesService) private readonly invoices: InvoicesService,
     @Inject(BillsService) private readonly bills: BillsService,
+    @Inject(BillersService) private readonly billers: BillersService,
     @Inject(BusinessReportsService) private readonly businessReports: BusinessReportsService,
     @Inject(RentService) private readonly rent: RentService,
     @Inject(LoansService) private readonly loans: LoansService,
@@ -366,6 +368,21 @@ export class FlowService {
         sourceId: b.id,
         accountId: null,
         status: b.dueDate < today ? 'overdue' : 'upcoming',
+      });
+    }
+    // Billers' next bills (ADR-0048 §4), estimated from their payments. A recurring item for the payee shows it already.
+    for (const e of await this.billers.expectedUntil(trx, ctx, to, entityId)) {
+      if (e.coveredByRecurring || !inRange(e.next.date)) continue;
+      push({
+        date: e.next.date,
+        kind: 'bill',
+        name: e.biller.name,
+        amount: s(-e.next.amount),
+        currency: e.currency as Money,
+        sourceId: e.biller.id,
+        accountId: null,
+        status: 'upcoming',
+        variable: true,
       });
     }
     const businesses = await trx
@@ -731,6 +748,7 @@ export class FlowService {
           .execute()
       ).map((r) => r.id),
     );
+    const billerBills = await this.billers.expectedUntil(trx, ctx, last, entityId);
     for (const e of entities) {
       const cash = accounts.filter((a) => a.entityId === e && accountProfile(a.kind).forecast === 'cash');
       const primary =
@@ -761,6 +779,18 @@ export class FlowService {
             kind: 'bill',
             name: b.partyName,
             sourceId: b.id,
+          });
+        }
+        // Billers' estimated next bills (ADR-0048 §4), paid from the books' main account.
+        for (const x of billerBills) {
+          if (x.biller.entity_id !== e || x.coveredByRecurring || x.next.date < from) continue;
+          add({
+            date: x.next.date,
+            accountId: primary.id,
+            amount: -x.next.amount,
+            kind: 'bill',
+            name: x.biller.name,
+            sourceId: x.biller.id,
           });
         }
       }

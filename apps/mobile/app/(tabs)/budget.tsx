@@ -29,6 +29,7 @@ import {
   Title,
   useToast,
 } from '../../src/ui/components';
+import { BillersCard, billerSummary } from '../../src/ui/Billers';
 import { useTheme } from '../../src/ui/theme';
 
 type Line = BudgetPeriodDto['groups'][number]['lines'][number];
@@ -84,10 +85,20 @@ export default function Budget() {
       </Screen>
     );
   }
-  return <BudgetPeriod ws={ws} budgetId={budget.id} canEdit={canEdit} />;
+  return <BudgetPeriod ws={ws} budgetId={budget.id} entityId={budget.entityId} canEdit={canEdit} />;
 }
 
-function BudgetPeriod({ ws, budgetId, canEdit }: { ws: string; budgetId: string; canEdit: boolean }) {
+function BudgetPeriod({
+  ws,
+  budgetId,
+  entityId,
+  canEdit,
+}: {
+  ws: string;
+  budgetId: string;
+  entityId: string;
+  canEdit: boolean;
+}) {
   const th = useTheme();
   const toast = useToast();
   const { api } = useSession();
@@ -96,6 +107,9 @@ function BudgetPeriod({ ws, budgetId, canEdit }: { ws: string; budgetId: string;
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const cached = useCached(ws, `budget.${budgetId}.${start}`, () => api.budgetPeriod(ws, budgetId, start));
+  // Bill providers on the budget's categories (ADR-0048 §4).
+  const billers = useCached(ws, `billers.${entityId}`, () => api.billers(ws, entityId));
+  const active = (billers.data ?? []).filter((b) => !b.archived);
   const p = cached.data;
   if (!p) {
     return (
@@ -223,8 +237,29 @@ function BudgetPeriod({ ws, budgetId, canEdit }: { ws: string; budgetId: string;
               }
             />
           ))}
+          {active
+            .filter((b) => g.lines.some((l) => l.categoryId === b.categoryId))
+            .map((b) => (
+              <Small key={b.id}>{billerSummary(b)}</Small>
+            ))}
         </Card>
       ))}
+      <BillersCard
+        billers={active}
+        categories={lines.map((l) => ({ id: l.categoryId, name: l.name }))}
+        canEdit={canEdit && !cached.stale}
+        onAdd={async (input) => {
+          try {
+            await api.createBiller(ws, input);
+            await billers.reload();
+            toast.show(t('mobile.billers.added', { name: input.name }));
+            return true;
+          } catch (e) {
+            toast.show((e as Error).message);
+            return false;
+          }
+        }}
+      />
       <Button
         kind="secondary"
         label={showAll ? t('mobile.budget.hide_unused') : t('budget.show_all')}
