@@ -13,10 +13,10 @@ import type {
   TestSendDto,
 } from '@montra/schemas';
 import { PROVIDER_KEYS } from '@montra/schemas';
-import { AppError } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import { ServiceSettings } from './service-settings.js';
+import { TextsService } from '../sms/texts.service.js';
 import { AdminDb } from './staff.js';
 
 type Detail = ProviderRowDto['details'][number];
@@ -41,6 +41,7 @@ export class ProvidersService {
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
     @Inject(ServiceSettings) private readonly settings: ServiceSettings,
+    @Inject(TextsService) private readonly texts: TextsService,
   ) {}
 
   async providers(staffId: string): Promise<ProvidersDto> {
@@ -64,11 +65,17 @@ export class ProvidersService {
           { label: 'sender', value: await this.settings.mailFrom() },
         ],
       },
-      // Twilio comes with step 5. Until then there are no texts, and everything goes by email.
+      // ADR-0049 §6. Kratos texts its codes through its own courier channel, set where Kratos runs.
       sms: {
-        configured: false,
-        mode: 'off',
+        configured:
+          c.SMS_MODE === 'twilio' &&
+          Boolean(c.TWILIO_ACCOUNT_SID && c.TWILIO_AUTH_TOKEN && c.TWILIO_MESSAGING_SERVICE_SID),
+        mode: c.SMS_MODE,
         details: [
+          // Twilio's account and Messaging Service ids name them; the auth token is the secret.
+          c.TWILIO_ACCOUNT_SID ? { label: 'key_id', value: c.TWILIO_ACCOUNT_SID } : null,
+          c.TWILIO_MESSAGING_SERVICE_SID ? { label: 'sender', value: c.TWILIO_MESSAGING_SERVICE_SID } : null,
+          c.SMS_MODE === 'twilio' ? { label: 'key', value: set(c.TWILIO_AUTH_TOKEN) } : null,
           { label: 'kinds', value: s.smsKinds.join(', ') || '—' },
           { label: 'countries', value: s.smsCountries.join(', ') || '—' },
         ],
@@ -187,8 +194,8 @@ export class ProvidersService {
     return { to };
   }
 
-  /** Texts come with Twilio (step 5). Until then there's nothing to send through. */
-  async testText(): Promise<TestSendDto> {
-    throw new AppError(409, 'sms.not_configured', 'Text messages aren’t set up here');
+  /** To the owner's own verified number (ADR-0049 §5). */
+  async testText(userId: string): Promise<TestSendDto> {
+    return this.texts.test(userId);
   }
 }

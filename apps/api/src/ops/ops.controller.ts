@@ -391,9 +391,9 @@ export class AdminController {
 
   @Post('providers/test-text')
   @HttpCode(200)
-  testText(@Req() req: StaffRequest) {
+  testText(@Req() req: StaffRequest, @Ctx() ctx: RequestContext) {
     if (req.staffRole !== 'owner') throw new AppError(403, 'forbidden', 'This needs the owner role');
-    return this.providers.testText();
+    return this.providers.testText(ctx.user.id);
   }
 
   // ----- Staff and plans (ADR-0049 §1, §3) ------------------------------------------------------------

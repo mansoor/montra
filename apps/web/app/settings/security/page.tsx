@@ -10,6 +10,7 @@ import { I18nProvider } from '@/components/i18n';
 import { SessionsList } from '@/components/sessions-list';
 import { GatewayNotice } from '@/components/kratos/gateway-notice';
 import { newPasswordProps } from '@/lib/password-policy';
+import { load } from '@/lib/server-api';
 
 export const metadata: Metadata = { title: 'Security' };
 export const dynamic = 'force-dynamic';
@@ -55,6 +56,14 @@ export default async function SecurityPage({
     const init = { return_to: back };
     if (!params.flow) redirect(flowInitUrl('settings', init));
     const flow = await fetchFlow('settings', params.flow, init);
+    // ADR-0049 §6: a mobile number is only asked for where texts are on; it couldn't be verified otherwise.
+    const texts = await load((api) => api.getNotificationPrefs())
+      .then((p) => p.texts.available)
+      .catch(() => false);
+    if (!texts)
+      flow.ui.nodes = flow.ui.nodes.filter(
+        (n) => (n.attributes as { name?: string }).name !== 'traits.phone',
+      );
     back ??= safeReturnTo(flow.return_to);
     const all = toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN });
     flowMessages = all.messages;

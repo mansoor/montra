@@ -3,10 +3,10 @@
  * off by preference, held through quiet hours, in-app only past the daily cap. Email and push say what happened and where; the only
  * figures that leave are in the weekly digest's email, which a user can turn off, and push never carries one.
  */
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { sql } from 'kysely';
 import { newId, type NotificationChannelStatus, type Trx } from '@montra/db';
-import { channelOutcome, deliveryTime, localClock, type QuietHours } from '@montra/domain';
+import { channelOutcome, deliveryTime, localClock, maskPhone, type QuietHours } from '@montra/domain';
 import {
   NOTIFICATION_TYPES,
   type ChannelPrefs,
@@ -21,6 +21,7 @@ import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import { PUSH_PORT, type PushPort } from './push.js';
+import { TextsService } from '../sms/texts.service.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -43,6 +44,15 @@ export const DEFAULT_CHANNELS: Record<NotificationType, ChannelPrefs> = {
   storage_failing: on(true, false),
   ai_allowance: on(true, false),
 };
+
+/** ADR-0049 §6: reminders that can also go by text, on plans that include texts. */
+const TEXTED_REMINDERS: ReadonlySet<NotificationType> = new Set([
+  'bill_due',
+  'reminder',
+  'tax_due',
+  'rent_overdue',
+  'lease_expiring',
+]);
 
 /** Asked for by the person it goes to, so unsubscribing from notifications and the daily cap don't apply. */
 /** Also here: what the account needs to know, such as running out of the month's AI (ADR-0049 §2). */
@@ -67,6 +77,11 @@ interface Prefs {
   importReminderDays: number;
   unsubscribed: boolean;
   unsubscribeToken: string | null;
+  smsSecurity: boolean;
+  smsReminders: boolean;
+  phone: string | null;
+  phoneVerified: boolean;
+  phoneOptedOut: boolean;
   timeZone: string;
   version: number;
 }
@@ -80,6 +95,7 @@ export class NotificationsService {
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
     @Inject(PUSH_PORT) private readonly push: PushPort,
+    @Optional() @Inject(TextsService) private readonly texts?: TextsService,
   ) {}
 
   // ----- Inbox ----------------------------------------------------------------------------------------------
@@ -152,7 +168,11 @@ export class NotificationsService {
   async prefsIn(trx: Trx, userId: string): Promise<Prefs> {
     const [row, user] = await Promise.all([
       trx.selectFrom('app.notification_pref').selectAll().where('user_id', '=', userId).executeTakeFirst(),
-      trx.selectFrom('app.app_user').select('time_zone').where('id', '=', userId).executeTakeFirst(),
+      trx
+        .selectFrom('app.app_user')
+        .select(['time_zone', 'phone_e164', 'phone_verified', 'phone_opted_out_at'])
+        .where('id', '=', userId)
+        .executeTakeFirst(),
     ]);
     const channels = { ...DEFAULT_CHANNELS };
     for (const t of NOTIFICATION_TYPES) {
@@ -172,6 +192,11 @@ export class NotificationsService {
       importReminderDays: row?.import_reminder_days ?? 9,
       unsubscribed: row?.email_unsubscribed_at != null,
       unsubscribeToken: row?.unsubscribe_token ?? null,
+      smsSecurity: row?.sms_security ?? false,
+      smsReminders: row?.sms_reminders ?? false,
+      phone: user?.phone_e164 ?? null,
+      phoneVerified: user?.phone_verified ?? false,
+      phoneOptedOut: user?.phone_opted_out_at != null,
       timeZone: user?.time_zone ?? 'UTC',
       version: Number(row?.version ?? 0),
     };
@@ -188,6 +213,14 @@ export class NotificationsService {
       lowBalanceDays: p.lowBalanceDays,
       importReminderDays: p.importReminderDays,
       emailUnsubscribed: p.unsubscribed,
+      texts: {
+        available: this.texts?.enabled ?? false,
+        phone: p.phone ? maskPhone(p.phone) : null,
+        verified: p.phoneVerified,
+        optedOut: p.phoneOptedOut,
+        security: p.smsSecurity,
+        reminders: p.smsReminders,
+      },
       version: p.version,
     };
   }
@@ -209,6 +242,8 @@ export class NotificationsService {
         large_transaction_minor: req.largeTransaction ?? String(current.largeTransaction),
         low_balance_days: req.lowBalanceDays ?? current.lowBalanceDays,
         import_reminder_days: req.importReminderDays ?? current.importReminderDays,
+        sms_security: req.texts?.security ?? current.smsSecurity,
+        sms_reminders: req.texts?.reminders ?? current.smsReminders,
         email_unsubscribed_at:
           req.emailUnsubscribed === undefined
             ? current.unsubscribed
@@ -354,6 +389,12 @@ export class NotificationsService {
           pushStatus = 'failed';
           this.logger.warn(`Push failed: ${(e as Error).message}`);
         }
+      }
+      if (this.texts && TEXTED_REMINDERS.has(type)) {
+        // The title only, as push: never a figure. Counted against the plan's texts.
+        await this.texts
+          .reminder(ctx, n.title)
+          .catch((e: Error) => this.logger.warn(`Text failed: ${e.message}`));
       }
       if (emailStatus === 'sent' || pushStatus === 'sent') {
         sentCount++;

@@ -80,6 +80,18 @@ no data. One short local run put the 5,000-row parse at about 6 to 9 seconds, cl
 - [ ] Help center and guided tours live (OPS-09).
 - [ ] Public status page live (OPS-03). This isn't in the Terraform.
 - [ ] SES production access granted. Email passes SPF, DKIM and DMARC. DMARC reports reviewed before tightening the policy.
+- [ ] Plans set up in the console (ADR-0049): each paid plan's versions and its Stripe prices, the AI allowance per
+      plan, and the operator's AI ceiling.
+- [ ] The first staff owner made with `staff:add <email> owner`. Every other staff change is made in the console.
+- [ ] Texts (ADR-0049 §6), if texting at launch:
+  - [ ] A Twilio Messaging Service, with Advanced Opt-Out (STOP and HELP), SMS pumping protection, and geo permissions
+        for only the countries on the console's allowed list.
+  - [ ] In the US, A2P 10DLC brand and campaign registration, or a verified toll-free number. Either takes weeks.
+  - [ ] The API: `SMS_MODE=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` (a secret) and
+        `TWILIO_MESSAGING_SERVICE_SID`. The Terraform doesn't set these yet.
+  - [ ] Kratos: `COURIER_CHANNELS` and `SELFSERVICE_METHODS_CODE_MFA_ENABLED=true`, as in
+        `infra/kratos/templates/README.md`. A test text sent from the console's Providers page, and a texted sign-in
+        code received.
 
 ## 7. Release path
 

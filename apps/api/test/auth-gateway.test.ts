@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  attemptOf,
   buildAuthGateway,
   passwordChangeOf,
   TOO_MANY_ATTEMPTS_ID,
@@ -359,6 +360,19 @@ describe('the gateway', () => {
     expect((await ask()).statusCode).toBe(429);
   });
 
+  it('limits texted codes per number, from any address (ADR-0049 §6)', async () => {
+    const ask = (i: number) =>
+      gateway.inject({
+        method: 'POST',
+        url: '/self-service/login?flow=t1',
+        remoteAddress: `198.51.100.${i}`,
+        headers: { 'content-type': 'application/json' },
+        payload: { method: 'code', address: '+1 415 555 0199' },
+      });
+    for (let i = 0; i < RULES.sms_send.maxFailures; i++) expect((await ask(i)).statusCode).not.toBe(429);
+    expect((await ask(99)).statusCode).toBe(429);
+  });
+
   it('answers 502 when Kratos is down', async () => {
     const down = buildAuthGateway({
       kratosUrl: 'http://127.0.0.1:9',
@@ -370,6 +384,75 @@ describe('the gateway', () => {
     const res = await down.inject({ method: 'GET', url: '/sessions/whoami' });
     expect(res.statusCode).toBe(502);
     await down.close();
+  });
+});
+
+describe('what sends a text (ADR-0049 §6)', () => {
+  const req = (url: string, payload: Record<string, string>, headers: Record<string, string> = {}) => ({
+    method: 'POST',
+    url,
+    headers: { 'content-type': 'application/json', ...headers },
+    body: Buffer.from(JSON.stringify(payload)),
+  });
+  const rules = (a: ReturnType<typeof attemptOf>) => a?.checks.map((c) => c.rule.name);
+
+  it('counts saving a number in settings, per number and per address', () => {
+    const a = attemptOf(
+      req('/self-service/settings?flow=s1', { method: 'profile', 'traits.phone': '+14155550123' }),
+      SECRET,
+      '203.0.113.9',
+    );
+    expect(rules(a)).toEqual(['sms_send', 'sms_send']);
+    expect(a?.countAlways).toBe(true);
+    expect(a?.checks[0]!.key).toBe(keyOf(SECRET, 'sms_send', 'number:+14155550123'));
+    // Other settings, such as a password, aren't limited here.
+    expect(
+      attemptOf(
+        req('/self-service/settings?flow=s1', { method: 'password', password: 'x' }),
+        SECRET,
+        '203.0.113.9',
+      ),
+    ).toBeNull();
+  });
+
+  it('counts asking for a texted code, but an emailed one as before', () => {
+    expect(
+      rules(
+        attemptOf(
+          req('/self-service/login?flow=l1', { method: 'code', address: '+14155550123' }),
+          SECRET,
+          'ip',
+        ),
+      ),
+    ).toEqual(['sms_send', 'sms_send']);
+    expect(
+      rules(
+        attemptOf(
+          req('/self-service/verification?flow=v1', { method: 'code', phone: '+14155550123' }),
+          SECRET,
+          'ip',
+        ),
+      ),
+    ).toEqual(['sms_send', 'sms_send']);
+    expect(
+      rules(
+        attemptOf(
+          req('/self-service/recovery?flow=r1', { method: 'code', email: 'kim@example.test' }),
+          SECRET,
+          'ip',
+        ),
+      ),
+    ).toEqual(['email_send']);
+  });
+
+  it('counts a wrong texted code against the session, as an authenticator code', () => {
+    const a = attemptOf(
+      req('/self-service/login?flow=l1', { method: 'code', code: '123456' }, { 'x-session-token': 'tok' }),
+      SECRET,
+      'ip',
+    );
+    expect(rules(a)).toEqual(['second_factor', 'code', 'code']);
+    expect(a?.clearOnSuccess).toEqual([keyOf(SECRET, 'second_factor', 'tok')]);
   });
 });
 

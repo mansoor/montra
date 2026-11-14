@@ -381,6 +381,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'account_suspended',
     'account_restored',
     'deletion_requested_by_support',
+    'phone_changed',
   ],
   'data.kind_': ['backup', 'tax_package'],
   'storage.kind_': ['s3', 'webdav'],

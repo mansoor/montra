@@ -28,6 +28,8 @@ import { BillingService } from './ops/billing.service.js';
 import { Plans } from './ops/plans.js';
 import { ProviderHealth, trackedProvider } from './ops/provider-health.js';
 import { ServiceSettings } from './ops/service-settings.js';
+import { SMS_PORT, smsProvider } from './sms/sms.js';
+import { TextsService } from './sms/texts.service.js';
 import { ProvidersService } from './ops/providers.service.js';
 import { AdminPlansService } from './ops/admin-plans.service.js';
 import { AdminAccountsService } from './ops/admin-accounts.service.js';
@@ -227,6 +229,8 @@ export class AppModule {
         errorReporterProvider(config),
         ...trackedProvider(BILLING_PORT, 'payments', billingProvider(config), config.BILLING_MODE === 'off'),
         ProviderHealth,
+        ...trackedProvider(SMS_PORT, 'sms', smsProvider(config), config.SMS_MODE === 'off'),
+        TextsService,
         ServiceSettings,
         Plans,
         BillingService,

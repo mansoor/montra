@@ -280,6 +280,25 @@ Each step is its own PR into `develop`, and works on its own:
     text are on and texts go only to US numbers.
   - A test email goes to the owner's own address. A test text waits for step 5.
   - `_FILE` secrets are ADR-0050's, built in its own PR.
+- **Step 5 (migration 0055):**
+  - Kratos: the identity schema gains `phone` (E.164), verified by a texted code, and a `code` identifier by text for
+    the second factor. Email is no longer a `code` identifier. Nothing used it, and with codes as a second factor it
+    would have made an emailed code count as one. The SMS channel holds the Twilio token, so it's set only through
+    `COURIER_CHANNELS` on Kratos, with `SELFSERVICE_METHODS_CODE_MFA_ENABLED`. Run against Kratos v26.2.0 with a
+    stand-in for Twilio, both kinds of text went out as Twilio's form.
+  - Recovery stays by email: Kratos v26.2.0's recovery form takes only an email address.
+  - The API keeps a copy of the number and whether it's verified (`app_user.phone_e164`), refreshed from the
+    Kratos session. A change is logged (`phone_changed`) and emailed to the sign-in address.
+  - Allowed countries are found from the number without a library: a table of calling codes, and within +1, Canada's
+    and the Caribbean's area codes. An unknown country is never texted.
+  - The kinds the owner switches on are sign-in codes, security alerts and reminders. Only the last two are the API's.
+    Sign-in codes are switched on Kratos, by the variables above.
+  - Security alerts by text (a new device, a password or two-step change) and reminders by text (bills due, reminders,
+    tax dates, rent overdue, a lease expiring) are each off until the person turns them on. A text carries the title
+    only, as push does: never a figure. Reminders take one of the plan's `smsMonthly` each (`app.sms_usage`).
+  - Twilio's STOP answer (error 21610) marks the number opted out, and it gets no texts until it changes.
+  - The auth gateway limits texted codes to 5 an hour per number and per address. Saving a number counts, as it
+    texts a code. A wrong texted code counts against the session, as an authenticator code does.
 
 ## Consequences
 

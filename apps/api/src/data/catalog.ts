@@ -22,6 +22,7 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   ai_credential: 'A secret: an API key is not copied into a file',
   ai_cache: 'A cache',
   ai_usage: 'A meter for the billing month',
+  sms_usage: 'A meter for the month’s texts, as for ai_usage',
   ai_task: 'Work in progress for a local AI client',
   change_log: 'A feed: restoring writes its own',
   sync_op: 'Device sync state',

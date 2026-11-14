@@ -44,7 +44,10 @@ selfservice:
     lookup_secret:
       enabled: true # AUTH-04/06: single-use recovery codes
     code:
-      enabled: true # email codes for verification and recovery
+      enabled: true # email codes for verification and recovery; texted codes to a verified phone (ADR-0049 §6)
+      # A texted code as a second factor, after passkeys and authenticator apps. Off here: a deployment that texts sets
+      # SELFSERVICE_METHODS_CODE_MFA_ENABLED=true along with COURIER_CHANNELS (see templates/README.md).
+      mfa_enabled: false
       config:
         lifespan: 30m # AUTH-05: single-use codes; the emails in templates/ state this number, keep them in step
     oidc:
@@ -173,6 +176,9 @@ identity:
     - id: montra
       url: file:///etc/config/kratos/identity.schema.json
 
+# Texts (ADR-0049 §6) go through an HTTP channel with id `sms` to Twilio. It holds the auth token, so it's never in
+# this file: set COURIER_CHANNELS to the JSON in sms-channel.example.json, with the real ids and token. Without it,
+# nothing is texted, and a number added in Settings stays unverified.
 courier:
   template_override_path: /etc/config/kratos/templates # recovery and verification emails (AUTH-05)
   smtp:

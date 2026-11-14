@@ -105,7 +105,7 @@ describe('the Providers page (ADR-0049 §5)', () => {
     await vi.waitFor(async () => expect((await row('email')).lastOkAt).not.toBeNull());
   });
 
-  it('has no texts to test until Twilio is set up', async () => {
+  it('has no texts to test where texts are off', async () => {
     const res = await owner.post('/v1/admin/providers/test-text');
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('sms.not_configured');
@@ -136,7 +136,8 @@ describe('the Providers page (ADR-0049 §5)', () => {
     const save = await owner.put('/v1/admin/providers/settings', {
       mailFromName: 'Montra Billing',
       mailFromAddress: 'billing@example.test',
-      smsKinds: ['codes', 'security'],
+      // All three kinds and US still in, so a test file running beside this one keeps texting.
+      smsKinds: ['codes', 'security', 'reminders'],
       smsCountries: ['us', 'ca'],
     });
     expect(save.status).toBe(204);
@@ -149,7 +150,7 @@ describe('the Providers page (ADR-0049 §5)', () => {
     expect((await owner.get('/v1/admin/providers')).body.settings).toMatchObject({
       mailFromName: 'Montra Billing',
       mailFromAddress: 'billing@example.test',
-      smsKinds: ['codes', 'security'],
+      smsKinds: ['codes', 'security', 'reminders'],
       smsCountries: ['US', 'CA'],
     });
     expect(await h.app.get(ServiceSettings).mailFrom()).toBe('Montra Billing <billing@example.test>');

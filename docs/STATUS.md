@@ -1239,6 +1239,24 @@ Phase 11 leftovers:
     - **Send a test email to me**. The test text answers `sms.not_configured` until step 5.
     - Tests: `apps/api/test/providers.test.ts`. It puts the service-wide settings back afterwards, since test files
       share a database.
+  - **Step 5, texts through Twilio** (migration 0055):
+    - `SmsPort` with `off`, `log`, `memory` and `twilio` modes (`SMS_MODE`, `TWILIO_*`). Twilio sends through a
+      Messaging Service. `TextsService` decides who gets what: their own verified number only, kinds the owner switched
+      on, countries on the allowed list, what the person turned on, and reminders within the plan's `smsMonthly`.
+    - Kratos: `phone` in the identity schema, verified by a texted code, and a texted code as a second factor. The
+      channel and the second factor are switched on by `COURIER_CHANNELS` and `SELFSERVICE_METHODS_CODE_MFA_ENABLED` on
+      Kratos (`infra/kratos/templates/README.md`). This was checked against Kratos v26.2.0 with a stand-in for Twilio.
+      Recovery stays by email.
+    - Web: the mobile number is in Settings → Security (shown only where texts are on), and a **Texts** section in
+      notification settings turns security alerts and reminders by text on. The Providers page shows Twilio's state and
+      sends a test text to the owner's own number.
+    - The API's copy of the number is refreshed from each new Kratos session. A change is logged and emailed.
+    - The auth gateway limits texted codes per number and per address (`sms_send`).
+    - Not done: the phone app has no settings for texts or the number (it shows them nowhere yet), the Terraform doesn't
+      set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real Twilio. US texting needs A2P 10DLC or
+      a verified toll-free number first (launch checklist).
+    - Tests: `apps/api/test/texts.test.ts`, the number's sync in `kratos.test.ts`, the limits in `auth-gateway.test.ts`,
+      and `packages/domain/test/phone.test.ts`.
   - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
     and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
     with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and
