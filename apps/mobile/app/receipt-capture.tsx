@@ -1,10 +1,11 @@
 /**
- * Receipt capture (TXN-08, TXN-09, 08 §3): photograph a receipt (several shots for a long one, in order) with
- * a blur and glare check after each shot, or pick a photo or PDF. The capture is kept on the device and
- * queued, so it works offline; the queue uploads when the network is back. expo-camera (ADR-0009, decided
- * 2026-11-03): no live edge detection, which would need vision-camera frame processors.
+ * Receipt capture (TXN-08, TXN-09, 08 §3). The phone's document scanner opens first (ADR-0047): it finds the
+ * receipt's edges, crops and straightens it, and takes several pages for a long one. Where it isn't available, or
+ * when asked, the app's own camera takes over (expo-camera, ADR-0009), with a blur and glare check after each shot.
+ * A photo or PDF can be picked instead. The capture is kept on the device and queued, so it works offline; the queue
+ * uploads when the network is back.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -20,6 +21,7 @@ import { NotAllowed } from '../src/ui/NotAllowed';
 import { assessFrame } from '../src/features/camera-metrics';
 import { base64ToBytes } from '../src/features/base64';
 import { frameVerdict, type FrameVerdict } from '../src/features/receipt-capture';
+import { scanReceipt } from '../src/features/scanner';
 import { keepPages } from '../src/receipts/files';
 import { Banner, Body, Button, Screen, Small } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
@@ -50,6 +52,10 @@ export default function ReceiptCapture() {
   const [doubtful, setDoubtful] = useState<Shot | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The scanner first; the app's camera when the scanner isn't there or someone prefers it.
+  const [mode, setMode] = useState<'scanner' | 'camera'>('scanner');
+  const [scannerGone, setScannerGone] = useState(false);
+  const launched = useRef(false);
 
   /** Sharpness and glare on a 256-px copy (camera spike metrics). */
   const assess = async (uri: string): Promise<FrameVerdict> => {
@@ -97,6 +103,27 @@ export default function ReceiptCapture() {
     }
   };
 
+  const scan = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await scanReceipt();
+    setBusy(false);
+    // The scanner has its own sharpness check and lets the person retake, so its pages are kept as they are.
+    if (r.kind === 'scanned')
+      return finish(r.uris.map((uri) => ({ uri, type: 'image/jpeg' as const, verdict: 'ok' })));
+    if (r.kind === 'unavailable') {
+      setScannerGone(true);
+      setMode('camera');
+    }
+  };
+
+  // Straight into the scanner: that's what this screen is for.
+  useEffect(() => {
+    if (!can.record || launched.current) return;
+    launched.current = true;
+    void scan();
+  }, [can.record]);
+
   const pick = async () => {
     const r = await DocumentPicker.getDocumentAsync({
       type: Object.keys(PICKABLE),
@@ -118,6 +145,26 @@ export default function ReceiptCapture() {
         <NotAllowed />
       </Screen>
     );
+  if (mode === 'scanner')
+    return (
+      <Screen testID="receipt-capture">
+        <Small>{t('mobile.receipts.scan_hint')}</Small>
+        <Button
+          label={t('mobile.receipts.scan')}
+          busy={busy}
+          onPress={() => void scan()}
+          testID="receipt-scan"
+        />
+        <Button
+          kind="secondary"
+          label={t('mobile.receipts.use_camera')}
+          onPress={() => setMode('camera')}
+          testID="receipt-use-camera"
+        />
+        <Button kind="secondary" label={t('mobile.receipts.pick')} onPress={() => void pick()} />
+        {error ? <Banner tone="danger" text={error} /> : null}
+      </Screen>
+    );
   if (!permission?.granted)
     return (
       <Screen testID="receipt-capture">
@@ -129,6 +176,7 @@ export default function ReceiptCapture() {
 
   return (
     <Screen testID="receipt-capture">
+      {scannerGone ? <Banner tone="info" text={t('mobile.receipts.scanner_unavailable')} /> : null}
       <Small>{t('mobile.receipts.capture_hint')}</Small>
       <View style={{ height: 420, borderRadius: th.radius, overflow: 'hidden' }}>
         <CameraView ref={camera} style={{ flex: 1 }} facing="back" />
