@@ -1210,7 +1210,7 @@ Phase 11 leftovers:
     - The console's **Plans** tab: plans, versions with what they allow, subscriber counts, Stripe prices, and moving
       subscribers between versions. Admins see it; owners change it. Editing a plan adds a version. One that gives
       less starts 30 or more days out, and moving subscribers onto it waits for each one's first renewal after a
-      date 30 or more days out. Customers are emailed either way (`app.plan_change_notice`, the `plans.notify` job).
+      date 30 or more days out. Customers are emailed either way (`app.plan_change_notice`, sent by the hourly billing sweep).
     - The plan picker: `GET /v1/plans`. Web: Settings → Plan lists the other plans with what they include and
       their prices, with a checkout button for each interval. Phone: Settings lists them read-only, since the phone
       doesn't sell.

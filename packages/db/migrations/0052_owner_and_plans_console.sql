@@ -18,7 +18,7 @@ alter table app.subscription add column pending_version_id uuid references app.p
 alter table app.subscription add column pending_from timestamptz;
 create index subscription_pending on app.subscription (pending_from) where pending_version_id is not null;
 
--- Each customer told about a plan change that gives them less, once. Sent by the plans.notify job.
+-- Each customer told about a plan change that gives them less, once. Sent by the hourly billing sweep.
 create table app.plan_change_notice (
   id           uuid primary key default gen_random_uuid(),
   version_id   uuid not null references app.plan_version (id),
@@ -287,7 +287,6 @@ begin
     insert into app.plan_change_notice (version_id, workspace_id, apply_at)
     select p_to, s.workspace_id, s.pending_from from app.subscription s where s.pending_version_id = p_to
     on conflict (version_id, workspace_id) do update set apply_at = excluded.apply_at, sent_at = null;
-    perform app.schedule_system_job('schedule', 'plans.notify', now());
   end if;
   insert into app.admin_log (staff_id, action, subject, detail)
   values (p_staff, 'plan.move', v_from,
@@ -316,7 +315,6 @@ begin
                        and s.plan <> 'free' and s.status in ('trialing', 'active', 'past_due'))
   on conflict do nothing;
   get diagnostics v_count = row_count;
-  perform app.schedule_system_job('schedule', 'plans.notify', now());
   return v_count;
 end $$;
 revoke all on function app.admin_notify_free_change(uuid, uuid) from public;

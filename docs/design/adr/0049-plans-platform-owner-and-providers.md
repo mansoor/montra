@@ -252,8 +252,8 @@ Each step is its own PR into `develop`, and works on its own:
     on, so a move survives Stripe still charging the old price. A new subscriber, or a change of tier, gets the
     plan's current version.
   - Moves are between versions of one plan. A pending move applies in the hourly billing sweep, from the first
-    renewal on or after its date (`first_renewal` steps the period end by the interval). Customers are told by
-    the `plans.notify` job.
+    renewal on or after its date (`first_renewal` steps the period end by the interval). Customers are told
+    by the same sweep.
   - Step-up uses the API's existing recent sign-in check (`requireRecentAuth`, 10 minutes), which is the one
     revealing a tenant's date of birth uses.
   - Listing staff is the owner's too, as managing them is. Admins can see plans but not change them.

@@ -280,9 +280,8 @@ export class BillingService {
   register(): void {
     this.worker.register('billing.sweep', async () => {
       await this.schedule(new Date(Date.now() + SWEEP_EVERY_MS));
-      return { lapsed: await this.sweep() };
+      return { lapsed: await this.sweep(), noticed: await this.sendPlanNotices() };
     });
-    this.worker.register('plans.notify', async () => ({ sent: await this.sendPlanNotices() }));
   }
 
   /** Each customer whose plan will give less is told, with the date, once (ADR-0049 §1). */
