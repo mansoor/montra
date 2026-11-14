@@ -1,7 +1,8 @@
 # Montra API and Node job worker. Same image, different command:
 #   API (default):  node dist/main.js
 #   Worker:         node dist/worker-main.js
-#   Migrations:     node node_modules/@montra/db/dist/cli.js migrate   (needs DATABASE_ADMIN_URL)
+#   Migrations:     node node_modules/@montra/db/dist/cli.js migrate   (needs DATABASE_ADMIN_URL or DATABASE_ADMIN_URL_FILE)
+#   Key moves:      node dist/crypto-cli.js rewrap                     (ADR-0050 §3, docs/runbooks/key-wrapping.md)
 # Build from the repository root:
 #   docker build -f apps/api/Dockerfile -t montra/api .
 FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS build
@@ -28,6 +29,7 @@ RUN rm -rf node_modules apps/api/node_modules packages/*/node_modules \
     packages/*/src packages/*/test packages/*/tsconfig*.json packages/*/vitest.config.ts \
  && test -f apps/api/dist/main.js \
  && test -f apps/api/dist/worker-main.js \
+ && test -f apps/api/dist/crypto-cli.js \
  && test -f packages/db/dist/cli.js \
  && test -d packages/db/migrations
 
