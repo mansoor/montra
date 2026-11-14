@@ -131,10 +131,8 @@ module "compute" {
   kratos_from_address = "no-reply@${var.domain_name}"
   support_email       = var.support_email
 
-  billing_mode             = var.billing_mode
-  stripe_price_pro_monthly = var.stripe_price_pro_monthly
-  stripe_price_pro_yearly  = var.stripe_price_pro_yearly
-  extra_environment        = var.extra_environment
+  billing_mode      = var.billing_mode
+  extra_environment = var.extra_environment
 
   services               = var.services
   metrics_namespace      = local.metrics_namespace

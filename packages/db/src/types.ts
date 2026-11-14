@@ -752,6 +752,10 @@ export interface AiUsageTable {
   month: CalendarDateCol;
   calls: Generated<number>;
   cost_micro_usd: Int8Default;
+  /** Built-in AI only, which the service pays for (ADR-0049 §2). */
+  builtin_micro_usd: Int8Default;
+  /** 0, 80 or 100: the share of the month's limit the owners have been told about. */
+  alerted_pct: Generated<number>;
 }
 
 export interface AiCredentialTable {
@@ -1320,6 +1324,42 @@ export interface SubscriptionTable {
   grace_until: Date | null;
   cancel_at_period_end: Generated<boolean>;
   updated_at: Generated<Date>;
+  /** ADR-0049: the version of the plan it's on. Null only on rows written before migration 0051 by an old task. */
+  plan_version_id: string | null;
+}
+
+// Plans as data (migration 0051, ADR-0049 §1).
+
+export interface PlanTable {
+  key: string;
+  name: string;
+  description: Generated<string>;
+  sort_order: Generated<number>;
+  offered: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface PlanVersionTable {
+  id: Generated<string>;
+  plan_key: string;
+  version: number;
+  /** PlanEntitlements in @montra/domain, checked with parseEntitlements. */
+  entitlements: Json<unknown>;
+  created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface PlanPriceTable {
+  id: Generated<string>;
+  plan_version_id: string;
+  provider: 'stripe' | 'apple' | 'google';
+  billing_interval: 'month' | 'year';
+  price_ref: string;
+  amount_minor: Int8;
+  currency: string;
+  active: Generated<boolean>;
+  created_at: Generated<Date>;
 }
 
 export interface FeatureFlagTable {
@@ -1629,6 +1669,9 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.storage_mirror_item': StorageMirrorItemTable;
   'app.restore_job': RestoreJobTable;
   'app.subscription': SubscriptionTable;
+  'app.plan': PlanTable;
+  'app.plan_version': PlanVersionTable;
+  'app.plan_price': PlanPriceTable;
   'app.feature_flag': FeatureFlagTable;
   'app.feature_flag_override': FeatureFlagOverrideTable;
   'app.system_notice': SystemNoticeTable;

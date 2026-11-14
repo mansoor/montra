@@ -160,9 +160,7 @@ export default function Settings() {
           {family.map((f) => (
             <Body key={f.id}>{f.name}</Body>
           ))}
-          {plan && plan.mode !== 'off' ? (
-            <Small>{t(plan.plan === 'pro' ? 'billing.plan_pro' : 'billing.plan_free')}</Small>
-          ) : null}
+          {plan && plan.mode !== 'off' ? <Small>{plan.planName}</Small> : null}
           <Small>{t('mobile.settings.change_on_web')}</Small>
         </Card>
       ) : null}

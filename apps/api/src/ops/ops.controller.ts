@@ -26,6 +26,7 @@ import {
   CreateNoticeRequest,
   CreateSupportGrantRequest,
   CreateSupportRequest,
+  SaveAiCeilingRequest,
   SaveFeatureFlagRequest,
   SaveMerchantRequest,
   SaveMileageRateRequest,
@@ -60,8 +61,8 @@ export class WorkspaceOpsController {
   @Post('billing/checkout')
   async checkout(@Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireWorkspaceAdmin(ctx);
-    const { interval } = parse(CheckoutRequest, body);
-    return { url: await this.billing.checkoutUrl(dbCtx(ctx), ctx.user.email, interval) };
+    const { plan, interval } = parse(CheckoutRequest, body);
+    return { url: await this.billing.checkoutUrl(dbCtx(ctx), ctx.user.email, plan, interval) };
   }
 
   @Post('billing/portal')
@@ -254,6 +255,18 @@ export class AdminController {
   async saveAdminPasswordPolicy(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireAdmin(req);
     await this.admin.savePasswordPolicy(ctx.user.id, parse(PasswordPolicyDto, body));
+  }
+
+  @Get('ai-ceiling')
+  aiCeiling() {
+    return this.admin.aiCeiling();
+  }
+
+  @Put('ai-ceiling')
+  @HttpCode(204)
+  async saveAiCeiling(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireAdmin(req);
+    await this.admin.saveAiCeiling(ctx.user.id, parse(SaveAiCeilingRequest, body));
   }
 
   @Get('analytics/imports')

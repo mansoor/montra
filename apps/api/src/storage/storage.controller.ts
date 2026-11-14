@@ -29,6 +29,7 @@ import {
 } from '../auth/auth.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { parse } from '../common/zod.js';
+import { Plans } from '../ops/plans.js';
 import { StorageDestinationsService } from './storage-destinations.service.js';
 
 const TestRequest = z.object({ connection: StorageConnection, folder: StorageFolder.optional() });
@@ -38,7 +39,10 @@ const TestRequest = z.object({ connection: StorageConnection, folder: StorageFol
 @UseGuards(AuthGuard, WorkspaceGuard)
 @UseInterceptors(IdempotencyInterceptor)
 export class StorageController {
-  constructor(@Inject(StorageDestinationsService) private readonly storage: StorageDestinationsService) {}
+  constructor(
+    @Inject(StorageDestinationsService) private readonly storage: StorageDestinationsService,
+    @Inject(Plans) private readonly plans: Plans,
+  ) {}
 
   @Get()
   async get(@Ctx() ctx: RequestContext) {
@@ -53,9 +57,10 @@ export class StorageController {
   }
 
   @Post()
-  connect(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+  async connect(@Ctx() ctx: RequestContext, @Body() body: unknown) {
     // AUTH-09: a copy of everything goes somewhere new.
     requireRecentAuth(ctx);
+    await this.plans.requireFeature(dbCtx(ctx), 'ownStorage');
     return this.storage.connect(dbCtx(ctx), ctx.role!, parse(ConnectStorageRequest, body));
   }
 

@@ -1,16 +1,36 @@
 /** Running the service: plans, the staff console, support access, notices and help (ADR-0020). */
+import { PLAN_FEATURES } from '@montra/domain';
 import { z } from 'zod';
 import { Id } from './common.js';
 
-// ----- Plans and billing (UP-12, OPS-08) --------------------------------------------------------
+/// ----- Plans and billing (UP-12, OPS-08, ADR-0049 §1) ------------------------------------------
 
-export const PlanDto = z.enum(['free', 'pro']);
+/** A plan's key, such as `free`, `pro` or `plus`. Plans are data the owner edits (ADR-0049 §1). */
+export const PlanDto = z.string().regex(/^[a-z][a-z0-9_-]{1,31}$/);
 export type PlanDto = z.infer<typeof PlanDto>;
+
+export const PlanFeatureDto = z.enum(PLAN_FEATURES);
+export type PlanFeatureDto = z.infer<typeof PlanFeatureDto>;
+
+/** What a plan version allows. Bytes and micro-dollars are strings, as they can pass what a number holds. */
+export const PlanEntitlementsDto = z.object({
+  businessBooks: z.number().int(),
+  rentalPortfolios: z.number().int(),
+  storageBytes: z.string(),
+  /** Null: no limit. */
+  familyLogins: z.number().int().nullable(),
+  /** The AI allowance a month, in millionths of a dollar. Null: no limit. Customers see a share, not this. */
+  aiMonthlyMicroUsd: z.string().nullable(),
+  smsMonthly: z.number().int(),
+  features: z.array(PlanFeatureDto),
+});
+export type PlanEntitlementsDto = z.infer<typeof PlanEntitlementsDto>;
 
 export const BillingDto = z.object({
   /** `off`: no plans here, as in a self-hosted install, and everything is available. */
   mode: z.enum(['off', 'stripe']),
   plan: PlanDto,
+  planName: z.string(),
   status: z.enum(['none', 'trialing', 'active', 'past_due', 'canceled']),
   provider: z.enum(['stripe', 'apple', 'google', 'staff']).nullable(),
   interval: z.enum(['month', 'year']).nullable(),
@@ -18,6 +38,9 @@ export const BillingDto = z.object({
   currentPeriodEnd: z.string().nullable(),
   graceUntil: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
+  /** What the workspace can do now. With plans off, everything. */
+  entitlements: PlanEntitlementsDto,
+  /** The same, in the shape clients read before plans were data. */
   features: z.object({
     businessEntities: z.boolean(),
     rentalEntities: z.boolean(),
@@ -30,7 +53,7 @@ export const BillingDto = z.object({
 });
 export type BillingDto = z.infer<typeof BillingDto>;
 
-export const CheckoutRequest = z.object({ interval: z.enum(['month', 'year']) });
+export const CheckoutRequest = z.object({ plan: PlanDto, interval: z.enum(['month', 'year']) });
 export type CheckoutRequest = z.output<typeof CheckoutRequest>;
 
 export const BillingLinkDto = z.object({ url: z.string() });
@@ -158,6 +181,18 @@ export const AdminSetPlanRequest = z.object({
   reason: z.string().trim().min(3).max(500),
 });
 export type AdminSetPlanRequest = z.output<typeof AdminSetPlanRequest>;
+
+/** ADR-0049 §2: the operator's monthly limit on built-in AI across the whole service. A circuit breaker, not a plan. */
+export const AiCeilingDto = z.object({
+  ceilingUsd: z.number().nullable(),
+  month: z.string(),
+  spentUsd: z.number(),
+  reached: z.boolean(),
+});
+export type AiCeilingDto = z.infer<typeof AiCeilingDto>;
+
+export const SaveAiCeilingRequest = z.object({ ceilingUsd: z.number().min(0).max(1_000_000).nullable() });
+export type SaveAiCeilingRequest = z.output<typeof SaveAiCeilingRequest>;
 
 export const FeatureFlagDto = z.object({
   key: z.string(),

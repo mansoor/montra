@@ -35,25 +35,23 @@ locals {
   ])
 
   api_environment = merge({
-    NODE_ENV                 = "production"
-    PORT                     = "4000"
-    AUTH_MODE                = "kratos"
-    KRATOS_PUBLIC_URL        = local.kratos_public_url
-    KRATOS_ADMIN_URL         = local.kratos_admin_url
-    KMS_MODE                 = "aws"
-    AWS_KMS_KEY_ID           = var.data_key_arn
-    STORAGE_MODE             = "s3"
-    S3_BUCKET                = var.s3_bucket_name
-    S3_REGION                = local.region
-    MAIL_MODE                = "smtp"
-    MAIL_FROM                = var.mail_from
-    BILLING_MODE             = var.billing_mode
-    STRIPE_PRICE_PRO_MONTHLY = var.stripe_price_pro_monthly
-    STRIPE_PRICE_PRO_YEARLY  = var.stripe_price_pro_yearly
-    API_URL                  = local.api_url
-    WEB_URL                  = local.web_url
-    SUPPORT_EMAIL            = var.support_email
-    PUSH_MODE                = "expo"
+    NODE_ENV          = "production"
+    PORT              = "4000"
+    AUTH_MODE         = "kratos"
+    KRATOS_PUBLIC_URL = local.kratos_public_url
+    KRATOS_ADMIN_URL  = local.kratos_admin_url
+    KMS_MODE          = "aws"
+    AWS_KMS_KEY_ID    = var.data_key_arn
+    STORAGE_MODE      = "s3"
+    S3_BUCKET         = var.s3_bucket_name
+    S3_REGION         = local.region
+    MAIL_MODE         = "smtp"
+    MAIL_FROM         = var.mail_from
+    BILLING_MODE      = var.billing_mode
+    API_URL           = local.api_url
+    WEB_URL           = local.web_url
+    SUPPORT_EMAIL     = var.support_email
+    PUSH_MODE         = "expo"
     # The hosted service can't reach a user's own AI endpoint (see apps/api/src/config.ts).
     AI_LOCAL_DIRECT = "false"
     # Cloudflare, then the load balancer: without this, the API sees the load balancer as every client.

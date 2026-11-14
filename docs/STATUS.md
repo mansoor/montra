@@ -1177,11 +1177,30 @@ Phase 11 leftovers:
       providers.
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
-- **Offering Montra as a service, hosted anywhere** (proposed, nothing built yet):
+- **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14):
   - [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console
     (tiers, prices by Stripe price id, entitlements, versions), each with an AI allowance; a staff `owner` role above
     `admin`; suspending, trials, given plans and closing accounts; a Providers page that shows but never stores keys;
     texts through Twilio (Kratos's SMS channel and an `SmsPort`). Five PRs, in the order the ADR gives.
+  - **Step 1, plans as data and the AI allowance** (migration 0051):
+    - `app.plan`, `app.plan_version` (entitlements as JSON, checked by `parseEntitlements` in `@montra/domain`) and
+      `app.plan_price` (Stripe price ids). `app.subscription.plan_version_id`. A version with subscribers can't be
+      changed (a trigger); a new version is the way. Free is always offered.
+    - Seeded so nothing changes: Free and Pro allow what `entitlementsFor` gave them, which is gone. Every feature key
+      is on for both, and neither has an AI allowance or a login limit.
+    - `Plans` (`apps/api/src/ops/plans.ts`) is the one place that says what the workspace in context is on, through
+      `app.current_plan()`, so jobs get it too. Adding books, a payroll person, staff time, a scan, own storage or
+      an invite checks it. `BILLING_MODE=off` still gives everything.
+    - Checkout takes `{ plan, interval }`; the webhook finds the version from the price id. `STRIPE_PRICE_PRO_*` are
+      gone, from the API and Terraform. **Until the plans editor (step 2), prices are added with SQL.**
+    - Built-in AI is held to min(plan allowance, the customer's budget). Owners get an `ai_allowance` notification at
+      80% and 100%, once each a month (`ai_usage.alerted_pct`). The operator's ceiling (`ai_monthly_ceiling_micro_usd`,
+      console → AI) stops built-in AI everywhere and emails staff once a month. Customers' own keys and local models
+      are held only to their own budget, and don't count towards the ceiling.
+    - The phone hides voice entry when the plan lacks `voice`. The web's plan panel names the plan; the plan picker
+      and the AI usage bar are step 2.
+    - Tests: `apps/api/test/plans.test.ts`. The ceiling is only ever set inside a rolled-back transaction there,
+      because test files share a database.
   - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
     and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
     with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and
