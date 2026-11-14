@@ -51,3 +51,18 @@ export async function scanPages(
     return { kind: 'unavailable', reason: (err as Error).message };
   }
 }
+
+/** Waits for a scan to be read (ADR-0048), checking every `everyMs`, for at most `limitMs`; null when it took longer. */
+export async function waitForScan<T extends { status: string }>(
+  get: () => Promise<T>,
+  everyMs = 1500,
+  limitMs = 120_000,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<T | null> {
+  for (let waited = 0; waited <= limitMs; waited += everyMs) {
+    const scan = await get();
+    if (scan.status !== 'reading') return scan;
+    await sleep(everyMs);
+  }
+  return null;
+}

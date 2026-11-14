@@ -1,7 +1,8 @@
 /**
  * Statement import on mobile (IMP-02, PLT-04): pick a file (Files, email attachments, iCloud/Drive), receive one from
  * the share sheet / "Open in Montra", or scan paper pages with the phone's document scanner (ADR-0048; combined into a
- * PDF that the server reads with OCR). Opened from the Add wheel with `?scan=1`, it goes straight to scanning. Then a
+ * PDF that the server reads with OCR). Opened from the Add wheel with `?scan=1`, it goes straight to scanning; the
+ * scan is read once and finds its account by the last four digits printed on it, for the person to confirm. Then a
  * simplified preview, the guided column mapping when needed, commit and the summary.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -11,7 +12,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Print from 'expo-print';
 import { useLocalSearchParams } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
-import type { ImportBatchDto, ImportRowDto } from '@montra/schemas';
+import type { ImportBatchDto, ImportRowDto, ScanStatementDetectedDto } from '@montra/schemas';
 import type { UploadFile } from '../src/api/client';
 import { fmtDate, fmtMoney, prefersDayFirst, t } from '../src/i18n';
 import { useAbilities, useSession } from '../src/session/SessionProvider';
@@ -24,14 +25,14 @@ import {
   nextStep,
   type GuidedChoices,
 } from '../src/features/import-mapping';
-import type { CapturedPage } from '../src/features/scanner';
+import { waitForScan, type CapturedPage } from '../src/features/scanner';
 import { removePage } from '../src/receipts/files';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../src/ui/components';
 import { DocumentCapture } from '../src/ui/DocumentCapture';
 import { NotAllowed } from '../src/ui/NotAllowed';
 import { useTheme } from '../src/ui/theme';
 
-type Phase = 'pick' | 'scan' | 'working' | 'mapping' | 'preview' | 'done';
+type Phase = 'pick' | 'scan' | 'account' | 'working' | 'mapping' | 'preview' | 'done';
 const WAITING = new Set(['uploaded', 'parsing', 'committing']);
 
 export default function ImportScreen() {
@@ -51,6 +52,12 @@ export default function ImportScreen() {
   const [batch, setBatch] = useState<ImportBatchDto | null>(null);
   const [rows, setRows] = useState<ImportRowDto[]>([]);
   const [choices, setChoices] = useState<GuidedChoices | null>(null);
+  // A scanned statement waiting for its account: the uploaded PDF, its scan and what the reading found.
+  const [scanned, setScanned] = useState<{
+    fileId: string;
+    scanId?: string;
+    found: ScanStatementDetectedDto | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!accountId && accounts[0]) setAccountId(accounts[0].id);
@@ -148,7 +155,44 @@ export default function ImportScreen() {
       .map((b64) => `<img src="data:image/jpeg;base64,${b64}" style="width:100%;page-break-after:always"/>`)
       .join('')}</body></html>`;
     const pdf = await Print.printToFileAsync({ html });
-    await start({ uri: pdf.uri, name: `scan-${Date.now()}.pdf`, type: 'application/pdf' });
+    if (!sync?.online) return setError(t('mobile.import.offline'));
+    setError(null);
+    setPhase('working');
+    try {
+      setMessage(t('mobile.import.uploading'));
+      const up = await api.upload(ws, {
+        uri: pdf.uri,
+        name: `scan-${Date.now()}.pdf`,
+        type: 'application/pdf',
+      });
+      setMessage(t('mobile.import.finding'));
+      const scan = await api.createScan(ws, 'statement', [up.fileId]);
+      const read = await waitForScan(() => api.getScan(ws, scan.id));
+      // Read: it suggests the account. Not read (or too slow): the import reads the file itself.
+      const found = read?.status === 'ready' ? read.statement : null;
+      setScanned({ fileId: up.fileId, scanId: found ? scan.id : undefined, found });
+      const pick = found?.accountId ?? found?.candidates[0]?.accountId;
+      if (pick) setAccountId(pick);
+      setPhase('account');
+    } catch (e) {
+      setError((e as Error).message);
+      setPhase('scan');
+    }
+  };
+
+  /** Imports the scanned statement into the chosen account, from the scan's reading when there is one. */
+  const importScanned = async () => {
+    if (!scanned || !accountId) return;
+    setPhase('working');
+    setMessage(t('mobile.import.reading'));
+    try {
+      const created = await api.createImport(ws, scanned.fileId, accountId, scanned.scanId);
+      setScanned(null);
+      await show(await settle(created.id));
+    } catch (e) {
+      setError((e as Error).message);
+      setPhase('account');
+    }
   };
 
   const applyMapping = async () => {
@@ -230,30 +274,59 @@ export default function ImportScreen() {
             testID="import-pick"
           />
           <Small>{t('mobile.import.pick_hint')}</Small>
-          <Button
-            kind="secondary"
-            label={t('mobile.import.scan')}
-            onPress={() => setPhase('scan')}
-            disabled={!accountId}
-          />
+          <Button kind="secondary" label={t('mobile.import.scan')} onPress={() => setPhase('scan')} />
         </>
       ) : null}
 
       {phase === 'scan' ? (
         <>
           <Title>{t('mobile.import.scan_title')}</Title>
-          <Small>{t('mobile.import.account')}</Small>
-          {accountChips}
           <Small>{t('mobile.import.scan_note')}</Small>
           <DocumentCapture
             scanLabel={t('mobile.import.scan')}
             scanHint={t('mobile.import.scan_hint')}
             cameraHint={t('mobile.import.scan_note')}
             pick={false}
-            autoStart={false}
             onPages={finishScan}
           />
           <Button kind="secondary" label={t('mobile.common.cancel')} onPress={() => setPhase('pick')} />
+        </>
+      ) : null}
+
+      {phase === 'account' && scanned ? (
+        <>
+          <Title>{t('mobile.import.which_account')}</Title>
+          {scanned.found?.accountId ? (
+            <Banner
+              tone="info"
+              text={t('mobile.import.found_account', {
+                last4: scanned.found.accountLast4 ?? '',
+                name: accounts.find((a) => a.id === scanned.found?.accountId)?.name ?? '',
+              })}
+            />
+          ) : scanned.found?.accountLast4 ? (
+            <Banner
+              tone="warning"
+              text={t('mobile.import.unknown_account', { last4: scanned.found.accountLast4 })}
+            />
+          ) : (
+            <Small>{t('mobile.import.choose_account')}</Small>
+          )}
+          {accountChips}
+          <Button
+            label={t('mobile.import.import_here')}
+            onPress={() => void importScanned()}
+            disabled={!accountId}
+            testID="import-scanned"
+          />
+          <Button
+            kind="secondary"
+            label={t('mobile.common.cancel')}
+            onPress={() => {
+              setScanned(null);
+              setPhase('pick');
+            }}
+          />
         </>
       ) : null}
 

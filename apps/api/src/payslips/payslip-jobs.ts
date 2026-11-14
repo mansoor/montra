@@ -1,10 +1,11 @@
 /**
  * `payslip.extract` (PAY-03): reads a payslip into a draft through the AI gateway, after the doc-worker's OCR unless
- * the workspace allows images to go to the provider. The result always waits for the user to confirm it.
+ * the workspace allows images to go to the provider. The result always waits for the user to confirm it. A payslip
+ * made from a scan (ADR-0048) uses the scan's reading instead of reading the pages again.
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { asCurrencyCode, calendarDate, isCurrencyCode, payslipGap } from '@montra/domain';
-import type { ImagePart } from '@montra/ai-gateway';
+import type { ImagePart, PayslipExtraction, TaskResult } from '@montra/ai-gateway';
 import { AiService } from '../ai/ai.service.js';
 import { Db } from '../db/database.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
@@ -17,7 +18,17 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 interface ExtractPayload {
   payslipId: string;
+  /** Made from a scan: its stored reading is used. */
+  scanId?: string;
   previousResult?: { kind?: string; pages?: string[] };
+}
+
+type JobCtx = { workspaceId: string; userId: string };
+
+/** A payslip's reading, as the gateway answered, with where it was read. Stored on a scan until it's used. */
+export interface PayslipReading {
+  res: TaskResult<PayslipExtraction>;
+  base: { mode: string; provider: string };
 }
 
 @Injectable()
@@ -34,27 +45,27 @@ export class PayslipJobs {
     this.worker.register('payslip.extract', (job) => this.extract(job));
   }
 
-  async extract(job: Job): Promise<Record<string, unknown>> {
-    if (!job.workspace_id || !job.created_by)
-      throw new PermanentJobError('job.invalid', 'Job without workspace or user');
-    const ctx = { workspaceId: job.workspace_id, userId: job.created_by };
-    const p = job.payload as unknown as ExtractPayload;
-    const { row, files, allowImages } = await this.db.run(ctx, async (trx) => {
-      const row = await this.payslips.row(trx, ctx, p.payslipId);
-      const files = await trx
+  /**
+   * Reads payslip pages through the gateway: the images when the workspace allows documents to go to the provider,
+   * else the doc-worker's OCR text. Used for a payslip and for a scanned payslip before it's filed.
+   */
+  async read(
+    ctx: JobCtx,
+    fileIds: readonly string[],
+    currencyHint: string | null,
+    previousResult: ExtractPayload['previousResult'],
+    subject: { type: 'payslip' | 'scan'; id: string },
+  ): Promise<PayslipReading> {
+    const { files, allowImages } = await this.db.run(ctx, async (trx) => {
+      const found = await trx
         .selectFrom('app.file')
         .select(['id', 'storage_key', 'mime', 'bytes'])
         .where('workspace_id', '=', ctx.workspaceId)
-        .where(
-          'id',
-          'in',
-          row.attachment_ids.length ? row.attachment_ids : ['00000000-0000-0000-0000-000000000000'],
-        )
+        .where('id', 'in', fileIds.length ? [...fileIds] : ['00000000-0000-0000-0000-000000000000'])
         .execute();
       const runtime = await this.ai.runtime(trx, ctx);
       return {
-        row,
-        files: row.attachment_ids.map((id) => files.find((f) => f.id === id)!).filter(Boolean),
+        files: fileIds.map((id) => found.find((f) => f.id === id)!).filter(Boolean),
         allowImages: (runtime.mode === 'builtin' || runtime.mode === 'byok') && runtime.allowDocumentsToLlm,
       };
     });
@@ -69,15 +80,42 @@ export class PayslipJobs {
       });
     }
     const ocrText =
-      p.previousResult?.kind === 'receipt_text' ? (p.previousResult.pages ?? []).join('\n\n') : null;
-
+      previousResult?.kind === 'receipt_text' ? (previousResult.pages ?? []).join('\n\n') : null;
     return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
-      const runtime = await this.ai.runtime(trx, ctx, { type: 'payslip', id: row.id });
+      const runtime = await this.ai.runtime(trx, ctx, subject);
       const res = await this.ai.gateway.extractPayslip(
-        { images, ocrText, currencyHint: row.currency, locale: 'en-US' },
+        { images, ocrText, currencyHint, locale: 'en-US' },
         { ...runtime.ctx, parkLocal: false },
       );
-      const base = { mode: runtime.mode, provider: runtime.ctx.provider.id };
+      return { res, base: { mode: runtime.mode, provider: runtime.ctx.provider.id } };
+    });
+  }
+
+  async extract(job: Job): Promise<Record<string, unknown>> {
+    if (!job.workspace_id || !job.created_by)
+      throw new PermanentJobError('job.invalid', 'Job without workspace or user');
+    const ctx = { workspaceId: job.workspace_id, userId: job.created_by };
+    const p = job.payload as unknown as ExtractPayload;
+    const row = await this.db.run(ctx, (trx) => this.payslips.row(trx, ctx, p.payslipId));
+    const reading = p.scanId
+      ? await this.db.run(ctx, async (trx) => {
+          const scan = await trx
+            .selectFrom('app.document_scan')
+            .select('result')
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', '=', p.scanId!)
+            .executeTakeFirst();
+          return (scan?.result as unknown as PayslipReading | null) ?? null;
+        })
+      : null;
+    const { res, base } =
+      reading ??
+      (await this.read(ctx, row.attachment_ids, row.currency, p.previousResult, {
+        type: 'payslip',
+        id: row.id,
+      }));
+
+    const out = await this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
       if (!res.ok) {
         await trx
           .updateTable('app.payslip')
@@ -147,11 +185,22 @@ export class PayslipJobs {
         .execute();
       return { read: true, lines: lines.length, warnings: warnings.length };
     });
+    // The scan's reading was only kept until the payslip had it.
+    if (p.scanId)
+      await this.db.run(ctx, (trx) =>
+        trx
+          .updateTable('app.document_scan')
+          .set({ result: null, updated_at: new Date() })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', p.scanId!)
+          .execute(),
+      );
+    return out;
   }
 }
 
 /** "ACME CORP" and "Acme Corporation Inc" are the same payer; a loose check, because it only raises a warning. */
-function namesAgree(a: string, b: string): boolean {
+export function namesAgree(a: string, b: string): boolean {
   const words = (s: string) =>
     s
       .toLowerCase()
@@ -159,4 +208,12 @@ function namesAgree(a: string, b: string): boolean {
       .filter((w) => w.length > 2);
   const other = new Set(words(b));
   return words(a).some((w) => other.has(w));
+}
+
+/** A reading as stored on a scan: JSON-safe (no bigint cost), keeping only the model from the call's details. */
+export function storableReading(r: PayslipReading): Record<string, unknown> {
+  const res = r.res.ok
+    ? { ok: true, value: r.res.value, meta: { model: r.res.meta.model } }
+    : { ok: false, reason: r.res.reason, ...(r.res.detail ? { detail: r.res.detail } : {}) };
+  return { res, base: r.base };
 }

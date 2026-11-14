@@ -1199,6 +1199,23 @@ export interface PayslipDepositTable {
   deposit_spec: Json<unknown> | null;
 }
 
+/** A scanned document read before it's filed (migration 0048, ADR-0048 §3); its uploader's own. */
+export interface DocumentScanTable {
+  workspace_id: string;
+  id: Generated<string>;
+  user_id: string;
+  kind: 'statement' | 'payslip' | 'bill';
+  file_ids: string[];
+  status: Generated<'reading' | 'ready' | 'failed' | 'used'>;
+  result: Json<Record<string, unknown>> | null;
+  detected: Json<Record<string, unknown>> | null;
+  error: string | null;
+  used_id: string | null;
+  job_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface SavedReportTable {
   workspace_id: string;
   id: string;
@@ -1557,6 +1574,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.property_budget': PropertyBudgetTable;
   'app.property_budget_line': PropertyBudgetLineTable;
   'app.saved_report': SavedReportTable;
+  'app.document_scan': DocumentScanTable;
   'app.notification': NotificationTable;
   'app.notification_pref': NotificationPrefTable;
   'app.security_event': SecurityEventTable;
@@ -2150,6 +2168,7 @@ export type TransactionRow = Selectable<TransactionTable>;
 export type TransactionUpdate = Updateable<TransactionTable>;
 export type PostingRow = Selectable<PostingTable>;
 export type ReceiptRow = Selectable<ReceiptTable>;
+export type DocumentScanRow = Selectable<DocumentScanTable>;
 export type ReceiptLineRow = Selectable<ReceiptLineTable>;
 export type TripRow = Selectable<TripTable>;
 export type BudgetRow = Selectable<BudgetTable>;

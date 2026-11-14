@@ -92,8 +92,16 @@ export class ImportsService {
         })
         .execute();
       const parse = { workspaceId: ctx.workspaceId, batchId: id, accountFilter: req.accountFilter ?? null };
-      const jobId =
-        fileType === 'xls' || fileType === 'pdf'
+      // A scanned statement was read already (ADR-0048): its reading goes straight to parsing, and the scan is used.
+      const scanned = req.scanId ? await this.scanReading(trx, ctx, req.scanId, file.id, id) : null;
+      const jobId = scanned
+        ? await this.queue.enqueue(trx, {
+            ...ctx,
+            queue: 'import',
+            type: 'import.parse',
+            payload: { ...parse, previousResult: scanned },
+          })
+        : fileType === 'xls' || fileType === 'pdf'
           ? await this.queue.enqueue(trx, {
               ...ctx,
               queue: 'doc',
@@ -117,6 +125,32 @@ export class ImportsService {
         .execute();
     });
     return this.get(ctx, id);
+  }
+
+  /** A scanned statement's reading for this file, marking the scan used by the import; the reading moves to the job. */
+  private async scanReading(
+    trx: Trx,
+    ctx: Ctx,
+    scanId: string,
+    fileId: string,
+    batchId: string,
+  ): Promise<Record<string, unknown>> {
+    const scan = await trx
+      .selectFrom('app.document_scan')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', scanId)
+      .executeTakeFirst();
+    if (!scan || scan.kind !== 'statement' || scan.file_ids[0] !== fileId) throw notFound('Scan');
+    if (scan.status !== 'ready' || !scan.result)
+      throw unprocessable('scan.not_ready', 'This scan is still being read, or was filed');
+    await trx
+      .updateTable('app.document_scan')
+      .set({ status: 'used', used_id: batchId, result: null, updated_at: new Date() })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', scanId)
+      .execute();
+    return scan.result as Record<string, unknown>;
   }
 
   async get(ctx: Ctx, id: string): Promise<ImportBatchDto> {

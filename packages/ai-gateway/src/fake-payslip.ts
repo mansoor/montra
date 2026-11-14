@@ -52,6 +52,7 @@ export function parsePayslipText(text: string) {
   }
   return {
     employer: /^employer:\s*(.+)$/im.exec(text)?.[1]?.trim() ?? null,
+    employee: /^employee:\s*(MEMBER_\d+)\b/im.exec(text)?.[1] ?? null,
     payDate: date(text, /pay date:?\s*(\d{4}-\d{2}-\d{2})/i),
     periodStart: date(text, /period:?\s*(\d{4}-\d{2}-\d{2})/i),
     periodEnd: date(text, /period:?\s*\d{4}-\d{2}-\d{2}\s*(?:to|-|–)\s*(\d{4}-\d{2}-\d{2})/i),

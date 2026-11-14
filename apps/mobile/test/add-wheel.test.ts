@@ -28,7 +28,7 @@ describe('the Add wheel', () => {
       '/receipt-capture',
       '/import?scan=1',
       '/bills/capture',
-      '/payslips',
+      '/payslips/capture',
     ]);
   });
 

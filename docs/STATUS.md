@@ -1148,8 +1148,13 @@ Phase 11 leftovers:
   - Statements, payslips and reimbursement photos now open the phone's document scanner first, with the camera as the
     fallback (`src/ui/DocumentCapture.tsx`; `scanReceipt` is now `scanPages`). A statement's scanned pages still become
     one PDF. From the wheel, Statement goes straight to scanning.
-  - Next: the account from a scanned statement and the person from a payslip (step 2), billers on the budget (step 3),
-    bill scanning (step 4).
+  - **Step 2:** a scan is read before it's filed (`app.document_scan`, migration 0048, `POST scans`, `scan.read`).
+    - A scanned statement finds its account by the last four digits the doc-worker reads from it. The phone shows the
+      account found and imports from the same reading (`POST imports` with `scanId`).
+    - A scanned payslip finds its person from the pseudonym token `extract_payslip` v2 returns, and its employer by
+      name. The phone shows what it found and saves to the employer chosen (`POST payslips` with `scanId`). From the
+      wheel, Payslip goes straight to scanning.
+  - Next: billers on the budget (step 3), bill scanning (step 4).
   - Not yet tried on a device.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.

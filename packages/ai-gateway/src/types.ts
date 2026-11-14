@@ -375,6 +375,8 @@ export interface PayslipDocument {
 /** A draft payslip with amounts as decimal strings (the caller converts to minor units). */
 export interface PayslipExtraction {
   employer: string | null;
+  /** The person's pseudonym token (`MEMBER_n`) when the payslip names a family member, else null. */
+  employee: string | null;
   payDate: string | null;
   periodStart: string | null;
   periodEnd: string | null;
