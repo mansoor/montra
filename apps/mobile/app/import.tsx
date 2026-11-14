@@ -1,14 +1,15 @@
 /**
  * Statement import on mobile (IMP-02, PLT-04): pick a file (Files, email attachments, iCloud/Drive), receive one from
- * the share sheet / "Open in Montra", or scan paper pages with the camera (combined into a PDF that the server reads
- * with OCR). Then a simplified preview, the guided column mapping when needed, commit and the summary.
+ * the share sheet / "Open in Montra", or scan paper pages with the phone's document scanner (ADR-0048; combined into a
+ * PDF that the server reads with OCR). Opened from the Add wheel with `?scan=1`, it goes straight to scanning. Then a
+ * simplified preview, the guided column mapping when needed, commit and the summary.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Switch, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Print from 'expo-print';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useLocalSearchParams } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
 import type { ImportBatchDto, ImportRowDto } from '@montra/schemas';
 import type { UploadFile } from '../src/api/client';
@@ -23,7 +24,10 @@ import {
   nextStep,
   type GuidedChoices,
 } from '../src/features/import-mapping';
+import type { CapturedPage } from '../src/features/scanner';
+import { removePage } from '../src/receipts/files';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../src/ui/components';
+import { DocumentCapture } from '../src/ui/DocumentCapture';
 import { NotAllowed } from '../src/ui/NotAllowed';
 import { useTheme } from '../src/ui/theme';
 
@@ -40,15 +44,13 @@ export default function ImportScreen() {
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter((a) => !a.archived);
   const [accountId, setAccountId] = useState('');
-  const [phase, setPhase] = useState<Phase>('pick');
+  const { scan } = useLocalSearchParams<{ scan?: string }>();
+  const [phase, setPhase] = useState<Phase>(scan ? 'scan' : 'pick');
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [batch, setBatch] = useState<ImportBatchDto | null>(null);
   const [rows, setRows] = useState<ImportRowDto[]>([]);
   const [choices, setChoices] = useState<GuidedChoices | null>(null);
-  const [pages, setPages] = useState<string[]>([]);
-  const camera = useRef<CameraView>(null);
-  const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
     if (!accountId && accounts[0]) setAccountId(accounts[0].id);
@@ -127,24 +129,25 @@ export default function ImportScreen() {
     await start({ uri: a.uri, name: a.name, type: a.mimeType ?? 'application/octet-stream' });
   };
 
-  const addPage = async () => {
-    const pic = await camera.current?.takePictureAsync({ quality: 0.7 });
-    if (!pic) return;
-    // Grayscale-friendly size for OCR; the server redacts before any AI step (AIA-03).
-    const small = await ImageManipulator.manipulateAsync(pic.uri, [{ resize: { width: 1600 } }], {
-      compress: 0.7,
-      format: ImageManipulator.SaveFormat.JPEG,
-      base64: true,
-    });
-    if (small.base64) setPages((p) => [...p, small.base64!]);
-  };
-
-  const finishScan = async () => {
-    const html = `<html><body style="margin:0">${pages
+  /** Scanned pages become one PDF, read by the server with OCR; the app's own scans are removed after. */
+  const finishScan = async (pages: CapturedPage[]) => {
+    const images: string[] = [];
+    for (const p of pages) {
+      if (p.type === 'application/pdf') continue;
+      // Grayscale-friendly size for OCR; the server redacts before any AI step (AIA-03).
+      const small = await ImageManipulator.manipulateAsync(p.uri, [{ resize: { width: 1600 } }], {
+        compress: 0.7,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: true,
+      });
+      if (small.base64) images.push(small.base64);
+    }
+    await Promise.all(pages.filter((p) => p.shot).map((p) => removePage(p.uri)));
+    if (images.length === 0) return;
+    const html = `<html><body style="margin:0">${images
       .map((b64) => `<img src="data:image/jpeg;base64,${b64}" style="width:100%;page-break-after:always"/>`)
       .join('')}</body></html>`;
     const pdf = await Print.printToFileAsync({ html });
-    setPages([]);
     await start({ uri: pdf.uri, name: `scan-${Date.now()}.pdf`, type: 'application/pdf' });
   };
 
@@ -183,6 +186,27 @@ export default function ImportScreen() {
 
   const willImport = rows.filter((r) => r.effective === 'import' || r.effective === 'match').length;
 
+  const accountChips = (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(2) }}>
+      {accounts.map((a) => (
+        <Pressable
+          key={a.id}
+          onPress={() => setAccountId(a.id)}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: a.id === accountId }}
+          style={{
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 16,
+            backgroundColor: a.id === accountId ? th.primary : th.surface,
+          }}
+        >
+          <Body style={{ color: a.id === accountId ? th.onPrimary : th.text }}>{a.name}</Body>
+        </Pressable>
+      ))}
+    </View>
+  );
+
   if (!allowed)
     return (
       <Screen testID="import">
@@ -198,24 +222,7 @@ export default function ImportScreen() {
         <>
           <Title>{t('mobile.import.title')}</Title>
           <Small>{t('mobile.import.account')}</Small>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(2) }}>
-            {accounts.map((a) => (
-              <Pressable
-                key={a.id}
-                onPress={() => setAccountId(a.id)}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: a.id === accountId }}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 16,
-                  backgroundColor: a.id === accountId ? th.primary : th.surface,
-                }}
-              >
-                <Body style={{ color: a.id === accountId ? th.onPrimary : th.text }}>{a.name}</Body>
-              </Pressable>
-            ))}
-          </View>
+          {accountChips}
           <Button
             label={t('mobile.import.pick')}
             onPress={() => void pick()}
@@ -234,24 +241,17 @@ export default function ImportScreen() {
 
       {phase === 'scan' ? (
         <>
+          <Title>{t('mobile.import.scan_title')}</Title>
+          <Small>{t('mobile.import.account')}</Small>
+          {accountChips}
           <Small>{t('mobile.import.scan_note')}</Small>
-          {permission?.granted ? (
-            <View style={{ height: 420, borderRadius: th.radius, overflow: 'hidden' }}>
-              <CameraView ref={camera} style={{ flex: 1 }} facing="back" />
-            </View>
-          ) : (
-            <Button label={t('mobile.spike.permission')} onPress={() => void requestPermission()} />
-          )}
-          <Button
-            label={t('mobile.import.scan_add')}
-            onPress={() => void addPage()}
-            disabled={!permission?.granted}
-          />
-          <Button
-            kind="secondary"
-            label={t('mobile.import.scan_done', { count: pages.length })}
-            onPress={() => void finishScan()}
-            disabled={pages.length === 0}
+          <DocumentCapture
+            scanLabel={t('mobile.import.scan')}
+            scanHint={t('mobile.import.scan_hint')}
+            cameraHint={t('mobile.import.scan_note')}
+            pick={false}
+            autoStart={false}
+            onPages={finishScan}
           />
           <Button kind="secondary" label={t('mobile.common.cancel')} onPress={() => setPhase('pick')} />
         </>

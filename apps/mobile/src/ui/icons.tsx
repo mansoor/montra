@@ -48,6 +48,7 @@ import {
   Wallet,
   WifiOff,
   X,
+  Zap,
 } from 'lucide-react-native';
 import { useTheme } from './theme';
 
@@ -94,6 +95,7 @@ const ICONS = {
   stop: Square,
   keyboard: Keyboard,
   locked: Lock,
+  bill: Zap,
   place: MapPin,
   phone: Phone,
   website: Globe,
