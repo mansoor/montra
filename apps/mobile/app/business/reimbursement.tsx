@@ -3,10 +3,9 @@
  * Someone who can write to the business approves it on the web. Needs a connection; the photo is deleted from the phone
  * once it's uploaded.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
 import { calendarDate } from '@montra/domain';
 import type { CategoryDto, PayrollPersonDto } from '@montra/schemas';
@@ -16,6 +15,7 @@ import { removePage } from '../../src/receipts/files';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
+import { DocumentCapture } from '../../src/ui/DocumentCapture';
 import { Banner, Body, Button, Card, Field, Row, Screen, Segmented, Small } from '../../src/ui/components';
 import { NotAllowed } from '../../src/ui/NotAllowed';
 import { useTheme } from '../../src/ui/theme';
@@ -49,8 +49,6 @@ export default function Reimbursement() {
   const [picking, setPicking] = useState(false);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [camera, setCamera] = useState(false);
-  const cameraRef = useRef<CameraView>(null);
-  const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,14 +63,6 @@ export default function Reimbursement() {
         setError(err.code === 'payroll.no_access' ? t('payroll.no_access') : err.message),
     );
   }, [api, ws, entityId]);
-
-  const shoot = async () => {
-    if (!cameraRef.current) return;
-    const pic = await cameraRef.current.takePictureAsync({ quality: 0.8, shutterSound: false });
-    if (!pic) return;
-    setPhoto({ uri: pic.uri, name: 'receipt.jpg', type: 'image/jpeg', shot: true });
-    setCamera(false);
-  };
 
   const pick = async () => {
     const r = await DocumentPicker.getDocumentAsync({
@@ -126,23 +116,19 @@ export default function Reimbursement() {
   if (camera) {
     return (
       <Screen testID="reimbursement-camera">
-        {permission?.granted ? (
-          <>
-            <View style={{ height: 420, borderRadius: th.radius, overflow: 'hidden' }}>
-              <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
-            </View>
-            <Button
-              label={t('mobile.receipts.shoot')}
-              onPress={() => void shoot()}
-              testID="reimbursement-shoot"
-            />
-          </>
-        ) : (
-          <>
-            <Body>{t('mobile.payroll.camera_permission')}</Body>
-            <Button label={t('mobile.common.retry')} onPress={() => void requestPermission()} />
-          </>
-        )}
+        <DocumentCapture
+          scanLabel={t('mobile.payroll.take_photo')}
+          scanHint={t('mobile.payroll.scan_hint')}
+          cameraHint={t('mobile.payroll.scan_hint')}
+          pick={false}
+          // One file per claim: the first page is the receipt.
+          onPages={async (pages) => {
+            const [first, ...rest] = pages;
+            await Promise.all(rest.filter((p) => p.shot).map((p) => removePage(p.uri)));
+            if (first) setPhoto({ uri: first.uri, name: 'receipt.jpg', type: first.type, shot: first.shot });
+            setCamera(false);
+          }}
+        />
         <Button kind="secondary" label={t('common.cancel')} onPress={() => setCamera(false)} />
       </Screen>
     );

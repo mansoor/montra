@@ -21,7 +21,7 @@ import { NotAllowed } from '../src/ui/NotAllowed';
 import { assessFrame } from '../src/features/camera-metrics';
 import { base64ToBytes } from '../src/features/base64';
 import { frameVerdict, type FrameVerdict } from '../src/features/receipt-capture';
-import { scanReceipt } from '../src/features/scanner';
+import { scanPages } from '../src/features/scanner';
 import { keepPages } from '../src/receipts/files';
 import { Banner, Body, Button, Screen, Small } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
@@ -106,7 +106,7 @@ export default function ReceiptCapture() {
   const scan = async () => {
     setBusy(true);
     setError(null);
-    const r = await scanReceipt();
+    const r = await scanPages();
     setBusy(false);
     // The scanner has its own sharpness check and lets the person retake, so its pages are kept as they are.
     if (r.kind === 'scanned')
