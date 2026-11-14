@@ -28,7 +28,7 @@ import { jsonSchemaOf } from './schema.js';
 import * as categorizeV1 from './tasks/categorize/v1.js';
 import * as extractV1 from './tasks/extract-statement-table/v1.js';
 import * as payslipV1 from './tasks/extract-payslip/v1.js';
-import * as receiptV2 from './tasks/extract-receipt/v2.js';
+import * as receiptV3 from './tasks/extract-receipt/v3.js';
 import * as mapColumnsV1 from './tasks/map-columns/v1.js';
 import * as normalizeV1 from './tasks/normalize-payees/v1.js';
 import * as quickAddV1 from './tasks/parse-quick-add/v1.js';
@@ -180,6 +180,21 @@ function cleanDecimal(s: string | null | undefined): string | null {
   if (s === null || s === undefined) return null;
   const t = s.replace(/[\s,$€£]/g, '').replace(/^\((.*)\)$/, '-$1');
   return SIGNED_DECIMAL.test(t) ? t : null;
+}
+
+/** A store phone number as printed: digits with the usual separators, 7 to 15 digits; else null. */
+export function storePhone(s: string): string | null {
+  const t = oneLine(s, 40);
+  const digits = t.replace(/\D/g, '').length;
+  return /^\+?[\d\s().-]+$/.test(t) && digits >= 7 && digits <= 15 ? t : null;
+}
+
+/** A store website as a bare host (and path), lower case, no scheme; else null. */
+export function storeWebsite(s: string): string | null {
+  const t = oneLine(s, 200)
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '');
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/[\w./-]*)?$/i.test(t) ? t.toLowerCase() : null;
 }
 
 export class Gateway implements AiGateway {
@@ -798,7 +813,7 @@ export class Gateway implements AiGateway {
    * of its lines is invalid.
    */
   async extractReceipt(doc: ReceiptDocument, ctx: AiContext): Promise<TaskResult<ReceiptExtraction>> {
-    const pv = receiptV2.PROMPT_VERSION;
+    const pv = receiptV3.PROMPT_VERSION;
     if (this.isOff(ctx)) return { ok: false, reason: 'off' };
     const imagesAllowed = ctx.mode === 'builtin' || ctx.mode === 'byok';
     const images = imagesAllowed ? doc.images : [];
@@ -817,7 +832,7 @@ export class Gateway implements AiGateway {
     return this.callProvider<ReceiptExtraction>(
       {
         task: 'extract_receipt',
-        system: receiptV2.SYSTEM,
+        system: receiptV3.SYSTEM,
         promptVersion: pv,
         input: {
           currencyHint: doc.currencyHint,
@@ -827,8 +842,8 @@ export class Gateway implements AiGateway {
           ocrText,
         },
         images,
-        schema: receiptV2.Output,
-        validate: (o: receiptV2.Output) => {
+        schema: receiptV3.Output,
+        validate: (o: receiptV3.Output) => {
           const lines = o.lines
             .map((l) => ({
               rawText: oneLine(l.rawText, 300),
@@ -837,20 +852,23 @@ export class Gateway implements AiGateway {
               unitPrice: cleanDecimal(l.unitPrice),
               lineTotal: cleanDecimal(l.lineTotal),
               discount: positiveDecimal(cleanDecimal(l.discount)),
-              taxable: receiptV2.fromMark(l.taxable),
+              taxable: receiptV3.fromMark(l.taxable),
             }))
             .filter((l): l is ReceiptExtraction['lines'][number] => l.rawText !== '' && l.lineTotal !== null);
           if (o.lines.length > 0 && lines.length < o.lines.length / 2) return null;
           const currency = o.currency?.toUpperCase() ?? null;
           return {
             merchant: o.merchant ? oneLine(o.merchant, 200) || null : null,
+            storeAddress: oneLine(o.storeAddress, 300) || null,
+            storePhone: storePhone(o.storePhone),
+            storeWebsite: storeWebsite(o.storeWebsite),
             date: validIsoDate(o.date) ? o.date : null,
             localTime: o.localTime && /^([01]\d|2[0-3]):[0-5]\d$/.test(o.localTime) ? o.localTime : null,
             currency: currency && isCurrencyCode(currency) ? currency : null,
             lines,
             subtotal: cleanDecimal(o.subtotal),
             tax: cleanDecimal(o.tax),
-            taxIncluded: receiptV2.fromMark(o.taxIncluded),
+            taxIncluded: receiptV3.fromMark(o.taxIncluded),
             discount: positiveDecimal(cleanDecimal(o.discount)),
             fees: cleanDecimal(o.fees),
             tip: cleanDecimal(o.tip),

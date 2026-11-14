@@ -222,6 +222,7 @@ import type {
   ReceiptDto,
   ReceiptFileDto,
   ReceiptPageDto,
+  ReceiptItemSearchDto,
   ReceiptHabitDto,
   ReceiptRecommendationDto,
   TripDto,
@@ -2393,6 +2394,13 @@ export class ApiClient {
   }
   listReceipts(workspaceId: string, opts: ReceiptListOptions = {}) {
     return this.request<ReceiptPageDto>('GET', this.ws(workspaceId, `/receipts${query({ ...opts })}`));
+  }
+  /** RCP-09: what was spent on an item and the receipts it is on (default: the last three months). */
+  searchReceiptItems(workspaceId: string, opts: { q: string; from?: string; to?: string }) {
+    return this.request<ReceiptItemSearchDto>(
+      'GET',
+      this.ws(workspaceId, `/receipts/items${query({ ...opts })}`),
+    );
   }
   getReceipt(workspaceId: string, id: string) {
     return this.request<ReceiptDto>('GET', this.ws(workspaceId, `/receipts/${enc(id)}`));

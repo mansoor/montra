@@ -33,6 +33,42 @@ export default async function ReceiptPage({
         </Link>
         <h1 className="page-title">{receipt.merchant ?? t('receipts.unknown_merchant')}</h1>
       </div>
+      {(receipt.storeAddress || receipt.storePhone || receipt.storeWebsite) && (
+        // The store's details as printed on the receipt (RCP-01).
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm" data-testid="store-details">
+          {receipt.storeAddress && (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(receipt.storeAddress)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+              title={t('receipts.store.map')}
+            >
+              {receipt.storeAddress}
+            </a>
+          )}
+          {receipt.storePhone && (
+            <a
+              href={`tel:${receipt.storePhone.replace(/[^\d+]/g, '')}`}
+              className="underline"
+              title={t('receipts.store.call')}
+            >
+              {receipt.storePhone}
+            </a>
+          )}
+          {receipt.storeWebsite && (
+            <a
+              href={`https://${receipt.storeWebsite}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+              title={t('receipts.store.website')}
+            >
+              {receipt.storeWebsite}
+            </a>
+          )}
+        </p>
+      )}
       <ReceiptReview
         workspace={workspace}
         receipt={receipt}

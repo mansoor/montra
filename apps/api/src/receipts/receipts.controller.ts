@@ -18,8 +18,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ApplyReceiptRequest,
   CreateReceiptRequest,
+  ReceiptItemSearchQuery,
   ReceiptListQuery,
   UpdateReceiptRequest,
+  type ReceiptItemSearchDto,
   type OrderImportResultDto,
   type ReceiptDto,
   type ReceiptFileDto,
@@ -66,6 +68,12 @@ export class ReceiptsController {
   @Get()
   list(@Ctx() ctx: RequestContext, @Query() query: unknown): Promise<ReceiptPageDto> {
     return this.receipts.list(dbCtx(ctx), parse(ReceiptListQuery, query));
+  }
+
+  /** RCP-09: what was spent on an item ("milk") and the receipts it is on. */
+  @Get('items')
+  items(@Ctx() ctx: RequestContext, @Query() query: unknown): Promise<ReceiptItemSearchDto> {
+    return this.receipts.searchItems(dbCtx(ctx), parse(ReceiptItemSearchQuery, query));
   }
 
   /** RCP-11: purchases at multi-department stores above $50 without a receipt. */

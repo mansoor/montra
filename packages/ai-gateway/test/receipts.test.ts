@@ -169,6 +169,9 @@ describe('gateway.extractReceipt', () => {
   it('cleans what the model returns and rejects answers that lose most lines', async () => {
     const answer = (o: Record<string, unknown>) => ({
       merchant: '  Walmart ',
+      storeAddress: ' 1155 Hollister St,\n San Diego, CA 92154 ',
+      storePhone: '(619) 575-1111',
+      storeWebsite: 'https://www.Walmart.com/',
       date: '2026-10-05',
       localTime: '25:99',
       currency: 'usd',
@@ -211,6 +214,9 @@ describe('gateway.extractReceipt', () => {
       ok: true,
       value: {
         merchant: 'Walmart',
+        storeAddress: '1155 Hollister St, San Diego, CA 92154',
+        storePhone: '(619) 575-1111',
+        storeWebsite: 'www.walmart.com',
         localTime: null,
         currency: 'USD',
         discount: '1.00',
@@ -223,6 +229,17 @@ describe('gateway.extractReceipt', () => {
           { rawText: 'BREAD', taxable: true },
         ],
       },
+    });
+    // Nothing printed, or something that isn't a phone number or a website: null.
+    next = answer({
+      storeAddress: '',
+      storePhone: 'call us',
+      storeWebsite: 'Thank you!',
+      lines: [line('EGGS', '2.00')],
+    });
+    expect(await gw.extractReceipt(doc({ images: [png('x')] }), ctx)).toMatchObject({
+      ok: true,
+      value: { storeAddress: null, storePhone: null, storeWebsite: null },
     });
     next = answer({ taxIncluded: 'unclear', lines: [line('EGGS', '2.00')] });
     expect(await gw.extractReceipt(doc({ images: [png('x')] }), ctx)).toMatchObject({

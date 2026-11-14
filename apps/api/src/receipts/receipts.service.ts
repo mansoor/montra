@@ -10,6 +10,7 @@ import { newId, type ReceiptLineRow, type ReceiptRow, type Trx } from '@montra/d
 import {
   abs,
   addDays,
+  addMonths,
   asCurrencyCode,
   calendarDate,
   convertGroupsAtCharge,
@@ -47,6 +48,8 @@ import type {
   ReceiptListQuery,
   ReceiptPageDto,
   ReceiptHabitDto,
+  ReceiptItemSearchDto,
+  ReceiptItemSearchQuery,
   ReceiptRecommendationDto,
   ReceiptStalledDto,
   UpdateReceiptRequest,
@@ -76,6 +79,9 @@ type Ctx = { workspaceId: string; userId: string };
 export const RETENTION_YEARS = 7;
 /** IMP-11: a candidate scoring at least this links automatically (when unambiguous). */
 const MATCH_WINDOW_DAYS = 5;
+/** RCP-09 item search: the default look-back, and how many receipts it lists (its totals count them all). */
+const ITEM_SEARCH_MONTHS = 3;
+const ITEM_SEARCH_MAX_RECEIPTS = 200;
 /** RCP-11: multi-department stores where a receipt is worth keeping above the threshold. */
 const MULTI_DEPARTMENT = ['walmart', 'target', 'costco', 'amazon'];
 const RECOMMEND_THRESHOLD_MAJOR = 50n;
@@ -368,6 +374,91 @@ export class ReceiptsService {
     });
   }
 
+  /**
+   * Item search (RCP-09): what was spent on an item, and on which receipts. A line matches when every word of the query
+   * starts a word of its expanded or printed name ("milk" finds "Great Value 2% milk", not "buttermilk"). Discarded and
+   * unread receipts are left out, and so are receipts without a date.
+   */
+  async searchItems(ctx: Ctx, q: ReceiptItemSearchQuery): Promise<ReceiptItemSearchDto> {
+    return this.db.run(ctx, async (trx) => {
+      const to = q.to ? calendarDate(q.to) : await this.today(trx, ctx);
+      const from = q.from ? calendarDate(q.from) : addMonths(to, -ITEM_SEARCH_MONTHS);
+      const words = q.q
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 6)
+        // `\m` is the start of a word in Postgres regular expressions; the word itself is matched literally.
+        .map((w) => `\\m${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+      const matches = words.map(
+        (w) => sql<boolean>`(coalesce(l.expanded_name, '') ~* ${w} or l.raw_text ~* ${w})`,
+      );
+      const { rows } = await sql<{
+        receipt_id: string;
+        merchant: string | null;
+        receipt_date: string;
+        currency: string;
+        total_minor: string | null;
+        line_id: string;
+        name: string;
+        qty: string | null;
+        amount: string;
+      }>`
+        select r.id as receipt_id, r.merchant, r.receipt_date::text as receipt_date, r.currency,
+               r.total_minor::text as total_minor, l.id as line_id,
+               coalesce(l.expanded_name, l.raw_text) as name, l.qty::text as qty,
+               (l.line_total_minor - l.discount_minor)::text as amount
+          from app.receipt_line l
+          join app.receipt r on r.workspace_id = l.workspace_id and r.id = l.receipt_id
+         where r.workspace_id = ${ctx.workspaceId} and r.deleted_at is null
+           and r.status not in ('rejected', 'processing') and r.currency is not null
+           and r.receipt_date between ${from} and ${to}
+           and ${sql.join(matches, sql` and `)}
+         order by r.receipt_date desc, r.created_at desc, l.line_no`.execute(trx);
+
+      const totals = new Map<string, { amount: bigint; items: number; receipts: Set<string> }>();
+      const hits = new Map<string, ReceiptItemSearchDto['receipts'][number]>();
+      for (const row of rows) {
+        const t = totals.get(row.currency) ?? { amount: 0n, items: 0, receipts: new Set<string>() };
+        t.amount += BigInt(row.amount);
+        t.items += 1;
+        t.receipts.add(row.receipt_id);
+        totals.set(row.currency, t);
+        let hit = hits.get(row.receipt_id);
+        if (!hit) {
+          hit = {
+            receiptId: row.receipt_id,
+            merchant: row.merchant,
+            receiptDate: row.receipt_date,
+            currency: row.currency,
+            total: row.total_minor,
+            itemsAmount: '0',
+            items: [],
+          };
+          hits.set(row.receipt_id, hit);
+        }
+        hit.items.push({ lineId: row.line_id, name: row.name, qty: row.qty, amount: row.amount });
+        hit.itemsAmount = (BigInt(hit.itemsAmount) + BigInt(row.amount)).toString();
+      }
+      const receipts = [...hits.values()];
+      return {
+        query: q.q,
+        from,
+        to,
+        totals: [...totals.entries()]
+          .sort((a, b) => b[1].receipts.size - a[1].receipts.size || a[0].localeCompare(b[0]))
+          .map(([currency, t]) => ({
+            currency,
+            amount: t.amount.toString(),
+            items: t.items,
+            receipts: t.receipts.size,
+          })),
+        receipts: receipts.slice(0, ITEM_SEARCH_MAX_RECEIPTS),
+        more: receipts.length > ITEM_SEARCH_MAX_RECEIPTS,
+      };
+    });
+  }
+
   async row(trx: Trx, ctx: Ctx, id: string): Promise<ReceiptRow> {
     const r = await trx
       .selectFrom('app.receipt')
@@ -455,6 +546,9 @@ export class ReceiptsService {
       source: r.source,
       fileIds: r.attachment_ids,
       merchant: r.merchant,
+      storeAddress: r.store_address,
+      storePhone: r.store_phone,
+      storeWebsite: r.store_website,
       receiptDate: r.receipt_date,
       localTime: r.local_time ? r.local_time.slice(0, 5) : null,
       currency: r.currency,
@@ -507,6 +601,8 @@ export class ReceiptsService {
       tipMinor: bigint;
       totalMinor: bigint | null;
       cardLast4: string | null;
+      /** The store's details; left as they are when undefined (a review that doesn't change them). */
+      store?: { address: string | null; phone: string | null; website: string | null };
       ocrText: string | null;
       extraction: ReceiptDto['extraction'];
     },
@@ -538,6 +634,13 @@ export class ReceiptsService {
         tip_minor: header.tipMinor,
         total_minor: header.totalMinor,
         card_last4: header.cardLast4,
+        ...(header.store
+          ? {
+              store_address: header.store.address,
+              store_phone: header.store.phone,
+              store_website: header.store.website,
+            }
+          : {}),
         validation_gap_minor: validation.gap,
         ocr_text: header.ocrText ?? searchText(header.merchant, categorized),
         extraction: header.extraction
@@ -864,6 +967,11 @@ export class ReceiptsService {
           tipMinor: req.tip === undefined ? r.tip_minor : BigInt(req.tip),
           totalMinor: req.total === undefined ? r.total_minor : req.total === null ? null : BigInt(req.total),
           cardLast4: r.card_last4,
+          store: {
+            address: req.storeAddress === undefined ? r.store_address : req.storeAddress || null,
+            phone: req.storePhone === undefined ? r.store_phone : req.storePhone || null,
+            website: req.storeWebsite === undefined ? r.store_website : req.storeWebsite || null,
+          },
           ocrText: r.ocr_text,
           extraction: null,
         },

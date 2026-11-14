@@ -4,7 +4,7 @@
  * web review screen.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { canSpendFrom, receiptAccountId } from '@montra/domain';
 import type { CategoryDto, ReceiptDto } from '@montra/schemas';
@@ -18,6 +18,7 @@ import {
   stalledMessage,
   uncategorizedLines,
 } from '../../src/features/receipt-capture';
+import { storeLinks } from '../../src/features/store-details';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
 import { Banner, Body, Button, Card, Disclosure, Row, Screen, Small, Title } from '../../src/ui/components';
 import { Icon } from '../../src/ui/icons';
@@ -118,6 +119,7 @@ export default function ReceiptReview() {
           .filter(Boolean)
           .join(' · ')}
       </Small>
+      <StoreDetails receipt={receipt} />
       {stalled ? (
         <Banner tone="warning" text={t(stalled)} />
       ) : receipt.status === 'processing' ? (
@@ -330,5 +332,40 @@ export default function ReceiptReview() {
         }}
       />
     </Screen>
+  );
+}
+
+const STORE_LABEL = {
+  place: 'mobile.receipts.store_map',
+  phone: 'mobile.receipts.store_call',
+  website: 'mobile.receipts.store_website',
+} as const;
+
+/** The store's address, phone and website as printed (RCP-01): tap to open the map, call or visit. */
+function StoreDetails({ receipt }: { receipt: ReceiptDto }) {
+  const th = useTheme();
+  const links = storeLinks(receipt, Platform.OS);
+  if (links.length === 0) return null;
+  return (
+    <View testID="store-details" style={{ gap: th.space(1) }}>
+      {links.map((l) => (
+        <Pressable
+          key={l.kind}
+          accessibilityRole="link"
+          accessibilityLabel={t(STORE_LABEL[l.kind], { value: l.text })}
+          onPress={() => void Linking.openURL(l.url).catch(() => undefined)}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: th.space(2),
+            minHeight: 32,
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <Icon name={l.kind} size={16} color={th.primary} />
+          <Small color={th.primary}>{l.text}</Small>
+        </Pressable>
+      ))}
+    </View>
   );
 }

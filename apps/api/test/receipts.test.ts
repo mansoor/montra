@@ -582,3 +582,87 @@ describe('uploads', () => {
     expect((await other.get(url('/receipts'))).status).toBe(403);
   });
 });
+
+describe('store details and item search (RCP-01, RCP-09)', () => {
+  let sprouts: any;
+
+  it('keeps the store address, phone and website from the receipt, and lets review change them', async () => {
+    sprouts = await capture(
+      [
+        'SPROUTS FARMERS MARKET',
+        'ADDRESS 100 Main St, Irvine, CA 92618',
+        'TEL (949) 555-0100',
+        'sprouts.com',
+        '03/10/2025 10:00',
+        'ORG QUINOA 2LB          7.99 N',
+        'QUINOA CHIPS            3.49 N',
+        'APPLES                  4.00 N',
+        'TOTAL                  15.48',
+      ].join('\n'),
+    );
+    expect(sprouts).toMatchObject({
+      merchant: 'SPROUTS FARMERS MARKET',
+      storeAddress: '100 Main St, Irvine, CA 92618',
+      storePhone: '(949) 555-0100',
+      storeWebsite: 'sprouts.com',
+    });
+    const edited = await c.patch(url(`/receipts/${sprouts.id}`), {
+      version: sprouts.version,
+      storePhone: '(949) 555-0199',
+      storeWebsite: '',
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body).toMatchObject({
+      storeAddress: '100 Main St, Irvine, CA 92618',
+      storePhone: '(949) 555-0199',
+      storeWebsite: null,
+    });
+  });
+
+  it('adds up an item across receipts, newest first, and widens with the period', async () => {
+    await capture(['TRADER JOES', '01/15/2025', 'QUINOA                  5.00 N', 'TOTAL 5.00'].join('\n'));
+    await capture(['TRADER JOES', '06/01/2024', 'QUINOA                  4.00 N', 'TOTAL 4.00'].join('\n'));
+    // Not the start of a word: not quinoa.
+    await capture(['TRADER JOES', '02/01/2025', 'NONQUINOA MIX           2.00 N', 'TOTAL 2.00'].join('\n'));
+
+    const search = async (query: string) => (await c.get(url(`/receipts/items?${query}`))).body;
+    const spring = await search('q=Quinoa&from=2025-01-01&to=2025-04-30');
+    expect(spring).toMatchObject({
+      query: 'Quinoa',
+      from: '2025-01-01',
+      to: '2025-04-30',
+      totals: [{ currency: 'USD', amount: '1648', items: 3, receipts: 2 }],
+      more: false,
+    });
+    expect(spring.receipts.map((r: any) => [r.merchant, r.receiptDate, r.itemsAmount, r.total])).toEqual([
+      ['SPROUTS FARMERS MARKET', '2025-03-10', '1148', '1548'],
+      ['TRADER JOES', '2025-01-15', '500', '500'],
+    ]);
+    expect(spring.receipts[0].receiptId).toBe(sprouts.id);
+    expect(spring.receipts[0].items.map((i: any) => [i.name, i.amount])).toEqual([
+      ['organic Quinoa 2LB', '799'],
+      ['QUINOA CHIPS', '349'],
+    ]);
+
+    // Every word must start a word of the line.
+    expect((await search('q=quinoa%20chips&from=2025-01-01&to=2025-04-30')).totals).toEqual([
+      { currency: 'USD', amount: '349', items: 1, receipts: 1 },
+    ]);
+    // A longer period finds the older receipt.
+    expect((await search('q=quinoa&from=2024-01-01&to=2025-04-30')).totals).toEqual([
+      { currency: 'USD', amount: '2048', items: 4, receipts: 3 },
+    ]);
+    // Three months back from `to` by default.
+    const recent = await search('q=quinoa&to=2025-04-30');
+    expect(recent.from).toBe('2025-01-30');
+    expect(recent.receipts.map((r: any) => r.receiptDate)).toEqual(['2025-03-10']);
+    // Regular-expression characters are only characters.
+    expect((await search('q=quin.*&from=2024-01-01&to=2025-04-30')).totals).toEqual([]);
+  });
+
+  it('leaves discarded receipts out', async () => {
+    await c.post(url(`/receipts/${sprouts.id}/reject`), {});
+    const after = (await c.get(url('/receipts/items?q=quinoa&from=2025-01-01&to=2025-04-30'))).body;
+    expect(after.totals).toEqual([{ currency: 'USD', amount: '500', items: 1, receipts: 1 }]);
+  });
+});

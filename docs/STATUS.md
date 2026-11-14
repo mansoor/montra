@@ -1124,6 +1124,22 @@ Phase 11 leftovers:
   - The transaction screen has compact split lines; its receipt icon stays by the amount. The receipt screen folds the photo
     away by default, with one zoom hint.
   - Not yet tried on a device.
+- **Store details and search by item** (RCP-01, RCP-09, migration 0047):
+  - `extract_receipt.v3` also reads the store's address, phone and website as printed. They are plain strings, empty
+    when not printed, because the schema already has 15 of Anthropic's 16 nullable fields. The gateway keeps a phone
+    only when it has 7 to 15 digits, and a website only when it looks like a host name. They're stored on the receipt
+    (`store_address`, `store_phone`, `store_website`) and can be changed in review (`PATCH`). Receipts read before
+    this have none until read again.
+  - The phone's receipt screen shows them under the store name: tap the address for maps, the number to call, the
+    website to open it. The web receipt page shows them as links.
+  - **Search by item** (`GET receipts/items?q=&from=&to=`): the lines whose expanded or printed name has every word of
+    the query at the start of a word ("milk" finds "Great Value 2% milk", not "buttermilk"). It returns the amount
+    per currency, item and receipt counts, and each receipt with its store, date, matching items, their amount and the
+    receipt's total, newest first (200 listed, all counted). Discarded, unread and undated receipts are left out. The
+    default period is the last three months.
+  - On the phone, Receipts → **Search by item**: 3 months, 6 months, 1 year, 2 years or all, and **Search further
+    back** below the results; a receipt opens in full. On the web, Receipts → **Search by item** does the same.
+  - Not yet tried on a device or with the real provider.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

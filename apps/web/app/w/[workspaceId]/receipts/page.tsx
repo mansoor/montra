@@ -46,9 +46,18 @@ export default async function ReceiptsPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="page-title">{t('receipts.title')}</h1>
-        <Link href={`/w/${workspaceId}/trips`} className="text-sm font-medium text-brand-600 underline">
-          {t('trips.title')}
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href={`${base}/items`}
+            className="text-sm font-medium text-brand-600 underline"
+            data-testid="search-items"
+          >
+            {t('receipts.items.title')}
+          </Link>
+          <Link href={`/w/${workspaceId}/trips`} className="text-sm font-medium text-brand-600 underline">
+            {t('trips.title')}
+          </Link>
+        </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <ReceiptUpload workspaceId={workspaceId} />
