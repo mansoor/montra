@@ -27,8 +27,8 @@ const expense = (name: string, taxLine?: string): CategoryTemplate => ({ name, t
 const income = (name: string, taxLine?: string): CategoryTemplate => ({ name, type: 'income', taxLine });
 
 /**
- * The personal chart (UP-03, ACC-13). Migration 0042 brings personal books made from an older version of this list up
- * to it; keep the two in step when it changes.
+ * The personal chart (UP-03, ACC-13). `app.add_personal_categories` (migration 0042, last replaced in 0046) brings
+ * personal books made from an older version of this list up to it; keep the two in step when it changes.
  */
 const PERSONAL: GroupTemplate[] = [
   {
@@ -71,7 +71,6 @@ const PERSONAL: GroupTemplate[] = [
       expense('Groceries'),
       expense('Dining out'),
       expense('Household'),
-      expense('Healthcare'),
       expense('Gym & fitness'),
       expense('Personal care'),
       expense('Clothing'),
@@ -84,6 +83,16 @@ const PERSONAL: GroupTemplate[] = [
       expense('Legal & professional fees'),
       // ACC-12: for the small things that fit nowhere else (a bag fee at the till).
       expense('Miscellaneous'),
+    ],
+  },
+  {
+    name: 'Health',
+    kind: 'daily',
+    categories: [
+      expense('Healthcare'),
+      expense('Pharmacy & medicine'),
+      expense('Dental & vision'),
+      expense('Health insurance'),
     ],
   },
   {

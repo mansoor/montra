@@ -1052,6 +1052,8 @@ Phase 11 leftovers:
   - **Fixed bills**, with HOA dues and Home & renters, Auto and Life insurance added. "Insurance" stays as the
     catch-all.
   - **Daily living**, with Gym & fitness, Kids' activities, Allowance, Pets and Legal & professional fees added.
+  - **Health** (new, migration 0046): Healthcare (moved from Daily living), Pharmacy & medicine, Dental & vision,
+    Health insurance.
   - **Home** (new): Improvement, Maintenance & repairs, Furniture, House cleaning, Gardener & landscaping, Pest control
     & pool service, Laundry & dry cleaning.
   - **Transportation** (new): Fuel, Public transit & rideshare, Parking & tolls, Car maintenance & repairs, Registration
@@ -1062,7 +1064,9 @@ Phase 11 leftovers:
 
   Migration 0042 (`app.add_personal_categories`) adds what's missing to existing personal books once and renames "Fuel &
   transport" to "Fuel" and "Gifts & donations" to "Gifts" unless those names are taken. It never deletes, archives or
-  moves a transaction. Keep it and `chart-templates.ts` in step. Merchant hints follow the new names (Home Depot →
+  moves a transaction. Migration 0046 replaces it with the Health group added and Healthcare moved there while it is
+  still in Daily living, and runs it again. Keep it and `chart-templates.ts` in step. CVS, Walgreens and Rite Aid hint
+  Pharmacy & medicine. Merchant hints follow the new names (Home Depot →
   Home improvement, Uber → Public transit & rideshare). A mortgage's escrowed property tax now lands in Property tax
   (it used to match the first category with "tax" in its name, such as a payslip's Federal income tax), and escrowed
   insurance in Home & renters insurance.
