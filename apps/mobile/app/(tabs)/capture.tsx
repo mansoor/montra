@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
+import { BackHandler, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import type { CategoryDto, SuggestionDto } from '@montra/schemas';
 import { asCurrencyCode, canSpendFrom, minorUnits } from '@montra/domain';
 import { fmtMoney, t } from '../../src/i18n';
@@ -415,7 +415,18 @@ export default function Capture() {
           {voice.listening ? (
             <Small color={th.primary}>{t('mobile.capture.listening')}</Small>
           ) : voice.errorKey ? (
-            <Banner tone="warning" text={t(voice.errorKey, { message: voice.errorDetail ?? '' })} />
+            <>
+              <Banner tone="warning" text={t(voice.errorKey, { message: voice.errorDetail ?? '' })} />
+              {voice.errorKey === 'mobile.capture.voice_denied' ? (
+                // Android stops asking once the microphone has been refused; the app's settings page can still allow it.
+                <Button
+                  label={t('mobile.capture.voice_settings')}
+                  kind="secondary"
+                  onPress={() => void Linking.openSettings()}
+                  testID="voice-settings"
+                />
+              ) : null}
+            </>
           ) : (
             <Small>{t('mobile.capture.voice_hint')}</Small>
           )}
