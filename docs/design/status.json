@@ -649,7 +649,7 @@
   ],
   "FLOW-05": [
     "done",
-    "month grid on web, agenda on mobile"
+    "month grid on web, agenda on mobile; bills scanned from billers (ADR-0048) show with their exact amount and due date"
   ],
   "FLOW-06": [
     "partial",
@@ -969,7 +969,7 @@
   ],
   "NOT-01": [
     "done",
-    "in-app, email and push per type per person, all eight types plus tax dates, rental reminders and suggestions. Push not yet tried on a device or real Expo"
+    "in-app, email and push per type per person, all eight types plus tax dates, rental reminders and suggestions. Push not yet tried on a device or real Expo; scanned household bills and billers' estimated bills raise bill-due alerts too"
   ],
   "NOT-02": [
     "done",

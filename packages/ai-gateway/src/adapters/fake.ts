@@ -3,6 +3,7 @@
  * (`AI_PROVIDER=fake`). It reads the same requests the real adapters get and answers every task with simple
  * keyword logic — no network, no randomness.
  */
+import { parseBillText } from '../fake-bill.js';
 import { DATE_FORMATS, detectDateFormat, displayName, normalizeDescription } from '@montra/importers';
 import type { CompletionRequest, CompletionResponse, ProviderAdapter } from '../types.js';
 import { decodeFakeReceiptImage, parseReceiptText } from '../fake-receipt.js';
@@ -248,6 +249,14 @@ export class FakeAdapter implements ProviderAdapter {
           lines: r.lines.map((l) => ({ ...l, taxable: receiptV3.mark(l.taxable, 'unmarked') })),
           taxIncluded: receiptV3.mark(r.taxIncluded, 'unclear'),
         };
+      }
+      case 'extract_bill': {
+        const fromImages = (req.images ?? [])
+          .map((i) => decodeFakeReceiptImage(i.data))
+          .filter((t): t is string => t !== null);
+        const b = parseBillText(fromImages.length ? fromImages.join('\n') : String(input.ocrText ?? ''));
+        // The wire format the real providers use: no digits is "".
+        return { ...b, accountLast4: b.accountLast4 ?? '' };
       }
       case 'extract_payslip': {
         const fromImages = (req.images ?? [])

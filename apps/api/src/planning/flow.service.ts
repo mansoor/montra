@@ -370,7 +370,8 @@ export class FlowService {
         status: b.dueDate < today ? 'overdue' : 'upcoming',
       });
     }
-    // Billers' next bills (ADR-0048 §4), estimated from their payments. A recurring item for the payee shows it already.
+    // Billers' next bills (ADR-0048 §4): an open bill's exact amount and date, else estimated from their payments. A
+    // recurring item for the payee shows the estimate already.
     for (const e of await this.billers.expectedUntil(trx, ctx, to, entityId)) {
       if (e.coveredByRecurring || !inRange(e.next.date)) continue;
       push({
@@ -379,10 +380,10 @@ export class FlowService {
         name: e.biller.name,
         amount: s(-e.next.amount),
         currency: e.currency as Money,
-        sourceId: e.biller.id,
+        sourceId: e.billId ?? e.biller.id,
         accountId: null,
-        status: 'upcoming',
-        variable: true,
+        status: e.next.date < today ? 'overdue' : 'upcoming',
+        variable: e.estimated,
       });
     }
     const businesses = await trx
@@ -783,14 +784,16 @@ export class FlowService {
         }
         // Billers' estimated next bills (ADR-0048 §4), paid from the books' main account.
         for (const x of billerBills) {
-          if (x.biller.entity_id !== e || x.coveredByRecurring || x.next.date < from) continue;
+          // An overdue bill is still to pay, from tomorrow; a past estimate isn't.
+          if (x.biller.entity_id !== e || x.coveredByRecurring || (x.estimated && x.next.date < from))
+            continue;
           add({
-            date: x.next.date,
+            date: x.next.date < from ? from : x.next.date,
             accountId: primary.id,
             amount: -x.next.amount,
             kind: 'bill',
             name: x.biller.name,
-            sourceId: x.biller.id,
+            sourceId: x.billId ?? x.biller.id,
           });
         }
       }

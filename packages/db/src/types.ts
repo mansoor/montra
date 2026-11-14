@@ -1235,6 +1235,30 @@ export interface BillerTable {
   updated_at: Generated<Date>;
 }
 
+/** A bill from a biller on personal books (migration 0050, ADR-0048 §4). */
+export interface HouseholdBillTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  biller_id: string;
+  member_id: string | null;
+  status: Generated<'open' | 'paid' | 'void'>;
+  amount_minor: Int8;
+  currency: string;
+  due_date: CalendarDateCol;
+  bill_date: CalendarDateCol | null;
+  period_start: CalendarDateCol | null;
+  period_end: CalendarDateCol | null;
+  attachment_ids: Generated<string[]>;
+  transaction_id: string | null;
+  paid_at: Date | null;
+  extraction: Json<Record<string, unknown>> | null;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface SavedReportTable {
   workspace_id: string;
   id: string;
@@ -1595,6 +1619,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.saved_report': SavedReportTable;
   'app.document_scan': DocumentScanTable;
   'app.biller': BillerTable;
+  'app.household_bill': HouseholdBillTable;
   'app.notification': NotificationTable;
   'app.notification_pref': NotificationPrefTable;
   'app.security_event': SecurityEventTable;
@@ -2190,6 +2215,7 @@ export type PostingRow = Selectable<PostingTable>;
 export type ReceiptRow = Selectable<ReceiptTable>;
 export type DocumentScanRow = Selectable<DocumentScanTable>;
 export type BillerRow = Selectable<BillerTable>;
+export type HouseholdBillRow = Selectable<HouseholdBillTable>;
 export type ReceiptLineRow = Selectable<ReceiptLineTable>;
 export type TripRow = Selectable<TripTable>;
 export type BudgetRow = Selectable<BudgetTable>;

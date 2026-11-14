@@ -4,6 +4,8 @@
  */
 import type {
   PasswordPolicyDto,
+  FiledBillDto,
+  HouseholdBillDto,
   BillerDto,
   BudgetDto,
   CreateReimbursementRequest,
@@ -523,6 +525,23 @@ export function createApi(opts: ApiOptions) {
     // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
     listEmployers: async (w: string) =>
       (await request<{ data: EmployerDto[] }>('GET', `${ws(w)}/employers`)).data,
+    // ----- Bills (ADR-0048 §4) ------------------------------------------------------------------------------------
+    uploadBillFile: (w: string, file: UploadFile) =>
+      sendFile<ReceiptFileDto>(`${ws(w)}/household-bills/files`, file),
+    householdBills: async (w: string) =>
+      (await request<{ data: HouseholdBillDto[] }>('GET', `${ws(w)}/household-bills`)).data,
+    createHouseholdBill: (
+      w: string,
+      input: {
+        billerId: string;
+        scanId?: string;
+        amount: string;
+        dueDate: string;
+        billDate?: string | null;
+        periodStart?: string | null;
+        periodEnd?: string | null;
+      },
+    ) => request<FiledBillDto>('POST', `${ws(w)}/household-bills`, input),
     uploadPayslipFile: (w: string, file: UploadFile) =>
       sendFile<ReceiptFileDto>(`${ws(w)}/payslips/files`, file),
     createPayslip: (w: string, input: Partial<CreatePayslipRequest> & { employerId: string }) =>

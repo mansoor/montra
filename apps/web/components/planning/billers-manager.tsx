@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { BillerDto, FamilyMemberDto } from '@montra/api-client';
+import type { BillerDto, FamilyMemberDto, HouseholdBillDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
@@ -19,12 +19,15 @@ export function BillersManager({
   categories,
   billers,
   members,
+  bills = [],
 }: {
   workspaceId: string;
   /** The budget's spending categories, by group. */
   categories: { id: string; name: string; group: string }[];
   billers: BillerDto[];
   members: FamilyMemberDto[];
+  /** Bills filed for these providers (scanned on the phone, or typed in). */
+  bills?: HouseholdBillDto[];
 }) {
   const { t } = useI18n();
   const { run, busy, message } = useAction();
@@ -127,6 +130,50 @@ export function BillersManager({
           </table>
         )}
       </section>
+
+      {bills.length > 0 && (
+        <section className="card-flush" aria-label={t('billers.bills')}>
+          <h2 className="border-b border-line px-4 py-2.5 text-base font-semibold">{t('billers.bills')}</h2>
+          <table className="tbl" data-testid="household-bills">
+            <thead>
+              <tr>
+                <th scope="col" className="px-4 py-2">
+                  {t('billers.name')}
+                </th>
+                <th scope="col" className="px-2 py-2">
+                  {t('billers.due_date')}
+                </th>
+                <th scope="col" className="px-2 py-2 text-right">
+                  {t('billers.amount')}
+                </th>
+                <th scope="col" className="px-2 py-2">
+                  {t('billers.status')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {bills.map((b) => (
+                <tr key={b.id}>
+                  <td className="px-4 py-2 font-medium">{b.billerName}</td>
+                  <td className="px-2 py-2">
+                    <DateText date={b.dueDate} />
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <Money amount={b.amount} currency={b.currency} />
+                  </td>
+                  <td className="px-2 py-2">
+                    <span
+                      className={`chip ${b.status === 'overdue' ? 'chip-bad' : b.status === 'paid' ? 'chip-good' : 'chip-muted'}`}
+                    >
+                      {t(`billers.status_${b.status}`)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <section className="card space-y-3" aria-label={t('billers.add')}>
         <h2 className="text-base font-semibold">{t('billers.add')}</h2>

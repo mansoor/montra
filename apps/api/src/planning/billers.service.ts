@@ -20,6 +20,7 @@ import type { BillerDto, CreateBillerRequest, UpdateBillerRequest } from '@montr
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { PlanningData, type Ctx } from './data.js';
+import { HouseholdBillsService } from './household-bills.service.js';
 
 /** How far back payments are read for the estimate: a year and a bit covers a yearly bill. */
 const LOOKBACK_DAYS = 400;
@@ -37,6 +38,10 @@ export interface BillerExpected {
   biller: BillerRow;
   next: NextBill;
   currency: string;
+  /** From the payments; false when an open bill gives the exact amount and date. */
+  estimated: boolean;
+  /** The open bill it comes from, when there is one. */
+  billId: string | null;
   /** A recurring item already shows this payee's payments: the estimate isn't added again. */
   coveredByRecurring: boolean;
 }
@@ -46,6 +51,7 @@ export class BillersService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(PlanningData) private readonly data: PlanningData,
+    @Inject(HouseholdBillsService) private readonly bills: HouseholdBillsService,
   ) {}
 
   async list(ctx: Ctx, entityId?: string): Promise<BillerDto[]> {
@@ -203,7 +209,25 @@ export class BillersService {
       .where('status', '=', 'active')
       .where('primary_entity_id', 'in', entityIds)
       .execute();
+    // An open bill (scanned or typed) gives the exact amount and date instead of the estimate.
+    const open = await this.bills.openByBiller(
+      trx,
+      ctx,
+      billers.map((b) => b.id),
+    );
     for (const b of billers) {
+      const bill = open.get(b.id)?.[0];
+      if (bill) {
+        out.set(b.id, {
+          biller: b,
+          next: { date: calendarDate(String(bill.due_date)), amount: BigInt(bill.amount_minor), basedOn: 0 },
+          currency: bill.currency,
+          estimated: false,
+          billId: bill.id,
+          coveredByRecurring: false,
+        });
+        continue;
+      }
       const cur = currency.get(b.entity_id)!;
       const payments: BillPayment[] = txns
         .filter(
@@ -222,7 +246,7 @@ export class BillersService {
           r.entityId === b.entity_id &&
           [r.payee, r.name].some((n) => n && isBillerPayee(b.match_key, billerKey(n))),
       );
-      out.set(b.id, { biller: b, next, currency: cur, coveredByRecurring });
+      out.set(b.id, { biller: b, next, currency: cur, estimated: true, billId: null, coveredByRecurring });
     }
     return out;
   }
@@ -244,7 +268,7 @@ function toDto(r: BillerRow, e: BillerExpected | null): BillerDto {
           date: e.next.date,
           amount: e.next.amount.toString(),
           currency: asCurrencyCode(e.currency),
-          estimated: true,
+          estimated: e.estimated,
           basedOn: e.next.basedOn,
         }
       : null,
