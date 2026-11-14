@@ -1216,6 +1216,25 @@ export interface DocumentScanTable {
   updated_at: Generated<Date>;
 }
 
+/** A provider that sends a budget category's bills (migration 0049, ADR-0048 §4). */
+export interface BillerTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  category_id: string;
+  name: string;
+  match_key: string;
+  member_id: string | null;
+  account_last4: string | null;
+  due_day: number | null;
+  cadence: Generated<'monthly' | 'bimonthly' | 'quarterly' | 'semiannual' | 'yearly'>;
+  archived_at: Date | null;
+  created_by: string | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface SavedReportTable {
   workspace_id: string;
   id: string;
@@ -1575,6 +1594,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.property_budget_line': PropertyBudgetLineTable;
   'app.saved_report': SavedReportTable;
   'app.document_scan': DocumentScanTable;
+  'app.biller': BillerTable;
   'app.notification': NotificationTable;
   'app.notification_pref': NotificationPrefTable;
   'app.security_event': SecurityEventTable;
@@ -2169,6 +2189,7 @@ export type TransactionUpdate = Updateable<TransactionTable>;
 export type PostingRow = Selectable<PostingTable>;
 export type ReceiptRow = Selectable<ReceiptTable>;
 export type DocumentScanRow = Selectable<DocumentScanTable>;
+export type BillerRow = Selectable<BillerTable>;
 export type ReceiptLineRow = Selectable<ReceiptLineTable>;
 export type TripRow = Selectable<TripTable>;
 export type BudgetRow = Selectable<BudgetTable>;

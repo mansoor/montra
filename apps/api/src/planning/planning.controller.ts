@@ -19,7 +19,9 @@ import {
   CalendarDateDto,
   CopyBudgetRequest,
   CreateBudgetRequest,
+  CreateBillerRequest,
   CreateExpectedIncomeRequest,
+  UpdateBillerRequest,
   CreateGoalRequest,
   DraftBudgetRequest,
   DashboardChartsQuery,
@@ -44,6 +46,7 @@ import { BudgetsService } from './budgets.service.js';
 import { FlowService } from './flow.service.js';
 import { MonthSummaryService } from './month-summary.service.js';
 import { GoalsService } from './goals.service.js';
+import { BillersService } from './billers.service.js';
 import { IncomeService } from './income.service.js';
 import { RecommendationsService } from './recommendations.service.js';
 import { PlanningData } from './data.js';
@@ -59,6 +62,7 @@ export class PlanningController {
     @Inject(BudgetsService) private readonly budgets: BudgetsService,
     @Inject(GoalsService) private readonly goals: GoalsService,
     @Inject(IncomeService) private readonly income: IncomeService,
+    @Inject(BillersService) private readonly billers: BillersService,
     @Inject(FlowService) private readonly flow: FlowService,
     @Inject(MonthSummaryService) private readonly monthSummary: MonthSummaryService,
     @Inject(RecommendationsService) private readonly recs: RecommendationsService,
@@ -195,6 +199,23 @@ export class PlanningController {
   @Patch('goals/:id')
   updateGoal(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
     return this.goals.update(dbCtx(ctx), parse(Id, id), parse(UpdateGoalRequest, body));
+  }
+
+  // ----- Billers (ADR-0048 §4) ------------------------------------------------------------------------------
+
+  @Get('billers')
+  async listBillers(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    return { data: await this.billers.list(dbCtx(ctx), parse(EntityQuery, q).entityId) };
+  }
+
+  @Post('billers')
+  createBiller(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.billers.create(dbCtx(ctx), parse(CreateBillerRequest, body));
+  }
+
+  @Patch('billers/:id')
+  updateBiller(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    return this.billers.update(dbCtx(ctx), parse(Id, id), parse(UpdateBillerRequest, body));
   }
 
   // ----- Expected income (BUD-03) ------------------------------------------------------------------------

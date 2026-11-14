@@ -1154,7 +1154,16 @@ Phase 11 leftovers:
     - A scanned payslip finds its person from the pseudonym token `extract_payslip` v2 returns, and its employer by
       name. The phone shows what it found and saves to the employer chosen (`POST payslips` with `scanId`). From the
       wheel, Payslip goes straight to scanning.
-  - Next: billers on the budget (step 3), bill scanning (step 4).
+  - **Step 3:** bill providers (billers) on the budget (`app.biller`, migration 0049, `GET/POST/PATCH billers`).
+    - A provider belongs to a spending category (SDG&E on Utilities), with an optional usual due day, the account
+      number's last four digits, the person it's for, and a cadence.
+    - Its next bill is estimated from its payments over the last 400 days: the average of the last three, on the due
+      day (or the day it was last paid) one cadence on (`nextBill` in `@montra/domain`). No payments, no estimate.
+    - Estimates come into the calendar, upcoming, bill-due alerts and the forecast as variable bills, unless a
+      recurring item for the same payee already shows them.
+    - Web: a **Bills** tab on the budget lists and adds providers, and each category line shows its providers and
+      next bills. Phone: the budget shows them under their group, with a **Bill providers** card to add one.
+  - Next: bill scanning (step 4).
   - Not yet tried on a device.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
