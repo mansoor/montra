@@ -1177,6 +1177,15 @@ Phase 11 leftovers:
       providers.
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
+- **Offering Montra as a service, hosted anywhere** (proposed, nothing built yet):
+  - [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console
+    (tiers, prices by Stripe price id, entitlements, versions), each with an AI allowance; a staff `owner` role above
+    `admin`; suspending, trials, given plans and closing accounts; a Providers page that shows but never stores keys;
+    texts through Twilio (Kratos's SMS channel and an `SmsPort`). Five PRs, in the order the ADR gives.
+  - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
+    and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
+    with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and
+    alerts that don't belong to one cloud. AWS stays as one target.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.
