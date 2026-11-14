@@ -49,21 +49,26 @@ matching (ADR-0017, BIZ-06).
 
 ### 3. Detecting the account, the person and the employer
 
+- **A scan is read before it's filed.** A statement, payslip or bill scanned from the wheel becomes a scan
+  (`app.document_scan`, `POST scans`): its uploader's own, read once by `scan.read`.
+  - The reading suggests where the document goes, and the person confirms.
+  - The import, payslip or bill is then made from the same reading (`scanId`), so nothing is read twice. Imports and
+    payslips keep their tables and their required account or employer.
+  - The reading is cleared from the scan once it's used.
 - **Statements:**
-  - The account becomes optional when an import is created.
-  - The account's last four digits and the bank's name come from the doc-worker's statement facts (already
-    extracted) and from `extract_statement_table` v2. They pick the account:
-    1. a unique `last4` match;
-    2. otherwise a unique institution and type match.
-  - With no confident match, the import waits in `needs_account` with the candidates, and the person chooses.
-  - The phone scans first and asks for the account only when it wasn't found.
+  - The doc-worker's `doc.extract` already reads the account's last four digits ("account ending 1234"). The API used
+    to drop them; `scan.read` now matches them against the accounts' `last4`.
+  - One match is picked. With no digits, or none that match, the accounts imported into most recently are offered.
+  - The phone scans first, shows the account found, and asks only for a confirmation.
 - **Payslips:**
-  - The employer becomes optional.
-  - `extract_payslip` v2 returns the employer's name and the employee as one of the pseudonym tokens the gateway already
-    uses for family members (`MEMBER_n`). Real names still never reach the provider (AIA-03).
-  - The employer is found by name among the workspace's employers, and the person from the token.
-  - Without an employer, the payslip waits with the detected employer name and person, so one tap creates the employer
-    for that person.
+  - `extract_payslip` v2 returns the employee as one of the pseudonym tokens the gateway already uses for family
+    members (`MEMBER_n`, in the order members were made). Anything else is dropped, so real names still never reach
+    the provider or come back from it (AIA-03).
+  - The person comes from the token. The employer is found by the name printed, among that person's employers when
+    the person is known.
+  - The phone scans first, shows the employer, person, pay date and net pay found, and saves to the employer chosen.
+    With no matching employer, it says to add the employer on the web, because adding one needs the account the pay
+    lands in.
 
 ### 4. Billers and bills
 

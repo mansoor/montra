@@ -36,7 +36,8 @@ export function wheelRoute(c: WheelChoice): string {
     case 'bill':
       return '/bills/capture';
     case 'payslip':
-      return '/payslips';
+      // Scanned first; the reading finds the employer and person (ADR-0048).
+      return '/payslips/capture';
   }
 }
 

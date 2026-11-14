@@ -78,6 +78,7 @@ import type {
   PayslipDto,
   ReceiptDto,
   ReceiptFileDto,
+  ScanDto,
   ReceiptPageDto,
   ReceiptItemSearchDto,
   RegisterPushDeviceRequest,
@@ -309,8 +310,17 @@ export function createApi(opts: ApiOptions) {
       request<QuickAddDraftDto>('POST', `${ws(w)}/transactions/parse`, req),
 
     upload: (w: string, file: UploadFile) => sendFile<UploadDto>(`${ws(w)}/uploads`, file, false),
-    createImport: (w: string, fileId: string, accountId: string) =>
-      request<ImportBatchDto>('POST', `${ws(w)}/imports`, { fileId, accountId }),
+    /** `scanId`: a statement scanned and read already (ADR-0048), imported from that reading. */
+    createImport: (w: string, fileId: string, accountId: string, scanId?: string) =>
+      request<ImportBatchDto>('POST', `${ws(w)}/imports`, {
+        fileId,
+        accountId,
+        ...(scanId ? { scanId } : {}),
+      }),
+    /** ADR-0048: a statement, payslip or bill read before it's filed; the reading suggests where it goes. */
+    createScan: (w: string, kind: ScanDto['kind'], fileIds: string[]) =>
+      request<ScanDto>('POST', `${ws(w)}/scans`, { kind, fileIds }),
+    getScan: (w: string, id: string) => request<ScanDto>('GET', `${ws(w)}/scans/${id}`),
     getImport: (w: string, id: string) => request<ImportBatchDto>('GET', `${ws(w)}/imports/${id}`),
     importRows: async (w: string, id: string) =>
       (await request<{ data: ImportRowDto[] }>('GET', `${ws(w)}/imports/${id}/rows`)).data,

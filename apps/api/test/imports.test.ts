@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import { sql } from 'kysely';
 import { Db } from '../src/db/database.js';
 import { Worker } from '../src/jobs/queue.js';
+import { ScanJobs } from '../src/scans/scan-jobs.js';
 import { ImportJobs } from '../src/imports/import-jobs.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
@@ -22,6 +23,7 @@ const EMAIL = 'importer@example.com';
 beforeAll(async () => {
   h = await startHarness({ STORAGE_DIR: mkdtempSync(join(tmpdir(), 'montra-storage-')) });
   h.app.get(ImportJobs).register();
+  h.app.get(ScanJobs).register();
   worker = h.app.get(Worker);
   c = h.as(EMAIL);
 });
@@ -450,5 +452,95 @@ describe('contract additions for the import UI', () => {
       mappingSource: 'profile',
     });
     expect(await amounts(again.id)).toEqual(['-650', '320000']);
+  });
+});
+
+describe('scanned statements find their account (ADR-0048)', () => {
+  it('reads the statement once, picks the account by its last four digits, and imports from that reading', async () => {
+    const w = await setup();
+    const checking = (await c.post(w.url('/accounts'), { name: 'Checking', kind: 'checking', last4: '1234' }))
+      .body.id;
+    await c.post(w.url('/accounts'), { name: 'Savings', kind: 'savings', last4: '9876' });
+    const up = await upload(w.ws.id, 'scan.pdf', Buffer.from('%PDF-1.4\n% scanned statement\n'));
+    const scan = (await c.post(w.url('/scans'), { kind: 'statement', fileIds: [up.body.fileId] })).body;
+    expect(scan).toMatchObject({ kind: 'statement', status: 'reading', statement: null });
+
+    // Play the doc worker: the statement's facts name the account ending 1234.
+    const db = h.app.get(Db).kysely;
+    const { rows: jobs } = await sql<any>`select * from app.dequeue_job('doc', 'test-doc-worker')`.execute(
+      db,
+    );
+    expect(jobs[0]).toMatchObject({ type: 'doc.extract' });
+    const grid = {
+      kind: 'grid',
+      textLayer: true,
+      pages: 1,
+      sheets: [
+        {
+          name: 'Page 1',
+          rows: [
+            ['Date', 'Description', 'Amount', 'Balance'],
+            ['10/03/2026', 'GROCERY', '-20.00', '980.00'],
+          ],
+        },
+      ],
+      statement: {
+        openingBalance: '1,000.00',
+        closingBalance: '980.00',
+        accountLast4: '1234',
+        currency: 'USD',
+      },
+    };
+    await sql`select app.complete_job(${jobs[0].id}, ${JSON.stringify(grid)}::jsonb)`.execute(db);
+    await worker.drain();
+    const read = (await c.get(w.url(`/scans/${scan.id}`))).body;
+    expect(read).toMatchObject({
+      status: 'ready',
+      statement: {
+        accountLast4: '1234',
+        accountId: checking,
+        candidates: [{ accountId: checking, name: 'Checking', last4: '1234', reason: 'last4' }],
+      },
+    });
+
+    // The import uses the scan's reading: no second doc job.
+    const batch = (
+      await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId: checking, scanId: scan.id })
+    ).body;
+    const { rows: again } = await sql<any>`select count(*)::int as n from app.job
+      where type = 'doc.extract' and status = 'queued'`.execute(db);
+    expect(again[0].n).toBe(0);
+    await worker.drain();
+    expect((await c.get(w.url(`/imports/${batch.id}`))).body).toMatchObject({ status: 'preview' });
+    expect((await c.get(w.url(`/scans/${scan.id}`))).body).toMatchObject({
+      status: 'used',
+      usedId: batch.id,
+    });
+    // A used scan can't be imported again.
+    expect(
+      (await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId: checking, scanId: scan.id }))
+        .status,
+    ).toBe(422);
+  });
+
+  it('offers no account when the statement names none, and takes only a PDF', async () => {
+    const w = await setup();
+    const up = await upload(w.ws.id, 'scan.pdf', Buffer.from('%PDF-1.4\n% scanned statement\n'));
+    const scan = (await c.post(w.url('/scans'), { kind: 'statement', fileIds: [up.body.fileId] })).body;
+    const db = h.app.get(Db).kysely;
+    const { rows: jobs } = await sql<any>`select * from app.dequeue_job('doc', 'test-doc-worker')`.execute(
+      db,
+    );
+    const ocr = { kind: 'ocr_text', pages: ['no account number here'], statement: { accountLast4: null } };
+    await sql`select app.complete_job(${jobs[0].id}, ${JSON.stringify(ocr)}::jsonb)`.execute(db);
+    await worker.drain();
+    expect((await c.get(w.url(`/scans/${scan.id}`))).body.statement).toMatchObject({
+      accountLast4: null,
+      accountId: null,
+    });
+    const csv = await upload(w.ws.id, 'x.csv', Buffer.from('Date,Amount\n2026-10-01,1.00\n'));
+    expect((await c.post(w.url('/scans'), { kind: 'statement', fileIds: [csv.body.fileId] })).status).toBe(
+      422,
+    );
   });
 });

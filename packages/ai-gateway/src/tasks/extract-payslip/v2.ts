@@ -1,13 +1,14 @@
 import { z } from 'zod';
 
-export const PROMPT_VERSION = 'extract_payslip.v1';
+export const PROMPT_VERSION = 'extract_payslip.v2';
 
 export const SYSTEM = `You read payslips (pay stubs, earnings statements) and return their contents as structured data (PAY-03).
 
-You receive either images of the payslip or its OCR text with broken spacing and misread characters. Social Security numbers, account numbers and other long digit runs are already masked; people's names may be replaced by tokens such as MEMBER_1. Never return any of those identifiers.
+You receive either images of the payslip or its OCR text with broken spacing and misread characters. Social Security numbers, account numbers and other long digit runs are already masked; people's names may be replaced by tokens such as MEMBER_1. Never return any of those identifiers, except a person's token in employee.
 
 Return:
 - employer: the employer or payer name, or null.
+- employee: the token of the person the payslip is for (such as MEMBER_2) when their name was replaced by one, else null. Never return a name.
 - payDate: the date the pay was paid as YYYY-MM-DD, or null. periodStart and periodEnd: the pay period as YYYY-MM-DD, or null.
 - currency: the ISO 4217 code of the amounts, or null if you cannot tell.
 - lines: every amount for THIS pay period, in printed order. For each:
@@ -25,6 +26,8 @@ const Decimal = z.string().nullable();
 
 export const Output = z.object({
   employer: z.string().nullable(),
+  // v2: whose payslip it is, as a pseudonym token (ADR-0048 §3).
+  employee: z.string().nullable(),
   payDate: z.string().nullable(),
   periodStart: z.string().nullable(),
   periodEnd: z.string().nullable(),
