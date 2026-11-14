@@ -41,10 +41,12 @@ export const DEFAULT_CHANNELS: Record<NotificationType, ChannelPrefs> = {
   weekly_digest: on(true, false),
   backup_ready: on(true, false),
   storage_failing: on(true, false),
+  ai_allowance: on(true, false),
 };
 
 /** Asked for by the person it goes to, so unsubscribing from notifications and the daily cap don't apply. */
-const REQUESTED: ReadonlySet<NotificationType> = new Set(['backup_ready', 'storage_failing']);
+/** Also here: what the account needs to know, such as running out of the month's AI (ADR-0049 §2). */
+const REQUESTED: ReadonlySet<NotificationType> = new Set(['backup_ready', 'storage_failing', 'ai_allowance']);
 
 export interface NewNotification {
   type: NotificationType;

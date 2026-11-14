@@ -70,8 +70,6 @@ const Env = z.object({
   STRIPE_API_URL: z.string().url().default('https://api.stripe.com'),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
-  STRIPE_PRICE_PRO_YEARLY: z.string().optional(),
   /** Error tracking (NFR-13). Without it, errors only go to the log. */
   SENTRY_DSN: z.string().url().optional(),
   /** Bearer token for /internal/metrics. Without it, the route doesn't answer. */

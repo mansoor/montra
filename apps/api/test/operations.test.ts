@@ -73,7 +73,12 @@ describe('plans switched off (self-hosted, development)', () => {
     expect(billing).toMatchObject({
       mode: 'off',
       plan: 'free',
+      planName: 'Free',
       features: { businessEntities: true, rentalEntities: true },
+      entitlements: {
+        features: ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'],
+        aiMonthlyMicroUsd: null,
+      },
       canManage: true,
     });
     const entity = await c.post(`/v1/workspaces/${ws}/entities`, { type: 'business', name: 'Allowed' });
@@ -81,7 +86,7 @@ describe('plans switched off (self-hosted, development)', () => {
   });
 
   it('has no way to buy anything', async () => {
-    const res = await c.post(`/v1/workspaces/${ws}/billing/checkout`, { interval: 'month' });
+    const res = await c.post(`/v1/workspaces/${ws}/billing/checkout`, { plan: 'pro', interval: 'month' });
     expect(res.status).toBe(404);
   });
 });
@@ -122,7 +127,9 @@ describe('plans and billing (UP-12, OPS-08)', () => {
     trial_end: null,
     metadata: { workspace_id: ws },
     items: {
-      data: [{ current_period_end: 1_900_000_000, price: { recurring: { interval: 'month' } } }],
+      data: [
+        { current_period_end: 1_900_000_000, price: { id: 'price_month', recurring: { interval: 'month' } } },
+      ],
     },
     ...over,
   });
@@ -132,9 +139,16 @@ describe('plans and billing (UP-12, OPS-08)', () => {
       BILLING_MODE: 'stripe',
       STRIPE_SECRET_KEY: 'sk_test_only_used_here',
       STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
-      STRIPE_PRICE_PRO_MONTHLY: 'price_month',
-      STRIPE_PRICE_PRO_YEARLY: 'price_year',
     });
+    // ADR-0049: prices are on the plan's version, where the owner adds them, not in configuration.
+    await admin.query(
+      `insert into app.plan_price (plan_version_id, provider, billing_interval, price_ref, amount_minor, currency)
+       select v.id, 'stripe', p.billing_interval, p.price_ref, p.amount, 'USD'
+         from app.plan_version v,
+              (values ('month', 'price_month', 900), ('year', 'price_year', 9000)) p (billing_interval, price_ref, amount)
+        where v.plan_key = 'pro' and v.version = 1
+       on conflict do nothing`,
+    );
     c = h.as('paying@example.com');
     ws = await newWorkspace(c);
     subscription = paid();
@@ -178,7 +192,7 @@ describe('plans and billing (UP-12, OPS-08)', () => {
   });
 
   it('sends the owner to checkout, with a trial, and no card details come near us', async () => {
-    const res = await c.post(`/v1/workspaces/${ws}/billing/checkout`, { interval: 'year' });
+    const res = await c.post(`/v1/workspaces/${ws}/billing/checkout`, { plan: 'pro', interval: 'year' });
     expect(res.status).toBe(201);
     expect(res.body.url).toBe('https://checkout.example/session');
     const form = new URLSearchParams(String(stripe.mock.calls[0]![1]!.body));
@@ -207,10 +221,12 @@ describe('plans and billing (UP-12, OPS-08)', () => {
     expect(stripe.mock.calls[0]![0]).toContain('/v1/subscriptions/sub_1');
     expect(await billing()).toMatchObject({
       plan: 'pro',
+      planName: 'Pro',
       status: 'active',
       provider: 'stripe',
       interval: 'month',
       features: { businessEntities: true, rentalEntities: true },
+      entitlements: { businessBooks: 10, rentalPortfolios: 10, storageBytes: String(50n * 1024n ** 3n) },
     });
     expect(String(await quota())).toBe(String(50n * 1024n * 1024n * 1024n));
     const entity = await c.post(`/v1/workspaces/${ws}/entities`, { type: 'business', name: 'Now allowed' });
@@ -277,7 +293,7 @@ describe('plans and billing (UP-12, OPS-08)', () => {
   });
 
   it('gives a workspace only one trial', async () => {
-    await c.post(`/v1/workspaces/${ws}/billing/checkout`, { interval: 'month' });
+    await c.post(`/v1/workspaces/${ws}/billing/checkout`, { plan: 'pro', interval: 'month' });
     const form = new URLSearchParams(String(stripe.mock.calls[0]![1]!.body));
     expect(form.get('subscription_data[trial_period_days]')).toBeNull();
     expect(form.get('customer')).toBe('cus_1');
@@ -308,9 +324,10 @@ describe('plans and billing (UP-12, OPS-08)', () => {
       [ws, await userId(partnerEmail)],
     );
     expect((await partner.get(`/v1/workspaces/${ws}/billing`)).body.canManage).toBe(false);
-    expect((await partner.post(`/v1/workspaces/${ws}/billing/checkout`, { interval: 'month' })).status).toBe(
-      403,
-    );
+    expect(
+      (await partner.post(`/v1/workspaces/${ws}/billing/checkout`, { plan: 'pro', interval: 'month' }))
+        .status,
+    ).toBe(403);
     expect((await partner.post(`/v1/workspaces/${ws}/billing/portal`)).status).toBe(403);
   });
 

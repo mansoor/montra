@@ -148,12 +148,22 @@ export default function Capture() {
   /** Came to the sentence step by voice: the keyboard stays down while listening. */
   const [talking, setTalking] = useState(false);
   const voice = useVoice(setSentence);
+  /** ADR-0049 §1: voice entry is a plan feature. Offline, or until the plan is read, it's offered. */
+  const [voiceOnPlan, setVoiceOnPlan] = useState(true);
   const [busy, setBusy] = useState(false);
   /** Set right after a save: the check animation shows it. */
   const [saved, setSaved] = useState<string | null>(null);
   /** The spending just saved: offered a receipt photo until dismissed or a new amount is typed. */
   const [receiptFor, setReceiptFor] = useState<{ id: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ws) return;
+    void api.billing(ws).then(
+      (b) => setVoiceOnPlan(b.entitlements.features.includes('voice')),
+      () => undefined,
+    );
+  }, [api, ws]);
 
   useEffect(() => {
     void store.getMeta(LAST_ACCOUNT).then((id) => {
@@ -351,17 +361,19 @@ export default function Capture() {
               setStep('sentence');
             }}
           />
-          <ModeButton
-            icon="mic"
-            label={t('mobile.capture.speak')}
-            a11y={t('mobile.capture.mic_start')}
-            onPress={() => {
-              setTalking(true);
-              setStep('sentence');
-              void voice.start(sentence);
-            }}
-            testID="qa-speak"
-          />
+          {voiceOnPlan ? (
+            <ModeButton
+              icon="mic"
+              label={t('mobile.capture.speak')}
+              a11y={t('mobile.capture.mic_start')}
+              onPress={() => {
+                setTalking(true);
+                setStep('sentence');
+                void voice.start(sentence);
+              }}
+              testID="qa-speak"
+            />
+          ) : null}
         </View>
       ) : null}
       {step === 'payee' ? (
@@ -390,27 +402,31 @@ export default function Capture() {
                 testID="qa-sentence"
               />
             </View>
-            <Pressable
-              onPress={() => {
-                haptic.tap();
-                if (voice.listening) voice.stop();
-                else void voice.start(sentence);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t(voice.listening ? 'mobile.capture.mic_stop' : 'mobile.capture.mic_start')}
-              testID="qa-mic"
-              style={({ pressed }) => ({
-                width: th.tap,
-                height: th.tap,
-                borderRadius: th.tap / 2,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: voice.listening ? th.danger : th.primary,
-                opacity: pressed ? 0.8 : 1,
-              })}
-            >
-              <Icon name={voice.listening ? 'stop' : 'mic'} size={20} color={th.onPrimary} />
-            </Pressable>
+            {voiceOnPlan ? (
+              <Pressable
+                onPress={() => {
+                  haptic.tap();
+                  if (voice.listening) voice.stop();
+                  else void voice.start(sentence);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t(
+                  voice.listening ? 'mobile.capture.mic_stop' : 'mobile.capture.mic_start',
+                )}
+                testID="qa-mic"
+                style={({ pressed }) => ({
+                  width: th.tap,
+                  height: th.tap,
+                  borderRadius: th.tap / 2,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: voice.listening ? th.danger : th.primary,
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                <Icon name={voice.listening ? 'stop' : 'mic'} size={20} color={th.onPrimary} />
+              </Pressable>
+            ) : null}
           </View>
           {voice.listening ? (
             <Small color={th.primary}>{t('mobile.capture.listening')}</Small>

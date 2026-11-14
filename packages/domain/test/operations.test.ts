@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aiAlertPct,
+  aiLimitMicroUsd,
+  aiUsedShare,
   effectivePlan,
-  entitlementsFor,
+  entitlementsJson,
+  EntitlementsError,
   flagEnabled,
   FREE_STORAGE_BYTES,
   isVersionBelow,
   maintenanceNoticeOk,
+  parseEntitlements,
   PRO_STORAGE_BYTES,
 } from '../src/operations.js';
 
@@ -18,20 +23,23 @@ describe('effectivePlan', () => {
     expect(effectivePlan(null, now)).toBe('free');
   });
 
-  it('is pro while paid', () => {
+  it('is the plan paid for while paid, whatever its key', () => {
     expect(effectivePlan({ plan: 'pro', status: 'active', trialEnd: null, graceUntil: null }, now)).toBe(
       'pro',
+    );
+    expect(effectivePlan({ plan: 'plus', status: 'active', trialEnd: null, graceUntil: null }, now)).toBe(
+      'plus',
     );
   });
 
   it('follows the trial’s end, even if no webhook says so', () => {
-    const trial = { plan: 'pro' as const, status: 'trialing' as const, graceUntil: null };
+    const trial = { plan: 'pro', status: 'trialing' as const, graceUntil: null };
     expect(effectivePlan({ ...trial, trialEnd: later }, now)).toBe('pro');
     expect(effectivePlan({ ...trial, trialEnd: earlier }, now)).toBe('free');
   });
 
   it('keeps a failed payment on until the grace runs out', () => {
-    const late = { plan: 'pro' as const, status: 'past_due' as const, trialEnd: null };
+    const late = { plan: 'pro', status: 'past_due' as const, trialEnd: null };
     expect(effectivePlan({ ...late, graceUntil: later }, now)).toBe('pro');
     expect(effectivePlan({ ...late, graceUntil: earlier }, now)).toBe('free');
   });
@@ -43,19 +51,71 @@ describe('effectivePlan', () => {
   });
 });
 
-describe('entitlementsFor', () => {
-  it('gives free personal books and paid business and rental books', () => {
-    expect(entitlementsFor('free')).toMatchObject({
-      businessEntities: false,
-      rentalEntities: false,
-      storageBytes: FREE_STORAGE_BYTES,
-    });
-    expect(entitlementsFor('pro')).toMatchObject({
-      businessEntities: true,
-      rentalEntities: true,
-      maxBusinesses: 10,
-      storageBytes: PRO_STORAGE_BYTES,
-    });
+describe('parseEntitlements (ADR-0049 §1)', () => {
+  const pro = {
+    businessBooks: 10,
+    rentalPortfolios: 10,
+    storageBytes: 53687091200,
+    familyLogins: null,
+    aiMonthlyMicroUsd: null,
+    smsMonthly: 0,
+    features: ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'],
+  };
+
+  it('reads what migration 0051 seeded for Pro', () => {
+    expect(parseEntitlements(pro)).toEqual({ ...pro, storageBytes: PRO_STORAGE_BYTES, familyLogins: null });
+    expect(parseEntitlements({ ...pro, storageBytes: 5368709120 }).storageBytes).toBe(FREE_STORAGE_BYTES);
+  });
+
+  it('takes big numbers as digit strings, and round-trips through what is stored', () => {
+    const big = parseEntitlements({ ...pro, aiMonthlyMicroUsd: '5000000', storageBytes: '1099511627776' });
+    expect(big.aiMonthlyMicroUsd).toBe(5_000_000n);
+    expect(parseEntitlements(entitlementsJson(big))).toEqual(big);
+  });
+
+  it('refuses unknown features, negative or fractional counts, and missing fields', () => {
+    expect(() => parseEntitlements({ ...pro, features: ['payroll', 'teleport'] })).toThrow(EntitlementsError);
+    expect(() => parseEntitlements({ ...pro, businessBooks: -1 })).toThrow(/businessBooks/);
+    expect(() => parseEntitlements({ ...pro, rentalPortfolios: 1.5 })).toThrow(/rentalPortfolios/);
+    expect(() => parseEntitlements({ ...pro, smsMonthly: null })).toThrow(/smsMonthly/);
+    expect(() => parseEntitlements({ ...pro, aiMonthlyMicroUsd: '-5' })).toThrow(/aiMonthlyMicroUsd/);
+    const { storageBytes: _, ...missing } = pro;
+    expect(() => parseEntitlements(missing)).toThrow(/storageBytes/);
+    expect(() => parseEntitlements([])).toThrow(EntitlementsError);
+  });
+
+  it('keeps features in one order, without repeats', () => {
+    expect(parseEntitlements({ ...pro, features: ['voice', 'scans', 'voice'] }).features).toEqual([
+      'scans',
+      'voice',
+    ]);
+  });
+});
+
+describe('the AI limit (ADR-0049 §2)', () => {
+  it('is the smaller of the plan’s allowance and the customer’s own budget', () => {
+    expect(aiLimitMicroUsd(null, null)).toBeNull();
+    expect(aiLimitMicroUsd(5_000_000n, null)).toBe(5_000_000n);
+    expect(aiLimitMicroUsd(null, 2)).toBe(2_000_000n);
+    expect(aiLimitMicroUsd(5_000_000n, 2)).toBe(2_000_000n);
+    // A higher budget than the plan allows has no effect.
+    expect(aiLimitMicroUsd(5_000_000n, 50)).toBe(5_000_000n);
+    expect(aiLimitMicroUsd(5_000_000n, 4.35)).toBe(4_350_000n);
+    expect(aiLimitMicroUsd(null, 0)).toBe(0n);
+  });
+
+  it('tells the owners at 80% and 100%', () => {
+    expect(aiAlertPct(1n, null)).toBe(0);
+    expect(aiAlertPct(7_999_999n, 10_000_000n)).toBe(0);
+    expect(aiAlertPct(8_000_000n, 10_000_000n)).toBe(80);
+    expect(aiAlertPct(10_000_000n, 10_000_000n)).toBe(100);
+    expect(aiAlertPct(0n, 0n)).toBe(100);
+  });
+
+  it('shows a share, never dollars', () => {
+    expect(aiUsedShare(1n, null)).toBeNull();
+    expect(aiUsedShare(7_000_000n, 10_000_000n)).toBe(0.7);
+    expect(aiUsedShare(12_000_000n, 10_000_000n)).toBe(1);
   });
 });
 

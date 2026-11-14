@@ -25,6 +25,7 @@ import { AwsKms, FieldCrypto, KMS_PORT, LocalKms } from './crypto/crypto.service
 import { AdminService } from './ops/admin.service.js';
 import { billingProvider } from './ops/billing.port.js';
 import { BillingService } from './ops/billing.service.js';
+import { Plans } from './ops/plans.js';
 import { errorReporterProvider } from './ops/errors.js';
 import { AppVersionInterceptor, MetricsService } from './ops/metrics.js';
 import {
@@ -218,6 +219,7 @@ export class AppModule {
         { provide: KMS_PORT, useClass: config.KMS_MODE === 'aws' ? AwsKms : LocalKms },
         errorReporterProvider(config),
         billingProvider(config),
+        Plans,
         BillingService,
         AdminDb,
         SupportDb,

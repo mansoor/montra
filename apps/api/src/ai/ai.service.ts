@@ -11,11 +11,15 @@ import {
   type ProviderConfig,
   type TaskName,
 } from '@montra/ai-gateway';
+import { aiAlertPct, aiLimitMicroUsd, aiUsedShare } from '@montra/domain';
 import type { AiDisclosureDto, AiProblem, AiSettingsDto, UpdateAiSettingsRequest } from '@montra/schemas';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { AppError, unprocessable } from '../common/errors.js';
+import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
+import { Plans } from '../ops/plans.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -108,6 +112,32 @@ export const aiUnavailableWarning = (r: Pick<AiRuntime, 'problem'>, meanwhile: s
 
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
 
+/** ADR-0049 §2: the operator's monthly limit on built-in AI across the service, in millionths of a dollar. */
+export const AI_CEILING_SETTING = 'ai_monthly_ceiling_micro_usd';
+/** The service's spend is a sum over every workspace, so it's read at most this often. */
+const SERVICE_SPEND_TTL_MS = 60_000;
+
+export async function readAiCeiling(trx: Trx): Promise<bigint | null> {
+  const row = await trx
+    .selectFrom('app.system_setting')
+    .select('value')
+    .where('key', '=', AI_CEILING_SETTING)
+    .executeTakeFirst();
+  return row && /^\d{1,20}$/.test(row.value) ? BigInt(row.value) : null;
+}
+
+/** What the workspace's owners are told at 80% and 100% of the month's AI (ADR-0049 §2). */
+const ALLOWANCE_NOTICE: Record<80 | 100, { title: string; body: string }> = {
+  80: {
+    title: 'You’ve used 80% of this month’s AI',
+    body: 'Montra now uses a smaller model to make it last. When it’s used up, AI tasks wait until next month: transactions are categorized by your rules, and scans and statements can still be filed and entered by hand.',
+  },
+  100: {
+    title: 'This month’s AI is used up',
+    body: 'Until next month, transactions are categorized by your rules, scans and statements can still be filed and entered by hand, and voice entry is off. Nothing already done is undone.',
+  },
+};
+
 /**
  * Resolves a workspace's AI mode into an `AiContext` for the gateway (06 §2), backs the gateway's cache,
  * audit log and usage counter with the database, and serves the AI settings and audit endpoints.
@@ -116,11 +146,15 @@ const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
 export class AiService {
   readonly gateway: AiGateway;
   private readonly logger = new Logger('ai');
+  private serviceSpend: { month: string; at: number; micro: bigint } | null = null;
 
   constructor(
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(Db) private readonly db: Db,
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
+    @Inject(Plans) private readonly plans: Plans,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(MAIL_PORT) private readonly mail: MailPort,
   ) {
     this.gateway = createGateway({
       onProviderFailure: (e) =>
@@ -154,6 +188,11 @@ export class AiService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('month', '=', monthStart())
       .executeTakeFirst();
+    // ADR-0049 §2: the plan's allowance is on what the service pays for, built-in AI. The operator's ceiling stops
+    // all of it at once. A customer's own key or model is theirs, and only their own budget applies.
+    const planMicroUsd = mode === 'builtin' ? await this.plans.aiAllowance(trx) : null;
+    const ceilingReached = mode === 'builtin' && (await this.ceilingReached(trx));
+    const customerUsd = s.monthlyBudgetUsd ?? null;
     const members = await trx
       .selectFrom('app.family_member')
       .select(['name'])
@@ -165,8 +204,12 @@ export class AiService {
       mode,
       provider,
       failover,
-      budget: { monthlyUsd: s.monthlyBudgetUsd ?? null, spentMicroUsd: usage?.cost_micro_usd ?? 0n },
-      store: this.store(ctx),
+      budget: {
+        monthlyUsd: customerUsd,
+        planMicroUsd: ceilingReached ? 0n : planMicroUsd,
+        spentMicroUsd: usage?.cost_micro_usd ?? 0n,
+      },
+      store: this.store(ctx, mode, aiLimitMicroUsd(planMicroUsd, customerUsd)),
       pseudonyms: members.map((m, i) => ({ name: m.name, token: `MEMBER_${i + 1}` })),
       parkLocal: mode === 'local' && !this.config.AI_LOCAL_DIRECT,
       subject,
@@ -245,10 +288,108 @@ export class AiService {
   }
 
   /**
+   * Whether the whole service has spent the operator's ceiling this month (ADR-0049 §2). The first time it has,
+   * staff are told. A circuit breaker against a bug or abuse, not a plan limit.
+   */
+  private async ceilingReached(trx: Trx): Promise<boolean> {
+    const ceiling = await readAiCeiling(trx);
+    if (ceiling === null) return false;
+    const month = monthStart();
+    if (
+      !this.serviceSpend ||
+      this.serviceSpend.month !== month ||
+      Date.now() - this.serviceSpend.at > SERVICE_SPEND_TTL_MS
+    ) {
+      const { rows } = await sql<{
+        spent: string;
+      }>`select app.ai_service_spend(${month}::date) as spent`.execute(trx);
+      this.serviceSpend = { month, at: Date.now(), micro: BigInt(rows[0]?.spent ?? 0) };
+    }
+    const reached = this.serviceSpend.micro >= ceiling;
+    if (reached) void this.alertCeiling(month, ceiling);
+    return reached;
+  }
+
+  /** Once a month: the log, and an email to every admin and owner on staff. */
+  private async alertCeiling(month: string, ceiling: bigint): Promise<void> {
+    try {
+      const { rows } = await this.db.run({ actorType: 'system' }, (trx) =>
+        sql<{ email: string }>`select email from app.ai_ceiling_reached(${month}::date)`.execute(trx),
+      );
+      if (rows.length === 0) return;
+      const dollars = (Number(ceiling) / 1e6).toFixed(2);
+      this.logger.error(`ai ceiling reached month=${month.slice(0, 7)} ceiling_usd=${dollars}`);
+      for (const r of rows) {
+        await this.mail.send({
+          to: r.email,
+          category: 'transactional',
+          subject: 'Montra: built-in AI is stopped for the month',
+          text: [
+            `The service has spent its built-in AI ceiling of $${dollars} for ${month.slice(0, 7)}, so built-in AI is stopped for every workspace until the month ends.`,
+            'Customers fall back as when AI fails: rules categorize transactions, and scans and statements are entered by hand.',
+            'If this is a bug or abuse, find it before raising the ceiling. The ceiling is in the staff console.',
+          ].join('\n\n'),
+        });
+      }
+    } catch (e) {
+      this.logger.error(`ai ceiling alert failed: ${(e as Error).message}`);
+    }
+  }
+
+  /** At 80% and 100% of the month's limit, once each, the workspace's owners hear about it (ADR-0049 §2). */
+  private async alertOwners(ctx: Ctx, spent: bigint, alerted: number, limit: bigint | null): Promise<void> {
+    const pct = aiAlertPct(spent, limit);
+    if (pct === 0 || pct <= alerted) return;
+    const month = monthStart();
+    const owners = await this.db.run(ctx, async (trx) => {
+      const turned = await trx
+        .updateTable('app.ai_usage')
+        .set({ alerted_pct: pct })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('month', '=', month)
+        .where('alerted_pct', '<', pct)
+        .returning('alerted_pct')
+        .executeTakeFirst();
+      if (!turned) return [];
+      return trx
+        .selectFrom('app.workspace_member')
+        .select('user_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('role', '=', 'owner')
+        .where('status', '=', 'active')
+        .execute();
+    });
+    const notice = ALLOWANCE_NOTICE[pct];
+    for (const o of owners) {
+      if (!o.user_id) continue;
+      const owner = { workspaceId: ctx.workspaceId, userId: o.user_id };
+      try {
+        await this.db.run(owner, async (trx) => {
+          const prefs = await this.notifications.prefsIn(trx, owner.userId);
+          await this.notifications.create(
+            trx,
+            owner,
+            {
+              type: 'ai_allowance',
+              dedupeKey: `ai_allowance:${month.slice(0, 7)}:${pct}`,
+              title: notice.title,
+              body: notice.body,
+              link: `/w/${owner.workspaceId}/settings?tab=ai`,
+            },
+            prefs,
+          );
+        });
+      } catch (e) {
+        this.logger.warn(`Couldn't tell ${owner.userId} about AI use: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  /**
    * The gateway's persistence. Each write is its own short transaction so audit entries and spend survive
    * a rollback of the caller's work (a failed import still spent the tokens).
    */
-  private store(ctx: Ctx): GatewayStore {
+  private store(ctx: Ctx, mode: AiMode, limit: bigint | null): GatewayStore {
     const run = <T>(fn: (trx: Trx) => Promise<T>) => this.db.run(ctx, fn);
     return {
       cacheGet: async (task: TaskName, keyHash: string) => {
@@ -313,13 +454,25 @@ export class AiService {
         );
       },
       addUsage: async (cost: bigint, calls: number) => {
-        await run((trx) =>
-          sql`insert into app.ai_usage (workspace_id, month, calls, cost_micro_usd)
-              values (${ctx.workspaceId}, ${monthStart()}, ${calls}, ${cost})
+        const builtin = mode === 'builtin' ? cost : 0n;
+        const { rows } = await run((trx) =>
+          sql<{ cost_micro_usd: string; alerted_pct: number }>`
+              insert into app.ai_usage (workspace_id, month, calls, cost_micro_usd, builtin_micro_usd)
+              values (${ctx.workspaceId}, ${monthStart()}, ${calls}, ${cost}, ${builtin})
               on conflict (workspace_id, month) do update
                 set calls = app.ai_usage.calls + excluded.calls,
-                    cost_micro_usd = app.ai_usage.cost_micro_usd + excluded.cost_micro_usd`.execute(trx),
+                    cost_micro_usd = app.ai_usage.cost_micro_usd + excluded.cost_micro_usd,
+                    builtin_micro_usd = app.ai_usage.builtin_micro_usd + excluded.builtin_micro_usd
+              returning cost_micro_usd, alerted_pct`.execute(trx),
         );
+        const row = rows[0];
+        if (row) {
+          try {
+            await this.alertOwners(ctx, BigInt(row.cost_micro_usd), row.alerted_pct, limit);
+          } catch (e) {
+            this.logger.warn(`AI use alert failed: ${(e as Error).message}`);
+          }
+        }
       },
       parkLocal: async (task: TaskName, input: unknown) => {
         await run((trx) =>
@@ -360,9 +513,13 @@ export class AiService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('month', '=', monthStart())
       .executeTakeFirst();
-    const spentUsd = Number(usage?.cost_micro_usd ?? 0n) / 1e6;
+    const spent = usage?.cost_micro_usd ?? 0n;
+    const spentUsd = Number(spent) / 1e6;
     const budget = s.monthlyBudgetUsd ?? null;
-    const ratio = budget === null ? 0 : budget === 0 ? Infinity : spentUsd / budget;
+    const planMicroUsd = ws.ai_mode === 'builtin' ? await this.plans.aiAllowance(trx) : null;
+    const limit = aiLimitMicroUsd(planMicroUsd, budget);
+    const share = aiUsedShare(spent, limit);
+    const alert = aiAlertPct(spent, limit);
     return {
       mode: ws.ai_mode,
       provider,
@@ -383,7 +540,9 @@ export class AiService {
         month: monthStart().slice(0, 7),
         calls: usage?.calls ?? 0,
         spentUsd: Number(spentUsd.toFixed(4)),
-        state: ratio >= 1 ? 'exhausted' : ratio >= 0.8 ? 'downgraded' : 'ok',
+        state: alert === 100 ? 'exhausted' : alert === 80 ? 'downgraded' : 'ok',
+        share,
+        planAllowance: planMicroUsd !== null,
       },
       problem: await this.problemFor(trx, ctx, ws.ai_mode, s),
       disclosures: AI_DISCLOSURES,

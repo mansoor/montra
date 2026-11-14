@@ -65,6 +65,7 @@ import { PeopleService } from './people.service.js';
 import { ReimbursementsService } from './reimbursements.service.js';
 import { LeaveService } from './leave.service.js';
 import { ContractorTimeService } from './contractor-time.service.js';
+import { Plans } from '../ops/plans.js';
 
 const Id = z.uuid();
 const EntityQuery = z.object({ entityId: z.uuid() });
@@ -94,6 +95,7 @@ export class PayrollController {
     @Inject(YearEndService) private readonly yearEnd: YearEndService,
     @Inject(LeaveService) private readonly leave: LeaveService,
     @Inject(ContractorTimeService) private readonly time: ContractorTimeService,
+    @Inject(Plans) private readonly plans: Plans,
   ) {}
 
   // ----- People (PRL-01) -----------------------------------------------------------------------------------------
@@ -105,8 +107,11 @@ export class PayrollController {
   }
 
   @Post('people')
-  create(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    return this.people.create(dbCtx(ctx), parse(CreatePersonRequest, body));
+  async create(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    const req = parse(CreatePersonRequest, body);
+    // Adding someone is what the plan's payroll covers; the people already there stay (ADR-0049 §1).
+    await this.plans.requireFeature(dbCtx(ctx), 'payroll');
+    return this.people.create(dbCtx(ctx), req);
   }
 
   @Get('people/:id')
@@ -576,8 +581,10 @@ export class PayrollController {
   }
 
   @Post('people/:id/time')
-  addTime(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
-    return this.time.add(dbCtx(ctx), parse(Id, id), parse(CreateContractorTimeRequest, body));
+  async addTime(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    const req = parse(CreateContractorTimeRequest, body);
+    await this.plans.requireFeature(dbCtx(ctx), 'staffTime');
+    return this.time.add(dbCtx(ctx), parse(Id, id), req);
   }
 
   /** "Bill these hours": one bill to the contractor's vendor record. */

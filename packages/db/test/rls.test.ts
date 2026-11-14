@@ -420,6 +420,10 @@ describe('staff (ADR-0020)', () => {
     'feature_flag_override',
     'system_notice',
     'system_setting',
+    // Plans are the service's price list, read to show them (ADR-0049 §1). Changes go through admin_ functions.
+    'plan',
+    'plan_version',
+    'plan_price',
   ]);
 
   it('can reach no table but their own through the console’s role', async () => {
@@ -453,6 +457,8 @@ describe('staff (ADR-0020)', () => {
       'admin_support_grant',
       'admin_support_requests',
       'admin_support_screenshot',
+      'ai_service_spend',
+      'apply_plan_version',
       'apply_subscription',
       'log_support_access',
     ]);

@@ -3,6 +3,7 @@ import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import {
   AccountLookup,
+  AiCeilingPanel,
   FlagsPanel,
   NoticesPanel,
   PasswordPolicyPanel,
@@ -56,38 +57,41 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       </section>
     );
   } else if (tab === 'ai') {
-    const rows = await load((api) => api.adminAiAccuracy(30));
+    const [rows, ceiling] = await load((api) => Promise.all([api.adminAiAccuracy(30), api.adminAiCeiling()]));
     body = (
-      <section className="card-flush overflow-x-auto" aria-label={t('admin.tab.ai')}>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th className="px-3 py-2">{t('admin.task')}</th>
-              <th className="px-3 py-2">{t('admin.model')}</th>
-              <th className="px-3 py-2 text-right">{t('admin.calls')}</th>
-              <th className="px-3 py-2 text-right">{t('admin.failed')}</th>
-              <th className="px-3 py-2 text-right">{t('admin.accepted')}</th>
-              <th className="px-3 py-2 text-right">{t('admin.edited')}</th>
-              <th className="px-3 py-2 text-right">{t('admin.rejected')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {rows.map((r) => (
-              <tr key={`${r.task}-${r.provider}-${r.model}`}>
-                <td className="px-3 py-2 text-sm">{r.task}</td>
-                <td className="px-3 py-2 text-sm">
-                  {r.provider} · {r.model}
-                </td>
-                <td className="px-3 py-2 text-right text-sm">{r.calls}</td>
-                <td className="px-3 py-2 text-right text-sm">{r.failures}</td>
-                <td className="px-3 py-2 text-right text-sm">{r.accepted}</td>
-                <td className="px-3 py-2 text-right text-sm">{r.edited}</td>
-                <td className="px-3 py-2 text-right text-sm">{r.rejected}</td>
+      <div className="space-y-4">
+        <AiCeilingPanel ceiling={ceiling} canChange={canChange} />
+        <section className="card-flush overflow-x-auto" aria-label={t('admin.tab.ai')}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th className="px-3 py-2">{t('admin.task')}</th>
+                <th className="px-3 py-2">{t('admin.model')}</th>
+                <th className="px-3 py-2 text-right">{t('admin.calls')}</th>
+                <th className="px-3 py-2 text-right">{t('admin.failed')}</th>
+                <th className="px-3 py-2 text-right">{t('admin.accepted')}</th>
+                <th className="px-3 py-2 text-right">{t('admin.edited')}</th>
+                <th className="px-3 py-2 text-right">{t('admin.rejected')}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {rows.map((r) => (
+                <tr key={`${r.task}-${r.provider}-${r.model}`}>
+                  <td className="px-3 py-2 text-sm">{r.task}</td>
+                  <td className="px-3 py-2 text-sm">
+                    {r.provider} · {r.model}
+                  </td>
+                  <td className="px-3 py-2 text-right text-sm">{r.calls}</td>
+                  <td className="px-3 py-2 text-right text-sm">{r.failures}</td>
+                  <td className="px-3 py-2 text-right text-sm">{r.accepted}</td>
+                  <td className="px-3 py-2 text-right text-sm">{r.edited}</td>
+                  <td className="px-3 py-2 text-right text-sm">{r.rejected}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      </div>
     );
   } else if (tab === 'flags') {
     body = <FlagsPanel flags={await load((api) => api.adminFlags())} canChange={canChange} />;

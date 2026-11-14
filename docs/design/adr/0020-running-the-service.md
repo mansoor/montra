@@ -2,6 +2,8 @@
 
 **Status:** accepted · **Date:** 2026-11-04 · **Phase:** 11
 
+§1 (plans in code) and §9 (staff added by hand) are replaced by [ADR-0049](0049-plans-platform-owner-and-providers.md).
+
 ## Context
 
 Phase 11 needs billing, a staff console, support access, in-app notices, a minimum mobile version, error tracking and metrics. What
