@@ -1,5 +1,8 @@
 {
   "merchant": "WALMART SUPERCENTER",
+  "storeAddress": "1155 Hollister St, San Diego, CA 92154",
+  "storePhone": "(619) 575-1111",
+  "storeWebsite": "walmart.com",
   "date": "2026-10-05",
   "localTime": "14:32",
   "currency": null,

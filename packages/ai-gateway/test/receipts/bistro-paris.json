@@ -1,5 +1,8 @@
 {
   "merchant": "LE PETIT BISTRO",
+  "storeAddress": null,
+  "storePhone": null,
+  "storeWebsite": null,
   "date": "2026-11-12",
   "localTime": "20:45",
   "currency": "EUR",

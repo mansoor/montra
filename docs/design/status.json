@@ -529,7 +529,7 @@
   ],
   "RCP-01": [
     "partial",
-    "extract_receipt (images in builtin/BYOK, doc-worker OCR text in local mode) stores lines, qty, unit price, discounts, taxable flag, subtotal, tax (taxIncluded), fees, tip, total; real-provider accuracy unmeasured (needs ANTHROPIC_API_KEY and real photos)"
+    "extract_receipt (images in builtin/BYOK, doc-worker OCR text in local mode) stores lines, qty, unit price, discounts, taxable flag, subtotal, tax (taxIncluded), fees, tip, total, and the store's address, phone and website (v3); real-provider accuracy unmeasured (needs ANTHROPIC_API_KEY and real photos)"
   ],
   "RCP-02": [
     "partial",
@@ -965,7 +965,7 @@
   ],
   "RCP-09": [
     "done",
-    "items on receipts across stores, by item, store or category"
+    "items on receipts across stores, by item, store or category; search by item (receipts/items) with the amount spent and each receipt, on the phone and the web"
   ],
   "NOT-01": [
     "done",

@@ -79,6 +79,7 @@ import type {
   ReceiptDto,
   ReceiptFileDto,
   ReceiptPageDto,
+  ReceiptItemSearchDto,
   RegisterPushDeviceRequest,
   SuggestionDto,
   SuggestRequest,
@@ -345,6 +346,12 @@ export function createApi(opts: ApiOptions) {
     listReceipts: (w: string, status?: ReceiptDto['status']) =>
       request<ReceiptPageDto>('GET', `${ws(w)}/receipts?limit=100${status ? `&status=${status}` : ''}`),
     getReceipt: (w: string, id: string) => request<ReceiptDto>('GET', `${ws(w)}/receipts/${id}`),
+    /** RCP-09: what was spent on an item and the receipts it is on, from `from` to today. */
+    searchReceiptItems: (w: string, q: string, from: string) =>
+      request<ReceiptItemSearchDto>(
+        'GET',
+        `${ws(w)}/receipts/items?q=${encodeURIComponent(q)}&from=${encodeURIComponent(from)}`,
+      ),
     /** One transaction, fresh from the server (its receipt can change without the transaction changing). */
     getTransaction: (w: string, id: string) => request<TransactionDto>('GET', `${ws(w)}/transactions/${id}`),
     /** Path of a page image; load it with the bearer header. */

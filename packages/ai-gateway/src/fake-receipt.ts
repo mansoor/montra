@@ -95,11 +95,15 @@ function expand(raw: string): string | null {
  * Parses receipt text: the first line without an amount is the merchant; `YYYY-MM-DD` or `MM/DD/YYYY` and
  * `HH:MM` anywhere; `CURRENCY EUR` or a currency symbol; `SUBTOTAL`, `TAX`/`VAT`, `TOTAL`, `TIP`, `FEE`,
  * `DISCOUNT` lines (`TVA`/`MWST`/`IVA`/`VAT INCL` mean the prices include the tax); `COUPON` lines discount the item above; other lines ending in an amount are items, with
- * an optional T/N tax flag and `2 @ 1.50` quantities; `CARD **** 1234` gives the card.
+ * an optional T/N tax flag and `2 @ 1.50` quantities; `CARD **** 1234` gives the card; `ADDRESS …`, `TEL …` and a
+ * bare domain (`walmart.com`) give the store's details.
  */
 export function parseReceiptText(text: string): ReceiptExtraction {
   const out: ReceiptExtraction = {
     merchant: null,
+    storeAddress: null,
+    storePhone: null,
+    storeWebsite: null,
     date: null,
     localTime: null,
     currency: null,
@@ -124,6 +128,24 @@ export function parseReceiptText(text: string): ReceiptExtraction {
       out.date = iso ? iso[0] : `${us![3]}-${us![1]!.padStart(2, '0')}-${us![2]!.padStart(2, '0')}`;
       const time = /\b([01]?\d|2[0-3]):([0-5]\d)\b/.exec(line);
       if (time) out.localTime = `${time[1]!.padStart(2, '0')}:${time[2]}`;
+      continue;
+    }
+    const address = /^ADDRESS[:\s]+(.+)$/i.exec(line);
+    if (address) {
+      out.storeAddress = address[1]!.trim();
+      continue;
+    }
+    const phone = /^(?:TEL|PHONE)[:\s]+([+(\d][\d\s().-]{6,})$/i.exec(line);
+    if (phone) {
+      out.storePhone = phone[1]!.trim();
+      continue;
+    }
+    if (
+      out.merchant &&
+      !out.storeWebsite &&
+      /^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|co|us|uk|de|fr)$/i.test(line)
+    ) {
+      out.storeWebsite = line.toLowerCase();
       continue;
     }
     const code = /^CURRENCY\s+([A-Z]{3})$/i.exec(line);

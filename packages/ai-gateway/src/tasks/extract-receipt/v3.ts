@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PROMPT_VERSION = 'extract_receipt.v2';
+export const PROMPT_VERSION = 'extract_receipt.v3';
 
 export const SYSTEM = `You read shop, restaurant and online-order receipts and return their contents as structured data (RCP-01, RCP-02).
 
@@ -8,6 +8,9 @@ You receive either images of the receipt (one or more photos of a long receipt, 
 
 Return:
 - merchant: the store or restaurant name as a customer would say it ("Walmart", not "WAL-MART SUPERCENTER #1234"), or null.
+- storeAddress: the store's street address as printed, on one line ("1155 Hollister St, San Diego, CA 92154"), or "" when none is printed. Not the customer's address on a delivery or online-order receipt.
+- storePhone: the store's phone number as printed ("(619) 575-1111"), or "".
+- storeWebsite: the store's website as printed, without "http://" ("walmart.com"), or "".
 - date: the purchase date as YYYY-MM-DD, or null. localTime: the printed time as HH:MM (24-hour), or null.
 - currency: the ISO 4217 code the amounts are in. Use symbols, the country of the address and the hint; null only if you cannot tell.
 - lines: every purchased item in printed order. For each:
@@ -40,6 +43,10 @@ export const fromMark = (m: string): boolean | null => (m === 'yes' ? true : m =
 
 export const Output = z.object({
   merchant: z.string().nullable(),
+  // v3: the store's details are plain strings, "" when not printed: the schema is at 15 of Anthropic's 16 unions.
+  storeAddress: z.string(),
+  storePhone: z.string(),
+  storeWebsite: z.string(),
   date: z.string().nullable(),
   localTime: z.string().nullable(),
   currency: z.string().nullable(),

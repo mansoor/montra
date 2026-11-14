@@ -1,5 +1,8 @@
 {
   "merchant": "LAWSON",
+  "storeAddress": null,
+  "storePhone": null,
+  "storeWebsite": null,
   "date": "2026-11-20",
   "localTime": "08:15",
   "currency": "JPY",

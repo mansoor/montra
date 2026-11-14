@@ -121,6 +121,10 @@ export const ReceiptDto = z.object({
   source: z.enum(RECEIPT_SOURCES),
   fileIds: z.array(Id),
   merchant: z.string().nullable(),
+  /** The store's details as printed on the receipt (RCP-01); null when not printed or read before they were kept. */
+  storeAddress: z.string().nullable(),
+  storePhone: z.string().nullable(),
+  storeWebsite: z.string().nullable(),
   receiptDate: z.string().nullable(),
   localTime: z.string().nullable(),
   currency: z.string().nullable(),
@@ -172,6 +176,55 @@ export const ReceiptListQuery = z.object({
 });
 export type ReceiptListQuery = z.output<typeof ReceiptListQuery>;
 
+/**
+ * Item search (RCP-09): receipts with lines that match every word of `q` (the start of a word, in the printed or the
+ * expanded name), dated from `from` (default: three months before `to`) to `to` (default: today).
+ */
+export const ReceiptItemSearchQuery = z.object({
+  q: z.string().trim().min(1).max(100),
+  from: CalendarDateDto.optional(),
+  to: CalendarDateDto.optional(),
+});
+export type ReceiptItemSearchQuery = z.output<typeof ReceiptItemSearchQuery>;
+
+export const ReceiptItemMatchDto = z.object({
+  lineId: Id,
+  /** The expanded name when there is one, else the line as printed. */
+  name: z.string(),
+  qty: z.string().nullable(),
+  /** Line total less its discount; negative for a return. */
+  amount: Minor,
+});
+export type ReceiptItemMatchDto = z.infer<typeof ReceiptItemMatchDto>;
+
+export const ReceiptItemHitDto = z.object({
+  receiptId: Id,
+  merchant: z.string().nullable(),
+  receiptDate: z.string(),
+  currency: z.string(),
+  /** The receipt's total, null when it wasn't read. */
+  total: Minor.nullable(),
+  /** The matching lines' amounts added up. */
+  itemsAmount: Minor,
+  items: z.array(ReceiptItemMatchDto),
+});
+export type ReceiptItemHitDto = z.infer<typeof ReceiptItemHitDto>;
+
+export const ReceiptItemSearchDto = z.object({
+  query: z.string(),
+  from: z.string(),
+  to: z.string(),
+  /** Spent on the item, one entry per currency (usually one). */
+  totals: z.array(
+    z.object({ currency: z.string(), amount: Minor, items: z.number().int(), receipts: z.number().int() }),
+  ),
+  /** Newest first. */
+  receipts: z.array(ReceiptItemHitDto),
+  /** More receipts matched than are listed (the totals still count them all). */
+  more: z.boolean(),
+});
+export type ReceiptItemSearchDto = z.infer<typeof ReceiptItemSearchDto>;
+
 export const ReceiptLineInput = z.object({
   /** Omitted for a line the user adds. */
   id: Id.optional(),
@@ -196,6 +249,9 @@ export type ReceiptLineInput = z.output<typeof ReceiptLineInput>;
 export const UpdateReceiptRequest = z.object({
   version: z.string(),
   merchant: z.string().trim().max(200).nullable().optional(),
+  storeAddress: z.string().trim().max(300).nullable().optional(),
+  storePhone: z.string().trim().max(40).nullable().optional(),
+  storeWebsite: z.string().trim().max(200).nullable().optional(),
   receiptDate: CalendarDateDto.nullable().optional(),
   localTime: LocalTime.nullable().optional(),
   currency: z.string().length(3).nullable().optional(),

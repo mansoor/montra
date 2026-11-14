@@ -11,6 +11,7 @@ import {
   PLAN_TYPES,
 } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
+import { ITEM_PERIODS } from './receipts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SKIP = new Set(['node_modules', '.next', 'e2e', 'test-results', 'playwright-report']);
@@ -351,6 +352,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   ],
   'rules.op.': ['equals', 'contains', 'starts_with', 'regex', 'between', 'gt', 'lt', 'in'],
   'receipts.status.': ['processing', 'inbox', 'needs_review', 'matched', 'rejected'],
+  'receipts.items.period_': ITEM_PERIODS,
   'fx.source.': ['implied', 'reference', 'user'],
   // Phase 6: budgets, flow, goals, recommendations.
   'budget.method_': [

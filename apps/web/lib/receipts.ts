@@ -2,7 +2,14 @@
  * Receipt screens' pure helpers (RCP-01..06): file checks, editable rows ↔ the API's minor units, and the
  * update request the review screen sends. No float math: amounts go through @montra/domain.
  */
-import { asCurrencyCode, isCurrencyCode, minorUnits, toDecimalString } from '@montra/domain';
+import {
+  addMonths,
+  asCurrencyCode,
+  isCurrencyCode,
+  minorUnits,
+  toDecimalString,
+  type CalendarDate,
+} from '@montra/domain';
 import type { ReceiptDto, UpdateReceiptInput } from '@montra/api-client';
 import { parseAmountInput } from './money';
 import { staticT } from './i18n-static';
@@ -176,3 +183,21 @@ export function receiptTotal(
 /** Exponent-aware placeholder for amount inputs ("0.00", "0", "0.000"). */
 export const amountPlaceholder = (currency: string) =>
   isCurrencyCode(currency) ? (0).toFixed(minorUnits(asCurrencyCode(currency))) : '0.00';
+
+/** Item search periods (RCP-09): three months first, then wider, up to every receipt. */
+export const ITEM_PERIODS = ['3m', '6m', '1y', '2y', 'all'] as const;
+export type ItemPeriod = (typeof ITEM_PERIODS)[number];
+const ITEM_MONTHS: Record<ItemPeriod, number | null> = { '3m': 3, '6m': 6, '1y': 12, '2y': 24, all: null };
+
+export const asItemPeriod = (p: string | undefined): ItemPeriod =>
+  (ITEM_PERIODS as readonly string[]).includes(p ?? '') ? (p as ItemPeriod) : '3m';
+
+/** The first day a period covers, ending `today`; "all" reaches back before any receipt. */
+export function itemPeriodFrom(today: CalendarDate, period: ItemPeriod): string {
+  const months = ITEM_MONTHS[period];
+  return months === null ? '1970-01-01' : addMonths(today, -months);
+}
+
+/** The next longer period, or null at "all". */
+export const widerItemPeriod = (p: ItemPeriod): ItemPeriod | null =>
+  ITEM_PERIODS[ITEM_PERIODS.indexOf(p) + 1] ?? null;

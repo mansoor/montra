@@ -7,7 +7,7 @@ import { DATE_FORMATS, detectDateFormat, displayName, normalizeDescription } fro
 import type { CompletionRequest, CompletionResponse, ProviderAdapter } from '../types.js';
 import { decodeFakeReceiptImage, parseReceiptText } from '../fake-receipt.js';
 import { parsePayslipText } from '../fake-payslip.js';
-import * as receiptV2 from '../tasks/extract-receipt/v2.js';
+import * as receiptV3 from '../tasks/extract-receipt/v3.js';
 
 /** keyword (in payee/description) → category name fragments it points to. */
 export const FAKE_SYNONYMS: ReadonlyArray<readonly [readonly string[], readonly string[]]> = [
@@ -242,8 +242,11 @@ export class FakeAdapter implements ProviderAdapter {
         // Answers in the wire format the real providers use.
         return {
           ...r,
-          lines: r.lines.map((l) => ({ ...l, taxable: receiptV2.mark(l.taxable, 'unmarked') })),
-          taxIncluded: receiptV2.mark(r.taxIncluded, 'unclear'),
+          storeAddress: r.storeAddress ?? '',
+          storePhone: r.storePhone ?? '',
+          storeWebsite: r.storeWebsite ?? '',
+          lines: r.lines.map((l) => ({ ...l, taxable: receiptV3.mark(l.taxable, 'unmarked') })),
+          taxIncluded: receiptV3.mark(r.taxIncluded, 'unclear'),
         };
       }
       case 'extract_payslip': {

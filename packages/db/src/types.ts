@@ -870,6 +870,10 @@ export interface ReceiptTable {
   status: Generated<ReceiptStatus>;
   merchant: string | null;
   merchant_raw: string | null;
+  /** The store's details as printed (migration 0047). */
+  store_address: string | null;
+  store_phone: string | null;
+  store_website: string | null;
   payee_id: string | null;
   receipt_date: CalendarDateCol | null;
   local_time: string | null;

@@ -18,6 +18,7 @@ import {
   ChevronRight,
   CircleCheck,
   FileText,
+  Globe,
   Inbox,
   Keyboard,
   Info,
@@ -25,8 +26,10 @@ import {
   Lightbulb,
   Mic,
   List,
+  MapPin,
   Lock,
   type LucideIcon,
+  Phone,
   House,
   PieChart,
   Plus,
@@ -91,6 +94,9 @@ const ICONS = {
   stop: Square,
   keyboard: Keyboard,
   locked: Lock,
+  place: MapPin,
+  phone: Phone,
+  website: Globe,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

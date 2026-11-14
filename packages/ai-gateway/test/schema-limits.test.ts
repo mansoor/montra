@@ -10,7 +10,7 @@ import { jsonSchemaOf } from '../src/schema.js';
 import * as answerQuestion from '../src/tasks/answer-question/v1.js';
 import * as categorize from '../src/tasks/categorize/v1.js';
 import * as extractPayslip from '../src/tasks/extract-payslip/v1.js';
-import * as extractReceipt from '../src/tasks/extract-receipt/v2.js';
+import * as extractReceipt from '../src/tasks/extract-receipt/v3.js';
 import * as extractStatementTable from '../src/tasks/extract-statement-table/v1.js';
 import * as flagCapital from '../src/tasks/flag-capital/v1.js';
 import * as flagSeparation from '../src/tasks/flag-separation/v1.js';

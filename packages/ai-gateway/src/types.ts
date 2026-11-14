@@ -265,6 +265,10 @@ export interface ReceiptDocument {
 /** Extracted receipt with amounts as decimal strings in `currency` (the caller converts to minor units). */
 export interface ReceiptExtraction {
   merchant: string | null;
+  /** The store's address, phone and website as printed (one line each), or null. */
+  storeAddress: string | null;
+  storePhone: string | null;
+  storeWebsite: string | null;
   date: string | null;
   localTime: string | null;
   currency: string | null;
