@@ -1,4 +1,7 @@
 WALMART SUPERCENTER #1234
+ADDRESS 1155 Hollister St, San Diego, CA 92154
+TEL (619) 575-1111
+walmart.com
 10/05/2026 14:32
 GV 2% MLK GAL          3.48 N
 BANANAS                1.62 N

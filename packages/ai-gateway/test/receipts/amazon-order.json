@@ -1,5 +1,8 @@
 {
   "merchant": "AMAZON.COM",
+  "storeAddress": null,
+  "storePhone": null,
+  "storeWebsite": null,
   "date": "2026-11-03",
   "localTime": null,
   "currency": null,

@@ -1,5 +1,8 @@
 {
   "merchant": "TARGET",
+  "storeAddress": null,
+  "storePhone": null,
+  "storeWebsite": null,
   "date": "2026-11-02",
   "localTime": "10:05",
   "currency": null,

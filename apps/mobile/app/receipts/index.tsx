@@ -1,6 +1,6 @@
 /**
  * Receipts on the phone: captures waiting to upload (TXN-09, with retry and discard) and the receipt inbox
- * from the server (IMP-11). Tapping a receipt opens its review.
+ * from the server (IMP-11). Tapping a receipt opens its review; "Search by item" finds what an item cost (RCP-09).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -78,6 +78,13 @@ export default function Receipts() {
           testID="scan"
         />
       ) : null}
+      <Button
+        kind="secondary"
+        icon="search"
+        label={t('mobile.receipts.items_open')}
+        onPress={() => router.push('/receipts/items')}
+        testID="search-items"
+      />
       <Button
         kind="secondary"
         label={t('mobile.activity.sync_now')}

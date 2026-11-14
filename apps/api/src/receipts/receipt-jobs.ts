@@ -189,6 +189,7 @@ export function fromExtraction(
     tipMinor: bigint;
     totalMinor: bigint | null;
     cardLast4: string | null;
+    store: { address: string | null; phone: string | null; website: string | null };
   };
   lines: LineInput[];
   warnings: string[];
@@ -230,6 +231,7 @@ export function fromExtraction(
       tipMinor: toMinor(x.tip, currency) ?? 0n,
       totalMinor: toMinor(x.total, currency),
       cardLast4: x.cardLast4,
+      store: { address: x.storeAddress, phone: x.storePhone, website: x.storeWebsite },
     },
     lines,
     warnings,
