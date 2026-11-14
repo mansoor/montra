@@ -27,7 +27,7 @@ import { DEFAULT_ROUTING, DOWNGRADE_AT, modelFor } from './reference/routing.js'
 import { jsonSchemaOf } from './schema.js';
 import * as categorizeV1 from './tasks/categorize/v1.js';
 import * as extractV1 from './tasks/extract-statement-table/v1.js';
-import * as payslipV1 from './tasks/extract-payslip/v1.js';
+import * as payslipV2 from './tasks/extract-payslip/v2.js';
 import * as receiptV3 from './tasks/extract-receipt/v3.js';
 import * as mapColumnsV1 from './tasks/map-columns/v1.js';
 import * as normalizeV1 from './tasks/normalize-payees/v1.js';
@@ -1221,8 +1221,8 @@ export class Gateway implements AiGateway {
     return this.callProvider<PayslipExtraction>(
       {
         task: 'extract_payslip',
-        system: payslipV1.SYSTEM,
-        promptVersion: payslipV1.PROMPT_VERSION,
+        system: payslipV2.SYSTEM,
+        promptVersion: payslipV2.PROMPT_VERSION,
         input: {
           currencyHint: doc.currencyHint,
           locale: doc.locale,
@@ -1231,8 +1231,8 @@ export class Gateway implements AiGateway {
           ocrText,
         },
         images,
-        schema: payslipV1.Output,
-        validate: (o: payslipV1.Output) => {
+        schema: payslipV2.Output,
+        validate: (o: payslipV2.Output) => {
           const lines = o.lines
             .map((l) => ({
               section: l.section,
@@ -1246,6 +1246,8 @@ export class Gateway implements AiGateway {
           const currency = o.currency?.toUpperCase() ?? null;
           return {
             employer: o.employer ? oneLine(o.employer, 200) || null : null,
+            // Only a pseudonym token: a name the model returned anyway is dropped.
+            employee: o.employee && /^MEMBER_\d{1,3}$/.test(o.employee.trim()) ? o.employee.trim() : null,
             payDate: validIsoDate(o.payDate) ? o.payDate : null,
             periodStart: validIsoDate(o.periodStart) ? o.periodStart : null,
             periodEnd: validIsoDate(o.periodEnd) ? o.periodEnd : null,

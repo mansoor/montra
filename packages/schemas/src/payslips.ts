@@ -171,6 +171,8 @@ export const CreatePayslipRequest = z.object({
   fileIds: z.array(Id).max(20).default([]),
   fromLast: z.boolean().default(false),
   payDate: CalendarDateDto.optional(),
+  /** A payslip scanned and read already (ADR-0048): its pages and reading are used; `fileIds` are ignored. */
+  scanId: Id.optional(),
 });
 export type CreatePayslipRequest = z.output<typeof CreatePayslipRequest>;
 

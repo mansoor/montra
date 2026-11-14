@@ -40,3 +40,26 @@ describe('the document scanner (ADR-0047)', () => {
     expect(asFileUri('content://media/1')).toBe('content://media/1');
   });
 });
+
+describe('waiting for a scan to be read (ADR-0048)', () => {
+  it('checks until the reading is done, or gives up', async () => {
+    const { waitForScan } = await import('../src/features/scanner');
+    const states = ['reading', 'reading', 'ready'];
+    let calls = 0;
+    const done = await waitForScan(
+      async () => ({ status: states[calls++] ?? 'ready' }),
+      10,
+      1000,
+      async () => undefined,
+    );
+    expect(done).toEqual({ status: 'ready' });
+    expect(calls).toBe(3);
+    const never = await waitForScan(
+      async () => ({ status: 'reading' }),
+      10,
+      30,
+      async () => undefined,
+    );
+    expect(never).toBeNull();
+  });
+});

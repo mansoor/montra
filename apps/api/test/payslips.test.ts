@@ -6,6 +6,7 @@ import { addDays, startOfMonth, todayIn } from '@montra/domain';
 import { ImportJobs } from '../src/imports/import-jobs.js';
 import { Worker } from '../src/jobs/queue.js';
 import { PayslipJobs } from '../src/payslips/payslip-jobs.js';
+import { ScanJobs } from '../src/scans/scan-jobs.js';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
@@ -70,6 +71,7 @@ const balance = async (who: Client, id: string) =>
 beforeAll(async () => {
   h = await startHarness({ AI_PROVIDER: 'fake' });
   h.app.get(PayslipJobs).register();
+  h.app.get(ScanJobs).register();
   h.app.get(ImportJobs).register();
   worker = h.app.get(Worker);
   c = h.as(EMAIL);
@@ -1052,5 +1054,64 @@ describe('splitting pay across accounts (ADR-0022)', () => {
         vacation: [],
       });
     });
+  });
+});
+
+describe('scanned payslips find their employer and person (ADR-0048)', () => {
+  // The gateway replaces family members' names with tokens; Sam is the second member (the owner is the first).
+  const SCANNED = [
+    'Employer: Acme Corporation',
+    'Employee: MEMBER_2',
+    `Pay date: ${payDate}`,
+    'Regular salary   5,000.00 ytd 50,000.00',
+    '401(k)   300.00',
+    'Federal tax   620.00',
+    'Net pay   4,080.00',
+  ].join('\n');
+
+  it('reads once, suggests the employer and person, and makes the payslip from the same reading', async () => {
+    await c.patch(url('/ai/settings'), { allowDocumentsToLlm: true });
+    const f = await upload(encodeFakeReceiptImage(SCANNED));
+    const scan = (await c.post(url('/scans'), { kind: 'payslip', fileIds: [f.body.fileId] })).body;
+    expect(scan.status).toBe('reading');
+    await worker.drain(['ai']);
+    const read = (await c.get(url(`/scans/${scan.id}`))).body;
+    expect(read).toMatchObject({
+      status: 'ready',
+      payslip: {
+        employerName: 'Acme Corporation',
+        memberId: sam,
+        employerId: employer.id,
+        candidates: [{ employerId: employer.id, name: 'ACME Corp', memberId: sam, memberName: 'Sam' }],
+        payDate,
+        net: '408000',
+        currency: 'USD',
+      },
+    });
+    const { rows: before } = await admin.query(
+      `select count(*)::int as n from app.ai_event where task = 'extract_payslip'`,
+    );
+
+    const p = (await c.post(url('/payslips'), { employerId: employer.id, scanId: scan.id })).body;
+    expect(p).toMatchObject({ status: 'processing', fileIds: [f.body.fileId], memberId: sam });
+    await worker.drain(['ai']);
+    await c.patch(url('/ai/settings'), { allowDocumentsToLlm: false });
+    expect((await c.get(url(`/payslips/${p.id}`))).body).toMatchObject({
+      status: 'needs_review',
+      net: '408000',
+      gross: '500000',
+    });
+    // Not read a second time, and the reading is gone from the scan.
+    const { rows: after } = await admin.query(
+      `select count(*)::int as n from app.ai_event where task = 'extract_payslip'`,
+    );
+    expect(after[0].n).toBe(before[0].n);
+    const { rows: kept } = await admin.query(`select status, result from app.document_scan where id = $1`, [
+      scan.id,
+    ]);
+    expect(kept[0]).toMatchObject({ status: 'used', result: null });
+    // Another login can't see someone else's scan.
+    expect((await partner.get(url(`/scans/${scan.id}`))).status).toBe(404);
+    expect((await c.delete(url(`/payslips/${p.id}`))).status).toBe(204);
   });
 });

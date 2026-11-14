@@ -78,6 +78,8 @@ export const CreateImportRequest = z.object({
   accountId: Id,
   /** For multi-account app exports (YNAB, Mint, …): which account's rows to import. */
   accountFilter: z.string().trim().max(200).optional(),
+  /** A statement scanned and read already (ADR-0048): its reading is used instead of reading the file again. */
+  scanId: Id.optional(),
 });
 export type CreateImportRequest = z.output<typeof CreateImportRequest>;
 

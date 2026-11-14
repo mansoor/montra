@@ -758,6 +758,20 @@ describe('extract_payslip (PAY-03, PAY-09)', () => {
     expect(sent).toContain('5,000.00');
   });
 
+  it('names the person only by their token (ADR-0048)', async () => {
+    const withToken = await createGateway().extractPayslip(
+      doc,
+      ctxOf(new MemoryStore(), { pseudonyms: [{ name: 'Sam Rivera', token: 'MEMBER_1' }] }),
+    );
+    expect(withToken.ok && withToken.value.employee).toBe('MEMBER_1');
+    // A name the model returns instead of a token is dropped.
+    const named = await createGateway().extractPayslip(
+      { ...doc, ocrText: TEXT.replace('Sam Rivera', 'MEMBER_9X') },
+      ctxOf(new MemoryStore()),
+    );
+    expect(named.ok && named.value.employee).toBeNull();
+  });
+
   it('keeps amounts and names out of the audit record', async () => {
     const store = new MemoryStore();
     await createGateway().extractPayslip(doc, ctxOf(store));

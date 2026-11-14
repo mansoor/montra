@@ -129,6 +129,9 @@ import { RentalReportsService } from './rentals/rental-reports.service.js';
 import { RentalsController } from './rentals/rentals.controller.js';
 import { PayslipsService } from './payslips/payslips.service.js';
 import { PayslipJobs } from './payslips/payslip-jobs.js';
+import { ScanJobs } from './scans/scan-jobs.js';
+import { ScansController } from './scans/scans.controller.js';
+import { ScansService } from './scans/scans.service.js';
 import { MemberReportsService } from './payslips/member-reports.service.js';
 import { PayslipsController } from './payslips/payslips.controller.js';
 
@@ -167,6 +170,7 @@ export class AppModule {
       TripsController,
       PlanningController,
       PayslipsController,
+      ScansController,
       BusinessController,
       AssetsController,
       PayrollController,
@@ -286,6 +290,8 @@ export class AppModule {
         ReportsService,
         SearchService,
         PayslipJobs,
+        ScansService,
+        ScanJobs,
         MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },
       ],

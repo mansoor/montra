@@ -398,7 +398,10 @@ export class PayslipsService {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', employer.entity_id)
         .executeTakeFirstOrThrow();
-      if (req.fileIds.length) await this.checkFiles(trx, ctx, req.fileIds);
+      // From a scan (ADR-0048): its pages, and its reading instead of reading them again.
+      const scan = req.scanId ? await this.usableScan(trx, ctx, req.scanId) : null;
+      const fileIds = scan ? scan.file_ids : req.fileIds;
+      if (fileIds.length) await this.checkFiles(trx, ctx, fileIds);
       const last = req.fromLast ? await this.lastPosted(trx, ctx, employer.id) : null;
       const row = await trx
         .insertInto('app.payslip')
@@ -407,10 +410,10 @@ export class PayslipsService {
           entity_id: employer.entity_id,
           employer_id: employer.id,
           member_id: employer.member_id,
-          status: req.fileIds.length ? 'processing' : 'needs_review',
+          status: fileIds.length ? 'processing' : 'needs_review',
           pay_date: req.payDate ?? null,
           currency: entity.functional_currency,
-          attachment_ids: req.fileIds,
+          attachment_ids: fileIds,
           gross_minor: last ? last.gross_minor : 0n,
           net_minor: last ? last.net_minor : 0n,
           extraction: last
@@ -437,9 +440,36 @@ export class PayslipsService {
           })),
         );
       }
-      if (req.fileIds.length) await this.startExtraction(trx, ctx, row.id, req.fileIds);
+      if (scan) {
+        await this.queue.enqueue(trx, {
+          ...ctx,
+          queue: 'ai',
+          type: 'payslip.extract',
+          payload: { workspaceId: ctx.workspaceId, payslipId: row.id, scanId: scan.id },
+        });
+        await trx
+          .updateTable('app.document_scan')
+          .set({ status: 'used', used_id: row.id, updated_at: new Date() })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', scan.id)
+          .execute();
+      } else if (fileIds.length) await this.startExtraction(trx, ctx, row.id, fileIds);
       return this.dto(trx, ctx, row);
     });
+  }
+
+  /** A scanned payslip, read and not yet filed; the uploader's own (RLS). */
+  private async usableScan(trx: Trx, ctx: Ctx, id: string) {
+    const scan = await trx
+      .selectFrom('app.document_scan')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .executeTakeFirst();
+    if (!scan || scan.kind !== 'payslip') throw notFound('Scan');
+    if (scan.status !== 'ready')
+      throw unprocessable('scan.not_ready', 'This scan is still being read, or was filed');
+    return scan;
   }
 
   private async checkFiles(trx: Trx, ctx: Ctx, ids: string[]) {
