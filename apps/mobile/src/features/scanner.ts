@@ -1,9 +1,21 @@
 /**
  * The phone's own document scanner (ADR-0047): Google's ML Kit scanner on Android, Apple's VisionKit on iPhone. It
- * finds the receipt's edges as you aim, crops and straightens it, and takes several pages. Loaded lazily: where the
- * native module isn't there (Expo Go, a build without it, an Android phone without Google Play services), the
- * capture screen falls back to its own camera.
+ * finds the page's edges as you aim, crops and straightens it, and takes several pages. Every paper document uses it
+ * (ADR-0048): receipts, statements, payslips, bills and reimbursement photos. Loaded lazily: where the native module
+ * isn't there (Expo Go, a build without it, an Android phone without Google Play services), the capture screen falls
+ * back to its own camera.
  */
+
+export type PageType = 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
+
+/** A page ready to upload: scanned, shot with the app's camera or picked. */
+export interface CapturedPage {
+  uri: string;
+  type: PageType;
+  name: string;
+  /** Made by the app (scanner or camera), so the app removes it after upload; a picked file belongs to the picker. */
+  shot: boolean;
+}
 
 export type ScanResult =
   { kind: 'scanned'; uris: string[] } | { kind: 'cancelled' } | { kind: 'unavailable'; reason: string };
@@ -15,13 +27,13 @@ interface Scanner {
   }): Promise<{ scannedImages?: string[]; status?: string }>;
 }
 
-/** Up to 10 pages; 85 keeps a receipt's small print sharp at about a third of full quality's size. */
+/** Up to 10 pages; 85 keeps small print sharp at about a third of full quality's size. */
 const OPTIONS = { croppedImageQuality: 85, maxNumDocuments: 10 };
 
 /** File paths come back bare on some platforms; the rest of the app reads `file://` URIs. */
 export const asFileUri = (path: string) => (path.startsWith('/') ? `file://${path}` : path);
 
-export async function scanReceipt(
+export async function scanPages(
   load: () => Promise<{ default: Scanner }> = () => import('react-native-document-scanner-plugin'),
 ): Promise<ScanResult> {
   let scanner: Scanner;

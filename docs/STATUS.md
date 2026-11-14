@@ -1140,6 +1140,17 @@ Phase 11 leftovers:
   - On the phone, Receipts → **Search by item**: 3 months, 6 months, 1 year, 2 years or all, and **Search further
     back** below the results; a receipt opens in full. On the web, Receipts → **Search by item** does the same.
   - Not yet tried on a device or with the real provider.
+- **The Add wheel and the scanner everywhere** ([ADR-0048](design/adr/0048-add-wheel-scanned-documents-and-billers.md),
+  step 1 of 4):
+  - The centre + opens a wheel: Transaction (quick add), Receipt, Statement and Payslip on an arc above the button
+    (`src/ui/AddWheel.tsx`, `src/features/add-wheel.ts`). Choices the login can't use are left out. Bill joins it with
+    bill scanning (step 4).
+  - Statements, payslips and reimbursement photos now open the phone's document scanner first, with the camera as the
+    fallback (`src/ui/DocumentCapture.tsx`; `scanReceipt` is now `scanPages`). A statement's scanned pages still become
+    one PDF. From the wheel, Statement goes straight to scanning.
+  - Next: the account from a scanned statement and the person from a payslip (step 2), billers on the budget (step 3),
+    bill scanning (step 4).
+  - Not yet tried on a device.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.
