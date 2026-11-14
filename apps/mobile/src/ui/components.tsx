@@ -42,7 +42,7 @@ export function Screen({
   const th = useTheme();
   const insets = useSafeAreaInsets();
   const { top, bottom } = screenInsets(useSegments(), insets);
-  const pad = { padding: th.pad, paddingBottom: th.pad + bottom, gap: th.space(2) };
+  const pad = { padding: th.pad, gap: th.space(2) };
   const body = scroll ? (
     <ScrollView contentContainerStyle={pad} keyboardShouldPersistTaps="handled">
       {children}
@@ -56,6 +56,8 @@ export function Screen({
         flex: 1,
         backgroundColor: th.bg,
         paddingTop: top,
+        // The whole screen ends above the navigation bar, not just its last item: a long form scrolls inside it.
+        paddingBottom: bottom,
         paddingLeft: insets.left,
         paddingRight: insets.right,
       }}

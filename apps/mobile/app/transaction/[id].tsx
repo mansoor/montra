@@ -1,9 +1,9 @@
 /**
  * Transaction detail and edit (DE-10 on the server): payee, date, account, category, memo, tags; splits are read-only.
- * Under the amount, a labelled receipt button opens the receipt, or adds one.
+ * The receipt button sits by the amount: it opens the receipt, or adds one.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { canSpendFrom } from '@montra/domain';
 import type { CategoryDto, TransactionDto, UpdateTransactionRequest } from '@montra/schemas';
@@ -135,19 +135,19 @@ export default function TransactionDetail() {
           <Body style={{ flex: 1, fontSize: 28, fontWeight: '700' }}>
             {fmtMoney(row.amount, row.currency)}
           </Body>
+          {receiptState ? (
+            <ReceiptButton
+              state={receiptState}
+              onPress={() => {
+                if (receipt) router.push(`/receipts/${receipt.id}`);
+                else if (receiptState === 'waiting') router.push('/receipts');
+                else router.push({ pathname: '/receipt-capture', params: { transactionId: row.id } });
+              }}
+            />
+          ) : null}
         </View>
-        {receiptState ? (
-          <Button
-            kind={receiptState === 'check' ? 'primary' : 'secondary'}
-            icon="receipt"
-            label={t(RECEIPT_LABEL[receiptState])}
-            onPress={() => {
-              if (receipt) router.push(`/receipts/${receipt.id}`);
-              else if (receiptState === 'waiting') router.push('/receipts');
-              else router.push({ pathname: '/receipt-capture', params: { transactionId: row.id } });
-            }}
-            testID={receiptState === 'add' ? 'txn-add-receipt' : 'txn-receipt'}
-          />
+        {receiptState && receiptState !== 'add' && receiptState !== 'view' ? (
+          <Small>{t(RECEIPT_LABEL[receiptState])}</Small>
         ) : null}
         {reconciled ? <Small>{t('mobile.txn.reconciled_note')}</Small> : null}
         {editable ? null : <Small>{t('mobile.role.read_only_books')}</Small>}
@@ -293,3 +293,49 @@ const RECEIPT_LABEL: Record<ReceiptState, string> = {
   check: 'mobile.txn.receipt_check',
   waiting: 'mobile.txn.receipt_waiting',
 };
+
+/** The receipt by the amount: filled when there is one, a quiet "+" when one can be added. */
+function ReceiptButton({ state, onPress }: { state: ReceiptState; onPress: () => void }) {
+  const th = useTheme();
+  const has = state === 'view';
+  const attention = state === 'check';
+  const bg = has ? th.primary : attention ? th.warningSoft : th.primarySoft;
+  const fg = has ? th.onPrimary : attention ? th.warning : th.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={t(RECEIPT_LABEL[state])}
+      testID={state === 'add' ? 'txn-add-receipt' : 'txn-receipt'}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        width: th.tap,
+        height: th.tap,
+        borderRadius: th.tap / 2,
+        backgroundColor: bg,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Icon name="receipt" size={22} color={fg} />
+      {state === 'add' ? (
+        <View
+          style={{
+            position: 'absolute',
+            right: 4,
+            bottom: 4,
+            width: 16,
+            height: 16,
+            borderRadius: 8,
+            backgroundColor: th.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Icon name="add" size={12} color={th.onPrimary} strokeWidth={3} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
