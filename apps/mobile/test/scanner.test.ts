@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest';
+import { asFileUri, scanReceipt } from '../src/features/scanner';
+
+const scanner = (result: { scannedImages?: string[]; status?: string } | Error) => async () => ({
+  default: {
+    scanDocument: async () => {
+      if (result instanceof Error) throw result;
+      return result;
+    },
+  },
+});
+
+describe('the document scanner (ADR-0047)', () => {
+  it('returns the cropped pages as file URIs', async () => {
+    expect(
+      await scanReceipt(
+        scanner({ status: 'success', scannedImages: ['/data/user/0/scan-1.jpg', 'file:///x/2.jpg'] }),
+      ),
+    ).toEqual({ kind: 'scanned', uris: ['file:///data/user/0/scan-1.jpg', 'file:///x/2.jpg'] });
+  });
+
+  it('says when it was closed without a scan', async () => {
+    expect(await scanReceipt(scanner({ status: 'cancel' }))).toEqual({ kind: 'cancelled' });
+    expect(await scanReceipt(scanner({ status: 'success', scannedImages: [] }))).toEqual({
+      kind: 'cancelled',
+    });
+  });
+
+  it('falls back when the scanner isn’t on this phone or fails to start', async () => {
+    const missing = () =>
+      Promise.reject(new Error("TurboModuleRegistry: 'DocumentScanner' could not be found"));
+    expect(await scanReceipt(missing)).toMatchObject({ kind: 'unavailable' });
+    expect(await scanReceipt(scanner(new Error('Google Play services are missing')))).toEqual({
+      kind: 'unavailable',
+      reason: 'Google Play services are missing',
+    });
+  });
+
+  it('leaves URIs alone', () => {
+    expect(asFileUri('content://media/1')).toBe('content://media/1');
+  });
+});

@@ -19,7 +19,7 @@ import {
   uncategorizedLines,
 } from '../../src/features/receipt-capture';
 import { CategoryPicker } from '../../src/ui/CategoryPicker';
-import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
+import { Banner, Body, Button, Card, Disclosure, Row, Screen, Small, Title } from '../../src/ui/components';
 import { Icon } from '../../src/ui/icons';
 import { ReceiptViewer } from '../../src/ui/ReceiptViewer';
 import { SidePanel } from '../../src/ui/SidePanel';
@@ -47,6 +47,8 @@ export default function ReceiptReview() {
   const [picking, setPicking] = useState<string | null>(null);
   // The receipt page open full screen for zooming, if any.
   const [viewing, setViewing] = useState<number | null>(null);
+  // The photos fold away by default: the lines are what's checked here, the photo when something looks off.
+  const [showImage, setShowImage] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const names = new Map(categories.map((c) => [c.id, c.name]));
@@ -162,34 +164,38 @@ export default function ReceiptReview() {
           ) : null}
         </Card>
       ) : null}
-      {pages.map((source, i) => (
-        <Pressable
-          key={source.uri}
-          accessibilityRole="imagebutton"
-          accessibilityLabel={t('mobile.receipts.page_n', { n: i + 1 })}
-          accessibilityHint={t('mobile.receipts.zoom_hint')}
-          onPress={() => setViewing(i)}
-          testID="receipt-page"
+      {pages.length ? (
+        <Disclosure
+          title={t('mobile.receipts.image')}
+          summary={t('mobile.receipts.pages', { count: pages.length })}
+          open={showImage}
+          onToggle={() => setShowImage((v) => !v)}
+          testID="receipt-image-toggle"
         >
-          <Image
-            source={source}
-            style={{ height: 320, borderRadius: th.radius, backgroundColor: th.surface }}
-            resizeMode="contain"
-          />
-        </Pressable>
-      ))}
-      {pages.length ? <Small>{t('mobile.receipts.zoom_hint')}</Small> : null}
+          <View style={{ gap: th.space(2) }}>
+            {pages.map((source, i) => (
+              <Pressable
+                key={source.uri}
+                accessibilityRole="imagebutton"
+                accessibilityLabel={t('mobile.receipts.page_n', { n: i + 1 })}
+                accessibilityHint={t('mobile.receipts.zoom_hint')}
+                onPress={() => setViewing(i)}
+                testID="receipt-page"
+              >
+                <Image
+                  source={source}
+                  style={{ height: 320, borderRadius: th.radius, backgroundColor: th.surface }}
+                  resizeMode="contain"
+                />
+              </Pressable>
+            ))}
+            <Small>{t('mobile.receipts.zoom_hint')}</Small>
+          </View>
+        </Disclosure>
+      ) : null}
 
       {receipt.lines.length ? <Title>{t('mobile.receipts.lines')}</Title> : null}
       {missing > 0 ? <Small>{t('mobile.receipts.uncategorized_count', { count: missing })}</Small> : null}
-      {pages.length && receipt.lines.length ? (
-        <Button
-          kind="secondary"
-          label={t('mobile.receipts.zoom_open')}
-          onPress={() => setViewing(0)}
-          testID="receipt-zoom"
-        />
-      ) : null}
       {receipt.lines.map((l) => {
         const categoryId = picked.has(l.id) ? picked.get(l.id) : l.categoryId;
         return (

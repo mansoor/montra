@@ -22,11 +22,13 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSegments } from 'expo-router';
 import { sparkline, thin } from '../features/planning';
 import { haptic } from './haptics';
 import { Icon, type IconName } from './icons';
 import { useTheme } from './theme';
+import { screenInsets } from './insets';
 
 export function Screen({
   children,
@@ -38,24 +40,29 @@ export function Screen({
   testID?: string;
 }) {
   const th = useTheme();
+  const insets = useSafeAreaInsets();
+  const { top, bottom } = screenInsets(useSegments(), insets);
+  const pad = { padding: th.pad, paddingBottom: th.pad + bottom, gap: th.space(2) };
   const body = scroll ? (
-    <ScrollView
-      contentContainerStyle={{ padding: th.pad, gap: th.space(2) }}
-      keyboardShouldPersistTaps="handled"
-    >
+    <ScrollView contentContainerStyle={pad} keyboardShouldPersistTaps="handled">
       {children}
     </ScrollView>
   ) : (
-    <View style={{ flex: 1, padding: th.pad, gap: th.space(2) }}>{children}</View>
+    <View style={{ flex: 1, ...pad }}>{children}</View>
   );
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: th.bg }}
-      edges={['top', 'left', 'right']}
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: th.bg,
+        paddingTop: top,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+      }}
       testID={testID}
     >
       {body}
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -4,7 +4,7 @@ import { ScrollView, View } from 'react-native';
 import { Stack, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
 import { SessionProvider, useSession } from '../src/session/SessionProvider';
 import { AppLock } from '../src/lock/AppLock';
@@ -18,6 +18,7 @@ function Gate() {
   const { state, updateRequired, twoStepRequired, clearTwoStepRequired } = useSession();
   const router = useRouter();
   const th = useTheme();
+  const insets = useSafeAreaInsets();
   const share = useShareIntentContext();
   const signedIn = state.status === 'signed_in';
 
@@ -50,7 +51,12 @@ function Gate() {
     return (
       <ScrollView
         style={{ flex: 1, backgroundColor: th.bg }}
-        contentContainerStyle={{ padding: th.space(4), gap: th.space(2) }}
+        contentContainerStyle={{
+          padding: th.space(4),
+          paddingTop: th.space(4) + insets.top,
+          paddingBottom: th.space(4) + insets.bottom,
+          gap: th.space(2),
+        }}
         testID="two-step-required"
       >
         <Title>{t('mobile.auth.two_step_title')}</Title>
