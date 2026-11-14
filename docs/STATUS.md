@@ -1066,6 +1066,7 @@ Phase 11 leftovers:
   Home improvement, Uber → Public transit & rideshare). A mortgage's escrowed property tax now lands in Property tax
   (it used to match the first category with "tax" in its name, such as a payslip's Federal income tax), and escrowed
   insurance in Home & renters insurance.
+
 - **Auth gateway** (AUTH-08, [ADR-0042](design/adr/0042-auth-gateway.md), migration 0043): self-hosted Kratos has no
   limits on guessing, so browsers and the phone now reach it only through `apps/api/src/auth-gateway`, its own process
   (`pnpm --filter @montra/api dev:auth-gateway`, port 4455; `auth-gateway` service in Terraform). Kratos's
@@ -1111,7 +1112,15 @@ Phase 11 leftovers:
     an `aal=aal2` login flow.
   - Every flow was run against Kratos v26.2.0 (with `use_continue_with_transitions`, now on in `kratos.yml`). The
     screens haven't been tried on a device. The LAN APK uses development sign-in, so they don't show there yet.
-- **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page (or **Zoom in on the receipt** under the lines) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
+- **Receipt scanning and phone screens** ([ADR-0047](design/adr/0047-receipt-document-scanner.md)):
+  - Capture opens the phone's own document scanner (ML Kit on Android, VisionKit on iPhone), which crops and straightens
+    the receipt. The app's camera is the fallback where the scanner can't run, or when chosen.
+  - Every screen now keeps clear of Android's navigation bar (the last button was under it), and screens with a title
+    bar lost the extra status-bar space at the top (`src/ui/insets.ts`).
+  - The transaction screen has a labelled receipt button and compact split lines. The receipt screen folds the photo
+    away by default, with one zoom hint.
+  - Not yet tried on a device.
+- **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.
 

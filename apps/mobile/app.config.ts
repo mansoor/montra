@@ -44,6 +44,11 @@ const config: ExpoConfig = {
     'expo-local-authentication',
     ['expo-sqlite', { useSQLCipher: true }],
     ['expo-camera', { cameraPermission: 'Montra uses the camera to scan receipts and paper statements.' }],
+    // ADR-0047: the phone's document scanner (ML Kit on Android, VisionKit on iOS) for receipts.
+    [
+      'react-native-document-scanner-plugin',
+      { cameraPermission: 'Montra uses the camera to scan receipts and paper statements.' },
+    ],
     'expo-notifications',
     [
       'expo-speech-recognition',
