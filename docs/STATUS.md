@@ -1182,10 +1182,27 @@ Phase 11 leftovers:
     (tiers, prices by Stripe price id, entitlements, versions), each with an AI allowance; a staff `owner` role above
     `admin`; suspending, trials, given plans and closing accounts; a Providers page that shows but never stores keys;
     texts through Twilio (Kratos's SMS channel and an `SmsPort`). Five PRs, in the order the ADR gives.
-  - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
-    and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
-    with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and
-    alerts that don't belong to one cloud. AWS stays as one target.
+  - [ADR-0050](design/adr/0050-hosting-anywhere.md) (**accepted** 2026-11-14): Montra needs containers, PostgreSQL 16,
+    S3-compatible storage, SMTP and secrets, nothing more. AWS stays as one target. **The owner starts on a home server
+    for family and friends, and moves to a VPS when real customers come** (§11): a Cloudflare Tunnel (no inbound ports,
+    no dynamic-IP problem), email through a sending service over SMTP, a UPS and mirrored disks, `BILLING_MODE=off`.
+    Built in four PRs:
+    1. ✅ **Application changes** (`claude/selfhost`):
+       - **`_FILE` secrets:** every API setting (`apps/api/src/secret-files.ts`), the API's command-line tools and the
+         migration command, the doc-worker (`settings.py`), and Kratos through a small Go entrypoint in its distroless
+         image (`infra/kratos/entrypoint`, tested in the image build; only Kratos's secret-bearing settings, as the
+         base image's own `SSL_CERT_FILE` is a path). Checked: the built image reads `DSN_FILE`. Both set is an error; empty means not set.
+       - **`KMS_MODE=local` in production** from `MASTER_KEY_FILE` only; a key file its group or others can read is
+         refused. On Windows the mode isn't checked (no Unix permissions).
+       - **`KMS_MODE=vault`** (`crypto/vault-kms.ts`): Vault or OpenBao Transit; `VAULT_TOKEN_FILE` is read on every
+         call for a Vault Agent. Tested against a stand-in for the Transit API, not a real Vault.
+       - **`crypto:rewrap`** (`crypto/rewrap.ts`, `crypto-cli.ts`): with `KMS_PREVIOUS_MODE` set, the service unwraps
+         with either mode (`MovingKms`) while the command moves workspace, backup-schedule, restore and queued-backup
+         keys. It resumes by skipping keys the new mode already unwraps, so it needs no table (and no migration).
+         Runbook: `docs/runbooks/key-wrapping.md`.
+    2. ❌ The self-hosted target: `infra/selfhost`, GHCR images, the `selfhost` deploy step, setup and operations runbooks.
+    3. ❌ Portable backups and alerts: pgBackRest or WAL-G, rclone, Alertmanager rules, a self-hosted restore drill.
+    4. ❌ `docs/runbooks/moving-platforms.md`.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

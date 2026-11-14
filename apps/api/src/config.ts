@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  assertPrivateKeyFile,
+  realFiles,
+  resolveSecretFiles,
+  type SecretFileSystem,
+} from './secret-files.js';
 
 const Env = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -78,9 +84,25 @@ const Env = z.object({
   METRICS_TOKEN: z.string().min(16).optional(),
   /** Where a new question or bug report is announced (OPS-09). */
   SUPPORT_EMAIL: z.string().email().optional(),
-  /** Key wrapping (NFR-01): 'local' for development and tests, 'aws' for AWS KMS. */
-  KMS_MODE: z.enum(['local', 'aws']).default('local'),
+  /**
+   * Key wrapping (NFR-01, ADR-0050 §3): 'local' wraps with a master key (from MASTER_KEY_FILE in production), 'aws' with
+   * AWS KMS, 'vault' with the Transit engine of HashiCorp Vault or OpenBao.
+   */
+  KMS_MODE: z.enum(['local', 'aws', 'vault']).default('local'),
+  /**
+   * While moving keys to KMS_MODE (`crypto:rewrap`), the mode they were wrapped with. Unwrapping falls back to it, so
+   * the service runs throughout the move. New keys are always wrapped with KMS_MODE.
+   */
+  KMS_PREVIOUS_MODE: z.enum(['local', 'aws', 'vault']).optional(),
   AWS_KMS_KEY_ID: z.string().optional(),
+  /** Vault or OpenBao (KMS_MODE=vault), e.g. https://vault.internal:8200. */
+  VAULT_ADDR: z.string().url().optional(),
+  /** A token allowed only `encrypt` and `decrypt` on the key. VAULT_TOKEN_FILE is read again on each call. */
+  VAULT_TOKEN: z.string().optional(),
+  VAULT_TOKEN_FILE: z.string().optional(),
+  VAULT_NAMESPACE: z.string().optional(),
+  VAULT_TRANSIT_MOUNT: z.string().default('transit'),
+  VAULT_TRANSIT_KEY: z.string().default('montra'),
   /** FX rates (CUR-05, ADR-0014): ECB euro reference rates, no key needed. */
   FX_ECB_URL: z.string().url().default('https://www.ecb.europa.eu/stats/eurofxref'),
   /** Optional second source covering more currencies (Open Exchange Rates app id). */
@@ -93,8 +115,13 @@ const Env = z.object({
     .transform((v) => v === 'true'),
   /** Public web origin used in links inside emails. */
   WEB_URL: z.string().url().default('http://localhost:3000'),
-  /** Base64 32-byte master key for the local KMS adapter (development); production uses AWS KMS. */
+  /**
+   * Base64 32-byte master key for KMS_MODE=local. In production it must come from MASTER_KEY_FILE, a file only its
+   * owner can read. Without one, development and tests use a fixed insecure key.
+   */
   MASTER_KEY: z.string().optional(),
+  /** The master key being replaced, when KMS_PREVIOUS_MODE=local (a new local key, or local to another mode). */
+  PREVIOUS_MASTER_KEY: z.string().optional(),
 
   /**
    * AI gateway (06, ADR-0012). The built-in mode uses `AI_PROVIDER` with Montra's key; `fake` is the
@@ -121,15 +148,29 @@ const Env = z.object({
 export type AppConfig = z.infer<typeof Env>;
 
 /**
+ * Settings that are read from `NAME_FILE` when given that way (ADR-0050 §2). VAULT_TOKEN is the exception: its file is
+ * kept as a path, and read again on each call (`VaultKms`).
+ */
+const FILE_SETTINGS = Object.keys(Env.shape).filter((name) => !name.startsWith('VAULT_TOKEN'));
+const MASTER_KEYS = ['MASTER_KEY', 'PREVIOUS_MASTER_KEY'] as const;
+
+/**
  * @param opts.process `auth-gateway` checks only what the gateway uses (ADR-0042): it holds no data key and no staff
  *   connection, so it isn't given their secrets.
+ * @param opts.files where `NAME_FILE` settings are read from (tests replace it).
  */
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
-  opts: { process?: 'api' | 'auth-gateway' } = {},
+  opts: { process?: 'api' | 'auth-gateway'; files?: SecretFileSystem } = {},
 ): AppConfig {
   // ECS needs a value in every secret, so one that isn't in use arrives empty, which means not set.
-  const config = Env.parse(Object.fromEntries(Object.entries(env).filter(([, v]) => v !== '')));
+  const files = opts.files ?? realFiles;
+  const resolved = resolveSecretFiles(env, FILE_SETTINGS, files);
+  if (resolved.env.VAULT_TOKEN && resolved.env.VAULT_TOKEN_FILE)
+    throw new Error('Set VAULT_TOKEN or VAULT_TOKEN_FILE, not both');
+  if (resolved.env.VAULT_TOKEN_FILE)
+    resolved.env.VAULT_TOKEN = files.read(resolved.env.VAULT_TOKEN_FILE).trim();
+  const config = Env.parse(resolved.env);
   if (config.NODE_ENV === 'production' && config.AUTH_MODE === 'dev') {
     throw new Error('AUTH_MODE=dev is not allowed in production');
   }
@@ -148,12 +189,7 @@ export function loadConfig(
     throw new Error('S3_BUCKET is required when STORAGE_MODE=s3');
   if (config.MAIL_MODE === 'smtp' && !config.MAIL_URL)
     throw new Error('MAIL_URL is required when MAIL_MODE=smtp');
-  if (config.NODE_ENV === 'production' && config.KMS_MODE === 'local' && !config.MASTER_KEY) {
-    throw new Error('MASTER_KEY (or KMS_MODE=aws) is required in production');
-  }
-  if (config.KMS_MODE === 'aws' && !config.AWS_KMS_KEY_ID) {
-    throw new Error('AWS_KMS_KEY_ID is required when KMS_MODE=aws');
-  }
+  checkKeyWrapping(config, resolved.fromFiles, files);
   if (config.NODE_ENV === 'production' && !(config.ADMIN_DATABASE_URL && config.SUPPORT_DATABASE_URL)) {
     throw new Error('ADMIN_DATABASE_URL and SUPPORT_DATABASE_URL are required in production');
   }
@@ -161,6 +197,49 @@ export function loadConfig(
     throw new Error('STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are required when BILLING_MODE=stripe');
   }
   return config;
+}
+
+/** ADR-0050 §3: each mode's settings, the production rules for a master key, and what a move between modes needs. */
+function checkKeyWrapping(config: AppConfig, fromFiles: Map<string, string>, files: SecretFileSystem): void {
+  const production = config.NODE_ENV === 'production';
+  const previous = config.KMS_PREVIOUS_MODE;
+  const modes = previous ? [config.KMS_MODE, previous] : [config.KMS_MODE];
+  for (const name of MASTER_KEYS) {
+    const path = fromFiles.get(name);
+    if (path) assertPrivateKeyFile(name, path, files);
+    else if (production && config[name]) throw new Error(`In production, give ${name} as ${name}_FILE`);
+  }
+  if (config.KMS_MODE === 'local' && production && !config.MASTER_KEY) {
+    throw new Error('MASTER_KEY_FILE (or KMS_MODE=aws or vault) is required in production');
+  }
+  if (modes.includes('aws') && !config.AWS_KMS_KEY_ID) {
+    throw new Error('AWS_KMS_KEY_ID is required when KMS_MODE=aws');
+  }
+  if (modes.includes('vault') && !(config.VAULT_ADDR && config.VAULT_TOKEN)) {
+    throw new Error('VAULT_ADDR and VAULT_TOKEN (or VAULT_TOKEN_FILE) are required when KMS_MODE=vault');
+  }
+  if (previous === 'local' && !previousMasterKey(config)) {
+    throw new Error('KMS_PREVIOUS_MODE=local needs the old key in PREVIOUS_MASTER_KEY_FILE');
+  }
+  if (previous && previous === config.KMS_MODE && previous !== 'local') {
+    // AWS KMS and Vault rotate their own keys; a move within one of them isn't Montra's to make.
+    throw new Error(`KMS_PREVIOUS_MODE is the same as KMS_MODE (${previous})`);
+  }
+  if (
+    previous === 'local' &&
+    config.KMS_MODE === 'local' &&
+    config.PREVIOUS_MASTER_KEY === config.MASTER_KEY
+  ) {
+    throw new Error('PREVIOUS_MASTER_KEY is the same key as MASTER_KEY');
+  }
+}
+
+/**
+ * The old master key when KMS_PREVIOUS_MODE=local: PREVIOUS_MASTER_KEY, or MASTER_KEY when moving away from local, so a
+ * move to Vault or AWS can keep the key file where it is.
+ */
+export function previousMasterKey(config: AppConfig): string | undefined {
+  return config.PREVIOUS_MASTER_KEY ?? (config.KMS_MODE === 'local' ? undefined : config.MASTER_KEY);
 }
 
 export const CONFIG = Symbol('CONFIG');

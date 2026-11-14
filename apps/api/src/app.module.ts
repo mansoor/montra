@@ -21,7 +21,8 @@ import { AccountsController } from './accounts/accounts.controller.js';
 import { TransactionsService } from './transactions/transactions.service.js';
 import { TransactionsController } from './transactions/transactions.controller.js';
 import { HealthController } from './health/health.controller.js';
-import { AwsKms, FieldCrypto, KMS_PORT, LocalKms } from './crypto/crypto.service.js';
+import { FieldCrypto, KMS_PORT } from './crypto/crypto.service.js';
+import { createKms } from './crypto/kms.js';
 import { AdminService } from './ops/admin.service.js';
 import { billingProvider } from './ops/billing.port.js';
 import { BillingService } from './ops/billing.service.js';
@@ -215,7 +216,7 @@ export class AppModule {
         TransactionsService,
         TransactionPoster,
         RecurringService,
-        { provide: KMS_PORT, useClass: config.KMS_MODE === 'aws' ? AwsKms : LocalKms },
+        { provide: KMS_PORT, useFactory: () => createKms(config) },
         errorReporterProvider(config),
         billingProvider(config),
         BillingService,
