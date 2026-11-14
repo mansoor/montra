@@ -40,7 +40,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const canChange = staff.role === 'admin' || isOwner;
   let body;
   if (tab === 'accounts') {
-    body = <AccountLookup canChange={canChange} />;
+    const plans = (await load((api) => api.adminPlans())).map((p) => ({ key: p.key, name: p.name }));
+    body = <AccountLookup canChange={canChange} isOwner={isOwner} plans={plans} />;
   } else if (tab === 'support') {
     body = <SupportRequestsPanel requests={await load((api) => api.adminSupportRequests())} />;
   } else if (tab === 'plans') {

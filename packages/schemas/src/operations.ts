@@ -175,6 +175,12 @@ export const AdminAccountDto = z.object({
   createdAt: z.string(),
   deletedAt: z.string().nullable(),
   workspaces: z.number().int(),
+  /** ADR-0049 §4: suspended, and why. Null when not. */
+  suspension: z
+    .object({ kind: z.enum(['abuse', 'fraud', 'legal_hold']), reason: z.string(), at: z.string() })
+    .nullable(),
+  /** Set while the account is closing, until then. */
+  purgeAfter: z.string().nullable(),
 });
 export type AdminAccountDto = z.infer<typeof AdminAccountDto>;
 
@@ -194,12 +200,17 @@ export const AdminWorkspaceDto = z.object({
   deletedAt: z.string().nullable(),
   /** Set when the owner has let support look, until then. */
   supportUntil: z.string().nullable(),
+  planName: z.string(),
+  trialEnd: z.string().nullable(),
 });
 export type AdminWorkspaceDto = z.infer<typeof AdminWorkspaceDto>;
 
+/** A given plan (ADR-0049 §4): provider `comp`, until a date. Free takes a given plan away. */
 export const AdminSetPlanRequest = z.object({
   plan: PlanDto,
   reason: z.string().trim().min(3).max(500),
+  /** The last day it's given, required for any plan but Free. */
+  until: z.iso.date().optional(),
 });
 export type AdminSetPlanRequest = z.output<typeof AdminSetPlanRequest>;
 
@@ -448,3 +459,36 @@ export type MoveSubscribersRequest = z.output<typeof MoveSubscribersRequest>;
 
 export const MoveSubscribersDto = z.object({ moved: z.number().int(), when: z.enum(['now', 'renewal']) });
 export type MoveSubscribersDto = z.infer<typeof MoveSubscribersDto>;
+
+// ----- Managing accounts (ADR-0049 §4) ------------------------------------------------------------
+
+/** Never for a missed payment: that's a lapse (ADR-0020 §3). A legal hold isn't emailed to the person. */
+export const SuspensionKind = z.enum(['abuse', 'fraud', 'legal_hold']);
+export type SuspensionKind = z.infer<typeof SuspensionKind>;
+
+export const SuspendRequest = z.object({
+  kind: SuspensionKind,
+  reason: z.string().trim().min(3).max(500),
+});
+export type SuspendRequest = z.output<typeof SuspendRequest>;
+
+export const ExtendTrialRequest = z.object({
+  days: z.number().int().min(1).max(30),
+  reason: z.string().trim().min(3).max(500),
+});
+export type ExtendTrialRequest = z.output<typeof ExtendTrialRequest>;
+
+export const CouponRequest = z.object({
+  /** A coupon made in Stripe's dashboard. */
+  coupon: z.string().trim().min(1).max(200),
+  reason: z.string().trim().min(3).max(500),
+});
+export type CouponRequest = z.output<typeof CouponRequest>;
+
+/** Closing on request: it must come from the account's own address, and staff record where it came. */
+export const CloseAccountRequest = z.object({
+  fromEmail: z.email().transform((e) => e.toLowerCase()),
+  channel: z.enum(['email', 'support_request', 'phone', 'letter']),
+  note: z.string().trim().max(500).default(''),
+});
+export type CloseAccountRequest = z.output<typeof CloseAccountRequest>;

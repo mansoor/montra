@@ -37,6 +37,8 @@ describe('session modes (ADR-0006)', () => {
       `/settings/security?setup=mfa&return_to=${encodeURIComponent('http://localhost:3000/w/1')}`,
     );
     expect(stepUpHref('email.unverified', '/')).toBe('/auth/verification');
+    expect(stepUpHref('account.suspended', '/w/1')).toBe('/account-closed');
+    expect(stepUpHref('workspace.suspended', '/w/1')).toBe('/account-closed?workspace=1');
     expect(stepUpHref('forbidden', '/')).toBeNull();
   });
 

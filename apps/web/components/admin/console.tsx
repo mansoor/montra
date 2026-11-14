@@ -13,26 +13,34 @@ import type {
 import Link from 'next/link';
 import { useState } from 'react';
 import { browserApi } from '@/lib/browser-api';
+import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
 const gb = (bytes: string) => (Number(bytes) / 1024 ** 3).toFixed(2);
 
-/** OPS-01: finding an account. People and plans only: there's nothing about money to show. */
-export function AccountLookup({ canChange }: { canChange: boolean }) {
-  const { run, busy, message, t } = useAction();
+/** OPS-01, ADR-0049 §4: finding and managing an account. People and plans only: there's nothing about money to show. */
+export function AccountLookup({
+  canChange,
+  isOwner,
+  plans,
+}: {
+  canChange: boolean;
+  isOwner: boolean;
+  plans: { key: string; name: string }[];
+}) {
+  const { run, busy, message, t, locale } = useActionWithLocale();
   const [q, setQ] = useState('');
   const [accounts, setAccounts] = useState<AdminAccountDto[] | null>(null);
   const [workspaces, setWorkspaces] = useState<Record<string, AdminWorkspaceDto[]>>({});
+  const search = async () => {
+    const rows = await run(() => browserApi.adminAccounts(q));
+    if (rows) setAccounts(rows);
+  };
   const open = async (id: string) => {
     const rows = await run(() => browserApi.adminAccountWorkspaces(id));
     if (rows) setWorkspaces((w) => ({ ...w, [id]: rows }));
   };
-  const setPlan = async (accountId: string, workspaceId: string, plan: 'free' | 'pro') => {
-    const reason = window.prompt(t('admin.plan_reason'));
-    if (!reason) return;
-    const done = await run(() => browserApi.adminSetPlan(workspaceId, { plan, reason }), t('admin.saved'));
-    if (done !== undefined) await open(accountId);
-  };
+  const date = (iso: string) => new Date(iso).toLocaleDateString(locale);
   return (
     <section className="space-y-3" aria-label={t('admin.tab.accounts')}>
       <form
@@ -40,8 +48,7 @@ export function AccountLookup({ canChange }: { canChange: boolean }) {
         role="search"
         onSubmit={async (e) => {
           e.preventDefault();
-          const rows = await run(() => browserApi.adminAccounts(q));
-          if (rows) setAccounts(rows);
+          await search();
         }}
       >
         <label>
@@ -62,12 +69,24 @@ export function AccountLookup({ canChange }: { canChange: boolean }) {
               <p className="text-xs text-muted">
                 {a.displayName} · {t('admin.workspaces', { count: a.workspaces })}
                 {a.deletedAt && ` · ${t('admin.deleting')}`}
+                {a.purgeAfter && ` · ${t('admin.closing_until', { date: date(a.purgeAfter) })}`}
               </p>
+              {a.suspension && (
+                <p className="text-xs text-warn" data-testid="admin-suspended">
+                  {t('admin.suspended', {
+                    kind: t(`admin.suspend_kind.${a.suspension.kind}`),
+                    date: date(a.suspension.at),
+                  })}
+                  {' · '}
+                  {a.suspension.reason}
+                </p>
+              )}
             </div>
             <button type="button" className="btn-secondary" onClick={() => open(a.id)}>
               {t('admin.open')}
             </button>
           </div>
+          {canChange && <AccountActions account={a} isOwner={isOwner} onDone={search} />}
           {workspaces[a.id]?.map((w) => (
             <div
               key={w.id}
@@ -76,9 +95,13 @@ export function AccountLookup({ canChange }: { canChange: boolean }) {
             >
               <p className="font-medium">{w.name}</p>
               <p className="text-xs text-muted">
-                {w.plan} · {w.status}
-                {w.provider && ` · ${w.provider}`} · {gb(w.usedBytes)} / {gb(w.quotaBytes)} GB ·{' '}
-                {t('admin.members', { count: w.members })}
+                {w.planName} ({w.plan}) · {w.status}
+                {w.provider && ` · ${w.provider}`}
+                {w.trialEnd &&
+                  w.status === 'trialing' &&
+                  ` · ${t('admin.trial_until', { date: date(w.trialEnd) })}`}
+                {' · '}
+                {gb(w.usedBytes)} / {gb(w.quotaBytes)} GB · {t('admin.members', { count: w.members })}
               </p>
               <div className="flex flex-wrap gap-2">
                 {w.supportUntil ? (
@@ -88,17 +111,8 @@ export function AccountLookup({ canChange }: { canChange: boolean }) {
                 ) : (
                   <span className="text-xs text-muted">{t('admin.support_none')}</span>
                 )}
-                {canChange && (
-                  <button
-                    type="button"
-                    className="underline"
-                    disabled={busy}
-                    onClick={() => setPlan(a.id, w.id, w.plan === 'pro' ? 'free' : 'pro')}
-                  >
-                    {t(w.plan === 'pro' ? 'admin.plan_free' : 'admin.plan_pro')}
-                  </button>
-                )}
               </div>
+              {canChange && <WorkspaceActions workspace={w} plans={plans} onDone={() => open(a.id)} />}
             </div>
           ))}
         </div>
@@ -107,6 +121,278 @@ export function AccountLookup({ canChange }: { canChange: boolean }) {
   );
 }
 
+function useActionWithLocale() {
+  const a = useAction();
+  const { locale } = useI18n();
+  return { ...a, locale };
+}
+
+/** Suspend or restore (admin), and close on request (owner). */
+function AccountActions({
+  account: a,
+  isOwner,
+  onDone,
+}: {
+  account: AdminAccountDto;
+  isOwner: boolean;
+  onDone: () => Promise<void>;
+}) {
+  const { run, busy, message, t } = useAction();
+  const [open, setOpen] = useState<'suspend' | 'close' | null>(null);
+  const [kind, setKind] = useState<'abuse' | 'fraud' | 'legal_hold'>('abuse');
+  const [reason, setReason] = useState('');
+  const [fromEmail, setFromEmail] = useState('');
+  const [channel, setChannel] = useState<'email' | 'support_request' | 'phone' | 'letter'>('email');
+  const [note, setNote] = useState('');
+  const done = async (r: unknown) => {
+    if (r !== undefined) {
+      setOpen(null);
+      await onDone();
+    }
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2 text-sm">
+        {a.suspension ? (
+          <button
+            type="button"
+            className="underline"
+            disabled={busy}
+            onClick={async () =>
+              done(await run(() => browserApi.adminRestoreAccount(a.id), t('admin.saved')))
+            }
+          >
+            {t('admin.restore')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="underline"
+            onClick={() => setOpen(open === 'suspend' ? null : 'suspend')}
+          >
+            {t('admin.suspend')}
+          </button>
+        )}
+        {isOwner && !a.purgeAfter && (
+          <button
+            type="button"
+            className="underline"
+            onClick={() => setOpen(open === 'close' ? null : 'close')}
+          >
+            {t('admin.close_account')}
+          </button>
+        )}
+      </div>
+      {open === 'suspend' && (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          aria-label={t('admin.suspend')}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            await done(
+              await run(() => browserApi.adminSuspendAccount(a.id, { kind, reason }), t('admin.saved')),
+            );
+          }}
+        >
+          <label>
+            <span className="field-label">{t('admin.suspend_why')}</span>
+            <select className="input" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+              {(['abuse', 'fraud', 'legal_hold'] as const).map((k) => (
+                <option key={k} value={k}>
+                  {t(`admin.suspend_kind.${k}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grow">
+            <span className="field-label">{t('admin.reason')}</span>
+            <input
+              className="input w-full"
+              required
+              minLength={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn-danger" disabled={busy}>
+            {t('admin.suspend')}
+          </button>
+          <p className="w-full text-xs text-muted">{t('admin.suspend_hint')}</p>
+        </form>
+      )}
+      {open === 'close' && (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          aria-label={t('admin.close_account')}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            await done(
+              await run(
+                () => browserApi.adminCloseAccount(a.id, { fromEmail, channel, note }),
+                t('admin.saved'),
+              ),
+            );
+          }}
+        >
+          <label>
+            <span className="field-label">{t('admin.close_from')}</span>
+            <input
+              className="input"
+              type="email"
+              required
+              value={fromEmail}
+              onChange={(e) => setFromEmail(e.target.value)}
+            />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.close_channel')}</span>
+            <select
+              className="input"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as typeof channel)}
+            >
+              {(['email', 'support_request', 'phone', 'letter'] as const).map((c) => (
+                <option key={c} value={c}>
+                  {t(`admin.close_channel_${c}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grow">
+            <span className="field-label">{t('admin.close_note')}</span>
+            <input className="input w-full" value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <button type="submit" className="btn-danger" disabled={busy}>
+            {t('admin.close_account')}
+          </button>
+          <p className="w-full text-xs text-muted">{t('admin.close_hint')}</p>
+        </form>
+      )}
+      <StatusLine message={message} />
+    </div>
+  );
+}
+
+/** Extend a trial, give a plan until a date, or give a Stripe coupon (admin). */
+function WorkspaceActions({
+  workspace: w,
+  plans,
+  onDone,
+}: {
+  workspace: AdminWorkspaceDto;
+  plans: { key: string; name: string }[];
+  onDone: () => Promise<void>;
+}) {
+  const { run, busy, message, t } = useAction();
+  const [action, setAction] = useState<'' | 'trial' | 'plan' | 'coupon'>('');
+  const [days, setDays] = useState('14');
+  const [plan, setPlan] = useState(plans.find((p) => p.key !== 'free')?.key ?? 'free');
+  const [until, setUntil] = useState('');
+  const [coupon, setCoupon] = useState('');
+  const [reason, setReason] = useState('');
+  const paying = w.provider === 'stripe' && w.status !== 'canceled' && w.status !== 'none';
+  const submit = async () => {
+    const r =
+      action === 'trial'
+        ? await run(() => browserApi.adminExtendTrial(w.id, { days: Number(days), reason }), t('admin.saved'))
+        : action === 'plan'
+          ? await run(
+              () => browserApi.adminSetPlan(w.id, { plan, reason, ...(plan === 'free' ? {} : { until }) }),
+              t('admin.saved'),
+            )
+          : await run(() => browserApi.adminGiveCoupon(w.id, { coupon, reason }), t('admin.saved'));
+    if (r !== undefined) {
+      setAction('');
+      await onDone();
+    }
+  };
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2"
+      aria-label={t('admin.workspace_actions', { name: w.name })}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        await submit();
+      }}
+    >
+      <label>
+        <span className="field-label">{t('admin.workspace_action')}</span>
+        <select className="input" value={action} onChange={(e) => setAction(e.target.value as typeof action)}>
+          <option value="" />
+          {w.status === 'trialing' && <option value="trial">{t('admin.trial_extend')}</option>}
+          {paying ? (
+            <option value="coupon">{t('admin.coupon_give')}</option>
+          ) : (
+            <option value="plan">{t('admin.plan_give')}</option>
+          )}
+        </select>
+      </label>
+      {action === 'trial' && (
+        <label>
+          <span className="field-label">{t('admin.trial_days')}</span>
+          <input
+            className="input w-20"
+            type="number"
+            min={1}
+            max={30}
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+          />
+        </label>
+      )}
+      {action === 'plan' && (
+        <>
+          <label>
+            <span className="field-label">{t('admin.plan_name')}</span>
+            <select className="input" value={plan} onChange={(e) => setPlan(e.target.value)}>
+              {plans.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {plan !== 'free' && (
+            <label>
+              <span className="field-label">{t('admin.plan_until')}</span>
+              <input
+                className="input"
+                type="date"
+                required
+                value={until}
+                onChange={(e) => setUntil(e.target.value)}
+              />
+            </label>
+          )}
+        </>
+      )}
+      {action === 'coupon' && (
+        <label>
+          <span className="field-label">{t('admin.coupon')}</span>
+          <input className="input" required value={coupon} onChange={(e) => setCoupon(e.target.value)} />
+        </label>
+      )}
+      {action && (
+        <>
+          <label className="grow">
+            <span className="field-label">{t('admin.reason')}</span>
+            <input
+              className="input w-full"
+              required
+              minLength={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn-secondary" disabled={busy}>
+            {t('admin.save')}
+          </button>
+        </>
+      )}
+      <StatusLine message={message} />
+    </form>
+  );
+}
 export function FlagsPanel({ flags, canChange }: { flags: FeatureFlagDto[]; canChange: boolean }) {
   const { run, busy, message, t } = useAction();
   const [key, setKey] = useState('');

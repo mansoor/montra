@@ -26,6 +26,9 @@ export interface SubscriptionRow {
   status: string;
   trial_end: Date | null;
   grace_until: Date | null;
+  /** From migration 0053. A given plan (`comp`) ends at its period's end, as a trial does. */
+  provider?: string | null;
+  current_period_end?: Date | null;
 }
 
 export interface PlanVersionRow {
@@ -166,8 +169,14 @@ export class Plans {
   /** The workspace in context: its plan's version now, and what it allows. */
   async current(trx: Trx, now: Date = new Date()): Promise<CurrentPlan> {
     const subscription = await this.subscription(trx);
+    const givenAndOver =
+      subscription?.provider === 'comp' &&
+      subscription.current_period_end !== null &&
+      subscription.current_period_end !== undefined &&
+      subscription.current_period_end <= now;
     const counts =
       subscription !== null &&
+      !givenAndOver &&
       subscriptionCounts(
         {
           plan: subscription.plan,

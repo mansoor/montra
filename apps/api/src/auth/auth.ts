@@ -51,6 +51,8 @@ export interface AuthPort {
    * (ADR-0044). Null when the sign-in service can't say.
    */
   hasSecondFactor(identityId: string): Promise<boolean | null>;
+  /** ADR-0049 §4: suspending stops sign-in and ends every session; restoring lets them sign in again. */
+  setIdentityActive(identityId: string, active: boolean): Promise<void>;
 }
 
 /** The roles that must use two-step verification under a workspace's `standard` policy (ADR-0044). */
@@ -140,6 +142,8 @@ export class DevAuthAdapter implements AuthPort {
 
   async removeSecondFactors(): Promise<void> {}
 
+  async setIdentityActive(): Promise<void> {}
+
   async hasSecondFactor(): Promise<boolean> {
     return true;
   }
@@ -177,7 +181,16 @@ export class AuthGuard implements CanActivate {
     // The way back stays open, and so does reading their own profile: the page that explains this needs their language.
     const stillOpen =
       /\/v1\/me\/deletion(\?|$)/.test(req.url) || (req.method === 'GET' && /\/v1\/me(\?|$)/.test(req.url));
-    if (!stillOpen && (await this.isDeleting(user.id))) {
+    const state = await this.accountState(user.id);
+    // ADR-0049 §4: suspended by staff. Kratos already refuses new sign-ins; this ends anything still open.
+    if (state.suspended) {
+      throw new AppError(
+        403,
+        'account.suspended',
+        'This account is suspended. Contact support to find out more.',
+      );
+    }
+    if (!stillOpen && state.deleting) {
       throw new AppError(
         403,
         'account.deleting',
@@ -188,11 +201,16 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
-  private async isDeleting(userId: string): Promise<boolean> {
+  private async accountState(userId: string): Promise<{ deleting: boolean; suspended: boolean }> {
     const row = await this.db.run({ userId }, (trx) =>
-      trx.selectFrom('app.app_user').select('deleted_at').where('id', '=', userId).executeTakeFirst(),
+      trx
+        .selectFrom('app.app_user')
+        .select('deleted_at')
+        .select(sql<boolean>`app.user_suspended(${userId}::uuid)`.as('suspended'))
+        .where('id', '=', userId)
+        .executeTakeFirst(),
     );
-    return Boolean(row?.deleted_at);
+    return { deleting: Boolean(row?.deleted_at), suspended: Boolean(row?.suspended) };
   }
 }
 
@@ -239,6 +257,18 @@ export class WorkspaceGuard implements CanActivate {
     );
     // Same response whether the workspace exists or not.
     if (!member) throw forbidden();
+    // ADR-0049 §4: a workspace whose owner is suspended is closed to every member, with its data kept.
+    const closed = await this.db.run({ userId: ctx.user.id }, (trx) =>
+      sql<{ closed: boolean }>`select app.workspace_suspended(${workspaceId}::uuid) as closed`.execute(trx),
+    );
+    if (closed.rows[0]?.closed) {
+      const support = this.config.SUPPORT_EMAIL ? ` at ${this.config.SUPPORT_EMAIL}` : '';
+      throw new AppError(
+        403,
+        'workspace.suspended',
+        `This workspace is closed for now. Contact support${support}.`,
+      );
+    }
     // AUTH-04, ADR-0044: who must have signed in with a second factor. Only asked of a session without one.
     if (
       ctx.user.aal !== 'aal2' &&

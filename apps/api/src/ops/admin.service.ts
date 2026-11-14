@@ -5,11 +5,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
-import { FREE_PLAN, maintenanceNoticeOk } from '@montra/domain';
+import { maintenanceNoticeOk } from '@montra/domain';
 import type {
   AiCeilingDto,
   AdminAccountDto,
-  AdminSetPlanRequest,
   AdminSupportRequestDto,
   AdminWorkspaceDto,
   AiAccuracyRowDto,
@@ -65,14 +64,31 @@ export class AdminService {
         deleted_at: Date | null;
         workspaces: string;
       }>`select * from app.admin_find_accounts(${query.trim()})`.execute(trx);
-      return rows.map((r) => ({
-        id: r.id,
-        email: r.email,
-        displayName: r.display_name,
-        createdAt: r.created_at.toISOString(),
-        deletedAt: iso(r.deleted_at),
-        workspaces: Number(r.workspaces),
-      }));
+      // ADR-0049 §4: whether each is suspended, and closing.
+      const { rows: states } = await sql<{
+        user_id: string;
+        kind: 'abuse' | 'fraud' | 'legal_hold' | null;
+        reason: string | null;
+        suspended_at: Date | null;
+        purge_after: Date | null;
+      }>`select * from app.admin_account_states(${rows.map((r) => r.id)}::uuid[])`.execute(trx);
+      const state = new Map(states.map((x) => [x.user_id, x]));
+      return rows.map((r) => {
+        const st = state.get(r.id);
+        return {
+          id: r.id,
+          email: r.email,
+          displayName: r.display_name,
+          createdAt: r.created_at.toISOString(),
+          deletedAt: iso(r.deleted_at),
+          workspaces: Number(r.workspaces),
+          suspension:
+            st?.kind && st.suspended_at
+              ? { kind: st.kind, reason: st.reason ?? '', at: st.suspended_at.toISOString() }
+              : null,
+          purgeAfter: iso(st?.purge_after),
+        };
+      });
     });
   }
 
@@ -94,7 +110,12 @@ export class AdminService {
         deleted_at: Date | null;
         support_until: Date | null;
       }>`select * from app.admin_account_workspaces(${userId}::uuid)`.execute(trx);
+      const { rows: plans } = await sql<{ workspace_id: string; plan_name: string; trial_end: Date | null }>`
+        select * from app.admin_workspace_plans(${rows.map((r) => r.id)}::uuid[])`.execute(trx);
+      const plan = new Map(plans.map((p) => [p.workspace_id, p]));
       return rows.map((r) => ({
+        planName: plan.get(r.id)?.plan_name ?? r.plan,
+        trialEnd: iso(plan.get(r.id)?.trial_end),
         id: r.id,
         name: r.name,
         role: r.role,
@@ -110,38 +131,6 @@ export class AdminService {
         deletedAt: iso(r.deleted_at),
         supportUntil: iso(r.support_until),
       }));
-    });
-  }
-
-  /** A complimentary plan, or taking one away. A workspace paying through a provider is changed there, not here. */
-  async setPlan(staffId: string, workspaceId: string, req: AdminSetPlanRequest): Promise<void> {
-    await this.db.run(async (trx) => {
-      const { rows } = await sql<{ provider: string | null; status: string }>`
-        select * from app.admin_subscription(${workspaceId}::uuid)`.execute(trx);
-      const current = rows[0];
-      if (current?.provider && current.provider !== 'staff' && current.status !== 'canceled') {
-        throw unprocessable(
-          'billing.provider_managed',
-          'This plan is paid for. Change it with the payment provider.',
-        );
-      }
-      // New customers get a plan's latest version, and so does a plan given here (ADR-0049 §1).
-      const version = await trx
-        .selectFrom('app.plan_version')
-        .select(['id', 'version'])
-        .where('plan_key', '=', req.plan)
-        .orderBy('version', 'desc')
-        .limit(1)
-        .executeTakeFirst();
-      if (!version) throw unprocessable('plan.unknown', 'There is no such plan');
-      const paid = req.plan !== FREE_PLAN;
-      await sql`select app.apply_plan_version(${workspaceId}::uuid, ${version.id}::uuid, ${paid ? 'active' : 'none'},
-        ${paid ? 'staff' : null}, null, null, null, null, null, null, false)`.execute(trx);
-      await this.log(trx, staffId, 'plan.set', workspaceId, {
-        plan: req.plan,
-        version: version.version,
-        reason: req.reason,
-      });
     });
   }
 

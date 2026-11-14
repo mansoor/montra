@@ -27,6 +27,7 @@ import { billingProvider } from './ops/billing.port.js';
 import { BillingService } from './ops/billing.service.js';
 import { Plans } from './ops/plans.js';
 import { AdminPlansService } from './ops/admin-plans.service.js';
+import { AdminAccountsService } from './ops/admin-accounts.service.js';
 import { errorReporterProvider } from './ops/errors.js';
 import { AppVersionInterceptor, MetricsService } from './ops/metrics.js';
 import {
@@ -229,6 +230,7 @@ export class AppModule {
         StaffGuard,
         AdminService,
         AdminPlansService,
+        AdminAccountsService,
         SupportService,
         StatusService,
         MetricsService,

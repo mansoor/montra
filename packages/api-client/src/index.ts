@@ -171,6 +171,10 @@ import type {
   AddPlanPriceRequest,
   AddPlanVersionRequest,
   AdminAccountDto,
+  CloseAccountRequest,
+  CouponRequest,
+  ExtendTrialRequest,
+  SuspendRequest,
   AdminPlanDto,
   AdminPlanVersionDto,
   PlanEntitlementsDto,
@@ -1074,6 +1078,21 @@ export class ApiClient {
   }
   adminMoveSubscribers(input: MoveSubscribersRequest) {
     return this.request<MoveSubscribersDto>('POST', '/v1/admin/plans/move', input);
+  }
+  adminSuspendAccount(userId: string, input: SuspendRequest) {
+    return this.request<void>('POST', `/v1/admin/accounts/${userId}/suspend`, input);
+  }
+  adminRestoreAccount(userId: string) {
+    return this.request<void>('POST', `/v1/admin/accounts/${userId}/restore`);
+  }
+  adminCloseAccount(userId: string, input: CloseAccountRequest) {
+    return this.request<{ purgeAfter: string | null }>('POST', `/v1/admin/accounts/${userId}/close`, input);
+  }
+  adminExtendTrial(workspaceId: string, input: ExtendTrialRequest) {
+    return this.request<{ trialEnd: string }>('POST', `/v1/admin/workspaces/${workspaceId}/trial`, input);
+  }
+  adminGiveCoupon(workspaceId: string, input: CouponRequest) {
+    return this.request<void>('POST', `/v1/admin/workspaces/${workspaceId}/coupon`, input);
   }
   adminAiCeiling() {
     return this.request<AiCeilingDto>('GET', '/v1/admin/ai-ceiling');

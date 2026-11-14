@@ -248,6 +248,16 @@ export class KratosAuthAdapter implements AuthPort {
     this.factors.delete(identityId);
   }
 
+  /** ADR-0049 §4: an inactive identity can't sign in, and its sessions are ended at once. */
+  async setIdentityActive(identityId: string, active: boolean): Promise<void> {
+    const base = `/admin/identities/${encodeURIComponent(identityId)}`;
+    await this.admin('PATCH', base, [
+      { op: 'replace', path: '/state', value: active ? 'active' : 'inactive' },
+    ]);
+    if (!active) await this.admin('DELETE', `${base}/sessions`, undefined, [404]);
+    this.evictIdentity(identityId);
+  }
+
   /** From the identity's credential types: TOTP, a security key or recovery codes count (ADR-0044). */
   async hasSecondFactor(identityId: string): Promise<boolean | null> {
     const hit = this.factors.get(identityId);
