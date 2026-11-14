@@ -263,7 +263,14 @@ describe('review queue (AI-03/04, PLT-10)', () => {
 
 describe('AI settings helpers (UP-13, AIA-08)', () => {
   it('computes budget use and parses the budget field', () => {
-    const usage = { month: '2026-10', calls: 10, spentUsd: 4, state: 'ok' as const };
+    const usage = {
+      month: '2026-10',
+      calls: 10,
+      spentUsd: 4,
+      state: 'ok' as const,
+      share: null,
+      planAllowance: false,
+    };
     expect(budgetPercent({ monthlyBudgetUsd: 5, usage })).toBe(80);
     expect(budgetPercent({ monthlyBudgetUsd: null, usage })).toBeNull();
     expect(budgetPercent({ monthlyBudgetUsd: 1, usage })).toBe(100);
