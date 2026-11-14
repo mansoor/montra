@@ -9,6 +9,7 @@ import { sql } from 'kysely';
 import type { FastifyRequest } from 'fastify';
 import type { MemberRole } from '@montra/db';
 import { CONFIG, type AppConfig } from '../config.js';
+import { ServiceSettings } from '../ops/service-settings.js';
 import { Db } from '../db/database.js';
 import { AppError, forbidden } from '../common/errors.js';
 import { memberMayRequest } from '../common/roles.js';
@@ -221,6 +222,7 @@ export class WorkspaceGuard implements CanActivate {
     @Inject(Db) private readonly db: Db,
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(AUTH_PORT) private readonly auth: AuthPort,
+    @Inject(ServiceSettings) private readonly settings: ServiceSettings,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -262,7 +264,8 @@ export class WorkspaceGuard implements CanActivate {
       sql<{ closed: boolean }>`select app.workspace_suspended(${workspaceId}::uuid) as closed`.execute(trx),
     );
     if (closed.rows[0]?.closed) {
-      const support = this.config.SUPPORT_EMAIL ? ` at ${this.config.SUPPORT_EMAIL}` : '';
+      const address = await this.settings.supportEmail().catch(() => this.config.SUPPORT_EMAIL ?? null);
+      const support = address ? ` at ${address}` : '';
       throw new AppError(
         403,
         'workspace.suspended',

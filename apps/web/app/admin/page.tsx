@@ -11,6 +11,7 @@ import {
   SupportRequestsPanel,
 } from '@/components/admin/console';
 import { PlansPanel, StaffPanel } from '@/components/admin/plans';
+import { ProvidersPanel } from '@/components/admin/providers';
 
 const TABS = [
   'accounts',
@@ -23,10 +24,11 @@ const TABS = [
   'security',
   'reference',
   'staff',
+  'providers',
 ] as const;
 type Tab = (typeof TABS)[number];
-/** Only an owner manages staff (ADR-0049 §3). */
-const OWNER_TABS: readonly Tab[] = ['staff'];
+/** Only an owner manages staff and providers (ADR-0049 §3, §5). */
+const OWNER_TABS: readonly Tab[] = ['staff', 'providers'];
 
 /** OPS-01, OPS-05: for staff, who can't see financial data here. Anyone else gets the 404 the API gives them. */
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -46,6 +48,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     body = <SupportRequestsPanel requests={await load((api) => api.adminSupportRequests())} />;
   } else if (tab === 'plans') {
     body = <PlansPanel plans={await load((api) => api.adminPlans())} canChange={isOwner} />;
+  } else if (tab === 'providers') {
+    body = <ProvidersPanel providers={await load((api) => api.adminProviders())} />;
   } else if (tab === 'staff') {
     body = <StaffPanel staff={await load((api) => api.adminStaff())} />;
   } else if (tab === 'imports') {

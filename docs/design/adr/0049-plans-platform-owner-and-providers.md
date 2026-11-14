@@ -269,6 +269,17 @@ Each step is its own PR into `develop`, and works on its own:
   - Extending a trial changes Stripe first, so the next webhook doesn't undo it.
   - Closing on request is the person's own deletion, started for them. The security log calls it
     `deletion_requested_by_support`, and they can still cancel it.
+- **Step 4 (migration 0054):**
+  - Last success and last failure are recorded as calls happen. The email, payment, storage, key and push ports are
+    wrapped (`trackedProvider`), and built-in AI and exchange rates are noted where they run. A success is written
+    at most every five minutes. A failure keeps a short message with addresses, URLs and long tokens cut out.
+    Error reporting can't report on itself, so its row shows only whether it's set up.
+  - What's shown is never secret: an SMTP or Sentry host without its credentials, test or live for the Stripe
+    key, whether a key or webhook secret is set, and the AWS KMS key's id.
+  - An empty sender or support address means the environment's. Until an owner says otherwise, all three kinds of
+    text are on and texts go only to US numbers.
+  - A test email goes to the owner's own address. A test text waits for step 5.
+  - `_FILE` secrets are ADR-0050's, built in its own PR.
 
 ## Consequences
 

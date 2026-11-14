@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { DbContext, Trx } from '@montra/db';
 import {
@@ -14,6 +14,7 @@ import type { FxRateDto } from '@montra/schemas';
 import { unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
+import { ProviderHealth } from '../ops/provider-health.js';
 import type { Worker } from '../jobs/queue.js';
 import { fetchEcb, fetchOxrLatest, type FxRow, type FxSourceId, type HttpGet } from './sources.js';
 
@@ -89,6 +90,7 @@ export class FxRatesService {
     @Inject(Db) private readonly db: Db,
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(FX_HTTP) private readonly http: HttpGet,
+    @Optional() @Inject(ProviderHealth) private readonly health?: ProviderHealth,
   ) {}
 
   /**
@@ -97,7 +99,13 @@ export class FxRatesService {
    * OXR failing is reported and ECB rates are still stored.
    */
   async refresh(mode: 'daily' | 'full'): Promise<FxRefreshResult> {
-    const ecb = await fetchEcb(this.http, this.config.FX_ECB_URL, mode === 'full' ? 'full' : 'recent');
+    let ecb: FxRow[];
+    try {
+      ecb = await fetchEcb(this.http, this.config.FX_ECB_URL, mode === 'full' ? 'full' : 'recent');
+    } catch (err) {
+      this.health?.failed('exchange_rates', err);
+      throw err;
+    }
     let oxr: FxRow[] | null = null;
     let oxrError: string | undefined;
     if (this.config.OXR_APP_ID) {
@@ -106,9 +114,11 @@ export class FxRatesService {
       } catch (err) {
         oxrError = (err as Error).message;
         this.logger.warn(`Open Exchange Rates refresh failed: ${oxrError}`);
+        this.health?.failed('exchange_rates', err);
       }
     }
     const changed = (await this.store('ecb', ecb)) + (oxr ? await this.store('oxr', oxr) : 0);
+    if (!oxrError) this.health?.ok('exchange_rates');
     return { ecb: ecb.length, oxr: oxr?.length ?? null, changed, ...(oxrError ? { oxrError } : {}) };
   }
 

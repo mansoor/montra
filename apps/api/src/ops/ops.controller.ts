@@ -36,6 +36,7 @@ import {
   CreateSupportGrantRequest,
   CreateSupportRequest,
   SaveAiCeilingRequest,
+  SaveProviderSettingsRequest,
   SaveFeatureFlagRequest,
   SaveMerchantRequest,
   SaveMileageRateRequest,
@@ -57,6 +58,7 @@ import { AdminAccountsService } from './admin-accounts.service.js';
 import { AdminPlansService } from './admin-plans.service.js';
 import { AdminService } from './admin.service.js';
 import { Plans } from './plans.js';
+import { ProvidersService } from './providers.service.js';
 import { BillingService } from './billing.service.js';
 import { METRICS_CONTENT_TYPE, MetricsService } from './metrics.js';
 import { requireAdmin, requireOwner, StaffGuard, type StaffRequest } from './staff.js';
@@ -201,6 +203,7 @@ export class AdminController {
     @Inject(AdminService) private readonly admin: AdminService,
     @Inject(AdminPlansService) private readonly owner: AdminPlansService,
     @Inject(AdminAccountsService) private readonly accountsAdmin: AdminAccountsService,
+    @Inject(ProvidersService) private readonly providers: ProvidersService,
   ) {}
 
   @Get('me')
@@ -362,6 +365,35 @@ export class AdminController {
   async saveAiCeiling(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireOwner(req, ctx);
     await this.admin.saveAiCeiling(ctx.user.id, parse(SaveAiCeilingRequest, body));
+  }
+
+  // ----- Providers (ADR-0049 §5): the owner's, and nothing here can change a key ---------------------
+
+  @Get('providers')
+  async providerList(@Req() req: StaffRequest, @Ctx() ctx: RequestContext) {
+    if (req.staffRole !== 'owner') throw new AppError(403, 'forbidden', 'This needs the owner role');
+    return this.providers.providers(ctx.user.id);
+  }
+
+  @Put('providers/settings')
+  @HttpCode(204)
+  async saveProviderSettings(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireOwner(req, ctx);
+    await this.providers.saveSettings(ctx.user.id, parse(SaveProviderSettingsRequest, body));
+  }
+
+  @Post('providers/test-email')
+  @HttpCode(200)
+  testEmail(@Req() req: StaffRequest, @Ctx() ctx: RequestContext) {
+    if (req.staffRole !== 'owner') throw new AppError(403, 'forbidden', 'This needs the owner role');
+    return this.providers.testEmail(ctx.user.email);
+  }
+
+  @Post('providers/test-text')
+  @HttpCode(200)
+  testText(@Req() req: StaffRequest) {
+    if (req.staffRole !== 'owner') throw new AppError(403, 'forbidden', 'This needs the owner role');
+    return this.providers.testText();
   }
 
   // ----- Staff and plans (ADR-0049 §1, §3) ------------------------------------------------------------

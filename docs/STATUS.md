@@ -1229,6 +1229,16 @@ Phase 11 leftovers:
       with how it came recorded. They're emailed and can still cancel it.
     - Not done: the phone has no screen for a suspended account or a closed workspace. It shows the API's message.
     - Tests: `apps/api/test/accounts.test.ts`, and `setIdentityActive` against the fake Kratos in `kratos.test.ts`.
+  - **Step 4, the Providers page** (migration 0054), the console's **Providers** tab, for owners:
+    - One row each for email, texts, payments, error reporting, AI, file storage, key management, push and exchange
+      rates: whether it's set up, its mode, what isn't secret, and its last success and failure
+      (`app.provider_status`, `ProviderHealth`). No key is shown or editable.
+    - Owners change the API's sender name and address, the support address, which kinds of text are on and the
+      countries texts may go to (`ServiceSettings`, kept in `app.system_setting`). The API's SMTP mail and the support
+      address use them at once.
+    - **Send a test email to me**. The test text answers `sms.not_configured` until step 5.
+    - Tests: `apps/api/test/providers.test.ts`. It puts the service-wide settings back afterwards, since test files
+      share a database.
   - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
     and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
     with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and

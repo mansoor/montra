@@ -14,11 +14,11 @@ import type {
 } from '@montra/schemas';
 import { AUTH_PORT, type AuthPort } from '../auth/auth.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { CONFIG, type AppConfig } from '../config.js';
 import { OwnershipService } from '../data/ownership.service.js';
 import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import { BILLING_PORT, type BillingPort } from './billing.port.js';
 import { AdminDb } from './staff.js';
+import { ServiceSettings } from './service-settings.js';
 
 const DAY_MS = 86_400_000;
 
@@ -39,11 +39,11 @@ export class AdminAccountsService {
     @Inject(MAIL_PORT) private readonly mail: MailPort,
     @Inject(BILLING_PORT) private readonly billing: BillingPort,
     @Inject(OwnershipService) private readonly ownership: OwnershipService,
-    @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(ServiceSettings) private readonly settings: ServiceSettings,
   ) {}
 
-  private get support(): string {
-    return this.config.SUPPORT_EMAIL ?? 'support';
+  private async support(): Promise<string> {
+    return (await this.settings.supportEmail()) ?? 'support';
   }
 
   // ----- Suspend and restore ------------------------------------------------------------------------
@@ -70,7 +70,7 @@ export class AdminAccountsService {
         text: [
           'Your Montra account has been suspended, so you can’t sign in, and workspaces you own are closed for now.',
           'Nothing has been deleted.',
-          `If you think this is a mistake, write to ${this.support}.`,
+          `If you think this is a mistake, write to ${await this.support()}.`,
         ].join('\n\n'),
       });
     }
@@ -248,7 +248,7 @@ export class AdminAccountsService {
       text: [
         'As you asked, your Montra account is closing. You can’t sign in to the workspaces it owns from now on.',
         `Everything is deleted for good after 30 days${status.purgeAfter ? `, on ${status.purgeAfter.slice(0, 10)}` : ''}.`,
-        `Changed your mind? Sign in before then and cancel it in Settings → Your data, or write to ${this.support}.`,
+        `Changed your mind? Sign in before then and cancel it in Settings → Your data, or write to ${await this.support()}.`,
       ].join('\n\n'),
     });
     return { purgeAfter: status.purgeAfter };
