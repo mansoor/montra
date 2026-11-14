@@ -4,6 +4,7 @@ import type { ReceiptDto } from '@montra/schemas';
 import { ApiError, createApi } from '../src/api/client';
 import { assessFrame } from '../src/features/camera-metrics';
 import {
+  captureNotice,
   classifyUploadError,
   frameVerdict,
   pageName,
@@ -152,6 +153,34 @@ describe('receipt API calls', () => {
       transactionId: 't1',
     });
     expect(api.receiptFilePath('w1', 'r1', 'f1')).toBe('/v1/workspaces/w1/receipts/r1/files/f1');
+  });
+});
+
+describe('the note after a capture (TXN-09)', () => {
+  const read = { status: 'inbox' as const, stalled: null };
+  const reading = { status: 'processing' as const, stalled: null };
+  const stuck = {
+    status: 'processing' as const,
+    stalled: { worker: 'documents' as const, reason: 'failed' as const, since: '2026-11-13T10:00:00.000Z' },
+  };
+
+  it('stays while the capture waits to upload or is being read, and goes once it is read', () => {
+    expect(captureNotice('offline', 1, [read])).toBe('offline');
+    expect(captureNotice('uploading', 1, null)).toBe('uploading');
+    // Uploaded once the phone came online: now it's being read.
+    expect(captureNotice('offline', 0, [reading, read])).toBe('uploading');
+    expect(captureNotice('uploading', 0, null)).toBe('uploading');
+    // Read, then recorded or discarded: nothing left to say.
+    expect(captureNotice('uploading', 0, [read])).toBeNull();
+    expect(captureNotice('uploading', 0, [])).toBeNull();
+  });
+
+  it('doesn’t wait on a receipt that is stuck, which says so on its own row', () => {
+    expect(captureNotice('uploading', 0, [stuck, read])).toBeNull();
+  });
+
+  it('says nothing when the screen wasn’t opened from a capture', () => {
+    expect(captureNotice(undefined, 2, [reading])).toBeNull();
   });
 });
 

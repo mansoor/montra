@@ -9,7 +9,7 @@ import type { ReceiptDto, ReceiptRecommendationDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
-import { queuedStatus, receiptStatusKey } from '../../src/features/receipt-capture';
+import { beingRead, captureNotice, queuedStatus, receiptStatusKey } from '../../src/features/receipt-capture';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { ReceiptWaitingRow } from '../../src/ui/ReceiptWaiting';
 import { useTheme } from '../../src/ui/theme';
@@ -49,12 +49,24 @@ export default function Receipts() {
 
   const can = useAbilities();
   const open = (list ?? []).filter((r) => r.status !== 'rejected');
+  // TXN-09: the note after a capture lasts while it uploads and is read, not for as long as this screen is open.
+  const notice = captureNotice(queued, waiting.length, list);
+  useEffect(() => {
+    if (queued && notice === null) router.setParams({ queued: undefined });
+  }, [queued, notice, router]);
+  // A receipt being read changes on the server; look again every few seconds until none is.
+  const inProgress = waiting.length > 0 || open.some(beingRead);
+  useEffect(() => {
+    if (!inProgress) return;
+    const timer = setInterval(() => void load(), 5000);
+    return () => clearInterval(timer);
+  }, [inProgress, load]);
   return (
     <Screen testID="receipts">
-      {queued ? (
+      {notice ? (
         <Banner
           text={
-            queued === 'offline' ? t('mobile.receipts.queued_offline') : t('mobile.receipts.queued_online')
+            notice === 'offline' ? t('mobile.receipts.queued_offline') : t('mobile.receipts.queued_online')
           }
         />
       ) : null}
