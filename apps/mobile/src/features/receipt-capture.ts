@@ -104,3 +104,23 @@ export function stalledMessage(r: Pick<ReceiptDto, 'status' | 'stalled'>): strin
 /** The status word for a receipt row: "Not being read" rather than "Reading" when nothing is reading it. */
 export const receiptStatusKey = (r: Pick<ReceiptDto, 'status' | 'stalled'>) =>
   stalledMessage(r) ? 'mobile.receipts.status.stalled' : `mobile.receipts.status.${r.status}`;
+
+/** A receipt the server is still reading: processing, and not stuck (a stuck one says so on its own row). */
+export const beingRead = (r: Pick<ReceiptDto, 'status' | 'stalled'>) =>
+  r.status === 'processing' && !r.stalled;
+
+/**
+ * The note after a capture (TXN-09): shown while the capture is still waiting to upload, or the server is still reading
+ * a receipt; gone once it's read. `queued` is what the capture screen passed: `offline` or `uploading`.
+ * `receipts` is null until the list has loaded.
+ */
+export function captureNotice(
+  queued: string | undefined,
+  waiting: number,
+  receipts: ReadonlyArray<Pick<ReceiptDto, 'status' | 'stalled'>> | null,
+): 'offline' | 'uploading' | null {
+  if (!queued) return null;
+  if (waiting > 0) return queued === 'offline' ? 'offline' : 'uploading';
+  if (receipts === null || receipts.some(beingRead)) return 'uploading';
+  return null;
+}
