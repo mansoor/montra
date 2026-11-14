@@ -1163,7 +1163,19 @@ Phase 11 leftovers:
       recurring item for the same payee already shows them.
     - Web: a **Bills** tab on the budget lists and adds providers, and each category line shows its providers and
       next bills. Phone: the budget shows them under their group, with a **Bill providers** card to add one.
-  - Next: bill scanning (step 4).
+  - **Step 4:** bill scanning (`extract_bill`, `app.household_bill`, migration 0050, `household-bills` routes).
+    - Bill is on the Add wheel. The scan is read once (`scan.read`): the biller, the account number's last four
+      digits, the amount due, the due date, the bill date and the service period, and the person as a token.
+    - The biller is found among the budget's providers by those four digits, else by name. The phone shows what was
+      read, lets the person fix the amount and date or pick or add the provider, and files it from the same reading.
+    - A household bill's exact amount and date replace the provider's estimate in the calendar, upcoming, bill-due
+      alerts and the forecast (overdue when past). A payment to the provider for the amount, from 20 days before the
+      due date to 15 after, marks it paid (`settle`, run when bills or estimates are read).
+    - A provider on a business's books files the scan as that business's vendor bill (ADR-0017), from a vendor of the
+      provider's name, to the provider's category.
+    - Phone: **Bills** (from More) lists bills due and paid. Web: the budget's **Bills** tab lists them under the
+      providers.
+    - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.

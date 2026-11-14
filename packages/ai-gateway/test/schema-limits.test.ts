@@ -10,6 +10,7 @@ import { jsonSchemaOf } from '../src/schema.js';
 import * as answerQuestion from '../src/tasks/answer-question/v1.js';
 import * as categorize from '../src/tasks/categorize/v1.js';
 import * as extractPayslip from '../src/tasks/extract-payslip/v2.js';
+import * as extractBill from '../src/tasks/extract-bill/v1.js';
 import * as extractReceipt from '../src/tasks/extract-receipt/v3.js';
 import * as extractStatementTable from '../src/tasks/extract-statement-table/v1.js';
 import * as flagCapital from '../src/tasks/flag-capital/v1.js';
@@ -36,6 +37,7 @@ function unionParams(node: unknown): number {
 }
 
 const TASKS: Record<string, z.ZodType> = {
+  extract_bill: extractBill.Output,
   answer_question: answerQuestion.Output,
   categorize: categorize.Output,
   extract_payslip: extractPayslip.Output,

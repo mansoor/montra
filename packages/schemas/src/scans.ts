@@ -58,6 +58,34 @@ export const ScanPayslipDetectedDto = z.object({
 });
 export type ScanPayslipDetectedDto = z.infer<typeof ScanPayslipDetectedDto>;
 
+/** A biller a scanned bill may be from. */
+export const ScanBillerDto = z.object({
+  billerId: Id,
+  name: z.string(),
+  categoryId: Id,
+  reason: z.enum(['account', 'name']),
+});
+export type ScanBillerDto = z.infer<typeof ScanBillerDto>;
+
+export const ScanBillDetectedDto = z.object({
+  /** The biller's name as printed, or null. */
+  billerName: z.string().nullable(),
+  kind: z.enum(['electricity_gas', 'water', 'trash', 'phone', 'internet_tv', 'insurance', 'other']),
+  accountLast4: z.string().nullable(),
+  /** The biller when one matches (by account number, else by name). */
+  billerId: Id.nullable(),
+  candidates: z.array(ScanBillerDto),
+  memberId: Id.nullable(),
+  /** Minor units in `currency`, or null when no amount due was read. */
+  amount: z.string().nullable(),
+  currency: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  billDate: z.string().nullable(),
+  periodStart: z.string().nullable(),
+  periodEnd: z.string().nullable(),
+});
+export type ScanBillDetectedDto = z.infer<typeof ScanBillDetectedDto>;
+
 export const ScanDto = z.object({
   id: Id,
   kind: ScanKind,
@@ -65,6 +93,7 @@ export const ScanDto = z.object({
   fileIds: z.array(Id),
   statement: ScanStatementDetectedDto.nullable(),
   payslip: ScanPayslipDetectedDto.nullable(),
+  bill: ScanBillDetectedDto.nullable(),
   /** Why it couldn't be read; it can still be filed by hand. */
   error: z.string().nullable(),
   /** The import or payslip made from it. */

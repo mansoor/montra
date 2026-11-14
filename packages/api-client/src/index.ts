@@ -80,6 +80,7 @@ import type {
   CreateGoalRequest,
   UpdateBillerRequest,
   BillerDto,
+  HouseholdBillDto,
   DashboardDto,
   DraftBudgetDto,
   DraftBudgetRequest,
@@ -2499,6 +2500,13 @@ export class ApiClient {
   updateGoal(workspaceId: string, id: string, input: UpdateGoalInput) {
     return this.request<GoalDto>('PATCH', this.ws(workspaceId, `/goals/${enc(id)}`), input);
   }
+  /** ADR-0048 §4: bills from the budget's providers (household bills), newest due first. */
+  listHouseholdBills(workspaceId: string, opts: { entityId?: string; status?: string } = {}) {
+    return this.request<{ data: HouseholdBillDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/household-bills${query({ ...opts })}`),
+    ).then((r) => r.data);
+  }
   /** ADR-0048 §4: the providers that send a budget's bills, with each one's next bill. */
   listBillers(workspaceId: string, entityId?: string) {
     return this.request<{ data: BillerDto[] }>(
@@ -3205,6 +3213,7 @@ export type {
   DraftBudgetDto,
   ExpectedIncomeDto,
   BillerDto,
+  HouseholdBillDto,
   DashboardChartsDto,
   SetCategoryBudgetDto,
   SetCategoryBudgetRequest,
