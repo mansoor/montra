@@ -1115,9 +1115,9 @@ Phase 11 leftovers:
 - **Receipt scanning and phone screens** ([ADR-0047](design/adr/0047-receipt-document-scanner.md)):
   - Capture opens the phone's own document scanner (ML Kit on Android, VisionKit on iPhone), which crops and straightens
     the receipt. The app's camera is the fallback where the scanner can't run, or when chosen.
-  - Every screen now keeps clear of Android's navigation bar (the last button was under it), and screens with a title
-    bar lost the extra status-bar space at the top (`src/ui/insets.ts`).
-  - The transaction screen has a labelled receipt button and compact split lines. The receipt screen folds the photo
+  - Every screen now ends above Android's navigation bar, so a long form scrolls above it instead of under it, and
+    screens with a title bar lost the extra status-bar space at the top (`src/ui/insets.ts`).
+  - The transaction screen has compact split lines; its receipt icon stays by the amount. The receipt screen folds the photo
     away by default, with one zoom hint.
   - Not yet tried on a device.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
