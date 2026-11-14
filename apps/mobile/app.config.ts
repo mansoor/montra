@@ -34,8 +34,13 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'app.montra.mobile',
-    permissions: ['android.permission.USE_BIOMETRIC', 'android.permission.CAMERA'],
-    blockedPermissions: ['android.permission.RECORD_AUDIO'],
+    // RECORD_AUDIO is for "Say it" (TXN-07). It used to be blocked, from before voice entry, and Android then refused
+    // the microphone without asking.
+    permissions: [
+      'android.permission.USE_BIOMETRIC',
+      'android.permission.CAMERA',
+      'android.permission.RECORD_AUDIO',
+    ],
   },
   plugins: [
     'expo-router',

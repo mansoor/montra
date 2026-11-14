@@ -29,3 +29,11 @@ describe('voice entry (TXN-07)', () => {
     expect(voiceErrorKey('audio-capture')).toBe('mobile.capture.voice_failed');
   });
 });
+
+describe('the Android build', () => {
+  it('asks for the microphone instead of blocking it', async () => {
+    const { default: config } = await import('../app.config');
+    expect(config.android?.permissions).toContain('android.permission.RECORD_AUDIO');
+    expect(config.android?.blockedPermissions ?? []).not.toContain('android.permission.RECORD_AUDIO');
+  });
+});
