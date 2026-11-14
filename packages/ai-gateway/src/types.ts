@@ -15,6 +15,7 @@ export type TaskName =
   | 'extract_statement_table'
   | 'extract_receipt'
   | 'extract_payslip'
+  | 'extract_bill'
   | 'propose_categories'
   | 'map_tax_lines'
   | 'flag_separation'
@@ -363,6 +364,23 @@ export interface CapitalFlag {
   reason: string;
 }
 
+/** A household bill read from a scan (ADR-0048 §4). Amounts are decimal strings in `currency`. */
+export interface BillExtraction {
+  biller: string | null;
+  kind: 'electricity_gas' | 'water' | 'trash' | 'phone' | 'internet_tv' | 'insurance' | 'other';
+  /** The last four digits of the account number with the biller, or null. */
+  accountLast4: string | null;
+  /** The person's pseudonym token (`MEMBER_n`) when the bill is addressed to a family member, else null. */
+  customer: string | null;
+  amountDue: string | null;
+  dueDate: string | null;
+  billDate: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  currency: string | null;
+  confidence: number;
+}
+
 export interface PayslipDocument {
   /** Sent only when the caller passes them: the workspace allows documents to go to the provider (PAY-09). */
   images: readonly ImagePart[];
@@ -436,6 +454,8 @@ export interface AiGateway {
   extractStatementTable(doc: StatementText, ctx: AiContext): Promise<TaskResult<StatementTable>>;
   extractReceipt(doc: ReceiptDocument, ctx: AiContext): Promise<TaskResult<ReceiptExtraction>>;
   extractPayslip(doc: PayslipDocument, ctx: AiContext): Promise<TaskResult<PayslipExtraction>>;
+  /** ADR-0048 §4: reads a bill's biller, amount due and due date. Same document rules as payslips. */
+  extractBill(doc: PayslipDocument, ctx: AiContext): Promise<TaskResult<BillExtraction>>;
   proposeCategories(
     input: CategoryProposalInput,
     ctx: AiContext,

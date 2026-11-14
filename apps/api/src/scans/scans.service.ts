@@ -119,6 +119,7 @@ export class ScansService {
       fileIds: r.file_ids,
       statement: r.kind === 'statement' && d ? (d as ScanDto['statement']) : null,
       payslip: r.kind === 'payslip' && d ? (d as ScanDto['payslip']) : null,
+      bill: r.kind === 'bill' && d ? (d as ScanDto['bill']) : null,
       error: r.error,
       usedId: r.used_id,
       createdAt: r.created_at.toISOString(),

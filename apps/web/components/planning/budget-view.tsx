@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowRightLeft, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
-import type { BudgetPeriodDto } from '@montra/api-client';
+import type { BillerDto, BudgetPeriodDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { minorToInput, parseAmountInput } from '@/lib/money';
 import { drillHref, percentOf, shiftDays, shiftMonth } from '@/lib/planning';
@@ -21,7 +21,16 @@ const ROLLOVERS = ['carry_surplus', 'carry_deficit', 'carry_both', 'reset'] as c
  * (editable), activity (drills to the transactions), available and pace. Every write sends the budget version
  * and shows the recomputed period the server returns.
  */
-export function BudgetView({ initial, workspaceId }: { initial: BudgetPeriodDto; workspaceId: string }) {
+export function BudgetView({
+  initial,
+  workspaceId,
+  billers = [],
+}: {
+  initial: BudgetPeriodDto;
+  workspaceId: string;
+  /** Providers named on the budget's categories, with their next bills (ADR-0048 §4). */
+  billers?: BillerDto[];
+}) {
   const router = useRouter();
   const { t, locale, money } = useI18n();
   const { run, busy, message, setMessage } = useAction();
@@ -271,6 +280,24 @@ export function BudgetView({ initial, workspaceId }: { initial: BudgetPeriodDto;
                               {t('budget.goal_needs')} <Money amount={l.goal.monthlyNeeded} currency={ccy} />
                             </span>
                           )}
+                          {billers
+                            .filter((x) => x.categoryId === l.categoryId)
+                            .map((x) => (
+                              <span
+                                key={x.id}
+                                className="block text-xs font-normal text-muted"
+                                data-testid="line-biller"
+                              >
+                                {x.name}
+                                {x.next && (
+                                  <>
+                                    {' · ≈ '}
+                                    <Money amount={x.next.amount} currency={x.next.currency} />{' '}
+                                    {t('billers.due')} <DateText date={x.next.date} />
+                                  </>
+                                )}
+                              </span>
+                            ))}
                           {BigInt(l.carriedIn) !== 0n && (
                             <span className="block text-xs font-normal text-muted">
                               {t('budget.carried_in')} <Money amount={l.carriedIn} currency={ccy} />

@@ -1,6 +1,6 @@
 /**
  * Tabs (08 §3): Home, Transactions, centre Add, Budget, More (the review count shows on More). The centre + opens the
- * Add wheel (ADR-0048) instead of a screen: a transaction, a receipt, a statement or a payslip.
+ * Add wheel (ADR-0048) instead of a screen: a transaction, a receipt, a statement, a bill or a payslip.
  */
 import { useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';
@@ -8,7 +8,7 @@ import { View, type ColorValue } from 'react-native';
 import { t } from '../../src/i18n';
 import { useAbilities } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
-import { WHEEL_CHOICES, wheelChoices, wheelRoute } from '../../src/features/add-wheel';
+import { wheelChoices, wheelRoute } from '../../src/features/add-wheel';
 import { AddWheel } from '../../src/ui/AddWheel';
 import { haptic } from '../../src/ui/haptics';
 import { Icon, type IconName } from '../../src/ui/icons';
@@ -53,11 +53,7 @@ export default function TabsLayout() {
   const review = record ? (state?.reviewCount ?? 0) : 0;
   const router = useRouter();
   const [wheel, setWheel] = useState(false);
-  // Bills join the wheel with bill scanning.
-  const choices = wheelChoices(
-    can,
-    WHEEL_CHOICES.filter((c) => c !== 'bill'),
-  );
+  const choices = wheelChoices(can);
   return (
     <>
       <Tabs

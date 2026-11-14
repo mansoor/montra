@@ -40,6 +40,7 @@ export default function More() {
           : []),
         { title: t('mobile.more.accounts'), icon: 'accounts', href: '/accounts', testID: 'more-accounts' },
         { title: t('mobile.more.receipts'), icon: 'receipt', href: '/receipts', testID: 'more-receipts' },
+        { title: t('mobile.bills.title'), icon: 'bill', href: '/bills', testID: 'more-bills' },
         { title: t('nav.payslips'), icon: 'payslips', href: '/payslips', testID: 'more-payslips' },
         // Imports are for those who set the books up (AUTH-18).
         ...(can.importFiles

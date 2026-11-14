@@ -4,6 +4,9 @@
  */
 import type {
   PasswordPolicyDto,
+  FiledBillDto,
+  HouseholdBillDto,
+  BillerDto,
   BudgetDto,
   CreateReimbursementRequest,
   PayRunDto,
@@ -262,6 +265,18 @@ export function createApi(opts: ApiOptions) {
     dashboardCharts: (w: string, months: number) =>
       request<DashboardChartsDto>('GET', `${ws(w)}/dashboard/charts?months=${months}`),
     budgets: async (w: string) => (await request<{ data: BudgetDto[] }>('GET', `${ws(w)}/budgets`)).data,
+    /** ADR-0048 §4: bill providers on the budget, with each one's next bill. */
+    billers: async (w: string, entityId?: string) =>
+      (
+        await request<{ data: BillerDto[] }>(
+          'GET',
+          `${ws(w)}/billers${entityId ? `?entityId=${entityId}` : ''}`,
+        )
+      ).data,
+    createBiller: (
+      w: string,
+      input: { name: string; categoryId: string; dueDay: number | null; accountLast4: string | null },
+    ) => request<BillerDto>('POST', `${ws(w)}/billers`, input),
     createBudget: (w: string, input: { entityId: string; name: string }) =>
       request<BudgetDto>('POST', `${ws(w)}/budgets`, input),
     budgetPeriod: (w: string, id: string, start = 'current') =>
@@ -510,6 +525,23 @@ export function createApi(opts: ApiOptions) {
     // ----- Payslips (PAY-03): read live, never stored on the device (PAY-09). --------------------------------
     listEmployers: async (w: string) =>
       (await request<{ data: EmployerDto[] }>('GET', `${ws(w)}/employers`)).data,
+    // ----- Bills (ADR-0048 §4) ------------------------------------------------------------------------------------
+    uploadBillFile: (w: string, file: UploadFile) =>
+      sendFile<ReceiptFileDto>(`${ws(w)}/household-bills/files`, file),
+    householdBills: async (w: string) =>
+      (await request<{ data: HouseholdBillDto[] }>('GET', `${ws(w)}/household-bills`)).data,
+    createHouseholdBill: (
+      w: string,
+      input: {
+        billerId: string;
+        scanId?: string;
+        amount: string;
+        dueDate: string;
+        billDate?: string | null;
+        periodStart?: string | null;
+        periodEnd?: string | null;
+      },
+    ) => request<FiledBillDto>('POST', `${ws(w)}/household-bills`, input),
     uploadPayslipFile: (w: string, file: UploadFile) =>
       sendFile<ReceiptFileDto>(`${ws(w)}/payslips/files`, file),
     createPayslip: (w: string, input: Partial<CreatePayslipRequest> & { employerId: string }) =>

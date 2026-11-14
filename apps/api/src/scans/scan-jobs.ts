@@ -8,14 +8,18 @@
  *   person comes from the pseudonym token the reading names (names never reach the provider), and the employer from
  *   the name printed, among the workspace's employers (that person's, when the person is known).
  *
- * The reading is kept on the scan until an import or payslip is made from it.
+ * - A bill is read with `extract_bill` the same way. Its biller is found by the account number's last four digits,
+ *   else by name, among the workspace's billers; the person from the token, as for payslips.
+ *
+ * The reading is kept on the scan until an import, payslip or bill is made from it.
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { asCurrencyCode, isCurrencyCode } from '@montra/domain';
-import type { ScanPayslipDetectedDto, ScanStatementDetectedDto } from '@montra/schemas';
+import type { ScanBillDetectedDto, ScanPayslipDetectedDto, ScanStatementDetectedDto } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
 import { namesAgree, PayslipJobs, storableReading } from '../payslips/payslip-jobs.js';
+import { billerKey, isBillerPayee } from '../planning/billers.service.js';
 import { toMinor } from '../receipts/receipts.service.js';
 import { ScansService } from './scans.service.js';
 
@@ -55,7 +59,100 @@ export class ScanJobs {
     if (scan.status !== 'reading') return { skipped: scan.status };
     if (scan.kind === 'statement') return this.statement(ctx, scan.id, p.previousResult ?? null);
     if (scan.kind === 'payslip') return this.payslip(ctx, scan.id, scan.file_ids, p.previousResult);
-    throw new PermanentJobError('scan.kind', `No reader for ${scan.kind} scans yet`);
+    return this.bill(ctx, scan.id, scan.file_ids, p.previousResult);
+  }
+
+  private async bill(
+    ctx: JobCtx,
+    scanId: string,
+    fileIds: string[],
+    previousResult: ReadPayload['previousResult'],
+  ): Promise<Record<string, unknown>> {
+    const base = await this.db.run(ctx, (trx) =>
+      trx
+        .selectFrom('app.workspace')
+        .select('base_currency')
+        .where('id', '=', ctx.workspaceId)
+        .executeTakeFirstOrThrow(),
+    );
+    const reading = await this.payslips.readDocument(
+      ctx,
+      fileIds,
+      base.base_currency,
+      previousResult,
+      { type: 'scan', id: scanId },
+      (doc, aiCtx) => this.payslips.gateway().extractBill(doc, aiCtx),
+    );
+    return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      if (!reading.res.ok) {
+        await this.scans.fail(
+          trx,
+          ctx,
+          scanId,
+          'This bill could not be read: enter its amount and due date yourself',
+        );
+        return { read: false, reason: reading.res.reason };
+      }
+      const x = reading.res.value;
+      const billers = await trx
+        .selectFrom('app.biller')
+        .select(['id', 'name', 'category_id', 'match_key', 'account_last4'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('archived_at', 'is', null)
+        .orderBy('name')
+        .execute();
+      const byAccount = x.accountLast4 ? billers.filter((b) => b.account_last4 === x.accountLast4) : [];
+      const byName =
+        byAccount.length === 0 && x.biller
+          ? billers.filter(
+              (b) =>
+                isBillerPayee(b.match_key, billerKey(x.biller!)) ||
+                isBillerPayee(billerKey(x.biller!), b.match_key),
+            )
+          : [];
+      const fits = byAccount.length ? byAccount : byName;
+      const members = await trx
+        .selectFrom('app.family_member')
+        .select(['id'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .orderBy('created_at')
+        .execute();
+      const token = x.customer ? /^MEMBER_(\d+)$/.exec(x.customer) : null;
+      const member = token ? (members[Number(token[1]) - 1] ?? null) : null;
+      const currency = x.currency && isCurrencyCode(x.currency) ? x.currency : base.base_currency;
+      const amount = toMinor(x.amountDue, asCurrencyCode(currency));
+      const detected: ScanBillDetectedDto = {
+        billerName: x.biller,
+        kind: x.kind,
+        accountLast4: x.accountLast4,
+        billerId: fits.length === 1 ? fits[0]!.id : null,
+        candidates: fits.map((b) => ({
+          billerId: b.id,
+          name: b.name,
+          categoryId: b.category_id,
+          reason: byAccount.length ? ('account' as const) : ('name' as const),
+        })),
+        memberId: member?.id ?? null,
+        amount: amount === null ? null : amount.toString(),
+        currency,
+        dueDate: x.dueDate,
+        billDate: x.billDate,
+        periodStart: x.periodStart,
+        periodEnd: x.periodEnd,
+      };
+      await trx
+        .updateTable('app.document_scan')
+        .set({
+          status: 'ready',
+          result: JSON.stringify(storableReading(reading)),
+          detected: JSON.stringify(detected),
+          updated_at: new Date(),
+        })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', scanId)
+        .execute();
+      return { read: true, biller: Boolean(detected.billerId), amount: amount !== null };
+    });
   }
 
   private async statement(

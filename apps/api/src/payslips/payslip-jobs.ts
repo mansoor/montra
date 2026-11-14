@@ -5,7 +5,13 @@
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { asCurrencyCode, calendarDate, isCurrencyCode, payslipGap } from '@montra/domain';
-import type { ImagePart, PayslipExtraction, TaskResult } from '@montra/ai-gateway';
+import type {
+  AiContext,
+  ImagePart,
+  PayslipDocument,
+  PayslipExtraction,
+  TaskResult,
+} from '@montra/ai-gateway';
 import { AiService } from '../ai/ai.service.js';
 import { Db } from '../db/database.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
@@ -49,6 +55,11 @@ export class PayslipJobs {
    * Reads payslip pages through the gateway: the images when the workspace allows documents to go to the provider,
    * else the doc-worker's OCR text. Used for a payslip and for a scanned payslip before it's filed.
    */
+  /** The gateway, for other documents read the same way (scanned bills). */
+  gateway() {
+    return this.ai.gateway;
+  }
+
   async read(
     ctx: JobCtx,
     fileIds: readonly string[],
@@ -56,6 +67,23 @@ export class PayslipJobs {
     previousResult: ExtractPayload['previousResult'],
     subject: { type: 'payslip' | 'scan'; id: string },
   ): Promise<PayslipReading> {
+    return this.readDocument(ctx, fileIds, currencyHint, previousResult, subject, (doc, aiCtx) =>
+      this.ai.gateway.extractPayslip(doc, aiCtx),
+    );
+  }
+
+  /**
+   * Reads a document's pages with an AI task: the images when the workspace allows documents to go to the provider,
+   * else the doc-worker's OCR text. Payslips and scanned bills (ADR-0048) both read this way.
+   */
+  async readDocument<T>(
+    ctx: JobCtx,
+    fileIds: readonly string[],
+    currencyHint: string | null,
+    previousResult: ExtractPayload['previousResult'],
+    subject: { type: string; id: string },
+    task: (doc: PayslipDocument, aiCtx: AiContext) => Promise<TaskResult<T>>,
+  ): Promise<{ res: TaskResult<T>; base: { mode: string; provider: string } }> {
     const { files, allowImages } = await this.db.run(ctx, async (trx) => {
       const found = await trx
         .selectFrom('app.file')
@@ -83,7 +111,7 @@ export class PayslipJobs {
       previousResult?.kind === 'receipt_text' ? (previousResult.pages ?? []).join('\n\n') : null;
     return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
       const runtime = await this.ai.runtime(trx, ctx, subject);
-      const res = await this.ai.gateway.extractPayslip(
+      const res = await task(
         { images, ocrText, currencyHint, locale: 'en-US' },
         { ...runtime.ctx, parkLocal: false },
       );
@@ -211,7 +239,10 @@ export function namesAgree(a: string, b: string): boolean {
 }
 
 /** A reading as stored on a scan: JSON-safe (no bigint cost), keeping only the model from the call's details. */
-export function storableReading(r: PayslipReading): Record<string, unknown> {
+export function storableReading<T>(r: {
+  res: TaskResult<T>;
+  base: { mode: string; provider: string };
+}): Record<string, unknown> {
   const res = r.res.ok
     ? { ok: true, value: r.res.value, meta: { model: r.res.meta.model } }
     : { ok: false, reason: r.res.reason, ...(r.res.detail ? { detail: r.res.detail } : {}) };

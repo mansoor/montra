@@ -28,6 +28,7 @@ import { jsonSchemaOf } from './schema.js';
 import * as categorizeV1 from './tasks/categorize/v1.js';
 import * as extractV1 from './tasks/extract-statement-table/v1.js';
 import * as payslipV2 from './tasks/extract-payslip/v2.js';
+import * as billV1 from './tasks/extract-bill/v1.js';
 import * as receiptV3 from './tasks/extract-receipt/v3.js';
 import * as mapColumnsV1 from './tasks/map-columns/v1.js';
 import * as normalizeV1 from './tasks/normalize-payees/v1.js';
@@ -70,6 +71,7 @@ import type {
   QuickAddContext,
   PayslipDocument,
   PayslipExtraction,
+  BillExtraction,
   ReceiptDocument,
   ReceiptExtraction,
   StatementTable,
@@ -1259,6 +1261,65 @@ export class Gateway implements AiGateway {
         },
         // No amounts or names in the audit log: it says that a payslip was read, not what it said.
         eventOutput: (v) => ({ lines: v.lines.length, hasNetPay: v.netPay !== null, currency: v.currency }),
+        confidence: (v) => v.confidence,
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
+  // ----- extract_bill (ADR-0048 §4) ------------------------------------------------------------------------
+
+  /**
+   * Reads a household bill: who sent it, the amount due and the due date. The text is masked like a payslip's
+   * (account numbers, member names as pseudonyms); images go only if the caller passes them, which it does only with
+   * the workspace's permission. The account number comes back as its last four digits at most, and the person only
+   * as a token.
+   */
+  async extractBill(doc: PayslipDocument, ctx: AiContext): Promise<TaskResult<BillExtraction>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    const images = ctx.mode === 'builtin' || ctx.mode === 'byok' ? doc.images : [];
+    const ocrText = doc.ocrText ? maskPayslipText(doc.ocrText, ctx.pseudonyms) : null;
+    if (images.length === 0 && !ocrText) {
+      return { ok: false, reason: 'invalid_output', detail: 'no image or text to read' };
+    }
+    return this.callProvider<BillExtraction>(
+      {
+        task: 'extract_bill',
+        system: billV1.SYSTEM,
+        promptVersion: billV1.PROMPT_VERSION,
+        input: {
+          currencyHint: doc.currencyHint,
+          locale: doc.locale,
+          pages: images.length,
+          imageHashes: images.map((i) => sha256(i.data).slice(0, 16)),
+          ocrText,
+        },
+        images,
+        schema: billV1.Output,
+        validate: (o: billV1.Output) => {
+          const currency = o.currency?.toUpperCase() ?? null;
+          const last4 = o.accountLast4.trim();
+          return {
+            biller: o.biller ? oneLine(o.biller, 200) || null : null,
+            kind: o.kind,
+            accountLast4: /^\d{4}$/.test(last4) ? last4 : null,
+            customer: o.customer && /^MEMBER_\d{1,3}$/.test(o.customer.trim()) ? o.customer.trim() : null,
+            amountDue: positiveDecimal(cleanDecimal(o.amountDue)),
+            dueDate: validIsoDate(o.dueDate) ? o.dueDate : null,
+            billDate: validIsoDate(o.billDate) ? o.billDate : null,
+            periodStart: validIsoDate(o.periodStart) ? o.periodStart : null,
+            periodEnd: validIsoDate(o.periodEnd) ? o.periodEnd : null,
+            currency: currency && isCurrencyCode(currency) ? currency : null,
+            confidence: round3(clamp01(o.confidence)),
+          };
+        },
+        // That a bill was read and what kind, not what it said.
+        eventOutput: (v) => ({
+          kind: v.kind,
+          hasAmount: v.amountDue !== null,
+          hasDueDate: v.dueDate !== null,
+        }),
         confidence: (v) => v.confidence,
       },
       ctx,
