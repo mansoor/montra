@@ -170,7 +170,7 @@ It comes with an env file template and a setup script that checks the requiremen
 
 ### 10. Moving from one platform to another
 
-The runbook `moving-platforms.md` sets out the order:
+The runbook [`moving-platforms.md`](../../runbooks/moving-platforms.md) sets out the order:
 
 1. Build the new target and fill its secrets.
 2. Copy the files with `rclone sync`, then keep them in step until the switch.
