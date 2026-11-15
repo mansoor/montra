@@ -105,6 +105,9 @@ importers:
       '@sentry/node':
         specifier: ^11.10.0
         version: 11.10.0
+      exceljs:
+        specifier: ^4.4.0
+        version: 4.4.0
       fastify:
         specifier: ^5.12.7
         version: 5.12.7
@@ -166,9 +169,6 @@ importers:
       '@types/yazl':
         specifier: ^3.3.1
         version: 3.3.1
-      exceljs:
-        specifier: ^4.4.0
-        version: 4.4.0
       tsx:
         specifier: ^4.23.15
         version: 4.23.15

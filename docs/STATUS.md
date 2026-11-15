@@ -1275,7 +1275,36 @@ Phase 11 leftovers:
          with either mode (`MovingKms`) while the command moves workspace, backup-schedule, restore and queued-backup
          keys. It resumes by skipping keys the new mode already unwraps, so it needs no table (and no migration).
          Runbook: `docs/runbooks/key-wrapping.md`.
-    2. ❌ The self-hosted target: `infra/selfhost`, GHCR images, the `selfhost` deploy step, setup and operations runbooks.
+    2. ✅ **The self-hosted target** (`claude/selfhost-2`, stacked on step 1):
+       - **`infra/selfhost/compose.yaml`:** Caddy, cloudflared (profile `tunnel`, the default), Postgres 16, Kratos
+         and its courier, the auth gateway, two API replicas (`api-a`, `api-b`, both reachable as `api`), the job
+         worker, the doc worker and web. Every Montra container runs as uid 1000; secrets are files in `secrets/`
+         read through `NAME_FILE`; no port is published. `compose.direct.yaml` publishes 80 and 443 for a VPS, with
+         Let's Encrypt. Caddy refuses `/internal/*` from outside; Kratos's webhooks reach the API internally.
+       - **`setup.sh`:** `secrets` generates passwords, URLs, Kratos secrets and the master key (never overwriting);
+         `check` checks Docker, `.env`, each secret's owner, mode and content, the bucket, SMTP and ghcr.io, disk and
+         memory, and warns about a missing disk mirror, SMART, UPS software, disk encryption or clock sync; `init`
+         creates the roles from `production-roles.sql`, then deploys.
+       - **`deploy.sh <tag>`:** migrations first as one-off containers, then Kratos, the workers, `api-a` then `api-b`
+         (Caddy health-checks each), web, and only then records the tag in `.env`.
+       - **`deploy.yml`:** an environment's `DEPLOY_TARGET` picks `aws` (default, unchanged) or `selfhost`, which
+         builds the four images to `ghcr.io/<repo>` (web as `web-<environment>`), copies `infra/selfhost` over SSH
+         (through Cloudflare Access at home) and runs `deploy.sh`. The AWS path still builds straight into ECR;
+         moving it to GHCR-then-copy (ADR-0050 §6) is left for when AWS is used.
+       - **The Kratos wrapper** gained `montra-kratos healthcheck`, as the image has no shell or curl.
+       - **Fixed: the API and web images couldn't start.** `exceljs` was a devDependency of the API but is imported at
+         runtime, so the image's production install left it out; and the web image's build deleted `lib/csp.mjs`,
+         which `next.config.mjs` loads at start (both `ERR_MODULE_NOT_FOUND`). The web build now loads its config to
+         prove it. They affected the AWS images too, which have never been run. Found by bringing the stack up.
+       - **Texts:** `SMS_MODE`, the Twilio secrets and Kratos's SMS channel (ADR-0049 §6) are wired in, off by default.
+       - **Brought up locally** on Docker Desktop from images built here, with MinIO and Mailpit standing in and no
+         tunnel: `setup.sh secrets`, `check` and `init` from nothing, every service healthy, the three hostnames
+         through Caddy, `/internal/*` refused, a sign-up through the auth gateway with its email, and a second deploy
+         replacing both API replicas while `/readyz` answered 382 of 382 calls. It found the two image bugs above and a
+         doc-worker one in step 1 (it resolved its secret files twice).
+       - Runbooks: `selfhost-setup.md` (hardware, mirror, LUKS, UPS, tunnel, email, bucket, VPS variant, secrets,
+         first start, GitHub settings) and `selfhost-operations.md` (releases and rollback, patching, power cuts, a
+         failing disk, health, rotating each secret, `pg_dump` until step 3).
     3. ❌ Portable backups and alerts: pgBackRest or WAL-G, rclone, Alertmanager rules, a self-hosted restore drill.
     4. ❌ `docs/runbooks/moving-platforms.md`.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).

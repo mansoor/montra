@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -76,5 +78,23 @@ func TestNamesAnUnreadableFile(t *testing.T) {
 	_, err := resolve([]string{"SECRETS_CIPHER_FILE=/s/missing"}, files(nil))
 	if err == nil || !strings.Contains(err.Error(), "SECRETS_CIPHER_FILE: can't read /s/missing") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestHealthcheck(t *testing.T) {
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health/ready" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
+	defer ok.Close()
+	if code := healthcheck(ok.URL + "/health/ready"); code != 0 {
+		t.Fatalf("ready: got %d", code)
+	}
+	if code := healthcheck(ok.URL + "/other"); code != 1 {
+		t.Fatalf("not ready: got %d", code)
+	}
+	if code := healthcheck("http://127.0.0.1:1/health/ready"); code != 1 {
+		t.Fatalf("down: got %d", code)
 	}
 }
