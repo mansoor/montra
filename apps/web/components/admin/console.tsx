@@ -4,6 +4,7 @@ import type {
   AdminAccountDto,
   AdminSupportRequestDto,
   AdminWorkspaceDto,
+  AiCeilingDto,
   AppVersionsDto,
   PasswordPolicyDto,
   FeatureFlagDto,
@@ -434,6 +435,57 @@ export function PasswordPolicyPanel({
       </form>
       <StatusLine message={message} />
     </section>
+  );
+}
+
+/**
+ * ADR-0049 §2: the operator's monthly limit on built-in AI across the whole service. A circuit breaker against a bug
+ * or abuse: once spent, built-in AI stops for everyone until the month ends, and staff are emailed.
+ */
+export function AiCeilingPanel({ ceiling, canChange }: { ceiling: AiCeilingDto; canChange: boolean }) {
+  const { run, busy, message, t } = useAction();
+  const [usd, setUsd] = useState(ceiling.ceilingUsd === null ? '' : String(ceiling.ceilingUsd));
+  return (
+    <form
+      className="card space-y-3"
+      aria-label={t('admin.ai_ceiling')}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void run(
+          () => browserApi.adminSaveAiCeiling({ ceilingUsd: usd.trim() === '' ? null : Number(usd) }),
+          t('admin.saved'),
+        );
+      }}
+    >
+      <h2 className="text-base font-semibold">{t('admin.ai_ceiling')}</h2>
+      <p className="text-sm text-muted">{t('admin.ai_ceiling_hint')}</p>
+      <p className="text-sm" data-testid="ai-ceiling-spent">
+        {t('admin.ai_ceiling_spent', { month: ceiling.month, spent: ceiling.spentUsd.toFixed(2) })}
+        {ceiling.reached ? ` ${t('admin.ai_ceiling_reached')}` : ''}
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label>
+          <span className="field-label">{t('admin.ai_ceiling_usd')}</span>
+          <input
+            className="input w-36"
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            placeholder={t('admin.ai_ceiling_none')}
+            disabled={!canChange}
+            value={usd}
+            onChange={(e) => setUsd(e.target.value)}
+          />
+        </label>
+        {canChange && (
+          <button type="submit" className="btn-secondary" disabled={busy}>
+            {t('admin.save')}
+          </button>
+        )}
+      </div>
+      <StatusLine message={message} />
+    </form>
   );
 }
 

@@ -5,8 +5,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
-import { entitlementsFor, maintenanceNoticeOk, type Plan } from '@montra/domain';
+import { FREE_PLAN, maintenanceNoticeOk } from '@montra/domain';
 import type {
+  AiCeilingDto,
   AdminAccountDto,
   AdminSetPlanRequest,
   AdminSupportRequestDto,
@@ -17,6 +18,7 @@ import type {
   CreateNoticeRequest,
   FeatureFlagDto,
   ImportFailureRowDto,
+  SaveAiCeilingRequest,
   SaveFeatureFlagRequest,
   SaveMerchantRequest,
   SaveMileageRateRequest,
@@ -26,6 +28,7 @@ import type {
 import { notFound, unprocessable } from '../common/errors.js';
 import { AdminDb, SupportDb } from './staff.js';
 import { POLICY_KEYS, readPasswordPolicy } from '../auth-gateway/policy.js';
+import { AI_CEILING_SETTING, readAiCeiling } from '../ai/ai.service.js';
 
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null;
 
@@ -79,7 +82,7 @@ export class AdminService {
         id: string;
         name: string;
         role: string;
-        plan: 'free' | 'pro';
+        plan: string;
         status: string;
         provider: string | null;
         current_period_end: Date | null;
@@ -122,13 +125,23 @@ export class AdminService {
           'This plan is paid for. Change it with the payment provider.',
         );
       }
-      const plan = req.plan as Plan;
-      const quota = entitlementsFor(plan).storageBytes.toString();
-      await sql`select app.apply_subscription(${workspaceId}::uuid, ${plan}, ${plan === 'pro' ? 'active' : 'none'},
-        ${plan === 'pro' ? 'staff' : null}, null, null, null, null, null, null, false, ${quota}::bigint)`.execute(
-        trx,
-      );
-      await this.log(trx, staffId, 'plan.set', workspaceId, { plan, reason: req.reason });
+      // New customers get a plan's latest version, and so does a plan given here (ADR-0049 §1).
+      const version = await trx
+        .selectFrom('app.plan_version')
+        .select(['id', 'version'])
+        .where('plan_key', '=', req.plan)
+        .orderBy('version', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      if (!version) throw unprocessable('plan.unknown', 'There is no such plan');
+      const paid = req.plan !== FREE_PLAN;
+      await sql`select app.apply_plan_version(${workspaceId}::uuid, ${version.id}::uuid, ${paid ? 'active' : 'none'},
+        ${paid ? 'staff' : null}, null, null, null, null, null, null, false)`.execute(trx);
+      await this.log(trx, staffId, 'plan.set', workspaceId, {
+        plan: req.plan,
+        version: version.version,
+        reason: req.reason,
+      });
     });
   }
 
@@ -281,6 +294,43 @@ export class AdminService {
           .execute();
       }
       await this.log(trx, staffId, 'app_version.save', null, { ...req });
+    });
+  }
+
+  // ----- The AI ceiling (ADR-0049 §2) -------------------------------------------------------------
+
+  async aiCeiling(): Promise<AiCeilingDto> {
+    const month = `${new Date().toISOString().slice(0, 7)}-01`;
+    return this.db.run(async (trx) => {
+      const ceiling = await readAiCeiling(trx);
+      const { rows } = await sql<{
+        spent: string;
+      }>`select app.ai_service_spend(${month}::date) as spent`.execute(trx);
+      const spent = BigInt(rows[0]?.spent ?? 0);
+      return {
+        ceilingUsd: ceiling === null ? null : Number(ceiling) / 1e6,
+        month: month.slice(0, 7),
+        spentUsd: Number(spent) / 1e6,
+        reached: ceiling !== null && spent >= ceiling,
+      };
+    });
+  }
+
+  /** A new ceiling tells staff afresh when it's reached, even in a month that already reached the old one. */
+  async saveAiCeiling(staffId: string, req: SaveAiCeilingRequest): Promise<void> {
+    await this.db.run(async (trx) => {
+      const value = req.ceilingUsd === null ? '' : (req.ceilingUsd * 1_000_000).toFixed(0);
+      for (const [key, v] of [
+        [AI_CEILING_SETTING, value],
+        ['ai_ceiling_alerted_month', ''],
+      ] as const) {
+        await trx
+          .insertInto('app.system_setting')
+          .values({ key, value: v })
+          .onConflict((oc) => oc.column('key').doUpdateSet({ value: v, updated_at: sql`now()` }))
+          .execute();
+      }
+      await this.log(trx, staffId, 'ai_ceiling.save', null, { ceilingUsd: req.ceilingUsd });
     });
   }
 

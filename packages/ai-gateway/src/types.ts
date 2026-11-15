@@ -130,8 +130,11 @@ export interface AiContext {
   provider: ProviderConfig;
   /** OPS-07: tried when the primary fails with provider_error. */
   failover?: ProviderConfig;
-  /** Monthly budget in USD (null = unlimited) and the spend so far this month. */
-  budget: { monthlyUsd: number | null; spentMicroUsd: bigint };
+  /**
+   * The customer's monthly budget in USD (null = unlimited), the plan's allowance in millionths of a dollar (null or
+   * absent = none; ADR-0049 §2), and the spend so far this month. The smaller limit applies.
+   */
+  budget: { monthlyUsd: number | null; planMicroUsd?: bigint | null; spentMicroUsd: bigint };
   store: GatewayStore;
   /** Names to replace with stable pseudonyms before sending (family members, tenants) — AIA-03. */
   pseudonyms?: ReadonlyArray<{ name: string; token: string }>;

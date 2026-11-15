@@ -365,7 +365,7 @@
   ],
   "AIA-08": [
     "done",
-    "monthly budget, downgrade at 80%, stop at 100%; spend counter separate from the audit log"
+    "monthly budget, downgrade at 80%, stop at 100%; spend counter separate from the audit log. Built-in AI is also held to the plan's allowance (the smaller limit applies), owners are told at 80% and 100%, and an operator ceiling stops built-in AI service-wide (ADR-0049 §2)"
   ],
   "AIA-09": [
     "done",
@@ -1018,7 +1018,7 @@
   ],
   "UP-12": [
     "partial",
-    "free personal books, Pro adds business and rental books and 50 GB, in entitlements. Prices are for you to set in Stripe; never run against real Stripe"
+    "plans are data (ADR-0049): each plan has versions of what it allows (books, storage, logins, an AI allowance, texts, features) and its Stripe prices. Seeded Free and Pro allow what they did before. The console's plan editor comes next. Prices are for you to set in Stripe; never run against real Stripe"
   ],
   "NFR-04": [
     "partial",
@@ -1074,7 +1074,7 @@
   ],
   "OPS-08": [
     "partial",
-    "Stripe checkout, portal, 14-day trial, 14-day grace, data stays usable after a lapse, tested with a stubbed network. Store billing isn’t built, so the phone doesn’t sell plans"
+    "Stripe checkout by plan and interval, the webhook finds the plan version from the price id, portal, 14-day trial, 14-day grace, data stays usable after a lapse, tested with a stubbed network. Store billing isn’t built, so the phone doesn’t sell plans"
   ],
   "OPS-09": [
     "partial",

@@ -4,7 +4,7 @@
  * and the audit event (AIA-10). Task functions minimize their input first (AIA-03) and validate the output
  * with Zod (AIA-04). A task never throws to the feature.
  */
-import { asCurrencyCode, isCurrencyCode, minorUnits } from '@montra/domain';
+import { aiLimitMicroUsd, asCurrencyCode, isCurrencyCode, minorUnits } from '@montra/domain';
 import { normalizeDescription, type ColumnMapping } from '@montra/importers';
 import type { z } from 'zod';
 import { AnthropicAdapter } from './adapters/anthropic.js';
@@ -227,12 +227,12 @@ export class Gateway implements AiGateway {
     return ctx.mode === 'off' || ctx.provider.id === 'null';
   }
 
+  /** The month's spend against the smaller of the customer's budget and the plan's allowance (ADR-0049 §2). */
   private budgetRatio(ctx: AiContext, state: RunState): number {
-    const limit = ctx.budget.monthlyUsd;
+    const limit = aiLimitMicroUsd(ctx.budget.planMicroUsd ?? null, ctx.budget.monthlyUsd);
     if (limit === null) return 0;
-    if (limit <= 0) return Infinity;
-    const limitMicro = BigInt(Math.trunc(limit * 1_000_000));
-    return Number(ctx.budget.spentMicroUsd + state.spent) / Number(limitMicro);
+    if (limit <= 0n) return Infinity;
+    return Number(ctx.budget.spentMicroUsd + state.spent) / Number(limit);
   }
 
   /** The model a task will use right now (after any budget downgrade) — part of cache keys. */

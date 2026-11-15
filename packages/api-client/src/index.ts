@@ -170,6 +170,8 @@ import type {
   CreateFamilyMemberRequest,
   AdminAccountDto,
   AdminSetPlanRequest,
+  AiCeilingDto,
+  SaveAiCeilingRequest,
   AdminSupportRequestDto,
   AdminWorkspaceDto,
   AiAccuracyRowDto,
@@ -177,6 +179,7 @@ import type {
   PasswordPolicyDto,
   BillingDto,
   BillingLinkDto,
+  CheckoutRequest,
   ClientErrorRequest,
   CreateNoticeRequest,
   CreateSupportRequest,
@@ -941,7 +944,7 @@ export class ApiClient {
   getBilling(workspaceId: string) {
     return this.request<BillingDto>('GET', this.ws(workspaceId, '/billing'));
   }
-  startCheckout(workspaceId: string, input: { interval: 'month' | 'year' }) {
+  startCheckout(workspaceId: string, input: CheckoutRequest) {
     return this.request<BillingLinkDto>('POST', this.ws(workspaceId, '/billing/checkout'), input);
   }
   openBillingPortal(workspaceId: string) {
@@ -1030,6 +1033,12 @@ export class ApiClient {
   }
   adminSavePasswordPolicy(input: PasswordPolicyDto) {
     return this.request<void>('PUT', '/v1/admin/password-policy', input);
+  }
+  adminAiCeiling() {
+    return this.request<AiCeilingDto>('GET', '/v1/admin/ai-ceiling');
+  }
+  adminSaveAiCeiling(input: SaveAiCeilingRequest) {
+    return this.request<void>('PUT', '/v1/admin/ai-ceiling', input);
   }
   adminImportFailures(days: number) {
     return this.request<{ data: ImportFailureRowDto[] }>(
@@ -3230,6 +3239,7 @@ export type {
 export type {
   AdminAccountDto,
   AdminSupportRequestDto,
+  AiCeilingDto,
   AdminWorkspaceDto,
   AppVersionsDto,
   BillingDto,

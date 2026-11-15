@@ -20,9 +20,7 @@ module "stack" {
   support_email               = var.support_email
   dmarc_report_address        = var.dmarc_report_address
 
-  billing_mode             = var.billing_mode
-  stripe_price_pro_monthly = var.stripe_price_pro_monthly
-  stripe_price_pro_yearly  = var.stripe_price_pro_yearly
+  billing_mode = var.billing_mode
 
   managed_waf_enabled            = var.managed_waf_enabled
   rate_limit_period_seconds      = var.rate_limit_period_seconds

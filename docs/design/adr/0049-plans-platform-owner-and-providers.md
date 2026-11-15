@@ -1,6 +1,6 @@
 # ADR-0049: Plans as data, the platform owner, accounts and providers
 
-- Status: proposed (replaces ADR-0020 §1 and §9; extends §2, §3 and §6)
+- Status: accepted (replaces ADR-0020 §1 and §9; extends §2, §3 and §6)
 - Date: 2026-11-14
 
 ## Context
@@ -223,6 +223,23 @@ Each step is its own PR into `develop`, and works on its own:
 3. **Managing accounts.** Suspend and restore, trials, given plans, and closing on request.
 4. **Providers.** The Providers page, test sends, and secrets from `_FILE`.
 5. **Text messages.** Kratos's SMS channel, `SmsPort`, phone numbers in Settings, and texted alerts.
+
+## Settled while building
+
+- **Step 1 (migration 0051):**
+  - The plan's AI allowance and the operator's ceiling apply to built-in AI, which the operator pays for. With the
+    customer's own key or a local model, only their own `monthlyBudgetUsd` applies, and that spend doesn't count
+    towards the ceiling (`ai_usage.builtin_micro_usd`).
+  - A budget the customer sets above the plan's allowance has no effect, rather than being refused, so lowering a
+    plan can't leave a saved setting that blocks every other AI setting.
+  - The seeded feature keys are `payroll`, `staffTime`, `scans`, `voice` and `ownStorage`, all on for Free and Pro.
+    A plan without one refuses adding: a new payroll person, staff time, a scan, or connecting storage. Voice entry
+    happens on the phone, which hides the microphone.
+  - `familyLogins` counts active members and open invites, and null means no limit. Free and Pro have none, as
+    before.
+  - A price id the webhook doesn't know is logged and sent to error reporting.
+  - The ceiling is `ai_monthly_ceiling_micro_usd` in `app.system_setting`, set from the console's AI tab. Reaching
+    it emails every admin on staff (and owner, once that role exists) once a month.
 
 ## Consequences
 

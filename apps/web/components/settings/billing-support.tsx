@@ -29,8 +29,10 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
       </section>
     );
   }
-  const pro = billing.plan === 'pro';
-  const canBuy = billing.canManage && !(pro && billing.status === 'active');
+  // A paid plan through the provider is changed in its portal; the plan picker comes with the console's plans.
+  const paying = billing.plan !== 'free' && billing.provider === 'stripe';
+  const canBuy = billing.canManage && !paying;
+  const books = billing.entitlements.businessBooks > 0 || billing.entitlements.rentalPortfolios > 0;
   return (
     <div className="max-w-xl space-y-4">
       <section className="card space-y-3" aria-labelledby="plan-title">
@@ -38,14 +40,14 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
           {t('billing.title')}
         </h2>
         <p className="text-sm" data-testid="billing-plan">
-          {t(pro ? 'billing.plan_pro' : 'billing.plan_free')}
+          {t('billing.plan_named', { name: billing.planName })}
         </p>
         {billing.status === 'trialing' && billing.trialEnd && (
           <p className="text-sm">{t('billing.trial_until', { date: when(billing.trialEnd, locale) })}</p>
         )}
         {billing.status === 'past_due' && billing.graceUntil && (
           <p className="text-sm text-warn" role="status">
-            {t('billing.past_due', { date: when(billing.graceUntil, locale) })}
+            {t('billing.past_due', { date: when(billing.graceUntil, locale), plan: billing.planName })}
           </p>
         )}
         {billing.status === 'active' && billing.currentPeriodEnd && (
@@ -58,10 +60,10 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
         {billing.status === 'canceled' && <p className="text-sm text-muted">{t('billing.lapsed')}</p>}
         <ul className="list-inside list-disc text-sm text-muted">
           <li>{t('billing.includes_personal')}</li>
-          <li>{t(pro ? 'billing.includes_business' : 'billing.excludes_business')}</li>
+          <li>{t(books ? 'billing.includes_business' : 'billing.excludes_business')}</li>
           <li>
             {t('billing.includes_storage', {
-              gb: Number(BigInt(billing.features.storageBytes) / 1073741824n),
+              gb: Number(BigInt(billing.entitlements.storageBytes) / 1073741824n),
             })}
           </li>
         </ul>
@@ -72,7 +74,9 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
                 type="button"
                 className="btn-primary"
                 disabled={busy}
-                onClick={() => go(() => browserApi.startCheckout(workspaceId, { interval: 'month' }))}
+                onClick={() =>
+                  go(() => browserApi.startCheckout(workspaceId, { plan: 'pro', interval: 'month' }))
+                }
               >
                 {t('billing.upgrade_monthly')}
               </button>
@@ -80,7 +84,9 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
                 type="button"
                 className="btn-secondary"
                 disabled={busy}
-                onClick={() => go(() => browserApi.startCheckout(workspaceId, { interval: 'year' }))}
+                onClick={() =>
+                  go(() => browserApi.startCheckout(workspaceId, { plan: 'pro', interval: 'year' }))
+                }
               >
                 {t('billing.upgrade_yearly')}
               </button>
