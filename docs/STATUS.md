@@ -1329,7 +1329,17 @@ Phase 11 leftovers:
          project (the WAL replayed, reconciliation clean). It found that Postgres must run under an init process
          (`init: true`): pgBackRest's async archiver leaves a process PID 1 inherits, and Postgres as PID 1 restarted
          every connection when it exited.
-    4. ❌ `docs/runbooks/moving-platforms.md`.
+    4. ✅ **`docs/runbooks/moving-platforms.md`** (`claude/selfhost-4`, stacked on step 3): the move from home to a VPS
+       or to any cloud, in ADR-0050 §10's order. Logical replication for `montra` and `kratos` (a private link, a
+       `bypassrls` replication login, the schema from `pg_dump --schema-only`, a subscription owned by `montra_owner`),
+       files by `rclone` only if they change bucket, the master key copied or rewrapped on the old platform first
+       (ECS can't hold a key file), the switch with sequences carried across, and 30 days read-only. A small database
+       can be restored from pgBackRest instead. The replication steps were rehearsed between two local Postgres 16
+       containers: every table matched and the reconciliation checks passed; it found that the replication login
+       needs `usage` on schema `public`.
+    - **Next for ADR-0050:** a real home server (setup runbook end to end), a real tunnel, bucket and sending service,
+      the first restore drill, and settling BAK-01 or BAK-09 before turning object lock on. A GCP or Azure adapter and
+      Terraform wait until a move is decided.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

@@ -2,7 +2,7 @@
 
 Montra on one server with Docker Compose ([ADR-0050](../design/adr/0050-hosting-anywhere.md) §5 and §11). This is how
 the owner starts: a server at home, shared with family and friends, reached through a Cloudflare Tunnel. §8 covers the
-same stack on a VPS, which is where it moves when real customers come (ADR-0050 §10).
+same stack on a VPS, which is where it moves when real customers come ([moving platforms](moving-platforms.md)).
 
 The files are in [`infra/selfhost`](../../infra/selfhost): `compose.yaml`, `Caddyfile`, `montra.env.example`,
 `setup.sh` and `deploy.sh`. Day-to-day running is in [self-hosted operations](selfhost-operations.md).
