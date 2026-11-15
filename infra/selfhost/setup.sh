@@ -145,6 +145,7 @@ cmd_check() {
   fi
   command -v openssl >/dev/null && pass openssl || fail "openssl isn't installed"
   command -v jq >/dev/null && pass jq || fail "jq isn't installed (backup.sh status needs it)"
+  [ -d /etc/cron.d ] && pass cron || fail "cron isn't installed (the backups run from /etc/cron.d)"
 
   echo "Settings"
   if [ ! -f .env ]; then
@@ -261,6 +262,10 @@ EOF
 # --- cron -------------------------------------------------------------------------------------------------------------
 cmd_cron() {
   local here tmp
+  [ -d /etc/cron.d ] || {
+    echo "/etc/cron.d is missing: install cron (sudo apt install cron), then run ./setup.sh cron" >&2
+    return 1
+  }
   here=$(pwd)
   tmp=$(mktemp)
   cat >"$tmp" <<EOF

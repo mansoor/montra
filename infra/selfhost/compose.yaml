@@ -315,6 +315,8 @@ services:
     environment:
       <<: *api-environment
       DATABASE_ADMIN_URL_FILE: /run/secrets/database_admin_url
+    # x-api-secrets plus database_admin_url (YAML can't append to a list): keep the two in step, as each NAME_FILE in
+    # the API's settings must exist.
     secrets:
       - database_url
       - database_admin_url
@@ -330,6 +332,8 @@ services:
       - sentry_dsn
       - metrics_token
       - kratos_webhook_secret
+      - twilio_account_sid
+      - twilio_auth_token
     depends_on:
       postgres: { condition: service_healthy }
 
