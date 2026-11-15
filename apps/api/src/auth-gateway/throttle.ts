@@ -15,7 +15,8 @@ export interface Rule {
   delayAfter: number;
 }
 
-export type RuleName = 'account' | 'address' | 'second_factor' | 'code' | 'email_send' | 'sign_up';
+export type RuleName =
+  'account' | 'address' | 'second_factor' | 'code' | 'email_send' | 'sms_send' | 'sign_up';
 
 const MIN = 60_000;
 
@@ -36,6 +37,11 @@ export const RULES: Record<RuleName, Rule> = {
   code: { name: 'code', maxFailures: 10, windowMs: 15 * MIN, lockMs: 15 * MIN, delayAfter: 5 },
   /** Recovery and verification emails asked for from one address, sent or not: keeps the courier from being a spammer. */
   email_send: { name: 'email_send', maxFailures: 10, windowMs: 60 * MIN, lockMs: 60 * MIN, delayAfter: 10 },
+  /**
+   * Texted codes asked for, per number and per address (ADR-0049 §6). Each text costs money, and SMS pumping is
+   * fraud that asks for many: a few an hour is plenty for a person.
+   */
+  sms_send: { name: 'sms_send', maxFailures: 5, windowMs: 60 * MIN, lockMs: 60 * MIN, delayAfter: 5 },
   /** Sign-up attempts from one address. */
   sign_up: { name: 'sign_up', maxFailures: 20, windowMs: 60 * MIN, lockMs: 60 * MIN, delayAfter: 20 },
 };

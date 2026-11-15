@@ -17,6 +17,9 @@ interface FakeSession {
   aal: 'aal1' | 'aal2';
   authenticatedAt: Date;
   active: boolean;
+  /** ADR-0049 §6: a number in the traits, verified by text or not. */
+  phone?: string;
+  phoneVerified?: boolean;
 }
 
 let kratos: Server;
@@ -37,8 +40,11 @@ const sessionJson = (s: FakeSession, id = `sess-${s.token}`) => ({
   devices: [{ user_agent: 'vitest', ip_address: '127.0.0.1' }],
   identity: {
     id: s.identityId,
-    traits: { email: s.email, name: { first: 'Kim', last: 'Lee' } },
-    verifiable_addresses: [{ value: s.email, verified: s.verified, via: 'email' }],
+    traits: { email: s.email, name: { first: 'Kim', last: 'Lee' }, ...(s.phone ? { phone: s.phone } : {}) },
+    verifiable_addresses: [
+      { value: s.email, verified: s.verified, via: 'email' },
+      ...(s.phone ? [{ value: s.phone, verified: Boolean(s.phoneVerified), via: 'sms' }] : []),
+    ],
   },
 });
 
@@ -322,6 +328,55 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     expect(
       (await call('POST', '/v1/me/email-change', 'stale-mover', { newEmail: 'x@example.com' })).body.code,
     ).toBe('reauth.required');
+  });
+
+  it('keeps a copy of the verified number, and emails the address when it changes (ADR-0049 §6)', async () => {
+    const outbox = (h.app.get(MAIL_PORT) as MemoryMail).outbox;
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    try {
+      const phoneOf = async () =>
+        (
+          await admin.query(
+            `select phone_e164, phone_verified from app.app_user where email = 'phoner@example.com'`,
+          )
+        ).rows[0];
+      add('phoner', { identityId: 'id-phoner', email: 'phoner@example.com', phone: '+14155550177' });
+      expect((await call('GET', '/v1/me', 'phoner')).status).toBe(200);
+      expect(await phoneOf()).toEqual({ phone_e164: '+14155550177', phone_verified: false });
+      expect(outbox.at(-1)).toMatchObject({
+        to: 'phoner@example.com',
+        subject: 'The mobile number on your Montra account changed',
+      });
+      // Verified by a texted code: the same number, now usable for texts, with no second alert.
+      const before = outbox.length;
+      add('phoner-2', {
+        identityId: 'id-phoner',
+        email: 'phoner@example.com',
+        phone: '+14155550177',
+        phoneVerified: true,
+      });
+      await call('GET', '/v1/me', 'phoner-2');
+      expect(await phoneOf()).toEqual({ phone_e164: '+14155550177', phone_verified: true });
+      // (A new session is a new device, which has its own alert.)
+      expect(outbox.slice(before).filter((m) => /mobile number/.test(m.subject))).toEqual([]);
+      // A different number is announced, by email, to the address that signs in.
+      add('phoner-3', {
+        identityId: 'id-phoner',
+        email: 'phoner@example.com',
+        phone: '+14155550178',
+        phoneVerified: true,
+      });
+      await call('GET', '/v1/me', 'phoner-3');
+      expect(outbox.filter((m) => /mobile number/.test(m.subject)).at(-1)!.text).toMatch(/ending 0178/);
+      const events = await admin.query(
+        `select e.kind from app.security_event e join app.app_user u on u.id = e.user_id
+          where u.email = 'phoner@example.com' and e.kind = 'phone_changed'`,
+      );
+      expect(events.rows).toHaveLength(2);
+    } finally {
+      await admin.end();
+    }
   });
 
   it('makes a suspended identity inactive and ends its sessions, and restores it (ADR-0049 §4)', async () => {

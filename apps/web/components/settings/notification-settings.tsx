@@ -44,6 +44,9 @@ export function NotificationSettings({
   const [lowDays, setLowDays] = useState(String(initial.lowBalanceDays));
   const [importDays, setImportDays] = useState(String(initial.importReminderDays));
   const [unsubscribed, setUnsubscribed] = useState(initial.emailUnsubscribed);
+  const [textSecurity, setTextSecurity] = useState(initial.texts.security);
+  const [textReminders, setTextReminders] = useState(initial.texts.reminders);
+  const texts = initial.texts;
 
   return (
     <form
@@ -70,6 +73,7 @@ export function NotificationSettings({
               lowBalanceDays: Number(lowDays),
               importReminderDays: Number(importDays),
               emailUnsubscribed: unsubscribed,
+              ...(texts.available ? { texts: { security: textSecurity, reminders: textReminders } } : {}),
             }),
           t('notify.saved'),
         );
@@ -212,6 +216,48 @@ export function NotificationSettings({
         </label>
         <p className="text-xs text-muted">{t('notify.privacy')}</p>
       </section>
+
+      {texts.available && (
+        <section className="card space-y-3" aria-labelledby="notify-texts" data-testid="notify-texts">
+          <h2 id="notify-texts" className="text-base font-semibold">
+            {t('notify.texts')}
+          </h2>
+          {texts.phone && texts.verified ? (
+            <p className="text-sm text-muted">{t('notify.texts_to', { phone: texts.phone })}</p>
+          ) : (
+            <p className="text-sm text-muted">
+              {t(texts.phone ? 'notify.texts_unverified' : 'notify.texts_no_phone')}{' '}
+              <a className="underline" href="/settings/security">
+                {t('notify.texts_add_phone')}
+              </a>
+            </p>
+          )}
+          {texts.optedOut && (
+            <p className="text-sm text-warn" role="status">
+              {t('notify.texts_opted_out')}
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={textSecurity}
+              disabled={!texts.verified}
+              onChange={(e) => setTextSecurity(e.target.checked)}
+            />
+            {t('notify.texts_security')}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={textReminders}
+              disabled={!texts.verified}
+              onChange={(e) => setTextReminders(e.target.checked)}
+            />
+            {t('notify.texts_reminders')}
+          </label>
+          <p className="text-xs text-muted">{t('notify.texts_hint')}</p>
+        </section>
+      )}
 
       <button type="submit" className="btn-primary" disabled={busy}>
         {t('notify.save')}

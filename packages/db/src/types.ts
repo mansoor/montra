@@ -26,6 +26,10 @@ export interface AppUserTable {
   updated_at: Generated<Date>;
   deleted_at: Date | null;
   purge_after: Date | null;
+  /** ADR-0049 §6: the number in Kratos's traits, as last seen at sign-in (migration 0055). */
+  phone_e164: string | null;
+  phone_verified: Generated<boolean>;
+  phone_opted_out_at: Date | null;
 }
 
 export interface WorkspaceTable {
@@ -1307,6 +1311,9 @@ export interface NotificationPrefTable {
   unsubscribe_token: Generated<string>;
   version: Int8Default;
   updated_at: Generated<Date>;
+  /** ADR-0049 §6: texts, off until the person turns them on (migration 0055). */
+  sms_security: Generated<boolean>;
+  sms_reminders: Generated<boolean>;
 }
 
 // Phase 11: running the service (migration 0021, ADR-0020).
@@ -1368,6 +1375,13 @@ export interface PlanPriceTable {
 }
 
 /** A customer told about a plan change that gives them less, once (migration 0052). */
+/** Reminder texts a workspace sent in a month, against its plan's smsMonthly (migration 0055). */
+export interface SmsUsageTable {
+  workspace_id: string;
+  month: string;
+  sent: Generated<number>;
+}
+
 export interface PlanChangeNoticeTable {
   id: Generated<string>;
   version_id: string;
@@ -1688,6 +1702,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.plan_version': PlanVersionTable;
   'app.plan_price': PlanPriceTable;
   'app.plan_change_notice': PlanChangeNoticeTable;
+  'app.sms_usage': SmsUsageTable;
   'app.feature_flag': FeatureFlagTable;
   'app.feature_flag_override': FeatureFlagOverrideTable;
   'app.system_notice': SystemNoticeTable;

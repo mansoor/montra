@@ -125,6 +125,21 @@ export const templates = {
     ].join('\n');
     return { to: args.to, subject: 'Your Montra password was changed', text, category: 'security' };
   },
+  /** ADR-0049 §6, ADR-0045: the mobile number on the account was added, changed or removed. To the email address. */
+  phoneChanged(args: { to: string; at: Date; url: string; now: string | null }): MailMessage {
+    const what = args.now ? `is now the number ending ${args.now.slice(-4)}` : 'was removed';
+    const text = [
+      `The mobile number on your Montra account ${what}, at ${args.at.toISOString()}. Texted sign-in codes and alerts go to it.`,
+      '',
+      `If this was you, no action is needed. If not, reset your password and check your security settings now: ${args.url}`,
+    ].join('\n');
+    return {
+      to: args.to,
+      subject: 'The mobile number on your Montra account changed',
+      text,
+      category: 'security',
+    };
+  },
   /** AUTH-12 (ADR-0045): an authenticator app, security key or recovery codes were added, changed or removed. */
   twoStepChanged(args: { to: string; at: Date; url: string }): MailMessage {
     const text = [
