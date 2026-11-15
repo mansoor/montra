@@ -1,7 +1,8 @@
 # ADR-0050: Hosting anywhere: own servers first, any cloud later
 
-- Status: proposed (amends ADR-0020's infrastructure; AWS stays as one target)
+- Status: accepted (amends ADR-0020's infrastructure; AWS stays as one target)
 - Date: 2026-11-14
+- Accepted: 2026-11-14, with the owner's choice of where to start (§11)
 
 ## Context
 
@@ -48,7 +49,17 @@ discovery. The one exception is key wrapping (§3), and that has a non-cloud ada
 ### 2. Secrets from the environment or from files
 
 - Every secret setting can also be given as `<NAME>_FILE`, a path to a file holding the value, as Docker and Kubernetes
-  secrets provide them. The API, the doc-worker and Kratos's start-up script read both. Setting both is an error.
+  secrets provide them. The API, the doc-worker and Kratos's start-up read both. Setting both is an error, and an empty
+  value counts as not set.
+  - **The API** (`apps/api/src/secret-files.ts`) takes `_FILE` for every setting in `config.ts`, and its command-line
+    tools for `DATABASE_ADMIN_URL`. The migration command in `@montra/db` does too.
+  - **The doc-worker** (`montra_doc_worker/settings.py`) takes it for every setting it reads.
+  - **Kratos's image** is distroless, with no shell for a script, so its entrypoint is a small Go program
+    (`infra/kratos/entrypoint`). It turns `NAME_FILE` into `NAME` for the settings that can hold a secret (`DSN`,
+    `SECRETS_*`, `COURIER_*`, `SELFSERVICE_*`, `OAUTH2_PROVIDER_*`), then runs `kratos` with the same arguments. Other
+    `_FILE` variables are left alone: the base image's `SSL_CERT_FILE` is a path, not a secret.
+  - `VAULT_TOKEN_FILE` is the one file read again on every use, so a token that a Vault Agent renews is picked up
+    without a restart.
 - Where the files come from is the platform's business:
   - on own servers, root-only files on an encrypted disk;
   - on AWS, Secrets Manager through ECS;
@@ -70,6 +81,22 @@ Workspace data keys are wrapped by a master key (design 03 §12). `KMS_MODE` get
 Moving between modes is a command, `crypto:rewrap`. It unwraps each workspace's data key with the old adapter and wraps
 it with the new one, in batches, and records progress so it can resume. Nothing else is re-encrypted, because the data
 keys don't change.
+
+How that works, as built:
+
+- **While keys move, the service runs.** `KMS_MODE` is the new mode and `KMS_PREVIOUS_MODE` the old one. New keys are
+  wrapped with the new mode, and a key the new mode can't unwrap is tried with the old one. The old local key is
+  `PREVIOUS_MASTER_KEY_FILE`, or `MASTER_KEY_FILE` when moving away from local.
+- **The stored keys are the record of progress.** A key the new mode already unwraps is skipped, so the command can be
+  stopped and run again without a table of its own. Each new wrapping is checked to unwrap before it is written, and it
+  is written only if the row hasn't changed since it was read.
+- **Every wrapped key moves**, not only the workspaces': a backup schedule's key, a restore's key, and the key inside a
+  queued backup job.
+- **It runs as the database owner** (`DATABASE_ADMIN_URL`), because it reads every workspace's keys past row level
+  security and `montra_app` can't update them.
+- Moving within AWS KMS or within Vault isn't Montra's job: both rotate their own keys. Rotating a local key is a move
+  from local to local, with the old key as `PREVIOUS_MASTER_KEY_FILE`.
+- The steps are in `docs/runbooks/key-wrapping.md`.
 
 ### 4. Files: the S3 API is the contract
 
@@ -95,7 +122,7 @@ keys don't change.
 - **Backups** (§7).
 - **Optional:** Prometheus and Grafana, and Vault for `KMS_MODE=vault`.
 - **Cloudflare** stays in front for DNS, WAF and rate limits. A Cloudflare Tunnel is supported, for servers that can't
-  or shouldn't open inbound ports.
+  or shouldn't open inbound ports, and is the default for a server at home (§11).
 
 It comes with an env file template and a setup script that checks the requirements in §1. Two runbooks go with it:
 `selfhost-setup.md` and `selfhost-operations.md` (updates, restore and rotating keys).
@@ -148,6 +175,28 @@ The runbook `moving-platforms.md` sets out the order:
 4. Move the master key: either rewrap to the new adapter (`crypto:rewrap`), or bring the `local` key over.
 5. Switch DNS in Cloudflare. Stop the old writers first.
 6. Run the reconciliation checks. Keep the old platform read-only for 30 days.
+
+### 11. Where Montra starts: a home server, then a VPS
+
+The owner's decision on accepting this ADR (2026-11-14): **Montra starts on a server at home, shared with family and
+friends. It moves to a VPS when real customers come.** The Consequences below still hold, and are accepted for that
+first stage, where the people relying on it know it runs at home. What this changes in the build:
+
+- **A Cloudflare Tunnel is the default way in, not an option.** `cloudflared` runs beside Caddy and connects out to
+  Cloudflare, so the home router opens no inbound ports, and a dynamic IP address doesn't matter: nothing points at it.
+  Cloudflare still gives DNS, TLS at the edge, WAF and rate limits. Publishing ports 80 and 443 stays possible for the
+  VPS, where Caddy gets its own certificates as in §5.
+- **Email goes through a sending service over SMTP** from the first day (Postmark, Mailgun, SES or similar), with SPF,
+  DKIM and DMARC on the domain. Nothing tries to deliver mail from the home connection.
+- **Power and disks are the owner's problem.** The setup runbook asks for a UPS that shuts the server down cleanly, disks
+  in a mirror with SMART monitoring and an alert, and backups off the house (§7). The operations runbook says what to do
+  after a power cut and when a disk fails.
+- **`BILLING_MODE=off`** for family and friends: no Stripe account, no plans enforced. Turning billing on is part of the
+  move to a VPS, with ADR-0049's plans.
+- **The master key is a local file** (`KMS_MODE=local` from `MASTER_KEY_FILE`), backed up offline apart from the
+  database backups. Vault is the step up when it's worth running.
+- **The move to a VPS** follows `moving-platforms.md` (§10), the same as any other move. Because the images, the Compose
+  stack and the backups are the same, it's mostly copying data and switching the tunnel or DNS.
 
 ## Build order
 

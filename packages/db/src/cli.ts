@@ -1,7 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { migrate, resetDatabase } from './migrate.js';
 import { loadReferenceData } from './reference/load.js';
 
-const url = process.env.DATABASE_ADMIN_URL ?? 'postgres://montra_owner:montra_owner@localhost:5432/montra';
+// ADR-0050 §2: the owner's URL can come from a file, as Docker and Kubernetes secrets do.
+const urlFile = process.env.DATABASE_ADMIN_URL_FILE;
+if (urlFile && process.env.DATABASE_ADMIN_URL)
+  throw new Error('Set DATABASE_ADMIN_URL or DATABASE_ADMIN_URL_FILE, not both');
+const url =
+  (urlFile ? readFileSync(urlFile, 'utf8').trim() : process.env.DATABASE_ADMIN_URL) ??
+  'postgres://montra_owner:montra_owner@localhost:5432/montra';
 const command = process.argv[2] ?? 'migrate';
 
 if (command === 'reset') {

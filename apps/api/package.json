@@ -16,7 +16,8 @@
     "start:auth-gateway": "node dist/auth-gateway-main.js",
     "dev:auth-gateway": "tsx watch --conditions=@montra/source src/auth-gateway-main.ts",
     "fx:load": "tsx --conditions=@montra/source src/fx-cli.ts",
-    "staff:add": "tsx --conditions=@montra/source src/staff-cli.ts"
+    "staff:add": "tsx --conditions=@montra/source src/staff-cli.ts",
+    "crypto:rewrap": "tsx --conditions=@montra/source src/crypto-cli.ts rewrap"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1161.0",

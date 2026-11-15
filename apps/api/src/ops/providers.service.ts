@@ -131,10 +131,23 @@ export class ProvidersService {
             : [],
       },
       keys: {
-        configured: c.KMS_MODE !== 'aws' || Boolean(c.AWS_KMS_KEY_ID),
+        configured:
+          c.KMS_MODE === 'aws'
+            ? Boolean(c.AWS_KMS_KEY_ID)
+            : c.KMS_MODE === 'vault'
+              ? Boolean(c.VAULT_ADDR && c.VAULT_TOKEN)
+              : true,
         mode: c.KMS_MODE,
-        // A KMS key's id or ARN names the key; it isn't the key.
-        details: c.KMS_MODE === 'aws' ? [{ label: 'key_id', value: c.AWS_KMS_KEY_ID ?? '—' }] : [],
+        // A KMS key's id or ARN, or Vault's key name, names the key; it isn't the key (ADR-0050 §3).
+        details:
+          c.KMS_MODE === 'aws'
+            ? [{ label: 'key_id', value: c.AWS_KMS_KEY_ID ?? '—' }]
+            : c.KMS_MODE === 'vault'
+              ? [
+                  hostOf(c.VAULT_ADDR) ? { label: 'endpoint', value: hostOf(c.VAULT_ADDR)! } : null,
+                  { label: 'key_id', value: c.VAULT_TRANSIT_KEY },
+                ]
+              : [],
       },
       push: { configured: c.PUSH_MODE === 'expo', mode: c.PUSH_MODE, details: [] },
       exchange_rates: {

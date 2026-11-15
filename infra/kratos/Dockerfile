@@ -33,9 +33,13 @@ RUN go get \
 RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false \
   -ldflags="-s -w -X github.com/ory/kratos/driver/config.Version=${KRATOS_VERSION} -X github.com/ory/kratos/driver/config.Commit=${KRATOS_COMMIT}" \
   -o /usr/bin/kratos .
+# The start-up wrapper (ADR-0050 §2): reads NAME_FILE secrets into NAME, then runs Kratos. Its tests run here.
+COPY entrypoint /entrypoint
+RUN cd /entrypoint && go vet ./... && go test ./...   && CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /usr/bin/montra-kratos .
 
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:25ac8f0c3b2334a9eb05452266bd4697864a8c8ef0ef71e5e6480d7f92868329
 COPY --from=build /usr/bin/kratos /usr/bin/kratos
+COPY --from=build /usr/bin/montra-kratos /usr/bin/montra-kratos
 COPY kratos.yml identity.schema.json /etc/config/kratos/
 COPY templates /etc/config/kratos/templates
 # Aurora requires TLS. `sslrootcert` in the DSN points here. When AWS changes this bundle the build fails on the checksum,
@@ -44,5 +48,6 @@ COPY templates /etc/config/kratos/templates
 ADD --chmod=644 --checksum=sha256:90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/config/kratos/rds-global-bundle.pem
 USER 10000
 EXPOSE 4433 4434
-ENTRYPOINT ["kratos"]
+# Any NAME_FILE becomes NAME (secrets as files on any platform); the arguments go to `kratos` unchanged.
+ENTRYPOINT ["montra-kratos"]
 CMD ["serve", "-c", "/etc/config/kratos/kratos.yml"]

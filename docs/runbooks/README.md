@@ -8,6 +8,7 @@
 | [Disaster recovery](disaster-recovery.md) | Data is lost or a region or account is gone   |
 | [Restore drill](restore-drill.md)         | Every quarter, to prove the backups work      |
 | [Security patching](security-patching.md) | A scanner or advisory reports a vulnerability |
+| [Key wrapping](key-wrapping.md)           | Making a master key, using Vault, or moving the wrapped keys |
 | [Launch checklist](launch-checklist.md)   | Going from closed beta to `v1.0.0`            |
 
 ## What has and hasn't been tested
