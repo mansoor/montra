@@ -65,6 +65,11 @@ x-api-environment: &api-environment
   METRICS_TOKEN_FILE: /run/secrets/metrics_token
   KRATOS_WEBHOOK_SECRET_FILE: /run/secrets/kratos_webhook_secret
   PUSH_MODE: expo
+  # Texts (ADR-0049 §6): off unless SMS_MODE=twilio, with the Twilio secrets filled in.
+  SMS_MODE: ${SMS_MODE:-off}
+  TWILIO_ACCOUNT_SID_FILE: /run/secrets/twilio_account_sid
+  TWILIO_AUTH_TOKEN_FILE: /run/secrets/twilio_auth_token
+  TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
   API_URL: https://${API_HOST:?Set API_HOST in .env}
   WEB_URL: https://${APP_HOST:?Set APP_HOST in .env}
   # Cloudflare, then Caddy (with cloudflared between them on the tunnel, which Caddy trusts and passes through).
@@ -84,6 +89,8 @@ x-api-secrets: &api-secrets
   - sentry_dsn
   - metrics_token
   - kratos_webhook_secret
+  - twilio_account_sid
+  - twilio_auth_token
 
 # Health checks run inside the images, which have node but no curl.
 x-node-health: &node-health
@@ -102,6 +109,9 @@ x-kratos-environment: &kratos-environment
   SECRETS_PAGINATION_FILE: /run/secrets/kratos_pagination_secret
   COURIER_SMTP_CONNECTION_URI_FILE: /run/secrets/kratos_smtp_url
   COURIER_SMTP_FROM_ADDRESS: ${KRATOS_FROM_ADDRESS:?Set KRATOS_FROM_ADDRESS in .env}
+  # Texted codes (infra/kratos/templates/README.md): the channel's JSON, with the Twilio token, is a secret; empty is off.
+  COURIER_CHANNELS_FILE: /run/secrets/kratos_sms_channel
+  SELFSERVICE_METHODS_CODE_MFA_ENABLED: ${KRATOS_SMS_MFA:-false}
   SERVE_PUBLIC_BASE_URL: https://${AUTH_HOST:?Set AUTH_HOST in .env}/
   SERVE_PUBLIC_CORS_ALLOWED_ORIGINS: '["https://${APP_HOST}"]'
   SERVE_ADMIN_BASE_URL: http://kratos:4434/
@@ -171,6 +181,7 @@ x-kratos-secrets: &kratos-secrets
   - kratos_pagination_secret
   - kratos_smtp_url
   - kratos_webhook_secret
+  - kratos_sms_channel
 
 x-api-service: &api-service
   <<: *app
@@ -433,3 +444,6 @@ secrets:
   kratos_smtp_url: { file: ./secrets/kratos_smtp_url }
   kratos_webhook_secret: { file: ./secrets/kratos_webhook_secret }
   cloudflare_tunnel_token: { file: ./secrets/cloudflare_tunnel_token }
+  twilio_account_sid: { file: ./secrets/twilio_account_sid }
+  twilio_auth_token: { file: ./secrets/twilio_auth_token }
+  kratos_sms_channel: { file: ./secrets/kratos_sms_channel }

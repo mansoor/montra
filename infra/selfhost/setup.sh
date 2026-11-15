@@ -24,7 +24,8 @@ URLS=(database_url database_admin_url admin_database_url support_database_url kr
 # Yours to fill in. Required: they must not be empty.
 REQUIRED=(s3_access_key s3_secret_key mail_url kratos_smtp_url)
 # Yours to fill in if you use them: an empty file means not in use.
-OPTIONAL=(cloudflare_tunnel_token stripe_secret_key stripe_webhook_secret anthropic_api_key sentry_dsn)
+OPTIONAL=(cloudflare_tunnel_token stripe_secret_key stripe_webhook_secret anthropic_api_key sentry_dsn twilio_account_sid
+  twilio_auth_token kratos_sms_channel)
 
 # The owner of a secret file: Postgres reads its password as root before dropping privileges; the rest run as APP_UID.
 owner_of() { if [ "$1" = postgres_password ] || [ "$1" = role_passwords ]; then echo 0; else echo "$APP_UID"; fi; }
@@ -79,6 +80,7 @@ cmd_secrets() {
   echo "  kratos_smtp_url                  the same server for Kratos: smtp://<user>:<password>@<host>:587/"
   echo "  cloudflare_tunnel_token          the tunnel's token (at home, with COMPOSE_PROFILES=tunnel)"
   echo "  anthropic_api_key, sentry_dsn    optional"
+  echo "  twilio_*, kratos_sms_channel     optional: texts (SMS_MODE=twilio; infra/kratos/sms-channel.example.json)"
   echo
   echo "Back up secrets/master_key now, offline and apart from the database backups (docs/runbooks/key-wrapping.md)."
 }
