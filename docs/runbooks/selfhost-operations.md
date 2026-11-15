@@ -147,5 +147,8 @@ the [restore drill](restore-drill.md). Restoring needs the `master_key` the back
 
 | What                                                                                                         | Result    |
 | ------------------------------------------------------------------------------------------------------------ | --------- |
-| `deploy.sh` and the stack, locally on Docker Desktop with images built from this repository, without the tunnel | See STATUS |
+| `setup.sh secrets`, `check` and `init` from nothing, locally on Docker Desktop (images built from this repository, MinIO and Mailpit standing in, no tunnel) | Every service healthy; roles, Kratos and ledger migrations applied |
+| Through Caddy: `app.`, `api.` and `auth.`; `/internal/metrics` from outside                                   | Answer; 404 |
+| A sign-up through the auth gateway                                                                            | Session made, confirmation email sent |
+| A second `deploy.sh` that replaced both API replicas, with `/readyz` called every 0.2 s through Caddy        | 382 of 382 answered |
 | A real server, a power cut, a disk swap, rotating each secret                                                | Not tried |

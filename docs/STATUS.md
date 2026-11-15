@@ -1297,6 +1297,11 @@ Phase 11 leftovers:
          which `next.config.mjs` loads at start (both `ERR_MODULE_NOT_FOUND`). The web build now loads its config to
          prove it. They affected the AWS images too, which have never been run. Found by bringing the stack up.
        - **Texts:** `SMS_MODE`, the Twilio secrets and Kratos's SMS channel (ADR-0049 §6) are wired in, off by default.
+       - **Brought up locally** on Docker Desktop from images built here, with MinIO and Mailpit standing in and no
+         tunnel: `setup.sh secrets`, `check` and `init` from nothing, every service healthy, the three hostnames
+         through Caddy, `/internal/*` refused, a sign-up through the auth gateway with its email, and a second deploy
+         replacing both API replicas while `/readyz` answered 382 of 382 calls. It found the two image bugs above and a
+         doc-worker one in step 1 (it resolved its secret files twice).
        - Runbooks: `selfhost-setup.md` (hardware, mirror, LUKS, UPS, tunnel, email, bucket, VPS variant, secrets,
          first start, GitHub settings) and `selfhost-operations.md` (releases and rollback, patching, power cuts, a
          failing disk, health, rotating each secret, `pg_dump` until step 3).

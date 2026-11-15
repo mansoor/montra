@@ -224,5 +224,5 @@ The images are private packages: the server's `docker login` (§3) is what lets 
 | `docker compose config` with the tunnel (no port published) and with `compose.direct.yaml` (80, 443) | Pass   |
 | `caddy validate` and `caddy adapt` for both, with the trusted proxies set                            | Pass   |
 | `shellcheck` on `setup.sh` and `deploy.sh`; `actionlint` on `deploy.yml`                             | Pass   |
-| The whole stack up locally, see [operations §8](selfhost-operations.md#8-what-was-tested)            | See there |
+| The whole stack up locally from `setup.sh init`, see [operations §8](selfhost-operations.md#8-what-was-tested) | Pass   |
 | A real tunnel, sending service, bucket, UPS or disk failure                                          | Not tried |
