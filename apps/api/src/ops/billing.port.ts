@@ -11,6 +11,8 @@ export interface ProviderSubscription {
   /** As the provider says it: trialing, active, past_due, unpaid, canceled, incomplete, incomplete_expired, paused. */
   status: string;
   interval: 'month' | 'year' | null;
+  /** The provider's price id, which says which plan version it's for (ADR-0049 §1). */
+  priceId: string | null;
   trialEnd: Date | null;
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
@@ -19,7 +21,8 @@ export interface ProviderSubscription {
 
 export interface CheckoutInput {
   workspaceId: string;
-  interval: 'month' | 'year';
+  /** The provider's price id, from the plan version's `plan_price`. */
+  price: string;
   customer: string | null;
   email: string;
   trial: boolean;
@@ -38,6 +41,10 @@ export interface BillingPort {
   checkoutUrl(input: CheckoutInput): Promise<string>;
   portalUrl(customer: string, returnUrl: string): Promise<string>;
   subscription(id: string): Promise<ProviderSubscription>;
+  /** ADR-0049 §4: a trial runs on to a new end, with nothing charged for the extra days. */
+  extendTrial(subscription: string, until: Date): Promise<void>;
+  /** ADR-0049 §4: a coupon made in the provider's dashboard, for a workspace that pays there. */
+  applyCoupon(subscription: string, coupon: string): Promise<void>;
   /** Checks the signature against the raw body, and refuses anything else. */
   parseEvent(rawBody: Buffer, signature: string | undefined): BillingEvent;
 }
@@ -104,12 +111,9 @@ export class StripeBilling implements BillingPort {
   }
 
   async checkoutUrl(input: CheckoutInput): Promise<string> {
-    const price =
-      input.interval === 'year' ? this.config.STRIPE_PRICE_PRO_YEARLY : this.config.STRIPE_PRICE_PRO_MONTHLY;
-    if (!price) throw new AppError(503, 'billing.not_configured', 'Plans are not available yet');
     const form = new URLSearchParams({
       mode: 'subscription',
-      'line_items[0][price]': price,
+      'line_items[0][price]': input.price,
       'line_items[0][quantity]': '1',
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
@@ -135,19 +139,39 @@ export class StripeBilling implements BillingPort {
   async subscription(id: string): Promise<ProviderSubscription> {
     const s = await this.call('GET', `/v1/subscriptions/${encodeURIComponent(id)}`);
     const item = ((s.items as StripeObject | undefined)?.data as StripeObject[] | undefined)?.[0];
-    const interval = ((item?.price as StripeObject | undefined)?.recurring as StripeObject | undefined)
-      ?.interval;
+    const price = item?.price as StripeObject | undefined;
+    const interval = (price?.recurring as StripeObject | undefined)?.interval;
     return {
       id: s.id as string,
       customer: idOf(s.customer) ?? '',
       status: s.status as string,
       interval: interval === 'month' || interval === 'year' ? interval : null,
+      priceId: idOf(price),
       trialEnd: date(s.trial_end),
       // Newer API versions moved this from the subscription onto its items.
       currentPeriodEnd: date(item?.current_period_end ?? s.current_period_end),
       cancelAtPeriodEnd: Boolean(s.cancel_at_period_end),
       workspaceId: ((s.metadata as StripeObject | undefined)?.workspace_id as string | undefined) ?? null,
     };
+  }
+
+  async extendTrial(subscription: string, until: Date): Promise<void> {
+    await this.call(
+      'POST',
+      `/v1/subscriptions/${encodeURIComponent(subscription)}`,
+      new URLSearchParams({
+        trial_end: String(Math.trunc(until.getTime() / 1000)),
+        proration_behavior: 'none',
+      }),
+    );
+  }
+
+  async applyCoupon(subscription: string, coupon: string): Promise<void> {
+    await this.call(
+      'POST',
+      `/v1/subscriptions/${encodeURIComponent(subscription)}`,
+      new URLSearchParams({ 'discounts[0][coupon]': coupon }),
+    );
   }
 
   parseEvent(rawBody: Buffer, signature: string | undefined): BillingEvent {
@@ -185,6 +209,12 @@ export class NoBilling implements BillingPort {
     return this.refuse();
   }
   subscription(): Promise<ProviderSubscription> {
+    return this.refuse();
+  }
+  extendTrial(): Promise<void> {
+    return this.refuse();
+  }
+  applyCoupon(): Promise<void> {
     return this.refuse();
   }
   parseEvent(): BillingEvent {

@@ -146,7 +146,7 @@ export function attemptOf(
   if (req.method !== 'POST') return null;
   const [path, query = ''] = req.url.split('?', 2) as [string, string?];
   const kind = SUBMIT.exec(path)?.[1] as FlowKind | undefined;
-  if (!kind || kind === 'settings') return null;
+  if (!kind) return null;
   const flowId = new URLSearchParams(query).get('flow');
   const contentType = header(req.headers, 'content-type');
   const json =
@@ -159,12 +159,33 @@ export function attemptOf(
 
   if (kind === 'registration') return { ...base, checks: [at(RULES.sign_up, ip)], countAlways: true };
 
+  /** A text with a code is about to go to this number (ADR-0049 §6): limited per number and per address. */
+  const texted = (phone: string): Attempt => ({
+    ...base,
+    checks: [at(RULES.sms_send, `number:${phone}`), at(RULES.sms_send, ip)],
+    countAlways: true,
+  });
+  const phoneIn = (...values: (string | undefined)[]) =>
+    values.map((v) => v?.trim().replace(/[\s().-]/g, '')).find((v) => v && /^\+[1-9]\d{6,14}$/.test(v)) ??
+    null;
+
+  // Settings: saving a number texts it a code to verify it. Nothing else in settings is limited here.
+  if (kind === 'settings') {
+    const phone = method === 'profile' ? phoneIn(fields['traits.phone']) : null;
+    return phone ? texted(phone) : null;
+  }
+
   const emailed = (): Attempt | null => {
     if (fields.code) {
       const checks = [at(RULES.code, ip)];
       if (flowId) checks.push(at(RULES.code, `flow:${flowId}`));
-      return { ...base, checks };
+      // A texted second factor: wrong codes count against the session, as an authenticator's do.
+      const session = kind === 'login' ? sessionOf(req.headers) : null;
+      if (session) checks.unshift(at(RULES.second_factor, session));
+      return { ...base, checks, clearOnSuccess: session ? [checks[0]!.key] : [] };
     }
+    const phone = phoneIn(fields.address, fields.phone, fields.identifier, fields.email);
+    if (phone) return texted(phone);
     if (fields.email || fields.identifier || kind !== 'login')
       return { ...base, checks: [at(RULES.email_send, ip)], countAlways: true };
     return null;

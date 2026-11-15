@@ -51,7 +51,7 @@ aws dynamodb create-table --table-name <lock-table> \
 
 ### Stripe
 
-- [ ] Products and the Pro monthly and yearly prices. Put the price ids in `terraform.tfvars`.
+- [ ] A product and a monthly and yearly price for each paid plan. Add each price id to its plan version in the staff console (ADR-0049), not to `terraform.tfvars`.
 - [ ] A webhook endpoint at the API's billing webhook route. Keep the signing secret for step 4.
 - [ ] Test mode keys for `dev` and `staging`, live keys for `prod` only.
 

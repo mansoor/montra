@@ -15,6 +15,7 @@ export * from './notifications.js';
 export * from './calendar-date.js';
 export * from './reconciliation.js';
 export * from './operations.js';
+export * from './phone.js';
 export * from './accounts-summary.js';
 export * from './dashboard-charts.js';
 export * from './spending-explore.js';

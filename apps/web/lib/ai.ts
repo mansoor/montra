@@ -24,8 +24,12 @@ export const USAGE_TONE: Record<AiSettingsDto['usage']['state'], Tone> = {
   exhausted: 'bad',
 };
 
-/** Share of the monthly budget spent, 0..100 (null without a budget). */
+/**
+ * Share of this month's AI limit used, 0..100 (null without a limit). The server's share counts the plan's allowance
+ * as well as the budget (ADR-0049 §2), so it wins when there is one.
+ */
 export function budgetPercent(s: Pick<AiSettingsDto, 'monthlyBudgetUsd' | 'usage'>): number | null {
+  if (s.usage.share !== null) return Math.min(100, whole(s.usage.share * 100));
   if (s.monthlyBudgetUsd === null || s.monthlyBudgetUsd <= 0) return null;
   return Math.min(100, whole((s.usage.spentUsd / s.monthlyBudgetUsd) * 100));
 }

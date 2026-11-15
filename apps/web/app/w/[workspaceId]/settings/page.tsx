@@ -172,9 +172,8 @@ export default async function SettingsPage({
       : [null, []];
     body = <StorageSettings workspace={workspace} destination={destination} failed={failed} />;
   } else if (tab === 'billing') {
-    body = (
-      <BillingPanel workspaceId={workspaceId} billing={await load((api) => api.getBilling(workspaceId))} />
-    );
+    const [billing, offers] = await load((api) => Promise.all([api.getBilling(workspaceId), api.getPlans()]));
+    body = <BillingPanel workspaceId={workspaceId} billing={billing} offers={offers} />;
   } else if (tab === 'support') {
     body = (
       <SupportAccessPanel

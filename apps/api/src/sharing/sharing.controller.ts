@@ -32,6 +32,7 @@ import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { isAdmin, requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
+import { Plans } from '../ops/plans.js';
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -44,6 +45,7 @@ export class SharingController {
     @Inject(MAIL_PORT) private readonly mail: MailPort,
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(AUTH_PORT) private readonly auth: AuthPort,
+    @Inject(Plans) private readonly plans: Plans,
   ) {}
 
   @Get('members')
@@ -75,6 +77,7 @@ export class SharingController {
         .where('accepted_at', 'is', null)
         .where('revoked_at', 'is', null)
         .execute();
+      await this.assertLoginRoom(trx, ctx.workspaceId!);
       return trx
         .insertInto('app.workspace_invite')
         .values({
@@ -115,6 +118,21 @@ export class SharingController {
       familyMemberId: invite.family_member_id,
       ...(this.config.NODE_ENV === 'production' ? {} : { token }),
     };
+  }
+
+  /** ADR-0049 §1: a plan can limit how many people sign in, counting those already invited. */
+  private async assertLoginRoom(trx: Trx, workspaceId: string): Promise<void> {
+    const { familyLogins } = await this.plans.entitlements(trx);
+    if (familyLogins === null) return;
+    const { rows } = await sql<{ n: string }>`
+      select (select count(*) from app.workspace_member m where m.workspace_id = ${workspaceId} and m.status = 'active')
+           + (select count(*) from app.workspace_invite i where i.workspace_id = ${workspaceId}
+                and i.accepted_at is null and i.revoked_at is null and i.expires_at > now()) as n`.execute(
+      trx,
+    );
+    if (Number(rows[0]?.n ?? 0) >= familyLogins) {
+      throw unprocessable('plan.limit', `This plan lets ${familyLogins} people sign in to the workspace`);
+    }
   }
 
   @Get('invites')

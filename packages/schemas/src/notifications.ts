@@ -17,6 +17,7 @@ export const NOTIFICATION_TYPES = [
   'weekly_digest',
   'backup_ready',
   'storage_failing',
+  'ai_allowance',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;
@@ -53,6 +54,20 @@ export const NotificationPrefsDto = z.object({
   lowBalanceDays: z.number().int(),
   importReminderDays: z.number().int(),
   emailUnsubscribed: z.boolean(),
+  /**
+   * ADR-0049 §6: alerts and reminders by text, to the number verified in security settings. `available` is false when
+   * this service doesn't send texts. Reminders by text also need a plan that includes them.
+   */
+  texts: z.object({
+    available: z.boolean(),
+    /** The country code and last four digits only. */
+    phone: z.string().nullable(),
+    verified: z.boolean(),
+    /** The number replied STOP. Texts start again once the number changes. */
+    optedOut: z.boolean(),
+    security: z.boolean(),
+    reminders: z.boolean(),
+  }),
   version: z.number().int(),
 });
 export type NotificationPrefsDto = z.infer<typeof NotificationPrefsDto>;
@@ -70,6 +85,7 @@ export const UpdateNotificationPrefsRequest = z
     lowBalanceDays: z.number().int().min(1).max(90),
     importReminderDays: z.number().int().min(1).max(90),
     emailUnsubscribed: z.boolean(),
+    texts: z.object({ security: z.boolean(), reminders: z.boolean() }).partial(),
   })
   .partial()
   .refine((v) => (v.quietStart === undefined) === (v.quietEnd === undefined), {

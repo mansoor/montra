@@ -5,10 +5,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
-import { entitlementsFor, maintenanceNoticeOk, type Plan } from '@montra/domain';
+import { maintenanceNoticeOk } from '@montra/domain';
 import type {
+  AiCeilingDto,
   AdminAccountDto,
-  AdminSetPlanRequest,
   AdminSupportRequestDto,
   AdminWorkspaceDto,
   AiAccuracyRowDto,
@@ -17,6 +17,7 @@ import type {
   CreateNoticeRequest,
   FeatureFlagDto,
   ImportFailureRowDto,
+  SaveAiCeilingRequest,
   SaveFeatureFlagRequest,
   SaveMerchantRequest,
   SaveMileageRateRequest,
@@ -26,6 +27,7 @@ import type {
 import { notFound, unprocessable } from '../common/errors.js';
 import { AdminDb, SupportDb } from './staff.js';
 import { POLICY_KEYS, readPasswordPolicy } from '../auth-gateway/policy.js';
+import { AI_CEILING_SETTING, readAiCeiling } from '../ai/ai.service.js';
 
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null;
 
@@ -62,14 +64,31 @@ export class AdminService {
         deleted_at: Date | null;
         workspaces: string;
       }>`select * from app.admin_find_accounts(${query.trim()})`.execute(trx);
-      return rows.map((r) => ({
-        id: r.id,
-        email: r.email,
-        displayName: r.display_name,
-        createdAt: r.created_at.toISOString(),
-        deletedAt: iso(r.deleted_at),
-        workspaces: Number(r.workspaces),
-      }));
+      // ADR-0049 §4: whether each is suspended, and closing.
+      const { rows: states } = await sql<{
+        user_id: string;
+        kind: 'abuse' | 'fraud' | 'legal_hold' | null;
+        reason: string | null;
+        suspended_at: Date | null;
+        purge_after: Date | null;
+      }>`select * from app.admin_account_states(${rows.map((r) => r.id)}::uuid[])`.execute(trx);
+      const state = new Map(states.map((x) => [x.user_id, x]));
+      return rows.map((r) => {
+        const st = state.get(r.id);
+        return {
+          id: r.id,
+          email: r.email,
+          displayName: r.display_name,
+          createdAt: r.created_at.toISOString(),
+          deletedAt: iso(r.deleted_at),
+          workspaces: Number(r.workspaces),
+          suspension:
+            st?.kind && st.suspended_at
+              ? { kind: st.kind, reason: st.reason ?? '', at: st.suspended_at.toISOString() }
+              : null,
+          purgeAfter: iso(st?.purge_after),
+        };
+      });
     });
   }
 
@@ -79,7 +98,7 @@ export class AdminService {
         id: string;
         name: string;
         role: string;
-        plan: 'free' | 'pro';
+        plan: string;
         status: string;
         provider: string | null;
         current_period_end: Date | null;
@@ -91,7 +110,12 @@ export class AdminService {
         deleted_at: Date | null;
         support_until: Date | null;
       }>`select * from app.admin_account_workspaces(${userId}::uuid)`.execute(trx);
+      const { rows: plans } = await sql<{ workspace_id: string; plan_name: string; trial_end: Date | null }>`
+        select * from app.admin_workspace_plans(${rows.map((r) => r.id)}::uuid[])`.execute(trx);
+      const plan = new Map(plans.map((p) => [p.workspace_id, p]));
       return rows.map((r) => ({
+        planName: plan.get(r.id)?.plan_name ?? r.plan,
+        trialEnd: iso(plan.get(r.id)?.trial_end),
         id: r.id,
         name: r.name,
         role: r.role,
@@ -107,28 +131,6 @@ export class AdminService {
         deletedAt: iso(r.deleted_at),
         supportUntil: iso(r.support_until),
       }));
-    });
-  }
-
-  /** A complimentary plan, or taking one away. A workspace paying through a provider is changed there, not here. */
-  async setPlan(staffId: string, workspaceId: string, req: AdminSetPlanRequest): Promise<void> {
-    await this.db.run(async (trx) => {
-      const { rows } = await sql<{ provider: string | null; status: string }>`
-        select * from app.admin_subscription(${workspaceId}::uuid)`.execute(trx);
-      const current = rows[0];
-      if (current?.provider && current.provider !== 'staff' && current.status !== 'canceled') {
-        throw unprocessable(
-          'billing.provider_managed',
-          'This plan is paid for. Change it with the payment provider.',
-        );
-      }
-      const plan = req.plan as Plan;
-      const quota = entitlementsFor(plan).storageBytes.toString();
-      await sql`select app.apply_subscription(${workspaceId}::uuid, ${plan}, ${plan === 'pro' ? 'active' : 'none'},
-        ${plan === 'pro' ? 'staff' : null}, null, null, null, null, null, null, false, ${quota}::bigint)`.execute(
-        trx,
-      );
-      await this.log(trx, staffId, 'plan.set', workspaceId, { plan, reason: req.reason });
     });
   }
 
@@ -281,6 +283,43 @@ export class AdminService {
           .execute();
       }
       await this.log(trx, staffId, 'app_version.save', null, { ...req });
+    });
+  }
+
+  // ----- The AI ceiling (ADR-0049 §2) -------------------------------------------------------------
+
+  async aiCeiling(): Promise<AiCeilingDto> {
+    const month = `${new Date().toISOString().slice(0, 7)}-01`;
+    return this.db.run(async (trx) => {
+      const ceiling = await readAiCeiling(trx);
+      const { rows } = await sql<{
+        spent: string;
+      }>`select app.ai_service_spend(${month}::date) as spent`.execute(trx);
+      const spent = BigInt(rows[0]?.spent ?? 0);
+      return {
+        ceilingUsd: ceiling === null ? null : Number(ceiling) / 1e6,
+        month: month.slice(0, 7),
+        spentUsd: Number(spent) / 1e6,
+        reached: ceiling !== null && spent >= ceiling,
+      };
+    });
+  }
+
+  /** A new ceiling tells staff afresh when it's reached, even in a month that already reached the old one. */
+  async saveAiCeiling(staffId: string, req: SaveAiCeilingRequest): Promise<void> {
+    await this.db.run(async (trx) => {
+      const value = req.ceilingUsd === null ? '' : (req.ceilingUsd * 1_000_000).toFixed(0);
+      for (const [key, v] of [
+        [AI_CEILING_SETTING, value],
+        ['ai_ceiling_alerted_month', ''],
+      ] as const) {
+        await trx
+          .insertInto('app.system_setting')
+          .values({ key, value: v })
+          .onConflict((oc) => oc.column('key').doUpdateSet({ value: v, updated_at: sql`now()` }))
+          .execute();
+      }
+      await this.log(trx, staffId, 'ai_ceiling.save', null, { ceilingUsd: req.ceilingUsd });
     });
   }
 

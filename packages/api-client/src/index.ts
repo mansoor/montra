@@ -168,8 +168,28 @@ import type {
   CreateAccountRequest,
   CreateEntityRequest,
   CreateFamilyMemberRequest,
+  AddPlanPriceRequest,
+  AddPlanVersionRequest,
   AdminAccountDto,
+  ProvidersDto,
+  SaveProviderSettingsRequest,
+  TestSendDto,
+  CloseAccountRequest,
+  CouponRequest,
+  ExtendTrialRequest,
+  SuspendRequest,
+  AdminPlanDto,
+  AdminPlanVersionDto,
+  PlanEntitlementsDto,
   AdminSetPlanRequest,
+  AiCeilingDto,
+  MoveSubscribersDto,
+  MoveSubscribersRequest,
+  PlanOfferDto,
+  SavePlanRequest,
+  SetStaffRequest,
+  StaffMemberDto,
+  SaveAiCeilingRequest,
   AdminSupportRequestDto,
   AdminWorkspaceDto,
   AiAccuracyRowDto,
@@ -177,6 +197,7 @@ import type {
   PasswordPolicyDto,
   BillingDto,
   BillingLinkDto,
+  CheckoutRequest,
   ClientErrorRequest,
   CreateNoticeRequest,
   CreateSupportRequest,
@@ -941,7 +962,7 @@ export class ApiClient {
   getBilling(workspaceId: string) {
     return this.request<BillingDto>('GET', this.ws(workspaceId, '/billing'));
   }
-  startCheckout(workspaceId: string, input: { interval: 'month' | 'year' }) {
+  startCheckout(workspaceId: string, input: CheckoutRequest) {
     return this.request<BillingLinkDto>('POST', this.ws(workspaceId, '/billing/checkout'), input);
   }
   openBillingPortal(workspaceId: string) {
@@ -1030,6 +1051,69 @@ export class ApiClient {
   }
   adminSavePasswordPolicy(input: PasswordPolicyDto) {
     return this.request<void>('PUT', '/v1/admin/password-policy', input);
+  }
+  getPlans() {
+    return this.request<{ data: PlanOfferDto[] }>('GET', '/v1/plans').then((r) => r.data);
+  }
+  adminStaff() {
+    return this.request<{ data: StaffMemberDto[] }>('GET', '/v1/admin/staff').then((r) => r.data);
+  }
+  adminSetStaff(input: SetStaffRequest) {
+    return this.request<void>('PUT', '/v1/admin/staff', input);
+  }
+  adminRemoveStaff(userId: string) {
+    return this.request<void>('DELETE', `/v1/admin/staff/${userId}`);
+  }
+  adminPlans() {
+    return this.request<{ data: AdminPlanDto[] }>('GET', '/v1/admin/plans').then((r) => r.data);
+  }
+  adminSavePlan(input: SavePlanRequest) {
+    return this.request<void>('PUT', '/v1/admin/plans', input);
+  }
+  adminAddPlanVersion(key: string, input: AddPlanVersionRequest) {
+    return this.request<{ id: string; version: number }>('POST', `/v1/admin/plans/${key}/versions`, input);
+  }
+  adminAddPlanPrice(versionId: string, input: AddPlanPriceRequest) {
+    return this.request<{ id: string }>('POST', `/v1/admin/plan-versions/${versionId}/prices`, input);
+  }
+  adminEndPlanPrice(priceId: string) {
+    return this.request<void>('POST', `/v1/admin/plan-prices/${priceId}/end`);
+  }
+  adminMoveSubscribers(input: MoveSubscribersRequest) {
+    return this.request<MoveSubscribersDto>('POST', '/v1/admin/plans/move', input);
+  }
+  adminSuspendAccount(userId: string, input: SuspendRequest) {
+    return this.request<void>('POST', `/v1/admin/accounts/${userId}/suspend`, input);
+  }
+  adminRestoreAccount(userId: string) {
+    return this.request<void>('POST', `/v1/admin/accounts/${userId}/restore`);
+  }
+  adminCloseAccount(userId: string, input: CloseAccountRequest) {
+    return this.request<{ purgeAfter: string | null }>('POST', `/v1/admin/accounts/${userId}/close`, input);
+  }
+  adminExtendTrial(workspaceId: string, input: ExtendTrialRequest) {
+    return this.request<{ trialEnd: string }>('POST', `/v1/admin/workspaces/${workspaceId}/trial`, input);
+  }
+  adminGiveCoupon(workspaceId: string, input: CouponRequest) {
+    return this.request<void>('POST', `/v1/admin/workspaces/${workspaceId}/coupon`, input);
+  }
+  adminProviders() {
+    return this.request<ProvidersDto>('GET', '/v1/admin/providers');
+  }
+  adminSaveProviderSettings(input: SaveProviderSettingsRequest) {
+    return this.request<void>('PUT', '/v1/admin/providers/settings', input);
+  }
+  adminTestEmail() {
+    return this.request<TestSendDto>('POST', '/v1/admin/providers/test-email');
+  }
+  adminTestText() {
+    return this.request<TestSendDto>('POST', '/v1/admin/providers/test-text');
+  }
+  adminAiCeiling() {
+    return this.request<AiCeilingDto>('GET', '/v1/admin/ai-ceiling');
+  }
+  adminSaveAiCeiling(input: SaveAiCeilingRequest) {
+    return this.request<void>('PUT', '/v1/admin/ai-ceiling', input);
   }
   adminImportFailures(days: number) {
     return this.request<{ data: ImportFailureRowDto[] }>(
@@ -3228,8 +3312,16 @@ export type {
 };
 
 export type {
+  ProvidersDto,
   AdminAccountDto,
+  AdminPlanDto,
+  AdminPlanVersionDto,
   AdminSupportRequestDto,
+  AiCeilingDto,
+  MoveSubscribersDto,
+  PlanEntitlementsDto,
+  PlanOfferDto,
+  StaffMemberDto,
   AdminWorkspaceDto,
   AppVersionsDto,
   BillingDto,

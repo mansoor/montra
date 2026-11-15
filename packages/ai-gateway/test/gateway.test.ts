@@ -310,6 +310,39 @@ describe('budget (AIA-08)', () => {
     expect(adapter.calls.at(-1)!.model).toBe('claude-haiku-5-5');
   });
 
+  it('applies the smaller of the plan’s allowance and the customer’s budget (ADR-0049 §2)', async () => {
+    const adapter = new Scripted('anthropic', (req) => ({
+      ok: true,
+      model: req.model,
+      usage,
+      json: { rows: [], opening: null, closing: null, periodStart: null, periodEnd: null },
+    }));
+    const gw = createGateway({ adapterFactory: () => adapter, env: {} });
+    const store = new MemoryStore();
+    const doc = { pages: ['page'], currency: 'USD' };
+    const run = (budget: { monthlyUsd: number | null; planMicroUsd: bigint | null; spentMicroUsd: bigint }) =>
+      gw.extractStatementTable(doc, ctxOf(store, { provider: { id: 'anthropic' }, budget }));
+    // The plan's $2 binds under a $50 budget the customer set.
+    expect(await run({ monthlyUsd: 50, planMicroUsd: 2_000_000n, spentMicroUsd: 2_000_000n })).toMatchObject({
+      ok: false,
+      reason: 'budget',
+    });
+    // The customer's $1 binds under the plan's $10.
+    expect(await run({ monthlyUsd: 1, planMicroUsd: 10_000_000n, spentMicroUsd: 1_000_000n })).toMatchObject({
+      ok: false,
+      reason: 'budget',
+    });
+    // Near the plan's allowance with no budget of their own: the smaller model.
+    await run({ monthlyUsd: null, planMicroUsd: 10_000_000n, spentMicroUsd: 8_500_000n });
+    expect(adapter.calls.at(-1)!.model).toBe('claude-haiku-5-5');
+    // An allowance of nothing stops everything, as the operator's ceiling does.
+    expect(await run({ monthlyUsd: null, planMicroUsd: 0n, spentMicroUsd: 0n })).toMatchObject({
+      ok: false,
+      reason: 'budget',
+    });
+    expect(adapter.calls).toHaveLength(1);
+  });
+
   it('accounts cost per call and stops mid-run once spend crosses the budget', async () => {
     const big = { inputTokens: 10_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }; // $1 on haiku
     const inner = new FakeAdapter();

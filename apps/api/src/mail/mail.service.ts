@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { CONFIG, type AppConfig } from '../config.js';
+import { ServiceSettings } from '../ops/service-settings.js';
 
 export interface MailMessage {
   to: string;
@@ -41,12 +42,16 @@ export class MemoryMail implements MailPort {
 @Injectable()
 export class SmtpMail implements MailPort {
   private readonly transport: Transporter;
-  constructor(@Inject(CONFIG) private readonly config: AppConfig) {
+  constructor(
+    @Inject(CONFIG) private readonly config: AppConfig,
+    @Optional() @Inject(ServiceSettings) private readonly settings?: ServiceSettings,
+  ) {
     this.transport = nodemailer.createTransport(config.MAIL_URL!);
   }
   async send(m: MailMessage): Promise<void> {
     await this.transport.sendMail({
-      from: this.config.MAIL_FROM,
+      // ADR-0049 §5: the sender owners set in the console, else MAIL_FROM.
+      from: (await this.settings?.mailFrom().catch(() => null)) ?? this.config.MAIL_FROM,
       to: m.to,
       subject: m.subject,
       text: m.text,
@@ -119,6 +124,21 @@ export const templates = {
       `If this was you, no action is needed. If not, reset your password now and check your devices: ${args.url}`,
     ].join('\n');
     return { to: args.to, subject: 'Your Montra password was changed', text, category: 'security' };
+  },
+  /** ADR-0049 §6, ADR-0045: the mobile number on the account was added, changed or removed. To the email address. */
+  phoneChanged(args: { to: string; at: Date; url: string; now: string | null }): MailMessage {
+    const what = args.now ? `is now the number ending ${args.now.slice(-4)}` : 'was removed';
+    const text = [
+      `The mobile number on your Montra account ${what}, at ${args.at.toISOString()}. Texted sign-in codes and alerts go to it.`,
+      '',
+      `If this was you, no action is needed. If not, reset your password and check your security settings now: ${args.url}`,
+    ].join('\n');
+    return {
+      to: args.to,
+      subject: 'The mobile number on your Montra account changed',
+      text,
+      category: 'security',
+    };
   },
   /** AUTH-12 (ADR-0045): an authenticator app, security key or recovery codes were added, changed or removed. */
   twoStepChanged(args: { to: string; at: Date; url: string }): MailMessage {

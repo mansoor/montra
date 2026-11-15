@@ -1,26 +1,22 @@
-/** What a workspace is on, and what that lets it do (UP-12, OPS-08, ADR-0020). */
-import { Inject, Injectable } from '@nestjs/common';
+/** What a workspace is on, and what that lets it do (UP-12, OPS-08, ADR-0020, ADR-0049 §1). */
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { DbContext, Trx } from '@montra/db';
-import {
-  effectivePlan,
-  entitlementsFor,
-  flagEnabled,
-  PAYMENT_GRACE_DAYS,
-  type Plan,
-  type SubscriptionStatus,
-} from '@montra/domain';
+import { flagEnabled, FREE_PLAN, PAYMENT_GRACE_DAYS, type SubscriptionStatus } from '@montra/domain';
 import type { BillingDto } from '@montra/schemas';
 import { AppError, unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
+import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import {
   BILLING_PORT,
   type BillingEvent,
   type BillingPort,
   type ProviderSubscription,
 } from './billing.port.js';
+import { ERROR_REPORTER, type ErrorReporter } from './errors.js';
+import { entitlementsDto, Plans } from './plans.js';
 
 type Ctx = DbContext & { workspaceId: string; userId: string };
 
@@ -40,15 +36,20 @@ const STATUS: Record<string, SubscriptionStatus> = {
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger('Billing');
+
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(BILLING_PORT) private readonly port: BillingPort,
     @Inject(Worker) private readonly worker: Worker,
+    @Inject(Plans) private readonly plans: Plans,
+    @Inject(ERROR_REPORTER) private readonly errors: ErrorReporter,
+    @Inject(MAIL_PORT) private readonly mail: MailPort,
   ) {}
 
   private get enabled(): boolean {
-    return this.config.BILLING_MODE !== 'off';
+    return this.plans.enabled;
   }
 
   async get(ctx: Ctx, canManage: boolean): Promise<BillingDto> {
@@ -58,8 +59,8 @@ export class BillingService {
         .selectAll()
         .where('workspace_id', '=', ctx.workspaceId)
         .executeTakeFirst();
-      const plan = this.planOf(sub);
-      const features = entitlementsFor(this.enabled ? plan : 'pro');
+      const current = await this.plans.current(trx);
+      const e = current.entitlements;
       const flags = await trx.selectFrom('app.feature_flag').selectAll().execute();
       const overrides = await trx
         .selectFrom('app.feature_flag_override')
@@ -69,7 +70,8 @@ export class BillingService {
       const override = new Map(overrides.map((o) => [o.key, o.enabled]));
       return {
         mode: this.config.BILLING_MODE,
-        plan,
+        plan: current.version.planKey,
+        planName: current.version.planName,
         status: (sub?.status ?? 'none') as BillingDto['status'],
         provider: (sub?.provider ?? null) as BillingDto['provider'],
         interval: (sub?.billing_interval ?? null) as BillingDto['interval'],
@@ -77,12 +79,13 @@ export class BillingService {
         currentPeriodEnd: sub?.current_period_end?.toISOString() ?? null,
         graceUntil: sub?.grace_until?.toISOString() ?? null,
         cancelAtPeriodEnd: sub?.cancel_at_period_end ?? false,
+        entitlements: entitlementsDto(e),
         features: {
-          businessEntities: features.businessEntities,
-          rentalEntities: features.rentalEntities,
-          maxBusinesses: features.maxBusinesses,
-          maxRentalPortfolios: features.maxRentalPortfolios,
-          storageBytes: features.storageBytes.toString(),
+          businessEntities: e.businessBooks > 0,
+          rentalEntities: e.rentalPortfolios > 0,
+          maxBusinesses: e.businessBooks,
+          maxRentalPortfolios: e.rentalPortfolios,
+          storageBytes: e.storageBytes.toString(),
         },
         flags: Object.fromEntries(
           flags.map((f) => [f.key, flagEnabled(f, ctx.workspaceId, override.get(f.key))]),
@@ -92,35 +95,23 @@ export class BillingService {
     });
   }
 
-  private planOf(
-    sub: { plan: string; status: string; trial_end: Date | null; grace_until: Date | null } | undefined,
-  ): Plan {
-    if (!sub) return 'free';
-    return effectivePlan(
-      {
-        plan: sub.plan as Plan,
-        status: sub.status as SubscriptionStatus,
-        trialEnd: sub.trial_end,
-        graceUntil: sub.grace_until,
-      },
-      new Date(),
-    );
-  }
-
-  /** Adding books is what a plan pays for. What's already there stays usable, whatever happens to the plan. */
+  /**
+   * Adding books is what a plan pays for. What's already there stays usable, whatever happens to the plan. The
+   * transaction's context is the workspace's.
+   */
   async assertCanAddEntity(trx: Trx, workspaceId: string, type: string): Promise<void> {
     if (!this.enabled || (type !== 'business' && type !== 'rental')) return;
-    const sub = await trx
-      .selectFrom('app.subscription')
-      .selectAll()
-      .where('workspace_id', '=', workspaceId)
-      .executeTakeFirst();
-    const features = entitlementsFor(this.planOf(sub));
-    const allowed = type === 'business' ? features.businessEntities : features.rentalEntities;
-    if (!allowed) {
-      throw new AppError(402, 'plan.required', 'Business and rental books come with the Pro plan');
+    const e = await this.plans.entitlements(trx);
+    const limit = type === 'business' ? e.businessBooks : e.rentalPortfolios;
+    if (limit <= 0) {
+      throw new AppError(
+        402,
+        'plan.required',
+        type === 'business'
+          ? "Business books aren't included in this workspace's plan"
+          : "Rental books aren't included in this workspace's plan",
+      );
     }
-    const limit = type === 'business' ? features.maxBusinesses : features.maxRentalPortfolios;
     const { n } = await trx
       .selectFrom('app.entity')
       .select((eb) => eb.fn.countAll<string>().as('n'))
@@ -130,21 +121,30 @@ export class BillingService {
     if (Number(n) >= limit) throw unprocessable('plan.limit', `This plan allows up to ${limit} of these`);
   }
 
-  async checkoutUrl(ctx: Ctx, email: string, interval: 'month' | 'year'): Promise<string> {
-    const sub = await this.db.run(ctx, (trx) =>
-      trx
+  /** Checkout for a plan and interval (ADR-0049 §1). Changing between paid plans is the provider's portal. */
+  async checkoutUrl(ctx: Ctx, email: string, planKey: string, interval: 'month' | 'year'): Promise<string> {
+    if (!this.enabled) throw new AppError(404, 'not_found', 'Plans are not in use here');
+    const { sub, price, current } = await this.db.run(ctx, async (trx) => ({
+      sub: await trx
         .selectFrom('app.subscription')
         .selectAll()
         .where('workspace_id', '=', ctx.workspaceId)
         .executeTakeFirst(),
-    );
-    if (this.planOf(sub) === 'pro' && sub?.status === 'active') {
-      throw new AppError(409, 'billing.already_subscribed', 'This workspace is already on the Pro plan');
+      price: await this.plans.checkoutPrice(trx, planKey, interval),
+      current: await this.plans.current(trx),
+    }));
+    if (sub?.provider === 'stripe' && current.version.planKey !== FREE_PLAN) {
+      throw new AppError(
+        409,
+        'billing.already_subscribed',
+        `This workspace is already on ${current.version.planName}. Change plans in the billing portal.`,
+      );
     }
+    if (!price) throw new AppError(404, 'billing.no_price', "That plan can't be bought just now");
     const back = `${this.config.WEB_URL}/w/${ctx.workspaceId}/settings?tab=billing`;
     return this.port.checkoutUrl({
       workspaceId: ctx.workspaceId,
-      interval,
+      price: price.priceRef,
       customer: sub?.customer_ref ?? null,
       email,
       // One trial for a workspace: having had a subscription of any kind uses it up.
@@ -189,44 +189,67 @@ export class BillingService {
     const workspaceId = s.workspaceId ?? known.rows[0]?.workspace_id;
     // Not one of ours, or created by hand in the provider's dashboard. Nothing to attach it to.
     if (!workspaceId) return;
-    // apply_subscription keeps a grace that's already running.
+    const ended = status === 'canceled' || status === 'none';
+    let version = ended
+      ? await this.plans.free(trx)
+      : s.priceId
+        ? await this.plans.versionByPrice(trx, 'stripe', s.priceId)
+        : undefined;
+    if (version && !ended) {
+      // The owner may have moved this plan's subscribers to a newer version, while Stripe keeps the price they're on
+      // (ADR-0049 §1). The same plan keeps the version it has; a different plan is a change of tier.
+      const { rows } = await sql<{ plan: string; plan_version_id: string | null }>`
+        select plan, plan_version_id from app.subscription_version(${workspaceId}::uuid)`.execute(trx);
+      const held = rows[0];
+      if (held?.plan === version.planKey && held.plan_version_id) {
+        version = (await this.plans.version(trx, held.plan_version_id)) ?? version;
+      } else {
+        // A new subscriber, or a change of tier: the plan's current version, whichever version the price was added to.
+        version = (await this.plans.latest(trx, version.planKey)) ?? version;
+      }
+    }
+    if (!version) {
+      // A price nobody added to a plan: the workspace stays as it was until someone does (ADR-0049 §1).
+      const detail = { subscription: s.id, price: s.priceId ?? 'none' };
+      this.logger.error(
+        `billing price not on any plan subscription=${detail.subscription} price=${detail.price}`,
+      );
+      this.errors.captureMessage('A subscription is for a price that is on no plan', detail);
+      return;
+    }
+    // apply_plan_version keeps a grace that's already running.
     const grace = status === 'past_due' ? new Date(Date.now() + PAYMENT_GRACE_DAYS * 86_400_000) : null;
-    const plan: Plan = status === 'canceled' || status === 'none' ? 'free' : 'pro';
-    await this.write(
-      trx,
-      workspaceId,
-      plan,
-      status,
-      'stripe',
-      s.customer,
-      s.id,
-      s.interval,
-      s.trialEnd,
-      s.currentPeriodEnd,
+    await this.write(trx, workspaceId, version.id, status, {
+      provider: 'stripe',
+      customer: s.customer,
+      subscription: s.id,
+      interval: s.interval,
+      trialEnd: s.trialEnd,
+      periodEnd: s.currentPeriodEnd,
       grace,
-      s.cancelAtPeriodEnd,
-    );
+      cancelAtPeriodEnd: s.cancelAtPeriodEnd,
+    });
   }
 
   private async write(
     trx: Trx,
     workspaceId: string,
-    plan: Plan,
+    versionId: string,
     status: SubscriptionStatus,
-    provider: string | null,
-    customer: string | null,
-    subscription: string | null,
-    interval: string | null,
-    trialEnd: Date | null,
-    periodEnd: Date | null,
-    grace: Date | null,
-    cancelAtPeriodEnd: boolean,
+    p: {
+      provider: string | null;
+      customer: string | null;
+      subscription: string | null;
+      interval: string | null;
+      trialEnd: Date | null;
+      periodEnd: Date | null;
+      grace: Date | null;
+      cancelAtPeriodEnd: boolean;
+    },
   ): Promise<void> {
-    const quota = entitlementsFor(plan).storageBytes.toString();
-    await sql`select app.apply_subscription(${workspaceId}::uuid, ${plan}, ${status}, ${provider}, ${customer},
-      ${subscription}, ${interval}, ${trialEnd}, ${periodEnd}, ${grace}, ${cancelAtPeriodEnd}, ${quota}::bigint)`.execute(
-      trx,
-    );
+    await sql`select app.apply_plan_version(${workspaceId}::uuid, ${versionId}::uuid, ${status}, ${p.provider},
+      ${p.customer}, ${p.subscription}, ${p.interval}, ${p.trialEnd}, ${p.periodEnd}, ${p.grace},
+      ${p.cancelAtPeriodEnd})`.execute(trx);
   }
 
   /** Writes down lapses the provider never told us about, which is what lowers the quota. */
@@ -235,21 +258,20 @@ export class BillingService {
       const { rows } = await sql<{
         workspace_id: string;
       }>`select workspace_id from app.subscriptions_lapsed()`.execute(trx);
+      // Moves to a version that gives less, at each subscriber's renewal (ADR-0049 §1).
+      await sql`select app.apply_pending_versions()`.execute(trx);
+      const free = await this.plans.free(trx);
       for (const r of rows) {
-        await this.write(
-          trx,
-          r.workspace_id,
-          'free',
-          'canceled',
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          false,
-        );
+        await this.write(trx, r.workspace_id, free.id, 'canceled', {
+          provider: null,
+          customer: null,
+          subscription: null,
+          interval: null,
+          trialEnd: null,
+          periodEnd: null,
+          grace: null,
+          cancelAtPeriodEnd: false,
+        });
       }
       return rows.length;
     });
@@ -258,8 +280,44 @@ export class BillingService {
   register(): void {
     this.worker.register('billing.sweep', async () => {
       await this.schedule(new Date(Date.now() + SWEEP_EVERY_MS));
-      return { lapsed: await this.sweep() };
+      return { lapsed: await this.sweep(), noticed: await this.sendPlanNotices() };
     });
+  }
+
+  /** Each customer whose plan will give less is told, with the date, once (ADR-0049 §1). */
+  async sendPlanNotices(): Promise<number> {
+    let sent = 0;
+    for (;;) {
+      const { rows } = await this.db.run({ actorType: 'system' }, (trx) =>
+        sql<{
+          id: string;
+          workspace_name: string;
+          plan_name: string;
+          apply_at: Date;
+          emails: string[];
+        }>`select * from app.plan_notices_due(50)`.execute(trx),
+      );
+      if (rows.length === 0) return sent;
+      for (const n of rows) {
+        const date = n.apply_at.toISOString().slice(0, 10);
+        for (const to of n.emails) {
+          await this.mail.send({
+            to,
+            category: 'transactional',
+            subject: `Your Montra ${n.plan_name} plan changes on ${date}`,
+            text: [
+              `The ${n.plan_name} plan for ${n.workspace_name} will include less from ${date}.`,
+              `See what it includes, or choose another plan, in Settings → Plan: ${this.config.WEB_URL}`,
+              'Nothing you already have is taken away: books and files stay readable, editable and exportable.',
+            ].join('\n\n'),
+          });
+        }
+        await this.db.run({ actorType: 'system' }, (trx) =>
+          sql`select app.plan_notice_sent(${n.id}::uuid)`.execute(trx),
+        );
+        sent++;
+      }
+    }
   }
 
   async schedule(at: Date = new Date()): Promise<void> {
