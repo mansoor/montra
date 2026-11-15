@@ -1292,6 +1292,10 @@ Phase 11 leftovers:
          (through Cloudflare Access at home) and runs `deploy.sh`. The AWS path still builds straight into ECR;
          moving it to GHCR-then-copy (ADR-0050 §6) is left for when AWS is used.
        - **The Kratos wrapper** gained `montra-kratos healthcheck`, as the image has no shell or curl.
+       - **Fixed: the API image couldn't start.** `exceljs` was a devDependency but is imported at runtime, so the
+         image's production install left it out (`ERR_MODULE_NOT_FOUND`). It affected the AWS images too, which have
+         never been run. Found by bringing the stack up.
+       - **Texts:** `SMS_MODE`, the Twilio secrets and Kratos's SMS channel (ADR-0049 §6) are wired in, off by default.
        - Runbooks: `selfhost-setup.md` (hardware, mirror, LUKS, UPS, tunnel, email, bucket, VPS variant, secrets,
          first start, GitHub settings) and `selfhost-operations.md` (releases and rollback, patching, power cuts, a
          failing disk, health, rotating each secret, `pg_dump` until step 3).
