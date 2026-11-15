@@ -20,6 +20,7 @@ import { AppError, unprocessable } from '../common/errors.js';
 import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { Plans } from '../ops/plans.js';
+import { ProviderHealth } from '../ops/provider-health.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -155,6 +156,7 @@ export class AiService {
     @Inject(Plans) private readonly plans: Plans,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
+    @Inject(ProviderHealth) private readonly health: ProviderHealth,
   ) {
     this.gateway = createGateway({
       onProviderFailure: (e) =>
@@ -428,6 +430,11 @@ export class AiService {
         );
       },
       recordEvent: async (e: AiEventRecord) => {
+        // ADR-0049 §5: built-in AI is the service's own provider; a customer's key or model is theirs.
+        if (mode === 'builtin' && e.outcome === 'ok') this.health.ok('ai');
+        if (mode === 'builtin' && e.outcome === 'provider_error') {
+          this.health.failed('ai', `${e.provider} ${e.task}`);
+        }
         await run((trx) =>
           trx
             .insertInto('app.ai_event')

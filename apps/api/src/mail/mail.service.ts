@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { CONFIG, type AppConfig } from '../config.js';
+import { ServiceSettings } from '../ops/service-settings.js';
 
 export interface MailMessage {
   to: string;
@@ -41,12 +42,16 @@ export class MemoryMail implements MailPort {
 @Injectable()
 export class SmtpMail implements MailPort {
   private readonly transport: Transporter;
-  constructor(@Inject(CONFIG) private readonly config: AppConfig) {
+  constructor(
+    @Inject(CONFIG) private readonly config: AppConfig,
+    @Optional() @Inject(ServiceSettings) private readonly settings?: ServiceSettings,
+  ) {
     this.transport = nodemailer.createTransport(config.MAIL_URL!);
   }
   async send(m: MailMessage): Promise<void> {
     await this.transport.sendMail({
-      from: this.config.MAIL_FROM,
+      // ADR-0049 §5: the sender owners set in the console, else MAIL_FROM.
+      from: (await this.settings?.mailFrom().catch(() => null)) ?? this.config.MAIL_FROM,
       to: m.to,
       subject: m.subject,
       text: m.text,

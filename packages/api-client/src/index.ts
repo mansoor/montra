@@ -171,6 +171,9 @@ import type {
   AddPlanPriceRequest,
   AddPlanVersionRequest,
   AdminAccountDto,
+  ProvidersDto,
+  SaveProviderSettingsRequest,
+  TestSendDto,
   CloseAccountRequest,
   CouponRequest,
   ExtendTrialRequest,
@@ -1093,6 +1096,18 @@ export class ApiClient {
   }
   adminGiveCoupon(workspaceId: string, input: CouponRequest) {
     return this.request<void>('POST', `/v1/admin/workspaces/${workspaceId}/coupon`, input);
+  }
+  adminProviders() {
+    return this.request<ProvidersDto>('GET', '/v1/admin/providers');
+  }
+  adminSaveProviderSettings(input: SaveProviderSettingsRequest) {
+    return this.request<void>('PUT', '/v1/admin/providers/settings', input);
+  }
+  adminTestEmail() {
+    return this.request<TestSendDto>('POST', '/v1/admin/providers/test-email');
+  }
+  adminTestText() {
+    return this.request<TestSendDto>('POST', '/v1/admin/providers/test-text');
   }
   adminAiCeiling() {
     return this.request<AiCeilingDto>('GET', '/v1/admin/ai-ceiling');
@@ -3297,6 +3312,7 @@ export type {
 };
 
 export type {
+  ProvidersDto,
   AdminAccountDto,
   AdminPlanDto,
   AdminPlanVersionDto,

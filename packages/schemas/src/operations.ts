@@ -492,3 +492,84 @@ export const CloseAccountRequest = z.object({
   note: z.string().trim().max(500).default(''),
 });
 export type CloseAccountRequest = z.output<typeof CloseAccountRequest>;
+
+// ----- Providers (ADR-0049 §5) --------------------------------------------------------------------
+
+export const PROVIDER_KEYS = [
+  'email',
+  'sms',
+  'payments',
+  'errors',
+  'ai',
+  'storage',
+  'keys',
+  'push',
+  'exchange_rates',
+] as const;
+export const ProviderKeyDto = z.enum(PROVIDER_KEYS);
+export type ProviderKeyDto = z.infer<typeof ProviderKeyDto>;
+
+/** What each detail is, so the console can name it. Values are never secrets. */
+export const PROVIDER_DETAILS = [
+  'mode',
+  'host',
+  'sender',
+  'key_mode',
+  'webhook',
+  'key',
+  'base_url',
+  'failover',
+  'bucket',
+  'region',
+  'endpoint',
+  'key_id',
+  'environment',
+  'oxr',
+  'kinds',
+  'countries',
+] as const;
+
+export const ProviderRowDto = z.object({
+  key: ProviderKeyDto,
+  configured: z.boolean(),
+  mode: z.string(),
+  details: z.array(z.object({ label: z.enum(PROVIDER_DETAILS), value: z.string() })),
+  lastOkAt: z.string().nullable(),
+  lastFailureAt: z.string().nullable(),
+  lastFailure: z.string().nullable(),
+});
+export type ProviderRowDto = z.infer<typeof ProviderRowDto>;
+
+export const SmsKindDto = z.enum(['codes', 'security', 'reminders']);
+
+export const ProviderSettingsDto = z.object({
+  mailFromName: z.string(),
+  mailFromAddress: z.string(),
+  supportEmail: z.string(),
+  smsKinds: z.array(SmsKindDto),
+  /** ISO 3166 country codes texts may go to. */
+  smsCountries: z.array(z.string()),
+});
+export type ProviderSettingsDto = z.infer<typeof ProviderSettingsDto>;
+
+export const ProvidersDto = z.object({ rows: z.array(ProviderRowDto), settings: ProviderSettingsDto });
+export type ProvidersDto = z.infer<typeof ProvidersDto>;
+
+/** Leave a field out to keep it. An empty sender name or address, or support address, means the environment's. */
+export const SaveProviderSettingsRequest = z
+  .object({
+    mailFromName: z
+      .string()
+      .trim()
+      .max(100)
+      .regex(/^[^<>"\r\n]*$/),
+    mailFromAddress: z.union([z.literal(''), z.email()]),
+    supportEmail: z.union([z.literal(''), z.email()]),
+    smsKinds: z.array(SmsKindDto).max(3),
+    smsCountries: z.array(z.string().regex(/^[A-Za-z]{2}$/)).max(250),
+  })
+  .partial();
+export type SaveProviderSettingsRequest = z.output<typeof SaveProviderSettingsRequest>;
+
+export const TestSendDto = z.object({ to: z.string() });
+export type TestSendDto = z.infer<typeof TestSendDto>;

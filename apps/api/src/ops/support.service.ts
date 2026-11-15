@@ -13,6 +13,7 @@ import type {
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
+import { ServiceSettings } from './service-settings.js';
 import { Db } from '../db/database.js';
 import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import { JOB_STALL_MS } from '../jobs/queue.js';
@@ -39,6 +40,7 @@ export class SupportService {
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
     @Inject(ERROR_REPORTER) private readonly errors: ErrorReporter,
+    @Inject(ServiceSettings) private readonly settings: ServiceSettings,
   ) {}
 
   async listGrants(ctx: Ctx): Promise<SupportGrantDto[]> {
@@ -137,11 +139,12 @@ export class SupportService {
         .returning('id')
         .executeTakeFirstOrThrow();
     });
-    if (this.config.SUPPORT_EMAIL) {
+    const support = await this.settings.supportEmail();
+    if (support) {
       // Only that there is one. What it says stays in the console, behind the staff sign-in.
       await this.mail
         .send({
-          to: this.config.SUPPORT_EMAIL,
+          to: support,
           subject: `New ${req.kind === 'bug' ? 'bug report' : 'question'} ${row.id}`,
           text: `From ${email}. Read it in the staff console: ${this.config.WEB_URL}/admin/support`,
           category: 'transactional',
