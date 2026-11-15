@@ -1323,6 +1323,12 @@ Phase 11 leftovers:
          alerts, what to do when one fires) and `selfhost-restore-drill.md` (restore onto a scratch server with
          read-only keys, reconciliation checks, `crypto check`, the files copy, the lock).
        - BAK-01 or BAK-09 is still open: the defaults keep about five weeks, which suits BAK-09.
+       - **Brought up locally** with MinIO (TLS and object lock) standing in for the buckets: the stanza, full and
+         differential backups, the files copy, `backup.sh status`, Prometheus scraping both API replicas and
+         node-exporter with the rules loaded, a locked backup refused deletion, and a restore drill into a second
+         project (the WAL replayed, reconciliation clean). It found that Postgres must run under an init process
+         (`init: true`): pgBackRest's async archiver leaves a process PID 1 inherits, and Postgres as PID 1 restarted
+         every connection when it exited.
     4. ❌ `docs/runbooks/moving-platforms.md`.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.

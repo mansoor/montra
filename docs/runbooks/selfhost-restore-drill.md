@@ -129,5 +129,16 @@ Revoke the two drill keys at the providers.
 
 ## Tried locally
 
-See [STATUS](../STATUS.md) for the latest local run: a second Compose project on Docker Desktop, restoring from MinIO with
-object lock, then the reconciliation checks.
+On 2026-11-14, on Docker Desktop: a second Compose project (`-p montra-drill`, `BACKUP_ARCHIVE=off`) restored from
+MinIO with object lock, standing in for the backup bucket.
+
+| Check                                                         | Result                                    |
+| ------------------------------------------------------------- | ----------------------------------------- |
+| `pgbackrest restore` into the drill's empty volume             | Completed in 17 s (a 49 MB database)      |
+| A row written after the full backup                           | Back, so the WAL replayed                 |
+| `archive_mode` in the drill                                   | `off`                                     |
+| Reconciliation checks                                         | No rows                                   |
+| `schema_migrations` against the original                      | 55 and 55                                 |
+| `crypto check`                                                | Runs; the test stack had no workspace keys |
+
+Not done there: a scratch server, read-only keys, the files copy check, a point-in-time target.

@@ -12,8 +12,9 @@ Backups and alerts for Montra on its own server, none of them tied to one cloud
 | The master key and `secrets/` | By hand, offline                                                             | A password manager and a printed or USB copy | When they change |
 | Alerts                | Prometheus, Alertmanager and node-exporter (profile `monitoring`)                    | Email to you                          |                |
 
-> **Tried locally only.** pgBackRest, the stanza, a full backup and a restore into a second stack were run on Docker
-> Desktop against MinIO with object lock (see §7). No real B2 or R2 bucket, and no real email from Alertmanager.
+> **Tried locally only.** pgBackRest, the stanza, full and differential backups, the files copy, the alerts and a
+> restore into a second stack were run on Docker Desktop against MinIO with object lock (see §7). No real B2 or R2
+> bucket, and no real email from Alertmanager.
 
 **Decide retention first.** `docs/STATUS.md` still has BAK-01 or BAK-09 open: monthly copies kept a year conflict with
 deleted data ageing out within 35 days. The defaults here keep about five weeks (four weekly fulls), which suits BAK-09.
@@ -133,5 +134,9 @@ moving.
 | `promtool check rules` and `test rules` for `selfhost.yml` (and the existing SLO rules)       | Pass   |
 | `promtool check config` for `prometheus.selfhost.yml`; `amtool check-config` for the example  | Pass   |
 | `shellcheck` on `backup.sh` and the Postgres entrypoint                                       | Pass   |
-| The Postgres image with pgBackRest, the stanza, a full backup and `backup.sh status` against MinIO with object lock | See [STATUS](../STATUS.md) |
+| Locally on Docker Desktop, with MinIO (TLS, object lock in compliance mode) standing in for the bucket:      |        |
+| `setup.sh init`: the stanza and a first full backup; archiving on (`archive_timeout` 60 s)                   | Pass   |
+| `backup.sh db diff`, `files` (to a versioned bucket), `status` (the metrics file), `info`                    | Pass   |
+| Deleting a locked backup version                                                                            | Refused ("WORM protected") |
+| Prometheus with the `monitoring` profile: both API replicas and node-exporter up, the self-hosted rules loaded, the backup ages read | Pass |
 | A real bucket at B2 or R2, an email from Alertmanager, a month of cron                         | Not tried |
