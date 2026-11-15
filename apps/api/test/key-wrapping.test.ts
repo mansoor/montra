@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { LocalKms, type KmsPort } from '../src/crypto/crypto.service.js';
 import { createKms, MovingKms } from '../src/crypto/kms.js';
-import { rewrapKeys } from '../src/crypto/rewrap.js';
+import { checkKeys, rewrapKeys } from '../src/crypto/rewrap.js';
 import { VaultKms } from '../src/crypto/vault-kms.js';
 import { resolveSecretFiles, secretFromEnv, type SecretFileSystem } from '../src/secret-files.js';
 import { ADMIN_URL } from './env.js';
@@ -364,6 +364,22 @@ describe('crypto:rewrap', () => {
     } finally {
       await moved.close();
     }
+  });
+
+  it('checks that every key unwraps with one adapter, and names those that don’t (crypto:check)', async () => {
+    const good = await checkKeys(admin, next, { batchSize: 2 });
+    expect(good.map((c) => c.name)).toEqual([
+      'workspace keys',
+      'backup schedules',
+      'restores',
+      'backup jobs',
+    ]);
+    expect(good.reduce((n, c) => n + c.failed, 0)).toBe(0);
+    expect(good.reduce((n, c) => n + c.ok, 0)).toBeGreaterThanOrEqual(3);
+    const lines: string[] = [];
+    const wrong = await checkKeys(admin, dev, { log: (l) => lines.push(l) });
+    expect(wrong.find((c) => c.name === 'workspace keys')!.failed).toBeGreaterThan(0);
+    expect(lines.some((l) => l.startsWith(`app.workspace_key (${wsId}, 1): doesn't unwrap`))).toBe(true);
   });
 
   it('reports a key neither adapter can unwrap, and carries on', async () => {

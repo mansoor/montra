@@ -9,6 +9,10 @@ live API.** `promtool` has checked and unit-tested the rules against synthetic s
 | `prometheus/rules/recording.yml`          | Availability, latency, queue and AI ratios                             |
 | `prometheus/rules/alerts.yml`             | Alerts, with burn-rate paging for availability                         |
 | `prometheus/tests/alerts.test.yml`        | `promtool test rules` unit tests                                       |
+| `prometheus/prometheus.selfhost.yml`      | Scrape config for the self-hosted stack (profile `monitoring`)         |
+| `prometheus/rules/selfhost.yml`           | Backups, the WAL archive, disks, the RAID mirror, the clock (ADR-0050) |
+| `prometheus/tests/selfhost.test.yml`      | Its `promtool` unit tests                                              |
+| `alertmanager/alertmanager.example.yml`   | Email for every alert, for the self-hosted stack                       |
 | `grafana/dashboards/slo.json`             | The five SLOs and their detail                                         |
 | `grafana/dashboards/import-failures.json` | Import failures by institution and file type                           |
 | `grafana/dashboards/ai-accuracy.json`     | Accepted ratio, error rate, outcomes by provider and task              |
@@ -16,8 +20,8 @@ live API.** `promtool` has checked and unit-tested the rules against synthetic s
 Check them:
 
 ```bash
-docker run --rm -v "$PWD/infra/observability/prometheus":/p --entrypoint promtool prom/prometheus:v2.53.0 check rules /p/rules/recording.yml /p/rules/alerts.yml
-docker run --rm -v "$PWD/infra/observability/prometheus":/p -w /p/tests --entrypoint promtool prom/prometheus:v2.53.0 test rules alerts.test.yml
+docker run --rm -v "$PWD/infra/observability/prometheus":/p --entrypoint promtool prom/prometheus:v2.53.0 check rules /p/rules/recording.yml /p/rules/alerts.yml /p/rules/selfhost.yml
+docker run --rm -v "$PWD/infra/observability/prometheus":/p -w /p/tests --entrypoint promtool prom/prometheus:v2.53.0 test rules alerts.test.yml selfhost.test.yml
 ```
 
 ## SLOs

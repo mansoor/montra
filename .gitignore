@@ -24,3 +24,5 @@ infra/terraform/envs/*/terraform.tfvars
 
 # Own servers (infra/selfhost): secrets live on the server only
 infra/selfhost/secrets/
+infra/selfhost/alertmanager.yml
+infra/selfhost/metrics/

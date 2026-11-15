@@ -1,0 +1,114 @@
+# Alerts for Montra on its own server (ADR-0050 §7–8): the backups, the WAL archive, and the machine that the cloud
+# used to look after. Backup ages come from infra/selfhost/backup.sh through node-exporter's textfile collector.
+# Runbooks: docs/runbooks/selfhost-backups.md and docs/runbooks/selfhost-operations.md.
+groups:
+  - name: montra-selfhost-backups
+    rules:
+      - alert: BackupStatusMissing
+        expr: absent(montra_backup_status_timestamp_seconds) or time() - montra_backup_status_timestamp_seconds > 1800
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: Backup status isn't being reported
+          description: >-
+            backup.sh status hasn't written its metrics for over 30 minutes, so nothing below can be trusted. Check
+            /etc/cron.d/montra and /var/log/montra-backup.log.
+          runbook: docs/runbooks/selfhost-backups.md
+      - alert: DatabaseBackupStale
+        expr: time() - montra_backup_newest_timestamp_seconds{kind="db_diff"} > 26 * 3600
+        for: 30m
+        labels:
+          severity: page
+        annotations:
+          summary: No database backup in the last 26 hours
+          description: 'The newest full or differential backup is {{ $value | humanizeDuration }} old.'
+          runbook: docs/runbooks/selfhost-backups.md
+      - alert: DatabaseFullBackupStale
+        expr: time() - montra_backup_newest_timestamp_seconds{kind="db_full"} > 8 * 86400
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: No full database backup in the last 8 days
+          description: 'The newest full backup is {{ $value | humanizeDuration }} old.'
+          runbook: docs/runbooks/selfhost-backups.md
+      - alert: WalArchiveFailing
+        expr: montra_wal_last_failed_timestamp_seconds > montra_wal_last_archived_timestamp_seconds
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: The write-ahead log isn't reaching the backup bucket
+          description: >-
+            The last archive attempt failed and none has succeeded since. Point-in-time recovery stops at the last
+            archived segment, and the WAL builds up on the server's disk.
+          runbook: docs/runbooks/selfhost-backups.md
+      - alert: FilesBackupStale
+        expr: time() - montra_backup_last_success_timestamp_seconds{kind="files"} > 26 * 3600
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: The files bucket hasn't been copied in the last 26 hours
+          description: 'The last copy finished {{ $value | humanizeDuration }} ago.'
+          runbook: docs/runbooks/selfhost-backups.md
+
+  - name: montra-selfhost-machine
+    rules:
+      - alert: ScrapeTargetDown
+        expr: up{job=~"montra-api|node"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: '{{ $labels.instance }} ({{ $labels.job }}) is down'
+          description: Prometheus can't reach it. An API replica that stays down takes half the capacity with it.
+          runbook: docs/runbooks/selfhost-operations.md
+      - alert: DiskMirrorDegraded
+        expr: node_md_disks{state="failed"} > 0 or (node_md_disks_required - ignoring(state) node_md_disks{state="active"}) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: 'The disk mirror {{ $labels.device }} has lost a disk'
+          description: Montra runs on the remaining disk. Replace the failed one before anything else goes wrong.
+          runbook: docs/runbooks/selfhost-operations.md
+      - alert: DiskAlmostFull
+        expr: >-
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.10
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: '{{ $labels.mountpoint }} is over 90% full'
+          description: 'Only {{ $value | humanizePercentage }} is free. A full disk stops Postgres.'
+          runbook: docs/runbooks/selfhost-operations.md
+      - alert: DiskFillingUp
+        expr: predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h], 24 * 3600) < 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: '{{ $labels.mountpoint }} will be full within a day at this rate'
+          description: Check the WAL queue (backups failing?), Docker images and logs.
+          runbook: docs/runbooks/selfhost-operations.md
+      - alert: ClockNotSynchronized
+        expr: node_timex_sync_status == 0
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: The server's clock isn't synchronized
+          description: Sign-in codes and session expiry depend on the clock.
+          runbook: docs/runbooks/selfhost-operations.md
+      - alert: BackupMetricsUnreadable
+        expr: node_textfile_scrape_error > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: node-exporter can't read the backup metrics file
+          description: Check infra/selfhost/metrics/montra_backup.prom.
+          runbook: docs/runbooks/selfhost-backups.md

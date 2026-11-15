@@ -11,11 +11,14 @@ four images as on AWS, from the GitHub Container Registry.
 | `montra.env.example`  | The settings that aren't secret. Copy to `.env`                                                                                                |
 | `setup.sh`            | `secrets` makes and generates `secrets/`; `check` checks the requirements; `init` is the first start                                           |
 | `deploy.sh`           | One release: migrations first, then the services, the API replicas one at a time                                                               |
+| `backup.sh`           | pgBackRest backups, the files copy and their status for alerts, from cron                                                                      |
+| `postgres/`           | PostgreSQL 16 with pgBackRest: the image's Dockerfile, settings and entrypoint                                                                 |
 
 At home, a Cloudflare Tunnel is the way in and nothing is published. Secrets are files in `secrets/` (git-ignored),
 read through `NAME_FILE` settings.
 
 Runbooks: [setup](../../docs/runbooks/selfhost-setup.md), [operations](../../docs/runbooks/selfhost-operations.md),
+[backups](../../docs/runbooks/selfhost-backups.md), [restore drill](../../docs/runbooks/selfhost-restore-drill.md),
 [key wrapping](../../docs/runbooks/key-wrapping.md).
 
 Check without a server, as in review:

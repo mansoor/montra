@@ -1,0 +1,30 @@
+# Prometheus in the self-hosted stack (infra/selfhost, profile `monitoring`; ADR-0050 §8).
+# The metrics token is a secret file, readable by Prometheus's user (setup.sh makes prometheus_metrics_token).
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - rules/recording.yml
+  - rules/alerts.yml
+  - rules/selfhost.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # Both API replicas, on the internal network. Caddy refuses /internal/* from outside.
+  - job_name: montra-api
+    metrics_path: /internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/prometheus_metrics_token
+    static_configs:
+      - targets: ['api-a:4000', 'api-b:4000']
+
+  # The server itself: disks, the RAID mirror, the clock, and the backup ages backup.sh writes (textfile collector).
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
