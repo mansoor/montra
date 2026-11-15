@@ -26,12 +26,14 @@ import { AdminService } from './ops/admin.service.js';
 import { billingProvider } from './ops/billing.port.js';
 import { BillingService } from './ops/billing.service.js';
 import { Plans } from './ops/plans.js';
+import { AdminPlansService } from './ops/admin-plans.service.js';
 import { errorReporterProvider } from './ops/errors.js';
 import { AppVersionInterceptor, MetricsService } from './ops/metrics.js';
 import {
   AdminController,
   BillingWebhookController,
   MetricsController,
+  PlansController,
   StatusController,
   SupportController,
   WorkspaceOpsController,
@@ -186,6 +188,7 @@ export class AppModule {
       BillingWebhookController,
       MetricsController,
       AdminController,
+      PlansController,
       ReportsController,
       NotificationsController,
       DataController,
@@ -225,6 +228,7 @@ export class AppModule {
         SupportDb,
         StaffGuard,
         AdminService,
+        AdminPlansService,
         SupportService,
         StatusService,
         MetricsService,

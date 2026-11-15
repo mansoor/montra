@@ -59,6 +59,26 @@ export type CheckoutRequest = z.output<typeof CheckoutRequest>;
 export const BillingLinkDto = z.object({ url: z.string() });
 export type BillingLinkDto = z.infer<typeof BillingLinkDto>;
 
+// ----- The plan picker (ADR-0049 §1) -------------------------------------------------------------
+
+export const PlanPriceDto = z.object({
+  interval: z.enum(['month', 'year']),
+  /** Minor units of the currency, for showing only: the provider decides what's charged. */
+  amountMinor: z.string(),
+  currency: z.string(),
+});
+export type PlanPriceDto = z.infer<typeof PlanPriceDto>;
+
+/** A plan new customers can choose, with what its current version allows. */
+export const PlanOfferDto = z.object({
+  key: PlanDto,
+  name: z.string(),
+  description: z.string(),
+  entitlements: PlanEntitlementsDto,
+  prices: z.array(PlanPriceDto),
+});
+export type PlanOfferDto = z.infer<typeof PlanOfferDto>;
+
 // ----- Support access (OPS-02) ------------------------------------------------------------------
 
 export const SUPPORT_GRANT_DEFAULT_HOURS = 72;
@@ -141,7 +161,8 @@ export type ClientErrorRequest = z.output<typeof ClientErrorRequest>;
 
 // ----- Staff console (OPS-01, OPS-05) -----------------------------------------------------------
 
-export const StaffRole = z.enum(['support', 'admin']);
+/** Each includes the one before it (ADR-0049 §3). */
+export const StaffRole = z.enum(['support', 'admin', 'owner']);
 export type StaffRole = z.infer<typeof StaffRole>;
 
 export const StaffMeDto = z.object({ role: StaffRole });
@@ -322,3 +343,108 @@ export const SupportViewDto = z.object({
   ),
 });
 export type SupportViewDto = z.infer<typeof SupportViewDto>;
+
+// ----- Staff and plans in the console (ADR-0049 §1, §3) -------------------------------------------
+
+export const StaffMemberDto = z.object({
+  userId: Id,
+  email: z.string(),
+  displayName: z.string(),
+  role: StaffRole,
+  createdAt: z.string(),
+  addedBy: z.string().nullable(),
+});
+export type StaffMemberDto = z.infer<typeof StaffMemberDto>;
+
+export const SetStaffRequest = z.object({
+  email: z.email().transform((e) => e.toLowerCase()),
+  role: StaffRole,
+});
+export type SetStaffRequest = z.output<typeof SetStaffRequest>;
+
+export const AdminPlanPriceDto = z.object({
+  id: Id,
+  provider: z.enum(['stripe', 'apple', 'google']),
+  interval: z.enum(['month', 'year']),
+  priceRef: z.string(),
+  amountMinor: z.string(),
+  currency: z.string(),
+  active: z.boolean(),
+});
+export type AdminPlanPriceDto = z.infer<typeof AdminPlanPriceDto>;
+
+export const AdminPlanVersionDto = z.object({
+  id: Id,
+  version: z.number().int(),
+  entitlements: PlanEntitlementsDto,
+  effectiveFrom: z.string(),
+  createdAt: z.string(),
+  /** On it now, paying, trialing or in grace. */
+  subscribers: z.number().int(),
+  /** Moving to it from their next renewal after a date. */
+  pending: z.number().int(),
+  prices: z.array(AdminPlanPriceDto),
+});
+export type AdminPlanVersionDto = z.infer<typeof AdminPlanVersionDto>;
+
+export const AdminPlanDto = z.object({
+  key: PlanDto,
+  name: z.string(),
+  description: z.string(),
+  sortOrder: z.number().int(),
+  offered: z.boolean(),
+  /** Newest first. */
+  versions: z.array(AdminPlanVersionDto),
+});
+export type AdminPlanDto = z.infer<typeof AdminPlanDto>;
+
+export const SavePlanRequest = z.object({
+  key: PlanDto,
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(500).default(''),
+  sortOrder: z.number().int().min(0).max(10_000).default(0),
+  offered: z.boolean().default(true),
+});
+export type SavePlanRequest = z.output<typeof SavePlanRequest>;
+
+/** Checked against PlanEntitlements in @montra/domain too, which refuses unknown features and absurd numbers. */
+export const PlanEntitlementsInput = z.object({
+  businessBooks: z.number().int().min(0),
+  rentalPortfolios: z.number().int().min(0),
+  storageBytes: z.string().regex(/^\d{1,20}$/),
+  familyLogins: z.number().int().min(0).nullable(),
+  aiMonthlyMicroUsd: z
+    .string()
+    .regex(/^\d{1,20}$/)
+    .nullable(),
+  smsMonthly: z.number().int().min(0),
+  features: z.array(PlanFeatureDto),
+});
+export type PlanEntitlementsInput = z.output<typeof PlanEntitlementsInput>;
+
+export const AddPlanVersionRequest = z.object({
+  entitlements: PlanEntitlementsInput,
+  /** When it becomes the plan's current version. Required at least 30 days out when it gives less than the current one. */
+  effectiveFrom: z.iso.datetime().optional(),
+});
+export type AddPlanVersionRequest = z.output<typeof AddPlanVersionRequest>;
+
+export const AddPlanPriceRequest = z.object({
+  provider: z.enum(['stripe']).default('stripe'),
+  interval: z.enum(['month', 'year']),
+  priceRef: z.string().trim().min(1).max(200),
+  amountMinor: z.string().regex(/^\d{1,12}$/),
+  currency: z.string().regex(/^[A-Za-z]{3}$/),
+});
+export type AddPlanPriceRequest = z.output<typeof AddPlanPriceRequest>;
+
+export const MoveSubscribersRequest = z.object({
+  from: Id,
+  to: Id,
+  /** Needed, at least 30 days out, when the new version gives less. Then it applies from each first renewal after it. */
+  after: z.iso.datetime().optional(),
+});
+export type MoveSubscribersRequest = z.output<typeof MoveSubscribersRequest>;
+
+export const MoveSubscribersDto = z.object({ moved: z.number().int(), when: z.enum(['now', 'renewal']) });
+export type MoveSubscribersDto = z.infer<typeof MoveSubscribersDto>;

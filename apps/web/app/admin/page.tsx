@@ -10,22 +10,43 @@ import {
   ReferencePanel,
   SupportRequestsPanel,
 } from '@/components/admin/console';
+import { PlansPanel, StaffPanel } from '@/components/admin/plans';
 
-const TABS = ['accounts', 'support', 'imports', 'ai', 'flags', 'notices', 'security', 'reference'] as const;
+const TABS = [
+  'accounts',
+  'support',
+  'plans',
+  'imports',
+  'ai',
+  'flags',
+  'notices',
+  'security',
+  'reference',
+  'staff',
+] as const;
 type Tab = (typeof TABS)[number];
+/** Only an owner manages staff (ADR-0049 §3). */
+const OWNER_TABS: readonly Tab[] = ['staff'];
 
 /** OPS-01, OPS-05: for staff, who can't see financial data here. Anyone else gets the 404 the API gives them. */
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const raw = (await searchParams).tab;
-  const tab: Tab = TABS.includes(raw as Tab) ? (raw as Tab) : 'accounts';
   const staff = await load((api) => api.adminMe());
+  const isOwner = staff.role === 'owner';
+  const tabs = TABS.filter((k) => isOwner || !OWNER_TABS.includes(k));
+  const tab: Tab = tabs.includes(raw as Tab) ? (raw as Tab) : 'accounts';
   const { t } = await getI18n();
-  const canChange = staff.role === 'admin';
+  // Each role includes the one below it.
+  const canChange = staff.role === 'admin' || isOwner;
   let body;
   if (tab === 'accounts') {
     body = <AccountLookup canChange={canChange} />;
   } else if (tab === 'support') {
     body = <SupportRequestsPanel requests={await load((api) => api.adminSupportRequests())} />;
+  } else if (tab === 'plans') {
+    body = <PlansPanel plans={await load((api) => api.adminPlans())} canChange={isOwner} />;
+  } else if (tab === 'staff') {
+    body = <StaffPanel staff={await load((api) => api.adminStaff())} />;
   } else if (tab === 'imports') {
     const rows = await load((api) => api.adminImportFailures(30));
     body = (
@@ -60,7 +81,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     const [rows, ceiling] = await load((api) => Promise.all([api.adminAiAccuracy(30), api.adminAiCeiling()]));
     body = (
       <div className="space-y-4">
-        <AiCeilingPanel ceiling={ceiling} canChange={canChange} />
+        <AiCeilingPanel ceiling={ceiling} canChange={isOwner} />
         <section className="card-flush overflow-x-auto" aria-label={t('admin.tab.ai')}>
           <table className="tbl">
             <thead>
@@ -117,7 +138,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         <p className="text-sm text-muted">{t('admin.hint')}</p>
       </header>
       <nav className="tabs" aria-label={t('admin.sections')}>
-        {TABS.map((k) => (
+        {tabs.map((k) => (
           <Link
             key={k}
             className="tab"

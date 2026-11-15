@@ -10,7 +10,7 @@ import { Kysely, PostgresDialect, sql } from 'kysely';
 import type { FastifyRequest } from 'fastify';
 import { createPool, setContext, type Database, type Trx } from '@montra/db';
 import type { StaffRole } from '@montra/schemas';
-import type { RequestContext } from '../auth/auth.js';
+import { requireRecentAuth, type RequestContext } from '../auth/auth.js';
 import { AppError, forbidden } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
@@ -101,6 +101,16 @@ export class StaffGuard implements CanActivate {
   }
 }
 
+/** Admin or owner: each role includes the one below it (ADR-0049 §3). */
 export function requireAdmin(req: StaffRequest): void {
-  if (req.staffRole !== 'admin') throw forbidden('This needs the admin role');
+  if (req.staffRole !== 'admin' && req.staffRole !== 'owner') throw forbidden('This needs the admin role');
+}
+
+/**
+ * Staff, plans, provider settings and the AI ceiling are the owner's, and need a sign-in in the last few minutes too
+ * (ADR-0049 §3), as revealing a tenant's date of birth does. The database checks the role again.
+ */
+export function requireOwner(req: StaffRequest, ctx: RequestContext): void {
+  if (req.staffRole !== 'owner') throw forbidden('This needs the owner role');
+  requireRecentAuth(ctx);
 }

@@ -3,6 +3,7 @@ import {
   aiAlertPct,
   aiLimitMicroUsd,
   aiUsedShare,
+  compareEntitlements,
   effectivePlan,
   entitlementsJson,
   EntitlementsError,
@@ -116,6 +117,31 @@ describe('the AI limit (ADR-0049 §2)', () => {
     expect(aiUsedShare(1n, null)).toBeNull();
     expect(aiUsedShare(7_000_000n, 10_000_000n)).toBe(0.7);
     expect(aiUsedShare(12_000_000n, 10_000_000n)).toBe(1);
+  });
+});
+
+describe('compareEntitlements (ADR-0049 §1)', () => {
+  const base = parseEntitlements({
+    businessBooks: 2,
+    rentalPortfolios: 1,
+    storageBytes: 1000,
+    familyLogins: 3,
+    aiMonthlyMicroUsd: 5_000_000,
+    smsMonthly: 10,
+    features: ['payroll', 'scans'],
+  });
+
+  it('calls more of anything, with nothing less, more', () => {
+    expect(compareEntitlements(base, base)).toBe('same');
+    expect(compareEntitlements(base, { ...base, businessBooks: 3 })).toBe('more');
+    expect(compareEntitlements(base, { ...base, familyLogins: null })).toBe('more');
+    expect(compareEntitlements(base, { ...base, features: ['payroll', 'scans', 'voice'] })).toBe('more');
+  });
+
+  it('calls anything taken away less, even with something else added', () => {
+    expect(compareEntitlements(base, { ...base, storageBytes: 999n })).toBe('less');
+    expect(compareEntitlements({ ...base, aiMonthlyMicroUsd: null }, base)).toBe('less');
+    expect(compareEntitlements(base, { ...base, features: ['payroll'], businessBooks: 9 })).toBe('less');
   });
 });
 

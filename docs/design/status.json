@@ -1018,7 +1018,7 @@
   ],
   "UP-12": [
     "partial",
-    "plans are data (ADR-0049): each plan has versions of what it allows (books, storage, logins, an AI allowance, texts, features) and its Stripe prices. Seeded Free and Pro allow what they did before. The console's plan editor comes next. Prices are for you to set in Stripe; never run against real Stripe"
+    "plans are data (ADR-0049): each plan has versions of what it allows (books, storage, logins, an AI allowance, texts, features) and its Stripe prices. Seeded Free and Pro allow what they did before. Owners edit plans and move subscribers in the console; the web and phone show a plan picker. Prices are for you to set in Stripe; never run against real Stripe"
   ],
   "NFR-04": [
     "partial",
@@ -1058,7 +1058,7 @@
   ],
   "OPS-01": [
     "done",
-    "staff console on its own database role: account lookup, plans, flags, import failures. A test fails if the role can read anything else. Real staff SSO is not in place: staff sign in like everyone, with a second factor"
+    "staff console on its own database role: account lookup, plans, flags, import failures; an owner role manages staff and edits plans through checked functions (ADR-0049). A test fails if the role can read anything else. Real staff SSO is not in place: staff sign in like everyone, with a second factor"
   ],
   "OPS-02": [
     "done",

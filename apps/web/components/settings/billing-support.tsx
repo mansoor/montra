@@ -1,6 +1,6 @@
 'use client';
 
-import type { BillingDto, SupportGrantDto } from '@montra/api-client';
+import type { BillingDto, PlanEntitlementsDto, PlanOfferDto, SupportGrantDto } from '@montra/api-client';
 import { useState } from 'react';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
@@ -10,7 +10,15 @@ const when = (iso: string | null, locale: string) =>
   iso ? new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(new Date(iso)) : '';
 
 /** UP-12, OPS-08: what this workspace is on. Paying happens at the provider, so card details never come here. */
-export function BillingPanel({ workspaceId, billing }: { workspaceId: string; billing: BillingDto }) {
+export function BillingPanel({
+  workspaceId,
+  billing,
+  offers,
+}: {
+  workspaceId: string;
+  billing: BillingDto;
+  offers: PlanOfferDto[];
+}) {
   const { run, busy, message, t } = useAction();
   const { locale } = useI18n();
   const go = async (get: () => Promise<{ url: string }>) => {
@@ -32,7 +40,8 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
   // A paid plan through the provider is changed in its portal; the plan picker comes with the console's plans.
   const paying = billing.plan !== 'free' && billing.provider === 'stripe';
   const canBuy = billing.canManage && !paying;
-  const books = billing.entitlements.businessBooks > 0 || billing.entitlements.rentalPortfolios > 0;
+  // The plan picker (ADR-0049 §1): every plan offered except the one this workspace is on.
+  const others = offers.filter((o) => o.key !== billing.plan && o.key !== 'free');
   return (
     <div className="max-w-xl space-y-4">
       <section className="card space-y-3" aria-labelledby="plan-title">
@@ -58,40 +67,8 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
           </p>
         )}
         {billing.status === 'canceled' && <p className="text-sm text-muted">{t('billing.lapsed')}</p>}
-        <ul className="list-inside list-disc text-sm text-muted">
-          <li>{t('billing.includes_personal')}</li>
-          <li>{t(books ? 'billing.includes_business' : 'billing.excludes_business')}</li>
-          <li>
-            {t('billing.includes_storage', {
-              gb: Number(BigInt(billing.entitlements.storageBytes) / 1073741824n),
-            })}
-          </li>
-        </ul>
+        <Includes entitlements={billing.entitlements} />
         <div className="flex flex-wrap gap-2">
-          {canBuy && (
-            <>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={busy}
-                onClick={() =>
-                  go(() => browserApi.startCheckout(workspaceId, { plan: 'pro', interval: 'month' }))
-                }
-              >
-                {t('billing.upgrade_monthly')}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={busy}
-                onClick={() =>
-                  go(() => browserApi.startCheckout(workspaceId, { plan: 'pro', interval: 'year' }))
-                }
-              >
-                {t('billing.upgrade_yearly')}
-              </button>
-            </>
-          )}
           {billing.canManage && billing.provider === 'stripe' && (
             <button
               type="button"
@@ -106,7 +83,76 @@ export function BillingPanel({ workspaceId, billing }: { workspaceId: string; bi
         {!billing.canManage && <p className="text-sm text-muted">{t('billing.owner_only')}</p>}
         <StatusLine message={message} />
       </section>
+      {others.length > 0 && (
+        <section className="space-y-3" aria-labelledby="plans-title" data-testid="plan-picker">
+          <h2 id="plans-title" className="text-base font-semibold">
+            {t('billing.other_plans')}
+          </h2>
+          {paying && billing.canManage && (
+            <p className="text-sm text-muted">{t('billing.change_in_portal')}</p>
+          )}
+          {others.map((o) => (
+            <article key={o.key} className="card space-y-2" data-testid={`offer-${o.key}`}>
+              <h3 className="text-sm font-semibold">{o.name}</h3>
+              {o.description && <p className="text-sm text-muted">{o.description}</p>}
+              <Includes entitlements={o.entitlements} />
+              <div className="flex flex-wrap gap-2">
+                {o.prices.map((p) => {
+                  const price = new Intl.NumberFormat(locale, {
+                    style: 'currency',
+                    currency: p.currency,
+                  }).format(Number(p.amountMinor) / 100);
+                  const label = t(
+                    p.interval === 'year' ? 'billing.choose_yearly' : 'billing.choose_monthly',
+                    {
+                      price,
+                    },
+                  );
+                  return canBuy ? (
+                    <button
+                      key={p.interval}
+                      type="button"
+                      className={p.interval === 'month' ? 'btn-primary' : 'btn-secondary'}
+                      disabled={busy}
+                      onClick={() =>
+                        go(() => browserApi.startCheckout(workspaceId, { plan: o.key, interval: p.interval }))
+                      }
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <span key={p.interval} className="text-sm text-muted">
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
     </div>
+  );
+}
+
+/** What a plan includes, from its entitlements (ADR-0049 §1). The AI allowance is a share, so it isn't priced here. */
+function Includes({ entitlements: e }: { entitlements: PlanEntitlementsDto }) {
+  const { t } = useI18n();
+  return (
+    <ul className="list-inside list-disc text-sm text-muted">
+      <li>{t('billing.includes_personal')}</li>
+      {e.businessBooks > 0 ? (
+        <li>{t('billing.includes_business_count', { count: e.businessBooks })}</li>
+      ) : (
+        <li>{t('billing.excludes_business_plain')}</li>
+      )}
+      {e.rentalPortfolios > 0 && <li>{t('billing.includes_rental_count', { count: e.rentalPortfolios })}</li>}
+      <li>{t('billing.includes_storage', { gb: Number(BigInt(e.storageBytes) / 1073741824n) })}</li>
+      {e.familyLogins !== null && <li>{t('billing.includes_logins', { count: e.familyLogins })}</li>}
+      {e.features.map((f) => (
+        <li key={f}>{t(`billing.feature.${f}`)}</li>
+      ))}
+    </ul>
   );
 }
 

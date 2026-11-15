@@ -8,6 +8,7 @@ import { AppError, unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
+import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
 import {
   BILLING_PORT,
   type BillingEvent,
@@ -44,6 +45,7 @@ export class BillingService {
     @Inject(Worker) private readonly worker: Worker,
     @Inject(Plans) private readonly plans: Plans,
     @Inject(ERROR_REPORTER) private readonly errors: ErrorReporter,
+    @Inject(MAIL_PORT) private readonly mail: MailPort,
   ) {}
 
   private get enabled(): boolean {
@@ -188,11 +190,24 @@ export class BillingService {
     // Not one of ours, or created by hand in the provider's dashboard. Nothing to attach it to.
     if (!workspaceId) return;
     const ended = status === 'canceled' || status === 'none';
-    const version = ended
+    let version = ended
       ? await this.plans.free(trx)
       : s.priceId
         ? await this.plans.versionByPrice(trx, 'stripe', s.priceId)
         : undefined;
+    if (version && !ended) {
+      // The owner may have moved this plan's subscribers to a newer version, while Stripe keeps the price they're on
+      // (ADR-0049 §1). The same plan keeps the version it has; a different plan is a change of tier.
+      const { rows } = await sql<{ plan: string; plan_version_id: string | null }>`
+        select plan, plan_version_id from app.subscription_version(${workspaceId}::uuid)`.execute(trx);
+      const held = rows[0];
+      if (held?.plan === version.planKey && held.plan_version_id) {
+        version = (await this.plans.version(trx, held.plan_version_id)) ?? version;
+      } else {
+        // A new subscriber, or a change of tier: the plan's current version, whichever version the price was added to.
+        version = (await this.plans.latest(trx, version.planKey)) ?? version;
+      }
+    }
     if (!version) {
       // A price nobody added to a plan: the workspace stays as it was until someone does (ADR-0049 §1).
       const detail = { subscription: s.id, price: s.priceId ?? 'none' };
@@ -243,6 +258,8 @@ export class BillingService {
       const { rows } = await sql<{
         workspace_id: string;
       }>`select workspace_id from app.subscriptions_lapsed()`.execute(trx);
+      // Moves to a version that gives less, at each subscriber's renewal (ADR-0049 §1).
+      await sql`select app.apply_pending_versions()`.execute(trx);
       const free = await this.plans.free(trx);
       for (const r of rows) {
         await this.write(trx, r.workspace_id, free.id, 'canceled', {
@@ -263,8 +280,44 @@ export class BillingService {
   register(): void {
     this.worker.register('billing.sweep', async () => {
       await this.schedule(new Date(Date.now() + SWEEP_EVERY_MS));
-      return { lapsed: await this.sweep() };
+      return { lapsed: await this.sweep(), noticed: await this.sendPlanNotices() };
     });
+  }
+
+  /** Each customer whose plan will give less is told, with the date, once (ADR-0049 §1). */
+  async sendPlanNotices(): Promise<number> {
+    let sent = 0;
+    for (;;) {
+      const { rows } = await this.db.run({ actorType: 'system' }, (trx) =>
+        sql<{
+          id: string;
+          workspace_name: string;
+          plan_name: string;
+          apply_at: Date;
+          emails: string[];
+        }>`select * from app.plan_notices_due(50)`.execute(trx),
+      );
+      if (rows.length === 0) return sent;
+      for (const n of rows) {
+        const date = n.apply_at.toISOString().slice(0, 10);
+        for (const to of n.emails) {
+          await this.mail.send({
+            to,
+            category: 'transactional',
+            subject: `Your Montra ${n.plan_name} plan changes on ${date}`,
+            text: [
+              `The ${n.plan_name} plan for ${n.workspace_name} will include less from ${date}.`,
+              `See what it includes, or choose another plan, in Settings → Plan: ${this.config.WEB_URL}`,
+              'Nothing you already have is taken away: books and files stay readable, editable and exportable.',
+            ].join('\n\n'),
+          });
+        }
+        await this.db.run({ actorType: 'system' }, (trx) =>
+          sql`select app.plan_notice_sent(${n.id}::uuid)`.execute(trx),
+        );
+        sent++;
+      }
+    }
   }
 
   async schedule(at: Date = new Date()): Promise<void> {

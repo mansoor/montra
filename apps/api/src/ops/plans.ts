@@ -15,7 +15,7 @@ import {
   type PlanFeature,
   type SubscriptionStatus,
 } from '@montra/domain';
-import type { PlanEntitlementsDto } from '@montra/schemas';
+import type { PlanEntitlementsDto, PlanOfferDto } from '@montra/schemas';
 import { AppError } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
@@ -105,14 +105,50 @@ export class Plans {
     return row && this.toVersion(row);
   }
 
-  /** A plan's latest version, which new customers get. */
+  /**
+   * A plan's current version, which new customers get: the newest that has started. A version that gives less
+   * starts at least 30 days after it's added (ADR-0049 §1).
+   */
   async latest(trx: Trx, planKey: string): Promise<PlanVersionRow | undefined> {
     const row = await this.versions(trx)
       .where('v.plan_key', '=', planKey)
+      .where('v.effective_from', '<=', new Date())
+      .orderBy('v.effective_from', 'desc')
       .orderBy('v.version', 'desc')
       .limit(1)
       .executeTakeFirst();
     return row && this.toVersion(row);
+  }
+
+  /** The plan picker: every plan offered to new customers, its current version, and its prices (ADR-0049 §1). */
+  async offers(trx: Trx): Promise<PlanOfferDto[]> {
+    const plans = await trx
+      .selectFrom('app.plan')
+      .select(['key', 'name', 'description'])
+      .where('offered', '=', true)
+      .orderBy('sort_order')
+      .orderBy('key')
+      .execute();
+    const out: PlanOfferDto[] = [];
+    for (const p of plans) {
+      const v = await this.latest(trx, p.key);
+      if (!v) continue;
+      const prices = await this.activePrices(trx, p.key, v.version);
+      // A paid plan with no price yet can't be chosen, so it isn't shown.
+      if (p.key !== FREE_PLAN && prices.length === 0) continue;
+      out.push({
+        key: p.key,
+        name: p.name,
+        description: p.description,
+        entitlements: entitlementsDto(this.enabled ? v.entitlements : UNLIMITED_ENTITLEMENTS),
+        prices: prices.map((pr) => ({
+          interval: pr.billing_interval,
+          amountMinor: String(pr.amount_minor),
+          currency: pr.currency,
+        })),
+      });
+    }
+    return out;
   }
 
   async free(trx: Trx): Promise<PlanVersionRow> {
@@ -197,7 +233,28 @@ export class Plans {
     return row && this.toVersion(row);
   }
 
-  /** The price a new customer pays for a plan: its latest version with an active price for the interval. */
+  /**
+   * The prices new customers pay for a plan: for each interval, the newest active price on the current version or
+   * an earlier one. A new version needn't repeat a price that hasn't changed (ADR-0049 §1).
+   */
+  private async activePrices(trx: Trx, planKey: string, upTo: number) {
+    const rows = await trx
+      .selectFrom('app.plan_price as pr')
+      .innerJoin('app.plan_version as v', 'v.id', 'pr.plan_version_id')
+      .select(['pr.billing_interval', 'pr.price_ref', 'pr.amount_minor', 'pr.currency'])
+      .where('v.plan_key', '=', planKey)
+      .where('v.version', '<=', upTo)
+      .where('pr.provider', '=', 'stripe')
+      .where('pr.active', '=', true)
+      .orderBy('v.version', 'desc')
+      .orderBy('pr.created_at', 'desc')
+      .execute();
+    const first = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) if (!first.has(r.billing_interval)) first.set(r.billing_interval, r);
+    return [...first.values()].sort((a, b) => a.billing_interval.localeCompare(b.billing_interval));
+  }
+
+  /** The price a new customer pays for a plan and interval, and the version they'll get: the current one. */
   async checkoutPrice(
     trx: Trx,
     planKey: string,
@@ -211,14 +268,9 @@ export class Plans {
     if (!plan?.offered || plan.key === FREE_PLAN) return undefined;
     const version = await this.latest(trx, planKey);
     if (!version) return undefined;
-    const price = await trx
-      .selectFrom('app.plan_price')
-      .select('price_ref')
-      .where('plan_version_id', '=', version.id)
-      .where('provider', '=', 'stripe')
-      .where('billing_interval', '=', interval)
-      .where('active', '=', true)
-      .executeTakeFirst();
+    const price = (await this.activePrices(trx, planKey, version.version)).find(
+      (p) => p.billing_interval === interval,
+    );
     return price ? { priceRef: price.price_ref, version } : undefined;
   }
 }

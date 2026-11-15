@@ -46,7 +46,9 @@ import type {
   LoanDto,
   LoanPaymentRequest,
   ArrearsDto,
+  AiSettingsDto,
   BillingDto,
+  PlanOfferDto,
   StatusDto,
   CreateBackupRequest,
   DeletionStatusDto,
@@ -241,7 +243,9 @@ export function createApi(opts: ApiOptions) {
     /** AUTH-02 (ADR-0043): the service's password policy, for the strength meter. Needs no sign-in. */
     passwordPolicy: () => request<PasswordPolicyDto>('GET', '/v1/password-policy'),
     workspaces: async () => (await request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces')).data,
-    aiSettings: (w: string) => request<{ mode: string }>('GET', `${ws(w)}/ai/settings`),
+    aiSettings: (w: string) => request<Pick<AiSettingsDto, 'mode' | 'usage'>>('GET', `${ws(w)}/ai/settings`),
+    /** The plan picker's list (ADR-0049 §1). The phone shows it; buying happens on the web. */
+    plans: async () => (await request<{ data: PlanOfferDto[] }>('GET', '/v1/plans')).data,
 
     // Planning (Phase 6): online reads (cached on the device by useCached) and online-only budget writes.
     /** `period`: any date in the period to show (default today). */

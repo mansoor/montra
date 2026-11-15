@@ -385,7 +385,7 @@ describe('the AI allowance (ADR-0049 §2)', () => {
     const staff = h.as('plans-staff@example.test');
     await staff.get('/v1/me');
     await admin.query(
-      `insert into app.staff_user (user_id, role) values ($1, 'admin') on conflict do nothing`,
+      `insert into app.staff_user (user_id, role) values ($1, 'owner') on conflict do nothing`,
       [await userId('plans-staff@example.test')],
     );
     // The ceiling is the whole service's, so it's set only inside a transaction that's rolled back: other test
@@ -425,7 +425,7 @@ describe('the AI allowance (ADR-0049 §2)', () => {
     expect((await runtime()).ctx.budget.planMicroUsd).toBe(1_000_000n);
   });
 
-  it('lets admin staff set the ceiling, and shows the service’s spend', async () => {
+  it('lets an owner set the ceiling, and shows the service’s spend', async () => {
     const staff = h.as('plans-staff@example.test');
     expect((await staff.get('/v1/admin/ai-ceiling')).body).toMatchObject({
       ceilingUsd: null,
