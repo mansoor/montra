@@ -86,7 +86,9 @@ sudoedit secrets/alert_smtp_password
 docker compose up -d
 ```
 
-That starts Prometheus (30 days of data), Alertmanager and node-exporter, on the internal network only. The rules are
+That starts Prometheus (30 days of data), Alertmanager and node-exporter, on the internal network only. node-exporter mounts
+the host's `/` with `rslave`, which needs `/` to be a shared mount, as it is on a Linux server with systemd; on Docker
+Desktop it fails to start, and `deploy.sh` with it. The rules are
 `infra/observability/prometheus/rules`: the SLO alerts from Phase 11, plus `selfhost.yml`:
 
 | Alert                     | When                                                            | Severity |
