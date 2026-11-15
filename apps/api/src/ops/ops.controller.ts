@@ -21,6 +21,10 @@ import {
   AddPlanPriceRequest,
   AddPlanVersionRequest,
   AdminSetPlanRequest,
+  CloseAccountRequest,
+  CouponRequest,
+  ExtendTrialRequest,
+  SuspendRequest,
   MoveSubscribersRequest,
   SavePlanRequest,
   SetStaffRequest,
@@ -37,11 +41,19 @@ import {
   SaveMileageRateRequest,
 } from '@montra/schemas';
 import { z } from 'zod';
-import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import {
+  AuthGuard,
+  Ctx,
+  dbCtx,
+  requireRecentAuth,
+  WorkspaceGuard,
+  type RequestContext,
+} from '../auth/auth.js';
 import { AppError, badRequest } from '../common/errors.js';
 import { requireWorkspaceAdmin, isAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { Db } from '../db/database.js';
+import { AdminAccountsService } from './admin-accounts.service.js';
 import { AdminPlansService } from './admin-plans.service.js';
 import { AdminService } from './admin.service.js';
 import { Plans } from './plans.js';
@@ -188,6 +200,7 @@ export class AdminController {
   constructor(
     @Inject(AdminService) private readonly admin: AdminService,
     @Inject(AdminPlansService) private readonly owner: AdminPlansService,
+    @Inject(AdminAccountsService) private readonly accountsAdmin: AdminAccountsService,
   ) {}
 
   @Get('me')
@@ -214,7 +227,63 @@ export class AdminController {
     @Body() body: unknown,
   ) {
     requireAdmin(req);
-    await this.admin.setPlan(ctx.user.id, parse(Id, id), parse(AdminSetPlanRequest, body));
+    await this.accountsAdmin.givePlan(ctx.user.id, parse(Id, id), parse(AdminSetPlanRequest, body));
+  }
+
+  // ----- Managing accounts (ADR-0049 §4) --------------------------------------------------------------
+
+  @Post('accounts/:id/suspend')
+  @HttpCode(204)
+  async suspend(
+    @Req() req: StaffRequest,
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    requireAdmin(req);
+    requireRecentAuth(ctx);
+    await this.accountsAdmin.suspend(ctx.user.id, parse(Id, id), parse(SuspendRequest, body));
+  }
+
+  @Post('accounts/:id/restore')
+  @HttpCode(204)
+  async restore(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Param('id') id: string) {
+    requireAdmin(req);
+    await this.accountsAdmin.restore(ctx.user.id, parse(Id, id));
+  }
+
+  @Post('accounts/:id/close')
+  closeAccount(
+    @Req() req: StaffRequest,
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    requireOwner(req, ctx);
+    return this.accountsAdmin.close(ctx.user.id, parse(Id, id), parse(CloseAccountRequest, body));
+  }
+
+  @Post('workspaces/:id/trial')
+  extendTrial(
+    @Req() req: StaffRequest,
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    requireAdmin(req);
+    return this.accountsAdmin.extendTrial(ctx.user.id, parse(Id, id), parse(ExtendTrialRequest, body));
+  }
+
+  @Post('workspaces/:id/coupon')
+  @HttpCode(204)
+  async coupon(
+    @Req() req: StaffRequest,
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    requireAdmin(req);
+    await this.accountsAdmin.coupon(ctx.user.id, parse(Id, id), parse(CouponRequest, body));
   }
 
   @Get('support/:workspaceId')

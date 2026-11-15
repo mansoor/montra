@@ -41,6 +41,10 @@ export interface BillingPort {
   checkoutUrl(input: CheckoutInput): Promise<string>;
   portalUrl(customer: string, returnUrl: string): Promise<string>;
   subscription(id: string): Promise<ProviderSubscription>;
+  /** ADR-0049 §4: a trial runs on to a new end, with nothing charged for the extra days. */
+  extendTrial(subscription: string, until: Date): Promise<void>;
+  /** ADR-0049 §4: a coupon made in the provider's dashboard, for a workspace that pays there. */
+  applyCoupon(subscription: string, coupon: string): Promise<void>;
   /** Checks the signature against the raw body, and refuses anything else. */
   parseEvent(rawBody: Buffer, signature: string | undefined): BillingEvent;
 }
@@ -151,6 +155,25 @@ export class StripeBilling implements BillingPort {
     };
   }
 
+  async extendTrial(subscription: string, until: Date): Promise<void> {
+    await this.call(
+      'POST',
+      `/v1/subscriptions/${encodeURIComponent(subscription)}`,
+      new URLSearchParams({
+        trial_end: String(Math.trunc(until.getTime() / 1000)),
+        proration_behavior: 'none',
+      }),
+    );
+  }
+
+  async applyCoupon(subscription: string, coupon: string): Promise<void> {
+    await this.call(
+      'POST',
+      `/v1/subscriptions/${encodeURIComponent(subscription)}`,
+      new URLSearchParams({ 'discounts[0][coupon]': coupon }),
+    );
+  }
+
   parseEvent(rawBody: Buffer, signature: string | undefined): BillingEvent {
     const secret = this.config.STRIPE_WEBHOOK_SECRET;
     if (!secret) throw new AppError(503, 'billing.not_configured', 'Plans are not available yet');
@@ -186,6 +209,12 @@ export class NoBilling implements BillingPort {
     return this.refuse();
   }
   subscription(): Promise<ProviderSubscription> {
+    return this.refuse();
+  }
+  extendTrial(): Promise<void> {
+    return this.refuse();
+  }
+  applyCoupon(): Promise<void> {
     return this.refuse();
   }
   parseEvent(): BillingEvent {

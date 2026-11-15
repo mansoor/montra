@@ -257,6 +257,18 @@ Each step is its own PR into `develop`, and works on its own:
   - Step-up uses the API's existing recent sign-in check (`requireRecentAuth`, 10 minutes), which is the one
     revealing a tenant's date of birth uses.
   - Listing staff is the owner's too, as managing them is. Admins can see plans but not change them.
+- **Step 3 (migration 0053):**
+  - Suspension sets the Kratos identity inactive, which refuses sign-in, and deletes its sessions. The API refuses
+    the person too (`account.suspended`), and a workspace an active owner of which is suspended
+    (`workspace.suspended`). The web sends both to a public page that names support.
+  - A suspension and the reason for it are visible only to staff. The person's security log shows that it happened
+    and when it ended, with no reason.
+  - "A Stripe coupon instead" means the console applies a coupon id made in Stripe's dashboard to the subscription.
+    It doesn't create coupons. A given plan needs an end date. It stops counting at that time by the clock, and the
+    hourly sweep writes it down.
+  - Extending a trial changes Stripe first, so the next webhook doesn't undo it.
+  - Closing on request is the person's own deletion, started for them. The security log calls it
+    `deletion_requested_by_support`, and they can still cancel it.
 
 ## Consequences
 

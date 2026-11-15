@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startHarness, type Harness } from './harness.js';
 import pg from 'pg';
+import { AUTH_PORT, type AuthPort } from '../src/auth/auth.js';
 import { MAIL_PORT, type MemoryMail } from '../src/mail/mail.service.js';
 import { ADMIN_URL } from './env.js';
 
@@ -321,6 +322,20 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     expect(
       (await call('POST', '/v1/me/email-change', 'stale-mover', { newEmail: 'x@example.com' })).body.code,
     ).toBe('reauth.required');
+  });
+
+  it('makes a suspended identity inactive and ends its sessions, and restores it (ADR-0049 §4)', async () => {
+    add('suspendee', { identityId: 'id-suspendee' });
+    expect((await call('GET', '/v1/me', 'suspendee')).status).toBe(200);
+    const auth = h.app.get<AuthPort>(AUTH_PORT);
+    await auth.setIdentityActive('id-suspendee', false);
+    expect(adminCalls).toEqual(
+      expect.arrayContaining(['PATCH / id-suspendee', 'DELETE /sessions id-suspendee']),
+    );
+    expect((await call('GET', '/v1/me', 'suspendee')).status).toBe(401);
+    const before = adminCalls.length;
+    await auth.setIdentityActive('id-suspendee', true);
+    expect(adminCalls.slice(before)).toEqual(['PATCH / id-suspendee']);
   });
 
   it('removes a lost second factor only after a 72-hour hold (AUTH-06)', async () => {

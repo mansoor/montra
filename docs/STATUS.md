@@ -1217,6 +1217,18 @@ Phase 11 leftovers:
     - The AI usage bar: the web's AI settings and the phone's Settings show "N% of this month's AI used" from
       `usage.share`. Under a plan's allowance, the web shows the share, not dollars.
     - Tests: `apps/api/test/plans-console.test.ts`, and a look at the Plans tab in `e2e/operations.spec.ts`.
+  - **Step 3, managing accounts** (migration 0053), in the console's account lookup:
+    - **Suspend and restore** (admin, with a recent sign-in): abuse, fraud or a legal hold, with a reason. Kratos
+      stops the sign-in and ends the sessions. The API refuses the person (`account.suspended`) and closes workspaces
+      they own to every member (`workspace.suspended`). The web shows `/account-closed`. They're emailed unless it's a
+      legal hold. Restoring reverses all of it.
+    - **Extend a trial** by up to 30 days, in Stripe first. **Give a plan** until a date (provider `comp`). It stops
+      counting at that time, and the sweep writes it down. A workspace paying through Stripe gets a **coupon** id
+      instead, applied to its subscription.
+    - **Close on request** (owner): the person's own 30-day deletion, only for a request from the account's address,
+      with how it came recorded. They're emailed and can still cancel it.
+    - Not done: the phone has no screen for a suspended account or a closed workspace. It shows the API's message.
+    - Tests: `apps/api/test/accounts.test.ts`, and `setIdentityActive` against the fake Kratos in `kratos.test.ts`.
   - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
     and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
     with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and

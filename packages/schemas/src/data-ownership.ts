@@ -20,6 +20,9 @@ export const SecurityEventKind = z.enum([
   'storage_changed',
   'storage_disconnected',
   'sign_in_locked',
+  'account_suspended',
+  'account_restored',
+  'deletion_requested_by_support',
 ]);
 export type SecurityEventKind = z.infer<typeof SecurityEventKind>;
 

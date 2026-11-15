@@ -67,5 +67,8 @@ export function stepUpHref(code: string, returnTo: string): string | null {
   if (code === 'reauth.required') return `/sign-in?refresh=true&return_to=${back}`;
   if (code === 'email.unverified') return '/auth/verification';
   if (code === 'account.deleting') return '/account-deleting';
+  // ADR-0049 §4: suspended by support, or a workspace whose owner is.
+  if (code === 'account.suspended') return '/account-closed';
+  if (code === 'workspace.suspended') return '/account-closed?workspace=1';
   return null;
 }

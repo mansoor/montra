@@ -397,13 +397,17 @@ describe('the staff console (OPS-01, ADR-0020)', () => {
   });
 
   it('keeps changes to the admin role, and logs them', async () => {
-    const set = { plan: 'pro', reason: 'Beta tester' };
+    const set = { plan: 'pro', reason: 'Beta tester', until: '2099-12-31' };
     expect((await staff.put(`/v1/admin/workspaces/${ws}/plan`, set)).status).toBe(403);
     expect((await adminStaff.put(`/v1/admin/workspaces/${ws}/plan`, set)).status).toBe(204);
     const row = (await staff.get(`/v1/admin/accounts/${ownerId}/workspaces`)).body.data[0];
-    expect(row).toMatchObject({ plan: 'pro', status: 'active', provider: 'staff' });
+    // ADR-0049 §4: a given plan, until a date.
+    expect(row).toMatchObject({ plan: 'pro', planName: 'Pro', status: 'active', provider: 'comp' });
     const log = await admin.query(`select action, detail from app.admin_log where subject = $1`, [ws]);
-    expect(log.rows[0]).toMatchObject({ action: 'plan.set', detail: { plan: 'pro', reason: 'Beta tester' } });
+    expect(log.rows[0]).toMatchObject({
+      action: 'plan.give',
+      detail: { plan: 'pro', reason: 'Beta tester', until: '2099-12-31' },
+    });
     expect(
       (await adminStaff.put(`/v1/admin/workspaces/${ws}/plan`, { plan: 'pro', reason: 'x' })).status,
     ).toBe(400);
