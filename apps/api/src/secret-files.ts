@@ -27,8 +27,8 @@ function fileValue(files: SecretFileSystem, name: string, path: string): string 
 }
 
 /**
- * Returns `env` with each `NAME_FILE` among `names` replaced by `NAME` and the file's contents. Empty values count as
- * not set, as ECS fills every secret it's given.
+ * Returns `env` with each `NAME_FILE` among `names` replaced by `NAME` and the file's contents. Empty values and empty
+ * files count as not set: ECS fills every secret it's given, and Compose mounts a file for every secret.
  */
 export function resolveSecretFiles(
   env: Record<string, string | undefined>,
@@ -42,7 +42,10 @@ export function resolveSecretFiles(
     const path = out[`${name}_FILE`];
     if (!path) continue;
     if (out[name] !== undefined) throw new Error(`Set ${name} or ${name}_FILE, not both`);
-    out[name] = fileValue(files, name, path);
+    const value = fileValue(files, name, path);
+    // An empty file is a secret not in use: Compose needs a file for every secret it mounts.
+    if (value === '') continue;
+    out[name] = value;
     fromFiles.set(name, path);
   }
   return { env: out, fromFiles };

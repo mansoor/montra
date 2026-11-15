@@ -62,6 +62,16 @@ func TestEmptyMeansNotSet(t *testing.T) {
 	}
 }
 
+func TestAnEmptyFileMeansNotSet(t *testing.T) {
+	got, err := resolve([]string{"COURIER_SMTP_CONNECTION_URI_FILE=/s/smtp"}, files(map[string]string{"/s/smtp": "\n"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %v", got)
+	}
+}
+
 func TestNamesAnUnreadableFile(t *testing.T) {
 	_, err := resolve([]string{"SECRETS_CIPHER_FILE=/s/missing"}, files(nil))
 	if err == nil || !strings.Contains(err.Error(), "SECRETS_CIPHER_FILE: can't read /s/missing") {

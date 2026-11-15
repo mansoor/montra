@@ -60,11 +60,16 @@ func resolve(environ []string, read func(string) ([]byte, error)) ([]string, err
 		}
 		// One trailing line break is dropped, since editors and echo add one.
 		value := strings.TrimSuffix(strings.TrimSuffix(string(b), "\n"), "\r")
+		delete(values, name)
+		// An empty file is a secret not in use: Compose mounts a file for every secret, and an empty value would
+		// replace what kratos.yml sets.
+		if value == "" {
+			continue
+		}
 		if _, seen := values[target]; !seen {
 			order = append(order, target)
 		}
 		values[target] = value
-		delete(values, name)
 	}
 	out := make([]string, 0, len(values))
 	for _, name := range order {

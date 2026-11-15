@@ -24,6 +24,11 @@ def test_reads_name_file_into_name(tmp_path: Path) -> None:
     assert "LOG_LEVEL" not in env
 
 
+def test_an_empty_file_means_not_set(tmp_path: Path) -> None:
+    (tmp_path / "key").write_text("\n", encoding="utf-8")
+    assert "S3_ACCESS_KEY" not in resolve_secret_files({"S3_ACCESS_KEY_FILE": str(tmp_path / "key")})
+
+
 def test_refuses_both_and_names_an_unreadable_file(tmp_path: Path) -> None:
     (tmp_path / "db").write_text("x", encoding="utf-8")
     with pytest.raises(RuntimeError, match="DATABASE_URL or DATABASE_URL_FILE, not both"):

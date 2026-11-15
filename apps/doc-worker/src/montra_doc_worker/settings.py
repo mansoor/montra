@@ -39,6 +39,9 @@ def resolve_secret_files(env: Mapping[str, str] | None = None) -> dict[str, str]
             value = Path(path).read_text(encoding="utf-8")
         except OSError as exc:
             raise RuntimeError(f"{name}_FILE: can't read {path} ({exc.strerror})") from exc
-        # One trailing line break is dropped, since editors and `echo` add one.
-        out[name] = value.removesuffix("\n").removesuffix("\r")
+        # One trailing line break is dropped, since editors and `echo` add one. An empty file is a secret
+        # not in use: Compose mounts a file for every secret.
+        value = value.removesuffix("\n").removesuffix("\r")
+        if value:
+            out[name] = value
     return out

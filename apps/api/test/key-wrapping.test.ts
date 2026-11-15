@@ -65,6 +65,12 @@ describe('secrets from files (ADR-0050 §2)', () => {
     );
     expect(resolveSecretFiles({ A: '', A_FILE: '/s/a' }, ['A'], fs).env.A).toBe('a');
     expect(secretFromEnv('A', { A_FILE: '' }, fs)).toBeUndefined();
+    // An empty file is an optional secret not in use, as Compose mounts one for each.
+    const empty = files({ '/s/sentry': { value: '\n' } });
+    expect(
+      resolveSecretFiles({ SENTRY_DSN_FILE: '/s/sentry' }, ['SENTRY_DSN'], empty).env.SENTRY_DSN,
+    ).toBeUndefined();
+    expect(loadConfig({ SENTRY_DSN_FILE: '/s/sentry' }, { files: empty }).SENTRY_DSN).toBeUndefined();
   });
 
   it('gives every setting of the API a _FILE form', () => {
