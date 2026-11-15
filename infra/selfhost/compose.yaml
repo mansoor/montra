@@ -262,6 +262,9 @@ services:
   postgres:
     image: ${MONTRA_IMAGES:-ghcr.io/mansoor/montra}/postgres:${MONTRA_POSTGRES_TAG:?Set MONTRA_POSTGRES_TAG in .env}
     restart: unless-stopped
+    # An init process as PID 1, not Postgres: pgBackRest's async archiver leaves a background process that PID 1
+    # inherits, and Postgres as PID 1 takes its exit for a crashed backend and restarts every connection.
+    init: true
     shm_size: 256mb
     stop_grace_period: 60s
     environment:
