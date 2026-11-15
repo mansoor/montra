@@ -26,11 +26,15 @@ SETTINGS = (
 
 
 def resolve_secret_files(env: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Returns the environment with each ``NAME_FILE`` among SETTINGS read into ``NAME``."""
+    """Returns the environment with each ``NAME_FILE`` among SETTINGS read into ``NAME``.
+
+    ``NAME_FILE`` is taken out once read, so resolving the result again (``main`` and ``storage_from_env``
+    both resolve) gives the same settings rather than seeing both.
+    """
     source = os.environ if env is None else env
     out = {k: v for k, v in source.items() if v != ""}
     for name in SETTINGS:
-        path = out.get(f"{name}_FILE")
+        path = out.pop(f"{name}_FILE", None)
         if not path:
             continue
         if name in out:

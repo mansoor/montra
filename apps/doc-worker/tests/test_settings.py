@@ -42,3 +42,15 @@ def test_storage_settings_can_come_from_files(tmp_path: Path) -> None:
     storage = storage_from_env({"STORAGE_MODE": "local", "STORAGE_DIR_FILE": str(tmp_path / "dir")})
     assert isinstance(storage, LocalStorage)
     assert storage.root == (tmp_path / "files").resolve()
+
+
+def test_resolving_twice_gives_the_same_settings(tmp_path: Path) -> None:
+    # main() resolves the environment, then storage_from_env() resolves what it's given again.
+    (tmp_path / "db").write_text("postgres://montra_app@db/montra\n", encoding="utf-8")
+    (tmp_path / "key").write_text("k\n", encoding="utf-8")
+    once = resolve_secret_files(
+        {"DATABASE_URL_FILE": str(tmp_path / "db"), "S3_ACCESS_KEY_FILE": str(tmp_path / "key")}
+    )
+    assert resolve_secret_files(once) == once
+    assert "DATABASE_URL_FILE" not in once
+    assert once["DATABASE_URL"] == "postgres://montra_app@db/montra"
