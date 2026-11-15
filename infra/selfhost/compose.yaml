@@ -5,6 +5,7 @@
 #   ./setup.sh check               # checks the requirements (ADR-0050 §1)
 #   ./setup.sh init                # first start: database roles, migrations, every service
 #   ./deploy.sh <tag>              # each release after that
+#   ./backup.sh …                  # backups, from cron (./setup.sh cron)
 #
 # By default a Cloudflare Tunnel is the way in (COMPOSE_PROFILES=tunnel): no port is published, and the home router
 # opens nothing. On a server with its own public address, add compose.direct.yaml instead: Caddy then publishes 80 and
@@ -254,14 +255,25 @@ services:
   # --- The database ---------------------------------------------------------------------------------------------------
   # Its port isn't published. To use a managed database instead, point the URLs in secrets/ at it and leave this out
   # (docs/runbooks/selfhost-setup.md).
+  #
+  # PostgreSQL 16 with pgBackRest (infra/selfhost/postgres, ADR-0050 §7): with BACKUP_S3_BUCKET set, the WAL goes to
+  # the backup bucket every 60 seconds, and backup.sh takes the full and differential backups. The image has its own
+  # tag, which changes only when that folder does, so a release doesn't restart the database.
   postgres:
-    image: postgres:16.11-bookworm@sha256:a2420e9555e2224583fe84d0bb3f0b967e69354ae3a0be55a9c14e251388c4eb
+    image: ${MONTRA_IMAGES:-ghcr.io/mansoor/montra}/postgres:${MONTRA_POSTGRES_TAG:?Set MONTRA_POSTGRES_TAG in .env}
     restart: unless-stopped
     shm_size: 256mb
+    stop_grace_period: 60s
     environment:
       POSTGRES_DB: montra
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    secrets: [postgres_password]
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-auto}
+      BACKUP_S3_URI_STYLE: ${BACKUP_S3_URI_STYLE:-path}
+      # off for a restore drill, so it never writes to the real repository (docs/runbooks/selfhost-restore-drill.md).
+      BACKUP_ARCHIVE: ${BACKUP_ARCHIVE:-on}
+    secrets: [postgres_password, backup_s3_access_key, backup_s3_secret_key, backup_cipher_pass]
     volumes:
       - pgdata:/var/lib/postgresql/data
       # production-roles.sql, run once by setup.sh init.
@@ -285,6 +297,36 @@ services:
       NODE_ENV: production
       DATABASE_ADMIN_URL_FILE: /run/secrets/database_admin_url
     secrets: [database_admin_url]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Key wrapping (docs/runbooks/key-wrapping.md): `docker compose run --rm crypto check` or `… crypto rewrap`.
+  # The API's settings plus the owner's database URL, which the running services never get.
+  crypto:
+    <<: *app
+    image: *api-image
+    profiles: [ops]
+    restart: 'no'
+    entrypoint: ['node', 'dist/crypto-cli.js']
+    command: ['check']
+    environment:
+      <<: *api-environment
+      DATABASE_ADMIN_URL_FILE: /run/secrets/database_admin_url
+    secrets:
+      - database_url
+      - database_admin_url
+      - admin_database_url
+      - support_database_url
+      - master_key
+      - s3_access_key
+      - s3_secret_key
+      - mail_url
+      - stripe_secret_key
+      - stripe_webhook_secret
+      - anthropic_api_key
+      - sentry_dsn
+      - metrics_token
+      - kratos_webhook_secret
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -411,6 +453,56 @@ services:
     depends_on:
       api-a: { condition: service_started }
 
+  # --- Alerts (profile `monitoring`; ADR-0050 §8, docs/runbooks/selfhost-backups.md §4) ---------------------------------
+  # Nothing here is published: Prometheus scrapes on the internal network, and Alertmanager sends email.
+  prometheus:
+    image: prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: [ALL]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    volumes:
+      - ../observability/prometheus/prometheus.selfhost.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus:/prometheus
+    secrets: [prometheus_metrics_token]
+    networks: [montra]
+    logging: *logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.29.0@sha256:88743b63b3e09ea6e31e140ced5bf45f4a8e82c617c2a963f78841f4995ad1d7
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: [ALL]
+    command: ['--config.file=/etc/alertmanager/alertmanager.yml', '--storage.path=/alertmanager']
+    volumes:
+      # Yours, from ../observability/alertmanager/alertmanager.example.yml (git-ignored here).
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager:/alertmanager
+    secrets: [alert_smtp_password]
+    networks: [montra]
+    logging: *logging
+
+  # The machine: disks, the RAID mirror (/proc/mdstat), the clock, and the backup ages from backup.sh.
+  node-exporter:
+    image: prom/node-exporter:v1.10.2@sha256:3ac34ce007accad95afed72149e0d2b927b7e42fd1c866149b945b84737c62c3
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: [ALL]
+    pid: host
+    command: ['--path.rootfs=/host', '--collector.textfile.directory=/textfile']
+    volumes:
+      - /:/host:ro,rslave
+      - ./metrics:/textfile:ro
+    networks: [montra]
+    logging: *logging
+
 networks:
   montra: {}
 
@@ -418,6 +510,8 @@ volumes:
   pgdata: {}
   caddy_data: {}
   caddy_config: {}
+  prometheus: {}
+  alertmanager: {}
 
 # Each is a file in ./secrets, made by `./setup.sh secrets`: owned by uid 1000, mode 0400, except postgres_password,
 # which the Postgres image reads as root before it drops privileges.
@@ -447,3 +541,12 @@ secrets:
   twilio_account_sid: { file: ./secrets/twilio_account_sid }
   twilio_auth_token: { file: ./secrets/twilio_auth_token }
   kratos_sms_channel: { file: ./secrets/kratos_sms_channel }
+  # Backups (docs/runbooks/selfhost-backups.md). backup_cipher_pass encrypts the database backups: keep it offline.
+  backup_s3_access_key: { file: ./secrets/backup_s3_access_key }
+  backup_s3_secret_key: { file: ./secrets/backup_s3_secret_key }
+  backup_cipher_pass: { file: ./secrets/backup_cipher_pass }
+  files_backup_access_key: { file: ./secrets/files_backup_access_key }
+  files_backup_secret_key: { file: ./secrets/files_backup_secret_key }
+  # Read by Prometheus and Alertmanager, which run as nobody (uid 65534), so setup.sh gives them their own copies.
+  prometheus_metrics_token: { file: ./secrets/prometheus_metrics_token }
+  alert_smtp_password: { file: ./secrets/alert_smtp_password }

@@ -11,6 +11,8 @@
 | [Key wrapping](key-wrapping.md)           | Making a master key, using Vault, or moving the wrapped keys |
 | [Self-hosted setup](selfhost-setup.md)    | Putting Montra on your own server (at home, or a VPS)         |
 | [Self-hosted operations](selfhost-operations.md) | Releases, patching, power cuts, failed disks and secrets on your own server |
+| [Self-hosted backups](selfhost-backups.md) | Setting up and watching backups and alerts on your own server |
+| [Self-hosted restore drill](selfhost-restore-drill.md) | Every quarter, to prove the self-hosted backups restore |
 | [Launch checklist](launch-checklist.md)   | Going from closed beta to `v1.0.0`            |
 
 ## What has and hasn't been tested

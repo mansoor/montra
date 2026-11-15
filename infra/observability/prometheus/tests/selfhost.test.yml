@@ -1,0 +1,157 @@
+# promtool test rules selfhost.test.yml. Synthetic series only. In promtool, time() starts at 0, so a timestamp series
+# that rises by 60 a minute is "now".
+rule_files:
+  - ../rules/selfhost.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: Backups that keep running don't alert
+    interval: 1m
+    input_series:
+      - series: 'montra_backup_status_timestamp_seconds{job="node"}'
+        values: '0+60x2000'
+      - series: 'montra_backup_newest_timestamp_seconds{job="node",kind="db_diff"}'
+        values: '0+60x2000'
+      - series: 'montra_backup_newest_timestamp_seconds{job="node",kind="db_full"}'
+        values: '0+60x2000'
+      - series: 'montra_backup_last_success_timestamp_seconds{job="node",kind="files"}'
+        values: '0+60x2000'
+      - series: 'montra_wal_last_archived_timestamp_seconds{job="node"}'
+        values: '0+60x2000'
+      - series: 'montra_wal_last_failed_timestamp_seconds{job="node"}'
+        values: '0x2000'
+    alert_rule_test:
+      - { alertname: BackupStatusMissing, eval_time: 30h, exp_alerts: [] }
+      - { alertname: DatabaseBackupStale, eval_time: 30h, exp_alerts: [] }
+      - { alertname: FilesBackupStale, eval_time: 30h, exp_alerts: [] }
+      - { alertname: WalArchiveFailing, eval_time: 30h, exp_alerts: [] }
+
+  - name: A database backup that stopped a day ago pages
+    interval: 1m
+    input_series:
+      - series: 'montra_backup_newest_timestamp_seconds{job="node",kind="db_diff"}'
+        values: '0x2000'
+    alert_rule_test:
+      - { alertname: DatabaseBackupStale, eval_time: 26h, exp_alerts: [] }
+      - alertname: DatabaseBackupStale
+        eval_time: 27h
+        exp_alerts:
+          - exp_labels: { severity: page, job: node, kind: db_diff }
+            exp_annotations:
+              summary: No database backup in the last 26 hours
+              description: 'The newest full or differential backup is 1d 3h 0m 0s old.'
+              runbook: docs/runbooks/selfhost-backups.md
+
+  - name: The status job stopping pages, and so does it never having run
+    interval: 1m
+    input_series:
+      - series: 'montra_backup_status_timestamp_seconds{job="node"}'
+        values: '0+60x30 1800x100'
+    alert_rule_test:
+      - { alertname: BackupStatusMissing, eval_time: 40m, exp_alerts: [] }
+      - alertname: BackupStatusMissing
+        eval_time: 80m
+        exp_alerts:
+          - exp_labels: { severity: page, job: node }
+            exp_annotations:
+              summary: Backup status isn't being reported
+              description: >-
+                backup.sh status hasn't written its metrics for over 30 minutes, so nothing below can be trusted. Check
+                /etc/cron.d/montra and /var/log/montra-backup.log.
+              runbook: docs/runbooks/selfhost-backups.md
+
+  - name: Nothing reported at all pages
+    interval: 1m
+    input_series:
+      - series: 'up{job="node",instance="node-exporter:9100"}'
+        values: '1x60'
+    alert_rule_test:
+      - alertname: BackupStatusMissing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels: { severity: page }
+            exp_annotations:
+              summary: Backup status isn't being reported
+              description: >-
+                backup.sh status hasn't written its metrics for over 30 minutes, so nothing below can be trusted. Check
+                /etc/cron.d/montra and /var/log/montra-backup.log.
+              runbook: docs/runbooks/selfhost-backups.md
+
+  - name: A failing WAL archive pages once it has failed for 15 minutes
+    interval: 1m
+    input_series:
+      - series: 'montra_wal_last_archived_timestamp_seconds{job="node"}'
+        values: '0+60x10 600x60'
+      - series: 'montra_wal_last_failed_timestamp_seconds{job="node"}'
+        values: '0x10 660+60x60'
+    alert_rule_test:
+      - { alertname: WalArchiveFailing, eval_time: 20m, exp_alerts: [] }
+      - alertname: WalArchiveFailing
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels: { severity: page, job: node }
+            exp_annotations:
+              summary: The write-ahead log isn't reaching the backup bucket
+              description: >-
+                The last archive attempt failed and none has succeeded since. Point-in-time recovery stops at the last
+                archived segment, and the WAL builds up on the server's disk.
+              runbook: docs/runbooks/selfhost-backups.md
+
+  - name: A disk dropping out of the mirror pages
+    interval: 1m
+    input_series:
+      - series: 'node_md_disks{job="node",device="md0",state="active"}'
+        values: '2x5 1x20'
+      - series: 'node_md_disks{job="node",device="md0",state="failed"}'
+        values: '0x5 1x20'
+      - series: 'node_md_disks_required{job="node",device="md0"}'
+        values: '2x25'
+    alert_rule_test:
+      - { alertname: DiskMirrorDegraded, eval_time: 5m, exp_alerts: [] }
+      - alertname: DiskMirrorDegraded
+        eval_time: 15m
+        exp_alerts:
+          - exp_labels: { severity: page, job: node, device: md0, state: failed }
+            exp_annotations:
+              summary: The disk mirror md0 has lost a disk
+              description: Montra runs on the remaining disk. Replace the failed one before anything else goes wrong.
+              runbook: docs/runbooks/selfhost-operations.md
+          - exp_labels: { severity: page, job: node, device: md0 }
+            exp_annotations:
+              summary: The disk mirror md0 has lost a disk
+              description: Montra runs on the remaining disk. Replace the failed one before anything else goes wrong.
+              runbook: docs/runbooks/selfhost-operations.md
+
+  - name: A nearly full disk pages
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="node",mountpoint="/",fstype="ext4"}'
+        values: '50x10 5x30'
+      - series: 'node_filesystem_size_bytes{job="node",mountpoint="/",fstype="ext4"}'
+        values: '100x40'
+    alert_rule_test:
+      - { alertname: DiskAlmostFull, eval_time: 20m, exp_alerts: [] }
+      - alertname: DiskAlmostFull
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels: { severity: page, job: node, mountpoint: /, fstype: ext4 }
+            exp_annotations:
+              summary: / is over 90% full
+              description: Only 5% is free. A full disk stops Postgres.
+              runbook: docs/runbooks/selfhost-operations.md
+
+  - name: An API replica down for five minutes pages
+    interval: 1m
+    input_series:
+      - series: 'up{job="montra-api",instance="api-b:4000"}'
+        values: '1x5 0x20'
+    alert_rule_test:
+      - alertname: ScrapeTargetDown
+        eval_time: 12m
+        exp_alerts:
+          - exp_labels: { severity: page, job: montra-api, instance: 'api-b:4000' }
+            exp_annotations:
+              summary: api-b:4000 (montra-api) is down
+              description: Prometheus can't reach it. An API replica that stays down takes half the capacity with it.
+              runbook: docs/runbooks/selfhost-operations.md

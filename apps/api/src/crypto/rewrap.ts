@@ -101,6 +101,28 @@ async function unwraps(kms: KmsPort, wrapped: Buffer): Promise<boolean> {
   }
 }
 
+type KeyRow = Record<string, unknown> & { wrapped: Buffer | string };
+
+/** A place's wrapped keys in batches, in key order, so a long run never holds a big result or a long transaction. */
+async function* batches(db: Queryable, place: Place, batchSize: number): AsyncGenerator<KeyRow[]> {
+  const keyList = place.keys.join(', ');
+  let after: unknown[] | undefined;
+  for (;;) {
+    const afterClause = after
+      ? `and (${keyList}) > (${place.keys.map((_, i) => `$${i + 1}`).join(', ')})`
+      : '';
+    const { rows } = await db.query<KeyRow>(
+      `select ${keyList}, ${place.value} as wrapped from ${place.table}
+        where ${place.where} ${afterClause}
+        order by ${keyList} limit ${batchSize}`,
+      after ?? [],
+    );
+    if (rows.length === 0) return;
+    yield rows;
+    after = place.keys.map((k) => rows[rows.length - 1]![k]);
+  }
+}
+
 async function rewrapPlace(
   db: Queryable,
   place: Place,
@@ -110,19 +132,7 @@ async function rewrapPlace(
 ): Promise<RewrapCount> {
   const count: RewrapCount = { name: place.name, done: 0, rewrapped: 0, failed: 0 };
   const keyList = place.keys.join(', ');
-  let after: unknown[] | undefined;
-  for (;;) {
-    const params: unknown[] = after ? [...after] : [];
-    const afterClause = after
-      ? `and (${keyList}) > (${place.keys.map((_, i) => `$${i + 1}`).join(', ')})`
-      : '';
-    const { rows } = await db.query<Record<string, unknown> & { wrapped: Buffer | string }>(
-      `select ${keyList}, ${place.value} as wrapped from ${place.table}
-        where ${place.where} ${afterClause}
-        order by ${keyList} limit ${opts.batchSize}`,
-      params,
-    );
-    if (rows.length === 0) break;
+  for await (const rows of batches(db, place, opts.batchSize)) {
     for (const row of rows) {
       const keyValues = place.keys.map((k) => row[k]);
       const label = `${place.table} (${keyValues.join(', ')})`;
@@ -160,7 +170,6 @@ async function rewrapPlace(
         opts.log?.(`${label}: changed while being moved; run again`);
       }
     }
-    after = place.keys.map((k) => rows[rows.length - 1]![k]);
     opts.log?.(
       `${place.name}: ${count.done + count.rewrapped + count.failed} checked, ${count.rewrapped} ${
         opts.dryRun ? 'to move' : 'moved'
@@ -179,5 +188,38 @@ export async function rewrapKeys(
   const opts = { batchSize: options.batchSize ?? 200, dryRun: options.dryRun ?? false, log: options.log };
   const counts: RewrapCount[] = [];
   for (const place of PLACES) counts.push(await rewrapPlace(db, place, current, previous, opts));
+  return counts;
+}
+
+export interface CheckCount {
+  name: string;
+  /** Unwrapped by the adapter. */
+  ok: number;
+  failed: number;
+}
+
+/**
+ * `crypto:check`: unwraps every stored key with the adapter and counts what it can't. For a restore drill (are the
+ * backup and its key a full backup?) and after a move between modes. Writes nothing.
+ */
+export async function checkKeys(
+  db: Queryable,
+  kms: KmsPort,
+  options: Pick<RewrapOptions, 'batchSize' | 'log'> = {},
+): Promise<CheckCount[]> {
+  const counts: CheckCount[] = [];
+  for (const place of PLACES) {
+    const count: CheckCount = { name: place.name, ok: 0, failed: 0 };
+    for await (const rows of batches(db, place, options.batchSize ?? 200)) {
+      for (const row of rows) {
+        if (await unwraps(kms, decode(place, row.wrapped))) count.ok++;
+        else {
+          count.failed++;
+          options.log?.(`${place.table} (${place.keys.map((k) => row[k]).join(', ')}): doesn't unwrap`);
+        }
+      }
+    }
+    counts.push(count);
+  }
   return counts;
 }

@@ -3,7 +3,8 @@
 #
 #   ./setup.sh secrets   make ./secrets, generate what can be generated, and list what you must fill in
 #   ./setup.sh check     check the requirements; changes nothing
-#   ./setup.sh init      the first start: Postgres, the database roles, migrations, then every service
+#   ./setup.sh init      the first start: Postgres, the database roles, migrations, every service, the first backup
+#   ./setup.sh cron      installs /etc/cron.d/montra: the backup schedule (docs/runbooks/selfhost-backups.md)
 #
 # Run it as a user who can use docker, and sudo for the secret files. See docs/runbooks/selfhost-setup.md.
 # `check && pass … || fail …` is safe here: pass, warn and fail always succeed.
@@ -17,18 +18,26 @@ SECRETS=./secrets
 SUDO=$([ "$(id -u)" = 0 ] && echo "" || echo sudo)
 
 # Generated here, never overwritten.
-GENERATED=(postgres_password master_key auth_gateway_secret metrics_token kratos_cookie_secret kratos_cipher_secret
-  kratos_pagination_secret kratos_webhook_secret)
+GENERATED=(postgres_password master_key auth_gateway_secret metrics_token prometheus_metrics_token kratos_cookie_secret
+  kratos_cipher_secret kratos_pagination_secret kratos_webhook_secret backup_cipher_pass)
 # Made from generated role passwords (secrets/role_passwords, which only setup.sh reads).
 URLS=(database_url database_admin_url admin_database_url support_database_url kratos_dsn)
 # Yours to fill in. Required: they must not be empty.
-REQUIRED=(s3_access_key s3_secret_key mail_url kratos_smtp_url)
+REQUIRED=(s3_access_key s3_secret_key mail_url kratos_smtp_url backup_s3_access_key backup_s3_secret_key
+  files_backup_access_key files_backup_secret_key)
 # Yours to fill in if you use them: an empty file means not in use.
 OPTIONAL=(cloudflare_tunnel_token stripe_secret_key stripe_webhook_secret anthropic_api_key sentry_dsn twilio_account_sid
-  twilio_auth_token kratos_sms_channel)
+  twilio_auth_token kratos_sms_channel alert_smtp_password)
 
-# The owner of a secret file: Postgres reads its password as root before dropping privileges; the rest run as APP_UID.
-owner_of() { if [ "$1" = postgres_password ] || [ "$1" = role_passwords ]; then echo 0; else echo "$APP_UID"; fi; }
+# The owner of a secret file. Postgres reads its own as root before it drops privileges; Prometheus and Alertmanager
+# run as nobody (65534); every Montra container runs as APP_UID.
+owner_of() {
+  case $1 in
+    postgres_password | role_passwords | backup_s3_access_key | backup_s3_secret_key | backup_cipher_pass) echo 0 ;;
+    prometheus_metrics_token | alert_smtp_password) echo 65534 ;;
+    *) echo "$APP_UID" ;;
+  esac
+}
 
 put() { # put <name> <value>: writes a secret file with its owner and mode 0400, unless it exists.
   local name=$1 value=$2 owner tmp
@@ -52,6 +61,8 @@ cmd_secrets() {
   put master_key "$(openssl rand -base64 32)"
   put auth_gateway_secret "$(hex 32)"
   put metrics_token "$(hex 24)"
+  put prometheus_metrics_token "$(read_secret metrics_token)" # the same token, readable by Prometheus
+  put backup_cipher_pass "$(hex 32)"                           # encrypts the database backups
   put kratos_cookie_secret "$(hex 32)"
   put kratos_cipher_secret "$(hex 16)" # Kratos needs exactly 32 characters
   put kratos_pagination_secret "$(hex 32)"
@@ -79,10 +90,14 @@ cmd_secrets() {
   echo "  mail_url                         smtp://<user>:<password>@<host>:587 at your sending service"
   echo "  kratos_smtp_url                  the same server for Kratos: smtp://<user>:<password>@<host>:587/"
   echo "  cloudflare_tunnel_token          the tunnel's token (at home, with COMPOSE_PROFILES=tunnel)"
+  echo "  backup_s3_access_key, backup_s3_secret_key       the database backup bucket's key"
+  echo "  files_backup_access_key, files_backup_secret_key the files backup bucket's key"
+  echo "  alert_smtp_password              the SMTP password Alertmanager sends with (profile monitoring)"
   echo "  anthropic_api_key, sentry_dsn    optional"
   echo "  twilio_*, kratos_sms_channel     optional: texts (SMS_MODE=twilio; infra/kratos/sms-channel.example.json)"
   echo
-  echo "Back up secrets/master_key now, offline and apart from the database backups (docs/runbooks/key-wrapping.md)."
+  echo "Back up secrets/master_key and secrets/backup_cipher_pass now, offline and apart from the database backups"
+  echo "(docs/runbooks/key-wrapping.md). Without them no backup can be read."
 }
 
 # --- check ------------------------------------------------------------------------------------------------------------
@@ -129,6 +144,7 @@ cmd_check() {
     pass "docker compose $compose"
   fi
   command -v openssl >/dev/null && pass openssl || fail "openssl isn't installed"
+  command -v jq >/dev/null && pass jq || fail "jq isn't installed (backup.sh status needs it)"
 
   echo "Settings"
   if [ ! -f .env ]; then
@@ -143,6 +159,18 @@ cmd_check() {
         check_secret stripe_webhook_secret required
         ;;
     esac
+    [ -n "$(env_value MONTRA_POSTGRES_TAG)" ] && pass "MONTRA_POSTGRES_TAG=$(env_value MONTRA_POSTGRES_TAG)" ||
+      fail "MONTRA_POSTGRES_TAG is empty in .env"
+    for name in BACKUP_S3_ENDPOINT BACKUP_S3_BUCKET FILES_BACKUP_S3_ENDPOINT FILES_BACKUP_S3_BUCKET; do
+      [ -n "$(env_value "$name")" ] || fail "$name is empty in .env: backups go to buckets at another provider"
+    done
+    if [[ "$(env_value COMPOSE_PROFILES)" == *monitoring* ]]; then
+      [ -f alertmanager.yml ] && pass "alertmanager.yml" ||
+        fail "alertmanager.yml is missing: cp ../observability/alertmanager/alertmanager.example.yml alertmanager.yml"
+      check_secret alert_smtp_password required
+    else
+      warn "the monitoring profile is off: nothing will tell you a backup failed (docs/runbooks/selfhost-backups.md §4)"
+    fi
   fi
 
   echo "Secrets"
@@ -216,22 +244,46 @@ cmd_init() {
     'set -a; . /dev/stdin; set +a; psql -v ON_ERROR_STOP=1 -U postgres -d montra -f /montra-db/production-roles.sql'
   echo "== First release: $tag"
   ./deploy.sh "$tag"
+  echo "== pgBackRest: the stanza and a first full backup"
+  $SUDO ./backup.sh init
+  cmd_cron
   cat <<EOF
 
 Montra is running. Next (docs/runbooks/selfhost-setup.md §10):
   1. Sign up at https://$(env_value APP_HOST) with your own email.
   2. Make yourself staff:
        docker compose run --rm migrate node dist/staff-cli.js <your email> admin
-  3. Back up secrets/master_key offline, if you haven't yet.
+  3. Back up secrets/master_key and secrets/backup_cipher_pass offline, if you haven't yet.
+  4. Do a restore drill within the first month (docs/runbooks/selfhost-restore-drill.md).
 EOF
+}
+
+# --- cron -------------------------------------------------------------------------------------------------------------
+cmd_cron() {
+  local here tmp
+  here=$(pwd)
+  tmp=$(mktemp)
+  cat >"$tmp" <<EOF
+# Montra's backups (docs/runbooks/selfhost-backups.md). Written by $here/setup.sh cron.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 2 * * 0   root $here/backup.sh db full >>/var/log/montra-backup.log 2>&1
+15 2 * * 1-6 root $here/backup.sh db diff >>/var/log/montra-backup.log 2>&1
+45 3 * * *   root $here/backup.sh files   >>/var/log/montra-backup.log 2>&1
+*/5 * * * *  root $here/backup.sh status  >>/var/log/montra-backup.log 2>&1
+EOF
+  $SUDO install -m 0644 -o 0 -g 0 "$tmp" /etc/cron.d/montra
+  rm -f "$tmp"
+  echo "Installed /etc/cron.d/montra."
 }
 
 case ${1:-} in
   secrets) cmd_secrets ;;
   check) cmd_check ;;
   init) cmd_init ;;
+  cron) cmd_cron ;;
   *)
-    echo "Usage: ./setup.sh secrets | check | init" >&2
+    echo "Usage: ./setup.sh secrets | check | init | cron" >&2
     exit 1
     ;;
 esac

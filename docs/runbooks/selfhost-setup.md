@@ -21,6 +21,7 @@ The files are in [`infra/selfhost`](../../infra/selfhost): `compose.yaml`, `Cadd
 | A Cloudflare account         | DNS, the tunnel, WAF and rate limits                    |                                                                       |
 | An email sending service     | Sign-up codes, recovery, alerts                         | Postmark, Mailgun, Amazon SES or similar, with SMTP                   |
 | An S3-compatible bucket      | Receipts, statements and other files                    | Backblaze B2 or Cloudflare R2. Not on the server: see ADR-0050 §4      |
+| Two backup buckets           | Database backups (object lock) and a copy of the files  | At another provider than the files: [backups §1](selfhost-backups.md#1-the-buckets) |
 | A GitHub account with access | Pulling the images from the GitHub Container Registry   | A token that can only read packages                                   |
 
 Montra itself needs only containers, PostgreSQL 16, S3-compatible storage, SMTP and secrets (ADR-0050 §1).
@@ -66,7 +67,7 @@ Copy the stack to the server (deploys from GitHub do this for you, §11):
 
 ```bash
 # from a checkout of the repository
-tar -C infra -czf - selfhost db/production-roles.sql | ssh montra@<server> 'tar -C /srv/montra/infra -xzf -'
+tar -C infra -czf - selfhost db observability | ssh montra@<server> 'tar -C /srv/montra/infra -xzf -'
 ```
 
 Log Docker in to the GitHub Container Registry with a classic token that has only `read:packages`:
@@ -109,8 +110,9 @@ be on the verified domain.
 3. Note the endpoint and region: B2 `https://s3.<region>.backblazeb2.com` and the region; R2
    `https://<account id>.r2.cloudflarestorage.com` and `auto`.
 
-Files are encrypted at rest by the provider (ADR-0050 §4). Backups of the bucket go to a second provider (step 3 of
-ADR-0050).
+Files are encrypted at rest by the provider (ADR-0050 §4). A nightly copy goes to a second provider, and the database
+backups to a bucket with object lock: set those up now, as `./setup.sh check` asks for them
+([self-hosted backups](selfhost-backups.md)).
 
 ## 7. Settings
 
@@ -120,7 +122,9 @@ cp montra.env.example .env && chmod 600 .env
 ```
 
 Fill in `.env`: the three hostnames and `COOKIE_DOMAIN`, the mail addresses, the bucket's endpoint, name and region,
-and `MONTRA_TAG` (the release to start with: a tag that `deploy.yml` pushed, `<commit>-<attempt>`).
+the two backup buckets, `MONTRA_TAG` (the release to start with: a tag that `deploy.yml` pushed, `<commit>-<attempt>`)
+and `MONTRA_POSTGRES_TAG` (the `postgres` image's tag from the same run, `16-<hash>`). Add `monitoring` to
+`COMPOSE_PROFILES` for alerts.
 Keep `BILLING_MODE=off` for family and friends, and `KMS_MODE=local`.
 
 ## 8. On a VPS instead of at home
@@ -162,12 +166,15 @@ Then fill in, one value per file, with `sudoedit secrets/<name>`:
 | `anthropic_api_key`       | Optional: without it, categorizing uses rules and history only              |
 | `sentry_dsn`              | Optional: error reports                                                     |
 | `stripe_*`                | Empty while `BILLING_MODE=off`                                              |
+| `backup_s3_access_key`, `backup_s3_secret_key` | The database backup bucket's key                       |
+| `files_backup_access_key`, `files_backup_secret_key` | The files backup bucket's key                    |
+| `alert_smtp_password`     | The SMTP password Alertmanager sends with (profile `monitoring`)            |
 
 Each file is owned by uid 1000 with mode 0400 (`postgres_password` and `role_passwords` by root), and Compose mounts
 it at `/run/secrets/<name>`. The services read them through `NAME_FILE` settings (ADR-0050 §2). An empty file means a
 secret not in use.
 
-**Back up `secrets/master_key` now**, offline and apart from the database backups: in a password manager, and printed
+**Back up `secrets/master_key` and `secrets/backup_cipher_pass` now**, offline and apart from the database backups: in a password manager, and printed
 or on a USB stick somewhere safe. Without it, no backup of the database can be read. See
 [key wrapping](key-wrapping.md#1-a-local-master-key). Keep a copy of the whole `secrets/` folder the same way.
 
@@ -182,8 +189,9 @@ or on a USB stick somewhere safe. Without it, no backup of the database can be r
 the SMTP server and ghcr.io answer, free disk space and memory, and warns about what the machine lacks: a disk mirror,
 SMART monitoring, UPS software, an encrypted disk, a synchronized clock.
 
-`init` starts Postgres, creates the database roles and the `kratos` database (`infra/db/production-roles.sql`), then
-runs `deploy.sh` for `MONTRA_TAG`: migrations, then every service.
+`init` starts Postgres, creates the database roles and the `kratos` database (`infra/db/production-roles.sql`), runs
+`deploy.sh` for `MONTRA_TAG` (migrations, then every service), creates pgBackRest's stanza with a first full backup,
+and installs the backup schedule in `/etc/cron.d/montra`.
 
 Then:
 

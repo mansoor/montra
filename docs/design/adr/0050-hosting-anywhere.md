@@ -142,6 +142,9 @@ It comes with an env file template and a setup script that checks the requiremen
 
 - **The database:** pgBackRest (or WAL-G) writes full and incremental backups and archives WAL every 60 seconds, to an
   S3-compatible bucket at another provider. Point-in-time recovery keeps the 5-minute RPO.
+  - As built: pgBackRest, in Postgres's own image (`infra/selfhost/postgres`), with weekly full and daily differential
+    backups encrypted before they leave the server. `backup.sh` runs them from cron and reports their ages to
+    Prometheus (`docs/runbooks/selfhost-backups.md`).
 - **Immutable copies:** the backup bucket uses object lock (supported by S3, B2 and R2) in place of AWS Backup's Vault
   Lock. The retention choice in `docs/STATUS.md` (BAK-01 or BAK-09) still has to be made first.
 - **Files:** a nightly `rclone sync` to a second provider, keeping versions for 30 days.

@@ -1,0 +1,27 @@
+# Alertmanager for the self-hosted stack (ADR-0050 §8): every alert by email, through the same sending service as
+# Montra's mail. Copy to infra/selfhost/alertmanager.yml on the server (git-ignored there) and fill in the addresses.
+# The SMTP password is the secret file alert_smtp_password, never this file.
+global:
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_from: 'Montra alerts <alerts@example.com>'
+  smtp_auth_username: 'smtp-user'
+  smtp_auth_password_file: /run/secrets/alert_smtp_password
+  smtp_require_tls: true
+
+route:
+  receiver: owner
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    # Pages repeat hourly until they're fixed or silenced.
+    - matchers: ['severity="page"']
+      receiver: owner
+      repeat_interval: 1h
+
+receivers:
+  - name: owner
+    email_configs:
+      - to: 'you@example.com'
+        send_resolved: true

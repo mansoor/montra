@@ -87,10 +87,9 @@ again at any point: a key that's already moved is skipped.
 2. **Count first** with a dry run. It writes nothing:
 
    ```bash
-   # in the API image, with the service's settings and the owner's database URL
-   node dist/crypto-cli.js rewrap --dry-run
-   # or from a checkout
-   pnpm --filter @montra/api crypto:rewrap -- --dry-run
+   docker compose run --rm crypto rewrap --dry-run      # self-hosted (infra/selfhost)
+   node dist/crypto-cli.js rewrap --dry-run             # in the API image elsewhere, with the service's settings
+   pnpm --filter @montra/api crypto:rewrap -- --dry-run # from a checkout
    ```
 
    It also needs `DATABASE_ADMIN_URL` (or `DATABASE_ADMIN_URL_FILE`): it reads every workspace's keys, past row level
@@ -103,7 +102,8 @@ again at any point: a key that's already moved is skipped.
    - _"changed while being moved"_: the row was written meanwhile. Run the command again.
    - If it stops part way (a network error, a restart), run it again. It picks up where it was.
 
-4. **Check:** run it once more. Every line should say all keys are already in the new mode, with 0 moved and 0 failed.
+4. **Check:** `crypto-cli check` (`docker compose run --rm crypto check` self-hosted) unwraps every stored key with
+   the new mode alone and must report none that don't.
 
 5. **Remove `KMS_PREVIOUS_MODE`** (and `PREVIOUS_MASTER_KEY_FILE`) and redeploy. Sign in, open a transaction with a
    memo and a receipt, and check they read.

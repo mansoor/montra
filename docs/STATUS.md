@@ -1305,7 +1305,24 @@ Phase 11 leftovers:
        - Runbooks: `selfhost-setup.md` (hardware, mirror, LUKS, UPS, tunnel, email, bucket, VPS variant, secrets,
          first start, GitHub settings) and `selfhost-operations.md` (releases and rollback, patching, power cuts, a
          failing disk, health, rotating each secret, `pg_dump` until step 3).
-    3. ❌ Portable backups and alerts: pgBackRest or WAL-G, rclone, Alertmanager rules, a self-hosted restore drill.
+    3. ✅ **Portable backups and alerts** (`claude/selfhost-3`, stacked on step 2):
+       - **Postgres with pgBackRest** (`infra/selfhost/postgres`, pushed to GHCR as `postgres:16-<hash of the folder>`,
+         so a release restarts the database only when that image changes). With `BACKUP_S3_BUCKET` set it archives the
+         WAL every 60 seconds (async, a 4 GB queue) to a bucket at another provider with object lock, encrypted with
+         `backup_cipher_pass` before it leaves. `BACKUP_ARCHIVE=off` for a restore drill.
+       - **`backup.sh`:** `init` (stanza and first full), `db full|diff`, `files` (rclone sync to a versioned bucket at a
+         second provider, keys through the environment), `status` (backup ages and `pg_stat_archiver` into a textfile
+         for node-exporter), `info`. `setup.sh cron` installs the schedule; `init` runs both.
+       - **Alerts:** profile `monitoring` runs Prometheus, Alertmanager (email) and node-exporter, nothing published.
+         `infra/observability/prometheus/rules/selfhost.yml`: backup status missing, database or files backup stale,
+         WAL archive failing, a scrape target down, the RAID mirror degraded, a disk full or filling, the clock unsynced.
+         Unit-tested with `promtool` (`tests/selfhost.test.yml`).
+       - **`crypto check`** (`crypto-cli.ts check`, `pnpm --filter @montra/api crypto:check`, the Compose `crypto`
+         task): unwraps every stored key with `KMS_MODE` and names any that don't, for a restore drill or after a move.
+       - Runbooks: `selfhost-backups.md` (buckets, object lock shorter than pgBackRest's retention, settings, schedule,
+         alerts, what to do when one fires) and `selfhost-restore-drill.md` (restore onto a scratch server with
+         read-only keys, reconciliation checks, `crypto check`, the files copy, the lock).
+       - BAK-01 or BAK-09 is still open: the defaults keep about five weeks, which suits BAK-09.
     4. ❌ `docs/runbooks/moving-platforms.md`.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.

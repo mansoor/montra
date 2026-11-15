@@ -86,7 +86,8 @@ smartd or mdadm emails you (setup §2). Then:
 
 1. **Find which disk:** `cat /proc/mdstat`, `sudo mdadm --detail /dev/md0` (or `zpool status`), and
    `sudo smartctl -a /dev/sdX` for its serial number.
-2. **Check the backups are current** before touching anything (step 3 of ADR-0050 sets them up).
+2. **Check the backups are current** before touching anything: `sudo ./backup.sh info`
+   ([self-hosted backups](selfhost-backups.md)).
 3. **Replace it.** mdadm: `sudo mdadm /dev/md0 --fail /dev/sdX1 --remove /dev/sdX1`, shut down, swap the disk, copy the
    partition table from the good disk (`sudo sfdisk -d /dev/sdY | sudo sfdisk /dev/sdX`), then
    `sudo mdadm /dev/md0 --add /dev/sdX1`, and reinstall the boot loader on it. ZFS: `zpool replace`.
@@ -101,7 +102,8 @@ one from backups ([disaster recovery](disaster-recovery.md)).
   (which asks Kratos), Kratos's own `/health/ready`, cloudflared's `ready`, Postgres's `pg_isready`.
 - Logs: `docker compose logs -f <service>`. They're kept 5 × 10 MB per container.
 - Metrics: the API serves Prometheus at `/internal/metrics` on the internal network only (Caddy refuses `/internal/*`
-  from outside), with the token in `secrets/metrics_token`. Alerts come with step 3 of ADR-0050.
+  from outside), with the token in `secrets/metrics_token`. The `monitoring` profile scrapes it and emails alerts:
+  [self-hosted backups §4](selfhost-backups.md#4-alerts).
 - An outside uptime check (for example a free UptimeRobot or Better Stack monitor on `https://api.<domain>/readyz`)
   tells you when the whole server is down, which nothing on the server can.
 
@@ -127,21 +129,23 @@ docker compose up -d --force-recreate --no-deps <services>
 | A database role's password                  | the services using that URL                      | `alter role … password` in psql first, then the URL file     |
 | `cloudflare_tunnel_token`                   | `cloudflared`                                    | After rotating it in the Cloudflare dashboard                |
 | `master_key`                                | Not by editing the file                          | It's a move: [key wrapping §3](key-wrapping.md#3-moving-to-another-mode-or-a-new-local-key) |
+| `backup_s3_*`                               | `postgres`                                       | Restarting it is a few seconds' pause; WAL waits in the queue |
+| `backup_cipher_pass`                        | Don't: it's the repository's passphrase          | A new one means a new repository (a new bucket path) and a new full backup |
+| `files_backup_*`                            | Nothing: `backup.sh files` reads them each run   |                                                              |
 
 After any change, update the offline copy of `secrets/`.
 
 ## 7. Restoring
 
-Until step 3 of ADR-0050 (continuous backups), the database is backed up with `pg_dump`. A nightly cron entry, as the
-`montra` user, that keeps 14 days on the server and copies them off it:
+Backups are pgBackRest for the database and an rclone copy for the files ([self-hosted backups](selfhost-backups.md)).
+The [self-hosted restore drill](selfhost-restore-drill.md) is the tested way to restore: onto a scratch server for the
+drill, or onto a new server after a disaster, with these differences for the real thing:
 
-```bash
-docker compose exec -T postgres pg_dump -U postgres -Fc montra > /srv/montra/backups/montra-$(date +%F).dump
-```
-
-To restore one into a fresh stack: start Postgres alone, run `./setup.sh init`'s role step, then
-`pg_restore -U postgres -d montra --no-owner --role=montra_owner`, and run `infra/db/reconciliation-checks.sql` as in
-the [restore drill](restore-drill.md). Restoring needs the `master_key` the backup was made with.
+- Restore onto the new server with `BACKUP_ARCHIVE=on` once the restored database is checked, so it archives to the
+  same repository again. Take a full backup straight after (`sudo ./backup.sh db full`).
+- Point `S3_BUCKET` at the files bucket, not its copy, unless the files bucket was lost too; then copy the backup bucket
+  back first (`rclone sync dst: src:`).
+- Restoring needs the `master_key` and `backup_cipher_pass` from the offline copy.
 
 ## 8. What was tested
 
