@@ -1177,12 +1177,13 @@ Phase 11 leftovers:
       providers.
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
-- **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14):
-  - [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console
+- **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14; **done** 2026-11-14: ADR-0049 in
+  #97–#101, tagged `v0.12.0-dev.56`–`60`; ADR-0050 in #96 and #102–#104, tagged `v0.12.0-dev.61`–`64`):
+  - ✅ [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console
     (tiers, prices by Stripe price id, entitlements, versions), each with an AI allowance; a staff `owner` role above
     `admin`; suspending, trials, given plans and closing accounts; a Providers page that shows but never stores keys;
-    texts through Twilio (Kratos's SMS channel and an `SmsPort`). Five PRs, in the order the ADR gives.
-  - **Step 1, plans as data and the AI allowance** (migration 0051):
+    texts through Twilio (Kratos's SMS channel and an `SmsPort`). Done in five PRs, in the order the ADR gives.
+  - ✅ **Step 1, plans as data and the AI allowance** (#97, migration 0051):
     - `app.plan`, `app.plan_version` (entitlements as JSON, checked by `parseEntitlements` in `@montra/domain`) and
       `app.plan_price` (Stripe price ids). `app.subscription.plan_version_id`. A version with subscribers can't be
       changed (a trigger); a new version is the way. Free is always offered.
@@ -1201,7 +1202,7 @@ Phase 11 leftovers:
       and the AI usage bar are step 2.
     - Tests: `apps/api/test/plans.test.ts`. The ceiling is only ever set inside a rolled-back transaction there,
       because test files share a database.
-  - **Step 2, the owner and plans in the console** (migration 0052):
+  - ✅ **Step 2, the owner and plans in the console** (#98, migration 0052):
     - Staff roles are `support`, `admin` and `owner`, each including the one below. `staff:add <email> owner` (or
       `--role owner`) makes the first owner; after that, owners add, change and remove staff in the console's
       **Staff** tab, through `admin_*` functions that check the role again. Every change is emailed to every owner.
@@ -1217,7 +1218,7 @@ Phase 11 leftovers:
     - The AI usage bar: the web's AI settings and the phone's Settings show "N% of this month's AI used" from
       `usage.share`. Under a plan's allowance, the web shows the share, not dollars.
     - Tests: `apps/api/test/plans-console.test.ts`, and a look at the Plans tab in `e2e/operations.spec.ts`.
-  - **Step 3, managing accounts** (migration 0053), in the console's account lookup:
+  - ✅ **Step 3, managing accounts** (#99, migration 0053), in the console's account lookup:
     - **Suspend and restore** (admin, with a recent sign-in): abuse, fraud or a legal hold, with a reason. Kratos
       stops the sign-in and ends the sessions. The API refuses the person (`account.suspended`) and closes workspaces
       they own to every member (`workspace.suspended`). The web shows `/account-closed`. They're emailed unless it's a
@@ -1229,7 +1230,7 @@ Phase 11 leftovers:
       with how it came recorded. They're emailed and can still cancel it.
     - Not done: the phone has no screen for a suspended account or a closed workspace. It shows the API's message.
     - Tests: `apps/api/test/accounts.test.ts`, and `setIdentityActive` against the fake Kratos in `kratos.test.ts`.
-  - **Step 4, the Providers page** (migration 0054), the console's **Providers** tab, for owners:
+  - ✅ **Step 4, the Providers page** (#100, migration 0054), the console's **Providers** tab, for owners:
     - One row each for email, texts, payments, error reporting, AI, file storage, key management, push and exchange
       rates: whether it's set up, its mode, what isn't secret, and its last success and failure
       (`app.provider_status`, `ProviderHealth`). No key is shown or editable.
@@ -1239,7 +1240,7 @@ Phase 11 leftovers:
     - **Send a test email to me**. The test text answers `sms.not_configured` until step 5.
     - Tests: `apps/api/test/providers.test.ts`. It puts the service-wide settings back afterwards, since test files
       share a database.
-  - **Step 5, texts through Twilio** (migration 0055):
+  - ✅ **Step 5, texts through Twilio** (#101, migration 0055):
     - `SmsPort` with `off`, `log`, `memory` and `twilio` modes (`SMS_MODE`, `TWILIO_*`). Twilio sends through a
       Messaging Service. `TextsService` decides who gets what: their own verified number only, kinds the owner switched
       on, countries on the allowed list, what the person turned on, and reminders within the plan's `smsMonthly`.
@@ -1257,12 +1258,17 @@ Phase 11 leftovers:
       a verified toll-free number first (launch checklist).
     - Tests: `apps/api/test/texts.test.ts`, the number's sync in `kratos.test.ts`, the limits in `auth-gateway.test.ts`,
       and `packages/domain/test/phone.test.ts`.
-  - [ADR-0050](design/adr/0050-hosting-anywhere.md) (**accepted** 2026-11-14): Montra needs containers, PostgreSQL 16,
+  - **Next for ADR-0049:**
+    - phone screens for a suspended account or closed workspace, and for texts and the mobile number;
+    - `SMS_MODE` and the Twilio secrets in Terraform;
+    - A2P 10DLC (or a verified toll-free number) before the first real text in the US;
+    - a first real send through Twilio and a real Stripe checkout by plan.
+  - ✅ [ADR-0050](design/adr/0050-hosting-anywhere.md) (**accepted** 2026-11-14): Montra needs containers, PostgreSQL 16,
     S3-compatible storage, SMTP and secrets, nothing more. AWS stays as one target. **The owner starts on a home server
     for family and friends, and moves to a VPS when real customers come** (§11): a Cloudflare Tunnel (no inbound ports,
     no dynamic-IP problem), email through a sending service over SMTP, a UPS and mirrored disks, `BILLING_MODE=off`.
-    Built in four PRs:
-    1. ✅ **Application changes** (`claude/selfhost`):
+    Done in four PRs:
+    1. ✅ **Application changes** (#96):
        - **`_FILE` secrets:** every API setting (`apps/api/src/secret-files.ts`), the API's command-line tools and the
          migration command, the doc-worker (`settings.py`), and Kratos through a small Go entrypoint in its distroless
          image (`infra/kratos/entrypoint`, tested in the image build; only Kratos's secret-bearing settings, as the
@@ -1275,7 +1281,7 @@ Phase 11 leftovers:
          with either mode (`MovingKms`) while the command moves workspace, backup-schedule, restore and queued-backup
          keys. It resumes by skipping keys the new mode already unwraps, so it needs no table (and no migration).
          Runbook: `docs/runbooks/key-wrapping.md`.
-    2. ✅ **The self-hosted target** (`claude/selfhost-2`, stacked on step 1):
+    2. ✅ **The self-hosted target** (#102):
        - **`infra/selfhost/compose.yaml`:** Caddy, cloudflared (profile `tunnel`, the default), Postgres 16, Kratos
          and its courier, the auth gateway, two API replicas (`api-a`, `api-b`, both reachable as `api`), the job
          worker, the doc worker and web. Every Montra container runs as uid 1000; secrets are files in `secrets/`
@@ -1305,7 +1311,7 @@ Phase 11 leftovers:
        - Runbooks: `selfhost-setup.md` (hardware, mirror, LUKS, UPS, tunnel, email, bucket, VPS variant, secrets,
          first start, GitHub settings) and `selfhost-operations.md` (releases and rollback, patching, power cuts, a
          failing disk, health, rotating each secret, `pg_dump` until step 3).
-    3. ✅ **Portable backups and alerts** (`claude/selfhost-3`, stacked on step 2):
+    3. ✅ **Portable backups and alerts** (#103):
        - **Postgres with pgBackRest** (`infra/selfhost/postgres`, pushed to GHCR as `postgres:16-<hash of the folder>`,
          so a release restarts the database only when that image changes). With `BACKUP_S3_BUCKET` set it archives the
          WAL every 60 seconds (async, a 4 GB queue) to a bucket at another provider with object lock, encrypted with
@@ -1329,7 +1335,9 @@ Phase 11 leftovers:
          project (the WAL replayed, reconciliation clean). It found that Postgres must run under an init process
          (`init: true`): pgBackRest's async archiver leaves a process PID 1 inherits, and Postgres as PID 1 restarted
          every connection when it exited.
-    4. ✅ **`docs/runbooks/moving-platforms.md`** (`claude/selfhost-4`, stacked on step 3): the move from home to a VPS
+       - The Postgres image starts as the `postgres` user, not root (`USER postgres`), which the Trivy file scan
+         requires (DS-0002).
+    4. ✅ **`docs/runbooks/moving-platforms.md`** (#104): the move from home to a VPS
        or to any cloud, in ADR-0050 §10's order. Logical replication for `montra` and `kratos` (a private link, a
        `bypassrls` replication login, the schema from `pg_dump --schema-only`, a subscription owned by `montra_owner`),
        files by `rclone` only if they change bucket, the master key copied or rewrapped on the old platform first
