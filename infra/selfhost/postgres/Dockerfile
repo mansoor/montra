@@ -4,6 +4,9 @@
 # pgBackRest archives the write-ahead log every 60 seconds and takes full and differential backups to an S3-compatible
 # bucket at another provider, encrypted before they leave the server. Its settings that aren't secret are in
 # pgbackrest.conf; the bucket's keys and the encryption passphrase come from /run/secrets at start (entrypoint.sh).
+#
+# It runs as postgres (uid 999), never root: the official entrypoint supports that, and a new volume takes the data
+# directory's owner from the image. So the secrets Postgres reads are owned by uid 999 (setup.sh).
 FROM postgres:16.11-bookworm@sha256:a2420e9555e2224583fe84d0bb3f0b967e69354ae3a0be55a9c14e251388c4eb
 # From the PostgreSQL project's apt repository, which the base image already uses for PostgreSQL itself.
 RUN apt-get update \
@@ -13,5 +16,6 @@ RUN apt-get update \
  && pgbackrest version
 COPY pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
 COPY --chmod=755 entrypoint.sh /usr/local/bin/montra-postgres
+USER postgres
 ENTRYPOINT ["montra-postgres"]
 CMD ["postgres"]

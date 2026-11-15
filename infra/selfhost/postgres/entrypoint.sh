@@ -6,10 +6,20 @@
 #   pgbackrest …      pgBackRest as the postgres user, e.g. a restore into an empty volume.
 #
 # pgBackRest has no _FILE settings, so the bucket's keys and the passphrase are written to a file only postgres can
-# read, inside the container. `docker compose exec -u postgres postgres pgbackrest …` reads it too.
+# read, inside the container. `docker compose exec postgres pgbackrest …` reads it too.
+#
+# The image runs as postgres. Started as root anyway (`-u root`), it still writes that file for postgres and runs
+# pgBackRest as postgres, and docker-entrypoint.sh drops to postgres itself.
 set -euo pipefail
 
 CONF=/etc/pgbackrest/conf.d/repo.conf
+if [ "$(id -u)" = 0 ]; then
+  AS_POSTGRES=(gosu postgres)
+  CONF_OWNER=(-o postgres -g postgres)
+else
+  AS_POSTGRES=()
+  CONF_OWNER=()
+fi
 
 secret() { # the first line of /run/secrets/<name>, or nothing
   local file="/run/secrets/$1"
@@ -32,7 +42,7 @@ write_repo_conf() {
       return 2
     }
   done
-  install -o postgres -g postgres -m 0600 /dev/null "$CONF"
+  install "${CONF_OWNER[@]}" -m 0600 /dev/null "$CONF"
   {
     echo "[global]"
     echo "repo1-s3-endpoint=$host"
@@ -66,7 +76,7 @@ case ${1:-postgres} in
       echo "montra-postgres: set BACKUP_S3_ENDPOINT, BACKUP_S3_BUCKET and the backup secrets first" >&2
       exit 1
     }
-    exec gosu postgres "$@"
+    exec "${AS_POSTGRES[@]}" "$@"
     ;;
   *)
     exec docker-entrypoint.sh "$@"

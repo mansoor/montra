@@ -14,6 +14,7 @@ umask 077
 cd "$(dirname "$0")"
 
 APP_UID=1000 # every Montra container runs as this user (compose.yaml)
+PG_UID=999   # the postgres user in the Postgres image (infra/selfhost/postgres)
 SECRETS=./secrets
 SUDO=$([ "$(id -u)" = 0 ] && echo "" || echo sudo)
 
@@ -29,11 +30,12 @@ REQUIRED=(s3_access_key s3_secret_key mail_url kratos_smtp_url backup_s3_access_
 OPTIONAL=(cloudflare_tunnel_token stripe_secret_key stripe_webhook_secret anthropic_api_key sentry_dsn twilio_account_sid
   twilio_auth_token kratos_sms_channel alert_smtp_password)
 
-# The owner of a secret file. Postgres reads its own as root before it drops privileges; Prometheus and Alertmanager
-# run as nobody (65534); every Montra container runs as APP_UID.
+# The owner of a secret file. Postgres runs as PG_UID; role_passwords is read only here, as root; Prometheus and
+# Alertmanager run as nobody (65534); every Montra container runs as APP_UID.
 owner_of() {
   case $1 in
-    postgres_password | role_passwords | backup_s3_access_key | backup_s3_secret_key | backup_cipher_pass) echo 0 ;;
+    postgres_password | backup_s3_access_key | backup_s3_secret_key | backup_cipher_pass) echo "$PG_UID" ;;
+    role_passwords) echo 0 ;;
     prometheus_metrics_token | alert_smtp_password) echo 65534 ;;
     *) echo "$APP_UID" ;;
   esac

@@ -170,8 +170,9 @@ Then fill in, one value per file, with `sudoedit secrets/<name>`:
 | `files_backup_access_key`, `files_backup_secret_key` | The files backup bucket's key                    |
 | `alert_smtp_password`     | The SMTP password Alertmanager sends with (profile `monitoring`)            |
 
-Each file is owned by uid 1000 with mode 0400 (`postgres_password` and `role_passwords` by root), and Compose mounts
-it at `/run/secrets/<name>`. The services read them through `NAME_FILE` settings (ADR-0050 §2). An empty file means a
+Each file has mode 0400 and is owned by the user of the container that reads it: uid 1000 for Montra's, 999 for
+Postgres (`postgres_password` and the `backup_*` files), 65534 for Prometheus and Alertmanager, and root for
+`role_passwords`, which only `setup.sh` reads. Compose mounts each at `/run/secrets/<name>`. The services read them through `NAME_FILE` settings (ADR-0050 §2). An empty file means a
 secret not in use.
 
 **Back up `secrets/master_key` and `secrets/backup_cipher_pass` now**, offline and apart from the database backups: in a password manager, and printed
