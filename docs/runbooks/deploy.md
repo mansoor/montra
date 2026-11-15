@@ -3,6 +3,10 @@
 > **Not exercised.** `deploy.yml` and the scripts in `infra/deploy` passed `actionlint` and `shellcheck`, but have never run
 > against AWS. Do the first real deployment on `dev` and correct this page.
 
+This page is the AWS target. For Montra on your own server (`DEPLOY_TARGET=selfhost`), see
+[self-hosted operations](selfhost-operations.md#1-releasing-a-new-version): the same tags and migrations-first order, with
+`infra/selfhost/deploy.sh` run over SSH.
+
 ## Which tag goes where
 
 | Tag            | Environment | From                                       |

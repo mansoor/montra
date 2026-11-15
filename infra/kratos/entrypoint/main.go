@@ -10,9 +10,11 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const kratos = "/usr/bin/kratos"
@@ -80,7 +82,31 @@ func resolve(environ []string, read func(string) ([]byte, error)) ([]string, err
 	return out, nil
 }
 
+// healthcheck answers a container health check, as the image has no shell or curl: `montra-kratos healthcheck [url]`
+// exits 0 when the URL (Kratos's public readiness endpoint by default) answers 200.
+func healthcheck(url string) int {
+	client := http.Client{Timeout: 5 * time.Second}
+	res, err := client.Get(url)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "montra-kratos healthcheck:", err)
+		return 1
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "montra-kratos healthcheck:", res.Status)
+		return 1
+	}
+	return 0
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		url := "http://127.0.0.1:4433/health/ready"
+		if len(os.Args) > 2 {
+			url = os.Args[2]
+		}
+		os.Exit(healthcheck(url))
+	}
 	env, err := resolve(os.Environ(), os.ReadFile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "montra-kratos:", err)
