@@ -67,18 +67,6 @@ variable "billing_mode" {
   default     = "stripe"
 }
 
-variable "stripe_price_pro_monthly" {
-  description = "Stripe price id for Pro monthly."
-  type        = string
-  default     = ""
-}
-
-variable "stripe_price_pro_yearly" {
-  description = "Stripe price id for Pro yearly."
-  type        = string
-  default     = ""
-}
-
 variable "managed_waf_enabled" {
   description = "Deploy Cloudflare's managed rulesets. Needs a Pro plan or higher on the zone."
   type        = bool

@@ -1,6 +1,6 @@
 # ADR-0049: Plans as data, the platform owner, accounts and providers
 
-- Status: proposed (replaces ADR-0020 §1 and §9; extends §2, §3 and §6)
+- Status: accepted (replaces ADR-0020 §1 and §9; extends §2, §3 and §6)
 - Date: 2026-11-14
 
 ## Context
@@ -223,6 +223,82 @@ Each step is its own PR into `develop`, and works on its own:
 3. **Managing accounts.** Suspend and restore, trials, given plans, and closing on request.
 4. **Providers.** The Providers page, test sends, and secrets from `_FILE`.
 5. **Text messages.** Kratos's SMS channel, `SmsPort`, phone numbers in Settings, and texted alerts.
+
+## Settled while building
+
+- **Step 1 (migration 0051):**
+  - The plan's AI allowance and the operator's ceiling apply to built-in AI, which the operator pays for. With the
+    customer's own key or a local model, only their own `monthlyBudgetUsd` applies, and that spend doesn't count
+    towards the ceiling (`ai_usage.builtin_micro_usd`).
+  - A budget the customer sets above the plan's allowance has no effect, rather than being refused, so lowering a
+    plan can't leave a saved setting that blocks every other AI setting.
+  - The seeded feature keys are `payroll`, `staffTime`, `scans`, `voice` and `ownStorage`, all on for Free and Pro.
+    A plan without one refuses adding: a new payroll person, staff time, a scan, or connecting storage. Voice entry
+    happens on the phone, which hides the microphone.
+  - `familyLogins` counts active members and open invites, and null means no limit. Free and Pro have none, as
+    before.
+  - A price id the webhook doesn't know is logged and sent to error reporting.
+  - The ceiling is `ai_monthly_ceiling_micro_usd` in `app.system_setting`, set from the console's AI tab. Reaching
+    it emails every admin on staff (and owner) once a month.
+- **Step 2 (migration 0052):**
+  - A version has a start (`effective_from`). A plan's current version is the newest that has started, and it's
+    what new customers and Free's workspaces get. A version that gives less than the current one starts at least
+    30 days out. For Free, every workspace without a paid plan is told by email.
+  - "Gives less" means any limit lower or any feature removed, even if something else rises
+    (`compareEntitlements`).
+  - A price stays with the plan until it's replaced. New customers pay the newest active price for the interval on
+    the current version or an earlier one, so a new version needn't repeat an unchanged price.
+  - The webhook uses a price id to find the plan. A subscriber already on that plan keeps the version they're held
+    on, so a move survives Stripe still charging the old price. A new subscriber, or a change of tier, gets the
+    plan's current version.
+  - Moves are between versions of one plan. A pending move applies in the hourly billing sweep, from the first
+    renewal on or after its date (`first_renewal` steps the period end by the interval). Customers are told
+    by the same sweep.
+  - Step-up uses the API's existing recent sign-in check (`requireRecentAuth`, 10 minutes), which is the one
+    revealing a tenant's date of birth uses.
+  - Listing staff is the owner's too, as managing them is. Admins can see plans but not change them.
+- **Step 3 (migration 0053):**
+  - Suspension sets the Kratos identity inactive, which refuses sign-in, and deletes its sessions. The API refuses
+    the person too (`account.suspended`), and a workspace an active owner of which is suspended
+    (`workspace.suspended`). The web sends both to a public page that names support.
+  - A suspension and the reason for it are visible only to staff. The person's security log shows that it happened
+    and when it ended, with no reason.
+  - "A Stripe coupon instead" means the console applies a coupon id made in Stripe's dashboard to the subscription.
+    It doesn't create coupons. A given plan needs an end date. It stops counting at that time by the clock, and the
+    hourly sweep writes it down.
+  - Extending a trial changes Stripe first, so the next webhook doesn't undo it.
+  - Closing on request is the person's own deletion, started for them. The security log calls it
+    `deletion_requested_by_support`, and they can still cancel it.
+- **Step 4 (migration 0054):**
+  - Last success and last failure are recorded as calls happen. The email, payment, storage, key and push ports are
+    wrapped (`trackedProvider`), and built-in AI and exchange rates are noted where they run. A success is written
+    at most every five minutes. A failure keeps a short message with addresses, URLs and long tokens cut out.
+    Error reporting can't report on itself, so its row shows only whether it's set up.
+  - What's shown is never secret: an SMTP or Sentry host without its credentials, test or live for the Stripe
+    key, whether a key or webhook secret is set, and the AWS KMS key's id.
+  - An empty sender or support address means the environment's. Until an owner says otherwise, all three kinds of
+    text are on and texts go only to US numbers.
+  - A test email goes to the owner's own address. A test text waits for step 5.
+  - `_FILE` secrets are ADR-0050's, built in its own PR.
+- **Step 5 (migration 0055):**
+  - Kratos: the identity schema gains `phone` (E.164), verified by a texted code, and a `code` identifier by text for
+    the second factor. Email is no longer a `code` identifier. Nothing used it, and with codes as a second factor it
+    would have made an emailed code count as one. The SMS channel holds the Twilio token, so it's set only through
+    `COURIER_CHANNELS` on Kratos, with `SELFSERVICE_METHODS_CODE_MFA_ENABLED`. Run against Kratos v26.2.0 with a
+    stand-in for Twilio, both kinds of text went out as Twilio's form.
+  - Recovery stays by email: Kratos v26.2.0's recovery form takes only an email address.
+  - The API keeps a copy of the number and whether it's verified (`app_user.phone_e164`), refreshed from the
+    Kratos session. A change is logged (`phone_changed`) and emailed to the sign-in address.
+  - Allowed countries are found from the number without a library: a table of calling codes, and within +1, Canada's
+    and the Caribbean's area codes. An unknown country is never texted.
+  - The kinds the owner switches on are sign-in codes, security alerts and reminders. Only the last two are the API's.
+    Sign-in codes are switched on Kratos, by the variables above.
+  - Security alerts by text (a new device, a password or two-step change) and reminders by text (bills due, reminders,
+    tax dates, rent overdue, a lease expiring) are each off until the person turns them on. A text carries the title
+    only, as push does: never a figure. Reminders take one of the plan's `smsMonthly` each (`app.sms_usage`).
+  - Twilio's STOP answer (error 21610) marks the number opted out, and it gets no texts until it changes.
+  - The auth gateway limits texted codes to 5 an hour per number and per address. Saving a number counts, as it
+    texts a code. A wrong texted code counts against the session, as an authenticator code does.
 
 ## Consequences
 

@@ -99,6 +99,10 @@ export const AiSettingsDto = z.object({
     calls: z.number(),
     spentUsd: z.number(),
     state: z.enum(['ok', 'downgraded', 'exhausted']),
+    /** ADR-0049 §2: the share of this month's limit used, 0 to 1. Null when nothing limits it. */
+    share: z.number().nullable(),
+    /** Whether the plan includes an AI allowance for this mode, so the customer's own budget can only lower it. */
+    planAllowance: z.boolean(),
   }),
   /** Set when the mode is on but can't run; null when AI works or is deliberately off. */
   problem: AiProblem.nullable(),

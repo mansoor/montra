@@ -168,7 +168,8 @@ export class OwnershipService {
     };
   }
 
-  async requestDeletion(userId: string): Promise<DeletionStatusDto> {
+  /** `support`: staff started it because the person asked them to (ADR-0049 §4). It's the same deletion. */
+  async requestDeletion(userId: string, by: 'self' | 'support' = 'self'): Promise<DeletionStatusDto> {
     const purgeAfter = new Date(Date.now() + DELETION_WINDOW_MS);
     await this.db.run({ userId }, async (trx) => {
       await sql`select app.flag_account_deletion(${userId}::uuid, ${purgeAfter})`.execute(trx);
@@ -177,7 +178,7 @@ export class OwnershipService {
         .values({
           user_id: userId,
           workspace_id: null,
-          kind: 'deletion_requested',
+          kind: by === 'support' ? 'deletion_requested_by_support' : 'deletion_requested',
           detail: JSON.stringify({ purgeAfter: purgeAfter.toISOString() }),
         })
         .execute();

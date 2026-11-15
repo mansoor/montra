@@ -16,3 +16,22 @@ and don't add tracking links or images.
 
 A broken template also answers differently for known and unknown addresses, which leaks whether an account exists. After
 any change here, send a real recovery and verification email through Mailpit: `node scripts/kratos-smoke.mjs` does it.
+
+## Texts (ADR-0049 §6)
+
+`login_code/valid/sms.body.gotmpl` is the texted second factor, and `verification_code/valid/sms.body.gotmpl` confirms
+a number added in Settings. They're plain text with no links, and they say "30 minutes" like the emails do.
+
+Texting is off unless the deployment sets two environment variables on Kratos:
+
+- `COURIER_CHANNELS`: the JSON in `../sms-channel.example.json`, with the Twilio account id, the auth token, and in
+  the base64 body (`../sms-body.jsonnet`) the Messaging Service id. The token is a secret: it comes from the secret
+  store, like `COURIER_SMTP_CONNECTION_URI`.
+- `SELFSERVICE_METHODS_CODE_MFA_ENABLED=true`: offers a texted code as a second factor to a verified number.
+
+Recovery stays by email: Kratos v26.2.0's recovery form takes only an email address. Email isn't a `code` identifier
+in the identity schema, so turning the second factor on never offers an emailed code as a second factor.
+
+This was run against Kratos v26.2.0 with the channel pointed at a stand-in for Twilio: saving a number texted a
+verification code, and the aal2 login texted a sign-in code, both as Twilio's form (`To`, `Body`,
+`MessagingServiceSid`, basic auth).

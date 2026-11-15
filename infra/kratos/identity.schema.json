@@ -17,11 +17,24 @@
               "password": { "identifier": true },
               "webauthn": { "identifier": true },
               "passkey": { "display_name": true },
-              "totp": { "account_name": true },
-              "code": { "identifier": true, "via": "email" }
+              "totp": { "account_name": true }
             },
             "verification": { "via": "email" },
             "recovery": { "via": "email" }
+          }
+        },
+        "phone": {
+          "type": "string",
+          "format": "tel",
+          "title": "Mobile number",
+          "description": "With the country code, such as +1 415 555 0123. For texted codes and alerts; you still sign in with your email.",
+          "pattern": "^\\+[1-9][0-9]{6,14}$",
+          "maxLength": 16,
+          "ory.sh/kratos": {
+            "credentials": {
+              "code": { "identifier": true, "via": "sms" }
+            },
+            "verification": { "via": "sms" }
           }
         },
         "name": {

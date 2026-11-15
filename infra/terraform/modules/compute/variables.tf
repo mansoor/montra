@@ -105,18 +105,6 @@ variable "billing_mode" {
   default     = "stripe"
 }
 
-variable "stripe_price_pro_monthly" {
-  description = "Stripe price id for Pro monthly. Not a secret."
-  type        = string
-  default     = ""
-}
-
-variable "stripe_price_pro_yearly" {
-  description = "Stripe price id for Pro yearly. Not a secret."
-  type        = string
-  default     = ""
-}
-
 variable "extra_environment" {
   description = "More plain environment variables for the API and worker."
   type        = map(string)

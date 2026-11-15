@@ -155,6 +155,13 @@ test('the staff console, support access and a notice', async ({ page }) => {
   await expect(workspace).toContainText('Support access not given');
   await expect(account).not.toContainText('Very Private Account');
 
+  // ADR-0049: admins see the plans; only an owner changes them, and only an owner sees staff.
+  await page.goto('/admin?tab=plans');
+  await expect(page.getByTestId('plan-free')).toContainText('Version 1');
+  await expect(page.getByTestId('plan-pro')).toContainText('10 business books');
+  await expect(page.getByRole('button', { name: 'New version' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Staff', exact: true })).toHaveCount(0);
+
   // Without the owner's say-so, a support view doesn't exist.
   const refused = await page.goto(`/admin/support/${workspaceId}`);
   expect(refused!.status()).toBe(404);

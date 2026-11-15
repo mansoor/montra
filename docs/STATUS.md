@@ -1177,11 +1177,86 @@ Phase 11 leftovers:
       providers.
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
-- **Offering Montra as a service, hosted anywhere** (proposed, nothing built yet):
+- **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14):
   - [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console
     (tiers, prices by Stripe price id, entitlements, versions), each with an AI allowance; a staff `owner` role above
     `admin`; suspending, trials, given plans and closing accounts; a Providers page that shows but never stores keys;
     texts through Twilio (Kratos's SMS channel and an `SmsPort`). Five PRs, in the order the ADR gives.
+  - **Step 1, plans as data and the AI allowance** (migration 0051):
+    - `app.plan`, `app.plan_version` (entitlements as JSON, checked by `parseEntitlements` in `@montra/domain`) and
+      `app.plan_price` (Stripe price ids). `app.subscription.plan_version_id`. A version with subscribers can't be
+      changed (a trigger); a new version is the way. Free is always offered.
+    - Seeded so nothing changes: Free and Pro allow what `entitlementsFor` gave them, which is gone. Every feature key
+      is on for both, and neither has an AI allowance or a login limit.
+    - `Plans` (`apps/api/src/ops/plans.ts`) is the one place that says what the workspace in context is on, through
+      `app.current_plan()`, so jobs get it too. Adding books, a payroll person, staff time, a scan, own storage or
+      an invite checks it. `BILLING_MODE=off` still gives everything.
+    - Checkout takes `{ plan, interval }`; the webhook finds the version from the price id. `STRIPE_PRICE_PRO_*` are
+      gone, from the API and Terraform. Prices are added in the console (step 2).
+    - Built-in AI is held to min(plan allowance, the customer's budget). Owners get an `ai_allowance` notification at
+      80% and 100%, once each a month (`ai_usage.alerted_pct`). The operator's ceiling (`ai_monthly_ceiling_micro_usd`,
+      console → AI) stops built-in AI everywhere and emails staff once a month. Customers' own keys and local models
+      are held only to their own budget, and don't count towards the ceiling.
+    - The phone hides voice entry when the plan lacks `voice`. The web's plan panel names the plan; the plan picker
+      and the AI usage bar are step 2.
+    - Tests: `apps/api/test/plans.test.ts`. The ceiling is only ever set inside a rolled-back transaction there,
+      because test files share a database.
+  - **Step 2, the owner and plans in the console** (migration 0052):
+    - Staff roles are `support`, `admin` and `owner`, each including the one below. `staff:add <email> owner` (or
+      `--role owner`) makes the first owner; after that, owners add, change and remove staff in the console's
+      **Staff** tab, through `admin_*` functions that check the role again. Every change is emailed to every owner.
+      The last owner can't be removed or demoted.
+    - Owner actions (staff, plans, the AI ceiling) need a sign-in in the last 10 minutes as well as a second factor.
+    - The console's **Plans** tab: plans, versions with what they allow, subscriber counts, Stripe prices, and moving
+      subscribers between versions. Admins see it; owners change it. Editing a plan adds a version. One that gives
+      less starts 30 or more days out, and moving subscribers onto it waits for each one's first renewal after a
+      date 30 or more days out. Customers are emailed either way (`app.plan_change_notice`, sent by the hourly billing sweep).
+    - The plan picker: `GET /v1/plans`. Web: Settings → Plan lists the other plans with what they include and
+      their prices, with a checkout button for each interval. Phone: Settings lists them read-only, since the phone
+      doesn't sell.
+    - The AI usage bar: the web's AI settings and the phone's Settings show "N% of this month's AI used" from
+      `usage.share`. Under a plan's allowance, the web shows the share, not dollars.
+    - Tests: `apps/api/test/plans-console.test.ts`, and a look at the Plans tab in `e2e/operations.spec.ts`.
+  - **Step 3, managing accounts** (migration 0053), in the console's account lookup:
+    - **Suspend and restore** (admin, with a recent sign-in): abuse, fraud or a legal hold, with a reason. Kratos
+      stops the sign-in and ends the sessions. The API refuses the person (`account.suspended`) and closes workspaces
+      they own to every member (`workspace.suspended`). The web shows `/account-closed`. They're emailed unless it's a
+      legal hold. Restoring reverses all of it.
+    - **Extend a trial** by up to 30 days, in Stripe first. **Give a plan** until a date (provider `comp`). It stops
+      counting at that time, and the sweep writes it down. A workspace paying through Stripe gets a **coupon** id
+      instead, applied to its subscription.
+    - **Close on request** (owner): the person's own 30-day deletion, only for a request from the account's address,
+      with how it came recorded. They're emailed and can still cancel it.
+    - Not done: the phone has no screen for a suspended account or a closed workspace. It shows the API's message.
+    - Tests: `apps/api/test/accounts.test.ts`, and `setIdentityActive` against the fake Kratos in `kratos.test.ts`.
+  - **Step 4, the Providers page** (migration 0054), the console's **Providers** tab, for owners:
+    - One row each for email, texts, payments, error reporting, AI, file storage, key management, push and exchange
+      rates: whether it's set up, its mode, what isn't secret, and its last success and failure
+      (`app.provider_status`, `ProviderHealth`). No key is shown or editable.
+    - Owners change the API's sender name and address, the support address, which kinds of text are on and the
+      countries texts may go to (`ServiceSettings`, kept in `app.system_setting`). The API's SMTP mail and the support
+      address use them at once.
+    - **Send a test email to me**. The test text answers `sms.not_configured` until step 5.
+    - Tests: `apps/api/test/providers.test.ts`. It puts the service-wide settings back afterwards, since test files
+      share a database.
+  - **Step 5, texts through Twilio** (migration 0055):
+    - `SmsPort` with `off`, `log`, `memory` and `twilio` modes (`SMS_MODE`, `TWILIO_*`). Twilio sends through a
+      Messaging Service. `TextsService` decides who gets what: their own verified number only, kinds the owner switched
+      on, countries on the allowed list, what the person turned on, and reminders within the plan's `smsMonthly`.
+    - Kratos: `phone` in the identity schema, verified by a texted code, and a texted code as a second factor. The
+      channel and the second factor are switched on by `COURIER_CHANNELS` and `SELFSERVICE_METHODS_CODE_MFA_ENABLED` on
+      Kratos (`infra/kratos/templates/README.md`). This was checked against Kratos v26.2.0 with a stand-in for Twilio.
+      Recovery stays by email.
+    - Web: the mobile number is in Settings → Security (shown only where texts are on), and a **Texts** section in
+      notification settings turns security alerts and reminders by text on. The Providers page shows Twilio's state and
+      sends a test text to the owner's own number.
+    - The API's copy of the number is refreshed from each new Kratos session. A change is logged and emailed.
+    - The auth gateway limits texted codes per number and per address (`sms_send`).
+    - Not done: the phone app has no settings for texts or the number (it shows them nowhere yet), the Terraform doesn't
+      set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real Twilio. US texting needs A2P 10DLC or
+      a verified toll-free number first (launch checklist).
+    - Tests: `apps/api/test/texts.test.ts`, the number's sync in `kratos.test.ts`, the limits in `auth-gateway.test.ts`,
+      and `packages/domain/test/phone.test.ts`.
   - [ADR-0050](design/adr/0050-hosting-anywhere.md) (**accepted** 2026-11-14): Montra needs containers, PostgreSQL 16,
     S3-compatible storage, SMTP and secrets, nothing more. AWS stays as one target. **The owner starts on a home server
     for family and friends, and moves to a VPS when real customers come** (§11): a Cloudflare Tunnel (no inbound ports,

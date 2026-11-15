@@ -76,8 +76,15 @@ const Env = z.object({
   STRIPE_API_URL: z.string().url().default('https://api.stripe.com'),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
-  STRIPE_PRICE_PRO_YEARLY: z.string().optional(),
+  /**
+   * Texts (ADR-0049 §6), as mail has modes: `off` sends none and everything goes by email, as self-hosting and tests
+   * run; `twilio` sends through a Messaging Service. Kratos texts its own codes through its courier, set up separately.
+   */
+  SMS_MODE: z.enum(['off', 'log', 'memory', 'twilio']).default('off'),
+  TWILIO_API_URL: z.string().url().default('https://api.twilio.com'),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
   /** Error tracking (NFR-13). Without it, errors only go to the log. */
   SENTRY_DSN: z.string().url().optional(),
   /** Bearer token for /internal/metrics. Without it, the route doesn't answer. */
@@ -185,6 +192,13 @@ export function loadConfig(
       throw new Error('MAIL_URL is required when MAIL_MODE=smtp');
     return config;
   }
+  if (
+    config.SMS_MODE === 'twilio' &&
+    !(config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && config.TWILIO_MESSAGING_SERVICE_SID)
+  )
+    throw new Error(
+      'TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_MESSAGING_SERVICE_SID are required when SMS_MODE=twilio',
+    );
   if (config.STORAGE_MODE === 's3' && !config.S3_BUCKET)
     throw new Error('S3_BUCKET is required when STORAGE_MODE=s3');
   if (config.MAIL_MODE === 'smtp' && !config.MAIL_URL)

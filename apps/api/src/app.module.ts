@@ -24,14 +24,23 @@ import { HealthController } from './health/health.controller.js';
 import { FieldCrypto, KMS_PORT } from './crypto/crypto.service.js';
 import { createKms } from './crypto/kms.js';
 import { AdminService } from './ops/admin.service.js';
-import { billingProvider } from './ops/billing.port.js';
+import { BILLING_PORT, billingProvider } from './ops/billing.port.js';
 import { BillingService } from './ops/billing.service.js';
+import { Plans } from './ops/plans.js';
+import { ProviderHealth, trackedProvider } from './ops/provider-health.js';
+import { ServiceSettings } from './ops/service-settings.js';
+import { SMS_PORT, smsProvider } from './sms/sms.js';
+import { TextsService } from './sms/texts.service.js';
+import { ProvidersService } from './ops/providers.service.js';
+import { AdminPlansService } from './ops/admin-plans.service.js';
+import { AdminAccountsService } from './ops/admin-accounts.service.js';
 import { errorReporterProvider } from './ops/errors.js';
 import { AppVersionInterceptor, MetricsService } from './ops/metrics.js';
 import {
   AdminController,
   BillingWebhookController,
   MetricsController,
+  PlansController,
   StatusController,
   SupportController,
   WorkspaceOpsController,
@@ -48,8 +57,8 @@ import { RecurringController } from './recurring/recurring.controller.js';
 import { PushDevicesController, SyncController } from './sync/sync.controller.js';
 import { SyncService } from './sync/sync.service.js';
 import { RealtimeService } from './realtime/realtime.service.js';
-import { mailProvider } from './mail/mail.service.js';
-import { storageProvider } from './storage/storage.js';
+import { MAIL_PORT, mailProvider } from './mail/mail.service.js';
+import { STORAGE_PORT, storageProvider } from './storage/storage.js';
 import { StorageController } from './storage/storage.controller.js';
 import { StorageDestinationsService } from './storage/storage-destinations.service.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
@@ -119,7 +128,7 @@ import {
   UnsubscribeController,
 } from './notifications/notifications.controller.js';
 import { NotificationsService } from './notifications/notifications.service.js';
-import { pushProvider } from './notifications/push.js';
+import { PUSH_PORT, pushProvider } from './notifications/push.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { ReportsService } from './reports/reports.service.js';
 import { SearchService } from './reports/search.service.js';
@@ -186,6 +195,7 @@ export class AppModule {
       BillingWebhookController,
       MetricsController,
       AdminController,
+      PlansController,
       ReportsController,
       NotificationsController,
       DataController,
@@ -216,14 +226,22 @@ export class AppModule {
         TransactionsService,
         TransactionPoster,
         RecurringService,
-        { provide: KMS_PORT, useFactory: () => createKms(config) },
+        ...trackedProvider(KMS_PORT, 'keys', { useFactory: () => createKms(config) }),
         errorReporterProvider(config),
-        billingProvider(config),
+        ...trackedProvider(BILLING_PORT, 'payments', billingProvider(config), config.BILLING_MODE === 'off'),
+        ProviderHealth,
+        ...trackedProvider(SMS_PORT, 'sms', smsProvider(config), config.SMS_MODE === 'off'),
+        TextsService,
+        ServiceSettings,
+        Plans,
         BillingService,
         AdminDb,
         SupportDb,
         StaffGuard,
         AdminService,
+        AdminPlansService,
+        AdminAccountsService,
+        ProvidersService,
         SupportService,
         StatusService,
         MetricsService,
@@ -232,8 +250,8 @@ export class AppModule {
         { provide: APP_INTERCEPTOR, useExisting: AppVersionInterceptor },
         FieldCrypto,
         ...(opts.worker ? [] : [RealtimeService]),
-        mailProvider(config),
-        storageProvider(config),
+        ...trackedProvider(MAIL_PORT, 'email', mailProvider(config)),
+        ...trackedProvider(STORAGE_PORT, 'storage', storageProvider(config)),
         JobQueue,
         Worker,
         ImportsService,
@@ -293,7 +311,7 @@ export class AppModule {
         OwnershipService,
         NotificationsService,
         NotificationJobs,
-        pushProvider,
+        ...trackedProvider(PUSH_PORT, 'push', pushProvider),
         ReportsService,
         SearchService,
         PayslipJobs,

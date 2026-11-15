@@ -1,16 +1,36 @@
 /** Running the service: plans, the staff console, support access, notices and help (ADR-0020). */
+import { PLAN_FEATURES } from '@montra/domain';
 import { z } from 'zod';
 import { Id } from './common.js';
 
-// ----- Plans and billing (UP-12, OPS-08) --------------------------------------------------------
+/// ----- Plans and billing (UP-12, OPS-08, ADR-0049 §1) ------------------------------------------
 
-export const PlanDto = z.enum(['free', 'pro']);
+/** A plan's key, such as `free`, `pro` or `plus`. Plans are data the owner edits (ADR-0049 §1). */
+export const PlanDto = z.string().regex(/^[a-z][a-z0-9_-]{1,31}$/);
 export type PlanDto = z.infer<typeof PlanDto>;
+
+export const PlanFeatureDto = z.enum(PLAN_FEATURES);
+export type PlanFeatureDto = z.infer<typeof PlanFeatureDto>;
+
+/** What a plan version allows. Bytes and micro-dollars are strings, as they can pass what a number holds. */
+export const PlanEntitlementsDto = z.object({
+  businessBooks: z.number().int(),
+  rentalPortfolios: z.number().int(),
+  storageBytes: z.string(),
+  /** Null: no limit. */
+  familyLogins: z.number().int().nullable(),
+  /** The AI allowance a month, in millionths of a dollar. Null: no limit. Customers see a share, not this. */
+  aiMonthlyMicroUsd: z.string().nullable(),
+  smsMonthly: z.number().int(),
+  features: z.array(PlanFeatureDto),
+});
+export type PlanEntitlementsDto = z.infer<typeof PlanEntitlementsDto>;
 
 export const BillingDto = z.object({
   /** `off`: no plans here, as in a self-hosted install, and everything is available. */
   mode: z.enum(['off', 'stripe']),
   plan: PlanDto,
+  planName: z.string(),
   status: z.enum(['none', 'trialing', 'active', 'past_due', 'canceled']),
   provider: z.enum(['stripe', 'apple', 'google', 'staff']).nullable(),
   interval: z.enum(['month', 'year']).nullable(),
@@ -18,6 +38,9 @@ export const BillingDto = z.object({
   currentPeriodEnd: z.string().nullable(),
   graceUntil: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
+  /** What the workspace can do now. With plans off, everything. */
+  entitlements: PlanEntitlementsDto,
+  /** The same, in the shape clients read before plans were data. */
   features: z.object({
     businessEntities: z.boolean(),
     rentalEntities: z.boolean(),
@@ -30,11 +53,31 @@ export const BillingDto = z.object({
 });
 export type BillingDto = z.infer<typeof BillingDto>;
 
-export const CheckoutRequest = z.object({ interval: z.enum(['month', 'year']) });
+export const CheckoutRequest = z.object({ plan: PlanDto, interval: z.enum(['month', 'year']) });
 export type CheckoutRequest = z.output<typeof CheckoutRequest>;
 
 export const BillingLinkDto = z.object({ url: z.string() });
 export type BillingLinkDto = z.infer<typeof BillingLinkDto>;
+
+// ----- The plan picker (ADR-0049 §1) -------------------------------------------------------------
+
+export const PlanPriceDto = z.object({
+  interval: z.enum(['month', 'year']),
+  /** Minor units of the currency, for showing only: the provider decides what's charged. */
+  amountMinor: z.string(),
+  currency: z.string(),
+});
+export type PlanPriceDto = z.infer<typeof PlanPriceDto>;
+
+/** A plan new customers can choose, with what its current version allows. */
+export const PlanOfferDto = z.object({
+  key: PlanDto,
+  name: z.string(),
+  description: z.string(),
+  entitlements: PlanEntitlementsDto,
+  prices: z.array(PlanPriceDto),
+});
+export type PlanOfferDto = z.infer<typeof PlanOfferDto>;
 
 // ----- Support access (OPS-02) ------------------------------------------------------------------
 
@@ -118,7 +161,8 @@ export type ClientErrorRequest = z.output<typeof ClientErrorRequest>;
 
 // ----- Staff console (OPS-01, OPS-05) -----------------------------------------------------------
 
-export const StaffRole = z.enum(['support', 'admin']);
+/** Each includes the one before it (ADR-0049 §3). */
+export const StaffRole = z.enum(['support', 'admin', 'owner']);
 export type StaffRole = z.infer<typeof StaffRole>;
 
 export const StaffMeDto = z.object({ role: StaffRole });
@@ -131,6 +175,12 @@ export const AdminAccountDto = z.object({
   createdAt: z.string(),
   deletedAt: z.string().nullable(),
   workspaces: z.number().int(),
+  /** ADR-0049 §4: suspended, and why. Null when not. */
+  suspension: z
+    .object({ kind: z.enum(['abuse', 'fraud', 'legal_hold']), reason: z.string(), at: z.string() })
+    .nullable(),
+  /** Set while the account is closing, until then. */
+  purgeAfter: z.string().nullable(),
 });
 export type AdminAccountDto = z.infer<typeof AdminAccountDto>;
 
@@ -150,14 +200,31 @@ export const AdminWorkspaceDto = z.object({
   deletedAt: z.string().nullable(),
   /** Set when the owner has let support look, until then. */
   supportUntil: z.string().nullable(),
+  planName: z.string(),
+  trialEnd: z.string().nullable(),
 });
 export type AdminWorkspaceDto = z.infer<typeof AdminWorkspaceDto>;
 
+/** A given plan (ADR-0049 §4): provider `comp`, until a date. Free takes a given plan away. */
 export const AdminSetPlanRequest = z.object({
   plan: PlanDto,
   reason: z.string().trim().min(3).max(500),
+  /** The last day it's given, required for any plan but Free. */
+  until: z.iso.date().optional(),
 });
 export type AdminSetPlanRequest = z.output<typeof AdminSetPlanRequest>;
+
+/** ADR-0049 §2: the operator's monthly limit on built-in AI across the whole service. A circuit breaker, not a plan. */
+export const AiCeilingDto = z.object({
+  ceilingUsd: z.number().nullable(),
+  month: z.string(),
+  spentUsd: z.number(),
+  reached: z.boolean(),
+});
+export type AiCeilingDto = z.infer<typeof AiCeilingDto>;
+
+export const SaveAiCeilingRequest = z.object({ ceilingUsd: z.number().min(0).max(1_000_000).nullable() });
+export type SaveAiCeilingRequest = z.output<typeof SaveAiCeilingRequest>;
 
 export const FeatureFlagDto = z.object({
   key: z.string(),
@@ -287,3 +354,222 @@ export const SupportViewDto = z.object({
   ),
 });
 export type SupportViewDto = z.infer<typeof SupportViewDto>;
+
+// ----- Staff and plans in the console (ADR-0049 §1, §3) -------------------------------------------
+
+export const StaffMemberDto = z.object({
+  userId: Id,
+  email: z.string(),
+  displayName: z.string(),
+  role: StaffRole,
+  createdAt: z.string(),
+  addedBy: z.string().nullable(),
+});
+export type StaffMemberDto = z.infer<typeof StaffMemberDto>;
+
+export const SetStaffRequest = z.object({
+  email: z.email().transform((e) => e.toLowerCase()),
+  role: StaffRole,
+});
+export type SetStaffRequest = z.output<typeof SetStaffRequest>;
+
+export const AdminPlanPriceDto = z.object({
+  id: Id,
+  provider: z.enum(['stripe', 'apple', 'google']),
+  interval: z.enum(['month', 'year']),
+  priceRef: z.string(),
+  amountMinor: z.string(),
+  currency: z.string(),
+  active: z.boolean(),
+});
+export type AdminPlanPriceDto = z.infer<typeof AdminPlanPriceDto>;
+
+export const AdminPlanVersionDto = z.object({
+  id: Id,
+  version: z.number().int(),
+  entitlements: PlanEntitlementsDto,
+  effectiveFrom: z.string(),
+  createdAt: z.string(),
+  /** On it now, paying, trialing or in grace. */
+  subscribers: z.number().int(),
+  /** Moving to it from their next renewal after a date. */
+  pending: z.number().int(),
+  prices: z.array(AdminPlanPriceDto),
+});
+export type AdminPlanVersionDto = z.infer<typeof AdminPlanVersionDto>;
+
+export const AdminPlanDto = z.object({
+  key: PlanDto,
+  name: z.string(),
+  description: z.string(),
+  sortOrder: z.number().int(),
+  offered: z.boolean(),
+  /** Newest first. */
+  versions: z.array(AdminPlanVersionDto),
+});
+export type AdminPlanDto = z.infer<typeof AdminPlanDto>;
+
+export const SavePlanRequest = z.object({
+  key: PlanDto,
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(500).default(''),
+  sortOrder: z.number().int().min(0).max(10_000).default(0),
+  offered: z.boolean().default(true),
+});
+export type SavePlanRequest = z.output<typeof SavePlanRequest>;
+
+/** Checked against PlanEntitlements in @montra/domain too, which refuses unknown features and absurd numbers. */
+export const PlanEntitlementsInput = z.object({
+  businessBooks: z.number().int().min(0),
+  rentalPortfolios: z.number().int().min(0),
+  storageBytes: z.string().regex(/^\d{1,20}$/),
+  familyLogins: z.number().int().min(0).nullable(),
+  aiMonthlyMicroUsd: z
+    .string()
+    .regex(/^\d{1,20}$/)
+    .nullable(),
+  smsMonthly: z.number().int().min(0),
+  features: z.array(PlanFeatureDto),
+});
+export type PlanEntitlementsInput = z.output<typeof PlanEntitlementsInput>;
+
+export const AddPlanVersionRequest = z.object({
+  entitlements: PlanEntitlementsInput,
+  /** When it becomes the plan's current version. Required at least 30 days out when it gives less than the current one. */
+  effectiveFrom: z.iso.datetime().optional(),
+});
+export type AddPlanVersionRequest = z.output<typeof AddPlanVersionRequest>;
+
+export const AddPlanPriceRequest = z.object({
+  provider: z.enum(['stripe']).default('stripe'),
+  interval: z.enum(['month', 'year']),
+  priceRef: z.string().trim().min(1).max(200),
+  amountMinor: z.string().regex(/^\d{1,12}$/),
+  currency: z.string().regex(/^[A-Za-z]{3}$/),
+});
+export type AddPlanPriceRequest = z.output<typeof AddPlanPriceRequest>;
+
+export const MoveSubscribersRequest = z.object({
+  from: Id,
+  to: Id,
+  /** Needed, at least 30 days out, when the new version gives less. Then it applies from each first renewal after it. */
+  after: z.iso.datetime().optional(),
+});
+export type MoveSubscribersRequest = z.output<typeof MoveSubscribersRequest>;
+
+export const MoveSubscribersDto = z.object({ moved: z.number().int(), when: z.enum(['now', 'renewal']) });
+export type MoveSubscribersDto = z.infer<typeof MoveSubscribersDto>;
+
+// ----- Managing accounts (ADR-0049 §4) ------------------------------------------------------------
+
+/** Never for a missed payment: that's a lapse (ADR-0020 §3). A legal hold isn't emailed to the person. */
+export const SuspensionKind = z.enum(['abuse', 'fraud', 'legal_hold']);
+export type SuspensionKind = z.infer<typeof SuspensionKind>;
+
+export const SuspendRequest = z.object({
+  kind: SuspensionKind,
+  reason: z.string().trim().min(3).max(500),
+});
+export type SuspendRequest = z.output<typeof SuspendRequest>;
+
+export const ExtendTrialRequest = z.object({
+  days: z.number().int().min(1).max(30),
+  reason: z.string().trim().min(3).max(500),
+});
+export type ExtendTrialRequest = z.output<typeof ExtendTrialRequest>;
+
+export const CouponRequest = z.object({
+  /** A coupon made in Stripe's dashboard. */
+  coupon: z.string().trim().min(1).max(200),
+  reason: z.string().trim().min(3).max(500),
+});
+export type CouponRequest = z.output<typeof CouponRequest>;
+
+/** Closing on request: it must come from the account's own address, and staff record where it came. */
+export const CloseAccountRequest = z.object({
+  fromEmail: z.email().transform((e) => e.toLowerCase()),
+  channel: z.enum(['email', 'support_request', 'phone', 'letter']),
+  note: z.string().trim().max(500).default(''),
+});
+export type CloseAccountRequest = z.output<typeof CloseAccountRequest>;
+
+// ----- Providers (ADR-0049 §5) --------------------------------------------------------------------
+
+export const PROVIDER_KEYS = [
+  'email',
+  'sms',
+  'payments',
+  'errors',
+  'ai',
+  'storage',
+  'keys',
+  'push',
+  'exchange_rates',
+] as const;
+export const ProviderKeyDto = z.enum(PROVIDER_KEYS);
+export type ProviderKeyDto = z.infer<typeof ProviderKeyDto>;
+
+/** What each detail is, so the console can name it. Values are never secrets. */
+export const PROVIDER_DETAILS = [
+  'mode',
+  'host',
+  'sender',
+  'key_mode',
+  'webhook',
+  'key',
+  'base_url',
+  'failover',
+  'bucket',
+  'region',
+  'endpoint',
+  'key_id',
+  'environment',
+  'oxr',
+  'kinds',
+  'countries',
+] as const;
+
+export const ProviderRowDto = z.object({
+  key: ProviderKeyDto,
+  configured: z.boolean(),
+  mode: z.string(),
+  details: z.array(z.object({ label: z.enum(PROVIDER_DETAILS), value: z.string() })),
+  lastOkAt: z.string().nullable(),
+  lastFailureAt: z.string().nullable(),
+  lastFailure: z.string().nullable(),
+});
+export type ProviderRowDto = z.infer<typeof ProviderRowDto>;
+
+export const SmsKindDto = z.enum(['codes', 'security', 'reminders']);
+
+export const ProviderSettingsDto = z.object({
+  mailFromName: z.string(),
+  mailFromAddress: z.string(),
+  supportEmail: z.string(),
+  smsKinds: z.array(SmsKindDto),
+  /** ISO 3166 country codes texts may go to. */
+  smsCountries: z.array(z.string()),
+});
+export type ProviderSettingsDto = z.infer<typeof ProviderSettingsDto>;
+
+export const ProvidersDto = z.object({ rows: z.array(ProviderRowDto), settings: ProviderSettingsDto });
+export type ProvidersDto = z.infer<typeof ProvidersDto>;
+
+/** Leave a field out to keep it. An empty sender name or address, or support address, means the environment's. */
+export const SaveProviderSettingsRequest = z
+  .object({
+    mailFromName: z
+      .string()
+      .trim()
+      .max(100)
+      .regex(/^[^<>"\r\n]*$/),
+    mailFromAddress: z.union([z.literal(''), z.email()]),
+    supportEmail: z.union([z.literal(''), z.email()]),
+    smsKinds: z.array(SmsKindDto).max(3),
+    smsCountries: z.array(z.string().regex(/^[A-Za-z]{2}$/)).max(250),
+  })
+  .partial();
+export type SaveProviderSettingsRequest = z.output<typeof SaveProviderSettingsRequest>;
+
+export const TestSendDto = z.object({ to: z.string() });
+export type TestSendDto = z.infer<typeof TestSendDto>;

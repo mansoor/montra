@@ -263,10 +263,20 @@ describe('review queue (AI-03/04, PLT-10)', () => {
 
 describe('AI settings helpers (UP-13, AIA-08)', () => {
   it('computes budget use and parses the budget field', () => {
-    const usage = { month: '2026-10', calls: 10, spentUsd: 4, state: 'ok' as const };
+    const usage = {
+      month: '2026-10',
+      calls: 10,
+      spentUsd: 4,
+      state: 'ok' as const,
+      share: null,
+      planAllowance: false,
+    };
     expect(budgetPercent({ monthlyBudgetUsd: 5, usage })).toBe(80);
     expect(budgetPercent({ monthlyBudgetUsd: null, usage })).toBeNull();
     expect(budgetPercent({ monthlyBudgetUsd: 1, usage })).toBe(100);
+    // With a plan's allowance, the server's share is what counts (ADR-0049 §2).
+    const planned = { ...usage, share: 0.7, planAllowance: true };
+    expect(budgetPercent({ monthlyBudgetUsd: null, usage: planned })).toBe(70);
     expect(parseBudget('')).toEqual({ ok: true, value: null });
     expect(parseBudget('$12.50')).toEqual({ ok: true, value: 12.5 });
     expect(parseBudget('abc')).toEqual({ ok: false });

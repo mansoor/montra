@@ -9,6 +9,7 @@ import { Db } from '../db/database.js';
 import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { AUTH_PORT, type AuthPort } from './auth.js';
 import { KratosAuthAdapter } from './kratos.adapter.js';
+import { TextsService } from '../sms/texts.service.js';
 
 const Hook = z.object({
   event: z.enum(['recovery', 'settings', 'identity_deleted', 'password_changed', 'mfa_changed']),
@@ -30,6 +31,7 @@ export class KratosHooksController {
     @Inject(AUTH_PORT) private readonly auth: AuthPort,
     @Inject(Db) private readonly db: Db,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
+    @Inject(TextsService) private readonly texts: TextsService,
   ) {}
 
   @Post('hooks')
@@ -67,6 +69,19 @@ export class KratosHooksController {
           ? templates.passwordChanged({ to, at, url })
           : templates.twoStepChanged({ to, at, url }),
       );
+      // ADR-0049 §6: by text too, when the person turned that on.
+      const { rows: users } = await this.db.run({}, (trx) =>
+        sql<{ id: string | null }>`select app.user_id_for_identity(${identityId}) as id`.execute(trx),
+      );
+      const userId = users[0]?.id;
+      if (userId) {
+        await this.texts.securityAlert(
+          userId,
+          kind === 'password_changed'
+            ? 'your password was changed. If it wasn’t you, reset it now.'
+            : 'your two-step verification changed. If it wasn’t you, reset your password now.',
+        );
+      }
     } catch (err) {
       this.logger.warn(`Could not announce a ${kind}: ${(err as Error).message}`);
     }

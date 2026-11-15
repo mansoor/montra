@@ -26,6 +26,10 @@ export interface AppUserTable {
   updated_at: Generated<Date>;
   deleted_at: Date | null;
   purge_after: Date | null;
+  /** ADR-0049 §6: the number in Kratos's traits, as last seen at sign-in (migration 0055). */
+  phone_e164: string | null;
+  phone_verified: Generated<boolean>;
+  phone_opted_out_at: Date | null;
 }
 
 export interface WorkspaceTable {
@@ -752,6 +756,10 @@ export interface AiUsageTable {
   month: CalendarDateCol;
   calls: Generated<number>;
   cost_micro_usd: Int8Default;
+  /** Built-in AI only, which the service pays for (ADR-0049 §2). */
+  builtin_micro_usd: Int8Default;
+  /** 0, 80 or 100: the share of the month's limit the owners have been told about. */
+  alerted_pct: Generated<number>;
 }
 
 export interface AiCredentialTable {
@@ -1303,6 +1311,9 @@ export interface NotificationPrefTable {
   unsubscribe_token: Generated<string>;
   version: Int8Default;
   updated_at: Generated<Date>;
+  /** ADR-0049 §6: texts, off until the person turns them on (migration 0055). */
+  sms_security: Generated<boolean>;
+  sms_reminders: Generated<boolean>;
 }
 
 // Phase 11: running the service (migration 0021, ADR-0020).
@@ -1320,6 +1331,64 @@ export interface SubscriptionTable {
   grace_until: Date | null;
   cancel_at_period_end: Generated<boolean>;
   updated_at: Generated<Date>;
+  /** ADR-0049: the version of the plan it's on. Null only on rows written before migration 0051 by an old task. */
+  plan_version_id: string | null;
+  /** A move to a version that gives less, from the first renewal on or after a date (migration 0052). */
+  pending_version_id: string | null;
+  pending_from: Date | null;
+}
+
+// Plans as data (migration 0051, ADR-0049 §1).
+
+export interface PlanTable {
+  key: string;
+  name: string;
+  description: Generated<string>;
+  sort_order: Generated<number>;
+  offered: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface PlanVersionTable {
+  id: Generated<string>;
+  plan_key: string;
+  version: number;
+  /** PlanEntitlements in @montra/domain, checked with parseEntitlements. */
+  entitlements: Json<unknown>;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  /** When it becomes the plan's current version (migration 0052). */
+  effective_from: Generated<Date>;
+}
+
+export interface PlanPriceTable {
+  id: Generated<string>;
+  plan_version_id: string;
+  provider: 'stripe' | 'apple' | 'google';
+  billing_interval: 'month' | 'year';
+  price_ref: string;
+  amount_minor: Int8;
+  currency: string;
+  active: Generated<boolean>;
+  created_at: Generated<Date>;
+}
+
+/** A customer told about a plan change that gives them less, once (migration 0052). */
+/** Reminder texts a workspace sent in a month, against its plan's smsMonthly (migration 0055). */
+export interface SmsUsageTable {
+  workspace_id: string;
+  month: string;
+  sent: Generated<number>;
+}
+
+export interface PlanChangeNoticeTable {
+  id: Generated<string>;
+  version_id: string;
+  workspace_id: string;
+  apply_at: Date;
+  sent_at: Date | null;
+  created_at: Generated<Date>;
 }
 
 export interface FeatureFlagTable {
@@ -1629,6 +1698,11 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.storage_mirror_item': StorageMirrorItemTable;
   'app.restore_job': RestoreJobTable;
   'app.subscription': SubscriptionTable;
+  'app.plan': PlanTable;
+  'app.plan_version': PlanVersionTable;
+  'app.plan_price': PlanPriceTable;
+  'app.plan_change_notice': PlanChangeNoticeTable;
+  'app.sms_usage': SmsUsageTable;
   'app.feature_flag': FeatureFlagTable;
   'app.feature_flag_override': FeatureFlagOverrideTable;
   'app.system_notice': SystemNoticeTable;

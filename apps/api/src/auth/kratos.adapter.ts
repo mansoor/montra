@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { sql } from 'kysely';
 import { CONFIG, type AppConfig } from '../config.js';
+import { TextsService } from '../sms/texts.service.js';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
 import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
@@ -17,7 +19,7 @@ interface KratosSession {
   devices?: { user_agent?: string; ip_address?: string; location?: string }[];
   identity: {
     id: string;
-    traits: { email?: string; name?: string | { first?: string; last?: string } };
+    traits: { email?: string; phone?: string; name?: string | { first?: string; last?: string } };
     verifiable_addresses?: { value: string; verified: boolean; via: string }[];
   };
 }
@@ -55,6 +57,7 @@ export class KratosAuthAdapter implements AuthPort {
     @Inject(CONFIG) private readonly config: AppConfig,
     @Inject(Db) private readonly db: Db,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
+    @Optional() @Inject(TextsService) private readonly texts?: TextsService,
   ) {
     this.baseUrl = config.KRATOS_PUBLIC_URL!.replace(/\/$/, '');
   }
@@ -82,6 +85,7 @@ export class KratosAuthAdapter implements AuthPort {
     const name = session.identity.traits.name;
     const displayName = typeof name === 'string' ? name : [name?.first, name?.last].filter(Boolean).join(' ');
     const id = await resolveAppUser(this.db, session.identity.id, email, displayName, verified);
+    await this.syncPhone(id, email, session.identity);
     const user: AuthUser = {
       id,
       identityId: session.identity.id,
@@ -109,6 +113,47 @@ export class KratosAuthAdapter implements AuthPort {
       });
     }
     return user;
+  }
+
+  /**
+   * ADR-0049 §6: the number is Kratos's (a trait, verified by a texted code). The API keeps a copy for texting alerts,
+   * refreshed here. A change is an identity change (ADR-0045): logged, and emailed to the address that signs in.
+   */
+  private async syncPhone(userId: string, email: string, identity: KratosSession['identity']): Promise<void> {
+    const raw = typeof identity.traits.phone === 'string' ? identity.traits.phone.trim() : '';
+    const phone = /^\+[1-9]\d{6,14}$/.test(raw) ? raw : null;
+    const verified = Boolean(
+      phone && identity.verifiable_addresses?.some((a) => a.via === 'sms' && a.value === phone && a.verified),
+    );
+    try {
+      const { rows } = await this.db.run({ userId }, (trx) =>
+        sql<{ previous: string | null; changed: boolean }>`
+          select * from app.sync_user_phone(${userId}::uuid, ${phone}, ${verified})`.execute(trx),
+      );
+      if (!rows[0]?.changed) return;
+      const at = new Date();
+      await this.db.run({ userId }, (trx) =>
+        trx
+          .insertInto('app.security_event')
+          .values({
+            user_id: userId,
+            workspace_id: null,
+            kind: 'phone_changed',
+            detail: JSON.stringify({ added: Boolean(phone && !rows[0]!.previous), removed: !phone }),
+          })
+          .execute(),
+      );
+      await this.mail.send(
+        templates.phoneChanged({
+          to: email,
+          at,
+          now: phone,
+          url: `${this.config.WEB_URL}/settings/security`,
+        }),
+      );
+    } catch (err) {
+      this.logger.warn(`Could not sync a phone number: ${(err as Error).message}`);
+    }
   }
 
   /** When this browser session was last used, from the device list; idle past the limit means it's over. */
@@ -183,6 +228,12 @@ export class KratosAuthAdapter implements AuthPort {
           }),
         )
         .catch((err: Error) => this.logger.warn(`new-device alert failed: ${err.message}`));
+      await this.texts
+        ?.securityAlert(
+          user.id,
+          'a new device signed in to your account. If it wasn’t you, change your password now.',
+        )
+        .catch((err: Error) => this.logger.warn(`new-device text failed: ${err.message}`));
     }
   }
 
@@ -246,6 +297,16 @@ export class KratosAuthAdapter implements AuthPort {
     await this.admin('DELETE', `${base}/sessions`, undefined, [404]);
     this.evictIdentity(identityId);
     this.factors.delete(identityId);
+  }
+
+  /** ADR-0049 §4: an inactive identity can't sign in, and its sessions are ended at once. */
+  async setIdentityActive(identityId: string, active: boolean): Promise<void> {
+    const base = `/admin/identities/${encodeURIComponent(identityId)}`;
+    await this.admin('PATCH', base, [
+      { op: 'replace', path: '/state', value: active ? 'active' : 'inactive' },
+    ]);
+    if (!active) await this.admin('DELETE', `${base}/sessions`, undefined, [404]);
+    this.evictIdentity(identityId);
   }
 
   /** From the identity's credential types: TOTP, a security key or recovery codes count (ADR-0044). */

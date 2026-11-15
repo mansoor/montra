@@ -420,6 +420,10 @@ describe('staff (ADR-0020)', () => {
     'feature_flag_override',
     'system_notice',
     'system_setting',
+    // Plans are the service's price list, read to show them (ADR-0049 §1). Changes go through admin_ functions.
+    'plan',
+    'plan_version',
+    'plan_price',
   ]);
 
   it('can reach no table but their own through the console’s role', async () => {
@@ -444,15 +448,35 @@ describe('staff (ADR-0020)', () => {
       return rows.map((r) => r.proname).sort();
     });
     expect(callable).toEqual([
+      'admin_account_states',
       'admin_account_workspaces',
+      'admin_add_plan_price',
+      'admin_add_plan_version',
       'admin_ai_accuracy',
       'admin_close_support_request',
+      'admin_end_plan_price',
+      'admin_extend_trial',
       'admin_find_accounts',
       'admin_import_failures',
+      'admin_move_subscribers',
+      'admin_notify_free_change',
+      'admin_owner_emails',
+      'admin_plan_subscribers',
+      'admin_provider_status',
+      'admin_remove_staff',
+      'admin_restore',
+      'admin_save_plan',
+      'admin_save_provider_settings',
+      'admin_set_staff',
+      'admin_staff',
       'admin_subscription',
       'admin_support_grant',
       'admin_support_requests',
       'admin_support_screenshot',
+      'admin_suspend',
+      'admin_workspace_plans',
+      'ai_service_spend',
+      'apply_plan_version',
       'apply_subscription',
       'log_support_access',
     ]);
