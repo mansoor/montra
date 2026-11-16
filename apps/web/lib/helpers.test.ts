@@ -76,6 +76,7 @@ describe('view models', () => {
         name: 'Personal',
         functionalCurrency: 'USD',
         lockedThrough: null,
+        color: null,
         access: 'write' as const,
       },
       {
@@ -84,6 +85,7 @@ describe('view models', () => {
         name: 'Studio',
         functionalCurrency: 'USD',
         lockedThrough: null,
+        color: null,
         access: 'write' as const,
       },
     ],

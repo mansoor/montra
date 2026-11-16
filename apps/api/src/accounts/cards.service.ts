@@ -126,6 +126,7 @@ export class CardsService {
       const since = owed - (statementBalance - paidSince);
       out.push({
         accountId: r.id,
+        entityId: r.entity_id,
         name: r.name,
         currency: r.currency,
         ...cycle,

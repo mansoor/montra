@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { BUSINESS_TYPES, LEGACY_BUSINESS_TYPES } from '@montra/domain';
-import { CalendarDateDto, CurrencyCodeDto, Id, InviteRole, MemberRole, MoneyDto } from './common.js';
+import {
+  CalendarDateDto,
+  CurrencyCodeDto,
+  HexColorDto,
+  Id,
+  InviteRole,
+  MemberRole,
+  MoneyDto,
+} from './common.js';
 import { ForeignAmountInput, RateDto } from './fx.js';
 import { SplitInput } from './transactions.js';
 
@@ -115,6 +123,8 @@ export const UpdateEntityRequest = z
     businessType: z.enum([...BUSINESS_TYPES, ...LEGACY_BUSINESS_TYPES]).nullable(),
     fiscalYearStartMonth: z.number().int().min(1).max(12),
     archived: z.boolean(),
+    /** The book's colour on the calendar; null goes back to the palette's. The only change the personal books take. */
+    color: HexColorDto.nullable(),
   })
   .partial();
 export type UpdateEntityRequest = z.output<typeof UpdateEntityRequest>;
@@ -182,10 +192,7 @@ export const CreateFamilyMemberRequest = z.object({
   name: z.string().trim().min(1).max(100),
   relationship: FamilyRelationship,
   birthDate: CalendarDateDto.optional(),
-  color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .optional(),
+  color: HexColorDto.optional(),
   isDependent: z.boolean().optional(),
   linkedUserId: Id.nullable().optional(),
 });

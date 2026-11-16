@@ -32,3 +32,4 @@ export * from './payroll-deposits.js';
 export * from './payroll-year-end.js';
 export * from './leave.js';
 export * from './overtime.js';
+export * from './book-colors.js';

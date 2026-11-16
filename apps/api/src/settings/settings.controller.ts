@@ -110,10 +110,13 @@ export class EntitiesController {
   async update(@Ctx() ctx: RequestContext, @Param('entityId') entityId: string, @Body() body: unknown) {
     requireWorkspaceAdmin(ctx);
     const req = parse(UpdateEntityRequest, body);
+    // The personal books take only a colour (FLOW-05); the rest of them is fixed.
+    const onlyColor = Object.entries(req).every(([k, v]) => k === 'color' || v === undefined);
     await this.db.run(dbCtx(ctx), async (trx) => {
       const res = await trx
         .updateTable('app.entity')
         .set({
+          ...(req.color !== undefined ? { color: req.color === null ? null : req.color.toLowerCase() } : {}),
           ...(req.name !== undefined ? { name: req.name } : {}),
           ...(req.businessType !== undefined ? { business_type: req.businessType } : {}),
           ...(req.fiscalYearStartMonth !== undefined
@@ -123,7 +126,7 @@ export class EntitiesController {
         })
         .where('workspace_id', '=', ctx.workspaceId!)
         .where('id', '=', parse(z.uuid(), entityId))
-        .where('type', '<>', 'personal')
+        .$if(!onlyColor, (q) => q.where('type', '<>', 'personal'))
         .executeTakeFirst();
       if (res.numUpdatedRows === 0n) throw notFound('Entity');
     });
@@ -172,6 +175,7 @@ export const toEntityDto = (e: {
   business_type: string | null;
   fiscal_year_start_month: number;
   archived_at: Date | null;
+  color: string | null;
   locked_through: string | null;
 }) => ({
   id: e.id,
@@ -182,6 +186,7 @@ export const toEntityDto = (e: {
   fiscalYearStartMonth: e.fiscal_year_start_month,
   archived: e.archived_at !== null,
   lockedThrough: e.locked_through,
+  color: e.color,
 });
 
 /** Family members are profiles; an invite can link one to a login (FAM-01, FAM-02, FAM-11, AUTH-16). */
