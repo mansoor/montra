@@ -1,6 +1,6 @@
 /**
- * The Add wheel (ADR-0048): the centre + opens a fan of what can be added, on an arc above the button: a transaction,
- * a receipt, a statement, a bill and a payslip. The + turns into a ×; tapping it, the dimmed screen or Android's back
+ * The Add wheel (ADR-0048): the centre + opens a fan of what can be added, on an arc above the button: a bill, a
+ * transaction, a receipt, a statement and a payslip. The + turns into a ×; tapping it, the dimmed screen or Android's back
  * closes the wheel. Choices the login can't use (AUTH-18) are left out, and the rest spread over the same arc.
  */
 import { useEffect, useRef } from 'react';

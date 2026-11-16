@@ -415,8 +415,10 @@ export class FlowService {
       .$if(!!entityId, (q) => q.where('id', '=', entityId!))
       .execute();
     for (const b of businesses) {
-      // The payment for a tax year falls due up to January of the next one.
-      for (const year of new Set([Number(from.slice(0, 4)) - 1, Number(to.slice(0, 4))])) {
+      // The payment for a tax year falls due up to January of the next one, so look from the year before the
+      // range through its last year: a November-to-January range holds the Q4 date of the year in between.
+      const lastYear = Number(to.slice(0, 4));
+      for (let year = Number(from.slice(0, 4)) - 1; year <= lastYear; year++) {
         // Most views hold no tax date, and the amounts take a scan of the year: look only when there's one to show.
         if (!estimatedTaxPeriods(year).some((p) => inRange(p.due))) continue;
         const estimate = await this.businessReports.taxEstimateIn(trx, ctx, b.id, year);
