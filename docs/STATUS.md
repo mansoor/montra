@@ -1365,6 +1365,21 @@ Phase 11 leftovers:
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.
+- **The calendar by book** (FLOW-05, UP-14, migration 0057), as Google Calendar's calendars:
+  - **Colours**: each book has a colour (`app.entity.color`, `#rrggbb`, in `EntityDto` and `PATCH entities/:id`, which
+    now takes a colour on the personal books too). Unpicked, the clients agree on one from an 8-colour palette by the
+    book's id (`bookColors` in `@montra/domain`, each 3:1 on the light and dark surfaces). Settings → Entities picks one.
+  - **Each item names its book**: `CalendarItemDto.entityId`, filled in by every source in `FlowService.calendarIn`
+    from the queries it already ran (`CardStatementDto.entityId` for cards). The `entityId` query filter, Home's
+    upcoming list and bill alerts are unchanged.
+  - **Hidden books, per person**: `GET`/`PUT calendar/books` (`app.calendar_book_pref`, own row only under RLS; a
+    member may save it). Books the person can't see are dropped; an archived book is left out and comes back hidden.
+    The calendar API still returns every book: the clients filter.
+  - **Web**: with more than one book, a Books list of tick boxes beside the month grid (above it on narrow screens);
+    hidden books' items and totals drop out. Items have a bar in the book's colour (and its name for screen readers),
+    a word for their kind, and green or red amounts. **Phone**: the agenda has book chips with a colour dot, saved
+    through the same endpoint; the choice is cached, so it applies offline (`src/features/calendar-books.ts`). Not
+    run on a device.
 
 ---
 
