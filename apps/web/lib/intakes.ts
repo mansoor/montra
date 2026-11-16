@@ -4,6 +4,16 @@
  */
 import type { IntakeCandidateDto, IntakeDto } from '@montra/schemas';
 
+/** What the Statements screen takes: every statement type the imports read, and photos (ADR-0051 §1). */
+export const STATEMENT_ACCEPT = [
+  ...['csv', 'tsv', 'txt', 'xls', 'xlsx', 'pdf', 'qif', 'ofx', 'qfx', 'jpg', 'jpeg', 'png', 'webp'].map(
+    (e) => `.${e}`,
+  ),
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+].join(',');
+
 export interface TargetOption {
   id: string;
   label: string;
