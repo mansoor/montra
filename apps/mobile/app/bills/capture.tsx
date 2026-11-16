@@ -3,7 +3,8 @@
  * photo. The scan is read once: the provider is found among the budget's bill providers (by the account number's last
  * four digits, else by name), with the amount due and the due date. The person checks them and saves; the bill then
  * shows in upcoming and the forecast with its exact amount, and is marked paid when the payment comes in. A provider
- * that isn't on the budget yet is added here, on the category chosen.
+ * that isn't on the budget yet is added here, on the category chosen. Once a provider has been confirmed three times
+ * its bills are filed without asking (ADR-0051); one not saved here waits in Review.
  */
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
@@ -11,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { money, parseMoney, toDecimalString, type CurrencyCode } from '@montra/domain';
 import type { BillerDto, ScanBillDetectedDto } from '@montra/schemas';
 import { fmtDate, t } from '../../src/i18n';
+import { autoFiledName } from '../../src/features/intake-review';
 import { waitForScan, type CapturedPage } from '../../src/features/scanner';
 import { removePage } from '../../src/receipts/files';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
@@ -84,8 +86,15 @@ export default function BillCapture() {
       for (const p of pages)
         fileIds.push((await api.uploadBillFile(ws, { uri: p.uri, name: p.name, type: p.type })).fileId);
       await Promise.all(pages.filter((p) => p.shot).map((p) => removePage(p.uri)));
-      const scan = await api.createScan(ws, 'bill', fileIds);
+      // Filed straight away when its provider is learned (ADR-0051); otherwise checked here, and kept in Review.
+      const scan = await api.createScan(ws, 'bill', fileIds, { autoFile: true });
       const done = await waitForScan(() => api.getScan(ws, scan.id));
+      const filedFor = autoFiledName(done);
+      if (filedFor !== null) {
+        toast.show(t('mobile.bills.filed_auto', { name: filedFor }));
+        router.replace('/bills');
+        return;
+      }
       const found = done?.status === 'ready' ? done.bill : null;
       setRead({ scanId: done?.status === 'ready' ? scan.id : undefined, found });
       setBillerId(found?.billerId ?? found?.candidates[0]?.billerId ?? null);

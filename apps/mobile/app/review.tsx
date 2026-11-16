@@ -1,7 +1,8 @@
 /**
  * Swipe review (AI-04, 08 §3): a card stack of transactions needing review. Swipe right to accept the suggested
  * category, left (or tap) to choose another — a correction the server learns from. Works offline via the outbox.
- * Buttons offer the same actions for VoiceOver/TalkBack users.
+ * Buttons offer the same actions for VoiceOver/TalkBack users. Statements and bills to file (ADR-0051) come first,
+ * read online.
  */
 import { useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Text, useWindowDimensions, View } from 'react-native';
@@ -14,6 +15,7 @@ import { useAbilities } from '../src/session/SessionProvider';
 import { useLocal, useSync } from '../src/sync/SyncProvider';
 import { confidenceLabel, effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
 import { CategoryPicker } from '../src/ui/CategoryPicker';
+import { IntakeReview } from '../src/ui/IntakeReview';
 import { Body, Button, Card, Screen, Small, Title, useToast } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 
@@ -80,6 +82,7 @@ export default function Review() {
     return (
       <Screen>
         <Title>{t('mobile.tab.review')}</Title>
+        <IntakeReview />
         <Body muted>{t('mobile.review.empty')}</Body>
       </Screen>
     );
@@ -92,6 +95,7 @@ export default function Review() {
   return (
     <Screen scroll={false} testID="review">
       <Title>{t('mobile.tab.review')}</Title>
+      <IntakeReview />
       <Small>
         {t('mobile.review.hint')} {t('mobile.review.remaining', { count: queue.length })}
       </Small>

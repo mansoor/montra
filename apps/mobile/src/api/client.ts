@@ -3,6 +3,7 @@
  * source so it is unit-testable; the sync endpoints themselves go through `FetchTransport` in @montra/sync.
  */
 import type {
+  IntakeDto,
   PasswordPolicyDto,
   FiledBillDto,
   HouseholdBillDto,
@@ -351,8 +352,9 @@ export function createApi(opts: ApiOptions) {
         ...(scanId ? { scanId } : {}),
       }),
     /** ADR-0048: a statement, payslip or bill read before it's filed; the reading suggests where it goes. */
-    createScan: (w: string, kind: ScanDto['kind'], fileIds: string[]) =>
-      request<ScanDto>('POST', `${ws(w)}/scans`, { kind, fileIds }),
+    /** `autoFile` (bills, ADR-0051): filed straight away when the provider is learned, else it waits in Review. */
+    createScan: (w: string, kind: ScanDto['kind'], fileIds: string[], opts: { autoFile?: boolean } = {}) =>
+      request<ScanDto>('POST', `${ws(w)}/scans`, { kind, fileIds, ...opts }),
     getScan: (w: string, id: string) => request<ScanDto>('GET', `${ws(w)}/scans/${id}`),
     getImport: (w: string, id: string) => request<ImportBatchDto>('GET', `${ws(w)}/imports/${id}`),
     importRows: async (w: string, id: string) =>
@@ -568,6 +570,14 @@ export function createApi(opts: ApiOptions) {
         periodEnd?: string | null;
       },
     ) => request<FiledBillDto>('POST', `${ws(w)}/household-bills`, input),
+    // ----- Statements and bills to file (ADR-0051): online only, like scans ---------------------------------------
+    openIntakes: async (w: string) => (await request<{ data: IntakeDto[] }>('GET', `${ws(w)}/intakes`)).data,
+    resolveIntake: (
+      w: string,
+      id: string,
+      input: { targetId: string; commitIfClean?: boolean; amount?: string; dueDate?: string },
+    ) => request<IntakeDto>('POST', `${ws(w)}/intakes/${id}/resolve`, input),
+    dismissIntake: (w: string, id: string) => request<IntakeDto>('POST', `${ws(w)}/intakes/${id}/dismiss`),
     uploadPayslipFile: (w: string, file: UploadFile) =>
       sendFile<ReceiptFileDto>(`${ws(w)}/payslips/files`, file),
     createPayslip: (w: string, input: Partial<CreatePayslipRequest> & { employerId: string }) =>
