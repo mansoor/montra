@@ -1198,6 +1198,12 @@ Phase 11 leftovers:
     has the account or provider to pick (candidates first) and Put aside. The web opens a resolved statement in its
     import preview; the phone imports it only when clean (`commitIfClean`).
   - **Doc-worker:** `doc.extract` reads photos (`fileType: image`) with OCR, and returns `statement.issuer`.
+  - **Web Statements screen** (`/statements`, in the nav next to Receipts and Payslips; not for members): drop any
+    statement or photo with no account picked. It shows the account found to confirm or change, then continues in the
+    existing preview, mapping and commit screens (`/imports/[id]`). Once learned it says "Imported automatically into
+    X" with Undo. The import history is on the same screen (`ImportHistory`, shared with `/imports`, which stays for an
+    account's own history; the nav's Imports entry is gone). The account page's Import statement still imports into
+    that account. e2e: `e2e/statements.spec.ts`.
   - Not yet tried on a device, with real bank files beyond the corpus, or with OCR of a real photo (Tesseract isn't
     installed on the dev machine; the photo path is tested with a stubbed engine).
 - **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14; **done** 2026-11-14: ADR-0049 in
