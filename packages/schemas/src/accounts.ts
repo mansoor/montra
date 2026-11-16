@@ -180,6 +180,8 @@ export type InvestmentPerformanceDto = z.infer<typeof InvestmentPerformanceDto>;
 /** The latest statement of a card or line of credit, and what's still due on it (ADR-0026). Natural amounts: owed is positive. */
 export const CardStatementDto = z.object({
   accountId: z.string(),
+  /** The books the card is in. */
+  entityId: z.string(),
   name: z.string(),
   currency: z.string(),
   lastClose: CalendarDateDto,

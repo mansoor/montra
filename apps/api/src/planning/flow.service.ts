@@ -34,6 +34,7 @@ import {
   type Period,
 } from '@montra/domain';
 import type {
+  CalendarBooksDto,
   CalendarDto,
   CalendarItemDto,
   DashboardDto,
@@ -160,7 +161,16 @@ export class FlowService {
     // Materialized occurrences: scheduled (upcoming or overdue) and posted ones from schedules (paid).
     const txns = await trx
       .selectFrom('app.transaction')
-      .select(['id', 'txn_date', 'status', 'description', 'payee_raw', 'spec', 'recurring_item_id'])
+      .select([
+        'id',
+        'txn_date',
+        'status',
+        'description',
+        'payee_raw',
+        'spec',
+        'recurring_item_id',
+        'primary_entity_id',
+      ])
       .where('workspace_id', '=', ctx.workspaceId)
       .where('deleted_at', 'is', null)
       .where('txn_date', '>=', from)
@@ -182,6 +192,7 @@ export class FlowService {
         currency: leg.currency as Money,
         sourceId: t.recurring_item_id ?? t.id,
         accountId: leg.accountId,
+        entityId: t.primary_entity_id,
         status: t.status === 'scheduled' ? (date < today ? 'overdue' : 'upcoming') : 'paid',
       });
     }
@@ -214,6 +225,7 @@ export class FlowService {
           currency: leg.currency as Money,
           sourceId: r.id,
           accountId: leg.accountId,
+          entityId: r.primary_entity_id,
           status: 'upcoming',
         });
       }
@@ -234,6 +246,7 @@ export class FlowService {
           currency: o.item.currency as Money,
           sourceId: o.item.id,
           accountId: o.item.accountId,
+          entityId: e,
           status: !o.pending.length ? 'paid' : o.date < today ? 'overdue' : 'upcoming',
         });
       }
@@ -253,6 +266,7 @@ export class FlowService {
           currency: money,
           sourceId: l.loanId,
           accountId: l.payingAccountId,
+          entityId: e,
           status: l.date < today ? 'overdue' : 'upcoming',
         });
       }
@@ -264,7 +278,7 @@ export class FlowService {
       .innerJoin('app.ledger_account as a', (j) =>
         j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.ledger_account_id'),
       )
-      .select(['a.id', 'a.name', 'a.currency', 'b.due_date'])
+      .select(['a.id', 'a.entity_id', 'a.name', 'a.currency', 'b.due_date'])
       .where('b.workspace_id', '=', ctx.workspaceId)
       .where('b.due_date', 'is not', null)
       .where('b.due_date', '>=', from)
@@ -291,6 +305,7 @@ export class FlowService {
           currency: a.currency as Money,
           sourceId: a.id,
           accountId: a.id,
+          entityId: a.entity_id,
           status: date < today ? 'overdue' : 'upcoming',
         });
       }
@@ -312,6 +327,7 @@ export class FlowService {
           currency: c.currency as Money,
           sourceId: c.accountId,
           accountId: c.accountId,
+          entityId: c.entityId,
           status: d.date < today ? 'overdue' : 'upcoming',
         });
       }
@@ -323,7 +339,7 @@ export class FlowService {
       .innerJoin('app.entity as e', (j) =>
         j.onRef('e.workspace_id', '=', 'g.workspace_id').onRef('e.id', '=', 'g.entity_id'),
       )
-      .select(['g.id', 'g.name', 'g.due_date', 'g.target_minor', 'e.functional_currency'])
+      .select(['g.id', 'g.entity_id', 'g.name', 'g.due_date', 'g.target_minor', 'e.functional_currency'])
       .where('g.workspace_id', '=', ctx.workspaceId)
       .where('g.archived_at', 'is', null)
       .where('g.due_date', '>=', from)
@@ -339,6 +355,7 @@ export class FlowService {
         currency: g.functional_currency as Money,
         sourceId: g.id,
         accountId: null,
+        entityId: g.entity_id,
         status: 'upcoming',
       });
     }
@@ -354,6 +371,7 @@ export class FlowService {
         currency: i.currency as Money,
         sourceId: i.id,
         accountId: null,
+        entityId: i.entityId,
         status: i.dueDate < today ? 'overdue' : 'upcoming',
       });
     }
@@ -367,6 +385,7 @@ export class FlowService {
         currency: b.currency as Money,
         sourceId: b.id,
         accountId: null,
+        entityId: b.entityId,
         status: b.dueDate < today ? 'overdue' : 'upcoming',
       });
     }
@@ -382,6 +401,7 @@ export class FlowService {
         currency: e.currency as Money,
         sourceId: e.billId ?? e.biller.id,
         accountId: null,
+        entityId: e.biller.entity_id,
         status: e.next.date < today ? 'overdue' : 'upcoming',
         variable: e.estimated,
       });
@@ -414,6 +434,7 @@ export class FlowService {
             currency: estimate.currency,
             sourceId: b.id,
             accountId: null,
+            entityId: b.id,
             status: p.due < today ? 'paid' : 'upcoming',
           });
         }
@@ -433,6 +454,7 @@ export class FlowService {
           currency: money,
           sourceId: x.leaseId,
           accountId: x.accountId,
+          entityId: r.id,
           status: x.late ? 'overdue' : 'upcoming',
         });
       }
@@ -461,6 +483,7 @@ export class FlowService {
           currency: money,
           sourceId: l.id,
           accountId: null,
+          entityId: r.id,
           status: 'upcoming',
         });
       }
@@ -483,12 +506,59 @@ export class FlowService {
           currency: money,
           sourceId: x.id,
           accountId: null,
+          entityId: r.id,
           status: date < today ? 'overdue' : 'upcoming',
         });
       }
     }
     items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.name.localeCompare(b.name)));
     return { from, to, items };
+  }
+
+  // ----- Calendar books (FLOW-05): which books each person's calendar hides -----------------------------------
+
+  /** Only books the person can still see and that aren't archived: any other hidden id is ignored. */
+  async calendarBooks(ctx: Ctx): Promise<CalendarBooksDto> {
+    return this.db.run(ctx, async (trx) => {
+      const row = await trx
+        .selectFrom('app.calendar_book_pref')
+        .select('hidden_entity_ids')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('user_id', '=', ctx.userId)
+        .executeTakeFirst();
+      const hidden = row?.hidden_entity_ids ?? [];
+      if (!hidden.length) return { hiddenEntityIds: [] };
+      const open = new Set(await this.entityIds(trx, ctx));
+      return { hiddenEntityIds: hidden.filter((id) => open.has(id)) };
+    });
+  }
+
+  /** Replaces the person's hidden books. Ids of books they can't see are dropped; archived books keep their choice. */
+  async setCalendarBooks(ctx: Ctx, hiddenEntityIds: string[]): Promise<CalendarBooksDto> {
+    return this.db.run(ctx, async (trx) => {
+      // RLS lists only the books this person may read.
+      const readable = new Set(
+        (
+          await trx
+            .selectFrom('app.entity')
+            .select('id')
+            .where('workspace_id', '=', ctx.workspaceId)
+            .execute()
+        ).map((r) => r.id),
+      );
+      const hidden = [...new Set(hiddenEntityIds)].filter((id) => readable.has(id));
+      await trx
+        .insertInto('app.calendar_book_pref')
+        .values({ workspace_id: ctx.workspaceId, user_id: ctx.userId, hidden_entity_ids: hidden })
+        .onConflict((oc) =>
+          oc
+            .columns(['workspace_id', 'user_id'])
+            .doUpdateSet({ hidden_entity_ids: hidden, updated_at: new Date() }),
+        )
+        .execute();
+      const open = new Set(await this.entityIds(trx, ctx));
+      return { hiddenEntityIds: hidden.filter((id) => open.has(id)) };
+    });
   }
 
   private async entityIds(trx: Trx, ctx: Ctx): Promise<string[]> {

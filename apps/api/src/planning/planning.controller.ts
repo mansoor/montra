@@ -37,6 +37,8 @@ import {
   UpdateExpectedIncomeRequest,
   UpdateGoalRequest,
   UpdatePlanningSettingsRequest,
+  UpdateCalendarBooksRequest,
+  type CalendarBooksDto,
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
@@ -300,6 +302,17 @@ export class PlanningController {
     const today = await this.data.db.run(c, (trx) => this.data.today(trx, c));
     const from = p.from ?? startOfMonth(today);
     return this.flow.calendar(c, from, p.to ?? addDays(from, 41), p.entityId);
+  }
+
+  /** The books this person's calendar hides (FLOW-05): theirs alone, the same on every device. */
+  @Get('calendar/books')
+  calendarBooks(@Ctx() ctx: RequestContext): Promise<CalendarBooksDto> {
+    return this.flow.calendarBooks(dbCtx(ctx));
+  }
+
+  @Put('calendar/books')
+  setCalendarBooks(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<CalendarBooksDto> {
+    return this.flow.setCalendarBooks(dbCtx(ctx), parse(UpdateCalendarBooksRequest, body).hiddenEntityIds);
   }
 
   @Get('net-worth')

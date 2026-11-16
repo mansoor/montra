@@ -21,6 +21,8 @@ export const EntityDto = z.object({
   functionalCurrency: z.string(),
   /** Books are closed through this date (DE-09); null when open. */
   lockedThrough: z.string().nullable(),
+  /** The book's colour on the calendar, `#rrggbb`; null until picked, when clients use `bookColors` (@montra/domain). */
+  color: z.string().nullable(),
   /**
    * What the signed-in login may do in these books (AUTH-18): `read` for a viewer or a read-only grant. Books with no
    * access aren't listed. Clients hide what a read-only book can't take; the server still decides.

@@ -77,6 +77,8 @@ export interface EntityTable {
   business_type: string | null;
   tax_profile: Json<Record<string, unknown>>;
   archived_at: Date | null;
+  /** `#rrggbb`; null lets the clients pick one from a palette by id (migration 0057). */
+  color: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -416,6 +418,14 @@ export interface AccountVisibilityTable {
   user_id: string;
   ledger_account_id: string;
   hidden: Generated<boolean>;
+}
+
+/** Which books a person's calendar hides, per workspace (migration 0057). */
+export interface CalendarBookPrefTable {
+  workspace_id: string;
+  user_id: string;
+  hidden_entity_ids: Generated<string[]>;
+  updated_at: Generated<Date>;
 }
 
 export interface SessionDeviceTable {
@@ -1622,6 +1632,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.recurring_item': RecurringItemTable;
   'app.workspace_key': WorkspaceKeyTable;
   'app.account_visibility': AccountVisibilityTable;
+  'app.calendar_book_pref': CalendarBookPrefTable;
   'app.session_device': SessionDeviceTable;
   'app.email_change_request': EmailChangeRequestTable;
   'app.phone_verification': PhoneVerificationTable;

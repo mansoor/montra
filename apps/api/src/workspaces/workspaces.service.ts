@@ -152,7 +152,7 @@ export class WorkspacesService {
         .leftJoin('app.period_lock as pl', (j) =>
           j.onRef('pl.workspace_id', '=', 'e.workspace_id').onRef('pl.entity_id', '=', 'e.id'),
         )
-        .select(['e.id', 'e.type', 'e.name', 'e.functional_currency', 'pl.locked_through'])
+        .select(['e.id', 'e.type', 'e.name', 'e.functional_currency', 'e.color', 'pl.locked_through'])
         .select(sql<string>`app.entity_access(e.id)`.as('access'))
         .where('e.workspace_id', '=', workspaceId)
         .where('e.archived_at', 'is', null)
@@ -171,6 +171,7 @@ export class WorkspacesService {
           name: e.name,
           functionalCurrency: e.functional_currency,
           lockedThrough: e.locked_through,
+          color: e.color,
           access: e.access === 'write' ? ('write' as const) : ('read' as const),
         })),
       };

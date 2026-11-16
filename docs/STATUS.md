@@ -1277,14 +1277,17 @@ Phase 11 leftovers:
       - Kratos v26.2.0 reorders an identity's verifiable addresses and has no JSON Patch `test`, so the adapter writes
         the whole list back and reads it again. Removing a number also removes the `code` credential, which otherwise
         keeps the old number and stops anyone else adding it. Both checked against Kratos v26.2.0.
+      - The email change (AUTH-11) marks the new address verified the same way, found by `via` and value. It used to
+        patch `verifiable_addresses/0`, which on an account with a number can be the number's address: Kratos then
+        left the new email unverified and took the number's verified mark away. Kratos keeps the recovery address in
+        step with the email trait by itself, so it needs no patch. Checked against Kratos v26.2.0 over 8 accounts × 2
+        changes, with the number listed first on about half.
     - Not done: the Terraform doesn't set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real
       Twilio. US texting needs A2P 10DLC or a verified toll-free number first (launch checklist).
     - Tests: `apps/api/test/texts.test.ts`, confirming a number in `phone.test.ts`, the number's sync and the admin
       calls in `kratos.test.ts`, the limits and the settings refusal in `auth-gateway.test.ts`, and
       `packages/domain/test/phone.test.ts`.
   - **Next for ADR-0049:**
-    - the email change patches `verifiable_addresses/0`, but Kratos reorders addresses: with a number on the account it
-      can write the new email onto the number's address. Fix it as the number's change does;
     - `SMS_MODE` and the Twilio secrets in Terraform;
     - A2P 10DLC (or a verified toll-free number) before the first real text in the US;
     - a first real send through Twilio and a real Stripe checkout by plan.
@@ -1376,6 +1379,21 @@ Phase 11 leftovers:
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.
+- **The calendar by book** (FLOW-05, UP-14, migration 0057), as Google Calendar's calendars:
+  - **Colours**: each book has a colour (`app.entity.color`, `#rrggbb`, in `EntityDto` and `PATCH entities/:id`, which
+    now takes a colour on the personal books too). Unpicked, the clients agree on one from an 8-colour palette by the
+    book's id (`bookColors` in `@montra/domain`, each 3:1 on the light and dark surfaces). Settings → Entities picks one.
+  - **Each item names its book**: `CalendarItemDto.entityId`, filled in by every source in `FlowService.calendarIn`
+    from the queries it already ran (`CardStatementDto.entityId` for cards). The `entityId` query filter, Home's
+    upcoming list and bill alerts are unchanged.
+  - **Hidden books, per person**: `GET`/`PUT calendar/books` (`app.calendar_book_pref`, own row only under RLS; a
+    member may save it). Books the person can't see are dropped; an archived book is left out and comes back hidden.
+    The calendar API still returns every book: the clients filter.
+  - **Web**: with more than one book, a Books list of tick boxes beside the month grid (above it on narrow screens);
+    hidden books' items and totals drop out. Items have a bar in the book's colour (and its name for screen readers),
+    a word for their kind, and green or red amounts. **Phone**: the agenda has book chips with a colour dot, saved
+    through the same endpoint; the choice is cached, so it applies offline (`src/features/calendar-books.ts`). Not
+    run on a device.
 
 ---
 
