@@ -10,6 +10,7 @@ import { Db } from '../db/database.js';
 import { notFound, unprocessable } from '../common/errors.js';
 import { JobQueue } from '../jobs/queue.js';
 import { AiService, aiUnavailableWarning } from '../ai/ai.service.js';
+import { workspaceIssuers } from '../intakes/intakes.service.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -36,7 +37,14 @@ export class ScansService {
         throw unprocessable('scan.statement_pdf', 'A scanned statement is one PDF');
       const scan = await trx
         .insertInto('app.document_scan')
-        .values({ workspace_id: ctx.workspaceId, user_id: ctx.userId, kind: req.kind, file_ids: req.fileIds })
+        .values({
+          workspace_id: ctx.workspaceId,
+          user_id: ctx.userId,
+          kind: req.kind,
+          file_ids: req.fileIds,
+          // Only a bill is filed automatically (ADR-0051 §4).
+          auto_file: req.kind === 'bill' && Boolean(req.autoFile),
+        })
         .returningAll()
         .executeTakeFirstOrThrow();
       const read = { workspaceId: ctx.workspaceId, scanId: scan.id };
@@ -55,6 +63,7 @@ export class ScansService {
             fileName: f.file_name,
             mime: f.mime,
             fileType: 'pdf',
+            issuers: await workspaceIssuers(trx, ctx.workspaceId),
           },
           then: { queue: 'import', type: 'scan.read', payload: read },
         });

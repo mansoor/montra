@@ -281,7 +281,7 @@
   ],
   "IMP-01": [
     "done",
-    "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF, QIF and OFX/QFX (ADR-0030); mobile in P4"
+    "web drag-and-drop, multi-file; CSV/TSV/XLS/XLSX/PDF, QIF and OFX/QFX (ADR-0030); mobile in P4; a statement or photo uploaded without an account finds its account (printed or file-name digits, issuer, OFX account id, profile) and is imported automatically once learned and clean (ADR-0051)"
   ],
   "IMP-03": [
     "done",
@@ -289,7 +289,7 @@
   ],
   "IMP-04": [
     "done",
-    "profiles by fingerprint per account; a profile's choice of account in a multi-account file applies only to the account it was saved for"
+    "profiles by fingerprint per account; a profile's choice of account in a multi-account file applies only to the account it was saved for; a profile also suggests the account of a file uploaded without one (ADR-0051)"
   ],
   "IMP-05": [
     "done",
@@ -389,7 +389,7 @@
   ],
   "AI-03": [
     "done",
-    "threshold on calibrated confidence; auto-apply vs review queue"
+    "threshold on calibrated confidence; auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
   ],
   "AI-04": [
     "done",

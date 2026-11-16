@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import type { BillerDto, FamilyMemberDto, HouseholdBillDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { AddBill } from './add-bill';
 
 const CADENCES = ['monthly', 'bimonthly', 'quarterly', 'semiannual', 'yearly'] as const;
 
@@ -20,14 +21,17 @@ export function BillersManager({
   billers,
   members,
   bills = [],
+  addBill,
 }: {
   workspaceId: string;
   /** The budget's spending categories, by group. */
   categories: { id: string; name: string; group: string }[];
   billers: BillerDto[];
   members: FamilyMemberDto[];
-  /** Bills filed for these providers (scanned on the phone, or typed in). */
+  /** Bills filed for these providers (scanned on the phone, uploaded or typed in on the web). */
   bills?: HouseholdBillDto[];
+  /** "Add a bill", for logins that can write these books; absent otherwise. */
+  addBill?: Omit<ComponentProps<typeof AddBill>, 'workspaceId' | 'categories'>;
 }) {
   const { t } = useI18n();
   const { run, busy, message } = useAction();
@@ -131,47 +135,54 @@ export function BillersManager({
         )}
       </section>
 
-      {bills.length > 0 && (
+      {(bills.length > 0 || addBill) && (
         <section className="card-flush" aria-label={t('billers.bills')}>
-          <h2 className="border-b border-line px-4 py-2.5 text-base font-semibold">{t('billers.bills')}</h2>
-          <table className="tbl" data-testid="household-bills">
-            <thead>
-              <tr>
-                <th scope="col" className="px-4 py-2">
-                  {t('billers.name')}
-                </th>
-                <th scope="col" className="px-2 py-2">
-                  {t('billers.due_date')}
-                </th>
-                <th scope="col" className="px-2 py-2 text-right">
-                  {t('billers.amount')}
-                </th>
-                <th scope="col" className="px-2 py-2">
-                  {t('billers.status')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {bills.map((b) => (
-                <tr key={b.id}>
-                  <td className="px-4 py-2 font-medium">{b.billerName}</td>
-                  <td className="px-2 py-2">
-                    <DateText date={b.dueDate} />
-                  </td>
-                  <td className="px-2 py-2 text-right">
-                    <Money amount={b.amount} currency={b.currency} />
-                  </td>
-                  <td className="px-2 py-2">
-                    <span
-                      className={`chip ${b.status === 'overdue' ? 'chip-bad' : b.status === 'paid' ? 'chip-good' : 'chip-muted'}`}
-                    >
-                      {t(`billers.status_${b.status}`)}
-                    </span>
-                  </td>
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line px-4 py-2.5">
+            <h2 className="text-base font-semibold">{t('billers.bills')}</h2>
+            {addBill && <AddBill workspaceId={workspaceId} categories={categories} {...addBill} />}
+          </div>
+          {bills.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-muted">{t('billers.bills_empty')}</p>
+          ) : (
+            <table className="tbl" data-testid="household-bills">
+              <thead>
+                <tr>
+                  <th scope="col" className="px-4 py-2">
+                    {t('billers.name')}
+                  </th>
+                  <th scope="col" className="px-2 py-2">
+                    {t('billers.due_date')}
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right">
+                    {t('billers.amount')}
+                  </th>
+                  <th scope="col" className="px-2 py-2">
+                    {t('billers.status')}
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {bills.map((b) => (
+                  <tr key={b.id}>
+                    <td className="px-4 py-2 font-medium">{b.billerName}</td>
+                    <td className="px-2 py-2">
+                      <DateText date={b.dueDate} />
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      <Money amount={b.amount} currency={b.currency} />
+                    </td>
+                    <td className="px-2 py-2">
+                      <span
+                        className={`chip ${b.status === 'overdue' ? 'chip-bad' : b.status === 'paid' ? 'chip-good' : 'chip-muted'}`}
+                      >
+                        {t(`billers.status_${b.status}`)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
 

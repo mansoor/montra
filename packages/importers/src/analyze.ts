@@ -101,19 +101,31 @@ export function pickSheet(sheets: readonly Sheet[]): Sheet {
   return [...sheets].sort((a, b) => score(b) - score(a))[0]!;
 }
 
-export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override?: ColumnMapping): Analysis {
-  const sheet = override?.sheet
-    ? (sheets.find((s) => s.name === override.sheet) ?? pickSheet(sheets))
-    : pickSheet(sheets);
+/** A sheet's header and its fingerprint, as the import profile is keyed (IMP-04). */
+function shape(sheet: Sheet, fileType: FileType) {
   const { headerRow, dataStart } = findHeaderRow(sheet.rows);
   const header = headerRow === null ? null : sheet.rows[headerRow]!;
   const width = Math.max(0, ...sheet.rows.slice(0, 50).map((r) => r.length));
   const fp = fingerprint(
-    opts.fileType,
+    fileType,
     header,
     header?.length ?? width,
     headerRow === null ? sheet.rows[dataStart] : undefined,
   );
+  return { header, fingerprint: fp };
+}
+
+/** The fingerprint `analyze` gives a file, without parsing it: what finds a saved profile before the account is known. */
+export function sheetFingerprint(sheets: readonly Sheet[], fileType: FileType): string | null {
+  if (sheets.length === 0) return null;
+  return shape(pickSheet(sheets), fileType).fingerprint;
+}
+
+export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override?: ColumnMapping): Analysis {
+  const sheet = override?.sheet
+    ? (sheets.find((s) => s.name === override.sheet) ?? pickSheet(sheets))
+    : pickSheet(sheets);
+  const { header, fingerprint: fp } = shape(sheet, opts.fileType);
 
   let proposal: Analysis['proposal'];
   if (override) {

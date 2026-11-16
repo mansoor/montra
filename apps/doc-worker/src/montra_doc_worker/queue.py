@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 from .errors import PermanentJobError, TransientJobError
 from .extract_pdf import extract_pdf
 from .extract_xls import extract_xls
+from .ocr import ocr_image
 from .ocr_receipt import ReceiptTextResult, ocr_receipt
 from .result import GridResult, OcrTextResult, check_magic
 from .storage import Storage
@@ -38,9 +39,16 @@ def handle_doc_extract(payload: dict[str, Any], storage: Storage) -> GridResult 
     file_type = payload.get("fileType")
     if not isinstance(key, str) or not isinstance(file_type, str):
         raise PermanentJobError("doc.bad_payload", "storageKey and fileType are required")
+    raw = payload.get("issuers")
+    # The workspace's institutions, to say which one a statement names (ADR-0051).
+    issuers = [i for i in raw if isinstance(i, str)][:200] if isinstance(raw, list) else []
     data = storage.read(key)
     kind = check_magic(data, file_type)
-    return extract_xls(data) if kind == "xls" else extract_pdf(data)
+    if kind == "xls":
+        return extract_xls(data)
+    if kind == "image":
+        return ocr_image(data, issuers)
+    return extract_pdf(data, issuers)
 
 
 def handle_receipt_ocr(payload: dict[str, Any], storage: Storage) -> ReceiptTextResult:

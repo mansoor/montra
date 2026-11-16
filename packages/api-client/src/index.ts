@@ -82,6 +82,11 @@ import type {
   UpdateBillerRequest,
   BillerDto,
   HouseholdBillDto,
+  CreateHouseholdBillRequest,
+  FiledBillDto,
+  CreateScanRequest,
+  ScanBillDetectedDto,
+  ScanDto,
   DashboardDto,
   DraftBudgetDto,
   DraftBudgetRequest,
@@ -412,6 +417,12 @@ import type {
   SetExpenseDetailRequest,
   UpdateAssetRequest,
 } from '@montra/schemas';
+import type { IntakeDto, ListIntakesQuery, ResolveIntakeRequest } from '@montra/schemas';
+
+// ----- Statements and bills to file (ADR-0051) -----
+export type ListIntakesInput = z.input<typeof ListIntakesQuery>;
+export type ResolveIntakeInput = z.input<typeof ResolveIntakeRequest>;
+export type { IntakeDto };
 
 // ----- Payroll (PRL-01..05, ADR-0034) -----
 export type CreatePersonInput = z.input<typeof CreatePersonRequest>;
@@ -761,6 +772,8 @@ export type UpdateGoalInput = z.input<typeof UpdateGoalRequest>;
 export type CreateExpectedIncomeInput = z.input<typeof CreateExpectedIncomeRequest>;
 export type CreateBillerInput = z.input<typeof CreateBillerRequest>;
 export type UpdateBillerInput = z.input<typeof UpdateBillerRequest>;
+export type CreateHouseholdBillInput = z.input<typeof CreateHouseholdBillRequest>;
+export type CreateScanInput = z.input<typeof CreateScanRequest>;
 export type UpdateExpectedIncomeInput = z.input<typeof UpdateExpectedIncomeRequest>;
 export type AcceptRecommendationInput = z.input<typeof AcceptRecommendationRequest>;
 export type UpdatePlanningSettingsInput = z.input<typeof UpdatePlanningSettingsRequest>;
@@ -1498,6 +1511,29 @@ export class ApiClient {
   /** Undoes a committed import within 30 days (202); the job result is an UndoResultDto. */
   undoImport(workspaceId: string, id: string) {
     return this.request<ImportBatchDto>('POST', this.ws(workspaceId, `/imports/${enc(id)}/undo`));
+  }
+  /** A statement with no account (ADR-0051): any statement file or a photo; it's read and matched (202). */
+  uploadStatement(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<IntakeDto>('POST', this.ws(workspaceId, '/intakes/files'), form);
+  }
+  /** Statements and bills waiting in Review (`open`, the default) or everything from the last 30 days (`recent`). */
+  listIntakes(workspaceId: string, opts: ListIntakesInput = {}) {
+    return this.request<{ data: IntakeDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/intakes${query({ ...opts })}`),
+    ).then((r) => r.data);
+  }
+  getIntake(workspaceId: string, id: string) {
+    return this.request<IntakeDto>('GET', this.ws(workspaceId, `/intakes/${enc(id)}`));
+  }
+  /** Picks the account or biller and finishes; the match memory learns from it. */
+  resolveIntake(workspaceId: string, id: string, input: ResolveIntakeInput) {
+    return this.request<IntakeDto>('POST', this.ws(workspaceId, `/intakes/${enc(id)}/resolve`), input);
+  }
+  dismissIntake(workspaceId: string, id: string) {
+    return this.request<IntakeDto>('POST', this.ws(workspaceId, `/intakes/${enc(id)}/dismiss`));
   }
   getJob(workspaceId: string, jobId: string) {
     return this.request<JobDto>('GET', this.ws(workspaceId, `/jobs/${enc(jobId)}`));
@@ -2610,6 +2646,26 @@ export class ApiClient {
       this.ws(workspaceId, `/household-bills${query({ ...opts })}`),
     ).then((r) => r.data);
   }
+  /** ADR-0048 §4: one page of a bill to scan (PDF, JPEG, PNG, WebP); the API sniffs the type. */
+  uploadHouseholdBillFile(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<ReceiptFileDto>('POST', this.ws(workspaceId, '/household-bills/files'), form);
+  }
+  /**
+   * ADR-0048 §4: files a bill for a provider, from a scan (`scanId`) or typed in. A provider on a business's books
+   * makes that business's vendor bill; the answer says which.
+   */
+  createHouseholdBill(workspaceId: string, input: CreateHouseholdBillInput) {
+    return this.request<FiledBillDto>('POST', this.ws(workspaceId, '/household-bills'), input);
+  }
+  /** ADR-0048 §3: a statement, payslip or bill to read before it's filed. Poll `getScan` until it isn't `reading`. */
+  createScan(workspaceId: string, input: CreateScanInput) {
+    return this.request<ScanDto>('POST', this.ws(workspaceId, '/scans'), input);
+  }
+  getScan(workspaceId: string, id: string) {
+    return this.request<ScanDto>('GET', this.ws(workspaceId, `/scans/${enc(id)}`));
+  }
   /** ADR-0048 §4: the providers that send a budget's bills, with each one's next bill. */
   listBillers(workspaceId: string, entityId?: string) {
     return this.request<{ data: BillerDto[] }>(
@@ -3326,6 +3382,9 @@ export type {
   ExpectedIncomeDto,
   BillerDto,
   HouseholdBillDto,
+  FiledBillDto,
+  ScanBillDetectedDto,
+  ScanDto,
   DashboardChartsDto,
   SetCategoryBudgetDto,
   SetCategoryBudgetRequest,

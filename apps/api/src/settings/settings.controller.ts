@@ -9,6 +9,7 @@ import {
   type FamilyMemberDto,
   type MeDto,
 } from '@montra/schemas';
+import { sql } from 'kysely';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { Db } from '../db/database.js';
@@ -144,7 +145,9 @@ export class EntitiesController {
         .selectAll('e')
         .select('pl.locked_through')
         .where('e.workspace_id', '=', ctx.workspaceId!)
+        .orderBy(sql`case when e.type = 'personal' then 0 else 1 end`)
         .orderBy('e.created_at')
+        .orderBy('e.id')
         .execute(),
     );
     return { data: rows.map(toEntityDto) };

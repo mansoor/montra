@@ -55,6 +55,7 @@ def test_ruled_table_pdf() -> None:
         "periodEnd": "2026-10-31",
         "accountLast4": "1234",
         "currency": "USD",
+        "issuer": None,
     }
     assert result["pages"] == 1 and result["textLayer"] is True
 

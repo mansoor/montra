@@ -206,6 +206,14 @@ dedupe/match ──▶ categorize (pipeline §5) ──▶ PREVIEW ──(user c
    `transaction_source`. Rows edited since the import are listed for confirmation
    first. Protected rows are kept and reported, so a partial undo is always explicit.
 
+**A statement without an account** ([ADR-0051](adr/0051-statement-and-bill-matching.md)): before step 2, an intake
+reads the file once and finds its account from its most specific signal: the last four digits printed (PDF, scan,
+photo), the issuer it names, the OFX `ACCTID` and `BANKID`, or for spreadsheets the digits in the file name, else the
+header fingerprint with the file-name pattern; a saved profile's account is also a candidate. The match memory counts
+confirmations per signal; after 3 in a row the account is picked automatically, and the import is committed when it is
+clean (step 3 needed no mapping, step 5 found no probable duplicates, no rows failed, step 6 didn't fail, and something
+is new). Anything else waits in Review. Undoing an automatic import resets the count.
+
 **Two imported legs of one transfer** (TXN-04): when the checking file shows "AMEX
 PAYMENT −1,200" and the card file later shows "PAYMENT THANK YOU +1,200", step 3 of the
 pipeline pairs them (keyword + amount ⇒ 0.95). The second leg does not create a

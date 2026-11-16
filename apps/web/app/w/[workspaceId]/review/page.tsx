@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { load, serverApi } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
+import { DocumentQueue } from '@/components/review/document-queue';
 import { ReviewQueue } from '@/components/review/review-queue';
 
 export const metadata: Metadata = { title: 'Review' };
@@ -32,6 +33,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ workspa
         <h1 className="page-title">{t('review.title')}</h1>
         <p className="text-sm text-muted">{t('review.intro')}</p>
       </div>
+      <DocumentQueue workspaceId={workspace.id} role={workspace.role} accounts={accounts} />
       <ReviewQueue
         workspace={workspace}
         accounts={accounts}
