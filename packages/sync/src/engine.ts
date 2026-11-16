@@ -50,6 +50,18 @@ export const backoffMs = (attempts: number): number => Math.min(2 ** attempts * 
 const isAuthError = (e: unknown) => e instanceof TransportError && (e.status === 401 || e.status === 403);
 const isRetryable = (e: unknown) => !(e instanceof TransportError) || e.retryable || isAuthError(e);
 
+/**
+ * Refusals no retry can get past (ADR-0049 §4, BAK-09): the account is suspended, the workspace's owner is, or the
+ * account is being deleted. Only staff or the person can change that, so the engine stops until told to reopen.
+ */
+export const CLOSED_CODES: ReadonlySet<string> = new Set([
+  'account.suspended',
+  'workspace.suspended',
+  'account.deleting',
+]);
+const closedBy = (e: unknown): TransportError | null =>
+  e instanceof TransportError && e.status === 403 && CLOSED_CODES.has(e.code) ? e : null;
+
 export class SyncEngine implements SyncEngineApi {
   private readonly store: SyncEngineOptions['store'];
   private readonly transport: SyncEngineOptions['transport'];
@@ -58,6 +70,8 @@ export class SyncEngine implements SyncEngineApi {
   private readonly newId: () => string;
   private readonly onEvent: (e: SyncEvent) => void;
   private online = true;
+  /** Set by a refusal in `CLOSED_CODES`: nothing is sent until `reopen()`. */
+  private closed: string | null = null;
   private running: Promise<void> | null = null;
   private rerun = false;
 
@@ -107,7 +121,7 @@ export class SyncEngine implements SyncEngineApi {
   }
 
   sync(): Promise<void> {
-    if (!this.online) return Promise.resolve();
+    if (!this.online || this.closed) return Promise.resolve();
     if (this.running) {
       this.rerun = true;
       return this.running;
@@ -118,16 +132,26 @@ export class SyncEngine implements SyncEngineApi {
         this.rerun = false;
         try {
           await this.pushOutbox();
-          if (this.online) await this.pullChanges();
+          if (this.online && !this.closed) await this.pullChanges();
         } catch (e) {
-          this.emit({ type: 'error', error: e as Error });
+          if (!this.close(e)) this.emit({ type: 'error', error: e as Error });
         }
-      } while (this.rerun && this.online);
+      } while (this.rerun && this.online && !this.closed);
     })().finally(() => {
       this.running = null;
       void this.emitState();
     });
     return this.running;
+  }
+
+  /** What closed the engine (`account.suspended`, `workspace.suspended`, `account.deleting`), or null. */
+  get closedBy(): string | null {
+    return this.closed;
+  }
+
+  /** After the refusal may have been lifted: the next `sync()` tries again. The outbox was kept as it was. */
+  reopen(): void {
+    this.closed = null;
   }
 
   setOnline(online: boolean): void {
@@ -325,7 +349,9 @@ export class SyncEngine implements SyncEngineApi {
       } catch (e) {
         await this.store.transaction(async () => {
           for (const o of ready) {
-            if (isRetryable(e)) {
+            // Closed: the ops wait as they were, with no attempt counted, until the engine is reopened.
+            if (closedBy(e)) await this.store.updateOutbox(o.op.opId, { status: 'pending' });
+            else if (isRetryable(e)) {
               const attempts = o.attempts + 1;
               await this.store.updateOutbox(o.op.opId, {
                 status: 'pending',
@@ -341,6 +367,7 @@ export class SyncEngine implements SyncEngineApi {
             }
           }
         });
+        if (this.close(e)) break;
         this.emit({ type: 'error', error: e as Error });
         if (isRetryable(e)) break;
         continue;
@@ -496,10 +523,20 @@ export class SyncEngine implements SyncEngineApi {
     return this.now().toISOString();
   }
 
+  /** Stops the engine on a refusal in `CLOSED_CODES` and says so. False for any other failure. */
+  private close(e: unknown): boolean {
+    const err = closedBy(e);
+    if (!err) return false;
+    const first = this.closed === null;
+    this.closed = err.code;
+    if (first) this.emit({ type: 'closed', code: err.code, message: err.message });
+    return true;
+  }
+
   /** Background sync after a local write; failures surface as events, never as rejections. */
   private kick(): void {
     void this.emitState();
-    if (!this.online) return;
+    if (!this.online || this.closed) return;
     this.sync().catch((e: unknown) => this.emit({ type: 'error', error: e as Error }));
   }
 

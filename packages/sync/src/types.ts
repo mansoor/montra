@@ -139,7 +139,9 @@ export type SyncEvent =
   | { type: 'pulled'; transactions: number; removed: number }
   | { type: 'pushed'; applied: number; merged: number; rejected: number }
   | { type: 'conflict'; notice: ConflictNotice }
-  | { type: 'error'; error: Error };
+  | { type: 'error'; error: Error }
+  /** The server refused the account or workspace (`CLOSED_CODES`); the engine sends nothing until reopened. */
+  | { type: 'closed'; code: string; message: string };
 
 export interface SyncState {
   online: boolean;
@@ -169,6 +171,8 @@ export interface SyncEngineApi {
   /** Push the outbox, then pull changes since the last seq. Safe to call often; concurrent calls coalesce. */
   sync(): Promise<void>;
   setOnline(online: boolean): void;
+  /** After a closing refusal (a `closed` event) may have been lifted: lets `sync()` try again. */
+  reopen(): void;
   state(): Promise<SyncState>;
 
   /** Optimistic local writes; each enqueues one outbox op. */

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { calendarDate } from '@montra/domain';
 import type { SyncPullResponse } from '@montra/schemas';
-import { SyncEngine, MemoryStore, backoffMs, type SyncEvent, type SyncTransport } from '../src/index.js';
+import {
+  SyncEngine,
+  MemoryStore,
+  TransportError,
+  backoffMs,
+  type SyncEvent,
+  type SyncTransport,
+} from '../src/index.js';
 import { ACCOUNT, CATEGORIES, FakeClock, FakeServer, idGen, makeDto } from './fake-server.js';
 
 const D = calendarDate('2026-10-30');
@@ -245,6 +252,83 @@ describe('outbox', () => {
     expect(server.pushCalls).toBe(2);
     expect(await store.outbox()).toHaveLength(0);
     expect(backoffMs(20)).toBe(5 * 60_000);
+  });
+
+  it('stops on a closed account or workspace, keeps the outbox as it was, and resumes once reopened', async () => {
+    const { engine, store, server, events } = setup();
+    await engine.bootstrap();
+    await offline(engine, () =>
+      engine.createTransaction({ date: D, accountId: ACCOUNT, amount: usd('-100') }),
+    );
+    const realPush = server.push.bind(server);
+    const realPull = server.pull.bind(server);
+    let refusal: string | null = 'workspace.suspended';
+    const refuse = () => new TransportError(403, refusal!, 'This workspace is closed for now.', false);
+    server.push = async (req) => {
+      if (refusal) {
+        server.pushCalls++;
+        throw refuse();
+      }
+      return realPush(req);
+    };
+    server.pull = async (params) => {
+      if (refusal) {
+        server.pullCalls++;
+        throw refuse();
+      }
+      return realPull(params);
+    };
+    const pulls = server.pullCalls;
+
+    await engine.sync();
+    expect(server.pushCalls).toBe(1);
+    expect(server.pullCalls).toBe(pulls); // stopped before the pull
+    expect(engine.closedBy).toBe('workspace.suspended');
+    expect(events.filter((e) => e.type === 'closed')).toEqual([
+      { type: 'closed', code: 'workspace.suspended', message: 'This workspace is closed for now.' },
+    ]);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    // No attempt counted, no back-off, not a draft: it goes as it is once the workspace opens again.
+    const [item] = await store.outbox();
+    expect(item).toMatchObject({ status: 'pending', attempts: 0 });
+    expect(item!.nextAttemptAt ?? null).toBeNull();
+
+    // Further syncs and local writes send nothing.
+    await engine.sync();
+    await engine.createTransaction({ date: D, accountId: ACCOUNT, amount: usd('-5') });
+    await engine.sync();
+    expect(server.pushCalls).toBe(1);
+
+    refusal = null;
+    engine.reopen();
+    await engine.sync();
+    expect(engine.closedBy).toBeNull();
+    expect(await store.outbox()).toHaveLength(0);
+    expect(server.count()).toBe(2);
+  });
+
+  it('a refusal on the pull closes it too, and other 403s still back off', async () => {
+    const { engine, server, events } = setup();
+    await engine.bootstrap();
+    server.pull = async () => {
+      server.pullCalls++;
+      throw new TransportError(403, 'account.deleting', 'This account is being deleted.', false);
+    };
+    await engine.sync();
+    expect(engine.closedBy).toBe('account.deleting');
+    const pulls = server.pullCalls;
+    await engine.sync();
+    expect(server.pullCalls).toBe(pulls);
+    expect(events.filter((e) => e.type === 'closed')).toHaveLength(1);
+
+    const other = setup();
+    await other.engine.bootstrap();
+    other.server.pull = async () => {
+      throw new TransportError(403, 'forbidden', 'No', false);
+    };
+    await other.engine.sync();
+    expect(other.engine.closedBy).toBeNull();
+    expect(other.events.some((e) => e.type === 'error')).toBe(true);
   });
 
   it('deleting a create that was never pushed never reaches the server', async () => {
