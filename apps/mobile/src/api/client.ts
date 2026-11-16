@@ -16,6 +16,7 @@ import type {
   ReimbursementDto,
   TransactionDto,
   BudgetPeriodDto,
+  CalendarBooksDto,
   CalendarDto,
   DashboardChartsDto,
   SetCategoryBudgetDto,
@@ -323,6 +324,10 @@ export function createApi(opts: ApiOptions) {
     forecast: (w: string, days: number) => request<ForecastDto>('GET', `${ws(w)}/flow/forecast?days=${days}`),
     calendar: (w: string, from: string, to: string) =>
       request<CalendarDto>('GET', `${ws(w)}/calendar?from=${from}&to=${to}`),
+    /** The books this person's calendar hides (FLOW-05), the same as on the web. */
+    calendarBooks: (w: string) => request<CalendarBooksDto>('GET', `${ws(w)}/calendar/books`),
+    setCalendarBooks: (w: string, hiddenEntityIds: string[]) =>
+      request<CalendarBooksDto>('PUT', `${ws(w)}/calendar/books`, { hiddenEntityIds }),
     netWorth: (w: string, months = 12) => request<NetWorthDto>('GET', `${ws(w)}/net-worth?months=${months}`),
     recommendations: async (w: string) =>
       (await request<{ data: RecommendationDto[] }>('GET', `${ws(w)}/recommendations?status=open`)).data,

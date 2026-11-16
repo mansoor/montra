@@ -3,6 +3,9 @@ import { isCalendarDate, isCurrencyCode, type CalendarDate, type CurrencyCode } 
 
 export const Id = z.uuid();
 
+/** A colour as `#rrggbb`: a family member's, a book's. */
+export const HexColorDto = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
 export const CurrencyCodeDto = z
   .string()
   .length(3)
