@@ -54,6 +54,11 @@ export interface AuthPort {
   hasSecondFactor(identityId: string): Promise<boolean | null>;
   /** ADR-0049 §4: suspending stops sign-in and ends every session; restoring lets them sign in again. */
   setIdentityActive(identityId: string, active: boolean): Promise<void>;
+  /**
+   * ADR-0049 §6: puts a number the API has confirmed by a texted code on the identity, already verified, or removes
+   * the number (null). Kratos texts nothing for an admin change.
+   */
+  setPhone(identityId: string, phone: string | null): Promise<void>;
 }
 
 /** The roles that must use two-step verification under a workspace's `standard` policy (ADR-0044). */
@@ -144,6 +149,8 @@ export class DevAuthAdapter implements AuthPort {
   async removeSecondFactors(): Promise<void> {}
 
   async setIdentityActive(): Promise<void> {}
+
+  async setPhone(): Promise<void> {}
 
   async hasSecondFactor(): Promise<boolean> {
     return true;

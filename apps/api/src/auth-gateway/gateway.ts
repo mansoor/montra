@@ -45,6 +45,13 @@ const UI_PATH: Record<FlowKind, string> = {
 export const TOO_MANY_ATTEMPTS_ID = 4290001;
 /** Shown when a new password doesn't meet the policy (ADR-0043). */
 export const WEAK_PASSWORD_ID = 4000901;
+/**
+ * ADR-0049 §6: a number is changed through the API, which texts it a code; Kratos's own texted code can't be entered
+ * (its settings flow never names the verification flow). So a settings save that would change it is turned away.
+ */
+export const PHONE_IN_APP_ID = 4000902;
+const PHONE_IN_APP_TEXT =
+  'Change your mobile number in its own section of your security settings, where we text it a code to confirm it.';
 
 export interface Check {
   rule: Rule;
@@ -169,11 +176,9 @@ export function attemptOf(
     values.map((v) => v?.trim().replace(/[\s().-]/g, '')).find((v) => v && /^\+[1-9]\d{6,14}$/.test(v)) ??
     null;
 
-  // Settings: saving a number texts it a code to verify it. Nothing else in settings is limited here.
-  if (kind === 'settings') {
-    const phone = method === 'profile' ? phoneIn(fields['traits.phone']) : null;
-    return phone ? texted(phone) : null;
-  }
+  // Settings: nothing is limited here. A number isn't changed in Kratos's settings (`phoneChangeOf`), so nothing in
+  // them texts.
+  if (kind === 'settings') return null;
 
   const emailed = (): Attempt | null => {
     if (fields.code) {
@@ -234,6 +239,31 @@ export function passwordChangeOf(req: {
     password: fields.password,
     email: fields['traits.email'] ?? null,
     name: fields['traits.name'] ?? null,
+  };
+}
+
+/**
+ * A settings profile save that carries a number (`traits.phone`), with the number as sent (spaces dropped; empty means
+ * none). The handler turns it away unless it's the number the identity already has. Null for anything else.
+ */
+export function phoneChangeOf(req: {
+  method: string;
+  url: string;
+  headers: FastifyRequest['headers'];
+  body?: Buffer;
+}): { flowId: string | null; json: boolean; phone: string | null } | null {
+  if (req.method !== 'POST') return null;
+  const [path, query = ''] = req.url.split('?', 2) as [string, string?];
+  if (SUBMIT.exec(path)?.[1] !== 'settings') return null;
+  const contentType = header(req.headers, 'content-type');
+  const fields = parseFields(contentType, req.body);
+  if (fields.method !== 'profile' || !('traits.phone' in fields)) return null;
+  return {
+    flowId: new URLSearchParams(query).get('flow'),
+    json:
+      Boolean(contentType?.includes('application/json')) ||
+      Boolean(header(req.headers, 'accept')?.includes('application/json')),
+    phone: fields['traits.phone']!.replace(/[\s().-]/g, '') || null,
   };
 }
 
@@ -360,14 +390,16 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
   };
 
   /** Who is changing their password, for words it shouldn't be built from. */
-  const whoami = async (req: FastifyRequest): Promise<{ email: string | null; name: string | null }> => {
+  const whoami = async (
+    req: FastifyRequest,
+  ): Promise<{ email: string | null; name: string | null; phone: string | null }> => {
     const res = await forward(req, '/sessions/whoami', 'GET').catch(() => null);
     const body = res?.ok
       ? ((await res.json().catch(() => null)) as { identity?: { traits?: Record<string, unknown> } } | null)
       : null;
     const traits = body?.identity?.traits ?? {};
     const str = (v: unknown) => (typeof v === 'string' ? v : null);
-    return { email: str(traits.email), name: str(traits.name) };
+    return { email: str(traits.email), name: str(traits.name), phone: str(traits.phone) };
   };
 
   const lockedMessage = (seconds: number) => {
@@ -469,6 +501,22 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
           : { error: { id: 'weak_password', code: 400, status: 'Bad Request', message: text } };
         return reply.code(400).header('content-type', 'application/json').send(JSON.stringify(payload));
       }
+    }
+
+    // A number changes only through the API (ADR-0049 §6): the same number passes, as the web's profile form sends it.
+    const phoneChange = phoneChangeOf({ method: req.method, url: req.url, headers: req.headers, body });
+    if (phoneChange && phoneChange.phone !== (await whoami(req)).phone) {
+      if (!phoneChange.json) {
+        const q = new URLSearchParams({ notice: 'phone_in_app' });
+        if (phoneChange.flowId) q.set('flow', phoneChange.flowId);
+        return reply.code(303).header('location', `${web}${UI_PATH.settings}?${q}`).send();
+      }
+      const message = { id: PHONE_IN_APP_ID, type: 'error', text: PHONE_IN_APP_TEXT };
+      const flow = await readFlow(req, { kind: 'settings', flowId: phoneChange.flowId });
+      const out = flow?.ui
+        ? { ...flow, ui: { ...flow.ui, messages: [message] } }
+        : { error: { id: 'phone_in_app', code: 400, status: 'Bad Request', message: PHONE_IN_APP_TEXT } };
+      return reply.code(400).header('content-type', 'application/json').send(JSON.stringify(out));
     }
 
     let res: Response;

@@ -87,11 +87,22 @@ beforeAll(async () => {
       req.on('data', (c) => (raw += c));
       req.on('end', () => {
         const owned = [...sessions.values()].filter((o) => o.identityId === identityId);
+        const identity = () => (owned[0] ? sessionJson(owned[0]).identity : { id: identityId, traits: {} });
         if (req.method === 'PATCH' && !rest) {
-          for (const op of JSON.parse(raw) as { path: string; value: unknown }[]) {
+          for (const op of JSON.parse(raw) as { op: string; path: string; value: unknown }[]) {
             if (op.path === '/traits/email') owned.forEach((o) => (o.email = String(op.value)));
+            if (op.path === '/traits/phone')
+              owned.forEach((o) => {
+                o.phone = op.op === 'remove' ? undefined : String(op.value);
+                o.phoneVerified = false;
+              });
+            // The whole list written back, as the adapter does since Kratos reorders it.
+            if (op.path === '/verifiable_addresses') {
+              const list = op.value as { via: string; verified: boolean }[];
+              owned.forEach((o) => (o.phoneVerified = list.some((v) => v.via === 'sms' && v.verified)));
+            }
           }
-          return send(200, { id: identityId });
+          return send(200, identity());
         }
         if (req.method === 'DELETE' && rest === '/sessions') {
           owned.forEach((o) => (o.active = false));
@@ -101,7 +112,7 @@ beforeAll(async () => {
         if (req.method === 'GET' && !rest) {
           const types = factors.get(identityId) ?? ['password'];
           return send(200, {
-            id: identityId,
+            ...identity(),
             credentials: Object.fromEntries(types.map((t) => [t, { type: t }])),
           });
         }
@@ -377,6 +388,37 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     } finally {
       await admin.end();
     }
+  });
+
+  it('puts a number the API confirmed on the identity, already verified, and takes it off (ADR-0049 §6)', async () => {
+    add('numbered', { identityId: 'id-numbered', email: 'numbered@example.com' });
+    const auth = h.app.get<AuthPort>(AUTH_PORT);
+    const before = adminCalls.length;
+    await auth.setPhone('id-numbered', '+14155550188');
+    // The number, then its address marked verified: the list read, written back whole, and read again.
+    expect(adminCalls.slice(before)).toEqual([
+      'PATCH / id-numbered',
+      'GET / id-numbered',
+      'PATCH / id-numbered',
+      'GET / id-numbered',
+    ]);
+    expect(sessions.get('numbered')).toMatchObject({ phone: '+14155550188', phoneVerified: true });
+
+    await auth.setPhone('id-numbered', null);
+    expect(sessions.get('numbered')!.phone).toBeUndefined();
+    // Nothing to take off: no patch, which Kratos would refuse.
+    const quiet = adminCalls.length;
+    await auth.setPhone('id-numbered', null);
+    expect(adminCalls.slice(quiet)).toEqual(['GET / id-numbered']);
+  });
+
+  it('asks for a recent sign-in before the number changes (AUTH-09)', async () => {
+    add('stale-number', {
+      identityId: 'id-stale-number',
+      authenticatedAt: new Date(Date.now() - 60 * 60_000),
+    });
+    const r = await call('DELETE', '/v1/me/phone', 'stale-number');
+    expect(r).toMatchObject({ status: 403, body: { code: 'reauth.required' } });
   });
 
   it('makes a suspended identity inactive and ends its sessions, and restores it (ADR-0049 §4)', async () => {

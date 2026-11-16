@@ -56,6 +56,7 @@ import type {
   FamilyMemberDto,
   NotificationListDto,
   NotificationPrefsDto,
+  PhoneStatusDto,
   RequestDeletionRequest,
   SecurityEventDto,
   StorageUsageDto,
@@ -494,6 +495,12 @@ export function createApi(opts: ApiOptions) {
     notificationPrefs: () => request<NotificationPrefsDto>('GET', '/v1/me/notification-prefs'),
     updateNotificationPrefs: (input: UpdateNotificationPrefsRequest) =>
       request<NotificationPrefsDto>('PATCH', '/v1/me/notification-prefs', input),
+    /** ADR-0049 §6: the mobile number, confirmed by a code the API texts. Changing it needs a recent sign-in. */
+    phone: () => request<PhoneStatusDto>('GET', '/v1/me/phone'),
+    startPhone: (phone: string) =>
+      request<{ phone: string; expiresAt: string }>('POST', '/v1/me/phone', { phone }),
+    confirmPhone: (code: string) => request<PhoneStatusDto>('POST', '/v1/me/phone/confirm', { code }),
+    removePhone: () => request<PhoneStatusDto>('DELETE', '/v1/me/phone'),
     listBackups: async (w: string) =>
       (await request<{ data: ExportJobDto[] }>('GET', `${ws(w)}/backups`)).data,
     createBackup: (w: string, input: CreateBackupRequest) =>

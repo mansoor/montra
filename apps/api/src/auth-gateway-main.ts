@@ -3,7 +3,7 @@ import { loadConfig } from './config.js';
 import { Db } from './db/database.js';
 import { LogMail, MemoryMail, SmtpMail, type MailPort } from './mail/mail.service.js';
 import { buildAuthGateway } from './auth-gateway/gateway.js';
-import { ThrottleStore } from './auth-gateway/throttle.js';
+import { ThrottleStore, throttleSecret } from './auth-gateway/throttle.js';
 import { readPasswordPolicy } from './auth-gateway/policy.js';
 import { StrengthPool } from './auth-gateway/strength-pool.js';
 import { DEFAULT_POLICY, type PasswordPolicy } from '@montra/password';
@@ -12,8 +12,6 @@ import { DEFAULT_POLICY, type PasswordPolicy } from '@montra/password';
  * Auth gateway entrypoint (AUTH-08, ADR-0042): the only public door to Kratos. Same image as the API, its own process
  * and port. Kratos's own port stays on the private network.
  */
-const DEV_SECRET = 'dev-only-auth-gateway-secret-not-for-production';
-
 const config = loadConfig(process.env, { process: 'auth-gateway' });
 const db = new Db(config);
 const mail: MailPort =
@@ -37,7 +35,7 @@ const currentPolicy = async (): Promise<PasswordPolicy> => {
 const app = buildAuthGateway({
   kratosUrl: config.KRATOS_PUBLIC_URL!,
   webUrl: config.WEB_URL,
-  secret: config.AUTH_GATEWAY_SECRET ?? DEV_SECRET,
+  secret: throttleSecret(config),
   store,
   mail,
   trustProxy: config.TRUST_PROXY_HOPS,

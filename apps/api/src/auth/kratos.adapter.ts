@@ -24,6 +24,19 @@ interface KratosSession {
   };
 }
 
+/** The part of an identity, from the admin API, that a number change reads. */
+interface KratosAddress {
+  value: string;
+  via: string;
+  verified?: boolean;
+  status?: string;
+}
+interface KratosIdentity {
+  traits?: { phone?: string };
+  credentials?: Record<string, unknown>;
+  verifiable_addresses?: KratosAddress[];
+}
+
 interface Credentials {
   headers: Record<string, string>;
   cacheKey: string;
@@ -309,6 +322,56 @@ export class KratosAuthAdapter implements AuthPort {
     this.evictIdentity(identityId);
   }
 
+  /**
+   * ADR-0049 §6: the number goes on the identity only once the API has confirmed it, and is marked verified in the
+   * same step, so Kratos never holds it unverified (and never texts its own code, whose flow it doesn't name).
+   */
+  async setPhone(identityId: string, phone: string | null): Promise<void> {
+    const path = `/admin/identities/${encodeURIComponent(identityId)}`;
+    if (!phone) {
+      // Kratos v26.2.0 keeps a removed number as a sign-in code identifier, which would stop anyone else ever adding
+      // it; the code credential holds nothing else (email isn't a code identifier), so it goes too.
+      const current = (await this.admin('GET', path)) as KratosIdentity;
+      const ops = [
+        ...(current.traits?.phone !== undefined ? [{ op: 'remove', path: '/traits/phone' }] : []),
+        ...(current.credentials?.code ? [{ op: 'remove', path: '/credentials/code' }] : []),
+      ];
+      if (ops.length) await this.admin('PATCH', path, ops);
+    } else {
+      await this.admin('PATCH', path, [{ op: 'add', path: '/traits/phone', value: phone }]).catch(
+        (err: unknown) => {
+          if (err instanceof AppError && err.status === 409)
+            throw new AppError(409, 'phone.in_use', 'That number is on another account');
+          throw err;
+        },
+      );
+      await this.markVerified(path, 'sms', phone);
+    }
+    this.evictIdentity(identityId);
+  }
+
+  /**
+   * Marks one verifiable address verified. Kratos v26.2.0 doesn't keep them in a fixed order (the order a PATCH works on
+   * can differ from what a read shows) and has no JSON Patch `test`, so an index can't be trusted: the whole list is
+   * written back with that one address changed, then read again to be sure.
+   */
+  private async markVerified(path: string, via: 'email' | 'sms', value: string): Promise<void> {
+    const matches = (a: KratosAddress) => a.via === via && a.value === value;
+    const current = ((await this.admin('GET', path)) as KratosIdentity).verifiable_addresses ?? [];
+    if (current.some(matches)) {
+      await this.admin('PATCH', path, [
+        {
+          op: 'replace',
+          path: '/verifiable_addresses',
+          value: current.map((a) => (matches(a) ? { ...a, verified: true, status: 'completed' } : a)),
+        },
+      ]);
+      const after = ((await this.admin('GET', path)) as KratosIdentity).verifiable_addresses ?? [];
+      if (after.some((a) => matches(a) && a.verified)) return;
+    }
+    throw new AppError(502, 'auth.admin_failed', 'The address couldn’t be marked as confirmed');
+  }
+
   /** From the identity's credential types: TOTP, a security key or recovery codes count (ADR-0044). */
   async hasSecondFactor(identityId: string): Promise<boolean | null> {
     const hit = this.factors.get(identityId);
@@ -333,12 +396,13 @@ export class KratosAuthAdapter implements AuthPort {
     }
   }
 
+  /** A call to Kratos's admin API; the JSON it answers, if any. */
   private async admin(
-    method: 'PATCH' | 'DELETE',
+    method: 'GET' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
     okStatuses: number[] = [],
-  ): Promise<void> {
+  ): Promise<unknown> {
     const base = this.config.KRATOS_ADMIN_URL?.replace(/\/$/, '');
     if (!base) throw new AppError(503, 'auth.admin_unavailable', 'Account administration is not configured');
     let res: Response;
@@ -356,6 +420,12 @@ export class KratosAuthAdapter implements AuthPort {
     if (!res.ok && !okStatuses.includes(res.status)) {
       if (res.status === 409) throw new AppError(409, 'email.in_use', 'That email address is already in use');
       throw new AppError(502, 'auth.admin_failed', `Account update failed (${res.status})`);
+    }
+    const text = await res.text().catch(() => '');
+    try {
+      return text ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      return null;
     }
   }
 

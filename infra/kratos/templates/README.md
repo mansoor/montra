@@ -19,8 +19,14 @@ any change here, send a real recovery and verification email through Mailpit: `n
 
 ## Texts (ADR-0049 §6)
 
-`login_code/valid/sms.body.gotmpl` is the texted second factor, and `verification_code/valid/sms.body.gotmpl` confirms
-a number added in Settings. They're plain text with no links, and they say "30 minutes" like the emails do.
+`login_code/valid/sms.body.gotmpl` is the texted second factor. They're plain text with no links, and they say
+"30 minutes" like the emails do.
+
+`verification_code/valid/sms.body.gotmpl` isn't sent any more. Kratos v26.2.0 texts it when a number is saved in a
+settings flow but never names the verification flow it belongs to, so the code can't be entered. The API confirms a
+number with its own code instead and puts it on the identity already verified, through the admin API (ADR-0049 §6),
+and the auth gateway turns away a settings save that would change the number. The template stays for a Kratos that
+names the flow.
 
 Texting is off unless the deployment sets two environment variables on Kratos:
 
@@ -33,5 +39,5 @@ Recovery stays by email: Kratos v26.2.0's recovery form takes only an email addr
 in the identity schema, so turning the second factor on never offers an emailed code as a second factor.
 
 This was run against Kratos v26.2.0 with the channel pointed at a stand-in for Twilio: saving a number texted a
-verification code, and the aal2 login texted a sign-in code, both as Twilio's form (`To`, `Body`,
-`MessagingServiceSid`, basic auth).
+verification code (which can't be entered, as above), and the aal2 login texted a sign-in code, both as Twilio's form
+(`To`, `Body`, `MessagingServiceSid`, basic auth).

@@ -322,6 +322,7 @@ import type {
   NotificationDto,
   NotificationListDto,
   NotificationPrefsDto,
+  PhoneStatusDto,
   ReportDto,
   ReportExportFormat,
   ReportFilters,
@@ -2308,6 +2309,21 @@ export class ApiClient {
   updateNotificationPrefs(input: UpdateNotificationPrefsInput) {
     return this.request<NotificationPrefsDto>('PATCH', '/v1/me/notification-prefs', input);
   }
+  /** ADR-0049 §6: the mobile number, and any number waiting for the code the API texted it. */
+  getPhone() {
+    return this.request<PhoneStatusDto>('GET', '/v1/me/phone');
+  }
+  /** Texts a code to the number; it's confirmed with `confirmPhone`. Needs a recent sign-in. */
+  startPhoneVerification(phone: string) {
+    return this.request<{ phone: string; expiresAt: string }>('POST', '/v1/me/phone', { phone });
+  }
+  confirmPhone(code: string) {
+    return this.request<PhoneStatusDto>('POST', '/v1/me/phone/confirm', { code });
+  }
+  /** Needs a recent sign-in. */
+  removePhone() {
+    return this.request<PhoneStatusDto>('DELETE', '/v1/me/phone');
+  }
 
   // ----- Data ownership (NFR-06, BAK-04..09, AUTH-12) -------------------------------------------------------------
   listBackups(workspaceId: string) {
@@ -3171,6 +3187,7 @@ export type {
   NotificationDto,
   NotificationListDto,
   NotificationPrefsDto,
+  PhoneStatusDto,
   ReportDto,
   ReportExportFormat,
   ReportType,

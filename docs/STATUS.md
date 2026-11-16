@@ -1249,31 +1249,42 @@ Phase 11 leftovers:
     - `SmsPort` with `off`, `log`, `memory` and `twilio` modes (`SMS_MODE`, `TWILIO_*`). Twilio sends through a
       Messaging Service. `TextsService` decides who gets what: their own verified number only, kinds the owner switched
       on, countries on the allowed list, what the person turned on, and reminders within the plan's `smsMonthly`.
-    - Kratos: `phone` in the identity schema, verified by a texted code, and a texted code as a second factor. The
+    - Kratos: `phone` in the identity schema, and a texted code as a second factor. The
       channel and the second factor are switched on by `COURIER_CHANNELS` and `SELFSERVICE_METHODS_CODE_MFA_ENABLED` on
       Kratos (`infra/kratos/templates/README.md`). This was checked against Kratos v26.2.0 with a stand-in for Twilio.
       Recovery stays by email.
-    - Web: the mobile number is in Settings → Security (shown only where texts are on), and a **Texts** section in
+    - Web: the mobile number is in its own section of Settings → Security (shown only where texts are on), and a
+      **Texts** section in
       notification settings turns security alerts and reminders by text on. The Providers page shows Twilio's state and
       sends a test text to the owner's own number.
     - The API's copy of the number is refreshed from each new Kratos session. A change is logged and emailed.
     - The auth gateway limits texted codes per number and per address (`sms_send`).
-    - Phone: Settings has **Mobile number** (add, change, remove, through Kratos's settings flow, asking for the
+    - Phone: Settings has **Mobile number** (add, change or remove it, confirmed by a texted code, asking for the
       password when the sign-in is old), and notification settings have the **Texts** section. Both show only where
       texts are on, and the switches work only for a confirmed number, as on the web
       (`apps/mobile/src/features/texts.ts`). Not run on a device.
-    - **Verifying a number is blocked on Kratos, for the web and the phone.** Checked against Kratos v26.2.0 with a
-      stand-in for Twilio: saving a number texts a code, but the code works only in the verification flow Kratos made
-      for it, and the settings response doesn't name that flow (no `continue_with`, native or browser). A new
-      verification flow takes only an email address. So `texts.verified` never turns true, and no text goes out. The
-      phone enters the code if Kratos ever names the flow. The probe's details are in the session notes
-      (`side-session-notes/…/phone-account-texts.md`).
+    - **Confirming a number goes through the API** (migration 0056). Kratos v26.2.0 texts a code when a number is
+      saved in its settings, but never names the verification flow the code belongs to, so it couldn't be entered on
+      the web or the phone (checked with a stand-in for Twilio). Now:
+      - `POST /v1/me/phone` texts a 6-digit code (no link) through `TextsService`. It's hashed, lasts 10 minutes and
+        is single use. Codes count under the gateway's `sms_send` limit per number (the same counter) and per person,
+        go only to allowed countries, and never to a number confirmed on another account.
+      - `POST /v1/me/phone/confirm` allows five tries per code and 10 wrong codes in 15 minutes per person. A right code
+        puts the number on the Kratos identity already verified, through the admin API, which texts nothing.
+        `DELETE /v1/me/phone` removes it. Both need a recent sign-in, and each change is logged and emailed.
+      - Kratos's settings no longer change the number: the web keeps it as a hidden field of the profile form, and
+        the gateway turns away a settings save that would change it (`phone_in_app`).
+      - Kratos v26.2.0 reorders an identity's verifiable addresses and has no JSON Patch `test`, so the adapter writes
+        the whole list back and reads it again. Removing a number also removes the `code` credential, which otherwise
+        keeps the old number and stops anyone else adding it. Both checked against Kratos v26.2.0.
     - Not done: the Terraform doesn't set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real
       Twilio. US texting needs A2P 10DLC or a verified toll-free number first (launch checklist).
-    - Tests: `apps/api/test/texts.test.ts`, the number's sync in `kratos.test.ts`, the limits in `auth-gateway.test.ts`,
-      and `packages/domain/test/phone.test.ts`.
+    - Tests: `apps/api/test/texts.test.ts`, confirming a number in `phone.test.ts`, the number's sync and the admin
+      calls in `kratos.test.ts`, the limits and the settings refusal in `auth-gateway.test.ts`, and
+      `packages/domain/test/phone.test.ts`.
   - **Next for ADR-0049:**
-    - confirming a mobile number through the API instead of Kratos (chosen over texting a link; its own PR after #106);
+    - the email change patches `verifiable_addresses/0`, but Kratos reorders addresses: with a number on the account it
+      can write the new email onto the number's address. Fix it as the number's change does;
     - `SMS_MODE` and the Twilio secrets in Terraform;
     - A2P 10DLC (or a verified toll-free number) before the first real text in the US;
     - a first real send through Twilio and a real Stripe checkout by plan.
