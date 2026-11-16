@@ -14,8 +14,18 @@
  * The reading is kept on the scan until an import, payslip or bill is made from it.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { asCurrencyCode, isCurrencyCode } from '@montra/domain';
-import type { ScanBillDetectedDto, ScanPayslipDetectedDto, ScanStatementDetectedDto } from '@montra/schemas';
+import { asCurrencyCode, calendarDate, isCalendarDate, isCurrencyCode } from '@montra/domain';
+import { billSignal, isLearned } from '@montra/importers';
+import type {
+  IntakeCandidateDto,
+  ScanBillDetectedDto,
+  ScanPayslipDetectedDto,
+  ScanStatementDetectedDto,
+} from '@montra/schemas';
+import { AppError } from '../common/errors.js';
+import { memoryState, readMemory } from '../intakes/match-memory.js';
+import type { StoredDetected } from '../intakes/intakes.service.js';
+import { HouseholdBillsService } from '../planning/household-bills.service.js';
 import { Db } from '../db/database.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
 import { namesAgree, PayslipJobs, storableReading } from '../payslips/payslip-jobs.js';
@@ -44,6 +54,7 @@ export class ScanJobs {
     @Inject(Worker) private readonly worker: Worker,
     @Inject(ScansService) private readonly scans: ScansService,
     @Inject(PayslipJobs) private readonly payslips: PayslipJobs,
+    @Inject(HouseholdBillsService) private readonly bills: HouseholdBillsService,
   ) {}
 
   register(): void {
@@ -59,7 +70,128 @@ export class ScanJobs {
     if (scan.status !== 'reading') return { skipped: scan.status };
     if (scan.kind === 'statement') return this.statement(ctx, scan.id, p.previousResult ?? null);
     if (scan.kind === 'payslip') return this.payslip(ctx, scan.id, scan.file_ids, p.previousResult);
-    return this.bill(ctx, scan.id, scan.file_ids, p.previousResult);
+    const read = await this.bill(ctx, scan.id, scan.file_ids, p.previousResult);
+    return scan.auto_file && read.read ? { ...read, ...(await this.fileAutomatically(ctx, scan.id)) } : read;
+  }
+
+  /**
+   * A bill scanned with `autoFile` (ADR-0051 §4): filed for its biller when the match memory has learned it and the
+   * amount and due date were read. Otherwise it waits in Review as an intake, the scan still ready to confirm.
+   */
+  private async fileAutomatically(ctx: JobCtx, scanId: string): Promise<Record<string, unknown>> {
+    const plan = await this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      const scan = await this.scans.row(trx, ctx, scanId);
+      const d = scan.detected as unknown as ScanBillDetectedDto;
+      const signal = billSignal({ accountLast4: d.accountLast4, billerName: d.billerName });
+      const memory = await readMemory(trx, ctx, 'bill', signal);
+      const learned = isLearned(memoryState(memory))
+        ? await trx
+            .selectFrom('app.biller')
+            .select(['id', 'name', 'category_id', 'account_last4'])
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', '=', memory!.target_id)
+            .where('archived_at', 'is', null)
+            .executeTakeFirst()
+        : undefined;
+      const complete = d.amount !== null && BigInt(d.amount) > 0n && !!d.dueDate && isCalendarDate(d.dueDate);
+      return { scan, d, signal, learned, complete };
+    });
+    const { scan, d, signal, learned, complete } = plan;
+    if (learned && complete) {
+      try {
+        const filed = await this.bills.create(
+          ctx,
+          {
+            billerId: learned.id,
+            scanId,
+            amount: d.amount!,
+            dueDate: calendarDate(d.dueDate!),
+            billDate: d.billDate && isCalendarDate(d.billDate) ? calendarDate(d.billDate) : null,
+            periodStart: d.periodStart && isCalendarDate(d.periodStart) ? calendarDate(d.periodStart) : null,
+            periodEnd: d.periodEnd && isCalendarDate(d.periodEnd) ? calendarDate(d.periodEnd) : null,
+            ...(d.memberId ? { memberId: d.memberId } : {}),
+          },
+          undefined,
+          { automatic: true },
+        );
+        await this.db.run({ ...ctx, actorType: 'worker' }, (trx) =>
+          trx
+            .updateTable('app.document_scan')
+            .set({ detected: JSON.stringify({ ...d, billerId: learned.id, filed }), updated_at: new Date() })
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', '=', scanId)
+            .execute(),
+        );
+        return { filed: filed.kind };
+      } catch (err) {
+        // Filing refused it (dates the wrong way round, a biller archived meanwhile): a person decides in Review.
+        if (!(err instanceof AppError) || err.status >= 500) throw err;
+      }
+    }
+    return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      const first = await trx
+        .selectFrom('app.file')
+        .select(['file_name', 'mime'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', scan.file_ids[0]!)
+        .executeTakeFirst();
+      const candidates: IntakeCandidateDto[] = [
+        ...(learned
+          ? [{ id: learned.id, name: learned.name, last4: learned.account_last4, reason: 'learned' as const }]
+          : []),
+        ...d.candidates
+          .filter((c) => c.billerId !== learned?.id)
+          .map((c) => ({
+            id: c.billerId,
+            name: c.name,
+            last4: null,
+            reason: c.reason === 'account' ? ('last4' as const) : ('name' as const),
+          })),
+      ];
+      const target = learned?.id ?? (candidates.length === 1 ? candidates[0]!.id : null);
+      const detected: StoredDetected = {
+        last4: d.accountLast4,
+        issuer: null,
+        fileNamePattern: null,
+        billerName: d.billerName,
+        candidates,
+        bill: {
+          amount: d.amount,
+          currency: d.currency,
+          dueDate: d.dueDate && isCalendarDate(d.dueDate) ? d.dueDate : null,
+          billDate: d.billDate && isCalendarDate(d.billDate) ? d.billDate : null,
+          periodStart: d.periodStart && isCalendarDate(d.periodStart) ? d.periodStart : null,
+          periodEnd: d.periodEnd && isCalendarDate(d.periodEnd) ? d.periodEnd : null,
+          memberId: d.memberId,
+        },
+      };
+      const intake = await trx
+        .insertInto('app.document_intake')
+        .values({
+          workspace_id: ctx.workspaceId,
+          kind: 'bill',
+          file_ids: scan.file_ids,
+          file_name: first?.file_name ?? 'bill',
+          file_type: first?.mime === 'application/pdf' ? 'pdf' : 'image',
+          status: target ? 'suggested' : 'review',
+          reason: learned ? 'bill_incomplete' : target ? null : candidates.length ? 'several' : 'no_match',
+          signal,
+          detected: JSON.stringify(detected),
+          reading: scan.result ? JSON.stringify(scan.result) : null,
+          target_id: target,
+          scan_id: scanId,
+          created_by: ctx.userId,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await trx
+        .updateTable('app.document_scan')
+        .set({ detected: JSON.stringify({ ...d, intakeId: intake.id }), updated_at: new Date() })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', scanId)
+        .execute();
+      return { review: intake.id };
+    });
   }
 
   private async bill(
@@ -67,7 +199,7 @@ export class ScanJobs {
     scanId: string,
     fileIds: string[],
     previousResult: ReadPayload['previousResult'],
-  ): Promise<Record<string, unknown>> {
+  ): Promise<{ read: boolean } & Record<string, unknown>> {
     const base = await this.db.run(ctx, (trx) =>
       trx
         .selectFrom('app.workspace')

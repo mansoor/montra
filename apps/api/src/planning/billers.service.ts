@@ -15,24 +15,16 @@ import {
   type CalendarDate,
   type NextBill,
 } from '@montra/domain';
-import { normalizeDescription, similarity } from '@montra/importers';
 import type { BillerDto, CreateBillerRequest, UpdateBillerRequest } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
+import { billerKey, isBillerPayee } from './biller-keys.js';
 import { PlanningData, type Ctx } from './data.js';
 import { HouseholdBillsService } from './household-bills.service.js';
 
 /** How far back payments are read for the estimate: a year and a bit covers a yearly bill. */
 const LOOKBACK_DAYS = 400;
-/** A payee this close to the biller's name is the biller (payee keys are normalized the same way). */
-const SAME_PAYEE = 0.6;
-
-/** The key a biller's payments and bills are matched by: its name normalized like a payee. */
-export const billerKey = (name: string): string => normalizeDescription(name) || name.trim().toUpperCase();
-
-/** Whether a transaction's payee key is this biller's. */
-export const isBillerPayee = (billerKeyValue: string, payeeKey: string): boolean =>
-  payeeKey.startsWith(billerKeyValue) || similarity(payeeKey, billerKeyValue) >= SAME_PAYEE;
+export { billerKey, isBillerPayee } from './biller-keys.js';
 
 export interface BillerExpected {
   biller: BillerRow;

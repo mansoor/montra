@@ -412,6 +412,12 @@ import type {
   SetExpenseDetailRequest,
   UpdateAssetRequest,
 } from '@montra/schemas';
+import type { IntakeDto, ListIntakesQuery, ResolveIntakeRequest } from '@montra/schemas';
+
+// ----- Statements and bills to file (ADR-0051) -----
+export type ListIntakesInput = z.input<typeof ListIntakesQuery>;
+export type ResolveIntakeInput = z.input<typeof ResolveIntakeRequest>;
+export type { IntakeDto };
 
 // ----- Payroll (PRL-01..05, ADR-0034) -----
 export type CreatePersonInput = z.input<typeof CreatePersonRequest>;
@@ -1498,6 +1504,29 @@ export class ApiClient {
   /** Undoes a committed import within 30 days (202); the job result is an UndoResultDto. */
   undoImport(workspaceId: string, id: string) {
     return this.request<ImportBatchDto>('POST', this.ws(workspaceId, `/imports/${enc(id)}/undo`));
+  }
+  /** A statement with no account (ADR-0051): any statement file or a photo; it's read and matched (202). */
+  uploadStatement(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<IntakeDto>('POST', this.ws(workspaceId, '/intakes/files'), form);
+  }
+  /** Statements and bills waiting in Review (`open`, the default) or everything from the last 30 days (`recent`). */
+  listIntakes(workspaceId: string, opts: ListIntakesInput = {}) {
+    return this.request<{ data: IntakeDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/intakes${query({ ...opts })}`),
+    ).then((r) => r.data);
+  }
+  getIntake(workspaceId: string, id: string) {
+    return this.request<IntakeDto>('GET', this.ws(workspaceId, `/intakes/${enc(id)}`));
+  }
+  /** Picks the account or biller and finishes; the match memory learns from it. */
+  resolveIntake(workspaceId: string, id: string, input: ResolveIntakeInput) {
+    return this.request<IntakeDto>('POST', this.ws(workspaceId, `/intakes/${enc(id)}/resolve`), input);
+  }
+  dismissIntake(workspaceId: string, id: string) {
+    return this.request<IntakeDto>('POST', this.ws(workspaceId, `/intakes/${enc(id)}/dismiss`));
   }
   getJob(workspaceId: string, jobId: string) {
     return this.request<JobDto>('GET', this.ws(workspaceId, `/jobs/${enc(jobId)}`));

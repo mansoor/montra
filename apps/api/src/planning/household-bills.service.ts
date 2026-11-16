@@ -23,7 +23,20 @@ import { Db } from '../db/database.js';
 import { BillsService } from '../business/bills.service.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
-import { billerKey, isBillerPayee } from './billers.service.js';
+import { billSignal } from '@montra/importers';
+import type { ScanBillDetectedDto } from '@montra/schemas';
+import { confirmMatch } from '../intakes/match-memory.js';
+import { billerKey, isBillerPayee } from './biller-keys.js';
+
+/** A bill filed from Review (ADR-0051 §5): the intake's own copy of the pages and reading. */
+export interface IntakeSource {
+  intakeId: string;
+  fileIds: string[];
+  reading: unknown;
+  signal: string | null;
+  /** The scan it came from, marked used once filed. */
+  scanId: string | null;
+}
 import { PlanningData, type Ctx } from './data.js';
 
 /** Bills are kept like other documents with money on them. */
@@ -92,8 +105,20 @@ export class HouseholdBillsService {
     });
   }
 
-  /** Files a bill for its biller: a household bill, or a business's vendor bill (ADR-0017). */
-  async create(ctx: Ctx, req: CreateHouseholdBillRequest): Promise<FiledBillDto> {
+  /**
+   * Files a bill for its biller: a household bill, or a business's vendor bill (ADR-0017).
+   *
+   * - From a scan (`scanId`), a person's choice of biller teaches the match memory (ADR-0051 §3), and the Review item
+   *   the scan waited in is done.
+   * - From an intake in Review (`from`): its pages and reading, as the scan's uploader may be someone else.
+   * - `automatic`: filed by the match memory itself, which is not a confirmation.
+   */
+  async create(
+    ctx: Ctx,
+    req: CreateHouseholdBillRequest,
+    from?: IntakeSource,
+    opts: { automatic?: boolean } = {},
+  ): Promise<FiledBillDto> {
     const prepared = await this.db.run(ctx, async (trx) => {
       const biller = await trx
         .selectFrom('app.biller as b')
@@ -120,8 +145,23 @@ export class HouseholdBillsService {
       return { biller, scan };
     });
     const { biller, scan } = prepared;
-    const fileIds = scan?.file_ids ?? [];
-    const extraction = scan ? scanExtraction(scan.result) : null;
+    const fileIds = scan?.file_ids ?? from?.fileIds ?? [];
+    const extraction = scanExtraction(scan ? scan.result : from?.reading);
+    const signal = from
+      ? from.signal
+      : scan
+        ? billSignal((scan.detected ?? {}) as ScanBillDetectedDto)
+        : null;
+    const after = async (trx: Trx, filed: FiledBillDto) => {
+      if (!opts.automatic && (scan || from)) await confirmMatch(trx, ctx, 'bill', signal, biller.id);
+      await this.closeIntake(
+        trx,
+        ctx,
+        { scanId: scan?.id ?? null, intakeId: from?.intakeId ?? null },
+        biller.id,
+        filed,
+      );
+    };
 
     if (biller.type === 'business') {
       // A business's bill is its vendor bill: from a vendor of the biller's name, to the biller's category.
@@ -138,34 +178,99 @@ export class HouseholdBillsService {
         notes: null,
         fileIds,
       });
-      if (scan) await this.db.run(ctx, (trx) => this.useScan(trx, ctx, scan.id, bill.id));
-      return { kind: 'business', id: bill.id, entityId: biller.entity_id };
+      const filed: FiledBillDto = { kind: 'business', id: bill.id, entityId: biller.entity_id };
+      await this.db.run(ctx, async (trx) => {
+        if (scan) await this.useScan(trx, ctx, scan.id, bill.id);
+        await after(trx, filed);
+      });
+      if (from?.scanId) await this.useOwnersScan(ctx, from.scanId, bill.id);
+      return filed;
     }
 
-    return this.db.run(ctx, async (trx) => {
-      const row = await trx
-        .insertInto('app.household_bill')
-        .values({
-          workspace_id: ctx.workspaceId,
-          entity_id: biller.entity_id,
-          biller_id: biller.id,
-          member_id: req.memberId !== undefined ? req.memberId : biller.member_id,
-          amount_minor: BigInt(req.amount),
-          currency: biller.functional_currency,
-          due_date: req.dueDate,
-          bill_date: req.billDate ?? null,
-          period_start: req.periodStart ?? null,
-          period_end: req.periodEnd ?? null,
-          attachment_ids: fileIds,
-          extraction: extraction ? JSON.stringify(extraction) : null,
-          created_by: ctx.userId,
-        })
-        .returning('id')
-        .executeTakeFirstOrThrow();
-      if (scan) await this.useScan(trx, ctx, scan.id, row.id);
-      await this.settle(trx, ctx);
-      return { kind: 'household', id: row.id, entityId: biller.entity_id };
-    });
+    return this.db
+      .run(ctx, async (trx) => {
+        const row = await trx
+          .insertInto('app.household_bill')
+          .values({
+            workspace_id: ctx.workspaceId,
+            entity_id: biller.entity_id,
+            biller_id: biller.id,
+            member_id: req.memberId !== undefined ? req.memberId : biller.member_id,
+            amount_minor: BigInt(req.amount),
+            currency: biller.functional_currency,
+            due_date: req.dueDate,
+            bill_date: req.billDate ?? null,
+            period_start: req.periodStart ?? null,
+            period_end: req.periodEnd ?? null,
+            attachment_ids: fileIds,
+            extraction: extraction ? JSON.stringify(extraction) : null,
+            created_by: ctx.userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        if (scan) await this.useScan(trx, ctx, scan.id, row.id);
+        const filed: FiledBillDto = { kind: 'household', id: row.id, entityId: biller.entity_id };
+        await after(trx, filed);
+        await this.settle(trx, ctx);
+        return filed;
+      })
+      .then(async (filed) => {
+        if (from?.scanId) await this.useOwnersScan(ctx, from.scanId, filed.id);
+        return filed;
+      });
+  }
+
+  /** The Review item a bill waited in is done (ADR-0051 §5). */
+  private async closeIntake(
+    trx: Trx,
+    ctx: Ctx,
+    by: { scanId: string | null; intakeId: string | null },
+    billerId: string,
+    filed: FiledBillDto,
+  ): Promise<void> {
+    if (!by.scanId && !by.intakeId) return;
+    await trx
+      .updateTable('app.document_intake')
+      .set({
+        status: 'done',
+        reason: null,
+        reading: null,
+        filed: JSON.stringify(filed),
+        target_id: billerId,
+        resolved_by: ctx.userId,
+        resolved_at: new Date(),
+        updated_at: new Date(),
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('kind', '=', 'bill')
+      .where('status', 'in', ['suggested', 'review'])
+      .where((eb) => (by.intakeId ? eb('id', '=', by.intakeId) : eb('scan_id', '=', by.scanId!)))
+      .execute();
+  }
+
+  /**
+   * A bill filed from Review may have been scanned by someone else: their scan (their own, ADR-0048 §3) is marked used
+   * in their name so it can't be filed twice.
+   */
+  private async useOwnersScan(ctx: Ctx, scanId: string, usedId: string): Promise<void> {
+    const owner = await this.db.run(ctx, (trx) =>
+      trx
+        .selectFrom('app.document_intake')
+        .select('created_by')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('scan_id', '=', scanId)
+        .executeTakeFirst(),
+    );
+    if (!owner?.created_by) return;
+    await this.db.run({ workspaceId: ctx.workspaceId, userId: owner.created_by }, (trx) =>
+      trx
+        .updateTable('app.document_scan')
+        .set({ status: 'used', used_id: usedId, result: null, updated_at: new Date() })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', scanId)
+        .where('status', '=', 'ready')
+        .execute(),
+    );
   }
 
   async update(ctx: Ctx, id: string, req: UpdateHouseholdBillRequest): Promise<HouseholdBillDto> {
