@@ -85,7 +85,7 @@ export default async function CalendarPage({
           </div>
         }
       />
-      <div className={filtered ? 'grid gap-4 lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start' : ''}>
+      <div className="space-y-4">
         {filtered && <CalendarBooks workspaceId={workspaceId} books={books} hidden={hidden} />}
         <div className="card-flush">
           <div className="hidden grid-cols-7 border-b border-line bg-canvas md:grid">

@@ -1389,7 +1389,8 @@ Phase 11 leftovers:
   - **Hidden books, per person**: `GET`/`PUT calendar/books` (`app.calendar_book_pref`, own row only under RLS; a
     member may save it). Books the person can't see are dropped; an archived book is left out and comes back hidden.
     The calendar API still returns every book: the clients filter.
-  - **Web**: with more than one book, a Books list of tick boxes beside the month grid (above it on narrow screens);
+  - **Web**: with more than one book, a Books bar of on/off switches above the full-width month grid
+    (side by side, one under another on narrow screens);
     hidden books' items and totals drop out. Items have a bar in the book's colour (and its name for screen readers),
     a word for their kind, and green or red amounts. **Phone**: the agenda has book chips with a colour dot, saved
     through the same endpoint; the choice is cached, so it applies offline (`src/features/calendar-books.ts`). Not

@@ -6,8 +6,10 @@ import { toggleHidden, type CalendarBook } from '@/lib/calendar';
 import { StatusLine, useAction } from '../use-action';
 
 /**
- * The calendar's Books list (FLOW-05), as Google Calendar's calendars: a tick box per book with its colour. The choice
- * is the person's own, saved on the server so the phone shows the same; the page re-renders with the books shown.
+ * The calendar's Books bar (FLOW-05), as Google Calendar's calendars: an on/off switch per book with its colour, above
+ * the month so the calendar keeps the full width. Side by side where there's room, one under another on a narrow
+ * screen. The choice is the person's own, saved on the server so the phone shows the same; the page re-renders with
+ * the books shown.
  */
 export function CalendarBooks({
   workspaceId,
@@ -39,7 +41,7 @@ export function CalendarBooks({
       <p id="cal-books-hint" className="text-xs text-muted">
         {t('calendar.books_hint')}
       </p>
-      <ul className="space-y-1">
+      <ul className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-6">
         {books.map((b) => {
           const shown = !hidden.includes(b.id);
           return (
@@ -47,6 +49,8 @@ export function CalendarBooks({
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <input
                   type="checkbox"
+                  role="switch"
+                  className="switch"
                   checked={shown}
                   onChange={(e) => toggle(b.id, e.target.checked)}
                   data-testid={`cal-book-${b.id}`}
