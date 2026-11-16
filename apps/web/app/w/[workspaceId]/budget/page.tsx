@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
+import { canWriteBooks } from '@/lib/household-bills';
 import { getI18n } from '@/lib/i18n-server';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
@@ -120,7 +121,8 @@ export default async function BudgetPage({
     );
   }
 
-  const [period, income, accounts, billers, bills] = await load((api) =>
+  const canAddBills = canWriteBooks(workspace, entityId);
+  const [period, income, accounts, billers, bills, allBillers] = await load((api) =>
     Promise.all([
       api.getBudgetPeriod(workspaceId, budget.id, sp.start ?? 'current'),
       tab === 'income' ? api.listExpectedIncome(workspaceId, entityId) : Promise.resolve([]),
@@ -128,6 +130,8 @@ export default async function BudgetPage({
       // ADR-0048 §4: providers show under their category on the plan, and are managed on Bills.
       tab === 'plan' || tab === 'bills' ? api.listBillers(workspaceId, entityId) : Promise.resolve([]),
       tab === 'bills' ? api.listHouseholdBills(workspaceId, { entityId }) : Promise.resolve([]),
+      // A scanned bill can match a provider on any books, so "Add a bill" offers them all.
+      tab === 'bills' && canAddBills ? api.listBillers(workspaceId) : Promise.resolve([]),
     ]),
   );
   const moves =
@@ -179,6 +183,22 @@ export default async function BudgetPage({
           billers={member ? billers.filter((b) => b.memberId === member.id || b.memberId === null) : billers}
           members={people}
           bills={bills}
+          addBill={
+            canAddBills
+              ? {
+                  entityId,
+                  currency: budget.currency,
+                  // Only books this login can write: a bill for a read-only book would be refused.
+                  billers: allBillers.filter((b) => !b.archived && canWriteBooks(workspace, b.entityId)),
+                  entities: entities.map((e) => ({
+                    id: e.id,
+                    name: e.name,
+                    type: e.type,
+                    functionalCurrency: e.functionalCurrency,
+                  })),
+                }
+              : undefined
+          }
         />
       )}
       {tab === 'income' && (

@@ -1,4 +1,4 @@
-/** More (08 §3): review, planning, accounts and registers, import, sync activity, settings, grouped by what they're for. */
+/** More (08 §3): review, planning, accounts and registers, statements, sync activity, settings, grouped by what they're for. */
 import { useRouter, type Href } from 'expo-router';
 import { t } from '../../src/i18n';
 import { config } from '../../src/config';
@@ -42,14 +42,14 @@ export default function More() {
         { title: t('mobile.more.receipts'), icon: 'receipt', href: '/receipts', testID: 'more-receipts' },
         { title: t('mobile.bills.title'), icon: 'bill', href: '/bills', testID: 'more-bills' },
         { title: t('nav.payslips'), icon: 'payslips', href: '/payslips', testID: 'more-payslips' },
-        // Imports are for those who set the books up (AUTH-18).
+        // Statements are imported by those who set the books up (AUTH-18).
         ...(can.importFiles
           ? [
               {
-                title: t('mobile.more.import'),
-                icon: 'import',
-                href: '/import',
-                testID: 'more-import',
+                title: t('mobile.statements.title'),
+                icon: 'document',
+                href: '/statements',
+                testID: 'more-statements',
               } as Item,
             ]
           : []),

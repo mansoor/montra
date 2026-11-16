@@ -1175,6 +1175,10 @@ Phase 11 leftovers:
       provider's name, to the provider's category.
     - Phone: **Bills** (from More) lists bills due and paid. Web: the budget's **Bills** tab lists them under the
       providers.
+    - Web: **Add a bill** on that tab (writers only) uploads a PDF or photos and reads them like the phone (`POST
+      household-bills/files`, a `bill` scan, polled until read), shows what was read, and files it once checked; or
+      the bill is typed in. A business's provider files a vendor bill, and the message links to it. A bill has no
+      notes field (the API takes none).
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
 - **Statements and bills find their account or biller, and learn it** (IMP-01, IMP-04, AI-03,
@@ -1418,11 +1422,18 @@ Phase 11 leftovers:
   - **Hidden books, per person**: `GET`/`PUT calendar/books` (`app.calendar_book_pref`, own row only under RLS; a
     member may save it). Books the person can't see are dropped; an archived book is left out and comes back hidden.
     The calendar API still returns every book: the clients filter.
-  - **Web**: with more than one book, a Books list of tick boxes beside the month grid (above it on narrow screens);
+  - **Web**: with more than one book, a Books bar of on/off switches above the full-width month grid
+    (side by side, one under another on narrow screens);
     hidden books' items and totals drop out. Items have a bar in the book's colour (and its name for screen readers),
     a word for their kind, and green or red amounts. **Phone**: the agenda has book chips with a colour dot, saved
     through the same endpoint; the choice is cached, so it applies offline (`src/features/calendar-books.ts`). Not
     run on a device.
+- **Statements on the phone** (IMP-09): More → Everyday's **Statements** row (was "Import a statement", still only
+  for those who may import) opens a list of the statements imported so far, newest first, from `GET imports`: file
+  name, account, the day it was imported, its status in the web history's colours, and the rows it imported (rows
+  read while one waits to be mapped or checked). **Import a statement** opens the import flow; pull to refresh, and the
+  list looks again every 5 seconds while one is being read. Rows don't open anything and undo stays on the web
+  (`src/features/statements.ts`). Not run on a device.
 
 ---
 
