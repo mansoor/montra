@@ -1262,17 +1262,18 @@ Phase 11 leftovers:
       password when the sign-in is old), and notification settings have the **Texts** section. Both show only where
       texts are on, and the switches work only for a confirmed number, as on the web
       (`apps/mobile/src/features/texts.ts`). Not run on a device.
-    - **A number can't be confirmed yet, on the web or the phone.** Checked against Kratos v26.2.0 with a stand-in
-      for Twilio: saving a number texts a code, but the code works only in the verification flow Kratos made for it,
-      and the settings response doesn't name that flow (no `continue_with`, native or browser). A new verification
-      flow takes only an email address. So `texts.verified` never turns true, and no text goes out. The phone enters
-      the code if Kratos ever names the flow.
+    - **Verifying a number is blocked on Kratos, for the web and the phone.** Checked against Kratos v26.2.0 with a
+      stand-in for Twilio: saving a number texts a code, but the code works only in the verification flow Kratos made
+      for it, and the settings response doesn't name that flow (no `continue_with`, native or browser). A new
+      verification flow takes only an email address. So `texts.verified` never turns true, and no text goes out. The
+      phone enters the code if Kratos ever names the flow. The probe's details are in the session notes
+      (`side-session-notes/…/phone-account-texts.md`).
     - Not done: the Terraform doesn't set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real
       Twilio. US texting needs A2P 10DLC or a verified toll-free number first (launch checklist).
     - Tests: `apps/api/test/texts.test.ts`, the number's sync in `kratos.test.ts`, the limits in `auth-gateway.test.ts`,
       and `packages/domain/test/phone.test.ts`.
   - **Next for ADR-0049:**
-    - a way to confirm a mobile number (see step 5): text a link, confirm it in the API, or a Kratos that names the flow;
+    - confirming a mobile number through the API instead of Kratos (chosen over texting a link; its own PR after #106);
     - `SMS_MODE` and the Twilio secrets in Terraform;
     - A2P 10DLC (or a verified toll-free number) before the first real text in the US;
     - a first real send through Twilio and a real Stripe checkout by plan.
