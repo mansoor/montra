@@ -1175,6 +1175,10 @@ Phase 11 leftovers:
       provider's name, to the provider's category.
     - Phone: **Bills** (from More) lists bills due and paid. Web: the budget's **Bills** tab lists them under the
       providers.
+    - Web: **Add a bill** on that tab (writers only) uploads a PDF or photos and reads them like the phone (`POST
+      household-bills/files`, a `bill` scan, polled until read), shows what was read, and files it once checked; or
+      the bill is typed in. A business's provider files a vendor bill, and the message links to it. A bill has no
+      notes field (the API takes none).
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
 - **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14; **done** 2026-11-14: ADR-0049 in
