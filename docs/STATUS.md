@@ -1181,6 +1181,29 @@ Phase 11 leftovers:
       notes field (the API takes none).
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
+- **Statements and bills find their account or biller, and learn it** (IMP-01, IMP-04, AI-03,
+  [ADR-0051](design/adr/0051-statement-and-bill-matching.md), migration 0058):
+  - **Intakes:** `POST intakes/files` takes any statement (CSV, XLS, XLSX, PDF, QIF, OFX/QFX) or a photo of one, with no
+    account. It's read once (`intake.read`; PDFs, XLS files and photos go through `doc.extract` first, and the reading is
+    kept for the import) and matched: printed last four digits, the issuer the doc-worker finds among the workspace's
+    institutions, the OFX `ACCTID`/`BANKID`, digits in the file name, the accounts a saved profile of the same header
+    belongs to. Nothing strong: the recent accounts are offered.
+  - **Match memory** (`app.match_memory`): one row per kind and signal, with the confirmations in a row. A person's pick
+    (Review, the Statements screen, a phone scan's import, a bill filed from a scan) counts; a different pick resets it
+    to 1. After **3** the match is automatic. Undoing an automatic import resets it to 0 and puts the statement back in
+    Review. Pure rules in `@montra/importers` (`statement-match.ts`).
+  - **Import if clean:** a learned statement is imported into its account and committed by `intake.settle` when it went
+    straight to preview with no likely duplicates, no rows in error, no failed balance check and something new. Anything
+    else waits in Review with the reason, its import in preview.
+  - **Bills:** `POST scans { kind: 'bill', autoFile: true }` files the bill for a learned provider when its amount and
+    due date were read; otherwise it waits in Review (and the scan can still be confirmed as before). Without `autoFile`
+    nothing changes, so the web's Add a bill keeps its flow. The phone's bill capture now asks for `autoFile`.
+  - **Review:** web `/review` and the phone's Review show **Statements and bills to file** above the transactions; each
+    has the account or provider to pick (candidates first) and Put aside. The web opens a resolved statement in its
+    import preview; the phone imports it only when clean (`commitIfClean`).
+  - **Doc-worker:** `doc.extract` reads photos (`fileType: image`) with OCR, and returns `statement.issuer`.
+  - Not yet tried on a device, with real bank files beyond the corpus, or with OCR of a real photo (Tesseract isn't
+    installed on the dev machine; the photo path is tested with a stubbed engine).
 - **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14; **done** 2026-11-14: ADR-0049 in
   #97–#101, tagged `v0.12.0-dev.56`–`60`; ADR-0050 in #96 and #102–#104, tagged `v0.12.0-dev.61`–`64`):
   - ✅ [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console

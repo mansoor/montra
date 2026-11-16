@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Id } from './common.js';
+import { FiledBillDto } from './household-bills.js';
 
 /**
  * Scanned documents read before they're filed (ADR-0048 §3): a statement, payslip or bill from the Add wheel. The
@@ -13,6 +14,11 @@ export const CreateScanRequest = z.object({
   kind: ScanKind,
   /** Uploaded files: one PDF for a statement (`/uploads`), the pages for a payslip (`/payslips/files`). */
   fileIds: z.array(Id).min(1).max(20),
+  /**
+   * Bills (ADR-0051): file it straight away when its biller is learned and its amount and due date were read; when
+   * it isn't, it also waits in Review until it's filed. Off by default: the scan waits for a confirmation.
+   */
+  autoFile: z.boolean().optional(),
 });
 export type CreateScanRequest = z.output<typeof CreateScanRequest>;
 
@@ -83,6 +89,10 @@ export const ScanBillDetectedDto = z.object({
   billDate: z.string().nullable(),
   periodStart: z.string().nullable(),
   periodEnd: z.string().nullable(),
+  /** With `autoFile`: the bill filed automatically (the scan is then `used`). */
+  filed: FiledBillDto.nullable().optional(),
+  /** With `autoFile`: the Review item it waits in when it wasn't filed automatically. */
+  intakeId: Id.nullable().optional(),
 });
 export type ScanBillDetectedDto = z.infer<typeof ScanBillDetectedDto>;
 

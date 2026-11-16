@@ -10,6 +10,7 @@ export * from './fx.js';
 export * from './receipts.js';
 export * from './scans.js';
 export * from './household-bills.js';
+export * from './intakes.js';
 export * from './budgets.js';
 export * from './flow.js';
 export * from './recommendations.js';

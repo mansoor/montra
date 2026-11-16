@@ -16,6 +16,7 @@ import { NotificationJobs } from './notifications/notification-jobs.service.js';
 import { RecommendationsService } from './planning/recommendations.service.js';
 import { PayslipJobs } from './payslips/payslip-jobs.js';
 import { ScanJobs } from './scans/scan-jobs.js';
+import { IntakeJobs } from './intakes/intake-jobs.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
@@ -30,6 +31,7 @@ app.get(InsightsService).register();
 app.get(ReceiptJobs).register();
 app.get(PayslipJobs).register();
 app.get(ScanJobs).register();
+app.get(IntakeJobs).register();
 const planning = app.get(RecommendationsService);
 planning.register();
 const notifications = app.get(NotificationJobs);

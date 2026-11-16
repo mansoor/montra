@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Selectable } from 'kysely';
 import { newId, type ImportBatchTable, type ImportRowTable, type Trx } from '@montra/db';
 import { asCurrencyCode, isBalanceSheet } from '@montra/domain';
+import { statementSignal } from '@montra/importers';
 import type {
   BulkImportRowsRequest,
   ColumnMappingDto,
@@ -16,6 +17,7 @@ import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { JobQueue } from '../jobs/queue.js';
 import { LedgerService } from '../ledger/ledger.service.js';
+import { confirmMatch, intakeImportCommitted, intakeImportUndone } from '../intakes/match-memory.js';
 
 type Ctx = { workspaceId: string; userId: string };
 type Batch = Selectable<ImportBatchTable>;
@@ -54,77 +56,105 @@ export class ImportsService {
     req: CreateImportRequest,
     opts: { migrationId?: string } = {},
   ): Promise<ImportBatchDto> {
+    const id = await this.db.run(ctx, (trx) => this.startBatch(trx, ctx, req, opts));
+    return this.get(ctx, id);
+  }
+
+  /**
+   * Starts an import inside the caller's transaction. An intake (ADR-0051) passes the reading it already has
+   * (`previousResult`) and a job to run after parsing (`then`), which checks whether the import is clean.
+   */
+  async startBatch(
+    trx: Trx,
+    ctx: Ctx,
+    req: CreateImportRequest,
+    opts: {
+      migrationId?: string;
+      previousResult?: Record<string, unknown> | null;
+      then?: { queue: 'import'; type: string; payload: Record<string, unknown> };
+    } = {},
+  ): Promise<string> {
     const id = newId();
-    await this.db.run(ctx, async (trx) => {
-      const file = await trx
-        .selectFrom('app.file')
-        .selectAll()
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', req.fileId)
-        .where('deleted_at', 'is', null)
-        .executeTakeFirst();
-      if (!file) throw notFound('Uploaded file');
-      const fileType = fileTypeOf(file.mime, file.file_name);
-      if (!fileType)
-        throw unprocessable('import.unsupported_file', 'Upload a CSV, XLS, XLSX, PDF, QIF or OFX statement');
-      const account = await this.ledger.accountRef(trx, ctx.workspaceId, req.accountId);
-      if (!isBalanceSheet(account.type) || account.type === 'equity') {
-        throw unprocessable(
-          'account.not_a_bank_account',
-          'Statements are imported into a bank, card, loan or cash account',
-        );
-      }
-      await trx
-        .insertInto('app.import_batch')
-        .values({
-          workspace_id: ctx.workspaceId,
-          id,
-          entity_id: account.entityId,
-          ledger_account_id: account.id,
-          file_id: file.id,
-          file_name: file.file_name,
-          file_type: fileType,
-          currency: account.currency,
-          status: 'parsing',
-          warnings: '[]',
-          created_by: ctx.userId,
-          ...(opts.migrationId ? { migration_id: opts.migrationId } : {}),
+    const file = await trx
+      .selectFrom('app.file')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', req.fileId)
+      .where('deleted_at', 'is', null)
+      .executeTakeFirst();
+    if (!file) throw notFound('Uploaded file');
+    // A photo of a statement (ADR-0051) is read like a scanned page, from the reading it comes with.
+    const fileType =
+      opts.previousResult && /^image\//.test(file.mime) ? 'pdf' : fileTypeOf(file.mime, file.file_name);
+    if (!fileType)
+      throw unprocessable('import.unsupported_file', 'Upload a CSV, XLS, XLSX, PDF, QIF or OFX statement');
+    const account = await this.ledger.accountRef(trx, ctx.workspaceId, req.accountId);
+    if (!isBalanceSheet(account.type) || account.type === 'equity') {
+      throw unprocessable(
+        'account.not_a_bank_account',
+        'Statements are imported into a bank, card, loan or cash account',
+      );
+    }
+    await trx
+      .insertInto('app.import_batch')
+      .values({
+        workspace_id: ctx.workspaceId,
+        id,
+        entity_id: account.entityId,
+        ledger_account_id: account.id,
+        file_id: file.id,
+        file_name: file.file_name,
+        file_type: fileType,
+        currency: account.currency,
+        status: 'parsing',
+        warnings: '[]',
+        created_by: ctx.userId,
+        ...(opts.migrationId ? { migration_id: opts.migrationId } : {}),
+      })
+      .execute();
+    const parse = { workspaceId: ctx.workspaceId, batchId: id, accountFilter: req.accountFilter ?? null };
+    // A scanned statement was read already (ADR-0048): its reading goes straight to parsing, and the scan is used.
+    // The account it's imported into is a confirmation the match memory learns from (ADR-0051).
+    const scanned = req.scanId
+      ? await this.scanReading(trx, ctx, req.scanId, file.id, id, account.id)
+      : (opts.previousResult ?? null);
+    const jobId = scanned
+      ? await this.queue.enqueue(trx, {
+          ...ctx,
+          queue: 'import',
+          type: 'import.parse',
+          payload: { ...parse, previousResult: scanned },
+          ...(opts.then ? { then: opts.then } : {}),
         })
-        .execute();
-      const parse = { workspaceId: ctx.workspaceId, batchId: id, accountFilter: req.accountFilter ?? null };
-      // A scanned statement was read already (ADR-0048): its reading goes straight to parsing, and the scan is used.
-      const scanned = req.scanId ? await this.scanReading(trx, ctx, req.scanId, file.id, id) : null;
-      const jobId = scanned
+      : fileType === 'xls' || fileType === 'pdf'
         ? await this.queue.enqueue(trx, {
+            ...ctx,
+            queue: 'doc',
+            type: 'doc.extract',
+            payload: {
+              workspaceId: ctx.workspaceId,
+              fileId: file.id,
+              storageKey: file.storage_key,
+              fileName: file.file_name,
+              mime: file.mime,
+              fileType,
+            },
+            then: { queue: 'import', type: 'import.parse', payload: parse },
+          })
+        : await this.queue.enqueue(trx, {
             ...ctx,
             queue: 'import',
             type: 'import.parse',
-            payload: { ...parse, previousResult: scanned },
-          })
-        : fileType === 'xls' || fileType === 'pdf'
-          ? await this.queue.enqueue(trx, {
-              ...ctx,
-              queue: 'doc',
-              type: 'doc.extract',
-              payload: {
-                workspaceId: ctx.workspaceId,
-                fileId: file.id,
-                storageKey: file.storage_key,
-                fileName: file.file_name,
-                mime: file.mime,
-                fileType,
-              },
-              then: { queue: 'import', type: 'import.parse', payload: parse },
-            })
-          : await this.queue.enqueue(trx, { ...ctx, queue: 'import', type: 'import.parse', payload: parse });
-      await trx
-        .updateTable('app.import_batch')
-        .set({ job_id: jobId })
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', id)
-        .execute();
-    });
-    return this.get(ctx, id);
+            payload: parse,
+            ...(opts.then ? { then: opts.then } : {}),
+          });
+    await trx
+      .updateTable('app.import_batch')
+      .set({ job_id: jobId })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
+    return id;
   }
 
   /** A scanned statement's reading for this file, marking the scan used by the import; the reading moves to the job. */
@@ -134,6 +164,7 @@ export class ImportsService {
     scanId: string,
     fileId: string,
     batchId: string,
+    accountId: string,
   ): Promise<Record<string, unknown>> {
     const scan = await trx
       .selectFrom('app.document_scan')
@@ -144,6 +175,21 @@ export class ImportsService {
     if (!scan || scan.kind !== 'statement' || scan.file_ids[0] !== fileId) throw notFound('Scan');
     if (scan.status !== 'ready' || !scan.result)
       throw unprocessable('scan.not_ready', 'This scan is still being read, or was filed');
+    const statement = (
+      scan.result as { statement?: { accountLast4?: string | null; issuer?: string | null } }
+    ).statement;
+    await confirmMatch(
+      trx,
+      ctx,
+      'statement',
+      statementSignal({
+        fileType: 'pdf',
+        printedLast4: statement?.accountLast4 ?? null,
+        issuer: statement?.issuer ?? null,
+        fileName: '',
+      }),
+      accountId,
+    );
     await trx
       .updateTable('app.document_scan')
       .set({ status: 'used', used_id: batchId, result: null, updated_at: new Date() })
@@ -339,21 +385,28 @@ export class ImportsService {
             : `The import is ${batch.status}`,
         );
       }
-      const jobId = await this.queue.enqueue(trx, {
-        ...ctx,
-        queue: 'import',
-        type: 'import.commit',
-        payload: { workspaceId: ctx.workspaceId, batchId: id },
-        maxAttempts: 1,
-      });
-      await trx
-        .updateTable('app.import_batch')
-        .set({ status: 'committing', job_id: jobId })
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', id)
-        .execute();
+      await this.enqueueCommit(trx, ctx, id);
+      // A statement from the Statements screen or Review is finished by its commit (ADR-0051).
+      await intakeImportCommitted(trx, ctx, id);
     });
     return this.get(ctx, id);
+  }
+
+  /** Queues the atomic commit of a previewed import. */
+  async enqueueCommit(trx: Trx, ctx: Ctx, id: string): Promise<void> {
+    const jobId = await this.queue.enqueue(trx, {
+      ...ctx,
+      queue: 'import',
+      type: 'import.commit',
+      payload: { workspaceId: ctx.workspaceId, batchId: id },
+      maxAttempts: 1,
+    });
+    await trx
+      .updateTable('app.import_batch')
+      .set({ status: 'committing', job_id: jobId })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
   }
 
   /** Undo a committed import within 30 days (IMP-09). */
@@ -378,6 +431,8 @@ export class ImportsService {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', id)
         .execute();
+      // An automatic import that's undone may have gone to the wrong account (ADR-0051 §6).
+      await intakeImportUndone(trx, ctx, id);
     });
     return this.get(ctx, id);
   }

@@ -15,3 +15,4 @@ export * from './fixed-layout.js';
 export * from './qif.js';
 export * from './ofx.js';
 export * from './read.js';
+export * from './statement-match.js';
