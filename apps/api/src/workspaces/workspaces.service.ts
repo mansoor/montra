@@ -156,7 +156,10 @@ export class WorkspacesService {
         .select(sql<string>`app.entity_access(e.id)`.as('access'))
         .where('e.workspace_id', '=', workspaceId)
         .where('e.archived_at', 'is', null)
+        // Books made together share a creation time: the personal book first, then a stable order.
+        .orderBy(sql`case when e.type = 'personal' then 0 else 1 end`)
         .orderBy('e.created_at')
+        .orderBy('e.id')
         .execute();
       return {
         id: ws.id,
