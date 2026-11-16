@@ -12,7 +12,7 @@ import {
   PLAN_TYPES,
 } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
-import { CALENDAR_ITEM_KINDS } from '@montra/schemas';
+import { CALENDAR_ITEM_KINDS, INTAKE_REASONS } from '@montra/schemas';
 import { ITEM_PERIODS } from './receipts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -117,6 +117,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'account.type.': ['asset', 'liability', 'equity', 'income', 'expense'],
   'account.type_plural.': ['asset', 'liability', 'equity', 'income', 'expense'],
   'entity.type.': ['personal', 'business', 'rental'],
+  'intakes.reason.': INTAKE_REASONS,
   'imports.status.': [
     'uploaded',
     'parsing',
