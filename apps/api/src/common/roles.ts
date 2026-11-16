@@ -60,6 +60,8 @@ const MEMBER_WRITES = new Set([
   'POST notifications/:id/read',
   'POST notifications/read-all',
   'POST sync/push',
+  // Which books their own calendar shows (FLOW-05): a view choice, not a change to the books.
+  'PUT calendar/books',
 ]);
 
 /** True when a member may make this request. Reads are always allowed; RLS decides what they see. */

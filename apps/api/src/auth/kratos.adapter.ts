@@ -290,15 +290,16 @@ export class KratosAuthAdapter implements AuthPort {
     return body.count ?? 0;
   }
 
+  /**
+   * Both addresses were confirmed by code, so the new address is stored as verified. Kratos rebuilds the verifiable
+   * and recovery addresses from the traits, so the new email arrives as an unverified address and the recovery address
+   * follows by itself; only the verified mark is ours to set. It's found by `via` and value, never by index: with a
+   * number on the account, index 0 can be the number's address.
+   */
   async changeEmail(identityId: string, newEmail: string): Promise<void> {
     const path = `/admin/identities/${encodeURIComponent(identityId)}`;
-    // Both addresses were confirmed by code, so the new address is stored as verified.
     await this.admin('PATCH', path, [{ op: 'replace', path: '/traits/email', value: newEmail }]);
-    await this.admin('PATCH', path, [
-      { op: 'replace', path: '/verifiable_addresses/0/value', value: newEmail },
-      { op: 'replace', path: '/verifiable_addresses/0/verified', value: true },
-      { op: 'replace', path: '/verifiable_addresses/0/status', value: 'completed' },
-    ]);
+    await this.markVerified(path, 'email', newEmail);
     this.evictIdentity(identityId);
   }
 
@@ -353,10 +354,12 @@ export class KratosAuthAdapter implements AuthPort {
   /**
    * Marks one verifiable address verified. Kratos v26.2.0 doesn't keep them in a fixed order (the order a PATCH works on
    * can differ from what a read shows) and has no JSON Patch `test`, so an index can't be trusted: the whole list is
-   * written back with that one address changed, then read again to be sure.
+   * written back with that one address changed, then read again to be sure. Kratos stores an email address in lower
+   * case whatever the trait's case, so emails match without it.
    */
   private async markVerified(path: string, via: 'email' | 'sms', value: string): Promise<void> {
-    const matches = (a: KratosAddress) => a.via === via && a.value === value;
+    const same = (a: string) => (via === 'email' ? a.toLowerCase() === value.toLowerCase() : a === value);
+    const matches = (a: KratosAddress) => a.via === via && same(a.value);
     const current = ((await this.admin('GET', path)) as KratosIdentity).verifiable_addresses ?? [];
     if (current.some(matches)) {
       await this.admin('PATCH', path, [

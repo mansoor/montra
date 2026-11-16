@@ -72,6 +72,7 @@ import type {
   BudgetDto,
   BudgetMoveDto,
   BudgetPeriodDto,
+  CalendarBooksDto,
   CalendarDto,
   CopyBudgetRequest,
   CreateBudgetRequest,
@@ -633,6 +634,8 @@ export interface EntityDetailDto {
   archived: boolean;
   /** Books are closed through this date (DE-09); null when open. */
   lockedThrough: string | null;
+  /** The book's colour on the calendar, `#rrggbb`; null when unpicked (clients use `bookColors`). */
+  color: string | null;
 }
 
 /** Row of the journal list (DE-07); `total` is the sum of debits in minor units. */
@@ -2678,6 +2681,13 @@ export class ApiClient {
   getCalendar(workspaceId: string, opts: { from?: string; to?: string; entityId?: string } = {}) {
     return this.request<CalendarDto>('GET', this.ws(workspaceId, `/calendar${query(opts)}`));
   }
+  /** The books the signed-in person's calendar hides (FLOW-05). */
+  getCalendarBooks(workspaceId: string) {
+    return this.request<CalendarBooksDto>('GET', this.ws(workspaceId, '/calendar/books'));
+  }
+  setCalendarBooks(workspaceId: string, input: { hiddenEntityIds: string[] }) {
+    return this.request<CalendarBooksDto>('PUT', this.ws(workspaceId, '/calendar/books'), input);
+  }
   getNetWorth(workspaceId: string, opts: { date?: string; months?: number; entityId?: string } = {}) {
     return this.request<NetWorthDto>('GET', this.ws(workspaceId, `/net-worth${query(opts)}`));
   }
@@ -3309,6 +3319,7 @@ export type {
   BudgetDto,
   BudgetMoveDto,
   BudgetPeriodDto,
+  CalendarBooksDto,
   CalendarDto,
   DashboardDto,
   DraftBudgetDto,

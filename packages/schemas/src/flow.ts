@@ -45,6 +45,8 @@ export const CalendarItemDto = z.object({
   /** recurring_item, expected_income or goal id. */
   sourceId: Id,
   accountId: Id.nullable(),
+  /** The book it belongs to: its colour on the calendar, and what the book filter hides. */
+  entityId: Id,
   status: z.enum(['upcoming', 'paid', 'overdue']),
   /** UP-14/REC-06: the last amount rose more than 5% over the previous stable amount. */
   priceChange: z.object({ previous: MinorDto, current: MinorDto, percent: z.number() }).nullable(),
@@ -57,6 +59,16 @@ export const CalendarDto = z.object({
   items: z.array(CalendarItemDto),
 });
 export type CalendarDto = z.infer<typeof CalendarDto>;
+
+/**
+ * The books a person's calendar hides, as Google Calendar's calendars (per person, per workspace). Only books the person
+ * can see and that aren't archived are listed; the calendar itself always returns every book's items.
+ */
+export const CalendarBooksDto = z.object({ hiddenEntityIds: z.array(Id) });
+export type CalendarBooksDto = z.infer<typeof CalendarBooksDto>;
+
+export const UpdateCalendarBooksRequest = z.object({ hiddenEntityIds: z.array(Id).max(200) });
+export type UpdateCalendarBooksRequest = z.output<typeof UpdateCalendarBooksRequest>;
 
 export const NetWorthPointDto = z.object({
   date: CalendarDateDto,

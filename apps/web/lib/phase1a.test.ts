@@ -264,6 +264,7 @@ describe('settings helpers', () => {
         name: 'Personal',
         functionalCurrency: 'USD',
         lockedThrough: null,
+        color: null,
         access: 'write' as const,
       },
       {
@@ -272,6 +273,7 @@ describe('settings helpers', () => {
         name: 'Studio',
         functionalCurrency: 'USD',
         lockedThrough: null,
+        color: null,
         access: 'write' as const,
       },
     ],

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { BOOK_PALETTE, bookColors } from '@montra/domain';
 import type { EntityDetailDto, PeriodLockEventDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { StatusLine, useAction } from '../use-action';
@@ -22,6 +23,12 @@ export function EntitySettings({
 }) {
   const { busy, message, run, t } = useAction();
   const [type, setType] = useState<'business' | 'rental'>('business');
+  // The colour each book would have unpicked: the palette's by id, among the open books (as the calendar has them).
+  const open = entities.filter((e) => !e.archived);
+  const autoColor = (id: string) =>
+    bookColors(
+      open.some((e) => e.id === id) ? open.map((e) => (e.id === id ? { ...e, color: null } : e)) : [{ id }],
+    ).get(id)!;
 
   async function onAdd(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -44,6 +51,7 @@ export function EntitySettings({
           history={history[e.id] ?? []}
           isOwner={isOwner}
           today={today}
+          autoColor={autoColor(e.id)}
         />
       ))}
       {isOwner && (
@@ -90,12 +98,15 @@ function EntityCard({
   history,
   isOwner,
   today,
+  autoColor,
 }: {
   workspaceId: string;
   entity: EntityDetailDto;
   history: PeriodLockEventDto[];
   isOwner: boolean;
   today: string;
+  /** What the book shows on the calendar with no colour picked. */
+  autoColor: string;
 }) {
   const { busy, message, run, t } = useAction();
   const { date } = useI18n();
@@ -160,6 +171,10 @@ function EntityCard({
             </button>
           )}
         </div>
+      )}
+
+      {isOwner && (
+        <BookColor workspaceId={workspaceId} entity={entity} autoColor={autoColor} busy={busy} run={run} />
       )}
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -260,5 +275,65 @@ function EntityCard({
       )}
       <StatusLine message={message} />
     </section>
+  );
+}
+
+/** The book's colour on the calendar (FLOW-05): automatic (the palette's by id) or one of the palette's. */
+function BookColor({
+  workspaceId,
+  entity,
+  autoColor,
+  busy,
+  run,
+}: {
+  workspaceId: string;
+  entity: EntityDetailDto;
+  autoColor: string;
+  busy: boolean;
+  run: ReturnType<typeof useAction>['run'];
+}) {
+  const { t } = useI18n();
+  const current = entity.color?.toLowerCase() ?? null;
+  const options: { value: string | null; hex: string; label: string }[] = [
+    { value: null, hex: autoColor, label: t('entities.color_auto') },
+    ...BOOK_PALETTE.map((p) => ({
+      value: p.hex as string,
+      hex: p.hex as string,
+      label: t(`calendar.color_${p.name}`),
+    })),
+  ];
+  // A colour picked outside the palette (through the API) stays selectable.
+  if (current && !options.some((o) => o.value === current)) {
+    options.push({ value: current, hex: current, label: current });
+  }
+  const save = (value: string | null) =>
+    run(() => browserApi.updateEntity(workspaceId, entity.id, { color: value }), t('entities.color_saved'));
+  return (
+    <fieldset className="space-y-1">
+      <legend className="field-label">{t('entities.color')}</legend>
+      <div className="flex flex-wrap items-center gap-3">
+        {options.map((o) => (
+          <label
+            key={o.value ?? 'auto'}
+            className="flex cursor-pointer items-center gap-1.5 text-sm"
+            title={o.label}
+          >
+            <input
+              type="radio"
+              name={`color-${entity.id}`}
+              checked={current === o.value}
+              disabled={busy}
+              onChange={() => save(o.value)}
+            />
+            <span
+              aria-hidden
+              className="inline-block h-4 w-4 rounded-full"
+              style={{ backgroundColor: o.hex }}
+            />
+            <span className={o.value === null ? '' : 'sr-only'}>{o.label}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }

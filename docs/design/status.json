@@ -649,7 +649,7 @@
   ],
   "FLOW-05": [
     "done",
-    "month grid on web, agenda on mobile; bills scanned from billers (ADR-0048) show with their exact amount and due date"
+    "month grid on web, agenda on mobile; bills scanned from billers (ADR-0048) show with their exact amount and due date; filtered by book, each book in its own colour (migration 0057)"
   ],
   "FLOW-06": [
     "partial",

@@ -4,28 +4,20 @@ import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { shiftDays, shiftMonth } from '@/lib/planning';
+import { calendarBooks, calendarTotals, visibleItems } from '@/lib/calendar';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
+import { CalendarBooks } from '@/components/planning/calendar-books';
 import { PageHeader } from '@/components/ui/page-header';
 
 export const metadata: Metadata = { title: 'Calendar' };
 export const dynamic = 'force-dynamic';
 
-const TONE = {
-  bill: 'text-bad',
-  payday: 'text-good',
-  scheduled: 'text-info',
-  goal_due: 'text-warn',
-  card_due: 'text-bad',
-  invoice: 'text-good',
-  tax_due: 'text-warn',
-  rent: 'text-good',
-  mortgage: 'text-bad',
-  lease_end: 'text-warn',
-  reminder: 'text-info',
-};
-
-/** Bills, paydays and goal due dates by day (FLOW-05, UP-14). */
+/**
+ * Bills, paydays and goal due dates by day (FLOW-05, UP-14). With more than one book, a Books list filters the calendar
+ * by book, as Google Calendar's calendars: each item carries its book's colour and a word for its kind, and amounts
+ * stay green coming in and red going out.
+ */
 export default async function CalendarPage({
   params,
   searchParams,
@@ -39,7 +31,17 @@ export default async function CalendarPage({
   const today = todayIn(workspace.timeZone);
   const month = /^\d{4}-\d{2}-01$/.test(sp.month ?? '') ? sp.month! : `${today.slice(0, 7)}-01`;
   const end = shiftDays(shiftMonth(month, 1), -1);
-  const cal = await load((api) => api.getCalendar(workspaceId, { from: month, to: end }));
+  const books = calendarBooks(workspace.entities);
+  const filtered = books.length > 1;
+  const [cal, prefs] = await Promise.all([
+    load((api) => api.getCalendar(workspaceId, { from: month, to: end })),
+    filtered
+      ? load((api) => api.getCalendarBooks(workspaceId))
+      : Promise.resolve({ hiddenEntityIds: [] as string[] }),
+  ]);
+  const hidden = prefs.hiddenEntityIds;
+  const shown = visibleItems(cal.items, hidden);
+  const bookOf = new Map(books.map((b) => [b.id, b]));
   const { t, locale } = await getI18n();
   // Month heading in the user's language ("November 2026"); dates are calendar dates, so format in UTC.
   const monthLabel = new Intl.DateTimeFormat(locale, {
@@ -55,19 +57,10 @@ export default async function CalendarPage({
   const days = Array.from({ length: Math.ceil((lead + Number(end.slice(8))) / 7) * 7 }, (_, i) =>
     shiftDays(start, i),
   );
-  const byDay = new Map<string, typeof cal.items>();
-  for (const i of cal.items) byDay.set(i.date, [...(byDay.get(i.date) ?? []), i]);
-  const totals = cal.items.reduce(
-    (acc, i) => {
-      const v = BigInt(i.amount);
-      if (i.status === 'paid') return acc;
-      if (v >= 0n) acc.in += v;
-      else acc.out -= v;
-      return acc;
-    },
-    { in: 0n, out: 0n },
-  );
-  const ccy = cal.items[0]?.currency ?? workspace.baseCurrency;
+  const byDay = new Map<string, typeof shown>();
+  for (const i of shown) byDay.set(i.date, [...(byDay.get(i.date) ?? []), i]);
+  const totals = calendarTotals(shown);
+  const ccy = shown[0]?.currency ?? workspace.baseCurrency;
   const weekdays = [0, 1, 2, 3, 4, 5, 6].map((d) => t(`calendar.weekday_${d}`));
 
   return (
@@ -92,63 +85,86 @@ export default async function CalendarPage({
           </div>
         }
       />
-      <div className="card-flush">
-        <div className="hidden grid-cols-7 border-b border-line bg-canvas md:grid">
-          {weekdays.map((w) => (
-            <div key={w} className="section-h px-2 py-2">
-              {w}
-            </div>
-          ))}
-        </div>
-        <ol className="grid md:grid-cols-7">
-          {days.map((d) => {
-            const items = byDay.get(d) ?? [];
-            const inMonth = d >= month && d <= end;
-            if (!inMonth && items.length === 0) {
+      <div className={filtered ? 'grid gap-4 lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start' : ''}>
+        {filtered && <CalendarBooks workspaceId={workspaceId} books={books} hidden={hidden} />}
+        <div className="card-flush">
+          <div className="hidden grid-cols-7 border-b border-line bg-canvas md:grid">
+            {weekdays.map((w) => (
+              <div key={w} className="section-h px-2 py-2">
+                {w}
+              </div>
+            ))}
+          </div>
+          <ol className="grid md:grid-cols-7">
+            {days.map((d) => {
+              const items = byDay.get(d) ?? [];
+              const inMonth = d >= month && d <= end;
+              if (!inMonth && items.length === 0) {
+                return (
+                  <li
+                    key={d}
+                    aria-hidden
+                    className="hidden min-h-24 border-b border-line bg-sunken/40 md:block md:border-r"
+                  />
+                );
+              }
               return (
                 <li
                   key={d}
-                  aria-hidden
-                  className="hidden min-h-24 border-b border-line bg-sunken/40 md:block md:border-r"
-                />
-              );
-            }
-            return (
-              <li
-                key={d}
-                className={`min-h-24 border-b border-line p-2 md:border-r ${d === today ? 'bg-brand-50' : ''} ${items.length === 0 ? 'hidden md:block' : ''}`}
-              >
-                <div className={`text-xs font-semibold ${d === today ? 'text-brand-600' : 'text-muted'}`}>
-                  <time dateTime={d}>
-                    <span className="md:hidden">
-                      <DateText date={d} />
-                    </span>
-                    <span className="hidden md:inline">{Number(d.slice(8))}</span>
-                  </time>
-                </div>
-                <ul className="mt-1 space-y-1">
-                  {items.map((i, n) => (
-                    <li key={n} className="text-xs">
-                      <span className={`block truncate font-semibold ${TONE[i.kind]}`} title={i.name}>
-                        {i.name}
+                  className={`min-h-24 border-b border-line p-2 md:border-r ${d === today ? 'bg-brand-50' : ''} ${items.length === 0 ? 'hidden md:block' : ''}`}
+                >
+                  <div className={`text-xs font-semibold ${d === today ? 'text-brand-600' : 'text-muted'}`}>
+                    <time dateTime={d}>
+                      <span className="md:hidden">
+                        <DateText date={d} />
                       </span>
-                      <span className="flex items-center gap-1">
-                        {BigInt(i.amount) !== 0n && <Money amount={i.amount} currency={i.currency} />}
-                        {i.status !== 'upcoming' && (
-                          <span className={`chip ${i.status === 'paid' ? 'chip-good' : 'chip-bad'}`}>
-                            {t(`calendar.status_${i.status}`)}
+                      <span className="hidden md:inline">{Number(d.slice(8))}</span>
+                    </time>
+                  </div>
+                  <ul className="mt-1 space-y-1">
+                    {items.map((i, n) => {
+                      const book = filtered ? bookOf.get(i.entityId) : undefined;
+                      return (
+                        <li
+                          key={n}
+                          className={`text-xs ${book ? 'border-l-4 pl-1.5' : ''}`}
+                          style={book ? { borderLeftColor: book.color } : undefined}
+                          data-testid="calendar-item"
+                        >
+                          <span className="block truncate font-semibold" title={i.name}>
+                            {i.name}
                           </span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            );
-          })}
-        </ol>
+                          {book && (
+                            <span className="sr-only">{t('calendar.in_book', { name: book.name })}</span>
+                          )}
+                          <span className="flex flex-wrap items-center gap-1">
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted">
+                              {t(`calendar.kind_${i.kind}`)}
+                            </span>
+                            {BigInt(i.amount) !== 0n && (
+                              <Money amount={i.amount} currency={i.currency} signed />
+                            )}
+                            {i.status !== 'upcoming' && (
+                              <span className={`chip ${i.status === 'paid' ? 'chip-good' : 'chip-bad'}`}>
+                                {t(`calendar.status_${i.status}`)}
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       </div>
-      {cal.items.length === 0 && <p className="text-sm text-muted">{t('calendar.empty')}</p>}
+      {cal.items.length === 0 ? (
+        <p className="text-sm text-muted">{t('calendar.empty')}</p>
+      ) : (
+        shown.length === 0 && <p className="text-sm text-muted">{t('calendar.empty_shown')}</p>
+      )}
     </div>
   );
 }
