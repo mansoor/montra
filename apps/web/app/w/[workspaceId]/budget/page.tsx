@@ -188,7 +188,8 @@ export default async function BudgetPage({
               ? {
                   entityId,
                   currency: budget.currency,
-                  billers: allBillers.filter((b) => !b.archived),
+                  // Only books this login can write: a bill for a read-only book would be refused.
+                  billers: allBillers.filter((b) => !b.archived && canWriteBooks(workspace, b.entityId)),
                   entities: entities.map((e) => ({
                     id: e.id,
                     name: e.name,
