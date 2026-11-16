@@ -1,10 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MAIL_PORT, type MemoryMail } from '../src/mail/mail.service.js';
 import { SMS_PORT, type MemorySms } from '../src/sms/sms.js';
 import { ADMIN_URL } from './env.js';
-import { startHarness, type Client, type Harness } from './harness.js';
+import { startHarness, type Harness } from './harness.js';
 
 // Confirming a mobile number with a code the API texts (ADR-0049 §6, migration 0056).
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
