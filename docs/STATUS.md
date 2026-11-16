@@ -1277,14 +1277,17 @@ Phase 11 leftovers:
       - Kratos v26.2.0 reorders an identity's verifiable addresses and has no JSON Patch `test`, so the adapter writes
         the whole list back and reads it again. Removing a number also removes the `code` credential, which otherwise
         keeps the old number and stops anyone else adding it. Both checked against Kratos v26.2.0.
+      - The email change (AUTH-11) marks the new address verified the same way, found by `via` and value. It used to
+        patch `verifiable_addresses/0`, which on an account with a number can be the number's address: Kratos then
+        left the new email unverified and took the number's verified mark away. Kratos keeps the recovery address in
+        step with the email trait by itself, so it needs no patch. Checked against Kratos v26.2.0 over 8 accounts × 2
+        changes, with the number listed first on about half.
     - Not done: the Terraform doesn't set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real
       Twilio. US texting needs A2P 10DLC or a verified toll-free number first (launch checklist).
     - Tests: `apps/api/test/texts.test.ts`, confirming a number in `phone.test.ts`, the number's sync and the admin
       calls in `kratos.test.ts`, the limits and the settings refusal in `auth-gateway.test.ts`, and
       `packages/domain/test/phone.test.ts`.
   - **Next for ADR-0049:**
-    - the email change patches `verifiable_addresses/0`, but Kratos reorders addresses: with a number on the account it
-      can write the new email onto the number's address. Fix it as the number's change does;
     - `SMS_MODE` and the Twilio secrets in Terraform;
     - A2P 10DLC (or a verified toll-free number) before the first real text in the US;
     - a first real send through Twilio and a real Stripe checkout by plan.

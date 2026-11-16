@@ -20,6 +20,8 @@ interface FakeSession {
   /** ADR-0049 §6: a number in the traits, verified by text or not. */
   phone?: string;
   phoneVerified?: boolean;
+  /** Kratos keeps no fixed order of addresses; this lists the number's first. */
+  phoneFirst?: boolean;
 }
 
 let kratos: Server;
@@ -41,12 +43,24 @@ const sessionJson = (s: FakeSession, id = `sess-${s.token}`) => ({
   identity: {
     id: s.identityId,
     traits: { email: s.email, name: { first: 'Kim', last: 'Lee' }, ...(s.phone ? { phone: s.phone } : {}) },
-    verifiable_addresses: [
-      { value: s.email, verified: s.verified, via: 'email' },
-      ...(s.phone ? [{ value: s.phone, verified: Boolean(s.phoneVerified), via: 'sms' }] : []),
-    ],
+    verifiable_addresses: addressesOf(s),
+    recovery_addresses: [{ value: s.email, via: 'email' }],
   },
 });
+
+/** The identity's verifiable addresses, in the order Kratos happens to give them. */
+function addressesOf(s: FakeSession): { value: string; verified: boolean; via: string; status: string }[] {
+  const at = (value: string, verified: boolean, via: string) => ({
+    value,
+    verified,
+    via,
+    status: verified ? 'completed' : 'pending',
+  });
+  // Kratos keeps the email trait as given, and its address in lower case.
+  const email = at(s.email.toLowerCase(), s.verified, 'email');
+  const phone = s.phone ? [at(s.phone, Boolean(s.phoneVerified), 'sms')] : [];
+  return s.phoneFirst ? [...phone, email] : [email, ...phone];
+}
 
 const add = (token: string, overrides: Partial<FakeSession> = {}) =>
   sessions.set(token, {
@@ -89,18 +103,29 @@ beforeAll(async () => {
         const owned = [...sessions.values()].filter((o) => o.identityId === identityId);
         const identity = () => (owned[0] ? sessionJson(owned[0]).identity : { id: identityId, traits: {} });
         if (req.method === 'PATCH' && !rest) {
-          for (const op of JSON.parse(raw) as { op: string; path: string; value: unknown }[]) {
-            if (op.path === '/traits/email') owned.forEach((o) => (o.email = String(op.value)));
-            if (op.path === '/traits/phone')
-              owned.forEach((o) => {
+          // As Kratos v26.2.0 does: a changed trait comes back as a new, unverified address; the address list is then
+          // matched against the traits, so an address patched to another value (or patched by an index that names
+          // another address) loses its verified mark.
+          for (const o of owned) {
+            let list = addressesOf(o);
+            for (const op of JSON.parse(raw) as { op: string; path: string; value: unknown }[]) {
+              if (op.path === '/traits/email' && op.value !== o.email) {
+                o.email = String(op.value);
+                o.verified = false;
+              }
+              if (op.path === '/traits/phone') {
                 o.phone = op.op === 'remove' ? undefined : String(op.value);
                 o.phoneVerified = false;
-              });
-            // The whole list written back, as the adapter does since Kratos reorders it.
-            if (op.path === '/verifiable_addresses') {
-              const list = op.value as { via: string; verified: boolean }[];
-              owned.forEach((o) => (o.phoneVerified = list.some((v) => v.via === 'sms' && v.verified)));
+              }
+              if (op.path.startsWith('/traits/')) list = addressesOf(o);
+              if (op.path === '/verifiable_addresses') list = op.value as typeof list;
+              const byIndex = /^\/verifiable_addresses\/(\d+)\/(value|verified|status)$/.exec(op.path);
+              if (byIndex) Object.assign(list[Number(byIndex[1])]!, { [byIndex[2]!]: op.value });
             }
+            const kept = (via: string, value?: string) =>
+              list.some((a) => a.via === via && a.value === value && a.verified);
+            o.verified = kept('email', o.email.toLowerCase());
+            o.phoneVerified = kept('sms', o.phone);
           }
           return send(200, identity());
         }
@@ -339,6 +364,32 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     expect(
       (await call('POST', '/v1/me/email-change', 'stale-mover', { newEmail: 'x@example.com' })).body.code,
     ).toBe('reauth.required');
+  });
+
+  it('marks the new email verified, not the number, whichever address Kratos lists first (AUTH-11)', async () => {
+    add('listed', {
+      identityId: 'id-listed',
+      email: 'listed@example.com',
+      phone: '+14155550189',
+      phoneVerified: true,
+      phoneFirst: true,
+    });
+    const auth = h.app.get<AuthPort>(AUTH_PORT);
+    const before = adminCalls.length;
+    await auth.changeEmail('id-listed', 'ReListed@example.com');
+    expect(sessions.get('listed')).toMatchObject({
+      email: 'ReListed@example.com',
+      verified: true,
+      phone: '+14155550189',
+      phoneVerified: true,
+    });
+    // The email trait, then the list read, written back whole with the new email marked, and read again.
+    expect(adminCalls.slice(before)).toEqual([
+      'PATCH / id-listed',
+      'GET / id-listed',
+      'PATCH / id-listed',
+      'GET / id-listed',
+    ]);
   });
 
   it('keeps a copy of the verified number, and emails the address when it changes (ADR-0049 §6)', async () => {
