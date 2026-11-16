@@ -28,7 +28,8 @@ matching (ADR-0017, BIZ-06).
 ### 1. The Add wheel
 
 - Tapping the centre + opens a wheel instead of a screen. Five round choices fan out on an arc above the button:
-  **Transaction** (quick add), **Receipt**, **Statement**, **Bill** and **Payslip**.
+  **Bill**, **Transaction** (quick add), **Receipt**, **Statement** and **Payslip**, left to right (the owner moved
+  Bill to the front in November 2026).
 - The + turns into a ×. Tapping it, the dimmed screen or Android's back closes the wheel.
 - Choices the login can't use are left out (AUTH-18), and the rest spread over the same arc:
   - Statement needs `importFiles`.

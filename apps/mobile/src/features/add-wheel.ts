@@ -2,7 +2,8 @@
  * The Add wheel's pure part (ADR-0048): what it offers to whom, and where each choice sits on the arc above the +.
  */
 
-export const WHEEL_CHOICES = ['transaction', 'receipt', 'statement', 'bill', 'payslip'] as const;
+/** Left to right on the arc, in the order the owner chose: bills come first. */
+export const WHEEL_CHOICES = ['bill', 'transaction', 'receipt', 'statement', 'payslip'] as const;
 export type WheelChoice = (typeof WHEEL_CHOICES)[number];
 
 export interface WheelAbilities {
