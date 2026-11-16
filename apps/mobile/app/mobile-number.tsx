@@ -68,7 +68,9 @@ export default function MobileNumber() {
       if (r.kind === 'error') return setError(r.message);
       await refresh();
       if (!phone) return setNote(t('mobile.phone.removed'));
-      if (r.verificationFlowId) setStep({ kind: 'code', flowId: r.verificationFlowId, phone });
+      // Kratos v26.2.0 texts a code but doesn't say which flow it belongs to, so it can't be entered yet.
+      if (!r.verificationFlowId) return setNote(t('mobile.phone.added_pending', { phone }));
+      setStep({ kind: 'code', flowId: r.verificationFlowId, phone });
       setNote(t('mobile.phone.added', { phone }));
     });
 

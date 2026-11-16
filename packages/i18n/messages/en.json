@@ -2531,6 +2531,7 @@
   "mobile.closed.try_again": "Try again",
   "mobile.closed.waiting": "Nothing syncs meanwhile. Changes made on this phone that haven’t reached Montra wait here until it opens again.",
   "mobile.phone.added": "Saved. We texted a code to {phone} to confirm it.",
+  "mobile.phone.added_pending": "Saved. Confirming a number isn’t possible yet, so texts to {phone} stay off for now.",
   "mobile.phone.change": "Change number",
   "mobile.phone.code": "Code from the text",
   "mobile.phone.confirm": "Confirm",
