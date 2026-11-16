@@ -152,7 +152,8 @@ export class IntakeJobs {
       } else if (issuer) {
         for (const a of accounts.filter(sameIssuer)) add(a, 'issuer');
       }
-      if (fingerprint) {
+      // A saved profile says which bank's layout, not which account: it's offered only when nothing more specific is.
+      if (fingerprint && candidates.length === 0) {
         const profiles = await trx
           .selectFrom('app.import_profile')
           .select('ledger_account_id')

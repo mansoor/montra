@@ -63,6 +63,12 @@ found from every detail the file has; the signal is only the most specific one.
   own it says which bank, not which account, so it is a signal only together with the file-name pattern.
 - **Account numbers aren't stored.** An OFX `ACCTID` is kept only as a hash in the signal; last four digits are
   already stored on accounts and billers.
+- **Candidates come in tiers**, so a weaker detail never outvotes a stronger one:
+  1. the account the memory points to, and the accounts with the digits (narrowed by the issuer when several share
+     them);
+  2. else the accounts at the issuer;
+  3. else the accounts a saved profile of the same header belongs to;
+  4. else the recent accounts (below).
 - When the file gives no signal (a photo with no digits and no issuer), it is matched every time by hand. Nothing is
   learned from it.
 - When nothing strong matches, the accounts imported into most recently are offered, as ADR-0048 §3 does. They're

@@ -184,6 +184,11 @@ describe('statements without an account (ADR-0051 §1–§4, §6)', () => {
         [savings, 'profile'],
       ].sort(),
     );
+    // Digits in the name are more specific than the layout: only their account is offered.
+    const named = await drop('Chase9876_Activity.csv');
+    expect(named).toMatchObject({ status: 'suggested', targetId: savings });
+    expect(named.candidates).toEqual([expect.objectContaining({ id: savings, reason: 'last4' })]);
+    await c.post(w.url(`/intakes/${named.id}/dismiss`));
   });
 
   it('offers recent accounts when nothing identifies the file, and never picks them itself', async () => {
