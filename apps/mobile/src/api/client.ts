@@ -354,6 +354,14 @@ export function createApi(opts: ApiOptions) {
     createScan: (w: string, kind: ScanDto['kind'], fileIds: string[]) =>
       request<ScanDto>('POST', `${ws(w)}/scans`, { kind, fileIds }),
     getScan: (w: string, id: string) => request<ScanDto>('GET', `${ws(w)}/scans/${id}`),
+    /** Import history (IMP-09), newest first; `accountId` narrows it to one account. */
+    listImports: async (w: string, accountId?: string) =>
+      (
+        await request<{ data: ImportBatchDto[] }>(
+          'GET',
+          `${ws(w)}/imports${accountId ? `?accountId=${encodeURIComponent(accountId)}` : ''}`,
+        )
+      ).data,
     getImport: (w: string, id: string) => request<ImportBatchDto>('GET', `${ws(w)}/imports/${id}`),
     importRows: async (w: string, id: string) =>
       (await request<{ data: ImportRowDto[] }>('GET', `${ws(w)}/imports/${id}/rows`)).data,

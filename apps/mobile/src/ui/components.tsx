@@ -14,6 +14,7 @@ import {
   Animated,
   Easing,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -34,17 +35,28 @@ export function Screen({
   children,
   scroll = true,
   testID,
+  onRefresh,
+  refreshing = false,
 }: {
   children: ReactNode;
   scroll?: boolean;
   testID?: string;
+  /** Pull to refresh, on a scrolling screen. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const th = useTheme();
   const insets = useSafeAreaInsets();
   const { top, bottom } = screenInsets(useSegments(), insets);
   const pad = { padding: th.pad, gap: th.space(2) };
   const body = scroll ? (
-    <ScrollView contentContainerStyle={pad} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={pad}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={
+        onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} /> : undefined
+      }
+    >
       {children}
     </ScrollView>
   ) : (
