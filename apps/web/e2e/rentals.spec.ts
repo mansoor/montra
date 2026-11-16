@@ -292,11 +292,11 @@ test('a lease, rent, a deposit and a mortgage reach the reports and Schedule E',
   // It's on the calendar too.
   await nav(page, 'Calendar');
   await expect(page.getByText('12 Elm St · Main').first()).toBeVisible();
-  // Filtered by book, as Google Calendar's calendars (FLOW-05): unticking the rental books hides their dates, for
-  // this person on every device, and ticking them brings them back.
+  // Filtered by book, as Google Calendar's calendars (FLOW-05): switching the rental book off hides its dates, for
+  // this person on every device, and switching it on brings them back.
   const books = page.getByRole('group', { name: 'Books' });
-  const elm = books.getByRole('checkbox', { name: 'Elm Rentals' });
-  await expect(books.getByRole('checkbox', { name: 'Personal' })).toBeChecked();
+  const elm = books.getByRole('switch', { name: 'Elm Rentals' });
+  await expect(books.getByRole('switch', { name: 'Personal' })).toBeChecked();
   await elm.uncheck();
   await expect(page.getByText('12 Elm St · Main')).toHaveCount(0);
   expect((await (await page.request.get(`${ws}/calendar/books`)).json()).hiddenEntityIds).toEqual([entityId]);
