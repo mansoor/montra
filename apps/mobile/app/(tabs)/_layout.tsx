@@ -1,6 +1,6 @@
 /**
  * Tabs (08 §3): Home, Transactions, centre Add, Budget, More (the review count shows on More). The centre + opens the
- * Add wheel (ADR-0048) instead of a screen: a transaction, a receipt, a statement, a bill or a payslip.
+ * Add wheel (ADR-0048) instead of a screen: a bill, a transaction, a receipt, a statement or a payslip.
  */
 import { useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';

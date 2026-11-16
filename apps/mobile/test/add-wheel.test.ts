@@ -6,12 +6,12 @@ describe('the Add wheel', () => {
   const all = { record: true, importFiles: true, setUp: true };
 
   it('offers what the login can use, in order', () => {
-    expect(wheelChoices(all)).toEqual(['transaction', 'receipt', 'statement', 'bill', 'payslip']);
+    expect(wheelChoices(all)).toEqual(['bill', 'transaction', 'receipt', 'statement', 'payslip']);
     // A member records but doesn't import or set up.
     expect(wheelChoices({ record: true, importFiles: false, setUp: false })).toEqual([
+      'bill',
       'transaction',
       'receipt',
-      'bill',
     ]);
     expect(wheelChoices({ record: false, importFiles: false, setUp: false })).toEqual([]);
     expect(
@@ -24,10 +24,10 @@ describe('the Add wheel', () => {
 
   it('opens each choice where it is captured', () => {
     expect(WHEEL_CHOICES.map(wheelRoute)).toEqual([
+      '/bills/capture',
       '/capture',
       '/receipt-capture',
       '/import?scan=1',
-      '/bills/capture',
       '/payslips/capture',
     ]);
   });

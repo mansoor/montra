@@ -918,6 +918,17 @@ describe('estimated tax (BIZ-09, REC-09)', () => {
     await c.delete(url(`/mileage-trips/${t.id}`));
   });
 
+  it('puts the January Q4 date on a calendar that runs from November to January', async () => {
+    // The rate set above makes the dates show. Q4 of this year falls due in January of the next.
+    const from = `${year}-11-01`;
+    const to = `${year + 1}-01-31`;
+    const cal = (await c.get(url(`/calendar?from=${from}&to=${to}&entityId=${biz}`))).body.items;
+    const q4 = cal.filter((x: any) => x.kind === 'tax_due');
+    expect(q4).toHaveLength(1);
+    expect(q4[0]).toMatchObject({ name: 'Estimated tax Q4', sourceId: biz });
+    expect(q4[0].date.startsWith(`${year + 1}-01-`)).toBe(true);
+  });
+
   it('suggests setting aside, and accepting makes the transfer', async () => {
     const savings = (
       await c.post(url('/accounts'), {
