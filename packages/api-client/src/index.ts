@@ -82,6 +82,11 @@ import type {
   UpdateBillerRequest,
   BillerDto,
   HouseholdBillDto,
+  CreateHouseholdBillRequest,
+  FiledBillDto,
+  CreateScanRequest,
+  ScanBillDetectedDto,
+  ScanDto,
   DashboardDto,
   DraftBudgetDto,
   DraftBudgetRequest,
@@ -761,6 +766,8 @@ export type UpdateGoalInput = z.input<typeof UpdateGoalRequest>;
 export type CreateExpectedIncomeInput = z.input<typeof CreateExpectedIncomeRequest>;
 export type CreateBillerInput = z.input<typeof CreateBillerRequest>;
 export type UpdateBillerInput = z.input<typeof UpdateBillerRequest>;
+export type CreateHouseholdBillInput = z.input<typeof CreateHouseholdBillRequest>;
+export type CreateScanInput = z.input<typeof CreateScanRequest>;
 export type UpdateExpectedIncomeInput = z.input<typeof UpdateExpectedIncomeRequest>;
 export type AcceptRecommendationInput = z.input<typeof AcceptRecommendationRequest>;
 export type UpdatePlanningSettingsInput = z.input<typeof UpdatePlanningSettingsRequest>;
@@ -2610,6 +2617,26 @@ export class ApiClient {
       this.ws(workspaceId, `/household-bills${query({ ...opts })}`),
     ).then((r) => r.data);
   }
+  /** ADR-0048 §4: one page of a bill to scan (PDF, JPEG, PNG, WebP); the API sniffs the type. */
+  uploadHouseholdBillFile(workspaceId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<ReceiptFileDto>('POST', this.ws(workspaceId, '/household-bills/files'), form);
+  }
+  /**
+   * ADR-0048 §4: files a bill for a provider, from a scan (`scanId`) or typed in. A provider on a business's books
+   * makes that business's vendor bill; the answer says which.
+   */
+  createHouseholdBill(workspaceId: string, input: CreateHouseholdBillInput) {
+    return this.request<FiledBillDto>('POST', this.ws(workspaceId, '/household-bills'), input);
+  }
+  /** ADR-0048 §3: a statement, payslip or bill to read before it's filed. Poll `getScan` until it isn't `reading`. */
+  createScan(workspaceId: string, input: CreateScanInput) {
+    return this.request<ScanDto>('POST', this.ws(workspaceId, '/scans'), input);
+  }
+  getScan(workspaceId: string, id: string) {
+    return this.request<ScanDto>('GET', this.ws(workspaceId, `/scans/${enc(id)}`));
+  }
   /** ADR-0048 §4: the providers that send a budget's bills, with each one's next bill. */
   listBillers(workspaceId: string, entityId?: string) {
     return this.request<{ data: BillerDto[] }>(
@@ -3326,6 +3353,9 @@ export type {
   ExpectedIncomeDto,
   BillerDto,
   HouseholdBillDto,
+  FiledBillDto,
+  ScanBillDetectedDto,
+  ScanDto,
   DashboardChartsDto,
   SetCategoryBudgetDto,
   SetCategoryBudgetRequest,
