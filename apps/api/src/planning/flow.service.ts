@@ -567,7 +567,9 @@ export class FlowService {
       .select('id')
       .where('workspace_id', '=', ctx.workspaceId)
       .where('archived_at', 'is', null)
+      .orderBy(sql`case when type = 'personal' then 0 else 1 end`)
       .orderBy('created_at')
+      .orderBy('id')
       .execute();
     return rows.map((r) => r.id);
   }
@@ -1030,7 +1032,9 @@ export class FlowService {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('archived_at', 'is', null)
         .$if(!!entityId, (q) => q.where('id', '=', entityId!))
+        .orderBy(sql`case when type = 'personal' then 0 else 1 end`)
         .orderBy('created_at')
+        .orderBy('id')
         .execute();
       if (entityId && !entities.length) throw notFound('Entity');
       const wholeMonths = from === startOfMonth(from) && to === endOfMonth(to);
