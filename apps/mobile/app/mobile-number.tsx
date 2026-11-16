@@ -1,27 +1,26 @@
 /**
- * The mobile number (ADR-0049 §6), as on the web's Settings → Security: Kratos's `traits.phone`, changed in a settings
- * flow. Reached only where this service sends texts. Kratos texts a code to a new number; it's entered here when
- * Kratos says which verification flow it belongs to. Changing it needs a recent sign-in (AUTH-09), asked for here.
+ * The mobile number (ADR-0049 §6), as on the web's Settings → Security: the API texts a code to the number, and the
+ * number is the account's once the code comes back. Reached only where this service sends texts. Adding, changing and
+ * removing it need a recent sign-in (AUTH-09); when the API asks, the password is asked for here.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
+import type { PhoneStatusDto } from '@montra/schemas';
+import { needsFreshSignIn } from '../src/features/data-settings';
 import { parsePhone } from '../src/features/texts';
 import { t } from '../src/i18n';
 import { useSession } from '../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Field, Screen, SectionLabel, Small } from '../src/ui/components';
 
 type Step =
-  | { kind: 'loading' }
-  | { kind: 'edit' }
-  | { kind: 'code'; flowId: string; phone: string }
-  | { kind: 'reauth'; then: () => Promise<void> };
+  { kind: 'edit' } | { kind: 'code'; sentTo: string } | { kind: 'reauth'; then: () => Promise<void> };
 
 export default function MobileNumber() {
   const s = useSession();
-  const kratos = s.kratos;
+  const { api, kratos } = s;
   const email = s.state.status === 'signed_in' ? s.state.me.email : '';
-  const [current, setCurrent] = useState<{ phone: string | null; verified: boolean } | null>(null);
-  const [step, setStep] = useState<Step>({ kind: 'loading' });
+  const [status, setStatus] = useState<PhoneStatusDto | null>(null);
+  const [step, setStep] = useState<Step>({ kind: 'edit' });
   const [input, setInput] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -30,57 +29,38 @@ export default function MobileNumber() {
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    const token = await s.token();
-    if (!kratos || !token) return;
-    const r = await kratos.phoneStatus(token);
-    if (r.kind === 'reauth') return setStep({ kind: 'reauth', then: refresh });
-    if (r.kind === 'error') {
-      setError(r.message);
-      return setStep({ kind: 'edit' });
+    try {
+      const next = await api.phone();
+      setStatus(next);
+      if (next.pending) setStep({ kind: 'code', sentTo: next.pending.phone });
+    } catch (err) {
+      setError((err as Error).message);
     }
-    setCurrent({ phone: r.phone, verified: r.verified });
-    setInput(r.phone ?? '');
-    setStep({ kind: 'edit' });
-  }, [kratos, s]);
+  }, [api]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const run = async (fn: (token: string) => Promise<void>) => {
-    const token = await s.token();
-    if (!kratos || !token) return;
+  /** Runs a change; a stale sign-in asks for the password, then runs it again. */
+  const run = async (fn: () => Promise<void>): Promise<void> => {
     setBusy(true);
     setError(null);
     setNote(null);
     try {
-      await fn(token);
+      await fn();
     } catch (err) {
-      setError((err as Error).message);
+      if (needsFreshSignIn(err) && kratos) setStep({ kind: 'reauth', then: () => run(fn) });
+      else setError((err as Error).message);
     } finally {
       setBusy(false);
     }
   };
 
-  const save = (phone: string | null): Promise<void> =>
-    run(async (token) => {
-      const r = await kratos!.setPhone(token, phone);
-      if (r.kind === 'reauth') return setStep({ kind: 'reauth', then: () => save(phone) });
-      if (r.kind === 'error') return setError(r.message);
-      await refresh();
-      if (!phone) return setNote(t('mobile.phone.removed'));
-      // Kratos v26.2.0 texts a code but doesn't say which flow it belongs to, so it can't be entered yet.
-      if (!r.verificationFlowId) return setNote(t('mobile.phone.added_pending', { phone }));
-      setStep({ kind: 'code', flowId: r.verificationFlowId, phone });
-      setNote(t('mobile.phone.added', { phone }));
+  const send = (phone: string) =>
+    run(async () => {
+      const sent = await api.startPhone(phone);
+      setStep({ kind: 'code', sentTo: sent.phone });
     });
-
-  if (!kratos) {
-    return (
-      <Screen testID="mobile-number">
-        <Body muted>{t('mobile.auth.dev_only')}</Body>
-      </Screen>
-    );
-  }
 
   return (
     <Screen testID="mobile-number">
@@ -89,16 +69,18 @@ export default function MobileNumber() {
 
       {step.kind === 'edit' ? (
         <Card>
-          <SectionLabel>{t('mobile.phone.label')}</SectionLabel>
-          <Body>
-            {current?.phone
-              ? t(current.verified ? 'mobile.phone.verified' : 'mobile.phone.unverified', {
-                  phone: current.phone,
-                })
-              : t('mobile.phone.none')}
-          </Body>
+          <SectionLabel>{t('phone.title')}</SectionLabel>
+          {status ? (
+            <Body>
+              {status.phone
+                ? t(status.verified ? 'phone.current_verified' : 'phone.current_unverified', {
+                    phone: status.phone,
+                  })
+                : t('phone.none')}
+            </Body>
+          ) : null}
           <Field
-            label={t('mobile.phone.label')}
+            label={t('phone.title')}
             value={input}
             onChangeText={setInput}
             keyboardType="phone-pad"
@@ -106,27 +88,35 @@ export default function MobileNumber() {
             autoComplete="tel"
             testID="mobile-number-input"
           />
-          <Small>{t('mobile.phone.hint')}</Small>
+          <Small>{t('phone.hint')}</Small>
           <Button
-            label={t(current?.phone ? 'mobile.phone.change' : 'mobile.phone.save')}
+            label={t('phone.send')}
             busy={busy}
             disabled={!input.trim()}
             onPress={() => {
               const parsed = parsePhone(input);
               if (!parsed.ok) return setError(t(parsed.error));
-              void save(parsed.phone);
+              void send(parsed.phone);
             }}
-            testID="mobile-number-save"
+            testID="mobile-number-send"
           />
-          {current?.phone ? (
+          {status?.phone ? (
             <Button
               kind="secondary"
-              label={t('mobile.phone.remove')}
+              label={t('phone.remove')}
               busy={busy}
               onPress={() =>
-                Alert.alert(t('mobile.phone.remove'), t('mobile.phone.remove_confirm'), [
+                Alert.alert(t('phone.remove'), t('phone.remove_confirm'), [
                   { text: t('mobile.common.cancel'), style: 'cancel' },
-                  { text: t('mobile.phone.remove'), style: 'destructive', onPress: () => void save(null) },
+                  {
+                    text: t('phone.remove'),
+                    style: 'destructive',
+                    onPress: () =>
+                      void run(async () => {
+                        setStatus(await api.removePhone());
+                        setNote(t('phone.removed'));
+                      }),
+                  },
                 ])
               }
               testID="mobile-number-remove"
@@ -135,39 +125,41 @@ export default function MobileNumber() {
         </Card>
       ) : step.kind === 'code' ? (
         <Card>
-          <SectionLabel>{t('mobile.phone.label')}</SectionLabel>
+          <SectionLabel>{t('phone.title')}</SectionLabel>
+          <Body>{t('phone.sent', { phone: step.sentTo })}</Body>
           <Field
-            label={t('mobile.phone.code')}
+            label={t('phone.code')}
             value={code}
             onChangeText={setCode}
             keyboardType="number-pad"
             textContentType="oneTimeCode"
             autoComplete="sms-otp"
+            maxLength={6}
             testID="mobile-number-code"
           />
           <Button
-            label={t('mobile.phone.confirm')}
+            label={t('phone.confirm')}
             busy={busy}
-            disabled={!code.trim()}
+            disabled={code.trim().length !== 6}
             onPress={() =>
               void run(async () => {
-                const r = await kratos.verifyCode(step.flowId, code);
-                if (r.kind === 'error') return setError(r.message);
-                if (r.kind === 'reauth') return setError(t('mobile.auth.failed'));
+                setStatus(await api.confirmPhone(code.trim()));
                 setCode('');
-                await refresh();
-                setNote(t('mobile.phone.confirmed'));
+                setInput('');
+                setStep({ kind: 'edit' });
+                setNote(t('phone.confirmed'));
               })
             }
             testID="mobile-number-confirm"
           />
           <Button
             kind="secondary"
-            label={t('mobile.common.cancel')}
+            label={t('phone.change')}
             onPress={() => setStep({ kind: 'edit' })}
+            testID="mobile-number-change"
           />
         </Card>
-      ) : step.kind === 'reauth' ? (
+      ) : (
         <Card>
           <SectionLabel>{t('mobile.auth.confirm_password')}</SectionLabel>
           <Body>{t('mobile.auth.reauth_body')}</Body>
@@ -185,15 +177,19 @@ export default function MobileNumber() {
             busy={busy}
             disabled={!password}
             onPress={() =>
-              void run(async (token) => {
+              void (async () => {
+                const token = await s.token();
+                if (!kratos || !token) return;
+                setBusy(true);
                 const r = await kratos.reauthenticate(token, email, password);
+                setBusy(false);
                 if (r.kind !== 'ok')
                   return setError(r.kind === 'error' ? r.message : t('mobile.auth.failed'));
                 setPassword('');
                 const then = step.then;
                 setStep({ kind: 'edit' });
                 await then();
-              })
+              })()
             }
           />
           <Button
@@ -202,7 +198,7 @@ export default function MobileNumber() {
             onPress={() => setStep({ kind: 'edit' })}
           />
         </Card>
-      ) : null}
+      )}
     </Screen>
   );
 }

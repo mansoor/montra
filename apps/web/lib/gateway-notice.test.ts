@@ -33,6 +33,10 @@ describe('gatewayNotice (AUTH-02)', () => {
     expect(gatewayNotice({ notice: 'weak_password' })).toMatchObject({ tooWeak: true });
   });
 
+  it('reads a number to change in its own section (ADR-0049 §6)', () => {
+    expect(gatewayNotice({ notice: 'phone_in_app' })).toEqual({ kind: 'phone_in_app' });
+  });
+
   it('reads a pause, and nothing else', () => {
     expect(gatewayNotice({ notice: 'too_many_attempts', retry: '120' })).toEqual({
       kind: 'paused',
