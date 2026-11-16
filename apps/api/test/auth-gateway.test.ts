@@ -6,6 +6,8 @@ import {
   attemptOf,
   buildAuthGateway,
   passwordChangeOf,
+  phoneChangeOf,
+  PHONE_IN_APP_ID,
   TOO_MANY_ATTEMPTS_ID,
   WEAK_PASSWORD_ID,
 } from '../src/auth-gateway/gateway.js';
@@ -131,7 +133,7 @@ function fakeKratos() {
     app.get(`/self-service/${kind}/flows`, async (req) => flowBody((req.query as any).id));
   }
   app.get('/sessions/whoami', async () => ({
-    identity: { traits: { email: EMAIL, name: 'Gateway Owner' } },
+    identity: { traits: { email: EMAIL, name: 'Gateway Owner', phone: '+14155550100' } },
   }));
   for (const kind of ['registration', 'settings']) {
     app.post(`/self-service/${kind}`, async (req, reply) =>
@@ -396,16 +398,15 @@ describe('what sends a text (ADR-0049 §6)', () => {
   });
   const rules = (a: ReturnType<typeof attemptOf>) => a?.checks.map((c) => c.rule.name);
 
-  it('counts saving a number in settings, per number and per address', () => {
-    const a = attemptOf(
-      req('/self-service/settings?flow=s1', { method: 'profile', 'traits.phone': '+14155550123' }),
-      SECRET,
-      '203.0.113.9',
-    );
-    expect(rules(a)).toEqual(['sms_send', 'sms_send']);
-    expect(a?.countAlways).toBe(true);
-    expect(a?.checks[0]!.key).toBe(keyOf(SECRET, 'sms_send', 'number:+14155550123'));
-    // Other settings, such as a password, aren't limited here.
+  it('limits nothing in settings: a number is changed through the API, which texts it a code (ADR-0049 §6)', () => {
+    expect(
+      attemptOf(
+        req('/self-service/settings?flow=s1', { method: 'profile', 'traits.phone': '+14155550123' }),
+        SECRET,
+        '203.0.113.9',
+      ),
+    ).toBeNull();
+    // Nor other settings, such as a password.
     expect(
       attemptOf(
         req('/self-service/settings?flow=s1', { method: 'password', password: 'x' }),
@@ -579,6 +580,60 @@ describe('new passwords (AUTH-02, ADR-0043)', () => {
     expect(res.headers.location).toBe(`${WEB}/after-settings`);
     expect(kratos.hits).toContain('GET /sessions/whoami');
     expect(seen[0]).toEqual(expect.arrayContaining(['gateway-owner@example.test', 'gateway', 'owner']));
+    await g.close();
+  });
+
+  it('reads a number in a profile save, as a form or as JSON', () => {
+    const req = (url: string, payload: Record<string, unknown>) => ({
+      method: 'POST',
+      url,
+      headers: { 'content-type': 'application/json' },
+      body: Buffer.from(JSON.stringify(payload)),
+    });
+    expect(
+      phoneChangeOf(
+        req('/self-service/settings?flow=s1', { method: 'profile', 'traits.phone': '+1 415 555 0123' }),
+      ),
+    ).toEqual({ flowId: 's1', json: true, phone: '+14155550123' });
+    expect(
+      phoneChangeOf(req('/self-service/settings?flow=s1', { method: 'profile', traits: { phone: '' } })),
+    ).toMatchObject({ phone: null });
+    expect(
+      phoneChangeOf(req('/self-service/settings?flow=s1', { method: 'profile', traits: {} })),
+    ).toBeNull();
+    expect(
+      phoneChangeOf(req('/self-service/settings?flow=s1', { method: 'password', password: 'x' })),
+    ).toBeNull();
+    expect(phoneChangeOf(req('/self-service/login?flow=l1', { 'traits.phone': '+14155550123' }))).toBeNull();
+  });
+
+  it('turns away a profile save that would change the number, and lets the same number through', async () => {
+    const g = gatewayWith();
+    const post = (phone: string, json: boolean) =>
+      g.inject({
+        method: 'POST',
+        url: '/self-service/settings?flow=s1',
+        headers: json
+          ? { 'content-type': 'application/json', accept: 'application/json', 'x-session-token': 'tok' }
+          : { 'content-type': 'application/x-www-form-urlencoded', cookie: 'ory_kratos_session=abc' },
+        payload: json
+          ? JSON.stringify({ method: 'profile', traits: { email: EMAIL, phone } })
+          : `method=profile&traits.email=${encodeURIComponent(EMAIL)}&traits.phone=${encodeURIComponent(phone)}`,
+      });
+
+    // The web's profile form carries the number as it is: that's a name change, and passes.
+    const same = await post('+14155550100', false);
+    expect(same.statusCode).toBe(303);
+    expect(same.headers.location).toBe(`${WEB}/after-settings`);
+
+    kratos.hits.length = 0;
+    const browser = await post('+14155550199', false);
+    expect(browser.statusCode).toBe(303);
+    expect(browser.headers.location).toBe(`${WEB}/settings/security?notice=phone_in_app&flow=s1`);
+    const phone = await post('+14155550199', true);
+    expect(phone.statusCode).toBe(400);
+    expect(phone.json().ui.messages[0].id).toBe(PHONE_IN_APP_ID);
+    expect(kratos.hits).not.toContain('POST /self-service/settings');
     await g.close();
   });
 

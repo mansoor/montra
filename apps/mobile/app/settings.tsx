@@ -155,13 +155,13 @@ export default function Settings() {
         />
         {texts?.available ? (
           <Row
-            title={t('mobile.phone.label')}
+            title={t('phone.title')}
             subtitle={
               texts.phone
-                ? t(texts.verified ? 'mobile.phone.verified' : 'mobile.phone.unverified', {
+                ? t(texts.verified ? 'phone.current_verified' : 'phone.current_unverified', {
                     phone: texts.phone,
                   })
-                : t('mobile.phone.none')
+                : t('phone.none')
             }
             icon="phone"
             onPress={() => router.push('/mobile-number')}

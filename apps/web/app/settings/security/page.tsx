@@ -8,6 +8,7 @@ import { getI18n } from '@/lib/i18n-server';
 import { FlowForm, FlowMessages } from '@/components/kratos/flow-form';
 import { I18nProvider } from '@/components/i18n';
 import { SessionsList } from '@/components/sessions-list';
+import { PhoneNumber } from '@/components/settings/phone-number';
 import { GatewayNotice } from '@/components/kratos/gateway-notice';
 import { newPasswordProps } from '@/lib/password-policy';
 import { load } from '@/lib/server-api';
@@ -47,6 +48,10 @@ export default async function SecurityPage({
   const { me, t } = await getI18n();
   let sections: { group: string; model: ReturnType<typeof toRenderModel> }[] = [];
   let flowMessages: ReturnType<typeof toRenderModel>['messages'] = [];
+  // ADR-0049 §6: a mobile number is only asked for where texts are on; it couldn't be confirmed otherwise.
+  const texts = await load((api) => api.getNotificationPrefs())
+    .then((p) => p.texts.available)
+    .catch(() => false);
   const newPassword =
     AUTH_MODE === 'kratos' ? await newPasswordProps({ email: me.email, name: me.displayName }) : undefined;
   // ADR-0044: sent here to set up two-step verification. Starting the flow goes through Kratos, which keeps only the
@@ -56,14 +61,15 @@ export default async function SecurityPage({
     const init = { return_to: back };
     if (!params.flow) redirect(flowInitUrl('settings', init));
     const flow = await fetchFlow('settings', params.flow, init);
-    // ADR-0049 §6: a mobile number is only asked for where texts are on; it couldn't be verified otherwise.
-    const texts = await load((api) => api.getNotificationPrefs())
-      .then((p) => p.texts.available)
-      .catch(() => false);
-    if (!texts)
-      flow.ui.nodes = flow.ui.nodes.filter(
-        (n) => (n.attributes as { name?: string }).name !== 'traits.phone',
-      );
+    // The number is changed in its own section below, through the API, which confirms it by a texted code. Kratos's
+    // field stays in the profile form as a hidden input with the number as it is, since a profile save replaces every
+    // trait: left out, saving a new name would remove the number.
+    // (With no number there's nothing to keep, and an empty one wouldn't match the trait's pattern.)
+    flow.ui.nodes = flow.ui.nodes.flatMap((n) => {
+      const a = n.attributes as { name?: string; value?: unknown };
+      if (a.name !== 'traits.phone') return [n];
+      return a.value ? [{ ...n, attributes: { ...n.attributes, type: 'hidden' } }] : [];
+    });
     back ??= safeReturnTo(flow.return_to);
     const all = toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN });
     flowMessages = all.messages;
@@ -108,6 +114,14 @@ export default async function SecurityPage({
             />
           </section>
         ))}
+        {texts && (
+          <section className="card space-y-3" aria-labelledby="sec-phone">
+            <h2 id="sec-phone" className="text-base font-semibold">
+              {t('phone.title')}
+            </h2>
+            <PhoneNumber />
+          </section>
+        )}
         <section className="card space-y-3" aria-labelledby="sec-devices">
           <h2 id="sec-devices" className="text-base font-semibold">
             {t('security.devices')}

@@ -105,7 +105,7 @@ export default function NotificationSettings() {
               <Small>{t(texts.line.key, texts.line.values)}</Small>
               {texts.addNumber ? (
                 <Row
-                  title={t('mobile.phone.label')}
+                  title={t('phone.title')}
                   icon="phone"
                   last
                   onPress={() => router.push('/mobile-number')}

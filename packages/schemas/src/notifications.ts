@@ -95,3 +95,24 @@ export const UpdateNotificationPrefsRequest = z
     message: 'Set both ends of quiet hours',
   });
 export type UpdateNotificationPrefsRequest = z.output<typeof UpdateNotificationPrefsRequest>;
+
+/**
+ * ADR-0049 §6: the mobile number, confirmed by a code the API texts (`POST /v1/me/phone`, then
+ * `POST /v1/me/phone/confirm`). Numbers show as the country code and last four digits only.
+ */
+export const PhoneStatusDto = z.object({
+  /** False where this service doesn't send texts: a number couldn't be confirmed. */
+  available: z.boolean(),
+  phone: z.string().nullable(),
+  verified: z.boolean(),
+  /** A number waiting for its code, until the code expires. */
+  pending: z.object({ phone: z.string(), expiresAt: z.string() }).nullable(),
+});
+export type PhoneStatusDto = z.infer<typeof PhoneStatusDto>;
+
+/** With the country code; spaces, dashes and brackets are fine. */
+export const StartPhoneVerificationRequest = z.object({ phone: z.string().trim().min(1).max(40) });
+export type StartPhoneVerificationRequest = z.output<typeof StartPhoneVerificationRequest>;
+
+export const ConfirmPhoneRequest = z.object({ code: z.string().regex(/^\d{6}$/) });
+export type ConfirmPhoneRequest = z.output<typeof ConfirmPhoneRequest>;

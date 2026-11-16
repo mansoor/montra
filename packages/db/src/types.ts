@@ -442,6 +442,19 @@ export interface EmailChangeRequestTable {
   created_at: Generated<Date>;
 }
 
+/** A number waiting to be confirmed by a code the API texted (ADR-0049 §6, migration 0056). */
+export interface PhoneVerificationTable {
+  id: Generated<string>;
+  user_id: string;
+  phone: string;
+  code_hash: string;
+  attempts: Generated<number>;
+  expires_at: Generated<Date>;
+  completed_at: Date | null;
+  cancelled_at: Date | null;
+  created_at: Generated<Date>;
+}
+
 export interface MfaResetRequestTable {
   id: Generated<string>;
   user_id: string;
@@ -1611,6 +1624,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.account_visibility': AccountVisibilityTable;
   'app.session_device': SessionDeviceTable;
   'app.email_change_request': EmailChangeRequestTable;
+  'app.phone_verification': PhoneVerificationTable;
   'app.mfa_reset_request': MfaResetRequestTable;
   'app.file': FileTable;
   'app.job': JobTable;

@@ -103,7 +103,7 @@ function Gate() {
         <Stack.Screen name="business/reimbursement" options={{ title: t('payroll.claim.new') }} />
         <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
         <Stack.Screen name="notification-settings" options={{ title: t('notifications.settings') }} />
-        <Stack.Screen name="mobile-number" options={{ title: t('mobile.phone.label') }} />
+        <Stack.Screen name="mobile-number" options={{ title: t('phone.title') }} />
         <Stack.Screen name="your-data" options={{ title: t('settings.tab.data') }} />
         <Stack.Screen name="rentals/index" options={{ title: t('nav.rentals') }} />
         <Stack.Screen name="rentals/log" options={{ title: t('rentals.record_payment') }} />

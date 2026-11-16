@@ -1,12 +1,14 @@
 /**
  * The auth gateway (ADR-0042, ADR-0043) sends a browser back to its form with a `notice`:
  * - `too_many_attempts` with the seconds left in `retry`;
- * - `weak_password` with `problems` (`too_short`, `too_weak`) and the minimum length in `min`.
+ * - `weak_password` with `problems` (`too_short`, `too_weak`) and the minimum length in `min`;
+ * - `phone_in_app`: a mobile number is changed in its own section, not the profile form (ADR-0049 §6).
  * This reads them into something to show, or null when there's nothing to say.
  */
 export type GatewayNoticeInfo =
   | { kind: 'paused'; minutes: number }
-  | { kind: 'weak_password'; tooShort: boolean; tooWeak: boolean; minLength: number };
+  | { kind: 'weak_password'; tooShort: boolean; tooWeak: boolean; minLength: number }
+  | { kind: 'phone_in_app' };
 
 export function pausedMinutes(params: Record<string, string | undefined>): number | null {
   if (params.notice !== 'too_many_attempts') return null;
@@ -18,6 +20,7 @@ export function pausedMinutes(params: Record<string, string | undefined>): numbe
 export function gatewayNotice(params: Record<string, string | undefined>): GatewayNoticeInfo | null {
   const minutes = pausedMinutes(params);
   if (minutes !== null) return { kind: 'paused', minutes };
+  if (params.notice === 'phone_in_app') return { kind: 'phone_in_app' };
   if (params.notice !== 'weak_password') return null;
   const problems = new Set((params.problems ?? '').split(','));
   const min = Number(params.min);

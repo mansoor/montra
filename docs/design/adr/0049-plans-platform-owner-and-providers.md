@@ -190,7 +190,8 @@ so.
 ### 6. Text messages through Twilio
 
 - **What's texted:**
-  - Kratos's codes: verifying a phone number, account recovery, and a second factor by texted code.
+  - Kratos's codes: account recovery, and a second factor by texted code.
+  - The API's code that confirms a phone number (see "Confirming a number" below).
   - Security alerts (ADR-0045), when the person turns them on.
   - Reminders, such as bills due, on plans whose `smsMonthly` is above 0.
 - **Email stays the sign-in identifier.** A phone number is an extra, verified address. Texted codes are the weakest
@@ -202,6 +203,17 @@ so.
   - **The API's texts:** they go through an `SmsPort`, with `log`, `memory` and `twilio` modes, as mail does.
 - **Phone numbers** are stored in E.164 form in Kratos's identity traits. A changed number sends an identity change
   alert to the email address (ADR-0045).
+- **Confirming a number** (changed 2026-11-15): the API texts its own code, not Kratos. Kratos v26.2.0 texts a code
+  when a number is saved in a settings flow, but never names the verification flow that code belongs to (no
+  `continue_with`, native or browser), and a new verification flow takes only an email address, so the code can't be
+  entered anywhere. Instead:
+  - `POST /v1/me/phone` texts a 6-digit code (no link) to the number, through `TextsService` and `SmsPort`. The code
+    is hashed, lasts 10 minutes, and is single use (`app.phone_verification`, migration 0056).
+  - `POST /v1/me/phone/confirm` checks it, then puts the number on the identity already verified, through Kratos's
+    admin API, which texts nothing. A number is never on the identity unverified, so Kratos never texts its own code.
+  - Changing or removing the number needs a recent sign-in. Each change is logged and emailed, as before.
+  - Kratos's settings no longer change the number: the web's profile form keeps it as a hidden field, and the auth
+    gateway turns away a settings save that would change it.
 - **Against SMS pumping**, which is fraud that racks up text charges:
   - texts go only to countries on the allowed list;
   - Twilio's SMS pumping protection is on;
@@ -281,7 +293,8 @@ Each step is its own PR into `develop`, and works on its own:
   - A test email goes to the owner's own address. A test text waits for step 5.
   - `_FILE` secrets are ADR-0050's, built in its own PR.
 - **Step 5 (migration 0055):**
-  - Kratos: the identity schema gains `phone` (E.164), verified by a texted code, and a `code` identifier by text for
+  - Kratos: the identity schema gains `phone` (E.164), verified by a texted code (the API's, since migration 0056),
+    and a `code` identifier by text for
     the second factor. Email is no longer a `code` identifier. Nothing used it, and with codes as a second factor it
     would have made an emailed code count as one. The SMS channel holds the Twilio token, so it's set only through
     `COURIER_CHANNELS` on Kratos, with `SELFSERVICE_METHODS_CODE_MFA_ENABLED`. Run against Kratos v26.2.0 with a
@@ -297,8 +310,17 @@ Each step is its own PR into `develop`, and works on its own:
     tax dates, rent overdue, a lease expiring) are each off until the person turns them on. A text carries the title
     only, as push does: never a figure. Reminders take one of the plan's `smsMonthly` each (`app.sms_usage`).
   - Twilio's STOP answer (error 21610) marks the number opted out, and it gets no texts until it changes.
-  - The auth gateway limits texted codes to 5 an hour per number and per address. Saving a number counts, as it
-    texts a code. A wrong texted code counts against the session, as an authenticator code does.
+  - The auth gateway limits texted codes to 5 an hour per number and per address. A wrong texted code counts against
+    the session, as an authenticator code does.
+- **Confirming a number through the API (migration 0056):**
+  - The code is counted under the gateway's `sms_send` limit with the same key per number, so a number gets 5 an hour
+    whoever sends them, and per person rather than per address (the web's server calls the API, so an address there
+    would be the server's). Only a country on the allowed list, and not a number already confirmed on another account.
+  - Five tries per code, and 10 wrong codes in 15 minutes per person across codes.
+  - Kratos v26.2.0 doesn't keep an identity's `verifiable_addresses` in a fixed order and has no JSON Patch `test`, so
+    the adapter writes the whole list back with the number's address marked verified, then reads it again. It also
+    keeps a removed number as a sign-in code identifier, which would stop anyone else adding it, so removing the
+    number removes the code credential too (email isn't a code identifier).
 
 ## Consequences
 

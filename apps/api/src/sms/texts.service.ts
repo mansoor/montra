@@ -1,6 +1,7 @@
 /**
  * What the API texts, and to whom (ADR-0049 §6). Every text goes only to the person's own verified number, only to a
- * country on the allowed list, and only for a kind the owner has switched on. Reminders also need the person to have
+ * country on the allowed list, and only for a kind the owner has switched on (except the code that confirms a number,
+ * which goes to the number being confirmed). Reminders also need the person to have
  * turned them on, a plan whose `smsMonthly` is above 0, and a text left this month; security alerts need the person
  * to have turned them on and aren't counted. A number that replied STOP gets no more.
  */
@@ -111,6 +112,24 @@ export class TextsService {
     });
     if (taken !== 'ok') return taken;
     return this.deliver(t.phone, `Montra: ${body}`);
+  }
+
+  /**
+   * The code that confirms a number (ADR-0049 §6), before the number is anyone's: so it's the one text that goes to an
+   * unconfirmed number, and only to a country on the allowed list. The caller limits how often. No link, ever.
+   */
+  async confirmationCode(phone: string, code: string, minutes: number): Promise<TextOutcome> {
+    if (!this.enabled) return 'off';
+    if (!(await this.allowedTo(phone))) return 'country';
+    return this.deliver(
+      phone,
+      `Montra code to confirm this number: ${code}. It expires in ${minutes} minutes.`,
+    );
+  }
+
+  /** Whether texts may go to this number's country (the owner's allowed list). */
+  async allowedTo(phone: string): Promise<boolean> {
+    return textAllowedTo(phone, (await this.settings.values()).smsCountries);
   }
 
   /** The Providers page's test: to the owner's own verified number, whatever the kinds and preferences say. */
