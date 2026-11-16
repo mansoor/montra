@@ -28,14 +28,17 @@ COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile --filter "@montra/web..." --filter .
 RUN pnpm --filter "@montra/web..." run build
 # Reinstall production dependencies from the same lockfile. `pnpm deploy --legacy` resolves versions afresh,
-# so the image could differ from what CI tested.
+# so the image could differ from what CI tested. `next start` loads next.config.mjs, which imports lib/csp.mjs, so that
+# file stays; the build fails here if the config can't load.
 RUN rm -rf node_modules apps/web/node_modules packages/*/node_modules apps/web/.next/cache \
  && pnpm install --frozen-lockfile --prod --filter "@montra/web..." \
- && rm -rf vitest.shared.ts apps/web/app apps/web/components apps/web/e2e apps/web/lib apps/web/middleware.ts \
+ && find apps/web/lib -type f ! -name csp.mjs -delete \
+ && rm -rf vitest.shared.ts apps/web/app apps/web/components apps/web/e2e apps/web/middleware.ts \
     apps/web/playwright.config.ts apps/web/vitest.config.ts apps/web/tsconfig.json apps/web/postcss.config.mjs \
     apps/web/next-env.d.ts packages/*/src packages/*/test packages/*/tsconfig*.json packages/*/vitest.config.ts \
  && rm -rf node_modules/.pnpm/@next+swc-*musl* node_modules/.pnpm/@img+sharp-*musl* \
- && test -f apps/web/.next/BUILD_ID
+ && test -f apps/web/.next/BUILD_ID \
+ && (cd apps/web && node --input-type=module -e "await import('./next.config.mjs')")
 
 FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS runtime
 ENV NODE_ENV=production \

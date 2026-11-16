@@ -1,0 +1,559 @@
+# Montra on one server (ADR-0050 §5 and §11). The same images as every other target.
+#
+#   cp montra.env.example .env     # then fill it in
+#   ./setup.sh secrets             # makes secrets/, generates what can be generated
+#   ./setup.sh check               # checks the requirements (ADR-0050 §1)
+#   ./setup.sh init                # first start: database roles, migrations, every service
+#   ./deploy.sh <tag>              # each release after that
+#   ./backup.sh …                  # backups, from cron (./setup.sh cron)
+#
+# By default a Cloudflare Tunnel is the way in (COMPOSE_PROFILES=tunnel): no port is published, and the home router
+# opens nothing. On a server with its own public address, add compose.direct.yaml instead: Caddy then publishes 80 and
+# 443 and gets its own certificates. See docs/runbooks/selfhost-setup.md.
+#
+# Every secret is a file in ./secrets, mounted at /run/secrets/<name> and read through NAME_FILE (ADR-0050 §2). An
+# empty file is a secret not in use.
+name: montra
+
+x-app: &app
+  restart: unless-stopped
+  # One unprivileged user for every Montra container, so the secret files can all be owned by it (uid 1000, mode 0400).
+  user: '1000:1000'
+  security_opt: ['no-new-privileges:true']
+  cap_drop: [ALL]
+  networks: [montra]
+  logging: &logging
+    driver: json-file
+    options: { max-size: 10m, max-file: '5' }
+
+x-api-image: &api-image ${MONTRA_IMAGES:-ghcr.io/mansoor/montra}/api:${MONTRA_TAG:?Set MONTRA_TAG in .env}
+x-kratos-image: &kratos-image ${MONTRA_IMAGES:-ghcr.io/mansoor/montra}/kratos:${MONTRA_TAG:?Set MONTRA_TAG in .env}
+
+# The API and the Node worker: the same settings (apps/api/src/config.ts).
+x-api-environment: &api-environment
+  NODE_ENV: production
+  PORT: '4000'
+  AUTH_MODE: kratos
+  KRATOS_PUBLIC_URL: http://kratos:4433
+  KRATOS_ADMIN_URL: http://kratos:4434
+  DATABASE_URL_FILE: /run/secrets/database_url
+  ADMIN_DATABASE_URL_FILE: /run/secrets/admin_database_url
+  SUPPORT_DATABASE_URL_FILE: /run/secrets/support_database_url
+  KMS_MODE: ${KMS_MODE:-local}
+  MASTER_KEY_FILE: /run/secrets/master_key
+  VAULT_ADDR: ${VAULT_ADDR:-}
+  VAULT_TOKEN_FILE: ${VAULT_TOKEN_FILE:-}
+  VAULT_TRANSIT_KEY: ${VAULT_TRANSIT_KEY:-montra}
+  STORAGE_MODE: s3
+  S3_ENDPOINT: ${S3_ENDPOINT:?Set S3_ENDPOINT in .env}
+  S3_BUCKET: ${S3_BUCKET:?Set S3_BUCKET in .env}
+  S3_REGION: ${S3_REGION:-auto}
+  S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+  S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
+  MAIL_MODE: smtp
+  MAIL_URL_FILE: /run/secrets/mail_url
+  MAIL_FROM: ${MAIL_FROM:?Set MAIL_FROM in .env}
+  SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+  BILLING_MODE: ${BILLING_MODE:-off}
+  STRIPE_SECRET_KEY_FILE: /run/secrets/stripe_secret_key
+  STRIPE_WEBHOOK_SECRET_FILE: /run/secrets/stripe_webhook_secret
+  STRIPE_PRICE_PRO_MONTHLY: ${STRIPE_PRICE_PRO_MONTHLY:-}
+  STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
+  AI_PROVIDER: ${AI_PROVIDER:-anthropic}
+  ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+  AI_LOCAL_DIRECT: ${AI_LOCAL_DIRECT:-false}
+  SENTRY_DSN_FILE: /run/secrets/sentry_dsn
+  METRICS_TOKEN_FILE: /run/secrets/metrics_token
+  KRATOS_WEBHOOK_SECRET_FILE: /run/secrets/kratos_webhook_secret
+  PUSH_MODE: expo
+  # Texts (ADR-0049 §6): off unless SMS_MODE=twilio, with the Twilio secrets filled in.
+  SMS_MODE: ${SMS_MODE:-off}
+  TWILIO_ACCOUNT_SID_FILE: /run/secrets/twilio_account_sid
+  TWILIO_AUTH_TOKEN_FILE: /run/secrets/twilio_auth_token
+  TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+  API_URL: https://${API_HOST:?Set API_HOST in .env}
+  WEB_URL: https://${APP_HOST:?Set APP_HOST in .env}
+  # Cloudflare, then Caddy (with cloudflared between them on the tunnel, which Caddy trusts and passes through).
+  TRUST_PROXY_HOPS: '2'
+
+x-api-secrets: &api-secrets
+  - database_url
+  - admin_database_url
+  - support_database_url
+  - master_key
+  - s3_access_key
+  - s3_secret_key
+  - mail_url
+  - stripe_secret_key
+  - stripe_webhook_secret
+  - anthropic_api_key
+  - sentry_dsn
+  - metrics_token
+  - kratos_webhook_secret
+  - twilio_account_sid
+  - twilio_auth_token
+
+# Health checks run inside the images, which have node but no curl.
+x-node-health: &node-health
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 30s
+
+# Kratos: kratos.yml holds local values, and everything that depends on the domain is set here, as Terraform does for
+# AWS (infra/terraform/modules/compute/locals.tf). Setting one item of a list by index replaces the whole list from
+# kratos.yml, so each hook list is repeated whole. A list value is JSON.
+x-kratos-environment: &kratos-environment
+  DSN_FILE: /run/secrets/kratos_dsn
+  SECRETS_COOKIE_FILE: /run/secrets/kratos_cookie_secret
+  SECRETS_CIPHER_FILE: /run/secrets/kratos_cipher_secret
+  SECRETS_PAGINATION_FILE: /run/secrets/kratos_pagination_secret
+  COURIER_SMTP_CONNECTION_URI_FILE: /run/secrets/kratos_smtp_url
+  COURIER_SMTP_FROM_ADDRESS: ${KRATOS_FROM_ADDRESS:?Set KRATOS_FROM_ADDRESS in .env}
+  # Texted codes (infra/kratos/templates/README.md): the channel's JSON, with the Twilio token, is a secret; empty is off.
+  COURIER_CHANNELS_FILE: /run/secrets/kratos_sms_channel
+  SELFSERVICE_METHODS_CODE_MFA_ENABLED: ${KRATOS_SMS_MFA:-false}
+  SERVE_PUBLIC_BASE_URL: https://${AUTH_HOST:?Set AUTH_HOST in .env}/
+  SERVE_PUBLIC_CORS_ALLOWED_ORIGINS: '["https://${APP_HOST}"]'
+  SERVE_ADMIN_BASE_URL: http://kratos:4434/
+  SELFSERVICE_DEFAULT_BROWSER_RETURN_URL: https://${APP_HOST}/
+  SELFSERVICE_ALLOWED_RETURN_URLS: '["https://${APP_HOST}"]'
+  SELFSERVICE_FLOWS_ERROR_UI_URL: https://${APP_HOST}/auth/error
+  SELFSERVICE_FLOWS_SETTINGS_UI_URL: https://${APP_HOST}/settings/security
+  SELFSERVICE_FLOWS_RECOVERY_UI_URL: https://${APP_HOST}/auth/recovery
+  SELFSERVICE_FLOWS_VERIFICATION_UI_URL: https://${APP_HOST}/auth/verification
+  SELFSERVICE_FLOWS_VERIFICATION_AFTER_DEFAULT_BROWSER_RETURN_URL: https://${APP_HOST}/welcome
+  SELFSERVICE_FLOWS_LOGIN_UI_URL: https://${APP_HOST}/sign-in
+  SELFSERVICE_FLOWS_REGISTRATION_UI_URL: https://${APP_HOST}/sign-up
+  SELFSERVICE_METHODS_PASSKEY_CONFIG_RP_ID: ${COOKIE_DOMAIN:?Set COOKIE_DOMAIN in .env}
+  SELFSERVICE_METHODS_PASSKEY_CONFIG_RP_ORIGINS: '["https://${APP_HOST}"]'
+  SELFSERVICE_METHODS_WEBAUTHN_CONFIG_RP_ID: ${COOKIE_DOMAIN}
+  SELFSERVICE_METHODS_WEBAUTHN_CONFIG_RP_ORIGINS: '["https://${APP_HOST}"]'
+  SESSION_COOKIE_DOMAIN: ${COOKIE_DOMAIN}
+  COOKIES_DOMAIN: ${COOKIE_DOMAIN}
+  # The webhooks reach the API on the internal network, never through the internet (Caddy refuses /internal/*).
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_0_HOOK: revoke_active_sessions
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_HOOK: web_hook
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncmVjb3ZlcnknLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_0_HOOK: revoke_active_sessions
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncGFzc3dvcmRfY2hhbmdlZCcsIGlkZW50aXR5X2lkOiBjdHguaWRlbnRpdHkuaWQgfQ==
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+
+x-kratos-secrets: &kratos-secrets
+  - kratos_dsn
+  - kratos_cookie_secret
+  - kratos_cipher_secret
+  - kratos_pagination_secret
+  - kratos_smtp_url
+  - kratos_webhook_secret
+  - kratos_sms_channel
+
+x-api-service: &api-service
+  <<: *app
+  image: *api-image
+  environment: *api-environment
+  secrets: *api-secrets
+  stop_grace_period: 60s
+  healthcheck:
+    <<: *node-health
+    test:
+      [
+        'CMD',
+        'node',
+        '-e',
+        "fetch('http://127.0.0.1:4000/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+      ]
+  depends_on:
+    postgres: { condition: service_healthy }
+    kratos: { condition: service_healthy }
+  networks:
+    montra:
+      # The Kratos webhooks and the web server reach either replica as `api`.
+      aliases: [api]
+
+services:
+  # --- The way in -----------------------------------------------------------------------------------------------------
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ['no-new-privileges:true']
+    environment:
+      APP_HOST: ${APP_HOST}
+      API_HOST: ${API_HOST}
+      AUTH_HOST: ${AUTH_HOST}
+      # http:// behind the tunnel, where Cloudflare holds the certificates; compose.direct.yaml makes it https://.
+      SITE_SCHEME: ${SITE_SCHEME:-http://}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-private_ranges}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:2019/config/']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on: [web, api-a, api-b, auth-gateway]
+    networks: [montra]
+    logging: *logging
+
+  # Connects out to Cloudflare, so nothing listens on the internet. Its public hostnames (app., api., auth.) are set in
+  # the Cloudflare dashboard and all point at http://caddy:80.
+  cloudflared:
+    image: cloudflare/cloudflared:2025.11.1@sha256:89ee50efb1e9cb2ae30281a8a404fed95eb8f02f0a972617526f8c5b417acae2
+    profiles: [tunnel]
+    <<: *app
+    command: ['tunnel', '--no-autoupdate', '--metrics', '127.0.0.1:2000', 'run']
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
+    secrets: [cloudflare_tunnel_token]
+    healthcheck:
+      test: ['CMD', 'cloudflared', 'tunnel', '--metrics', '127.0.0.1:2000', 'ready']
+      interval: 15s
+      timeout: 5s
+      retries: 4
+    depends_on: [caddy]
+
+  # --- The database ---------------------------------------------------------------------------------------------------
+  # Its port isn't published. To use a managed database instead, point the URLs in secrets/ at it and leave this out
+  # (docs/runbooks/selfhost-setup.md).
+  #
+  # PostgreSQL 16 with pgBackRest (infra/selfhost/postgres, ADR-0050 §7): with BACKUP_S3_BUCKET set, the WAL goes to
+  # the backup bucket every 60 seconds, and backup.sh takes the full and differential backups. The image has its own
+  # tag, which changes only when that folder does, so a release doesn't restart the database.
+  postgres:
+    image: ${MONTRA_IMAGES:-ghcr.io/mansoor/montra}/postgres:${MONTRA_POSTGRES_TAG:?Set MONTRA_POSTGRES_TAG in .env}
+    restart: unless-stopped
+    # An init process as PID 1, not Postgres: pgBackRest's async archiver leaves a background process that PID 1
+    # inherits, and Postgres as PID 1 takes its exit for a crashed backend and restarts every connection.
+    init: true
+    shm_size: 256mb
+    stop_grace_period: 60s
+    environment:
+      POSTGRES_DB: montra
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-auto}
+      BACKUP_S3_URI_STYLE: ${BACKUP_S3_URI_STYLE:-path}
+      # off for a restore drill, so it never writes to the real repository (docs/runbooks/selfhost-restore-drill.md).
+      BACKUP_ARCHIVE: ${BACKUP_ARCHIVE:-on}
+    secrets: [postgres_password, backup_s3_access_key, backup_s3_secret_key, backup_cipher_pass]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # production-roles.sql, run once by setup.sh init.
+      - ../db:/montra-db:ro
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres', '-d', 'montra']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [montra]
+    logging: *logging
+
+  # --- One-off tasks: `docker compose run --rm migrate` (deploy.sh runs them before anything else) ---------------------
+  migrate:
+    <<: *app
+    image: *api-image
+    profiles: [ops]
+    restart: 'no'
+    command: ['node', 'node_modules/@montra/db/dist/cli.js', 'migrate']
+    environment:
+      NODE_ENV: production
+      DATABASE_ADMIN_URL_FILE: /run/secrets/database_admin_url
+    secrets: [database_admin_url]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Key wrapping (docs/runbooks/key-wrapping.md): `docker compose run --rm crypto check` or `… crypto rewrap`.
+  # The API's settings plus the owner's database URL, which the running services never get.
+  crypto:
+    <<: *app
+    image: *api-image
+    profiles: [ops]
+    restart: 'no'
+    entrypoint: ['node', 'dist/crypto-cli.js']
+    command: ['check']
+    environment:
+      <<: *api-environment
+      DATABASE_ADMIN_URL_FILE: /run/secrets/database_admin_url
+    # x-api-secrets plus database_admin_url (YAML can't append to a list): keep the two in step, as each NAME_FILE in
+    # the API's settings must exist.
+    secrets:
+      - database_url
+      - database_admin_url
+      - admin_database_url
+      - support_database_url
+      - master_key
+      - s3_access_key
+      - s3_secret_key
+      - mail_url
+      - stripe_secret_key
+      - stripe_webhook_secret
+      - anthropic_api_key
+      - sentry_dsn
+      - metrics_token
+      - kratos_webhook_secret
+      - twilio_account_sid
+      - twilio_auth_token
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  kratos-migrate:
+    <<: *app
+    image: *kratos-image
+    profiles: [ops]
+    restart: 'no'
+    command: ['migrate', 'sql', 'up', '-e', '--yes', '-c', '/etc/config/kratos/kratos.yml']
+    environment:
+      DSN_FILE: /run/secrets/kratos_dsn
+    secrets: [kratos_dsn]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # --- Identity -------------------------------------------------------------------------------------------------------
+  kratos:
+    <<: *app
+    image: *kratos-image
+    command: ['serve', '-c', '/etc/config/kratos/kratos.yml']
+    environment: *kratos-environment
+    secrets: *kratos-secrets
+    healthcheck:
+      test: ['CMD', 'montra-kratos', 'healthcheck']
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 20s
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Sends recovery and verification email. Kratos needs it to run as one instance.
+  kratos-courier:
+    <<: *app
+    image: *kratos-image
+    command: ['courier', 'watch', '-c', '/etc/config/kratos/kratos.yml']
+    environment: *kratos-environment
+    secrets: *kratos-secrets
+    depends_on:
+      kratos: { condition: service_healthy }
+
+  # The only public way in to Kratos: it counts and pauses guessed passwords and codes (AUTH-08, ADR-0042).
+  auth-gateway:
+    <<: *app
+    image: *api-image
+    command: ['node', 'dist/auth-gateway-main.js']
+    environment:
+      NODE_ENV: production
+      AUTH_MODE: kratos
+      AUTH_GATEWAY_PORT: '4455'
+      KRATOS_PUBLIC_URL: http://kratos:4433
+      WEB_URL: https://${APP_HOST}
+      MAIL_MODE: smtp
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_URL_FILE: /run/secrets/mail_url
+      DATABASE_URL_FILE: /run/secrets/database_url
+      AUTH_GATEWAY_SECRET_FILE: /run/secrets/auth_gateway_secret
+      TRUST_PROXY_HOPS: '2'
+    secrets: [mail_url, database_url, auth_gateway_secret]
+    healthcheck:
+      <<: *node-health
+      # Passes through to Kratos's readiness.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4455/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+    depends_on:
+      kratos: { condition: service_healthy }
+
+  # --- The application ------------------------------------------------------------------------------------------------
+  # Two API replicas, so deploy.sh can replace them one at a time while Caddy sends traffic to the other.
+  api-a:
+    <<: *api-service
+  api-b:
+    <<: *api-service
+
+  worker:
+    <<: *app
+    image: *api-image
+    command: ['node', 'dist/worker-main.js']
+    environment: *api-environment
+    secrets: *api-secrets
+    # Lets a running job finish on SIGTERM; one that doesn't is requeued.
+    stop_grace_period: 120s
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  doc-worker:
+    <<: *app
+    image: ${MONTRA_IMAGES:-ghcr.io/mansoor/montra}/doc-worker:${MONTRA_TAG}
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      STORAGE_MODE: s3
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+      S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
+    secrets: [database_url, s3_access_key, s3_secret_key]
+    stop_grace_period: 120s
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # The web image is built per domain: its NEXT_PUBLIC_* values are compiled in (deploy.yml builds web-<environment>).
+  web:
+    <<: *app
+    image: ${MONTRA_IMAGES:-ghcr.io/mansoor/montra}/web-${MONTRA_ENVIRONMENT:-prod}:${MONTRA_TAG}
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:4000
+      KRATOS_PUBLIC_URL: http://kratos:4433
+    healthcheck:
+      <<: *node-health
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))",
+        ]
+    depends_on:
+      api-a: { condition: service_started }
+
+  # --- Alerts (profile `monitoring`; ADR-0050 §8, docs/runbooks/selfhost-backups.md §4) ---------------------------------
+  # Nothing here is published: Prometheus scrapes on the internal network, and Alertmanager sends email.
+  prometheus:
+    image: prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: [ALL]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    volumes:
+      - ../observability/prometheus/prometheus.selfhost.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus:/prometheus
+    secrets: [prometheus_metrics_token]
+    networks: [montra]
+    logging: *logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.29.0@sha256:88743b63b3e09ea6e31e140ced5bf45f4a8e82c617c2a963f78841f4995ad1d7
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: [ALL]
+    command: ['--config.file=/etc/alertmanager/alertmanager.yml', '--storage.path=/alertmanager']
+    volumes:
+      # Yours, from ../observability/alertmanager/alertmanager.example.yml (git-ignored here).
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager:/alertmanager
+    secrets: [alert_smtp_password]
+    networks: [montra]
+    logging: *logging
+
+  # The machine: disks, the RAID mirror (/proc/mdstat), the clock, and the backup ages from backup.sh.
+  node-exporter:
+    image: prom/node-exporter:v1.10.2@sha256:3ac34ce007accad95afed72149e0d2b927b7e42fd1c866149b945b84737c62c3
+    profiles: [monitoring]
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    cap_drop: [ALL]
+    pid: host
+    command: ['--path.rootfs=/host', '--collector.textfile.directory=/textfile']
+    volumes:
+      - /:/host:ro,rslave
+      - ./metrics:/textfile:ro
+    networks: [montra]
+    logging: *logging
+
+networks:
+  montra: {}
+
+volumes:
+  pgdata: {}
+  caddy_data: {}
+  caddy_config: {}
+  prometheus: {}
+  alertmanager: {}
+
+# Each is a file in ./secrets, made by `./setup.sh secrets`: owned by uid 1000, mode 0400, except postgres_password,
+# which the Postgres image reads as root before it drops privileges.
+secrets:
+  postgres_password: { file: ./secrets/postgres_password }
+  database_url: { file: ./secrets/database_url }
+  database_admin_url: { file: ./secrets/database_admin_url }
+  admin_database_url: { file: ./secrets/admin_database_url }
+  support_database_url: { file: ./secrets/support_database_url }
+  master_key: { file: ./secrets/master_key }
+  s3_access_key: { file: ./secrets/s3_access_key }
+  s3_secret_key: { file: ./secrets/s3_secret_key }
+  mail_url: { file: ./secrets/mail_url }
+  stripe_secret_key: { file: ./secrets/stripe_secret_key }
+  stripe_webhook_secret: { file: ./secrets/stripe_webhook_secret }
+  anthropic_api_key: { file: ./secrets/anthropic_api_key }
+  sentry_dsn: { file: ./secrets/sentry_dsn }
+  metrics_token: { file: ./secrets/metrics_token }
+  auth_gateway_secret: { file: ./secrets/auth_gateway_secret }
+  kratos_dsn: { file: ./secrets/kratos_dsn }
+  kratos_cookie_secret: { file: ./secrets/kratos_cookie_secret }
+  kratos_cipher_secret: { file: ./secrets/kratos_cipher_secret }
+  kratos_pagination_secret: { file: ./secrets/kratos_pagination_secret }
+  kratos_smtp_url: { file: ./secrets/kratos_smtp_url }
+  kratos_webhook_secret: { file: ./secrets/kratos_webhook_secret }
+  cloudflare_tunnel_token: { file: ./secrets/cloudflare_tunnel_token }
+  twilio_account_sid: { file: ./secrets/twilio_account_sid }
+  twilio_auth_token: { file: ./secrets/twilio_auth_token }
+  kratos_sms_channel: { file: ./secrets/kratos_sms_channel }
+  # Backups (docs/runbooks/selfhost-backups.md). backup_cipher_pass encrypts the database backups: keep it offline.
+  backup_s3_access_key: { file: ./secrets/backup_s3_access_key }
+  backup_s3_secret_key: { file: ./secrets/backup_s3_secret_key }
+  backup_cipher_pass: { file: ./secrets/backup_cipher_pass }
+  files_backup_access_key: { file: ./secrets/files_backup_access_key }
+  files_backup_secret_key: { file: ./secrets/files_backup_secret_key }
+  # Read by Prometheus and Alertmanager, which run as nobody (uid 65534), so setup.sh gives them their own copies.
+  prometheus_metrics_token: { file: ./secrets/prometheus_metrics_token }
+  alert_smtp_password: { file: ./secrets/alert_smtp_password }

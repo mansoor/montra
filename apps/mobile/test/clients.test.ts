@@ -260,8 +260,8 @@ describe('account flows on the phone (AUTH-01..06, ADR-0046)', () => {
       password: 'long and strong',
       traits: { email: 'a@b.co', name: { first: 'Ann', last: 'Bee' } },
     });
-    expect(await k.verifyEmail('v1', '000000')).toEqual({ kind: 'error', message: 'The code is invalid.' });
-    expect(await k.verifyEmail('v1', '123 456')).toEqual({ kind: 'ok' });
+    expect(await k.verifyCode('v1', '000000')).toEqual({ kind: 'error', message: 'The code is invalid.' });
+    expect(await k.verifyCode('v1', '123 456')).toEqual({ kind: 'ok' });
   });
 
   it('resets a password, asking for the second factor first when the account has one', async () => {
@@ -378,6 +378,117 @@ describe('two-step required by the workspace (ADR-0044)', () => {
     });
     await expect(api.me()).rejects.toBeInstanceOf(ApiError);
     expect(asked).toBe(1);
+  });
+});
+
+describe('a closed account or workspace (ADR-0049 §4, BAK-09)', () => {
+  it('tells the app about each refusal, and nothing else', async () => {
+    const seen: Array<[string, string]> = [];
+    let answer: { status: number; body?: unknown } = { status: 200, body: {} };
+    const { f, calls } = fakeFetch(() => answer);
+    const api = createApi({
+      baseUrl: 'http://api',
+      token: async () => 't',
+      fetch: f,
+      onClosed: (code, message) => seen.push([code, message]),
+    });
+    for (const code of ['account.suspended', 'workspace.suspended', 'account.deleting']) {
+      answer = { status: 403, body: { code, detail: `closed: ${code}` } };
+      await expect(api.me()).rejects.toMatchObject({ status: 403, code });
+    }
+    answer = { status: 403, body: { code: 'forbidden', detail: 'No' } };
+    await expect(api.me()).rejects.toBeInstanceOf(ApiError);
+    answer = { status: 404, body: { code: 'account.suspended' } };
+    await expect(api.me()).rejects.toBeInstanceOf(ApiError);
+    expect(seen).toEqual([
+      ['account.suspended', 'closed: account.suspended'],
+      ['workspace.suspended', 'closed: workspace.suspended'],
+      ['account.deleting', 'closed: account.deleting'],
+    ]);
+
+    answer = { status: 200, body: { requested: false, purgeAfter: null, workspaces: [] } };
+    expect(await api.cancelDeletion()).toMatchObject({ requested: false });
+    expect(calls.at(-1)).toMatchObject({ url: 'http://api/v1/me/deletion', init: { method: 'DELETE' } });
+  });
+});
+
+describe('the mobile number (ADR-0049 §6)', () => {
+  const profile = (phone?: string) => ({
+    id: 's1',
+    ui: {
+      nodes: [
+        { group: 'default', attributes: { name: 'csrf_token', value: '' } },
+        { group: 'profile', attributes: { name: 'traits.email', value: 'pat@example.test' } },
+        { group: 'profile', attributes: { name: 'traits.phone', value: phone } },
+        { group: 'profile', attributes: { name: 'traits.name.first', value: 'Pat' } },
+        { group: 'profile', attributes: { name: 'traits.name.last', value: 'Lee' } },
+        { group: 'profile', attributes: { name: 'method', value: 'profile' } },
+      ],
+    },
+    identity: {
+      verifiable_addresses: phone ? [{ via: 'sms', value: phone, verified: phone === '+14155550100' }] : [],
+    },
+  });
+
+  it('reads the number, saves it with the other traits as they were, and removes it', async () => {
+    let phone: string | undefined = '+14155550100';
+    const sent: any[] = [];
+    const { f } = fakeFetch((c) => {
+      const path = c.url.replace('http://k', '');
+      if (path === '/self-service/settings/api') return { status: 200, body: profile(phone) };
+      if (path === '/self-service/settings?flow=s1') {
+        const body = JSON.parse(String(c.init.body));
+        sent.push(body);
+        if (body.traits.phone === '12')
+          return {
+            status: 400,
+            body: { ui: { messages: [{ type: 'error', text: 'Enter a valid phone number' }] } },
+          };
+        phone = body.traits.phone;
+        return { status: 200, body: { state: 'success' } };
+      }
+      return { status: 404 };
+    });
+    const k = new KratosClient('http://k', f);
+    expect(await k.phoneStatus('tok')).toEqual({ kind: 'phone', phone: '+14155550100', verified: true });
+
+    expect(await k.setPhone('tok', '+447700900123')).toEqual({ kind: 'saved', verificationFlowId: null });
+    expect(sent[0]).toEqual({
+      method: 'profile',
+      traits: { email: 'pat@example.test', phone: '+447700900123', name: { first: 'Pat', last: 'Lee' } },
+    });
+    expect(await k.phoneStatus('tok')).toEqual({ kind: 'phone', phone: '+447700900123', verified: false });
+
+    expect(await k.setPhone('tok', null)).toMatchObject({ kind: 'saved' });
+    expect(sent[1].traits).toEqual({ email: 'pat@example.test', name: { first: 'Pat', last: 'Lee' } });
+    expect(await k.phoneStatus('tok')).toEqual({ kind: 'phone', phone: null, verified: false });
+
+    expect(await k.setPhone('tok', '12')).toEqual({ kind: 'error', message: 'Enter a valid phone number' });
+  });
+
+  it('takes the verification flow when Kratos names one, and asks for the password when the session is old', async () => {
+    let fresh = false;
+    const { f } = fakeFetch((c) => {
+      const path = c.url.replace('http://k', '');
+      if (path === '/self-service/settings/api')
+        return fresh
+          ? { status: 200, body: profile() }
+          : { status: 403, body: { error: { id: 'session_refresh_required' } } };
+      if (path === '/self-service/settings?flow=s1')
+        return {
+          status: 200,
+          body: { state: 'success', continue_with: [{ action: 'show_verification_ui', flow: { id: 'v7' } }] },
+        };
+      if (path === '/self-service/verification?flow=v7')
+        return { status: 200, body: { state: 'passed_challenge' } };
+      return { status: 404 };
+    });
+    const k = new KratosClient('http://k', f);
+    expect(await k.phoneStatus('tok')).toEqual({ kind: 'reauth' });
+    expect(await k.setPhone('tok', '+14155550123')).toEqual({ kind: 'reauth' });
+    fresh = true;
+    expect(await k.setPhone('tok', '+14155550123')).toEqual({ kind: 'saved', verificationFlowId: 'v7' });
+    expect(await k.verifyCode('v7', '123 456')).toEqual({ kind: 'ok' });
   });
 });
 

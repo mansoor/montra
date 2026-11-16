@@ -2,7 +2,16 @@
  * Who is signed in and which workspace is open. The session token lives in SecureStore (Keychain/Keystore);
  * sign-out wipes the offline store and its key, removes the push token and ends the Kratos session (BAK-10).
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import * as SecureStore from 'expo-secure-store';
 import type { MeDto, WorkspaceDto } from '@montra/schemas';
 import { Platform } from 'react-native';
@@ -11,6 +20,7 @@ import { createApi, type Api } from '../api/client';
 import { nativeUpload } from '../api/file-upload';
 import { KratosClient, devToken, type LoginResult } from '../auth/kratos';
 import { abilitiesOf, NO_ABILITIES, type Abilities } from '../features/roles';
+import { closedFrom, closedOf, strongerClosed, type Closed } from '../features/account-state';
 
 const TOKEN_KEY = 'montra.session.v1';
 const WORKSPACE_KEY = 'montra.workspace.v1';
@@ -45,6 +55,15 @@ interface SessionApi {
   twoStepRequired: boolean;
   /** After the second factor: reload the workspace with the stronger session. */
   clearTwoStepRequired(): void;
+  /**
+   * ADR-0049 §4, BAK-09: the server refused the account (suspended, being deleted) or the open workspace (its owner is
+   * suspended). Nothing else is shown, and nothing is sent, until the person tries again, switches or signs out.
+   */
+  closed: Closed | null;
+  /** From the API client or the sync engine: a refusal in `CLOSED_CODES`. */
+  reportClosed(code: string, message: string): void;
+  /** Ask again: the refusal may have been lifted (restored by support, or the deletion cancelled). */
+  reopen(): Promise<void>;
 }
 
 const Ctx = createContext<SessionApi | null>(null);
@@ -75,6 +94,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const token = useCallback(() => SecureStore.getItemAsync(TOKEN_KEY), []);
   const [updateRequired, setUpdateRequired] = useState(false);
   const [twoStepRequired, setTwoStepRequired] = useState(false);
+  const [closed, setClosed] = useState<Closed | null>(null);
+  // Signing out after asking for deletion: the last calls on the way out are refused, and that's expected.
+  const signingOut = useRef(false);
+  const reportClosed = useCallback((code: string, message: string) => {
+    const next = closedOf(code, message);
+    if (signingOut.current) return;
+    if (next) setClosed((current) => strongerClosed(current, next));
+  }, []);
   const api = useMemo(
     () =>
       createApi({
@@ -84,8 +111,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         uploadFile: nativeUpload,
         onUpdateRequired: () => setUpdateRequired(true),
         onTwoStepRequired: () => setTwoStepRequired(true),
+        onClosed: reportClosed,
       }),
-    [token],
+    [token, reportClosed],
   );
   const kratos = useMemo(() => (config.kratosUrl ? new KratosClient(config.kratosUrl) : null), []);
 
@@ -108,6 +136,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await SecureStore.deleteItemAsync(TOKEN_KEY);
         return setState({ status: 'signed_out' });
       }
+      // Refused (the client has reported it): the closed screen shows. The last workspace is kept only so that
+      // signing out from there still wipes its offline copy; nothing is synced while closed.
+      const refused = closedFrom(e) !== null;
       // Offline at launch: keep the last workspace so the offline store still opens.
       const saved = await SecureStore.getItemAsync(WORKSPACE_KEY);
       const cached = await SecureStore.getItemAsync(`${WORKSPACE_KEY}.dto`);
@@ -116,7 +147,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const me = JSON.parse((await SecureStore.getItemAsync(`${WORKSPACE_KEY}.me`)) ?? '{}') as MeDto;
         return setState({ status: 'signed_in', me, workspace: ws, workspaces: [ws] });
       }
-      setState({ status: 'signed_out', error: err.message });
+      setState({ status: 'signed_out', error: refused ? undefined : err.message });
     }
   }, [api, token]);
 
@@ -143,6 +174,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       clearTwoStepRequired: () => {
         setTwoStepRequired(false);
         void load();
+      },
+      closed,
+      reportClosed,
+      async reopen() {
+        setClosed(null);
+        await load();
       },
       api,
       token,
@@ -176,6 +213,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (state.status !== 'choose_workspace' && state.status !== 'signed_in') return;
         const ws = state.workspaces.find((w) => w.id === id);
         if (!ws) return;
+        // Another workspace may open when only this one is closed; a closed account stays closed.
+        if (closed?.kind === 'workspace') setClosed(null);
         await remember(state.me, ws);
         setState({ status: 'signed_in', me: state.me, workspace: ws, workspaces: state.workspaces });
       },
@@ -183,15 +222,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setHook({ fn });
       },
       async signOut() {
-        const t = await token();
-        await hook.fn?.().catch(() => undefined);
-        if (t && kratos && !t.startsWith('dev:')) await kratos.logout(t);
-        for (const k of [TOKEN_KEY, WORKSPACE_KEY, `${WORKSPACE_KEY}.dto`, `${WORKSPACE_KEY}.me`])
-          await SecureStore.deleteItemAsync(k);
-        setState({ status: 'signed_out' });
+        signingOut.current = true;
+        try {
+          const t = await token();
+          await hook.fn?.().catch(() => undefined);
+          if (t && kratos && !t.startsWith('dev:')) await kratos.logout(t);
+          for (const k of [TOKEN_KEY, WORKSPACE_KEY, `${WORKSPACE_KEY}.dto`, `${WORKSPACE_KEY}.me`])
+            await SecureStore.deleteItemAsync(k);
+          setClosed(null);
+          setState({ status: 'signed_out' });
+        } finally {
+          signingOut.current = false;
+        }
       },
     }),
-    [updateRequired, twoStepRequired, state, api, token, kratos, finish, hook, load],
+    [updateRequired, twoStepRequired, closed, reportClosed, state, api, token, kratos, finish, hook, load],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

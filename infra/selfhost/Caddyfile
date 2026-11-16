@@ -1,0 +1,51 @@
+# Routes app., api. and auth. to the web server, the two API replicas and the auth gateway (ADR-0050 §5).
+#
+# Behind the Cloudflare Tunnel (the default), SITE_SCHEME is http:// and Cloudflare holds the certificates: cloudflared
+# reaches Caddy on the internal network, and nothing is published. With compose.direct.yaml it is https://, and Caddy
+# gets its own certificates from Let's Encrypt.
+{
+	servers {
+		# Whose X-Forwarded-For to keep: cloudflared on the internal network by default, Cloudflare's ranges on a VPS.
+		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
+	}
+}
+
+(common) {
+	encode zstd gzip
+	header -Server
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$SITE_SCHEME:http://}{$APP_HOST} {
+	import common
+	reverse_proxy web:3000 {
+		# A request that arrives while web restarts waits for it, up to 30 seconds.
+		lb_try_duration 30s
+	}
+}
+
+{$SITE_SCHEME:http://}{$API_HOST} {
+	import common
+	# Metrics and the Kratos webhooks are for the internal network only.
+	@internal path /internal/*
+	respond @internal 404
+	reverse_proxy api-a:4000 api-b:4000 {
+		lb_policy round_robin
+		# A replica being replaced fails its check and is left out until it's ready again (deploy.sh).
+		health_uri /readyz
+		health_interval 5s
+		health_timeout 3s
+		fail_duration 30s
+		lb_try_duration 30s
+	}
+}
+
+{$SITE_SCHEME:http://}{$AUTH_HOST} {
+	import common
+	reverse_proxy auth-gateway:4455 {
+		lb_try_duration 30s
+	}
+}

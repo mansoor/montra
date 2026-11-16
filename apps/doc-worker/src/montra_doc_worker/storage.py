@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 from .errors import PermanentJobError, TransientJobError
+from .settings import resolve_secret_files
 
 MAX_BYTES = 25 * 1024 * 1024
 
@@ -75,7 +75,8 @@ def default_storage_dir() -> Path:
 
 
 def storage_from_env(env: dict[str, str] | None = None) -> Storage:
-    env = dict(os.environ) if env is None else env
+    # S3_ACCESS_KEY_FILE and the like are read here too (ADR-0050 §2).
+    env = resolve_secret_files(env)
     mode = env.get("STORAGE_MODE", "local")
     if mode == "local":
         return LocalStorage(Path(env.get("STORAGE_DIR") or default_storage_dir()))

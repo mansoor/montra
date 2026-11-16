@@ -8,11 +8,17 @@
 | [Disaster recovery](disaster-recovery.md) | Data is lost or a region or account is gone   |
 | [Restore drill](restore-drill.md)         | Every quarter, to prove the backups work      |
 | [Security patching](security-patching.md) | A scanner or advisory reports a vulnerability |
+| [Key wrapping](key-wrapping.md)           | Making a master key, using Vault, or moving the wrapped keys |
+| [Self-hosted setup](selfhost-setup.md)    | Putting Montra on your own server (at home, or a VPS)         |
+| [Self-hosted operations](selfhost-operations.md) | Releases, patching, power cuts, failed disks and secrets on your own server |
+| [Self-hosted backups](selfhost-backups.md) | Setting up and watching backups and alerts on your own server |
+| [Self-hosted restore drill](selfhost-restore-drill.md) | Every quarter, to prove the self-hosted backups restore |
+| [Moving platforms](moving-platforms.md)   | From home to a VPS, or to any cloud                            |
 | [Launch checklist](launch-checklist.md)   | Going from closed beta to `v1.0.0`            |
 
 ## What has and hasn't been tested
 
-Nothing here has been run against a real AWS, Cloudflare, Stripe or Sentry account. Treat every cloud step as a first
+Nothing here has been run against a real AWS, Cloudflare, Stripe or Sentry account, or on a real self-hosted server. Treat every cloud step as a first
 attempt, and correct the runbook when reality differs.
 
 These were run locally in Docker, and only these:

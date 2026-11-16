@@ -2,9 +2,12 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { Inject, Injectable } from '@nestjs/common';
 import type { Trx } from '@montra/db';
 import { DecryptCommand, EncryptCommand, KMSClient } from '@aws-sdk/client-kms';
-import { CONFIG, type AppConfig } from '../config.js';
+import type { AppConfig } from '../config.js';
 
-/** Wraps and unwraps data keys (envelope encryption, design 03 §12). Production uses AWS KMS. */
+/**
+ * Wraps and unwraps data keys (envelope encryption, design 03 §12). The adapters are `LocalKms`, `AwsKms` and `VaultKms`
+ * (ADR-0050 §3); `createKms` in `kms.ts` picks one from KMS_MODE.
+ */
 export interface KmsPort {
   wrap(dataKey: Buffer): Promise<Buffer>;
   unwrap(wrapped: Buffer): Promise<Buffer>;
@@ -33,16 +36,19 @@ function open(key: Buffer, sealed: Buffer, aad: Buffer): Buffer {
   return Buffer.concat([decipher.update(sealed.subarray(1 + IV_BYTES + TAG_BYTES)), decipher.final()]);
 }
 
-/** Local KMS for development and tests: AES-256-GCM under a master key from configuration. */
-@Injectable()
+/**
+ * AES-256-GCM under a master key (ADR-0050 §3). Production gives the key in a file only its owner can read
+ * (MASTER_KEY_FILE); development and tests without one use a fixed, insecure key.
+ */
 export class LocalKms implements KmsPort {
   private readonly master: Buffer;
 
-  constructor(@Inject(CONFIG) config: AppConfig) {
-    this.master = config.MASTER_KEY
-      ? Buffer.from(config.MASTER_KEY, 'base64')
+  /** @param masterKey base64, 32 bytes. */
+  constructor(masterKey: string | undefined, name = 'MASTER_KEY') {
+    this.master = masterKey
+      ? Buffer.from(masterKey, 'base64')
       : createHash('sha256').update('montra-insecure-development-master-key').digest();
-    if (this.master.length !== 32) throw new Error('MASTER_KEY must be 32 bytes, base64-encoded');
+    if (this.master.length !== 32) throw new Error(`${name} must be 32 bytes, base64-encoded`);
   }
 
   async wrap(dataKey: Buffer): Promise<Buffer> {
@@ -55,12 +61,11 @@ export class LocalKms implements KmsPort {
 }
 
 /** AWS KMS (NFR-01): the master key never leaves KMS, and data keys are wrapped and unwrapped there. */
-@Injectable()
 export class AwsKms implements KmsPort {
   private readonly client: Pick<KMSClient, 'send'>;
   private readonly keyId: string;
 
-  constructor(@Inject(CONFIG) config: AppConfig) {
+  constructor(config: AppConfig) {
     this.keyId = config.AWS_KMS_KEY_ID ?? '';
     this.client = new KMSClient({ region: config.S3_REGION });
   }

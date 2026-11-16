@@ -1,8 +1,11 @@
 name: Deploy
 
-# Tags pick the environment: vX.Y.Z-dev.N goes to dev, vX.Y.Z-rc.N to staging, vX.Y.Z to prod. Each GitHub environment
-# needs the variables AWS_ROLE_ARN and AWS_REGION. Add required reviewers on the prod environment.
-# See docs/runbooks/deploy.md. This workflow has not been run against a real AWS account yet.
+# Tags pick the environment: vX.Y.Z-dev.N goes to dev, vX.Y.Z-rc.N to staging, vX.Y.Z to prod. Add required reviewers on
+# the prod environment. Each GitHub environment picks its target with the variable DEPLOY_TARGET (ADR-0050 §6):
+#   aws (the default)  the variables AWS_ROLE_ARN and AWS_REGION. See docs/runbooks/deploy.md.
+#   selfhost           images go to the GitHub Container Registry, then infra/selfhost/deploy.sh runs over SSH on the
+#                      server. See docs/runbooks/selfhost-operations.md for the variables and secrets it needs.
+# An environment without its target's settings skips with a notice. Neither target has been run for real yet.
 on:
   push:
     tags: ['v*']
@@ -53,20 +56,33 @@ jobs:
           fi
 
   gate:
-    name: Check for an AWS role
+    name: Check the target's settings
     needs: target
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: ${{ needs.target.outputs.environment }}
     outputs:
       configured: ${{ steps.role.outputs.configured }}
+      deploy_target: ${{ steps.role.outputs.deploy_target }}
     steps:
       - id: role
         env:
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
           AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          SELFHOST_SSH_HOST: ${{ vars.SELFHOST_SSH_HOST }}
         run: |
-          if [ -z "$AWS_ROLE_ARN" ]; then
-            echo "::notice::AWS_ROLE_ARN is not set for this environment; skipping the deployment. Add it under Settings → Environments."
+          target="${DEPLOY_TARGET:-aws}"
+          case "$target" in
+            aws) setting="AWS_ROLE_ARN"; value="$AWS_ROLE_ARN" ;;
+            selfhost) setting="SELFHOST_SSH_HOST"; value="$SELFHOST_SSH_HOST" ;;
+            *)
+              echo "::error::DEPLOY_TARGET is '$target'; use aws or selfhost."
+              exit 1
+              ;;
+          esac
+          echo "deploy_target=$target" >> "$GITHUB_OUTPUT"
+          if [ -z "$value" ]; then
+            echo "::notice::$setting is not set for this environment; skipping the deployment. Add it under Settings → Environments."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -75,7 +91,7 @@ jobs:
   images:
     name: Build and push images
     needs: [target, gate]
-    if: needs.gate.outputs.configured == 'true'
+    if: needs.gate.outputs.configured == 'true' && needs.gate.outputs.deploy_target == 'aws'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: ${{ needs.target.outputs.environment }}
@@ -125,7 +141,7 @@ jobs:
   deploy:
     name: Migrate and deploy
     needs: [target, gate, images]
-    if: needs.gate.outputs.configured == 'true' && !inputs.build_only
+    if: needs.gate.outputs.configured == 'true' && needs.gate.outputs.deploy_target == 'aws' && !inputs.build_only
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: ${{ needs.target.outputs.environment }}
@@ -170,3 +186,137 @@ jobs:
         run: bash infra/deploy/ecs-deploy-blue-green.sh "$CONFIG" api "$API_IMAGE"
       - name: Blue/green web
         run: bash infra/deploy/ecs-deploy-blue-green.sh "$CONFIG" web "$WEB_IMAGE"
+
+  # --- Own servers (ADR-0050 §5–6, infra/selfhost) -------------------------------------------------------------------
+  selfhost-images:
+    name: Build and push images to GHCR
+    needs: [target, gate]
+    if: needs.gate.outputs.configured == 'true' && needs.gate.outputs.deploy_target == 'selfhost'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ needs.target.outputs.environment }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      postgres_tag: ${{ steps.tag.outputs.postgres_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Production deploys only from main
+        if: needs.target.outputs.environment == 'prod'
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_SHA is not on main, and production only runs released versions."
+            exit 1
+          fi
+      - id: tag
+        run: |
+          {
+            echo "tag=${GITHUB_SHA::12}-${GITHUB_RUN_ATTEMPT}"
+            echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}"
+            echo "postgres_tag=16-$(git ls-files -s infra/selfhost/postgres | sha256sum | cut -c1-12)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          POSTGRES_TAG: ${{ steps.tag.outputs.postgres_tag }}
+          PREFIX: ${{ steps.tag.outputs.prefix }}
+          ENVIRONMENT: ${{ needs.target.outputs.environment }}
+          APP_HOST: ${{ vars.SELFHOST_APP_HOST }}
+          API_HOST: ${{ vars.SELFHOST_API_HOST }}
+          AUTH_HOST: ${{ vars.SELFHOST_AUTH_HOST }}
+        run: |
+          for name in APP_HOST API_HOST AUTH_HOST; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Set SELFHOST_$name on the $ENVIRONMENT environment: the web image is built for its domain."
+              exit 1
+            fi
+          done
+          docker buildx build --push -f apps/api/Dockerfile -t "$PREFIX/api:$TAG" .
+          docker buildx build --push -f apps/doc-worker/Dockerfile -t "$PREFIX/doc-worker:$TAG" .
+          docker buildx build --push -t "$PREFIX/kratos:$TAG" infra/kratos
+          # Postgres with pgBackRest is tagged by its folder's content, so deploy.sh restarts the database only when
+          # that image changes.
+          docker buildx build --push -t "$PREFIX/postgres:$POSTGRES_TAG" infra/selfhost/postgres
+          # NEXT_PUBLIC_* values are compiled into the browser bundle, so web is built per environment.
+          docker buildx build --push -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_AUTH_MODE=kratos \
+            --build-arg "NEXT_PUBLIC_KRATOS_URL=https://$AUTH_HOST" \
+            --build-arg "NEXT_PUBLIC_APP_URL=https://$APP_HOST" \
+            --build-arg "NEXT_PUBLIC_API_WS_URL=wss://$API_HOST/v1/ws" \
+            -t "$PREFIX/web-$ENVIRONMENT:$TAG" .
+
+  selfhost-deploy:
+    name: Migrate and deploy over SSH
+    needs: [target, gate, selfhost-images]
+    if: needs.gate.outputs.configured == 'true' && needs.gate.outputs.deploy_target == 'selfhost' && !inputs.build_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ needs.target.outputs.environment }}
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.selfhost-images.outputs.tag }}
+      POSTGRES_TAG: ${{ needs.selfhost-images.outputs.postgres_tag }}
+      SSH_HOST: ${{ vars.SELFHOST_SSH_HOST }}
+      SSH_USER: ${{ vars.SELFHOST_SSH_USER || 'montra' }}
+      SERVER_DIR: ${{ vars.SELFHOST_DIR || '/srv/montra' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.SELFHOST_SSH_KNOWN_HOSTS }}
+          # A server at home has no inbound port: SSH goes through the Cloudflare Tunnel, with an Access service token.
+          VIA_ACCESS: ${{ vars.SELFHOST_SSH_VIA_CLOUDFLARE_ACCESS }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$KNOWN_HOSTS" ]; then
+            echo "::error::Set the SELFHOST_SSH_KEY secret and the SELFHOST_SSH_KNOWN_HOSTS variable on this environment."
+            exit 1
+          fi
+          install -d -m 700 ~/.ssh
+          (umask 077 && printf '%s\n' "$SSH_KEY" > ~/.ssh/montra)
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          {
+            echo "Host montra-server"
+            echo "  HostName $SSH_HOST"
+            echo "  User $SSH_USER"
+            echo "  IdentityFile ~/.ssh/montra"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking yes"
+            echo "  ServerAliveInterval 30"
+            if [ "$VIA_ACCESS" = "true" ]; then
+              # The token comes from the environment, not the command line.
+              echo "  ProxyCommand docker run --rm -i -e TUNNEL_SERVICE_TOKEN_ID -e TUNNEL_SERVICE_TOKEN_SECRET cloudflare/cloudflared:2025.11.1@sha256:89ee50efb1e9cb2ae30281a8a404fed95eb8f02f0a972617526f8c5b417acae2 access ssh --hostname %h"
+            fi
+          } > ~/.ssh/config
+      - name: Copy the stack's files
+        env:
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        # Only what is in git: .env and secrets/ on the server are never touched.
+        run: |
+          # The paths are this job's, expanded here on purpose.
+          # shellcheck disable=SC2029
+          tar -C infra -czf - selfhost/compose.yaml selfhost/compose.direct.yaml selfhost/Caddyfile \
+              selfhost/deploy.sh selfhost/setup.sh selfhost/backup.sh selfhost/montra.env.example \
+              db/production-roles.sql db/reconciliation-checks.sql \
+              observability/prometheus/prometheus.selfhost.yml observability/prometheus/rules \
+              observability/alertmanager/alertmanager.example.yml \
+            | ssh montra-server "mkdir -p '$SERVER_DIR/infra' && tar -C '$SERVER_DIR/infra' -xzf -"
+      - name: Migrate and roll out
+        env:
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          # shellcheck disable=SC2029
+          ssh montra-server "'$SERVER_DIR/infra/selfhost/deploy.sh' '$TAG' '$POSTGRES_TAG'"

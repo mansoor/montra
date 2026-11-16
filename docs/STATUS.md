@@ -1177,12 +1177,13 @@ Phase 11 leftovers:
       providers.
     - Not yet tried on a device or with the real provider.
   - Not yet tried on a device.
-- **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14):
-  - [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console
+- **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14; **done** 2026-11-14: ADR-0049 in
+  #97–#101, tagged `v0.12.0-dev.56`–`60`; ADR-0050 in #96 and #102–#104, tagged `v0.12.0-dev.61`–`64`):
+  - ✅ [ADR-0049](design/adr/0049-plans-platform-owner-and-providers.md): plans become data the owner edits in the console
     (tiers, prices by Stripe price id, entitlements, versions), each with an AI allowance; a staff `owner` role above
     `admin`; suspending, trials, given plans and closing accounts; a Providers page that shows but never stores keys;
-    texts through Twilio (Kratos's SMS channel and an `SmsPort`). Five PRs, in the order the ADR gives.
-  - **Step 1, plans as data and the AI allowance** (migration 0051):
+    texts through Twilio (Kratos's SMS channel and an `SmsPort`). Done in five PRs, in the order the ADR gives.
+  - ✅ **Step 1, plans as data and the AI allowance** (#97, migration 0051):
     - `app.plan`, `app.plan_version` (entitlements as JSON, checked by `parseEntitlements` in `@montra/domain`) and
       `app.plan_price` (Stripe price ids). `app.subscription.plan_version_id`. A version with subscribers can't be
       changed (a trigger); a new version is the way. Free is always offered.
@@ -1201,7 +1202,7 @@ Phase 11 leftovers:
       and the AI usage bar are step 2.
     - Tests: `apps/api/test/plans.test.ts`. The ceiling is only ever set inside a rolled-back transaction there,
       because test files share a database.
-  - **Step 2, the owner and plans in the console** (migration 0052):
+  - ✅ **Step 2, the owner and plans in the console** (#98, migration 0052):
     - Staff roles are `support`, `admin` and `owner`, each including the one below. `staff:add <email> owner` (or
       `--role owner`) makes the first owner; after that, owners add, change and remove staff in the console's
       **Staff** tab, through `admin_*` functions that check the role again. Every change is emailed to every owner.
@@ -1217,7 +1218,7 @@ Phase 11 leftovers:
     - The AI usage bar: the web's AI settings and the phone's Settings show "N% of this month's AI used" from
       `usage.share`. Under a plan's allowance, the web shows the share, not dollars.
     - Tests: `apps/api/test/plans-console.test.ts`, and a look at the Plans tab in `e2e/operations.spec.ts`.
-  - **Step 3, managing accounts** (migration 0053), in the console's account lookup:
+  - ✅ **Step 3, managing accounts** (#99, migration 0053), in the console's account lookup:
     - **Suspend and restore** (admin, with a recent sign-in): abuse, fraud or a legal hold, with a reason. Kratos
       stops the sign-in and ends the sessions. The API refuses the person (`account.suspended`) and closes workspaces
       they own to every member (`workspace.suspended`). The web shows `/account-closed`. They're emailed unless it's a
@@ -1227,9 +1228,14 @@ Phase 11 leftovers:
       instead, applied to its subscription.
     - **Close on request** (owner): the person's own 30-day deletion, only for a request from the account's address,
       with how it came recorded. They're emailed and can still cancel it.
-    - Not done: the phone has no screen for a suspended account or a closed workspace. It shows the API's message.
+    - Phone: a screen for each refusal, in the web's words: a suspended account, a closed workspace (with the
+      support address from the API's message, and the person's other workspaces), and an account being deleted (when
+      it goes, and **Keep my account**). Each offers help, **Try again** and sign-out (which still wipes the phone).
+      The sync engine stops on `account.suspended`, `workspace.suspended` or `account.deleting` (a `closed` event),
+      keeps the outbox as it was with no attempt counted, and sends nothing, socket included, until reopened
+      (`packages/sync` tests, `apps/mobile/src/features/account-state.ts`). Not run on a device.
     - Tests: `apps/api/test/accounts.test.ts`, and `setIdentityActive` against the fake Kratos in `kratos.test.ts`.
-  - **Step 4, the Providers page** (migration 0054), the console's **Providers** tab, for owners:
+  - ✅ **Step 4, the Providers page** (#100, migration 0054), the console's **Providers** tab, for owners:
     - One row each for email, texts, payments, error reporting, AI, file storage, key management, push and exchange
       rates: whether it's set up, its mode, what isn't secret, and its last success and failure
       (`app.provider_status`, `ProviderHealth`). No key is shown or editable.
@@ -1239,7 +1245,7 @@ Phase 11 leftovers:
     - **Send a test email to me**. The test text answers `sms.not_configured` until step 5.
     - Tests: `apps/api/test/providers.test.ts`. It puts the service-wide settings back afterwards, since test files
       share a database.
-  - **Step 5, texts through Twilio** (migration 0055):
+  - ✅ **Step 5, texts through Twilio** (#101, migration 0055):
     - `SmsPort` with `off`, `log`, `memory` and `twilio` modes (`SMS_MODE`, `TWILIO_*`). Twilio sends through a
       Messaging Service. `TextsService` decides who gets what: their own verified number only, kinds the owner switched
       on, countries on the allowed list, what the person turned on, and reminders within the plan's `smsMonthly`.
@@ -1252,15 +1258,110 @@ Phase 11 leftovers:
       sends a test text to the owner's own number.
     - The API's copy of the number is refreshed from each new Kratos session. A change is logged and emailed.
     - The auth gateway limits texted codes per number and per address (`sms_send`).
-    - Not done: the phone app has no settings for texts or the number (it shows them nowhere yet), the Terraform doesn't
-      set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real Twilio. US texting needs A2P 10DLC or
-      a verified toll-free number first (launch checklist).
+    - Phone: Settings has **Mobile number** (add, change, remove, through Kratos's settings flow, asking for the
+      password when the sign-in is old), and notification settings have the **Texts** section. Both show only where
+      texts are on, and the switches work only for a confirmed number, as on the web
+      (`apps/mobile/src/features/texts.ts`). Not run on a device.
+    - **Verifying a number is blocked on Kratos, for the web and the phone.** Checked against Kratos v26.2.0 with a
+      stand-in for Twilio: saving a number texts a code, but the code works only in the verification flow Kratos made
+      for it, and the settings response doesn't name that flow (no `continue_with`, native or browser). A new
+      verification flow takes only an email address. So `texts.verified` never turns true, and no text goes out. The
+      phone enters the code if Kratos ever names the flow. The probe's details are in the session notes
+      (`side-session-notes/…/phone-account-texts.md`).
+    - Not done: the Terraform doesn't set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real
+      Twilio. US texting needs A2P 10DLC or a verified toll-free number first (launch checklist).
     - Tests: `apps/api/test/texts.test.ts`, the number's sync in `kratos.test.ts`, the limits in `auth-gateway.test.ts`,
       and `packages/domain/test/phone.test.ts`.
-  - [ADR-0050](design/adr/0050-hosting-anywhere.md): Montra needs containers, PostgreSQL 16, S3-compatible storage, SMTP
-    and secrets, nothing more. Adds `_FILE` secrets, `KMS_MODE=local` from a file in production and `KMS_MODE=vault`
-    with `crypto:rewrap`, a Docker Compose target for own servers (`infra/selfhost`), images on GHCR, and backups and
-    alerts that don't belong to one cloud. AWS stays as one target.
+  - **Next for ADR-0049:**
+    - confirming a mobile number through the API instead of Kratos (chosen over texting a link; its own PR after #106);
+    - `SMS_MODE` and the Twilio secrets in Terraform;
+    - A2P 10DLC (or a verified toll-free number) before the first real text in the US;
+    - a first real send through Twilio and a real Stripe checkout by plan.
+  - ✅ [ADR-0050](design/adr/0050-hosting-anywhere.md) (**accepted** 2026-11-14): Montra needs containers, PostgreSQL 16,
+    S3-compatible storage, SMTP and secrets, nothing more. AWS stays as one target. **The owner starts on a home server
+    for family and friends, and moves to a VPS when real customers come** (§11): a Cloudflare Tunnel (no inbound ports,
+    no dynamic-IP problem), email through a sending service over SMTP, a UPS and mirrored disks, `BILLING_MODE=off`.
+    Done in four PRs:
+    1. ✅ **Application changes** (#96):
+       - **`_FILE` secrets:** every API setting (`apps/api/src/secret-files.ts`), the API's command-line tools and the
+         migration command, the doc-worker (`settings.py`), and Kratos through a small Go entrypoint in its distroless
+         image (`infra/kratos/entrypoint`, tested in the image build; only Kratos's secret-bearing settings, as the
+         base image's own `SSL_CERT_FILE` is a path). Checked: the built image reads `DSN_FILE`. Both set is an error; empty means not set.
+       - **`KMS_MODE=local` in production** from `MASTER_KEY_FILE` only; a key file its group or others can read is
+         refused. On Windows the mode isn't checked (no Unix permissions).
+       - **`KMS_MODE=vault`** (`crypto/vault-kms.ts`): Vault or OpenBao Transit; `VAULT_TOKEN_FILE` is read on every
+         call for a Vault Agent. Tested against a stand-in for the Transit API, not a real Vault.
+       - **`crypto:rewrap`** (`crypto/rewrap.ts`, `crypto-cli.ts`): with `KMS_PREVIOUS_MODE` set, the service unwraps
+         with either mode (`MovingKms`) while the command moves workspace, backup-schedule, restore and queued-backup
+         keys. It resumes by skipping keys the new mode already unwraps, so it needs no table (and no migration).
+         Runbook: `docs/runbooks/key-wrapping.md`.
+    2. ✅ **The self-hosted target** (#102):
+       - **`infra/selfhost/compose.yaml`:** Caddy, cloudflared (profile `tunnel`, the default), Postgres 16, Kratos
+         and its courier, the auth gateway, two API replicas (`api-a`, `api-b`, both reachable as `api`), the job
+         worker, the doc worker and web. Every Montra container runs as uid 1000; secrets are files in `secrets/`
+         read through `NAME_FILE`; no port is published. `compose.direct.yaml` publishes 80 and 443 for a VPS, with
+         Let's Encrypt. Caddy refuses `/internal/*` from outside; Kratos's webhooks reach the API internally.
+       - **`setup.sh`:** `secrets` generates passwords, URLs, Kratos secrets and the master key (never overwriting);
+         `check` checks Docker, `.env`, each secret's owner, mode and content, the bucket, SMTP and ghcr.io, disk and
+         memory, and warns about a missing disk mirror, SMART, UPS software, disk encryption or clock sync; `init`
+         creates the roles from `production-roles.sql`, then deploys.
+       - **`deploy.sh <tag>`:** migrations first as one-off containers, then Kratos, the workers, `api-a` then `api-b`
+         (Caddy health-checks each), web, and only then records the tag in `.env`.
+       - **`deploy.yml`:** an environment's `DEPLOY_TARGET` picks `aws` (default, unchanged) or `selfhost`, which
+         builds the four images to `ghcr.io/<repo>` (web as `web-<environment>`), copies `infra/selfhost` over SSH
+         (through Cloudflare Access at home) and runs `deploy.sh`. The AWS path still builds straight into ECR;
+         moving it to GHCR-then-copy (ADR-0050 §6) is left for when AWS is used.
+       - **The Kratos wrapper** gained `montra-kratos healthcheck`, as the image has no shell or curl.
+       - **Fixed: the API and web images couldn't start.** `exceljs` was a devDependency of the API but is imported at
+         runtime, so the image's production install left it out; and the web image's build deleted `lib/csp.mjs`,
+         which `next.config.mjs` loads at start (both `ERR_MODULE_NOT_FOUND`). The web build now loads its config to
+         prove it. They affected the AWS images too, which have never been run. Found by bringing the stack up.
+       - **Texts:** `SMS_MODE`, the Twilio secrets and Kratos's SMS channel (ADR-0049 §6) are wired in, off by default.
+       - **Brought up locally** on Docker Desktop from images built here, with MinIO and Mailpit standing in and no
+         tunnel: `setup.sh secrets`, `check` and `init` from nothing, every service healthy, the three hostnames
+         through Caddy, `/internal/*` refused, a sign-up through the auth gateway with its email, and a second deploy
+         replacing both API replicas while `/readyz` answered 382 of 382 calls. It found the two image bugs above and a
+         doc-worker one in step 1 (it resolved its secret files twice).
+       - Runbooks: `selfhost-setup.md` (hardware, mirror, LUKS, UPS, tunnel, email, bucket, VPS variant, secrets,
+         first start, GitHub settings) and `selfhost-operations.md` (releases and rollback, patching, power cuts, a
+         failing disk, health, rotating each secret, `pg_dump` until step 3).
+    3. ✅ **Portable backups and alerts** (#103):
+       - **Postgres with pgBackRest** (`infra/selfhost/postgres`, pushed to GHCR as `postgres:16-<hash of the folder>`,
+         so a release restarts the database only when that image changes). With `BACKUP_S3_BUCKET` set it archives the
+         WAL every 60 seconds (async, a 4 GB queue) to a bucket at another provider with object lock, encrypted with
+         `backup_cipher_pass` before it leaves. `BACKUP_ARCHIVE=off` for a restore drill.
+       - **`backup.sh`:** `init` (stanza and first full), `db full|diff`, `files` (rclone sync to a versioned bucket at a
+         second provider, keys through the environment), `status` (backup ages and `pg_stat_archiver` into a textfile
+         for node-exporter), `info`. `setup.sh cron` installs the schedule; `init` runs both.
+       - **Alerts:** profile `monitoring` runs Prometheus, Alertmanager (email) and node-exporter, nothing published.
+         `infra/observability/prometheus/rules/selfhost.yml`: backup status missing, database or files backup stale,
+         WAL archive failing, a scrape target down, the RAID mirror degraded, a disk full or filling, the clock unsynced.
+         Unit-tested with `promtool` (`tests/selfhost.test.yml`).
+       - **`crypto check`** (`crypto-cli.ts check`, `pnpm --filter @montra/api crypto:check`, the Compose `crypto`
+         task): unwraps every stored key with `KMS_MODE` and names any that don't, for a restore drill or after a move.
+       - Runbooks: `selfhost-backups.md` (buckets, object lock shorter than pgBackRest's retention, settings, schedule,
+         alerts, what to do when one fires) and `selfhost-restore-drill.md` (restore onto a scratch server with
+         read-only keys, reconciliation checks, `crypto check`, the files copy, the lock).
+       - BAK-01 or BAK-09 is still open: the defaults keep about five weeks, which suits BAK-09.
+       - **Brought up locally** with MinIO (TLS and object lock) standing in for the buckets: the stanza, full and
+         differential backups, the files copy, `backup.sh status`, Prometheus scraping both API replicas and
+         node-exporter with the rules loaded, a locked backup refused deletion, and a restore drill into a second
+         project (the WAL replayed, reconciliation clean). It found that Postgres must run under an init process
+         (`init: true`): pgBackRest's async archiver leaves a process PID 1 inherits, and Postgres as PID 1 restarted
+         every connection when it exited.
+       - The Postgres image starts as the `postgres` user, not root (`USER postgres`), which the Trivy file scan
+         requires (DS-0002).
+    4. ✅ **`docs/runbooks/moving-platforms.md`** (#104): the move from home to a VPS
+       or to any cloud, in ADR-0050 §10's order. Logical replication for `montra` and `kratos` (a private link, a
+       `bypassrls` replication login, the schema from `pg_dump --schema-only`, a subscription owned by `montra_owner`),
+       files by `rclone` only if they change bucket, the master key copied or rewrapped on the old platform first
+       (ECS can't hold a key file), the switch with sequences carried across, and 30 days read-only. A small database
+       can be restored from pgBackRest instead. The replication steps were rehearsed between two local Postgres 16
+       containers: every table matched and the reconciliation checks passed; it found that the replication login
+       needs `usage` on schema `public`.
+    - **Next for ADR-0050:** a real home server (setup runbook end to end), a real tunnel, bucket and sending service,
+      the first restore drill, and settling BAK-01 or BAK-09 before turning object lock on. A GCP or Azure adapter and
+      Terraform wait until a move is decided.
 - **Zoom on the receipt** (RCP-14): on the phone's receipt review, tapping a page in the **Receipt photo** section (folded away by default) opens it full screen. Pinch zooms around the fingers (up to 5x), a drag moves around the zoomed page without leaving its edges, a double-tap zooms in on that spot or back out, and arrows change page. It uses Gesture Handler 3's hook API (`usePinchGesture`, `usePanGesture`, `useTapGesture`) with Reanimated; the modal has its own `GestureHandlerRootView`, as Android gives a modal its own window. The geometry is pure and tested (`src/features/zoom.ts`).
 - **Account types** ([ADR-0023](design/adr/0023-account-type-profiles.md)): one definition per type in `@montra/domain` that the form, the account page, Settings and the server read. The form asks only what a type has, and the page shows those facts and the balance over time. The per-type plan built on it is done (ADR-0024 to ADR-0027). The phone shows the type, balance word and each type's details, but no chart yet.
 - **Splitting pay** ([ADR-0022](design/adr/0022-splitting-pay.md)): fixed amounts to other accounts, and the rest to the main one, as a plan on the employer. Each deposit is its own transaction and matches its own statement line. Editing is on the web; the phone shows the split and answers which-deposit questions. Forecasts expect each account's share on payday. The phone hasn't been run on a device.

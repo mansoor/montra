@@ -1,8 +1,15 @@
-/** Settings (OPS-13): profile, family, entities, currency and time zone to read, app lock (PLT-07), notifications, your data, workspace, AI mode (read-only), sign out (wipes, BAK-10), version. */
-import { useEffect, useState } from 'react';
+/** Settings (OPS-13): profile, family, entities, currency and time zone to read, app lock (PLT-07), notifications, the mobile number where texts are on (ADR-0049 §6), your data, workspace, AI mode (read-only), sign out (wipes, BAK-10), version. */
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, Switch, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import type { BillingDto, FamilyMemberDto, MeDto, PlanningSettingsDto, PlanOfferDto } from '@montra/schemas';
+import { useFocusEffect, useRouter } from 'expo-router';
+import type {
+  BillingDto,
+  FamilyMemberDto,
+  MeDto,
+  NotificationPrefsDto,
+  PlanningSettingsDto,
+  PlanOfferDto,
+} from '@montra/schemas';
 import { aiUsedPercent, headlinePrice, otherPlans } from '../src/features/plans';
 import { reminderChoices } from '../src/features/receipt-capture';
 import { config } from '../src/config';
@@ -29,6 +36,7 @@ export default function Settings() {
   const [family, setFamily] = useState<FamilyMemberDto[]>([]);
   const [plan, setPlan] = useState<BillingDto | null>(null);
   const [planning, setPlanning] = useState<PlanningSettingsDto | null>(null);
+  const [texts, setTexts] = useState<NotificationPrefsDto['texts'] | null>(null);
   const currency = state.status === 'signed_in' ? state.workspace.baseCurrency : 'USD';
 
   useEffect(() => {
@@ -47,6 +55,17 @@ export default function Settings() {
     void api.planningSettings(state.workspace.id).then(setPlanning, () => undefined);
     void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
   }, [api, state]);
+
+  // ADR-0049 §6: the number is asked for only where texts are on; it couldn't be confirmed otherwise. Read again on
+  // coming back from the number screen.
+  useFocusEffect(
+    useCallback(() => {
+      void api.notificationPrefs().then(
+        (p) => setTexts(p.texts),
+        () => setTexts(null),
+      );
+    }, [api]),
+  );
 
   const signOut = () =>
     Alert.alert(t('mobile.settings.sign_out'), t('mobile.settings.sign_out_note'), [
@@ -134,6 +153,21 @@ export default function Settings() {
           onPress={() => router.push('/notification-settings')}
           testID="settings-notifications"
         />
+        {texts?.available ? (
+          <Row
+            title={t('mobile.phone.label')}
+            subtitle={
+              texts.phone
+                ? t(texts.verified ? 'mobile.phone.verified' : 'mobile.phone.unverified', {
+                    phone: texts.phone,
+                  })
+                : t('mobile.phone.none')
+            }
+            icon="phone"
+            onPress={() => router.push('/mobile-number')}
+            testID="settings-mobile-number"
+          />
+        ) : null}
       </Card>
 
       <Row

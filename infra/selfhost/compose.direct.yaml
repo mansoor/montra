@@ -1,0 +1,13 @@
+# For a server with its own public address (a VPS), in place of the Cloudflare Tunnel:
+#   COMPOSE_FILE=compose.yaml:compose.direct.yaml   and leave `tunnel` out of COMPOSE_PROFILES   (in .env)
+# Caddy publishes 80 and 443, the only ports published, and gets certificates from Let's Encrypt. Keep Cloudflare's
+# proxy on (orange cloud) with SSL mode "Full (strict)", and set TRUSTED_PROXIES to Cloudflare's address ranges so
+# Caddy passes the visitor's address on (docs/runbooks/selfhost-setup.md §8).
+services:
+  caddy:
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      SITE_SCHEME: https://

@@ -1,6 +1,7 @@
 /**
  * One sync engine per signed-in workspace (PLT-05, ADR-0013): the encrypted store, `FetchTransport`, connectivity
  * from NetInfo, sync on foreground / pull-to-refresh / local writes / WebSocket `changes`, and conflict toasts.
+ * While the account or workspace is closed (ADR-0049 §4) nothing runs: no sync, no socket. The outbox waits as it is.
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
@@ -63,6 +64,10 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const engineRef = useRef<SyncEngine | null>(null);
+  /** Kept current for the listeners set up once per workspace. */
+  const closedRef = useRef(session.closed !== null);
+  closedRef.current = session.closed !== null;
+  const resumeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +82,11 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
         newId: () => Crypto.randomUUID(),
         onEvent: (e) => {
           if (e.type === 'state') setState(e.state);
+          if (e.type === 'closed') {
+            closedRef.current = true;
+            realtime?.stop();
+            session.reportClosed(e.code, e.message);
+          }
           if (e.type === 'conflict')
             toast.show(t('mobile.home.attention', { count: e.notice.conflicts.length }));
           if (e.type === 'pulled' || e.type === 'pushed' || e.type === 'conflict') bump();
@@ -114,13 +124,15 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
       engine.setOnline(connected);
       // Receipts upload alongside every sync: on start, reconnect, foreground and pull-to-refresh.
       const sync = () =>
-        void engine
-          .sync()
-          .catch(() => undefined)
-          .then(async () => ((await engine.state()).online ? receipts.process() : undefined))
-          .catch(() => undefined)
-          .finally(bump);
-      if (!(await store.getMeta('latestSeq')) && net.isConnected)
+        closedRef.current
+          ? undefined
+          : void engine
+              .sync()
+              .catch(() => undefined)
+              .then(async () => ((await engine.state()).online ? receipts.process() : undefined))
+              .catch(() => undefined)
+              .finally(bump);
+      if (!(await store.getMeta('latestSeq')) && net.isConnected && !closedRef.current)
         await engine.bootstrap().catch(() => undefined);
       bump();
       sync();
@@ -133,7 +145,7 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
         }),
       );
       const app = AppState.addEventListener('change', (s) => {
-        if (s === 'active') {
+        if (s === 'active' && !closedRef.current) {
           sync();
           realtime?.start();
         } else realtime?.stop();
@@ -145,16 +157,28 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
         token: session.token,
         onChanges: sync,
       });
-      realtime.start();
+      if (!closedRef.current) realtime.start();
+      resumeRef.current = () => {
+        engine.reopen();
+        sync();
+        realtime?.start();
+      };
     })();
     return () => {
       cancelled = true;
+      resumeRef.current = null;
       realtime?.stop();
       for (const s of subs) s();
       session.setSignOutHook(null);
     };
     // The engine is per workspace; session callbacks are stable.
   }, [workspaceId]);
+
+  // Opened again (restored, deletion cancelled, or another try): carry on where it stopped.
+  const isClosed = session.closed !== null;
+  useEffect(() => {
+    if (!isClosed) resumeRef.current?.();
+  }, [isClosed]);
 
   const refresh = useCallback(async () => {
     await engineRef.current?.sync().catch(() => undefined);
