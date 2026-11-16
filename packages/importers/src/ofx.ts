@@ -118,3 +118,30 @@ export function readOfx(text: string, name = 'OFX'): Sheet {
     warnings: investment ? [`investment_transactions_skipped:${investment}`] : [],
   });
 }
+
+/** An OFX statement's account, as the bank names it: what finds its account before one is picked (ADR-0051 §2). */
+export interface OfxAccountId {
+  /** `BANKID` (a routing number) for bank accounts; null for cards. */
+  bankId: string | null;
+  /** `ACCTID`: the account or card number. */
+  acctId: string;
+  /** `<FI><ORG>`: the institution's name, when the file gives one. */
+  org: string | null;
+  card: boolean;
+}
+
+/** Every statement's account id in an OFX or QFX file, in file order. */
+export function ofxAccounts(text: string): OfxAccountId[] {
+  if (!looksLikeOfx(text)) return [];
+  const org = leaf(blocks(text, 'FI')[0] ?? '', 'ORG') || null;
+  const out: OfxAccountId[] = [];
+  for (const card of [false, true]) {
+    for (const s of blocks(text, card ? 'CCSTMTRS' : 'STMTRS')) {
+      const from = blocks(s, card ? 'CCACCTFROM' : 'BANKACCTFROM')[0] ?? '';
+      const acctId = leaf(from, 'ACCTID').replace(/\s+/g, '');
+      if (!acctId) continue;
+      out.push({ bankId: card ? null : leaf(from, 'BANKID').replace(/\s+/g, '') || null, acctId, org, card });
+    }
+  }
+  return out;
+}

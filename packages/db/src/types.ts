@@ -1243,6 +1243,48 @@ export interface DocumentScanTable {
   error: string | null;
   used_id: string | null;
   job_id: string | null;
+  /** File the bill automatically once its biller is learned (migration 0058, ADR-0051). */
+  auto_file: Generated<boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** A statement or bill without a destination yet (migration 0058, ADR-0051); the workspace's. */
+export interface DocumentIntakeTable {
+  workspace_id: string;
+  id: Generated<string>;
+  kind: 'statement' | 'bill';
+  file_ids: string[];
+  file_name: string;
+  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx' | 'image';
+  status: Generated<'reading' | 'suggested' | 'review' | 'importing' | 'done' | 'dismissed'>;
+  reason: string | null;
+  signal: string | null;
+  detected: Json<Record<string, unknown>> | null;
+  reading: Json<Record<string, unknown>> | null;
+  target_id: string | null;
+  automatic: Generated<boolean>;
+  commit_if_clean: Generated<boolean>;
+  import_batch_id: string | null;
+  scan_id: string | null;
+  filed: Json<Record<string, unknown>> | null;
+  job_id: string | null;
+  created_by: string | null;
+  resolved_by: string | null;
+  resolved_at: Date | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** Per workspace, kind and signal: the account or biller it points to (migration 0058, ADR-0051 §3). */
+export interface MatchMemoryTable {
+  workspace_id: string;
+  id: Generated<string>;
+  kind: 'statement' | 'bill';
+  signal: string;
+  target_id: string;
+  confirmations: Generated<number>;
+  last_confirmed_at: Date | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -1712,6 +1754,8 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.property_budget_line': PropertyBudgetLineTable;
   'app.saved_report': SavedReportTable;
   'app.document_scan': DocumentScanTable;
+  'app.document_intake': DocumentIntakeTable;
+  'app.match_memory': MatchMemoryTable;
   'app.biller': BillerTable;
   'app.household_bill': HouseholdBillTable;
   'app.notification': NotificationTable;
@@ -2313,6 +2357,8 @@ export type TransactionUpdate = Updateable<TransactionTable>;
 export type PostingRow = Selectable<PostingTable>;
 export type ReceiptRow = Selectable<ReceiptTable>;
 export type DocumentScanRow = Selectable<DocumentScanTable>;
+export type DocumentIntakeRow = Selectable<DocumentIntakeTable>;
+export type MatchMemoryRow = Selectable<MatchMemoryTable>;
 export type BillerRow = Selectable<BillerTable>;
 export type HouseholdBillRow = Selectable<HouseholdBillTable>;
 export type ReceiptLineRow = Selectable<ReceiptLineTable>;
