@@ -254,8 +254,8 @@ cmd_init() {
 
 Montra is running. Next (docs/runbooks/selfhost-setup.md §10):
   1. Sign up at https://$(env_value APP_HOST) with your own email.
-  2. Make yourself staff:
-       docker compose run --rm migrate node dist/staff-cli.js <your email> admin
+  2. Make yourself the staff owner (the console at /admin; add other staff there):
+       docker compose run --rm migrate node dist/staff-cli.js <your email> owner
   3. Back up secrets/master_key and secrets/backup_cipher_pass offline, if you haven't yet.
   4. Do a restore drill within the first month (docs/runbooks/selfhost-restore-drill.md).
 EOF

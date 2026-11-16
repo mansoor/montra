@@ -197,9 +197,11 @@ and installs the backup schedule in `/etc/cron.d/montra`.
 Then:
 
 1. Open `https://app.<domain>` and sign up with your own address. The code comes by email.
-2. Make yourself staff:
-   `docker compose run --rm migrate node dist/staff-cli.js <your email> admin`.
-3. Set up two-step verification (Settings → Security). Owners must, by default.
+2. Make yourself the staff owner, who runs the console at `/admin` (plans, staff, providers):
+   `docker compose run --rm migrate node dist/staff-cli.js <your email> owner`. Add any other staff from the
+   console's **Staff** tab.
+3. Set up two-step verification (Settings → Security). Owners must, by default, and the console opens only after a
+   sign-in with it.
 4. Invite family and friends from the app. With `BILLING_MODE=off` nobody is asked to pay.
 
 ## 11. Deploys from GitHub
