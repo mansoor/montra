@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCOUNT_KINDS,
   BALANCE_RANGES,
+  BOOK_PALETTE,
   BUSINESS_TYPES,
   LEGACY_BUSINESS_TYPES,
   PAY_RULES,
   PLAN_TYPES,
 } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
+import { CALENDAR_ITEM_KINDS } from '@montra/schemas';
 import { ITEM_PERIODS } from './receipts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -423,6 +425,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'billers.status_': ['open', 'overdue', 'paid', 'void'],
   'cadence.': ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'yearly'],
   'calendar.status_': ['upcoming', 'paid', 'overdue'],
+  'calendar.kind_': CALENDAR_ITEM_KINDS,
+  'calendar.color_': BOOK_PALETTE.map((p) => p.name),
   'calendar.weekday_': ['0', '1', '2', '3', '4', '5', '6'],
   'flow.kind_': ['asset', 'liability'],
   'flow.tab_': ['flow', 'forecast', 'net-worth'],
