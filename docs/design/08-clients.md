@@ -50,7 +50,7 @@
 | Transactions | List, search, swipe actions, detail with splits |
 | Capture (centre button) | Camera receipt capture, quick add (3 taps: amount → payee → confirm with AI-suggested category, TXN-01), voice later (TXN-07) |
 | Budget | Period view, assign, move money |
-| More | Accounts, import, rentals (log rent), business, members, reports, settings |
+| More | Accounts, receipts, bills, payslips, statements (import history with an import button), rentals (log rent), business, members, reports, settings |
 
 - **Review**: a swipe card stack (right = accept, left = edit) (AI-04).
 - **Camera** (TXN-08): `react-native-vision-camera` with a frame processor for edge

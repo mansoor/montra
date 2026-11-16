@@ -184,6 +184,16 @@ h3 {
   .input[aria-invalid='true'] {
     @apply border-bad ring-1 ring-bad;
   }
+  /* An on/off switch: a checkbox with role="switch", so it keeps the checkbox's keyboard and form behaviour. */
+  .switch {
+    @apply relative h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-full border border-[var(--border-input)] bg-sunken transition-colors checked:border-brand-600 checked:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none;
+  }
+  .switch::before {
+    @apply absolute top-1/2 left-0.5 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-muted transition-transform content-[''] motion-reduce:transition-none;
+  }
+  .switch:checked::before {
+    @apply translate-x-4 bg-on-brand;
+  }
   .field-error {
     @apply mt-1 text-sm text-bad;
   }
