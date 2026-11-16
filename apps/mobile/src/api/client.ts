@@ -95,6 +95,7 @@ import type {
   CategoryDto,
   CategoryGroupDto,
 } from '@montra/schemas';
+import { CLOSED_CODES } from '@montra/sync';
 
 /** Review edits sent from the phone (RCP-06): line categories and amounts in minor units. */
 export interface ReceiptReviewInput {
@@ -154,6 +155,11 @@ export interface ApiOptions {
    * didn't use it (`mfa.required`).
    */
   onTwoStepRequired?: () => void;
+  /**
+   * ADR-0049 §4, BAK-09: the account is suspended (`account.suspended`), the workspace's owner is
+   * (`workspace.suspended`), or the account is being deleted (`account.deleting`).
+   */
+  onClosed?: (code: string, message: string) => void;
 }
 
 /** A file picked from Files, the share sheet or the camera (React Native's FormData file shape). */
@@ -193,7 +199,9 @@ export function createApi(opts: ApiOptions) {
       const p = (json ?? {}) as { code?: string; title?: string; detail?: string };
       if (status === 403 && (p.code === 'mfa.setup_required' || p.code === 'mfa.required'))
         opts.onTwoStepRequired?.();
-      throw new ApiError(status, p.code ?? `http_${status}`, p.detail ?? p.title ?? `HTTP ${status}`);
+      const message = p.detail ?? p.title ?? `HTTP ${status}`;
+      if (status === 403 && p.code && CLOSED_CODES.has(p.code)) opts.onClosed?.(p.code, message);
+      throw new ApiError(status, p.code ?? `http_${status}`, message);
     }
     return json as T;
   }
@@ -502,6 +510,8 @@ export function createApi(opts: ApiOptions) {
     deletionStatus: () => request<DeletionStatusDto>('GET', '/v1/me/deletion'),
     requestDeletion: (input: RequestDeletionRequest) =>
       request<DeletionStatusDto>('POST', '/v1/me/deletion', input),
+    /** Keeps an account that's being deleted (BAK-09), whoever asked for the deletion. */
+    cancelDeletion: () => request<DeletionStatusDto>('DELETE', '/v1/me/deletion'),
 
     // ----- Payroll (PRL-22): pay runs, payslips and reimbursements, read live and never stored on the device. ------
     payRuns: async (w: string, entityId: string) =>
