@@ -1,5 +1,5 @@
 export * from './types.js';
-export { SyncEngine, backoffMs } from './engine.js';
+export { SyncEngine, CLOSED_CODES, backoffMs } from './engine.js';
 export { MemoryStore, compareLocal } from './memory-store.js';
 export { FetchTransport, TransportError, type FetchTransportOptions } from './transport.js';
 export {

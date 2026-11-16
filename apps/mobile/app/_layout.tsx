@@ -12,10 +12,11 @@ import { SyncProvider } from '../src/sync/SyncProvider';
 import { Body, Button, Title, ToastHost } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 import { TwoStep } from '../src/ui/TwoStep';
+import { AccountClosed } from '../src/ui/AccountClosed';
 import { t } from '../src/i18n';
 
 function Gate() {
-  const { state, updateRequired, twoStepRequired, clearTwoStepRequired } = useSession();
+  const { state, updateRequired, twoStepRequired, clearTwoStepRequired, closed } = useSession();
   const router = useRouter();
   const th = useTheme();
   const insets = useSafeAreaInsets();
@@ -44,6 +45,13 @@ function Gate() {
         <Body>{t('mobile.update.body')}</Body>
       </View>
     );
+  }
+
+  // ADR-0049 §4, BAK-09: suspended, the owner suspended, or being deleted. Kept inside the sync layer (which sends
+  // nothing meanwhile) so that signing out from here still wipes this phone's copy.
+  if (closed) {
+    const screen = <AccountClosed closed={closed} />;
+    return signedIn ? <SyncProvider workspaceId={state.workspace.id}>{screen}</SyncProvider> : screen;
   }
 
   // ADR-0044: the workspace won't open until two-step verification is set up, so that's all there is to do.
@@ -95,6 +103,7 @@ function Gate() {
         <Stack.Screen name="business/reimbursement" options={{ title: t('payroll.claim.new') }} />
         <Stack.Screen name="notifications" options={{ title: t('notifications.title') }} />
         <Stack.Screen name="notification-settings" options={{ title: t('notifications.settings') }} />
+        <Stack.Screen name="mobile-number" options={{ title: t('mobile.phone.label') }} />
         <Stack.Screen name="your-data" options={{ title: t('settings.tab.data') }} />
         <Stack.Screen name="rentals/index" options={{ title: t('nav.rentals') }} />
         <Stack.Screen name="rentals/log" options={{ title: t('rentals.record_payment') }} />

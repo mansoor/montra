@@ -126,7 +126,7 @@ export default function SignUp() {
               disabled={!code.trim() || !step.flowId}
               onPress={() =>
                 void run(async () => {
-                  const r = await kratos.verifyEmail(step.flowId!, code);
+                  const r = await kratos.verifyCode(step.flowId!, code);
                   if (r.kind !== 'ok')
                     return setError(r.kind === 'error' ? r.message : t('mobile.auth.failed'));
                   await s.adopt(step.token);

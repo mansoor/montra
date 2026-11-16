@@ -3,6 +3,8 @@
  * a cookie; the token is sent as `Authorization: Bearer` (the API's Kratos adapter accepts it). Dev mode signs in
  * with `dev:<email>`, which the API accepts only with AUTH_MODE=dev. Pure over an injected fetch.
  */
+import { phoneOf, traitsWithPhone } from '../features/texts';
+
 export type AuthMode = 'dev' | 'kratos';
 
 export type LoginResult =
@@ -21,6 +23,7 @@ interface KratosNode {
     name?: string;
     id?: string;
     src?: string;
+    value?: unknown;
     text?: { text?: string; context?: { secret?: string; secrets?: Array<{ text?: string }> } };
   };
   messages?: KratosUiMessage[];
@@ -31,6 +34,7 @@ interface KratosFlow {
   ui?: { messages?: KratosUiMessage[]; nodes?: KratosNode[] };
   continue_with?: Array<{ action: string; ory_session_token?: string; flow?: { id: string } }>;
   error?: { id?: string; message?: string; reason?: string };
+  identity?: { verifiable_addresses?: Array<{ via?: string; value?: string; verified?: boolean }> };
 }
 
 /** A step that worked, or why it didn't. `reauth`: the session is too old to change security settings. */
@@ -53,6 +57,19 @@ export type TotpSetup =
   | { kind: 'reauth' };
 export type RecoveryCodes =
   | { kind: 'codes'; flowId: string; codes: string[] }
+  | { kind: 'error'; message: string }
+  | { kind: 'reauth' };
+/** The mobile number on the identity (ADR-0049 §6). */
+export type PhoneStatus =
+  | { kind: 'phone'; phone: string | null; verified: boolean }
+  | { kind: 'error'; message: string }
+  | { kind: 'reauth' };
+/**
+ * A saved number. Kratos texts a code to a new one; `verificationFlowId` is the flow that code belongs to, when Kratos
+ * says (v26.2.0 doesn't for a settings change).
+ */
+export type PhoneSaved =
+  | { kind: 'saved'; verificationFlowId: string | null }
   | { kind: 'error'; message: string }
   | { kind: 'reauth' };
 export interface TwoStepStatus {
@@ -176,7 +193,8 @@ export class KratosClient {
     };
   }
 
-  async verifyEmail(flowId: string, code: string): Promise<StepResult> {
+  /** A code from a verification flow: the email's at sign-up, or a number's (ADR-0049 §6). */
+  async verifyCode(flowId: string, code: string): Promise<StepResult> {
     const res = await this.json<KratosFlow>(`/self-service/verification?flow=${encodeURIComponent(flowId)}`, {
       method: 'POST',
       body: JSON.stringify({ method: 'code', code: code.replace(/\s/g, '') }),
@@ -226,6 +244,41 @@ export class KratosClient {
       authenticator: Boolean(nodeOf(flow.body, 'totp_unlink')),
       recoveryCodes: Boolean(nodeOf(flow.body, 'lookup_secret_reveal')),
     };
+  }
+
+  /** The mobile number and whether it's confirmed, from the settings form (ADR-0049 §6). */
+  async phoneStatus(token: string): Promise<PhoneStatus> {
+    const flow = await this.settingsFlow(token);
+    if (needsReauth(flow.status, flow.body)) return { kind: 'reauth' };
+    if (flow.status !== 200)
+      return { kind: 'error', message: firstMessage(flow.body, 'Settings are unavailable') };
+    return { kind: 'phone', ...phoneOf(flow.body) };
+  }
+
+  /**
+   * Sets the mobile number, or removes it (null), with the profile form like the web's Settings → Security. The other
+   * traits go back as they were: Kratos replaces them all.
+   */
+  async setPhone(token: string, phone: string | null): Promise<PhoneSaved> {
+    const flow = await this.settingsFlow(token);
+    if (needsReauth(flow.status, flow.body)) return { kind: 'reauth' };
+    if (flow.status !== 200)
+      return { kind: 'error', message: firstMessage(flow.body, 'Settings are unavailable') };
+    const res = await this.json<KratosFlow>(
+      `/self-service/settings?flow=${encodeURIComponent(flow.body.id)}`,
+      {
+        method: 'POST',
+        headers: { 'x-session-token': token },
+        body: JSON.stringify({
+          method: 'profile',
+          traits: traitsWithPhone(flow.body.ui?.nodes ?? [], phone),
+        }),
+      },
+    );
+    if (needsReauth(res.status, res.body)) return { kind: 'reauth' };
+    if (res.status !== 200 || res.body.state !== 'success')
+      return { kind: 'error', message: firstMessage(res.body, 'That didn’t work. Try again') };
+    return { kind: 'saved', verificationFlowId: next(res.body, 'show_verification_ui')?.flow?.id ?? null };
   }
 
   /** The key (and QR code) for an authenticator app (AUTH-04). Confirmed with a code from the app. */
