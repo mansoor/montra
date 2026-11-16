@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import shutil
 from typing import Any
@@ -40,6 +41,7 @@ def test_scanned_statement_is_read_and_redacted() -> None:
         "periodEnd": "2026-10-31",
         "accountLast4": "6789",
         "currency": "USD",
+        "issuer": None,
     }
     text = "\n".join(result["pages"])
     # Transaction lines survive intact …
@@ -250,3 +252,63 @@ def test_lines_without_an_address_keep_names() -> None:
 def test_empty_input() -> None:
     assert redact_pages([]) == []
     assert redact_pages([""]) == [""]
+
+
+# ----- Statements matched to accounts (ADR-0051) -----------------------------------------------------------
+
+
+def test_the_issuer_is_one_of_the_names_given() -> None:
+    from montra_doc_worker.extract_pdf import find_issuer, statement_facts
+
+    text = "\n".join(fixtures.SCANNED_STATEMENT_LINES)
+    assert find_issuer(text, ["Chase", "First Example Bank", "Example"]) == "First Example Bank"
+    assert find_issuer(text, ["Chase"]) is None
+    # Whole words only, and very short names never match.
+    assert find_issuer("FIRST EXAMPLES BANK", ["First Example"]) is None
+    assert find_issuer(text, ["Ex"]) is None
+    assert statement_facts(text, ["First Example Bank"])["issuer"] == "First Example Bank"
+
+
+def test_a_photo_of_a_statement_is_read_like_a_scanned_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytesseract = pytest.importorskip("pytesseract")
+    from PIL import Image
+
+    monkeypatch.setattr(ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(
+        pytesseract,
+        "image_to_string",
+        lambda image, config="", timeout=0: "\n".join(fixtures.SCANNED_STATEMENT_LINES),
+    )
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 20), "white").save(buf, "PNG")
+    result = ocr.ocr_image(buf.getvalue(), ["First Example Bank"])
+    assert result["kind"] == "ocr_text"
+    assert result["pageCount"] == 1
+    assert result["statement"] is not None
+    assert result["statement"]["accountLast4"] == "6789"
+    assert result["statement"]["issuer"] == "First Example Bank"
+    assert result["pages"][0].splitlines()[5] == f"Account number {MASK}"
+
+
+def test_a_photo_needs_ocr_and_image_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    from montra_doc_worker.result import check_magic
+
+    monkeypatch.setattr(ocr, "tesseract_available", lambda: False)
+    with pytest.raises(PermanentJobError) as err:
+        ocr.ocr_image(b"\x89PNG\r\n\x1a\n")
+    assert err.value.code == "pdf.ocr_unavailable"
+    assert check_magic(b"\xff\xd8\xff\xe0rest", "image") == "image"
+    with pytest.raises(PermanentJobError) as bad:
+        check_magic(b"%PDF-1.4", "image")
+    assert bad.value.code == "doc.type_mismatch"
+
+
+def test_the_queue_passes_the_workspace_institutions(tmp_path: Any) -> None:
+    from montra_doc_worker.storage import LocalStorage
+
+    (tmp_path / "statement.pdf").write_bytes(fixtures.make_ruled_pdf())
+    payload = {"storageKey": "statement.pdf", "fileType": "pdf", "issuers": ["Nowhere Credit Union", 7]}
+    result = handle_doc_extract(payload, LocalStorage(tmp_path))
+    assert result["statement"] is not None
+    assert result["statement"]["issuer"] is None
+    assert result["statement"]["accountLast4"] == "1234"

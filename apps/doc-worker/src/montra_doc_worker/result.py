@@ -19,6 +19,8 @@ class Statement(TypedDict):
     periodEnd: str | None
     accountLast4: str | None
     currency: str | None
+    # The institution the text names, among the names the job was given (ADR-0051); None when none is named.
+    issuer: str | None
 
 
 class GridResult(TypedDict):
@@ -40,7 +42,7 @@ class OcrTextResult(TypedDict):
     statement: Statement | None
 
 
-FileType = Literal["xls", "pdf"]
+FileType = Literal["xls", "pdf", "image"]
 
 _OLE2 = bytes.fromhex("D0CF11E0A1B11AE1")
 
@@ -56,4 +58,11 @@ def check_magic(data: bytes, file_type: str) -> FileType:
         if b"%PDF-" not in data[:1024]:
             raise PermanentJobError("doc.type_mismatch", "not a PDF file")
         return "pdf"
+    if file_type == "image":
+        # A photo of a statement page (ADR-0051): JPEG, PNG or WebP, read with OCR like a scanned PDF.
+        if data.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")) or (
+            data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+        ):
+            return "image"
+        raise PermanentJobError("doc.type_mismatch", "not a JPEG, PNG or WebP image")
     raise PermanentJobError("doc.unsupported_type", f"unsupported fileType {file_type!r}")

@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import re
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -71,7 +72,7 @@ class Line:
         return " ".join(w["text"] for w in self.words)
 
 
-def extract_pdf(data: bytes) -> GridResult | OcrTextResult:
+def extract_pdf(data: bytes, issuers: Sequence[str] = ()) -> GridResult | OcrTextResult:
     try:
         pdf = pdfplumber.open(io.BytesIO(data))
     except Exception as exc:
@@ -86,10 +87,10 @@ def extract_pdf(data: bytes) -> GridResult | OcrTextResult:
             raise PermanentJobError("doc.corrupt", f"unreadable PDF content: {exc}") from exc
         chars = sum(len(re.sub(r"\s", "", t)) for t in texts)
         if not pages or chars < MIN_CHARS_PER_PAGE * len(pages):
-            return ocr_pdf(pages)
+            return ocr_pdf(pages, issuers)
         full_text = "\n".join(texts)
         rows = _ruled_tables(pages) or _positional_table(pages)
-    statement = statement_facts(full_text)
+    statement = statement_facts(full_text, issuers)
     return {
         "kind": "grid",
         "sheets": [{"name": "Statement", "rows": rows}],
@@ -309,7 +310,7 @@ def _norm(text: str) -> str:
 # ----------------------------------------------------------------------------------------------------------
 
 
-def statement_facts(text: str) -> Statement:
+def statement_facts(text: str, issuers: Sequence[str] = ()) -> Statement:
     opening = closing = None
     for line in text.splitlines():
         if opening is None and OPENING_RE.search(line):
@@ -325,7 +326,22 @@ def statement_facts(text: str) -> Statement:
         "periodEnd": end,
         "accountLast4": last4.group(1) if last4 else None,
         "currency": _currency(text),
+        "issuer": find_issuer(text, issuers),
     }
+
+
+def _words(text: str) -> str:
+    return " " + re.sub(r"[^a-z0-9]+", " ", text.lower()).strip() + " "
+
+
+def find_issuer(text: str, issuers: Sequence[str]) -> str | None:
+    """The institution the text names, among the given names (the workspace's), compared as whole words.
+
+    The longest name wins, so "Chase Bank" is preferred to "Chase". Names under three letters are ignored.
+    """
+    haystack = _words(text)
+    found = [name for name in issuers if len(_words(name).strip()) >= 3 and _words(name) in haystack]
+    return max(found, key=lambda n: len(_words(n))) if found else None
 
 
 def _last_money(line: str) -> str | None:

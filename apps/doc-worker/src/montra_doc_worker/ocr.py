@@ -8,8 +8,10 @@ rows with the AI gateway's ``extract_statement_table`` task.
 
 from __future__ import annotations
 
+import io
 import re
 import shutil
+from collections.abc import Sequence
 from typing import Any
 
 from .errors import PermanentJobError
@@ -26,7 +28,7 @@ def tesseract_available() -> bool:
     return shutil.which("tesseract") is not None
 
 
-def ocr_pdf(pages: list[Any]) -> OcrTextResult:
+def ocr_pdf(pages: list[Any], issuers: Sequence[str] = ()) -> OcrTextResult:
     """Reads pdfplumber pages with Tesseract and returns redacted text per page."""
     if not tesseract_available():
         raise PermanentJobError(
@@ -64,7 +66,42 @@ def ocr_pdf(pages: list[Any]) -> OcrTextResult:
         "pageCount": len(pages),
         "textLayer": False,
         "ocrEngine": "tesseract",
-        "statement": statement_facts("\n".join(texts)),
+        "statement": statement_facts("\n".join(texts), issuers),
+    }
+
+
+def ocr_image(data: bytes, issuers: Sequence[str] = ()) -> OcrTextResult:
+    """A photo of a statement page (ADR-0051), read like one page of a scanned PDF."""
+    if not tesseract_available():
+        raise PermanentJobError(
+            "pdf.ocr_unavailable", "Photos of statements need OCR, which isn't installed on this server"
+        )
+    import pytesseract
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("L")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise PermanentJobError("doc.corrupt", f"could not open the image: {exc}") from exc
+    try:
+        text = _tidy(
+            pytesseract.image_to_string(image, config=TESSERACT_CONFIG, timeout=PAGE_TIMEOUT_SECONDS)
+        )
+    except RuntimeError as exc:  # pytesseract raises RuntimeError on timeout
+        raise PermanentJobError("pdf.ocr_failed", f"OCR timed out: {exc}") from exc
+    except pytesseract.TesseractError as exc:
+        raise PermanentJobError("pdf.ocr_failed", f"OCR failed: {exc}") from exc
+    if not re.sub(r"\s", "", text):
+        raise PermanentJobError("pdf.ocr_empty", "no text could be read from this photo")
+    from .extract_pdf import statement_facts
+
+    return {
+        "kind": "ocr_text",
+        "pages": redact_pages([text]),
+        "pageCount": 1,
+        "textLayer": False,
+        "ocrEngine": "tesseract",
+        "statement": statement_facts(text, issuers),
     }
 
 
