@@ -1228,7 +1228,12 @@ Phase 11 leftovers:
       instead, applied to its subscription.
     - **Close on request** (owner): the person's own 30-day deletion, only for a request from the account's address,
       with how it came recorded. They're emailed and can still cancel it.
-    - Not done: the phone has no screen for a suspended account or a closed workspace. It shows the API's message.
+    - Phone: a screen for each refusal, in the web's words: a suspended account, a closed workspace (with the
+      support address from the API's message, and the person's other workspaces), and an account being deleted (when
+      it goes, and **Keep my account**). Each offers help, **Try again** and sign-out (which still wipes the phone).
+      The sync engine stops on `account.suspended`, `workspace.suspended` or `account.deleting` (a `closed` event),
+      keeps the outbox as it was with no attempt counted, and sends nothing, socket included, until reopened
+      (`packages/sync` tests, `apps/mobile/src/features/account-state.ts`). Not run on a device.
     - Tests: `apps/api/test/accounts.test.ts`, and `setIdentityActive` against the fake Kratos in `kratos.test.ts`.
   - ✅ **Step 4, the Providers page** (#100, migration 0054), the console's **Providers** tab, for owners:
     - One row each for email, texts, payments, error reporting, AI, file storage, key management, push and exchange
@@ -1253,13 +1258,21 @@ Phase 11 leftovers:
       sends a test text to the owner's own number.
     - The API's copy of the number is refreshed from each new Kratos session. A change is logged and emailed.
     - The auth gateway limits texted codes per number and per address (`sms_send`).
-    - Not done: the phone app has no settings for texts or the number (it shows them nowhere yet), the Terraform doesn't
-      set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real Twilio. US texting needs A2P 10DLC or
-      a verified toll-free number first (launch checklist).
+    - Phone: Settings has **Mobile number** (add, change, remove, through Kratos's settings flow, asking for the
+      password when the sign-in is old), and notification settings have the **Texts** section. Both show only where
+      texts are on, and the switches work only for a confirmed number, as on the web
+      (`apps/mobile/src/features/texts.ts`). Not run on a device.
+    - **A number can't be confirmed yet, on the web or the phone.** Checked against Kratos v26.2.0 with a stand-in
+      for Twilio: saving a number texts a code, but the code works only in the verification flow Kratos made for it,
+      and the settings response doesn't name that flow (no `continue_with`, native or browser). A new verification
+      flow takes only an email address. So `texts.verified` never turns true, and no text goes out. The phone enters
+      the code if Kratos ever names the flow.
+    - Not done: the Terraform doesn't set `SMS_MODE` or the Twilio secrets, and nothing has been sent through real
+      Twilio. US texting needs A2P 10DLC or a verified toll-free number first (launch checklist).
     - Tests: `apps/api/test/texts.test.ts`, the number's sync in `kratos.test.ts`, the limits in `auth-gateway.test.ts`,
       and `packages/domain/test/phone.test.ts`.
   - **Next for ADR-0049:**
-    - phone screens for a suspended account or closed workspace, and for texts and the mobile number;
+    - a way to confirm a mobile number (see step 5): text a link, confirm it in the API, or a Kratos that names the flow;
     - `SMS_MODE` and the Twilio secrets in Terraform;
     - A2P 10DLC (or a verified toll-free number) before the first real text in the US;
     - a first real send through Twilio and a real Stripe checkout by plan.
