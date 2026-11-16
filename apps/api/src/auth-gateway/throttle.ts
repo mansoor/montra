@@ -88,6 +88,14 @@ export function afterFailure(
   return { bucket: { failures, windowStarted, lockedUntil }, locked: lock && !wasLocked };
 }
 
+/**
+ * The key for the counters' HMACs. The gateway and the API (which texts its own codes to confirm a number, ADR-0049 §6)
+ * share it, so a number's texts count once whoever sends them. Production requires the real one (config.ts).
+ */
+export function throttleSecret(config: { AUTH_GATEWAY_SECRET?: string | undefined }): string {
+  return config.AUTH_GATEWAY_SECRET ?? 'dev-only-auth-gateway-secret-not-for-production';
+}
+
 /** Keys are HMACs, so the table holds no email address, IP address or session token (ADR-0042). */
 export function keyOf(secret: string, rule: RuleName, value: string): string {
   return `${rule}:${createHmac('sha256', secret).update(`${rule}\0${value}`).digest('base64url')}`;

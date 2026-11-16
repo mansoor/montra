@@ -7,6 +7,7 @@ import { KratosAuthAdapter } from './auth/kratos.adapter.js';
 import { SessionsController } from './auth/sessions.controller.js';
 import { KratosHooksController } from './auth/kratos-hooks.controller.js';
 import { AccountSecurityController } from './auth/account-security.controller.js';
+import { PhoneController } from './sms/phone.controller.js';
 import { ProblemFilter } from './common/problem.filter.js';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
 import { LedgerService } from './ledger/ledger.service.js';
@@ -161,6 +162,7 @@ export class AppModule {
       SessionsController,
       KratosHooksController,
       AccountSecurityController,
+      PhoneController,
       WorkspacesController,
       EntitiesController,
       FamilyMembersController,
