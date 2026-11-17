@@ -22,13 +22,24 @@ export function defaultAccess(role: MemberRole, entityType: string): Access {
   return role === 'partner' || role === 'member' ? 'write' : role === 'viewer' ? 'read' : 'none';
 }
 
+/** The book access a role can be given: a viewer is read-only, always (ADR-0053 Q2; the API refuses write). */
+export const accessChoices = (role: MemberRole): Access[] =>
+  role === 'viewer' ? ['none', 'read'] : ['none', 'read', 'write'];
+
+/** What a choice means for this role: write is read for a viewer. */
+export const accessFor = (role: MemberRole, access: Access): Access =>
+  role === 'viewer' && access === 'write' ? 'read' : access;
+
 /** Only grants that differ from the role default are sent, so later default changes still apply. */
 export function grantsFor(
   workspace: WorkspaceDto,
   role: MemberRole,
   chosen: Record<string, Access>,
 ): EntityGrantInput[] {
-  return workspace.entities
-    .filter((e) => chosen[e.id] !== undefined && chosen[e.id] !== defaultAccess(role, e.type))
-    .map((e) => ({ entityId: e.id, access: chosen[e.id]! }));
+  return workspace.entities.flatMap((e) => {
+    const picked = chosen[e.id];
+    if (picked === undefined) return [];
+    const access = accessFor(role, picked);
+    return access === defaultAccess(role, e.type) ? [] : [{ entityId: e.id, access }];
+  });
 }

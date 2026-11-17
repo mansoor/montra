@@ -37,8 +37,9 @@ const PERSONAL: GroupTemplate[] = [
     categories: [
       income('Salary'),
       income('Bonus'),
-      income('Interest income'),
-      income('Dividends'),
+      // Schedule B parts I and II (ADR-0052 §5.7; migration 0059 sets them on older books).
+      income('Interest income', 'US_SCH_B_L1'),
+      income('Dividends', 'US_SCH_B_L5'),
       income('Side income'),
       income('Pension & Social Security'),
       income('Tax refund'),

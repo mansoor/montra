@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ScanBillDetectedDto } from '@montra/api-client';
 import {
+  autoFiledName,
   blankDraft,
   canWriteBooks,
   checkBillDraft,
@@ -24,6 +25,25 @@ const reading = (over: Partial<ScanBillDetectedDto> = {}): ScanBillDetectedDto =
   periodStart: null,
   periodEnd: null,
   ...over,
+});
+
+describe('autoFiledName', () => {
+  const filed = { kind: 'household' as const, id: 'h1', entityId: 'e1' };
+  it('names the provider when the scan filed the bill itself', () => {
+    expect(autoFiledName({ status: 'used', bill: { ...reading(), filed } })).toBe('Comcast');
+    // A provider not among the candidates: the name as printed.
+    expect(autoFiledName({ status: 'used', bill: { ...reading({ billerId: 'b9' }), filed } })).toBe(
+      'XFINITY',
+    );
+  });
+  it('is null when the bill was left to check, or the scan is still being read', () => {
+    expect(autoFiledName({ status: 'ready', bill: reading() })).toBeNull();
+    expect(
+      autoFiledName({ status: 'ready', bill: { ...reading(), filed: null, intakeId: 'i1' } }),
+    ).toBeNull();
+    expect(autoFiledName({ status: 'reading', bill: null })).toBeNull();
+    expect(autoFiledName(null)).toBeNull();
+  });
 });
 
 describe('canWriteBooks', () => {

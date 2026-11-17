@@ -138,8 +138,9 @@ export type ConfirmRestoreRequest = z.output<typeof ConfirmRestoreRequest>;
 
 // ----- Trash (BAK-06) ------------------------------------------------------------------------------------------------
 
+export const TRASH_KINDS = ['transaction', 'receipt', 'tax_form'] as const;
 export const TrashItemDto = z.object({
-  kind: z.enum(['transaction', 'receipt']),
+  kind: z.enum(TRASH_KINDS),
   id: Id,
   title: z.string(),
   deletedAt: z.string(),

@@ -5,7 +5,7 @@ import { friendlyMessage, toFormErrors } from './errors';
 import { evaluateJournal, toJournalLines, type JournalLine } from './journal';
 import { maxSeq, needsRefresh } from './sync';
 import { buildPatch, isEmptyPatch, parseTags, toEditState } from './transaction-edit';
-import { defaultAccess, grantsFor, inviteLink, isAdminRole } from './settings';
+import { accessChoices, defaultAccess, grantsFor, inviteLink, isAdminRole } from './settings';
 import { settingsGroupsFor, settingsTabOf } from './settings-sections';
 
 const posting = (
@@ -257,6 +257,7 @@ describe('settings helpers', () => {
     timeZone: 'UTC',
     role: 'owner' as const,
     security: { mfaPolicy: 'standard' as const, idleTimeoutMinutes: 30 },
+    accountantSeesTaxForms: false,
     entities: [
       {
         id: 'P',
@@ -288,6 +289,14 @@ describe('settings helpers', () => {
     expect(defaultAccess('partner', 'business')).toBe('none');
     expect(grantsFor(ws, 'partner', { P: 'write', B: 'read' })).toEqual([{ entityId: 'B', access: 'read' }]);
     expect(grantsFor(ws, 'accountant', { B: 'read' })).toEqual([{ entityId: 'B', access: 'read' }]);
+  });
+
+  it('never offers or sends write for a viewer (ADR-0053 Q2)', () => {
+    expect(accessChoices('viewer')).toEqual(['none', 'read']);
+    expect(accessChoices('partner')).toEqual(['none', 'read', 'write']);
+    expect(accessChoices('accountant')).toEqual(['none', 'read', 'write']);
+    // A write chosen under another role before switching to viewer is sent as read.
+    expect(grantsFor(ws, 'viewer', { P: 'write', B: 'write' })).toEqual([{ entityId: 'B', access: 'read' }]);
   });
 
   it('mirrors the admin and member defaults (AUTH-14, AUTH-17)', () => {

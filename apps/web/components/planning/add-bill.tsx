@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import type { BillerDto, ScanBillDetectedDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import {
+  autoFiledName,
   blankDraft,
   checkBillDraft,
   draftFromReading,
@@ -56,6 +58,7 @@ export function AddBill({
 }) {
   const { t, locale } = useI18n();
   const { run, busy, message, setMessage } = useAction();
+  const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const titleId = useId();
@@ -129,11 +132,32 @@ export function AddBill({
       const fileIds: string[] = [];
       for (const f of files)
         fileIds.push((await browserApi.uploadHouseholdBillFile(workspaceId, f, f.name)).fileId);
-      const scan = await browserApi.createScan(workspaceId, { kind: 'bill', fileIds });
+      // Filed straight away when its provider is learned (ADR-0051); otherwise checked here, and kept in Review.
+      const scan = await browserApi.createScan(workspaceId, { kind: 'bill', fileIds, autoFile: true });
       if (mine !== attempt.current) return;
       setReadState('reading');
       const done = await waitForScan(() => browserApi.getScan(workspaceId, scan.id));
       if (mine !== attempt.current) return;
+      const filedFor = autoFiledName(done);
+      const auto = done?.bill?.filed;
+      if (filedFor !== null && auto) {
+        const books = entity(auto.entityId);
+        setMessage(
+          auto.kind === 'business'
+            ? {
+                tone: 'good',
+                text: t('billers.bill_filed_auto_business', { name: filedFor, business: books?.name ?? '' }),
+                action: {
+                  href: `/w/${workspaceId}/business/${auto.entityId}/bills`,
+                  label: t('billers.bill_open_business'),
+                },
+              }
+            : { tone: 'good', text: t('billers.bill_filed_auto', { name: filedFor }) },
+        );
+        router.refresh();
+        close();
+        return;
+      }
       const ready = done?.status === 'ready';
       const found = ready ? done.bill : null;
       setReading({ scanId: ready ? scan.id : undefined, found });

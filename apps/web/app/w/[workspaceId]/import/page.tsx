@@ -30,6 +30,11 @@ export default async function ImportPage({
       </div>
       <p className="text-sm text-muted">{t('imports.upload.intro')}</p>
       <p className="text-sm">
+        <Link href={`${base}/statements`} className="font-medium text-brand-600 underline">
+          {t('statements.by_account_hint')}
+        </Link>
+      </p>
+      <p className="text-sm">
         <Link href={`${base}/switch`} className="font-medium text-brand-600 underline">
           {t('import.switch_link')}
         </Link>

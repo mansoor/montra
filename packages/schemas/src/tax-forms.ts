@@ -1,0 +1,273 @@
+import { z } from 'zod';
+import { normalizeEin, TAX_FORM_KINDS, TaxFormBoxesJsonSchemas } from '@montra/domain';
+import { Id } from './common.js';
+import { MinorDto } from './budgets.js';
+
+/**
+ * Tax forms received (ADR-0052): W-2, 1099-INT, 1099-DIV and 1098, kept per tax year, matched to an employer or
+ * account(s) and a household member, and checked against the books. Montra doesn't prepare returns or calculate tax.
+ *
+ * Who sees a form: the person it's for, owners and admins, and accountants while the owner's setting
+ * (`WorkspaceDto.accountantSeesTaxForms`) is on.
+ */
+export const TaxFormKind = z.enum(TAX_FORM_KINDS);
+export type TaxFormKind = z.infer<typeof TaxFormKind>;
+
+/**
+ * The boxes per kind, as stored and sent: money as strings of integer minor units, every box optional (blank on the
+ * form), unknown boxes refused. Box names follow the form (`box1`, `box12`, `box1a`); state rows are `states`.
+ * Defined once in `@montra/domain`, where `parseTaxFormBoxes` reads them as bigint.
+ */
+export const TaxFormW2BoxesDto = TaxFormBoxesJsonSchemas.w2;
+export type TaxFormW2BoxesDto = z.infer<typeof TaxFormW2BoxesDto>;
+export const TaxForm1099IntBoxesDto = TaxFormBoxesJsonSchemas['1099_int'];
+export type TaxForm1099IntBoxesDto = z.infer<typeof TaxForm1099IntBoxesDto>;
+export const TaxForm1099DivBoxesDto = TaxFormBoxesJsonSchemas['1099_div'];
+export type TaxForm1099DivBoxesDto = z.infer<typeof TaxForm1099DivBoxesDto>;
+export const TaxForm1098BoxesDto = TaxFormBoxesJsonSchemas['1098'];
+export type TaxForm1098BoxesDto = z.infer<typeof TaxForm1098BoxesDto>;
+export const TaxFormBoxesDto = {
+  w2: TaxFormW2BoxesDto,
+  '1099_int': TaxForm1099IntBoxesDto,
+  '1099_div': TaxForm1099DivBoxesDto,
+  '1098': TaxForm1098BoxesDto,
+} as const;
+
+/**
+ * - `reading`: the file is being read (from PR 3).
+ * - `review`: a person is needed (see `reason`).
+ * - `confirmed`: the reading is confirmed, by a person or by matching the books on every check.
+ * - `dismissed`: put aside. `superseded`: a corrected form replaced it.
+ */
+export const TAX_FORM_STATUSES = ['reading', 'review', 'confirmed', 'dismissed', 'superseded'] as const;
+export const TaxFormStatus = z.enum(TAX_FORM_STATUSES);
+export type TaxFormStatus = z.infer<typeof TaxFormStatus>;
+
+/** Why a form is in Review. */
+export const TAX_FORM_REASONS = [
+  /** It couldn't be read: type the boxes in. */
+  'unread',
+  /** No employer or account is matched yet. */
+  'no_match',
+  /** The person it's for isn't known yet. */
+  'no_person',
+  /** The employer's member and the reading name different people. */
+  'person_conflict',
+  /** A box differs from the books. */
+  'differs',
+  /** It looks like a copy of a form already received. */
+  'probable_copy',
+] as const;
+export const TaxFormReason = z.enum(TAX_FORM_REASONS);
+export type TaxFormReason = z.infer<typeof TaxFormReason>;
+
+export const TaxFormSource = z.enum(['upload', 'scan', 'typed']);
+export type TaxFormSource = z.infer<typeof TaxFormSource>;
+
+/** A tax year as forms carry it. */
+export const TaxYearNumber = z.number().int().min(2000).max(2100);
+
+const Last4 = z.string().regex(/^\d{4}$/, 'the last four digits');
+/** An EIN as printed (`12-3456789`) or as nine digits; kept as nine digits. */
+const EinInput = z.string().transform((s, ctx) => {
+  const ein = normalizeEin(s);
+  if (!ein) {
+    ctx.addIssue({ code: 'custom', message: 'an EIN, as 12-3456789' });
+    return z.NEVER;
+  }
+  return ein;
+});
+
+/** What a form is matched to: its employer (a W-2), or one of its accounts. */
+export const TaxFormTargetDto = z.object({ employerId: Id.nullable(), accountId: Id.nullable() });
+export type TaxFormTargetDto = z.infer<typeof TaxFormTargetDto>;
+
+const TargetInput = z.union([z.strictObject({ employerId: Id }), z.strictObject({ accountId: Id })]);
+
+const TaxFormFields = {
+  id: Id,
+  /** The books it belongs to: from what it's matched to, the personal books until then. */
+  entityId: Id,
+  taxYear: z.number().int(),
+  corrected: z.boolean(),
+  /** The earlier form a corrected one replaces. */
+  supersedesId: Id.nullable(),
+  issuerName: z.string().nullable(),
+  /** Nine digits, when the issuer's TIN is an EIN. */
+  issuerEin: z.string().nullable(),
+  /** An SSN-shaped payer TIN keeps only its last four digits. */
+  issuerTinLast4: z.string().nullable(),
+  /** The person's SSN, last four digits only. */
+  personTinLast4: z.string().nullable(),
+  accountLast4: z.string().nullable(),
+  /** The household member it's for; null until known. */
+  personMemberId: Id.nullable(),
+  targets: z.array(TaxFormTargetDto),
+  fileIds: z.array(Id),
+  pages: z.array(z.number().int()).nullable(),
+  status: TaxFormStatus,
+  reason: TaxFormReason.nullable(),
+  source: TaxFormSource,
+  createdBy: Id.nullable(),
+  confirmedBy: Id.nullable(),
+  confirmedAt: z.string().nullable(),
+  /** In the Trash since then (30 days); null otherwise. */
+  deletedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  version: z.number().int(),
+};
+
+/** One form received, with the boxes of its kind. */
+export const TaxFormDto = z.discriminatedUnion('kind', [
+  z.object({ ...TaxFormFields, kind: z.literal('w2'), boxes: TaxFormW2BoxesDto }),
+  z.object({ ...TaxFormFields, kind: z.literal('1099_int'), boxes: TaxForm1099IntBoxesDto }),
+  z.object({ ...TaxFormFields, kind: z.literal('1099_div'), boxes: TaxForm1099DivBoxesDto }),
+  z.object({ ...TaxFormFields, kind: z.literal('1098'), boxes: TaxForm1098BoxesDto }),
+]);
+export type TaxFormDto = z.infer<typeof TaxFormDto>;
+
+/** Why an expected form won't come. */
+export const TaxFormWaiverReason = z.enum(['not_issued', 'combined', 'other']);
+export type TaxFormWaiverReason = z.infer<typeof TaxFormWaiverReason>;
+
+/** An expected form the person says won't come or is covered elsewhere (§7.1). */
+export const TaxFormWaiverDto = z.object({
+  id: Id,
+  entityId: Id,
+  taxYear: z.number().int(),
+  kind: TaxFormKind,
+  employerId: Id.nullable(),
+  accountId: Id.nullable(),
+  personMemberId: Id.nullable(),
+  reason: TaxFormWaiverReason,
+  note: z.string().nullable(),
+  createdBy: Id.nullable(),
+  createdAt: z.string(),
+});
+export type TaxFormWaiverDto = z.infer<typeof TaxFormWaiverDto>;
+
+/**
+ * A year's tax forms (`GET tax-forms?year=`): those received and the waivers. Expected forms, inferred from payslips,
+ * interest, dividends and mortgages, join it with the reconciliation (ADR-0052 PR 2).
+ */
+export const TaxYearDto = z.object({
+  year: z.number().int(),
+  forms: z.array(TaxFormDto),
+  waivers: z.array(TaxFormWaiverDto),
+});
+export type TaxYearDto = z.infer<typeof TaxYearDto>;
+
+export const ListTaxFormsQuery = z.object({ year: z.coerce.number().int().min(2000).max(2100) });
+export type ListTaxFormsQuery = z.output<typeof ListTaxFormsQuery>;
+
+/**
+ * One check of a form against the books (§5), worked out each time it's shown. `kind`: a `check` box that differs
+ * puts the form in Review; an `info` box is shown only. Amounts are minor units; `books` and `difference` are null
+ * where the books hold no figure for the box.
+ */
+export const TaxFormCheckDto = z.object({
+  /** The box as printed: `1`, `12D`, `1a`, `1+3+8`. */
+  box: z.string(),
+  kind: z.enum(['check', 'info']),
+  form: MinorDto.nullable(),
+  books: MinorDto.nullable(),
+  difference: MinorDto.nullable(),
+  status: z.enum(['matches', 'explained', 'differs', 'accepted', 'check_reading', 'not_tracked', 'info']),
+  /** How the books' figure was worked out, in words. */
+  rule: z.string(),
+  /** The known explanation that made it match ("Interest credited on 31 December, posted on 2 January"). */
+  explanation: z.string().nullable(),
+  /** What was summed, for the drill-down (RPT-03). Empty for an accountant's payslip totals. */
+  sources: z.object({
+    payslipIds: z.array(Id),
+    transactionIds: z.array(Id),
+    loanPaymentIds: z.array(Id),
+  }),
+});
+export type TaxFormCheckDto = z.infer<typeof TaxFormCheckDto>;
+
+// ----- Typing a form in, and changing one ------------------------------------------------------------------------------
+
+const IdentificationInput = {
+  corrected: z.boolean().optional(),
+  supersedesId: Id.nullable().optional(),
+  issuerName: z.string().trim().min(1).max(200).nullable().optional(),
+  issuerEin: EinInput.nullable().optional(),
+  issuerTinLast4: Last4.nullable().optional(),
+  personTinLast4: Last4.nullable().optional(),
+  accountLast4: Last4.nullable().optional(),
+  /** Who it's for. A W-2 matched to an employer is for the employer's member when this is left out. */
+  personMemberId: Id.nullable().optional(),
+  /** A W-2 has one employer; a 1099 or 1098 one or more accounts. */
+  targets: z.array(TargetInput).max(10).optional(),
+};
+
+/** `POST tax-forms`: a form typed in, with no file (TAX-01). */
+export const CreateTaxFormRequest = z.discriminatedUnion('kind', [
+  z.strictObject({
+    ...IdentificationInput,
+    taxYear: TaxYearNumber,
+    kind: z.literal('w2'),
+    boxes: TaxFormW2BoxesDto,
+  }),
+  z.strictObject({
+    ...IdentificationInput,
+    taxYear: TaxYearNumber,
+    kind: z.literal('1099_int'),
+    boxes: TaxForm1099IntBoxesDto,
+  }),
+  z.strictObject({
+    ...IdentificationInput,
+    taxYear: TaxYearNumber,
+    kind: z.literal('1099_div'),
+    boxes: TaxForm1099DivBoxesDto,
+  }),
+  z.strictObject({
+    ...IdentificationInput,
+    taxYear: TaxYearNumber,
+    kind: z.literal('1098'),
+    boxes: TaxForm1098BoxesDto,
+  }),
+]);
+export type CreateTaxFormRequest = z.output<typeof CreateTaxFormRequest>;
+
+/**
+ * `PATCH tax-forms/:id`: change what a form says or what it's matched to. The kind can't change; the boxes are checked
+ * against it, and replace the old ones whole. `version` is the one read, so two edits can't overwrite each other.
+ */
+export const UpdateTaxFormRequest = z.strictObject({
+  ...IdentificationInput,
+  taxYear: TaxYearNumber.optional(),
+  boxes: z.record(z.string(), z.unknown()).optional(),
+  /** Put aside, or back in Review. */
+  dismissed: z.boolean().optional(),
+  version: z.number().int(),
+});
+export type UpdateTaxFormRequest = z.output<typeof UpdateTaxFormRequest>;
+
+/** `POST tax-forms/waivers`: an expected form that won't come. A W-2's waiver names its employer; the others an account. */
+export const CreateTaxFormWaiverRequest = z
+  .strictObject({
+    taxYear: TaxYearNumber,
+    kind: TaxFormKind,
+    employerId: Id.optional(),
+    accountId: Id.optional(),
+    /** Who it's for, for an account's form; a W-2's is the employer's member. */
+    personMemberId: Id.nullable().optional(),
+    reason: TaxFormWaiverReason,
+    note: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine((r) => (r.employerId === undefined) !== (r.accountId === undefined), {
+    message: 'Name an employer or an account',
+    path: ['employerId'],
+  })
+  .refine((r) => (r.kind === 'w2') === (r.employerId !== undefined), {
+    message: 'A W-2 comes from an employer; the other forms from an account',
+    path: ['kind'],
+  });
+export type CreateTaxFormWaiverRequest = z.output<typeof CreateTaxFormWaiverRequest>;
+
+/** `PUT workspaces/:id/accountant-tax-forms`: the owner's setting (ADR-0052 §8.4). Owner only, after a recent sign-in. */
+export const AccountantTaxFormsDto = z.strictObject({ accountantSeesTaxForms: z.boolean() });
+export type AccountantTaxFormsDto = z.infer<typeof AccountantTaxFormsDto>;

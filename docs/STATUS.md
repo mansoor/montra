@@ -20,6 +20,16 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
+**Being built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and
+1098 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on
+2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059;
+see §7g). Next is PR 2, the reconciliation, expected forms, Review and the `/tax-forms` screen. Role-based permissions
+(ADR-0053) are a separate proposal for later; tax forms use an owner-only setting for accountants instead.
+
+**Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
+become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
+accountant setting is what it would replace.
+
 ### Test suite at the end of Phase 11 (green locally)
 
 | Suite                                                                                                                                               | Tests                                                               |
@@ -1197,11 +1207,19 @@ Phase 11 leftovers:
     else waits in Review with the reason, its import in preview.
   - **Bills:** `POST scans { kind: 'bill', autoFile: true }` files the bill for a learned provider when its amount and
     due date were read; otherwise it waits in Review (and the scan can still be confirmed as before). Without `autoFile`
-    nothing changes, so the web's Add a bill keeps its flow. The phone's bill capture now asks for `autoFile`.
+    nothing changes. The phone's bill capture and the web's Add a bill both ask for `autoFile`: a bill filed
+    automatically closes the dialog with a message. The web's Bills list has **Void** on open and overdue bills
+    (`PATCH household-bills/:id { void: true }`), to undo one filed wrongly; the phone has no void yet.
   - **Review:** web `/review` and the phone's Review show **Statements and bills to file** above the transactions; each
     has the account or provider to pick (candidates first) and Put aside. The web opens a resolved statement in its
     import preview; the phone imports it only when clean (`commitIfClean`).
   - **Doc-worker:** `doc.extract` reads photos (`fileType: image`) with OCR, and returns `statement.issuer`.
+  - **Web Statements screen** (`/statements`, in the nav next to Receipts and Payslips; not for members): drop any
+    statement or photo with no account picked. It shows the account found to confirm or change, then continues in the
+    existing preview, mapping and commit screens (`/imports/[id]`). Once learned it says "Imported automatically into
+    X" with Undo. The import history is on the same screen (`ImportHistory`, shared with `/imports`, which stays for an
+    account's own history; the nav's Imports entry is gone). The account page's Import statement still imports into
+    that account. e2e: `e2e/statements.spec.ts`.
   - Not yet tried on a device, with real bank files beyond the corpus, or with OCR of a real photo (Tesseract isn't
     installed on the dev machine; the photo path is tested with a stubbed engine).
 - **Offering Montra as a service, hosted anywhere** (accepted 2026-11-14; **done** 2026-11-14: ADR-0049 in
@@ -1428,6 +1446,49 @@ Phase 11 leftovers:
   read while one waits to be mapped or checked). **Import a statement** opens the import flow; pull to refresh, and the
   list looks again every 5 seconds while one is being read. Rows don't open anything and undo stays on the web
   (`src/features/statements.ts`). Not run on a device.
+- **Three access fixes** (from ADR-0053's "Inconsistencies found"; each reproduced by a test before the fix,
+  `apps/api/test/access-rules.test.ts`):
+  - **A viewer is read-only, always** (migration 0061; 0059 and 0060 are kept for tax forms). The invite and
+    `PUT sharing/members/:id/grants` refuse `access: 'write'` for a viewer (422 `grant.viewer_write`); making someone a
+    viewer turns their write grants into read; `app.entity_access` caps a viewer at read whatever the grant says, and the
+    migration turned existing viewer write grants (and those in open invites to viewers) into read. The web's book
+    access lists offer a viewer none or read only.
+  - **Planning settings are owners' and admins'.** `PATCH planning/settings` had no role check, and RLS
+    (`workspace_update`) let a partner's or accountant's save update nothing while it answered 200. The API now
+    answers 403 before the update, and `RecommendationsService.updateSettings` throws 403 if the update reaches no
+    row. The web shows the settings read-only to everyone else; the phone shows receipt reminders only with the new
+    `workspaceSettings` ability (owners and admins), no longer under `setUp`.
+  - **The sync feed tells a person about their own private rows** (migration 0062). `GET sync/changes` listed
+    restricted changes to owners and admins only, so a linked login's phone never heard about its own payslips.
+    `app.change_log` now records whose restricted row changed (`restricted_member_id`: the column RLS checks), and the
+    feed asks `app.can_read_restricted` about each one. Changes logged before 0062 have no person and stay owners' and
+    admins' only.
+
+- **Tax forms received, PR 1 of 5** (TAX-01 typing only, TAX-02 partly, TAX-08 storage and row-level security;
+  [ADR-0052](design/adr/0052-tax-forms-received.md), migration 0059; requirements section 3.8 adds TAX-01..10):
+  - **Storage:** `app.tax_form` (kind, year, issuer name and EIN, the person's SSN and the account number as last four
+    digits only, the person, the books, the boxes as JSON, status and reason, `deleted_at` for the Trash, `version`),
+    `app.tax_form_target` (an employer, or one or more accounts) and `app.tax_form_waiver` (an expected form that won't
+    come). Boxes are checked by one Zod schema per kind in `@montra/domain/tax-forms.ts` (`parseTaxFormBoxes`, money as
+    minor-unit strings parsed to bigint, unknown boxes refused), which `@montra/schemas` reuses for the DTOs. The same
+    module has the Social Security wage base and the 1099/1098 thresholds by year.
+  - **Who sees a form:** `app.can_read_tax_form(member)`: the person, owners and admins, and accountants while
+    **`app.workspace.accountant_sees_tax_forms`** is on; the uploader too while the person isn't known; always bounded
+    by the books. Writing needs write access to the books, so viewers and read-only grants can't.
+    `app.tax_form_payslip_totals(form)` gives a W-2's payslip sums to anyone who can read the form, so an accountant
+    gets totals without the payslips.
+  - **The owner's setting:** `PUT workspaces/:id/accountant-tax-forms`, owner only with a recent sign-in, audited as
+    `workspace.accountant_tax_forms_changed` with the old and new values; a trigger refuses anyone else even by a direct
+    update. `WorkspaceDto.accountantSeesTaxForms`. Web: owners get a **Tax forms** switch in Settings → Workspace →
+    Sharing, under the members list.
+  - **API:** `GET tax-forms?year=`, `GET`/`PATCH`/`DELETE tax-forms/:id` (delete moves to the Trash, restored from
+    Settings → Your data), `POST tax-forms` (typed in), `POST`/`DELETE tax-forms/waivers`. Members may handle their own
+    forms. No reading, matching rules or checks yet.
+  - `match_memory` learns `tax_issuer` and `tax_person` (members may write those kinds); the personal chart's Interest
+    income and Dividends carry Schedule B's tax lines (`US_SCH_B_L1`, `US_SCH_B_L5`), set on older books by the
+    migration.
+  - Where the build differs from the ADR is in its "As built: PR 1" section. No screen to type a form in yet (PR 2),
+    and nothing on the phone.
 
 ---
 

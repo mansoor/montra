@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { IntakeDto } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
@@ -34,6 +34,7 @@ export function IntakeCard({
   intake,
   accounts,
   billers,
+  note,
   onDone,
 }: {
   workspaceId: string;
@@ -41,6 +42,8 @@ export function IntakeCard({
   intake: IntakeDto;
   accounts: readonly Pickable[];
   billers: readonly Pickable[];
+  /** A line under the file name, e.g. that the file was uploaded before. */
+  note?: ReactNode;
   /** The intake as it is after resolving or putting it aside. */
   onDone: (intake: IntakeDto) => void;
 }) {
@@ -107,6 +110,7 @@ export function IntakeCard({
               <span key={d.key}> · {t(d.key, d.values)}</span>
             ))}
           </p>
+          {note}
         </div>
         {intake.bill?.amount && intake.bill.currency && (
           <p className="text-right text-sm">
