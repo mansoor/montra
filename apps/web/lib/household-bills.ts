@@ -4,7 +4,7 @@
  * in, and checking the form before it's filed.
  */
 import { isCalendarDate } from '@montra/domain';
-import type { BillerDto, ScanBillDetectedDto } from '@montra/api-client';
+import type { BillerDto, ScanBillDetectedDto, ScanDto } from '@montra/api-client';
 import { staticT } from './i18n-static';
 import { minorToInput, parseAmountInput } from './money';
 
@@ -38,6 +38,16 @@ export async function waitForScan<S extends { status: string }>(
     await sleep(everyMs);
   }
   return null;
+}
+
+/**
+ * The provider's name when the scan filed its bill automatically (ADR-0051: the provider is learned and the amount and
+ * due date were read), else null. The phone's `autoFiledName` (apps/mobile/src/features/intake-review.ts).
+ */
+export function autoFiledName(scan: Pick<ScanDto, 'status' | 'bill'> | null): string | null {
+  const b = scan?.bill;
+  if (scan?.status !== 'used' || !b?.filed) return null;
+  return b.candidates.find((c) => c.billerId === b.billerId)?.name ?? b.billerName ?? '';
 }
 
 /** `billerId` empty means a new provider, named `newName`, on `categoryId`. */
