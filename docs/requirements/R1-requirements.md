@@ -672,9 +672,9 @@ Vault as a per-workspace storage provider. Documents go one way, from Montra to 
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | VLT-01 | An owner connects the workspace to the household's Family Document Vault with a key pair Montra makes for that workspace, checks the vault's code and identity, and sees whether it's approved. | S |
-| VLT-02 | The owner chooses, with one switch per group (receipts, statements, bills, payslips, tax documents, other), what goes to the vault and how each group maps to the vault's kinds, and whether the vault is a copy or the record, with a backup copy at Montra, at their own storage, or none. The vault decides where each document lands. | S |
+| VLT-02 | The owner chooses, for each group (receipts, statements, bills, payslips, tax documents, other), whether it is not sent (kept only locally), sent with a local copy kept, or sent with no local copy, and how each sent group maps to the vault's kinds. A document filed in the vault is the household's record; "local" is Montra's own storage, and the owner's own S3/WebDAV keeps its own setting. The vault decides where each document lands. | S |
 | VLT-03 | Documents are sent one at a time after Montra has finished with them, are never filed twice, and show their vault status per file and in total. | S |
-| VLT-04 | Existing documents can be copied or moved; a move removes Montra's copy only after the vault has filed the document and the chosen backup exists. | S |
+| VLT-04 | Existing documents can be sent; for a group sent with no local copy, Montra removes its copy only after the vault has filed the document. | S |
 | VLT-05 | Documents go one way, Montra to the vault; the vault's changes to documents Montra sent are read and shown, and win on the document but never change the books; a document the vault no longer shows is marked so, without a reason. | S |
 | VLT-06 | A vault-held document opens through a single-use link made when the person clicks, never stored, logged or sent. | S |
 | VLT-07 | Payslips and tax documents go to the vault only if an owner turns them on after a warning; sealed copies of identity documents, logos and exports never go. | M |

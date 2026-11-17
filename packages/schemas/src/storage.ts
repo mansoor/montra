@@ -240,21 +240,41 @@ export const VAULT_GROUP_KINDS: Readonly<Record<VaultGroup, readonly StorageFile
   other: ['lease', 'other'],
 };
 
-/** §6: on when a connection is made. Payslips and tax documents are restricted in Montra, so they start off. */
-export const VAULT_GROUP_DEFAULTS: Readonly<Record<VaultGroup, boolean>> = {
-  receipts: true,
-  statements: true,
-  bills: true,
-  payslips: false,
-  tax_documents: false,
-  other: false,
+/**
+ * What happens to one group's documents (§6, as the owner clarified it on 2026-11-17). The vault is additional
+ * storage, and a document filed there is the household's record in either sent mode; "local" means where Montra
+ * normally keeps the file (its own storage), while the owner's S3/WebDAV mirror keeps following its own setting.
+ *
+ * - `not_sent`: kept only locally.
+ * - `sent_keep_copy`: sent to the vault, and Montra keeps its copy.
+ * - `sent_no_copy`: sent to the vault, and once the vault has filed it Montra removes its own copy; when Montra needs
+ *   the file again it asks the vault, then a person (§5, §5a).
+ */
+export const VAULT_GROUP_MODES = ['not_sent', 'sent_keep_copy', 'sent_no_copy'] as const;
+export const VaultGroupMode = z.enum(VAULT_GROUP_MODES);
+export type VaultGroupMode = z.infer<typeof VaultGroupMode>;
+
+/** Whether a mode sends the group's documents to the vault. */
+export const isSentMode = (mode: VaultGroupMode): boolean => mode !== 'not_sent';
+
+/**
+ * §6: each group's mode when a connection is made. Receipts, statements and bills are sent with a copy kept; payslips
+ * and tax documents are restricted in Montra and start not sent, as do other papers.
+ */
+export const VAULT_GROUP_DEFAULTS: Readonly<Record<VaultGroup, VaultGroupMode>> = {
+  receipts: 'sent_keep_copy',
+  statements: 'sent_keep_copy',
+  bills: 'sent_keep_copy',
+  payslips: 'not_sent',
+  tax_documents: 'not_sent',
+  other: 'not_sent',
 };
 
-/** §6: groups only an owner may turn on, after a warning (an admin may turn them off). */
+/** §6: groups only an owner may send (either sent mode), after a warning; an admin may set them to `not_sent`. */
 export const VAULT_RESTRICTED_GROUPS: readonly VaultGroup[] = ['payslips', 'tax_documents'];
 
 /**
- * §6: the group a file belongs to, or `never` for what never goes to the vault whatever the switches say: sealed copies
+ * §6: the group a file belongs to, or `never` for what never goes to the vault whatever the modes say: sealed copies
  * of identity documents (ADR-0034 §3, including the documents kept with an I-9), logos and exports.
  */
 export function vaultGroupOf(file: { kind: FileKind; sealed: boolean }): VaultGroup | 'never' {
@@ -265,44 +285,55 @@ export function vaultGroupOf(file: { kind: FileKind; sealed: boolean }): VaultGr
   return 'never';
 }
 
-/** Each group's switch, with the defaults filled in for any not given. */
-export function vaultGroupSwitches(
-  on: Partial<Record<VaultGroup, boolean>> = {},
-): Record<VaultGroup, boolean> {
-  return Object.fromEntries(VAULT_GROUPS.map((g) => [g, on[g] ?? VAULT_GROUP_DEFAULTS[g]])) as Record<
+/** Each group's mode, with the defaults filled in for any not given. */
+export function vaultGroupModes(
+  modes: Partial<Record<VaultGroup, VaultGroupMode>> = {},
+): Record<VaultGroup, VaultGroupMode> {
+  return Object.fromEntries(VAULT_GROUPS.map((g) => [g, modes[g] ?? VAULT_GROUP_DEFAULTS[g]])) as Record<
     VaultGroup,
-    boolean
+    VaultGroupMode
   >;
 }
 
 /**
- * The connection's `file_kinds` (§11), derived from the groups that are on, in `STORAGE_FILE_KINDS` order, so the
- * trigger on `app.file` keeps working by kind. Groups not given take their defaults.
+ * The connection's `file_kinds` (§11), derived from the groups that are sent (either mode), in `STORAGE_FILE_KINDS`
+ * order, so the trigger on `app.file` keeps working by kind. Groups not given take their defaults.
  */
-export function vaultFileKinds(on: Partial<Record<VaultGroup, boolean>> = {}): StorageFileKind[] {
-  const switches = vaultGroupSwitches(on);
+export function vaultFileKinds(modes: Partial<Record<VaultGroup, VaultGroupMode>> = {}): StorageFileKind[] {
+  const all = vaultGroupModes(modes);
   return STORAGE_FILE_KINDS.filter((kind) => {
     const group = vaultGroupOf({ kind, sealed: false });
-    return group !== 'never' && switches[group];
+    return group !== 'never' && isSentMode(all[group]);
   });
 }
 
-/** Whether a file goes to the vault with these switches. */
-export function vaultSends(
+/** What happens to one file with these modes: `not_sent` for what never goes. */
+export function vaultModeOf(
   file: { kind: FileKind; sealed: boolean },
-  on: Partial<Record<VaultGroup, boolean>> = {},
-): boolean {
+  modes: Partial<Record<VaultGroup, VaultGroupMode>> = {},
+): VaultGroupMode {
   const group = vaultGroupOf(file);
-  return group !== 'never' && vaultGroupSwitches(on)[group];
+  return group === 'never' ? 'not_sent' : vaultGroupModes(modes)[group];
 }
 
-/** §1: a copy, like a mirror, or the household's record of the documents sent there. */
-export const VaultRole = z.enum(['copy', 'record']);
-export type VaultRole = z.infer<typeof VaultRole>;
+/** Whether a file goes to the vault with these modes. */
+export function vaultSends(
+  file: { kind: FileKind; sealed: boolean },
+  modes: Partial<Record<VaultGroup, VaultGroupMode>> = {},
+): boolean {
+  return isSentMode(vaultModeOf(file, modes));
+}
 
-/** §1: for the record role, where the backup copy is kept: at Montra (default), the owner's own storage, or none. */
-export const VaultBackup = z.enum(['montra', 'own_storage', 'none']);
-export type VaultBackup = z.infer<typeof VaultBackup>;
+/**
+ * §5: whether Montra keeps its own copy of a file once the vault has filed it: always, unless its group is
+ * `sent_no_copy`. A file that isn't sent is always kept.
+ */
+export function vaultKeepsCopy(
+  file: { kind: FileKind; sealed: boolean },
+  modes: Partial<Record<VaultGroup, VaultGroupMode>> = {},
+): boolean {
+  return vaultModeOf(file, modes) !== 'sent_no_copy';
+}
 
 /** §4, §11: a file's place in the vault's outbox. */
 export const VAULT_ITEM_STATUSES = [
@@ -329,10 +360,10 @@ export type VaultStage = z.infer<typeof VaultStage>;
 export const VaultKindDto = z.object({ key: z.string().min(1).max(100), name: z.string().max(200) });
 export type VaultKindDto = z.infer<typeof VaultKindDto>;
 
-/** A group's switch, and the vault kind it maps to. A group switched on but not mapped isn't sent (§3). */
+/** A group's mode, and the vault kind it maps to. A sent group that isn't mapped isn't sent (§3). */
 export const VaultGroupSettingDto = z.object({
   group: VaultGroup,
-  on: z.boolean(),
+  mode: VaultGroupMode,
   vaultKind: z.string().min(1).max(100).nullable(),
 });
 export type VaultGroupSettingDto = z.infer<typeof VaultGroupSettingDto>;
@@ -351,8 +382,13 @@ export const VaultConnectionDto = z.object({
   householdName: z.string().nullable(),
   publicKey: z.string(),
   fingerprint: z.string(),
-  role: VaultRole,
-  backup: VaultBackup,
+  /**
+   * §2 "Replace the key": the new public key and its fingerprint, made and sealed, waiting for the code the vault gives
+   * once someone there has added it. Montra keeps signing with the current key until then.
+   */
+  newKey: z.object({ publicKey: z.string(), fingerprint: z.string() }).nullable(),
+  /** Who Montra acts as in the vault, as the vault last said; the vault decides whose Inbox each document lands in. */
+  actingAs: z.string().nullable(),
   groups: z.array(VaultGroupSettingDto),
   /** The kinds the vault lets Montra send, from the last check. */
   vaultKinds: z.array(VaultKindDto),
@@ -399,18 +435,16 @@ export const PasteVaultCodeRequest = z
   .strict();
 export type PasteVaultCodeRequest = z.output<typeof PasteVaultCodeRequest>;
 
-/** §6, §13: a change to the connection. Groups not named keep their setting. */
+/** §6, §13: a change to the connection. Groups not named keep their mode and mapping. */
 export const UpdateVaultConnectionRequest = z
   .object({
     version: z.number().int().positive(),
-    role: VaultRole.optional(),
-    backup: VaultBackup.optional(),
     groups: z
       .array(
         z
           .object({
             group: VaultGroup,
-            on: z.boolean().optional(),
+            mode: VaultGroupMode.optional(),
             vaultKind: z.string().min(1).max(100).nullable().optional(),
           })
           .strict(),
@@ -426,14 +460,19 @@ export const UpdateVaultConnectionRequest = z
   .strict();
 export type UpdateVaultConnectionRequest = z.output<typeof UpdateVaultConnectionRequest>;
 
-/** §2: "Replace the key". */
-export const ReplaceVaultKeyRequest = z.object({ version: z.number().int().positive() }).strict();
+/**
+ * §2: "Replace the key": makes a new pair, sealed beside the current one, whose code is then pasted as when connecting.
+ * `cancel` drops a new key that hasn't been confirmed yet, and Montra goes on with the current one.
+ */
+export const ReplaceVaultKeyRequest = z
+  .object({ version: z.number().int().positive(), cancel: z.boolean().default(false) })
+  .strict();
 export type ReplaceVaultKeyRequest = z.output<typeof ReplaceVaultKeyRequest>;
 
 /**
- * §12: "Send existing documents": every file of the groups that are on, not in the trash. On a record connection it is
- * a move (§5 then removes each source once filed). `expected` is the count the person was shown, so a different number
- * is refused rather than surprising them.
+ * §12: "Send existing documents": every file of the groups that are sent, not in the trash. For a group sent with no
+ * local copy it is a move (§5 then removes each source once filed). `expected` is the count the person was shown, so a
+ * different number is refused rather than surprising them.
  */
 export const SendExistingToVaultRequest = z
   .object({ expected: z.number().int().min(0).max(1_000_000) })

@@ -15,20 +15,28 @@ import {
   VAULT_GROUP_KINDS,
   VAULT_GROUPS,
   VAULT_RESTRICTED_GROUPS,
+  VAULT_GROUP_MODES,
   VaultConnectionDto,
   vaultFileKinds,
+  vaultGroupModes,
   vaultGroupOf,
-  vaultGroupSwitches,
   VaultItemsQuery,
+  vaultKeepsCopy,
+  vaultModeOf,
   vaultSends,
+  ReplaceVaultKeyRequest,
   type FileKind,
   type VaultGroup,
+  type VaultGroupMode,
 } from '../src/index.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 
-// ADR-0054 §6: one switch per group, mapped from Montra's file kinds.
+// ADR-0054 §6: one mode per group, mapped from Montra's file kinds (the owner's clarification, 2026-11-17).
 describe('the vault’s document groups (ADR-0054 §6, VLT-02, VLT-07)', () => {
+  const every = (mode: VaultGroupMode) =>
+    Object.fromEntries(VAULT_GROUPS.map((g) => [g, mode])) as Record<VaultGroup, VaultGroupMode>;
+
   const table: [FileKind, boolean, VaultGroup | 'never'][] = [
     ['receipt', false, 'receipts'],
     ['statement', false, 'statements'],
@@ -61,24 +69,29 @@ describe('the vault’s document groups (ADR-0054 §6, VLT-02, VLT-07)', () => {
     ]);
   });
 
-  it('never sends sealed copies, logos or exports, even with every switch on', () => {
-    const all = Object.fromEntries(VAULT_GROUPS.map((g) => [g, true]));
-    for (const kind of FILE_KINDS) {
-      expect(vaultSends({ kind, sealed: true }, all), kind).toBe(false);
+  it('never sends sealed copies, logos or exports, whatever the modes say, and always keeps them', () => {
+    for (const mode of ['sent_keep_copy', 'sent_no_copy'] as const) {
+      const all = every(mode);
+      for (const kind of FILE_KINDS) {
+        expect(vaultSends({ kind, sealed: true }, all), kind).toBe(false);
+        expect(vaultKeepsCopy({ kind, sealed: true }, all), kind).toBe(true);
+      }
+      expect(vaultSends({ kind: 'logo', sealed: false }, all)).toBe(false);
+      expect(vaultSends({ kind: 'export', sealed: false }, all)).toBe(false);
+      expect(vaultModeOf({ kind: 'export', sealed: false }, all)).toBe('not_sent');
+      expect(vaultFileKinds(all)).toEqual([...STORAGE_FILE_KINDS]);
     }
-    expect(vaultSends({ kind: 'logo', sealed: false }, all)).toBe(false);
-    expect(vaultSends({ kind: 'export', sealed: false }, all)).toBe(false);
-    expect(vaultFileKinds(all)).toEqual([...STORAGE_FILE_KINDS]);
   });
 
-  it('starts with receipts, statements and bills on, and payslips, tax documents and other papers off', () => {
+  it('starts with receipts, statements and bills sent with a copy kept, and the rest not sent', () => {
+    expect(VAULT_GROUP_MODES).toEqual(['not_sent', 'sent_keep_copy', 'sent_no_copy']);
     expect(VAULT_GROUP_DEFAULTS).toEqual({
-      receipts: true,
-      statements: true,
-      bills: true,
-      payslips: false,
-      tax_documents: false,
-      other: false,
+      receipts: 'sent_keep_copy',
+      statements: 'sent_keep_copy',
+      bills: 'sent_keep_copy',
+      payslips: 'not_sent',
+      tax_documents: 'not_sent',
+      other: 'not_sent',
     });
     expect(vaultFileKinds()).toEqual(['statement', 'receipt', 'invoice']);
     expect(vaultSends({ kind: 'payslip', sealed: false })).toBe(false);
@@ -87,21 +100,39 @@ describe('the vault’s document groups (ADR-0054 §6, VLT-02, VLT-07)', () => {
     expect([...VAULT_RESTRICTED_GROUPS].sort()).toEqual(['payslips', 'tax_documents']);
   });
 
-  it('sends payslips and tax documents only when they are switched on', () => {
-    expect(vaultFileKinds({ payslips: true })).toEqual(['statement', 'receipt', 'payslip', 'invoice']);
-    expect(vaultFileKinds({ tax_documents: true, receipts: false })).toEqual([
+  it('sends payslips and tax documents only when they are given a sent mode', () => {
+    expect(vaultFileKinds({ payslips: 'sent_keep_copy' })).toEqual([
+      'statement',
+      'receipt',
+      'payslip',
+      'invoice',
+    ]);
+    expect(vaultFileKinds({ tax_documents: 'sent_no_copy', receipts: 'not_sent' })).toEqual([
       'statement',
       'invoice',
       'tax_form',
     ]);
-    expect(vaultSends({ kind: 'payslip', sealed: false }, { payslips: true })).toBe(true);
-    expect(vaultSends({ kind: 'tax_form', sealed: false }, { tax_documents: true })).toBe(true);
+    expect(vaultSends({ kind: 'payslip', sealed: false }, { payslips: 'sent_keep_copy' })).toBe(true);
+    expect(vaultSends({ kind: 'tax_form', sealed: false }, { tax_documents: 'sent_no_copy' })).toBe(true);
   });
 
-  it('fills in the defaults for groups not given, and can turn everything off', () => {
-    expect(vaultGroupSwitches({ statements: false })).toEqual({ ...VAULT_GROUP_DEFAULTS, statements: false });
-    const none = Object.fromEntries(VAULT_GROUPS.map((g) => [g, false]));
-    expect(vaultFileKinds(none)).toEqual([]);
+  it('keeps Montra’s copy unless the group is sent with no local copy', () => {
+    const receipt = { kind: 'receipt' as const, sealed: false };
+    expect(vaultKeepsCopy(receipt)).toBe(true);
+    expect(vaultKeepsCopy(receipt, { receipts: 'not_sent' })).toBe(true);
+    expect(vaultKeepsCopy(receipt, { receipts: 'sent_keep_copy' })).toBe(true);
+    expect(vaultKeepsCopy(receipt, { receipts: 'sent_no_copy' })).toBe(false);
+    // Another group's mode doesn't reach it.
+    expect(vaultKeepsCopy(receipt, { statements: 'sent_no_copy' })).toBe(true);
+    expect(vaultSends(receipt, { receipts: 'sent_no_copy' })).toBe(true);
+  });
+
+  it('fills in the defaults for groups not given, and can send nothing', () => {
+    expect(vaultGroupModes({ statements: 'not_sent' })).toEqual({
+      ...VAULT_GROUP_DEFAULTS,
+      statements: 'not_sent',
+    });
+    expect(vaultFileKinds(every('not_sent'))).toEqual([]);
   });
 });
 
@@ -114,9 +145,9 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     householdName: 'The Smiths',
     publicKey: 'MCowBQYDK2VwAyEA-public-part',
     fingerprint: 'SHA256:abcd',
-    role: 'copy',
-    backup: 'montra',
-    groups: VAULT_GROUPS.map((group) => ({ group, on: VAULT_GROUP_DEFAULTS[group], vaultKind: null })),
+    newKey: null,
+    actingAs: 'Sam',
+    groups: VAULT_GROUPS.map((group) => ({ group, mode: VAULT_GROUP_DEFAULTS[group], vaultKind: null })),
     vaultKinds: [{ key: 'receipt', name: 'Receipt' }],
     describeMore: false,
     deleteWithMontra: false,
@@ -158,29 +189,41 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
   it('changes groups one at a time, each named once, and refuses what it doesn’t know', () => {
     const ok = UpdateVaultConnectionRequest.parse({
       version: 3,
-      role: 'record',
-      backup: 'own_storage',
       groups: [
-        { group: 'payslips', on: true },
+        { group: 'payslips', mode: 'sent_keep_copy' },
         { group: 'receipts', vaultKind: 'receipt' },
+        { group: 'statements', mode: 'sent_no_copy' },
       ],
     });
-    expect(ok.groups).toHaveLength(2);
+    expect(ok.groups).toHaveLength(3);
     expect(
       UpdateVaultConnectionRequest.safeParse({
         version: 3,
         groups: [
-          { group: 'receipts', on: true },
-          { group: 'receipts', on: false },
+          { group: 'receipts', mode: 'not_sent' },
+          { group: 'receipts', mode: 'sent_keep_copy' },
         ],
       }).success,
     ).toBe(false);
     expect(
-      UpdateVaultConnectionRequest.safeParse({ version: 3, groups: [{ group: 'logos', on: true }] }).success,
+      UpdateVaultConnectionRequest.safeParse({ version: 3, groups: [{ group: 'logos', mode: 'not_sent' }] })
+        .success,
     ).toBe(false);
-    expect(UpdateVaultConnectionRequest.safeParse({ version: 3, backup: 'cloud' }).success).toBe(false);
+    expect(
+      UpdateVaultConnectionRequest.safeParse({ version: 3, groups: [{ group: 'receipts', on: true }] })
+        .success,
+    ).toBe(false);
+    // The connection-wide role and backup choice gave way to each group's mode (2026-11-17).
+    expect(UpdateVaultConnectionRequest.safeParse({ version: 3, role: 'record' }).success).toBe(false);
+    expect(UpdateVaultConnectionRequest.safeParse({ version: 3, backup: 'none' }).success).toBe(false);
     // An inbox or a person to file to is the vault's decision (owner's answer 3).
     expect(UpdateVaultConnectionRequest.safeParse({ version: 3, inbox: 'Sam' }).success).toBe(false);
+  });
+
+  it('replaces the key, or cancels a new key not yet confirmed', () => {
+    expect(ReplaceVaultKeyRequest.parse({ version: 2 })).toEqual({ version: 2, cancel: false });
+    expect(ReplaceVaultKeyRequest.parse({ version: 2, cancel: true })).toEqual({ version: 2, cancel: true });
+    expect(ReplaceVaultKeyRequest.safeParse({ version: 2, privateKey: 'x' }).success).toBe(false);
   });
 
   it('asks for the count shown before sending existing documents, and disconnects carefully by default', () => {
