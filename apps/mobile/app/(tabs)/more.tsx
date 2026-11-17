@@ -2,6 +2,8 @@
 import { useRouter, type Href } from 'expo-router';
 import { t } from '../../src/i18n';
 import { config } from '../../src/config';
+import { reviewBadge, showsTaxForms } from '../../src/features/tax-forms';
+import { useTaxFormsToCheck } from '../../src/features/use-tax-forms';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { Card, Row, Screen, SectionLabel, Small, Title } from '../../src/ui/components';
@@ -21,6 +23,10 @@ export default function More() {
   const { state: sync } = useSync();
   const can = useAbilities();
   const queued = sync ? sync.pending + sync.drafts : 0;
+  const taxForms = useTaxFormsToCheck().count;
+  const toReview = reviewBadge(sync?.reviewCount ?? 0, taxForms);
+  // ADR-0052 §7.2: US forms, for books kept in US dollars; not for viewers.
+  const taxFormsShown = state.status === 'signed_in' && showsTaxForms(state.workspace);
   const sections: Array<{ label: string; items: Item[] }> = [
     {
       label: t('mobile.more.section.everyday'),
@@ -32,9 +38,7 @@ export default function More() {
                 icon: 'review',
                 href: '/review',
                 testID: 'more-review',
-                ...(sync?.reviewCount
-                  ? { subtitle: t('mobile.more.review_count', { count: sync.reviewCount }) }
-                  : {}),
+                ...(toReview ? { subtitle: t('mobile.more.review_count', { count: toReview }) } : {}),
               } as Item,
             ]
           : []),
@@ -42,6 +46,17 @@ export default function More() {
         { title: t('mobile.more.receipts'), icon: 'receipt', href: '/receipts', testID: 'more-receipts' },
         { title: t('mobile.bills.title'), icon: 'bill', href: '/bills', testID: 'more-bills' },
         { title: t('nav.payslips'), icon: 'payslips', href: '/payslips', testID: 'more-payslips' },
+        ...(taxFormsShown
+          ? [
+              {
+                title: t('tax_forms.title'),
+                icon: 'taxForms',
+                href: '/tax-forms',
+                testID: 'more-tax-forms',
+                ...(taxForms ? { subtitle: t('mobile.tax_forms.to_check', { count: taxForms }) } : {}),
+              } as Item,
+            ]
+          : []),
         // Statements are imported by those who set the books up (AUTH-18).
         ...(can.importFiles
           ? [

@@ -1,0 +1,45 @@
+{
+  "forms": [
+    {
+      "kind": "w2",
+      "taxYear": 2025,
+      "corrected": false,
+      "issuerName": "Pine Street Bakery",
+      "person": null,
+      "pages": [1],
+      "boxes": {
+        "box1": "5200000",
+        "box2": "410000",
+        "box3": "5200000",
+        "box4": "322400",
+        "box5": "5200000",
+        "box6": "75400",
+        "box12": [
+          {
+            "code": "D",
+            "amount": "260000"
+          }
+        ],
+        "box14": [
+          {
+            "label": "CASDI",
+            "amount": "62400"
+          }
+        ],
+        "box13": {
+          "retirementPlan": true
+        },
+        "states": [
+          {
+            "state": "CA",
+            "box16": "5200000",
+            "box17": "182000"
+          }
+        ]
+      },
+      "droppedBoxes": 0,
+      "confidence": 0.95
+    }
+  ],
+  "otherForms": 0
+}

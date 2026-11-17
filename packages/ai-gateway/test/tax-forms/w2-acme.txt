@@ -1,0 +1,24 @@
+Form W-2 Wage and Tax Statement 2025
+Copy B To Be Filed With Employee's FEDERAL Tax Return
+a Employee's social security number XXX-XX-6789
+b Employer identification number (EIN) 12-3456789
+c Employer's name, address, and ZIP code
+Acme Widgets Inc
+[redacted]
+[redacted]
+e Employee's first name and initial Last name
+Sam Example
+[redacted]
+1 Wages, tips, other compensation 85,120.34
+2 Federal income tax withheld 9,876.00
+3 Social security wages 104,620.34
+4 Social security tax withheld 6,486.46
+5 Medicare wages and tips 104,620.34
+6 Medicare tax withheld 1,517.00
+12a D 19,500.00
+12b W 2,000.00
+X Retirement plan
+14 Other CASDI 1,150.82
+15 State CA Employer's state ID number ••••
+16 State wages, tips, etc. CA 85,120.34
+17 State income tax 4,210.00

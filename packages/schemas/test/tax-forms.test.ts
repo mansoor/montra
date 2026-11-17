@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AcceptTaxFormDifferenceRequest,
   AccountantTaxFormsDto,
+  ConfirmTaxFormReadingRequest,
   CreateTaxFormRequest,
   CreateTaxFormWaiverRequest,
   ListTaxFormsQuery,
+  RecordFromTaxFormRequest,
   TaxFormDto,
+  TaxFormUploadDto,
+  TaxYearDto,
   UpdateTaxFormRequest,
+  UploadTaxFormFieldsDto,
   WorkspaceDto,
 } from '../src/index.js';
 
@@ -125,11 +131,149 @@ describe('the form as sent', () => {
     createdAt: '2026-02-01T00:00:00.000Z',
     updatedAt: '2026-02-01T00:00:00.000Z',
     version: 1,
+    result: { state: 'needs_person', difference: null, review: true, recordable: null, recorded: null },
+    checks: [
+      {
+        box: '1+3+8',
+        kind: 'check',
+        form: '4107',
+        books: '4107',
+        difference: '0',
+        status: 'matches',
+        rule: 'Interest credited to the account(s) in the year',
+        explanation: null,
+        acceptedNote: null,
+        sources: { payslipIds: [], transactionIds: [ACCOUNT], loanPaymentIds: [], journalEntryIds: [] },
+      },
+    ],
+    reading: null,
   };
 
   it('carries the boxes of its kind', () => {
     expect(TaxFormDto.parse({ ...form, kind: '1099_int', boxes: { box1: '4107' } }).kind).toBe('1099_int');
     expect(TaxFormDto.safeParse({ ...form, kind: '1099_int', boxes: { box1a: '4107' } }).success).toBe(false);
+  });
+
+  it('carries its result and checks (§5, §7.1)', () => {
+    const parsed = TaxFormDto.parse({ ...form, kind: '1099_int', boxes: { box1: '4107' } });
+    expect(parsed.result.state).toBe('needs_person');
+    expect(parsed.checks[0]!.status).toBe('matches');
+    expect(
+      TaxFormDto.safeParse({
+        ...form,
+        kind: '1099_int',
+        boxes: { box1: '4107' },
+        checks: [{ ...form.checks[0], status: 'close enough' }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('forms read from files (ADR-0052 PR 3)', () => {
+  const reading = {
+    fileNames: ['bank.pdf'],
+    kindKnown: true,
+    boxesRead: true,
+    problem: null,
+    droppedBoxes: 0,
+    confirmedBy: 'books',
+    match: {
+      automatic: true,
+      reason: 'Matched: Savings is the only account ending 4321 with interest in 2025',
+      candidates: [{ employerId: null, accountId: ACCOUNT, name: 'Savings', reason: 'Ends 4321' }],
+    },
+    copyOfId: null,
+  };
+
+  it('says how a form from a file was read, and refuses a problem it doesn’t know', () => {
+    const base = {
+      id: EMPLOYER,
+      entityId: ACCOUNT,
+      taxYear: 2025,
+      corrected: false,
+      supersedesId: null,
+      issuerName: null,
+      issuerEin: null,
+      issuerTinLast4: null,
+      personTinLast4: null,
+      accountLast4: null,
+      personMemberId: null,
+      targets: [],
+      fileIds: [ACCOUNT],
+      pages: [1],
+      status: 'confirmed',
+      reason: null,
+      source: 'upload',
+      createdBy: null,
+      confirmedBy: null,
+      confirmedAt: null,
+      deletedAt: null,
+      createdAt: '2026-02-01T00:00:00.000Z',
+      updatedAt: '2026-02-01T00:00:00.000Z',
+      version: 3,
+      result: { state: 'matches', difference: null, review: false, recordable: null, recorded: null },
+      checks: [],
+      kind: '1099_int',
+      boxes: { box1: '4107' },
+    };
+    expect(TaxFormDto.parse({ ...base, reading }).reading?.confirmedBy).toBe('books');
+    expect(TaxFormDto.safeParse({ ...base, reading: { ...reading, problem: 'gremlins' } }).success).toBe(
+      false,
+    );
+  });
+
+  it('takes the upload’s fields as text, and answers per file', () => {
+    expect(UploadTaxFormFieldsDto.parse({ year: '2025', source: 'scan' })).toEqual({
+      year: 2025,
+      source: 'scan',
+    });
+    expect(UploadTaxFormFieldsDto.safeParse({ year: '1999' }).success).toBe(false);
+    expect(
+      TaxFormUploadDto.parse({ files: [{ fileName: 'w2.pdf', status: 'duplicate', formId: EMPLOYER }] })
+        .files,
+    ).toHaveLength(1);
+  });
+
+  it('changes a misread form’s kind, and confirms a reading at a version', () => {
+    expect(UpdateTaxFormRequest.parse({ kind: '1098', boxes: {}, version: 2 }).kind).toBe('1098');
+    expect(ConfirmTaxFormReadingRequest.safeParse({ version: 2 }).success).toBe(true);
+    expect(ConfirmTaxFormReadingRequest.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('acting on a difference (§5.6)', () => {
+  it('accepts a box with a note, and records an amount in cents', () => {
+    expect(AcceptTaxFormDifferenceRequest.parse({ box: '2', note: ' Bonus paid as a gift card ' })).toEqual({
+      box: '2',
+      note: 'Bonus paid as a gift card',
+    });
+    expect(AcceptTaxFormDifferenceRequest.safeParse({ box: '2', note: ' ' }).success).toBe(false);
+    expect(RecordFromTaxFormRequest.safeParse({ amount: '125000' }).success).toBe(true);
+    expect(RecordFromTaxFormRequest.safeParse({ amount: '1250.00' }).success).toBe(false);
+  });
+
+  it('lists the year’s expected forms with their state', () => {
+    const year = TaxYearDto.parse({
+      year: 2025,
+      forms: [],
+      expected: [
+        {
+          kind: 'w2',
+          employerId: EMPLOYER,
+          accountId: null,
+          personMemberId: null,
+          entityId: ACCOUNT,
+          name: 'Acme',
+          amount: '9000000',
+          state: 'missing',
+          formId: null,
+          waiverId: null,
+        },
+      ],
+      unexpectedFormIds: [],
+      waivers: [],
+    });
+    expect(year.expected[0]!.state).toBe('missing');
   });
 });
 

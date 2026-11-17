@@ -1,0 +1,20 @@
+{
+  "forms": [
+    {
+      "kind": "1099_int",
+      "taxYear": 2025,
+      "corrected": false,
+      "issuerName": "First Example Bank",
+      "person": "MEMBER_2",
+      "pages": [1],
+      "boxes": {
+        "box1": "41207",
+        "box3": "2500",
+        "box4": "4120"
+      },
+      "droppedBoxes": 0,
+      "confidence": 0.95
+    }
+  ],
+  "otherForms": 0
+}

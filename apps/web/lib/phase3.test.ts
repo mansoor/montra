@@ -18,6 +18,7 @@ import {
   confidenceTone,
   countAtOrAbove,
   goSequence,
+  reviewBadgeTotal,
   percent,
   removeItems,
   reviewCommand,
@@ -245,6 +246,16 @@ describe('review queue (AI-03/04, PLT-10)', () => {
     s = goSequence(null, 'g', 1000);
     expect(goSequence(s.state, 'r', 3000).target).toBeNull();
     expect(goSequence(null, 'r', 0).target).toBeNull();
+  });
+
+  it('adds tax forms to check to the Review badge, ignoring a count that failed to load', () => {
+    expect(reviewBadgeTotal(6, 2)).toBe(8);
+    expect(reviewBadgeTotal(0, 0)).toBe(0);
+    expect(reviewBadgeTotal(6, null)).toBe(6);
+    expect(reviewBadgeTotal(null, 2)).toBe(2);
+    expect(reviewBadgeTotal(null, null)).toBeNull();
+    expect(t('review.badge', { count: 1 })).toBe('1 item to review');
+    expect(t('review.badge', { count: 8 })).toBe('8 items to review');
   });
 
   it('has messages for counts and rule offers', () => {

@@ -1,0 +1,13 @@
+2025 Consolidated Form 1099
+PAYER'S name: Sample Brokerage LLC
+RECIPIENT'S name: MEMBER_1
+Account ••••
+Form 1099-DIV Dividends and Distributions 2025
+1a Total ordinary dividends 2,104.55
+1b Qualified dividends 1,800.00
+4 Federal income tax withheld 0.00
+Form 1099-INT Interest Income 2025
+1 Interest income 18.42
+--- page ---
+Form 1099-B Proceeds From Broker and Barter Exchange Transactions 2025
+1d Proceeds 10,000.00

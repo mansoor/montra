@@ -34,6 +34,7 @@ import { Db } from '../db/database.js';
 import { FxRatesService } from '../fx/fx.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { notFound, unprocessable } from '../common/errors.js';
+import { incomeCategory } from './income-categories.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -191,7 +192,10 @@ export class AccountsService {
     }
   }
 
-  /** Interest paid into an account this year: what came in against an interest income category (ADR-0027). */
+  /**
+   * Interest paid into an account this year: what came in against an interest income category (ADR-0027), found by
+   * Schedule B's interest line first, then by name (ADR-0052 §5.7).
+   */
   async interestEarned(ctx: Ctx, accountId: string): Promise<InterestEarnedDto> {
     return this.db.run(ctx, async (trx) => {
       const account = await trx
@@ -216,7 +220,7 @@ export class AccountsService {
           from app.posting i
           join app.ledger_account c on c.workspace_id = i.workspace_id and c.id = i.ledger_account_id
          where i.workspace_id = ${ctx.workspaceId} and i.entry_date between ${from} and ${to}
-           and c.type = 'income' and c.is_category and c.name ilike '%interest%'
+           and ${incomeCategory('c', 'interest')}
            and exists (select 1 from app.posting p
                         where p.workspace_id = i.workspace_id and p.journal_entry_id = i.journal_entry_id
                           and p.ledger_account_id = ${accountId} and p.amount_minor > 0)`.execute(trx);

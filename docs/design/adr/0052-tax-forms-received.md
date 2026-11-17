@@ -646,6 +646,144 @@ Where PR 1 had to differ from or add to the text above, and why:
   security, and employers are restricted (PAY-09), so an accountant types a W-2 unmatched and an owner, admin or the
   person matches it. PR 2's matching by hand should decide whether accountants with the setting on may.
 
+### As built: PR 2 (2026-11-16)
+
+Where PR 2 had to differ from or add to the text above, and why:
+
+- **The rules live in `@montra/domain/tax-form-checks.ts`**, beside `tax-forms.ts` rather than in it: `reconcileW2`,
+  `reconcile1099Int`, `reconcile1099Div`, `reconcile1098`, `w2ReadingIssues`, `checksOutcome`, `expectedTaxForms` and
+  `expectedAgainstReceived`. They return checks in English words (§5: "the rule in words"); the screens' own labels are
+  i18n keys.
+- **Every `TaxFormDto` carries its `result` and `checks`**, in the year's list, from `GET tax-forms/:id` and from every
+  write, so the screen and Review never ask twice. `TaxFormResultDto` is new (the state, the largest difference,
+  whether it's a Review item, what Record from the form would move, and what it moved). `TaxFormCheckDto` gains
+  `acceptedNote` and `sources.journalEntryIds` (entries with no transaction: a balance, or income recorded from the
+  form). `TaxYearDto` gains `expected` and `unexpectedFormIds`.
+- **A W-2's sums come from `app.tax_form_payslip_totals` for every reader**, not only accountants, so §5.2's sums are
+  worked out in one place. What the reader may also see of the payslips (their ids for the drill-down, the pay dates
+  for the gap, the last payslip's year-to-date figures and the labels of `other` pre-tax lines) is read under their
+  row-level security: an accountant gets the totals and the differences, but no drill-down and no year-to-date
+  cross-check.
+- **Box 14 is shown without the books' E − P beside it.** §5.2 pairs it with box 16; E − P beside a CASDI amount means
+  nothing, so only box 16 (state wages) has it.
+- **Reading checks change a box only when it differs from the books** (`check_reading` instead of `differs`); a box that
+  matches the books stands whatever the form's own arithmetic says. Box 4's check counts box 7 (Social Security tips)
+  with box 3, as the tax does. A misread `check` box is a Review item, like a difference.
+- **Known explanations, as built:** the year boundary is 27 December to 5 January, and only income credited (not an
+  entry taken back) counts. A 1098's box 4 explains a difference of either sign. "Interest paid at closing" can't be
+  checked to the cent, so it explains a shortfall only in the year the loan began (box 3, else the schedule's start)
+  and only up to one payment's interest.
+- **Taxes, foreign tax and penalties on a 1099's accounts are found by category name** (withholding, federal or income
+  tax; foreign tax; penalties, fees and Bank fees): there are no tax lines for them.
+- **"Not tracked" on a 1099** is a valued account (investment or other asset) whose income in the year nets to nothing.
+  An itemized account (checking, savings) with no interest posted differs instead: its interest is missing from the
+  books.
+- **Record from the form posts four lines, not two**: the income onto the account and the same amount off it, then the
+  income category and investment gains. The account's balance doesn't change, and because the entry touches the
+  account, the books' figures (the check, the expected forms, `interestEarned`) find the income. It's an `adjustment`
+  entry with no transaction, so it's taken back with **`DELETE tax-forms/:id/record`**, which reverses it on the same
+  date, rather than deleted from the transactions list. The entry is kept on the form as `accepted.recorded`;
+  `accepted` holds `{ boxes, recorded }`.
+- **Expected forms:** a W-2 from employers of type `employer` with posted payslips (their gross pay is the amount shown);
+  a 1098 from accounts of kind `mortgage` with a loan schedule. `interestEarned()` and the checks find interest and
+  dividends by Schedule B's tax line, plus income categories with no tax line by name (both, not one or the other).
+- **Matching by hand** (`taxIssuerSignal` in `@montra/importers`; PATCH or typing a form in with a match): the issuer's
+  signal learns the employer or the one account; the person's signal is `tin4:` with an HMAC-SHA256 of the last four
+  digits under the workspace's data key (`FieldCrypto.keyedHash`). Nothing uses the memory automatically until PR 3.
+- **Accountants don't match a W-2 to an employer**, even with the owner's setting on (`W2_EMPLOYER_MATCHERS` in the API;
+  an owner's question, see the PR). They can type a W-2 unmatched, read its checks and accept a difference.
+- **Not built in PR 2:** "Confirm reading" and the confirmation by matching (§5.6) wait for forms that are read
+  (PR 3): a typed form is the person's reading already. "Mark as corrected" has no button on the web yet; the API's
+  `corrected` and `supersedesId` do it. Review's count in the menu still counts transactions only.
+- **Web:** the year picker offers the last four years. "Won't come" records a waiver with its reason and note, and
+  "Expect it again" removes it. Drill-downs open each payslip and transaction; entries with no transaction link to the
+  Journal.
+
+### As built: PR 3 (2026-11-17)
+
+Where PR 3 had to differ from or add to the text above, and why:
+
+- **A form in `reading` is made at upload, one per file.** `app.tax_form.kind` is `not null` (migration 0059) and the
+  kind isn't known until the file is read, so the form starts as `w2` with `detected.kindKnown = false`, shown by its
+  file name ("A form not read yet") until the reading sets it. The reading turns that form into the first form found;
+  any others in the file (a consolidated 1099) become new forms sharing its `file_ids` and `sha256`. This keeps the
+  ADR's "no migration" and gives a failed reading a row to stand in Review.
+- **Files are `app.file` rows of kind `other`.** There's no `tax_form` file kind without a migration. They're reachable
+  only through their form (`GET tax-forms/:id/files/:fileId`, audited as `tax_form.file_viewed`), as payslips are, but
+  an external storage destination that mirrors `other` files (the default) copies them too. An owner's question: a
+  `tax_form` file kind (migration `0063`) would let a destination leave them out. `retain_until` is left for PR 5.
+- **The doc-worker replaces members' names with their tokens itself.** It masks the person's name lines (after the
+  employee, recipient or borrower label, or above an address), so the gateway's pseudonyms would come too late: the job
+  carries the members' names and `MEMBER_n` tokens (in the gateway's order) and the doc-worker swaps them in first,
+  keeping only the token on a name line. A line after the employer's, payer's or lender's name label is kept: it's the
+  issuer the AI must read. The gateway masks again (`maskTaxFormText`), keeping form names and years that `maskText`
+  would take for digit runs.
+- **A file the doc-worker can't read is a result, not a failed job** (`error` with a code), so the form still reaches
+  Review to be typed in (`reading.problem`: `unreadable`). A chain that fails anyway shows its form as unread
+  (`failed`), and one nothing picks up for three minutes as `waiting`; both can be typed in. While a form is being
+  read, `PATCH` is refused (409), since the reading would overwrite it.
+- **`TaxFormDto.reading`** (null for a form typed in) says how it was read: file names, whether the kind and boxes were
+  read, the problem, boxes dropped as invalid, who confirmed it (a person or the books), the automatic match's reason
+  in words or the candidates to pick, and a probable copy's original. The `reading` column keeps the boxes as read (not
+  the masked text), and is cleared on confirmation. `GET jobs/:id` returns no result for the chain's jobs: the masked
+  text is still a member's form, and jobs are readable by every member.
+- **The automatic rules (§4), as built** (`decideTaxFormMatch` in `@montra/importers`):
+  - A candidate fits when every detail the form gives agrees and it had pay, interest, dividends or mortgage interest
+    in the year; the name or the last four digits must be among those details, so a form giving neither isn't matched
+    automatically. A 1099's name is compared with the account's name and its institution.
+  - A W-2's employer is looked for without the person first, since the employer decides the person; if the token or
+    the learned last four names someone else, the form isn't matched and waits as `person_conflict` with the employer
+    suggested. Archived employers and accounts count only when they were active that year.
+  - The person's learned last four (`tax_person`) is used after one confirmation, not ADR-0051's three: they're the
+    household's own digits.
+  - Confirming a reading, by a person or by the books agreeing, confirms the match memory as a match by hand does, so
+    next year's form from the same EIN matches from memory. Picking another match is a correction (`learnMatch`).
+  - Accountants match nothing to an employer, by hand or automatically (`W2_EMPLOYER_MATCHERS`, the owner's decision).
+- **Confirmation by the books happens when a form is read or changed**, not when it's shown (reads don't write): a form
+  that comes to match later shows "Matches the books" and leaves Review, but stays unconfirmed until it's changed or a
+  person confirms it. A reading with nothing in the books to check it against (not tracked) stays unconfirmed, outside
+  Review. Confirm reading (`POST tax-forms/:id/confirm`) needs the boxes, a match and the person, and clears a
+  probable copy (it's kept as a form of its own).
+- **Duplicates and corrections:** the same file is refused per file in the upload's answer (`duplicate`, with the form);
+  a probable copy and the form a corrected one replaces are found by kind, year, issuer (the EIN when both have one,
+  else the name) and person (the member, else the last four). A misread form's kind (and year) can be changed while it
+  isn't confirmed.
+- **Local AI mode is treated as unavailable** for tax forms: the forms the titles name wait to be typed in (§6).
+- **The W-2 round trip** is an API test: payroll's `year-end-pdf.ts` renders the W-2, a test-only text extractor stands
+  in for the doc-worker (the API tests have no Python), and the fake provider reads it back to the same boxes; the
+  doc-worker's own reading is pytest's, on reportlab forms and rendered images (real Tesseract in CI).
+- **TAX-01 is done** with uploads on the web; the phone's Scan a form is TAX-09 (PR 4), and the upload already takes
+  `source=scan`.
+
+### As built: PR 4 (2026-11-17)
+
+Where PR 4 had to differ from or add to the text above, and why:
+
+- **The phone's Review badge adds the forms to check itself.** The owner asked for the badge to count tax forms to check,
+  as the web's does. The sync feed's `reviewCount` stays transactions only: a form's checks are worked out on read
+  (§5), so adding them to `reviewCount` would make every sync pull reconcile every form. The phone reads
+  `GET tax-forms/review` instead, as the web's badge does, at most once a minute when sync runs, at once after an action
+  on a form, and from Review's own list; a failed read (offline) keeps the last count. Only in US-dollar workspaces and
+  not for viewers, like the screens. No API change.
+- **The original file isn't shown on the phone.** A scan is uploaded as one PDF, which the phone can't show inline; the
+  form's screen lists the boxes as read instead, to compare with the paper before Confirm reading. The file opens on
+  the web (and each view is still audited there).
+- **What is uploaded:** the scanned, shot or picked photos are combined into one PDF (as statements are) and sent with
+  `source=scan` when the phone made them; a picked PDF goes as it is with `source=upload`, one request per file. The
+  upload uses FormData, as statements do, so the form is listed by its file name until it's read. The app's own pages
+  and the PDF it made are deleted from the device once uploaded: a form isn't kept on the phone as a file.
+- **Change the match includes the person.** Besides the reading's suggested matches, a form's screen changes the employer
+  (W-2), the accounts (1099, one or more) or the mortgage (1098), and who it's for, except on a W-2 matched to an
+  employer, which is for the employer's person (the phone sends no person then, so the server takes the employer's).
+  Accountants never match a W-2 to an employer, as on the web.
+- **Kept for offline viewing:** a year's list and each form opened, with `useCached` (the encrypted store). Actions need
+  a connection and write access to the form's books.
+- **Left on the web:** typing a form in, editing the boxes, "Won't come" and "Expect it again", Mark as corrected,
+  Delete, and the journal entries behind a check (payslips and transactions open on the phone).
+- **More → Tax forms** sits in the Everyday group, beside payslips and statements.
+- **Not run on a device yet:** the owner tries it on the LAN APK build. The screens are covered by typecheck, lint and
+  the Expo bundle; their logic by `apps/mobile/test/tax-forms.test.ts`.
+
 ## Consequences
 
 - The year's books get an outside check: every phase 1 form either agrees with them, is explained, or lands in Review

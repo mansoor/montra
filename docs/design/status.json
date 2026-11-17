@@ -1205,15 +1205,35 @@
     "Phone: balances on the payroll screen and leave lines on each paycheck, read-only; contractor time entry is web-only; not run on a device"
   ],
   "TAX-01": [
-    "partial",
-    "Typing a form in (POST tax-forms; W-2, 1099-INT, 1099-DIV, 1098) with its employer or accounts and the person; upload, scan and several at once come with reading (ADR-0052 PR 3)"
+    "done",
+    "Typing a form in (POST tax-forms, the web editor), and uploading several PDFs or photos at once (POST tax-forms/files, the web drop zone; source upload or scan), each read in the background. The phone’s Scan a form is TAX-09"
   ],
   "TAX-02": [
-    "partial",
-    "Boxes kept per kind as minor-unit amounts, checked by one schema per kind (parseTaxFormBoxes in @montra/domain); a corrected form marks the one it replaces superseded. Reading once and refusing duplicate files come with PR 3"
+    "done",
+    "Each file is read once (doc-worker taxform.read: text layer or OCR, titles, copies B/C/2 dropped; then tax_form.match with extract_tax_form v1), one form per form found (a consolidated 1099 gives several); boxes kept per kind as minor-unit amounts (parseTaxFormBoxes); the same file again is refused (sha256) with its form; a copy with the same kind, year, issuer, person and boxes waits in Review as a probable copy; a CORRECTED form or W-2c replaces the one it corrects (superseded)"
+  ],
+  "TAX-03": [
+    "done",
+    "Matched by hand (PATCH tax-forms/:id, the web editor and suggested matches) or automatically (ADR-0052 §4): an issuer signal with an EIN confirmed once before, a name after three, or the one employer or account that fits every detail the form gives (name, last four digits, person, pay or income in the year), with the reason in words; the person from the W-2’s employer, the MEMBER_n token, the learned last four (keyed hash) or the only login, a conflict being a Review item. Confirming (by a person, or by the books agreeing) teaches the memory. Accountants don’t match a W-2 to an employer, by hand or automatically"
+  ],
+  "TAX-04": [
+    "done",
+    "reconcileW2, reconcile1099Int, reconcile1099Div, reconcile1098 in @montra/domain (tax-form-checks.ts): one check per box with the rule, the explanation and the payslips, transactions, loan payments or entries behind it; $1.00 tolerance, reading checks, year boundary, box 12 C, box 2a, box 4, YTD cross-check, not tracked. Worked out on read; an accountant’s W-2 uses app.tax_form_payslip_totals. Interest and dividends found by Schedule B’s tax line first (interestEarned too)"
+  ],
+  "TAX-05": [
+    "done",
+    "GET tax-forms/review and Review’s “Tax forms to check” on the web: forms that differ or misread (not accepted), wait for a match or a person, or couldn’t be read. Fix the books through the drill-down, fix the boxes, change the match, accept a box’s difference with a note (POST tax-forms/:id/accept, holds while the difference stays), Record from the form on a valued account (POST/DELETE tax-forms/:id/record). The phone’s Review is TAX-09"
+  ],
+  "TAX-06": [
+    "done",
+    "Web /tax-forms per year (Reports group; USD workspaces; not viewers): expected forms inferred from payslips, interest, dividends and mortgages at the IRS thresholds (expectedTaxForms), grouped by person, each Received with its result, Not yet or Won’t come (waivers); received forms not expected; type a form in; a form’s checks with drill-downs"
   ],
   "TAX-08": [
     "partial",
-    "Storage and row-level security (migration 0059): the SSN as its last four digits only; a member’s forms visible to them, owners and admins, and to accountants while the owner’s setting is on (owner only, recent sign-in, audited); always bounded by the books. AI minimization (PR 3) and retention (PR 5) to come"
+    "Storage and row-level security (migration 0059): the SSN as its last four digits only; a member’s forms visible to them, owners and admins, and to accountants while the owner’s setting is on (owner only, recent sign-in, audited); always bounded by the books. AI minimization (PR 3): the doc-worker extracts the identifiers locally and masks TINs, account numbers, names (as MEMBER_n tokens), addresses and digit runs before any text leaves it; extract_tax_form takes text only, never images, masks again, drops a returned name and holds counts in its audit event; the masked text is kept out of GET jobs/:id; viewing a file is audited (tax_form.file_viewed). Retention (PR 5) to come"
+  ],
+  "TAX-09": [
+    "done",
+    "The phone (ADR-0052 PR 4): More → Tax forms (USD workspaces, not viewers), a year’s expected forms by person against those received with their results, read live and kept on the device for offline viewing; Scan a form through DocumentCapture (pages combined into one PDF, uploaded to POST tax-forms/files with source scan, the app’s pages and the PDF removed after); a form’s result, reading, boxes and checks with drill-downs to payslips and transactions, and its actions: pick or change the match and the person, Confirm reading, accept a difference with a note, Record from the form and take it back. Review shows “Tax forms to check”, and the Review badge adds their count (GET tax-forms/review, at most once a minute) to the sync feed’s reviewCount. Not run on a device yet"
   ]
 }

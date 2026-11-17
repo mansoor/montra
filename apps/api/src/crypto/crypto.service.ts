@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Trx } from '@montra/db';
 import { DecryptCommand, EncryptCommand, KMSClient } from '@aws-sdk/client-kms';
@@ -128,6 +128,19 @@ export class FieldCrypto {
   async openBytes(trx: Trx, workspaceId: string, fileId: string, sealed: Uint8Array): Promise<Buffer> {
     const key = await this.dataKey(trx, workspaceId);
     return open(key, Buffer.from(sealed), Buffer.from(`${workspaceId}:file:${fileId}`));
+  }
+
+  /**
+   * A keyed hash of a short identifier (HMAC-SHA256 with the workspace's data key), for a lookup that mustn't hold the
+   * identifier itself: a tax form's person by the last four digits of their SSN (ADR-0052 §4), in a memory every member
+   * can read. The same value in the same workspace and purpose gives the same hash; it can't be reversed without the key.
+   */
+  async keyedHash(trx: Trx, workspaceId: string, purpose: string, value: string): Promise<string> {
+    const key = await this.dataKey(trx, workspaceId);
+    return createHmac('sha256', key)
+      .update(`${workspaceId}:${purpose}:${value}`)
+      .digest('base64url')
+      .slice(0, 32);
   }
 
   private async dataKey(trx: Trx, workspaceId: string): Promise<Buffer> {

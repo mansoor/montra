@@ -1,0 +1,33 @@
+{
+  "forms": [
+    {
+      "kind": "1099_div",
+      "taxYear": 2025,
+      "corrected": false,
+      "issuerName": "Sample Brokerage LLC",
+      "person": "MEMBER_1",
+      "pages": [1],
+      "boxes": {
+        "box1a": "210455",
+        "box1b": "180000",
+        "box4": "0"
+      },
+      "droppedBoxes": 0,
+      "confidence": 0.95
+    },
+    {
+      "kind": "1099_int",
+      "taxYear": 2025,
+      "corrected": false,
+      "issuerName": "Sample Brokerage LLC",
+      "person": "MEMBER_1",
+      "pages": [1],
+      "boxes": {
+        "box1": "1842"
+      },
+      "droppedBoxes": 0,
+      "confidence": 0.95
+    }
+  ],
+  "otherForms": 1
+}

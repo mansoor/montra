@@ -1,6 +1,7 @@
 /**
- * Tabs (08 §3): Home, Transactions, centre Add, Budget, More (the review count shows on More). The centre + opens the
- * Add wheel (ADR-0048) instead of a screen: a bill, a transaction, a receipt, a statement or a payslip.
+ * Tabs (08 §3): Home, Transactions, centre Add, Budget, More (the review count shows on More: transactions to review
+ * and tax forms to check). The centre + opens the Add wheel (ADR-0048) instead of a screen: a bill, a transaction, a
+ * receipt, a statement or a payslip.
  */
 import { useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';
@@ -9,6 +10,8 @@ import { t } from '../../src/i18n';
 import { useAbilities } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { wheelChoices, wheelRoute } from '../../src/features/add-wheel';
+import { reviewBadge } from '../../src/features/tax-forms';
+import { useTaxFormsToCheck } from '../../src/features/use-tax-forms';
 import { AddWheel } from '../../src/ui/AddWheel';
 import { haptic } from '../../src/ui/haptics';
 import { Icon, type IconName } from '../../src/ui/icons';
@@ -50,7 +53,8 @@ export default function TabsLayout() {
   // A viewer, or a login with only read-only books, has nothing to add or review (AUTH-18).
   const can = useAbilities();
   const { record } = can;
-  const review = record ? (state?.reviewCount ?? 0) : 0;
+  const taxForms = useTaxFormsToCheck().count;
+  const review = record ? reviewBadge(state?.reviewCount ?? 0, taxForms) : 0;
   const router = useRouter();
   const [wheel, setWheel] = useState(false);
   const choices = wheelChoices(can);

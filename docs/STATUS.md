@@ -17,14 +17,17 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
 | **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Requirements**       | 327 IDs in total: **252 done, 60 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
 **Being built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and
 1098 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on
-2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059;
-see §7g). Next is PR 2, the reconciliation, expected forms, Review and the `/tax-forms` screen. Role-based permissions
-(ADR-0053) are a separate proposal for later; tax forms use an owner-only setting for accountants instead.
+2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059),
+**PR 2 is done** (the checks against the books, expected forms, Review and the `/tax-forms` screen; no migration),
+**PR 3 is done** (reading uploaded forms, masked text only, and matching them automatically; no migration) and
+**PR 4 is done** (the phone: More → Tax forms, Scan a form, a form's checks and actions, Review and its badge; no
+migration; not run on a device yet); see §7g. Next is PR 5, the tax package, the reminder and retention. Role-based permissions (ADR-0053) are a separate proposal for later; tax forms use an
+owner-only setting for accountants instead.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
@@ -1487,8 +1490,87 @@ Phase 11 leftovers:
   - `match_memory` learns `tax_issuer` and `tax_person` (members may write those kinds); the personal chart's Interest
     income and Dividends carry Schedule B's tax lines (`US_SCH_B_L1`, `US_SCH_B_L5`), set on older books by the
     migration.
-  - Where the build differs from the ADR is in its "As built: PR 1" section. No screen to type a form in yet (PR 2),
-    and nothing on the phone.
+  - Where the build differs from the ADR is in its "As built: PR 1" section. Nothing on the phone.
+- **Tax forms received, PR 2 of 5** (TAX-04, TAX-05, TAX-06 done; TAX-03 by hand; ADR-0052, no migration):
+  - **The checks** (`@montra/domain/tax-form-checks.ts`): `reconcileW2` (payslips: E − P, FICA wages capped at the wage
+    base, the taxes, 12 D/AA/W, one state's box 17), `reconcile1099Int` (boxes 1 + 3 + 8 against interest on the
+    account(s)), `reconcile1099Div` (1a against dividends), `reconcile1098` (the payments' interest, the principal on 1
+    January or the origination date). One check per box: form, books, difference, status, the rule in words and what
+    was summed. A box matches within $1.00; known explanations (box 12 C, box 2a, box 4, the year boundary, interest at
+    closing) make a difference match; reading checks on the form alone turn a difference into "check the reading"; the
+    last payslip's year-to-date figures say "a payslip seems to be missing" with the gap's dates; no payslips or a
+    valued account with no income is "not tracked". Worked out on every read, never stored.
+  - **API:** every `TaxFormDto` carries `result` and `checks`; `GET tax-forms?year=` adds `expected` (a W-2 per employer
+    with payslips, a 1099-INT/DIV per non-retirement account with $10 or more, a 1098 per mortgage with $600 or more of
+    interest; received, waived or missing) and `unexpectedFormIds`; `GET tax-forms/review`; `POST tax-forms/:id/accept`
+    (a box's difference with a note, held while it stays the same); `POST`/`DELETE tax-forms/:id/record` (Record from
+    the form on a valued account: income moved from investment gains on 31 December, balance unchanged; taken back by
+    a reversal). The books are read under the reader's row-level security; a W-2's sums come from
+    `app.tax_form_payslip_totals`, so an accountant sees totals without payslips. `interestEarned()` finds interest by
+    Schedule B's tax line first.
+  - **Matching by hand** teaches `match_memory`: `tax_issuer` (W-2 by EIN, else name; 1099/1098 by EIN and last four,
+    EIN, or name; one account only) and `tax_person` (`tin4:` + a keyed hash of the SSN's last four,
+    `FieldCrypto.keyedHash`). Accountants can't match a W-2 to an employer (`W2_EMPLOYER_MATCHERS`; the owner confirmed this on 2026-11-16).
+  - **Web:** **Tax forms** in the Books group of the menu (USD workspaces, not viewers): a year picker, the expected forms
+    grouped by person (Received with the result, Not yet with "Won't come", Won't come with "Expect it again"), the forms
+    received but not expected, and **Type a form in**. A form's page shows its result, the checks with "How this was
+    worked out" (rule, explanation, links to the payslips and transactions), Accept the difference, Record from the
+    form, Change the form (boxes, issuer, person, match) and Delete. Review gains **Tax forms to check** under the
+    statements and bills. The menu's **Review badge** counts tax forms to check as well as transactions (owner's
+    choice, 2026-11-16; `reviewBadgeTotal`). The phone's badge gains them in PR 4.
+  - Tests: domain table tests per box, the $1.00/$1.01 edge, the year boundary, YTD cross-check, not tracked, reading
+    checks, expected forms; API tests (`tax-form-checks.test.ts`) against real payslips, interest, a mortgage and an
+    accountant; web helpers; e2e `tax-forms.spec.ts`. Where the build differs from the ADR is in "As built: PR 2".
+- **Tax forms received, PR 3 of 5** (TAX-01, TAX-02, TAX-03 done; TAX-08 AI minimization; ADR-0052, no migration):
+  - **Doc-worker `taxform.read`** (`taxform.py`): the PDF's text layer, else Tesseract; form titles per page (W-2, W-2c,
+    1099-INT, 1099-DIV, 1098, other 1099 sections), year and CORRECTED; copies B, C and 2 dropped; the person's SSN
+    and SSN-shaped TINs to their last four, the issuer's EIN, the account to its last four, by their labels; then the
+    text masked (members' names as `MEMBER_n`, every TIN and account number, digit runs, emails, phones, addresses and
+    the person's name lines). Nothing else leaves the worker. A file it can't read is a result with an `error`.
+  - **Gateway `extract_tax_form` v1:** text only (the document has no image field), masked again; boxes validated per
+    kind into minor units, a returned name dropped, counts only in the audit event. Fake provider `fake-tax-form.ts`
+    and an eval corpus (`packages/ai-gateway/test/tax-forms`: W-2s, 1099-INT, 1099-DIV, 1098, a consolidated 1099, a
+    W-2c and a corrected 1099).
+  - **API:** `POST tax-forms/files` (several files; the same file again refused with its form) makes a form in `reading`
+    per file and queues `taxform.read` then `tax_form.match`, which makes one form per form found, matches the issuer
+    (an EIN learned once, or the one clear candidate, with the reason in words; `decideTaxFormMatch` in
+    `@montra/importers`) and the person, finds probable copies and the forms a corrected one replaces, and confirms the
+    reading when every check agrees with the books. `POST tax-forms/:id/confirm` (Confirm reading),
+    `GET tax-forms/:id/files/:fileId` (audited), a misread form's kind changed by `PATCH`, `TaxFormDto.reading`.
+    Accountants match nothing to an employer. `GET jobs/:id` hides the chain's results.
+  - **Web:** a drop zone on `/tax-forms` (several PDFs or photos), a Being read list that refreshes itself, and on a
+    form: its file, where its reading stands, why it was matched or the matches to pick, a probable copy, Confirm
+    reading, and the kind of a form that couldn't be read.
+  - Tests: pytest on reportlab forms and rendered images (no SSN-shaped string, nine-digit TIN, name or address in the
+    output; real Tesseract in CI), the gateway's corpus, minimization and dropped names, matcher units, API tests
+    (`tax-form-reading.test.ts`: upload, the chain, the automatic rules, copies, corrections, consolidated 1099s, person
+    conflicts, accountants, unread forms, the file and jobs, and a W-2 rendered by `year-end-pdf.ts` read back to the
+    same boxes), web helpers and an e2e upload. Where the build differs from the ADR is in "As built: PR 3".
+- **Tax forms received, PR 4 of 5** (TAX-09 done; ADR-0052, no migration, no API change). Not run on a device yet:
+  the owner tries it on the LAN APK build.
+  - **More → Tax forms** (Everyday group; USD workspaces, not viewers; `showsTaxForms`): a year picker (the last four
+    years, last year until April), the forms being read, the expected forms by person (Received with the result, Not
+    yet, Won't come with its reason) and the forms received but not expected. Read with `useCached`, so the last copy
+    shows offline. Typing a form in and waivers stay on the web.
+  - **Scan a form** (`/tax-forms/scan`): `DocumentCapture`; scanned, shot or picked photos become one PDF (Print, as a
+    statement's scan), picked PDFs go as they are, to `POST tax-forms/files` with the year and `source` (`scan` for the
+    phone's own pages). The app's pages and the PDF it made are removed after the upload. One file opens its form.
+  - **A form** (`/tax-forms/[id]`): the result, the reading (stage, problem, a probable copy, why it was matched), the
+    boxes read (to compare with the paper; editing them is on the web), and the checks (form, books, difference,
+    status, how it was worked out, links to payslips and transactions). Actions: the suggested matches, change the
+    match (an employer for a W-2, one or more accounts for a 1099, the mortgage for a 1098) and the person, Confirm
+    reading, accept a difference with a note, Record from the form and take it back. Accountants never match a W-2 to an
+    employer, as on the web. Writes need a connection and write access to the form's books.
+  - **Review** shows **Tax forms to check** under statements and bills to file; each opens its form.
+  - **The Review badge** (tab bar and More) adds tax forms to check to the sync feed's `reviewCount`. The phone reads
+    `GET tax-forms/review` (at most once a minute when sync runs, at once after an action on a form, and from Review's
+    list; a failed read keeps the last count) rather than the server adding the forms to `reviewCount`: the forms'
+    checks are worked out on read, which every sync pull would otherwise pay for. `TaxFormsToCheck` in
+    `src/features/tax-forms.ts`, `useTaxFormsToCheck`.
+  - Tests: `apps/mobile/test/tax-forms.test.ts` (who sees them, the year, results and checks, reading stages and
+    Confirm reading, the boxes against the domain's schemas, the year's sections, the match sent, scan uploads, the
+    badge's sum and its once-a-minute counter, the client's endpoints and multipart fields, and every i18n key the
+    screens use). Where the build differs from the ADR is in "As built: PR 4".
 
 ---
 

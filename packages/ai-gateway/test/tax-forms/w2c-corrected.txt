@@ -1,0 +1,7 @@
+Form W-2c Corrected Wage and Tax Statement 2025
+c Employer's name, address, and ZIP code
+Acme Widgets Inc
+e Employee's name
+MEMBER_1
+1 Wages, tips, other compensation 86,000.00
+2 Federal income tax withheld 9,990.00

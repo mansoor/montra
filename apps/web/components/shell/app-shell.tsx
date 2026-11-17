@@ -18,6 +18,7 @@ import {
   ChevronsRight,
   CircleUserRound,
   FileText,
+  FileCheck,
   FileUp,
   Flag,
   Home,
@@ -69,6 +70,7 @@ const ICONS = {
   recommendations: Sparkles,
   calendar: CalendarDays,
   inbox: Inbox,
+  taxForms: FileCheck,
 } as const;
 export type IconName = keyof typeof ICONS;
 

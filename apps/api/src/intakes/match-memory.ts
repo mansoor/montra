@@ -6,7 +6,7 @@
 import { forgetMatch, learnMatch, type MatchMemoryState } from '@montra/importers';
 import type { MatchMemoryRow, Trx } from '@montra/db';
 
-export type MatchKind = 'statement' | 'bill';
+export type MatchKind = 'statement' | 'bill' | 'tax_issuer' | 'tax_person';
 type Ctx = { workspaceId: string; userId: string };
 
 export async function readMemory(
