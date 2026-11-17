@@ -157,6 +157,18 @@ interface EntryAmount {
 }
 
 /**
+ * The ids of the ledger accounts (aliased `c`) a condition picks. Looked up first, so the postings are read through
+ * their account's index rather than by scanning the year's postings.
+ */
+async function categoryIds(trx: Trx, ctx: Ctx, category: RawBuilder<boolean>): Promise<string[]> {
+  const { rows } = await sql<{ id: string }>`
+    select c.id from app.ledger_account c where c.workspace_id = ${ctx.workspaceId} and ${category}`.execute(
+    trx,
+  );
+  return rows.map((r) => r.id);
+}
+
+/**
  * Postings to the categories `category` (the ledger account aliased `c`) in entries that move money on one of the
  * accounts, per entry, between two dates. `sign` −1 reads income (credits) as positive; 1 reads expenses.
  */
@@ -170,14 +182,15 @@ async function categoryPostings(
   opts: { sign: 1 | -1; moneyIn: boolean },
 ): Promise<{ entryId: string; transactionId: string | null; date: CalendarDate; amount: bigint }[]> {
   if (accountIds.length === 0) return [];
+  const categories = await categoryIds(trx, ctx, category);
+  if (categories.length === 0) return [];
   const { rows } = await sql<EntryAmount>`
     select i.journal_entry_id as entry_id, je.transaction_id, i.entry_date::text as entry_date,
            (${sql.lit(opts.sign)} * sum(i.amount_minor))::text as amount
       from app.posting i
-      join app.ledger_account c on c.workspace_id = i.workspace_id and c.id = i.ledger_account_id
       join app.journal_entry je on je.workspace_id = i.workspace_id and je.id = i.journal_entry_id
-     where i.workspace_id = ${ctx.workspaceId} and i.entry_date between ${from} and ${to}
-       and ${category}
+     where i.workspace_id = ${ctx.workspaceId} and i.ledger_account_id = any(${categories}::uuid[])
+       and i.entry_date between ${from} and ${to}
        and exists (select 1 from app.posting p
                     where p.workspace_id = i.workspace_id and p.journal_entry_id = i.journal_entry_id
                       and p.ledger_account_id = any(${[...accountIds]}::uuid[])
@@ -392,15 +405,16 @@ export async function expectedInputs(
      order by e.name`.execute(trx);
 
   const income = async (kind: IncomeKind) => {
+    const categories = await categoryIds(trx, ctx, incomeCategory('c', kind));
+    if (categories.length === 0) return new Map<string, bigint>();
     const { rows } = await sql<{ account_id: string; amount: string }>`
       select p.ledger_account_id as account_id, (-sum(i.amount_minor))::text as amount
         from app.posting i
-        join app.ledger_account c on c.workspace_id = i.workspace_id and c.id = i.ledger_account_id
         join app.posting p on p.workspace_id = i.workspace_id and p.journal_entry_id = i.journal_entry_id
          and p.amount_minor > 0
         join app.bank_account b on b.workspace_id = p.workspace_id and b.ledger_account_id = p.ledger_account_id
-       where i.workspace_id = ${ctx.workspaceId} and i.entry_date between ${from} and ${to}
-         and ${incomeCategory('c', kind)}
+       where i.workspace_id = ${ctx.workspaceId} and i.ledger_account_id = any(${categories}::uuid[])
+         and i.entry_date between ${from} and ${to}
        group by p.ledger_account_id`.execute(trx);
     return new Map(rows.map((r) => [r.account_id, BigInt(r.amount)]));
   };
