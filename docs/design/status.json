@@ -1231,5 +1231,9 @@
   "TAX-08": [
     "partial",
     "Storage and row-level security (migration 0059): the SSN as its last four digits only; a member’s forms visible to them, owners and admins, and to accountants while the owner’s setting is on (owner only, recent sign-in, audited); always bounded by the books. AI minimization (PR 3): the doc-worker extracts the identifiers locally and masks TINs, account numbers, names (as MEMBER_n tokens), addresses and digit runs before any text leaves it; extract_tax_form takes text only, never images, masks again, drops a returned name and holds counts in its audit event; the masked text is kept out of GET jobs/:id; viewing a file is audited (tax_form.file_viewed). Retention (PR 5) to come"
+  ],
+  "TAX-09": [
+    "done",
+    "The phone (ADR-0052 PR 4): More → Tax forms (USD workspaces, not viewers), a year’s expected forms by person against those received with their results, read live and kept on the device for offline viewing; Scan a form through DocumentCapture (pages combined into one PDF, uploaded to POST tax-forms/files with source scan, the app’s pages and the PDF removed after); a form’s result, reading, boxes and checks with drill-downs to payslips and transactions, and its actions: pick or change the match and the person, Confirm reading, accept a difference with a note, Record from the form and take it back. Review shows “Tax forms to check”, and the Review badge adds their count (GET tax-forms/review, at most once a minute) to the sync feed’s reviewCount. Not run on a device yet"
   ]
 }

@@ -755,6 +755,35 @@ Where PR 3 had to differ from or add to the text above, and why:
 - **TAX-01 is done** with uploads on the web; the phone's Scan a form is TAX-09 (PR 4), and the upload already takes
   `source=scan`.
 
+### As built: PR 4 (2026-11-17)
+
+Where PR 4 had to differ from or add to the text above, and why:
+
+- **The phone's Review badge adds the forms to check itself.** The owner asked for the badge to count tax forms to check,
+  as the web's does. The sync feed's `reviewCount` stays transactions only: a form's checks are worked out on read
+  (§5), so adding them to `reviewCount` would make every sync pull reconcile every form. The phone reads
+  `GET tax-forms/review` instead, as the web's badge does, at most once a minute when sync runs, at once after an action
+  on a form, and from Review's own list; a failed read (offline) keeps the last count. Only in US-dollar workspaces and
+  not for viewers, like the screens. No API change.
+- **The original file isn't shown on the phone.** A scan is uploaded as one PDF, which the phone can't show inline; the
+  form's screen lists the boxes as read instead, to compare with the paper before Confirm reading. The file opens on
+  the web (and each view is still audited there).
+- **What is uploaded:** the scanned, shot or picked photos are combined into one PDF (as statements are) and sent with
+  `source=scan` when the phone made them; a picked PDF goes as it is with `source=upload`, one request per file. The
+  upload uses FormData, as statements do, so the form is listed by its file name until it's read. The app's own pages
+  and the PDF it made are deleted from the device once uploaded: a form isn't kept on the phone as a file.
+- **Change the match includes the person.** Besides the reading's suggested matches, a form's screen changes the employer
+  (W-2), the accounts (1099, one or more) or the mortgage (1098), and who it's for, except on a W-2 matched to an
+  employer, which is for the employer's person (the phone sends no person then, so the server takes the employer's).
+  Accountants never match a W-2 to an employer, as on the web.
+- **Kept for offline viewing:** a year's list and each form opened, with `useCached` (the encrypted store). Actions need
+  a connection and write access to the form's books.
+- **Left on the web:** typing a form in, editing the boxes, "Won't come" and "Expect it again", Mark as corrected,
+  Delete, and the journal entries behind a check (payslips and transactions open on the phone).
+- **More → Tax forms** sits in the Everyday group, beside payslips and statements.
+- **Not run on a device yet:** the owner tries it on the LAN APK build. The screens are covered by typecheck, lint and
+  the Expo bundle; their logic by `apps/mobile/test/tax-forms.test.ts`.
+
 ## Consequences
 
 - The year's books get an outside check: every phase 1 form either agrees with them, is explained, or lands in Review
