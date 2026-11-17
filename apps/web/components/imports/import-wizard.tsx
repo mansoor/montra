@@ -55,12 +55,15 @@ export function ImportWizard({
   useEffect(() => {
     if (lastStatus.current !== batch.status) {
       if (batch.status === 'preview') setRowsVersion((v) => v + 1);
+      // Committed or undone: drop the router's cached pages, so going back to Statements, an account or the
+      // dashboard shows the import, not the copy fetched before it.
+      if (batch.status === 'committed' || batch.status === 'undone') router.refresh();
       lastStatus.current = batch.status;
     }
     if (!isBusy(batch.status)) return;
     const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [batch.status, refresh]);
+  }, [batch.status, refresh, router]);
 
   useEffect(
     () =>
