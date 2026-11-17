@@ -141,6 +141,7 @@ export class WorkspacesService {
           'w.time_zone',
           'w.mfa_policy',
           'w.idle_timeout_minutes',
+          'w.accountant_sees_tax_forms',
           'm.role',
         ])
         .where('w.id', '=', workspaceId)
@@ -168,6 +169,7 @@ export class WorkspacesService {
         timeZone: ws.time_zone,
         role: ws.role,
         security: { mfaPolicy: ws.mfa_policy, idleTimeoutMinutes: ws.idle_timeout_minutes },
+        accountantSeesTaxForms: ws.accountant_sees_tax_forms,
         entities: entities.map((e) => ({
           id: e.id,
           type: e.type,

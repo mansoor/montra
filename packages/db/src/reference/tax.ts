@@ -1,10 +1,10 @@
 /**
  * Tax reference data (OPS-05), keyed by country so other markets are a data change (design 10, assumption 1). Codes are
- * what `ledger_account.tax_line_code` holds; see `chart-templates.ts`. Line labels follow IRS Schedule C and E.
+ * what `ledger_account.tax_line_code` holds; see `chart-templates.ts`. Line labels follow IRS Schedules B, C and E.
  */
 export interface TaxLine {
   code: string;
-  form: 'schedule_c' | 'schedule_e';
+  form: 'schedule_b' | 'schedule_c' | 'schedule_e';
   line: string;
   label: string;
   /** The share usually deductible. Meals are generally 50%. */
@@ -64,6 +64,10 @@ export const US_TAX_LINES: TaxLine[] = [
   { code: 'US_SCH_E_L17', form: 'schedule_e', line: '17', label: 'Utilities' },
   { code: 'US_SCH_E_L18', form: 'schedule_e', line: '18', label: 'Depreciation expense or depletion' },
   { code: 'US_SCH_E_L19', form: 'schedule_e', line: '19', label: 'Other' },
+  // Schedule B (ADR-0052 §5.7): the personal chart's interest and dividends, so tax forms find them by tax line. Last,
+  // so the rows before keep their sort order.
+  { code: 'US_SCH_B_L1', form: 'schedule_b', line: '1', label: 'Interest' },
+  { code: 'US_SCH_B_L5', form: 'schedule_b', line: '5', label: 'Ordinary dividends' },
 ];
 
 export interface MileageRate {
