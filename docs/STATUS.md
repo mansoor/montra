@@ -25,6 +25,10 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 owner on 2026-11-16. Five PRs, starting with PR 1 (migration 0059); no code yet. Role-based permissions (ADR-0053) are
 a separate proposal for later; tax forms use an owner-only setting for accountants instead.
 
+**Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
+become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
+accountant setting is what it would replace.
+
 ### Test suite at the end of Phase 11 (green locally)
 
 | Suite                                                                                                                                               | Tests                                                               |
