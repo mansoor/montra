@@ -8,8 +8,10 @@ import {
   canConfirmReading,
   checkChip,
   defaultTaxYear,
+  packageWarning,
   readingStage,
   resultChip,
+  showsTaxForms,
   yearChoices,
 } from './tax-forms';
 
@@ -167,5 +169,34 @@ describe('forms read from files (ADR-0052 PR 3)', () => {
     expect(anyReading([form({ status: 'reading' })])).toBe(true);
     expect(anyReading([form({ status: 'reading' }, { problem: 'failed' })])).toBe(false);
     expect(anyReading([form()])).toBe(false);
+  });
+});
+
+describe('the tax package panel’s warning (ADR-0052 §7.3)', () => {
+  const form = (entityId: string, review: boolean) =>
+    ({ entityId, result: { state: review ? 'differs' : 'matches', review } }) as TaxFormDto;
+  const expected = (entityId: string, state: TaxFormExpectedDto['state']) =>
+    ({ entityId, state }) as TaxFormExpectedDto;
+
+  it('counts the chosen books’ forms to check and expected forms not yet come', () => {
+    const year = {
+      forms: [form('home', true), form('home', false), form('rental', true)],
+      expected: [expected('home', 'missing'), expected('home', 'waived'), expected('home', 'received')],
+    };
+    expect(packageWarning(year, 'home')).toEqual({ toCheck: 1, missing: 1 });
+    expect(packageWarning(year, 'rental')).toEqual({ toCheck: 1, missing: 0 });
+  });
+
+  it('says nothing when all is well', () => {
+    expect(
+      packageWarning({ forms: [form('home', false)], expected: [expected('home', 'received')] }, 'home'),
+    ).toBe(null);
+    expect(packageWarning({ forms: [], expected: [] }, 'home')).toBe(null);
+  });
+
+  it('is for US-dollar workspaces, and not for viewers', () => {
+    expect(showsTaxForms({ baseCurrency: 'USD', role: 'accountant' })).toBe(true);
+    expect(showsTaxForms({ baseCurrency: 'USD', role: 'viewer' })).toBe(false);
+    expect(showsTaxForms({ baseCurrency: 'EUR', role: 'owner' })).toBe(false);
   });
 });

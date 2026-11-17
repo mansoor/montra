@@ -1,8 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql, type Kysely } from 'kysely';
 import pg from 'pg';
-import { newId, withContext, type Database, type TaxFormKind, type Trx } from '../src/index.js';
-import { APP_URL } from './env.js';
+import {
+  MIGRATIONS_DIR,
+  newId,
+  withContext,
+  type Database,
+  type TaxFormKind,
+  type Trx,
+} from '../src/index.js';
+import { ADMIN_URL, APP_URL } from './env.js';
 import { addMember, appDb, createWorkspace, type Fixture } from './fixtures.js';
 
 // Who sees a tax form (ADR-0052 §8.4, TAX-08): the person it's for, owners and admins, and accountants while the
@@ -407,9 +416,82 @@ describe('staff (ADR-0020)', () => {
         await expect(c.query(`select app.tax_form_payslip_totals(gen_random_uuid())`)).rejects.toThrow(
           /permission denied/,
         );
+        await expect(c.query(`select app.tax_forms_in_books(gen_random_uuid(), 2025)`)).rejects.toThrow(
+          /permission denied/,
+        );
       } finally {
         await c.end();
       }
     }
+  });
+});
+
+describe('tax forms’ own file kind (migration 0060)', () => {
+  let admin: pg.Client;
+  let b: Fixture;
+  const destination = (workspaceId: string, kinds: string[]) =>
+    admin.query(
+      `insert into app.storage_destination (workspace_id, kind, label, secret_enc, folder, file_kinds)
+       values ($1, 's3', 'Mine', decode('00', 'hex'), 'Montra/Test', $2) returning id`,
+      [workspaceId, kinds],
+    );
+  const file = async (workspaceId: string, kind: string) =>
+    (
+      await admin.query(
+        `insert into app.file (workspace_id, kind, storage_key, file_name, mime, bytes, sha256)
+         values ($1, $2, $3, 'form.pdf', 'application/pdf', 10, repeat('c', 64)) returning id`,
+        [workspaceId, kind, `${workspaceId}/${kind}/${newId()}`],
+      )
+    ).rows[0].id as string;
+  const mirrored = async (fileId: string) =>
+    (await admin.query(`select 1 from app.storage_mirror_item where file_id = $1`, [fileId])).rowCount;
+
+  beforeAll(async () => {
+    admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    b = await createWorkspace(db, 'tax-storage@example.com');
+  });
+  afterAll(() => admin.end());
+
+  it('moves the files tax forms hold from `other`, sets their retention, and leaves other files alone', async () => {
+    const held = await file(a.workspaceId, 'other');
+    const loose = await file(a.workspaceId, 'other');
+    const id = newId();
+    await admin.query(
+      `insert into app.tax_form (workspace_id, id, entity_id, tax_year, kind, source, file_ids, created_by)
+       values ($1, $2, $3, 2024, '1099_int', 'upload', $4, $5)`,
+      [a.workspaceId, id, a.personalId, [held], a.ownerId],
+    );
+    // As PR 3 stored them: kind `other`, no retention.
+    await admin.query(`update app.file set kind = 'other', retain_until = null where id = $1`, [held]);
+    const copiesOther = await destination(a.workspaceId, ['receipt', 'other']);
+    const leavesOther = await destination(b.workspaceId, ['receipt']);
+    await admin.query(readFileSync(join(MIGRATIONS_DIR, '0060_tax_forms_reminder.sql'), 'utf8'));
+    const { rows } = await admin.query(
+      `select id, kind, retain_until::text as retain from app.file where id = any($1)`,
+      [[held, loose]],
+    );
+    expect(Object.fromEntries(rows.map((r) => [r.id, [r.kind, r.retain]]))).toEqual({
+      [held]: ['tax_form', '2031-12-31'],
+      [loose]: ['other', null],
+    });
+    // A connection that copied `other` files goes on copying tax forms; one that didn't, still doesn't.
+    const kinds = async (destId: string) =>
+      (await admin.query(`select file_kinds from app.storage_destination where id = $1`, [destId])).rows[0]
+        .file_kinds;
+    expect(await kinds(copiesOther.rows[0].id)).toEqual(['receipt', 'other', 'tax_form']);
+    expect(await kinds(leavesOther.rows[0].id)).toEqual(['receipt']);
+  });
+
+  it('copies tax form files to the owner’s storage only when it takes them', async () => {
+    expect(await mirrored(await file(a.workspaceId, 'tax_form'))).toBe(1);
+    expect(await mirrored(await file(b.workspaceId, 'tax_form'))).toBe(0);
+    expect(await mirrored(await file(b.workspaceId, 'receipt'))).toBe(1);
+    // A new connection takes every kind unless told otherwise, tax forms included, as payslips are.
+    const { rows } = await admin.query(
+      `select column_default from information_schema.columns
+        where table_schema = 'app' and table_name = 'storage_destination' and column_name = 'file_kinds'`,
+    );
+    expect(rows[0].column_default).toContain('tax_form');
   });
 });

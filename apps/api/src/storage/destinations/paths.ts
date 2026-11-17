@@ -8,6 +8,7 @@ export const KIND_FOLDERS: Record<StorageFileKind, string> = {
   lease: 'leases',
   invoice: 'invoices',
   other: 'other',
+  tax_form: 'tax-forms',
 };
 
 const EXTENSIONS: Record<string, string> = {

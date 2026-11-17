@@ -21,6 +21,7 @@ const TYPES = [
   'monthly_review',
   'suggestion',
   'weekly_digest',
+  'tax_forms_missing',
 ] as const;
 const CHANNELS = ['inApp', 'email', 'push'] as const;
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];

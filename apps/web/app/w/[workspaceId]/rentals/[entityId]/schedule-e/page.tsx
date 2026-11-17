@@ -7,6 +7,7 @@ import { Money } from '@/components/money';
 import { UnmappedCategories } from '@/components/business/tax-tools';
 import { ScheduleEExport } from '@/components/rentals/rental-ops';
 import { TaxPackageButton } from '@/components/settings/privacy-security';
+import { showsTaxForms } from '@/lib/tax-forms';
 import { StatTile } from '@/components/ui/page-header';
 
 export const metadata: Metadata = { title: 'Schedule E' };
@@ -46,7 +47,12 @@ export default async function ScheduleEPage({
         </nav>
         <div className="flex flex-wrap items-center gap-2">
           <ScheduleEExport workspaceId={workspaceId} entityId={entityId} year={year} />
-          <TaxPackageButton workspaceId={workspaceId} entityId={entityId} year={year} />
+          <TaxPackageButton
+            workspaceId={workspaceId}
+            entityId={entityId}
+            year={year}
+            taxForms={showsTaxForms(workspace)}
+          />
         </div>
       </div>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label={t('rentals.at_a_glance')}>

@@ -17,7 +17,7 @@ const destination = (over: Partial<StorageDestinationDto> = {}): StorageDestinat
   webdav: null,
   folder: 'Montra/Home',
   mirrorFiles: true,
-  fileKinds: ['statement', 'receipt', 'payslip', 'lease', 'invoice', 'other'],
+  fileKinds: ['statement', 'receipt', 'payslip', 'lease', 'invoice', 'other', 'tax_form'],
   deleteWithMontra: false,
   keepBackups: 12,
   canDelete: true,

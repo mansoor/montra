@@ -481,7 +481,7 @@ export interface MfaResetRequestTable {
 export interface FileTable {
   workspace_id: string;
   id: string;
-  kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other' | 'logo';
+  kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other' | 'logo' | 'tax_form';
   storage_key: string;
   file_name: string;
   mime: string;
@@ -1666,7 +1666,8 @@ export interface BackupScheduleTable {
 // Your own storage (migration 0029, ADR-0031).
 
 export type StorageDestinationKind = 's3' | 'webdav';
-export type StorageFileKind = 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'other';
+export type StorageFileKind =
+  'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'other' | 'tax_form';
 
 export interface StorageDestinationTable {
   workspace_id: string;

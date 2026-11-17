@@ -53,6 +53,7 @@ import type {
   PlanOfferDto,
   StatusDto,
   CreateBackupRequest,
+  CreateTaxPackageRequest,
   DeletionStatusDto,
   ExportJobDto,
   FamilyMemberDto,
@@ -531,6 +532,9 @@ export function createApi(opts: ApiOptions) {
       (await request<{ data: ExportJobDto[] }>('GET', `${ws(w)}/backups`)).data,
     createBackup: (w: string, input: CreateBackupRequest) =>
       request<ExportJobDto>('POST', `${ws(w)}/backups`, input),
+    /** RPT-04: one set of books for one year; it appears with the backups when ready. Needs a recent sign-in. */
+    createTaxPackage: (w: string, input: CreateTaxPackageRequest) =>
+      request<ExportJobDto>('POST', `${ws(w)}/tax-package`, input),
     backupDownloadUrl: (w: string, id: string) => `${opts.baseUrl}${ws(w)}/backups/${id}/download`,
     authHeaders,
     storageUsage: (w: string) => request<StorageUsageDto>('GET', `${ws(w)}/storage`),

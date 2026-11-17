@@ -18,6 +18,8 @@ export const NOTIFICATION_TYPES = [
   'backup_ready',
   'storage_failing',
   'ai_allowance',
+  /** ADR-0052 §11: on 16 February, the expected tax forms that haven't come. */
+  'tax_forms_missing',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;
