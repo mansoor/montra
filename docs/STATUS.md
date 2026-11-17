@@ -1660,7 +1660,8 @@ Phase 11 leftovers:
   - **The dependency:** `@fdv/client` (MIT), pinned by URL to the vault's public release tarball
     `v0.9.0-dev.59/fdv-client-0.9.0-dev.59.tgz` in `apps/api` (integrity in the lockfile). ESM only; the API is ESM, so
     it imports it directly. It has no install scripts, makes no network call on import and depends only on
-    `libphonenumber-js`. Its contract scenarios need vitest 5 or 6 and aren't used (pnpm notes the unmet optional peer).
+    `libphonenumber-js`. Its contract scenarios need vitest 5 or 6 and aren't used; `.pnpmfile.cjs` drops their
+    optional vitest peer, so the API's production image doesn't carry vitest (both Dockerfiles copy it).
   - **Connecting** (`apps/api/src/storage/vault/`, `/v1/workspaces/:id/family-vault`): an owner with a recent sign-in
     starts; Montra makes a fresh Ed25519 pair and seals the private key at once (`FieldCrypto`, `secret_enc`); the card
     shows the public key and fingerprint to register in the vault; the pasted code is checked in order (names that key,

@@ -571,8 +571,9 @@ later PRs use). Where PR 2 differs from or adds to the text above, and why:
 - **The package.** It is ESM only; the API is already ESM (`"type": "module"`, NodeNext), so it imports it directly,
   and the Docker image installs it from the lockfile like any dependency. Its fake vault (`@fdv/client/testing`) is
   loaded only with `FAMILY_VAULT_FAKE=on`. Its contract scenarios (`./testing/contract`) hold a vault's own API to the
-  client and need vitest 5 or 6; Montra is on vitest 4 and has no vault API to hold to them, so they aren't used (pnpm
-  notes the unmet optional peer).
+  client and need vitest 5 or 6; Montra is on vitest 4 and has no vault API to hold to them, so they aren't used. A
+  pnpm hook (`.pnpmfile.cjs`) drops that optional vitest peer: otherwise pnpm links it to the workspace's vitest and
+  the API's production install carries vitest, vite and esbuild. Both Dockerfiles copy the hook.
 - **Where the code is.** `apps/api/src/storage/vault/`: `keys.ts` (the pair and its sealed shape), `transport.ts` (the
   `fetch` the package is given), `connection.ts` (reading a code, identifying the vault, the signed connection test,
   failures as `VaultError`), `vault.service.ts`, `vault.controller.ts` (`/v1/workspaces/:id/family-vault`), and

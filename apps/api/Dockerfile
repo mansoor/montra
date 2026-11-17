@@ -11,7 +11,7 @@ ENV PNPM_HOME=/pnpm \
     CI=true
 RUN corepack enable
 WORKDIR /repo
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
 # `--filter .` keeps the root dev dependencies (TypeScript) available to the package builds.
