@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
 | **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 338 IDs in total: **255 done, 62 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Requirements**       | 338 IDs in total: **255 done, 64 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
@@ -34,14 +34,16 @@ accountant setting is what it would replace.
 
 **Being built:** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
 Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. It covers a key
-pair per workspace and signed requests. Documents go one way, Montra to the vault, one at a time, with one switch per
-group (receipts, statements, bills, payslips, tax documents, other); payslips and tax documents are off until an owner
-turns them on, and the vault decides whose Inbox each lands in. The vault is either a copy or the record; Montra's copy
-is removed only once the vault has filed it and the chosen backup exists. Montra reads back the vault's changes to what
+pair per workspace and signed requests. Documents go one way, Montra to the vault, one at a time. The vault is
+additional storage, and a document filed there is the household's record. Each group (receipts, statements, bills,
+payslips, tax documents, other) has a mode, as the owner clarified on 2026-11-17: not sent, sent with a local copy kept,
+or sent with no local copy; payslips and tax documents are not sent until an owner chooses otherwise, and the vault
+decides whose Inbox each lands in. Montra's copy is removed only for a group sent with no local copy, once the vault has
+filed the document. Montra reads back the vault's changes to what
 it sent, and opens documents through single-use view links. A file the vault doesn't return is listed in Review to be
 uploaded again, and backups and tax packages list any still missing. The owner chose to depend on the vault's client
-library as a published package: **PR 1 (contracts, migration 0063) is done** (see §7g), and PR 2 onwards waits for
-the vault's first client release tarball (0.9.0-dev.60). On the vault's side, view links and deletes have shipped, and automatic filing is next. The vault's API contract is private
+library as a published package: **PR 1 (contracts, migration 0063) is done**, and **PR 2 (connecting) is built** on
+`@fdv/client` 0.9.0-dev.59 from the vault's public GitHub release (see §7g). On the vault's side, view links and deletes have shipped, and automatic filing is next. The vault's API contract is private
 and is not copied into this repo.
 
 ### Test suite at the end of Phase 11 (green locally)
@@ -1653,6 +1655,42 @@ Phase 11 leftovers:
     DTOs, never a private key), `apps/api/test/own-storage.test.ts` (a mirror beside a vault),
     `apps/api/test/plans.test.ts` and `packages/domain/test/operations.test.ts` (the plan key). Where the build differs
     from the ADR is in its "As built: PR 1".
+- **Family Document Vault, PR 2 of 6: connecting** (VLT-01 and VLT-08 partial, VLT-02 updated; ADR-0054 "As built:
+  PR 2"; no migration). Nothing is sent yet.
+  - **The dependency:** `@fdv/client` (MIT), pinned by URL to the vault's public release tarball
+    `v0.9.0-dev.59/fdv-client-0.9.0-dev.59.tgz` in `apps/api` (integrity in the lockfile). ESM only; the API is ESM, so
+    it imports it directly. It has no install scripts, makes no network call on import and depends only on
+    `libphonenumber-js`. Its contract scenarios need vitest 5 or 6 and aren't used (pnpm notes the unmet optional peer).
+  - **Connecting** (`apps/api/src/storage/vault/`, `/v1/workspaces/:id/family-vault`): an owner with a recent sign-in
+    starts; Montra makes a fresh Ed25519 pair and seals the private key at once (`FieldCrypto`, `secret_enc`); the card
+    shows the public key and fingerprint to register in the vault; the pasted code is checked in order (names that key,
+    public https address with no loopback exception, a vault that takes apps and which one, pinned, then a signed
+    connection test through the package). Waiting for approval is saved and checked again on request (owners and
+    admins). A different vault at the pinned address, or the app paused or removed there, stops the connection with the
+    words to show; five unreachable checks in a row turn it `failing`.
+  - **Replacing the key:** a new pair sealed beside the current one, which keeps signing until the vault's code for the
+    new key checks out; the old key is then retired. Built through the vault's Settings (someone there adds the key and
+    gets a code), because the package's fake has no route for an app to add its own key; see the ADR.
+  - **Disconnecting** deletes the connection with its key, state and outbox. Security log rows: `vault_connected`,
+    `vault_changed`, `vault_key_replaced`, `vault_disconnected`.
+  - **The owner's clarification** (2026-11-17): the connection-wide role and backup choice are replaced by a mode per
+    group (not sent; sent, keep a local copy; sent, no local copy) in the ADR, the DTOs and the helpers
+    (`VaultGroupMode`, `vaultGroupModes`, `vaultKeepsCopy`). No migration: they only lived in `config`.
+  - **Web:** a "Family Document Vault" card in Settings → Storage for owners and admins whose plan has `familyVault`
+    (only an owner changes anything): the three steps, waiting for approval, status, the clock warning, Check again,
+    Replace the key, Disconnect. The per-group choices come with sending (PR 3). The plan key stays hidden from the
+    billing page (`FEATURES_NOT_YET_SHOWN`) until then.
+  - **Test-only switch:** `FAMILY_VAULT_FAKE=on` runs the package's own fake vault inside the API process (refused in
+    production), with a dev-only route that stands in for the vault's owner registering Montra. Tests and the e2e run
+    never reach a real vault.
+  - Tests: `apps/api/test/family-vault.test.ts` (keys, the address guard incl. the socket, failures mapped to words,
+    connecting with good and bad codes, private and loopback addresses, identity pinning, waiting for approval, paused
+    and removed apps, failing, key replacement and cancel, disconnecting, owner-only and recent sign-in, secrets never
+    in answers, logs, the security log or archives), `apps/api/test/plans.test.ts` (a plan without the vault),
+    `packages/schemas/test/vault.test.ts` (the modes), `apps/web/lib/vault.test.ts`, and the Playwright spec
+    `apps/web/e2e/family-vault.spec.ts` (connect, check, replace and cancel, disconnect, against the fake).
+  - Next: PR 3 (sending with a local copy kept, the job, the per-group choices), on `@fdv/client` 0.9.0-dev.60 when it
+    is out.
 
 ---
 

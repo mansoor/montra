@@ -249,6 +249,11 @@ describe('plans as data (ADR-0049 §1)', () => {
     const res = await c.post(`/v1/workspaces/${ws}/scans`, { kind: 'payslip', fileIds: [randomUUID()] });
     expect(res.status).toBe(402);
     expect(res.body.code).toBe('plan.required');
+    // ADR-0054 D11: a plan without `familyVault` refuses connecting a vault, before any key is made.
+    const vault = await c.post(`/v1/workspaces/${ws}/family-vault`);
+    expect(vault.status).toBe(402);
+    expect(vault.body.code).toBe('plan.required');
+    expect((await c.get(`/v1/workspaces/${ws}/family-vault`)).body).toEqual({ connection: null });
   });
 
   it('limits how many people can sign in, counting open invites', async () => {

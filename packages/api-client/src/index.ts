@@ -352,6 +352,10 @@ import type {
   StorageItemDto,
   StorageTestResultDto,
   UpdateStorageRequest,
+  VaultConnectionDto,
+  PasteVaultCodeRequest,
+  ReplaceVaultKeyRequest,
+  DisconnectVaultRequest,
   BusinessProfileDto,
   BusinessRegistrationsDto,
   BusinessRevealField,
@@ -602,6 +606,9 @@ export type SaveBackupScheduleInput = z.input<typeof SaveBackupScheduleRequest>;
 export type ConnectStorageInput = z.input<typeof ConnectStorageRequest>;
 export type UpdateStorageInput = z.input<typeof UpdateStorageRequest>;
 export type StorageConnectionInput = z.input<typeof StorageConnection>;
+export type PasteVaultCodeInput = z.input<typeof PasteVaultCodeRequest>;
+export type ReplaceVaultKeyInput = z.input<typeof ReplaceVaultKeyRequest>;
+export type DisconnectVaultInput = z.input<typeof DisconnectVaultRequest>;
 export type ConfirmRestoreInput = z.input<typeof ConfirmRestoreRequest>;
 export type RequestDeletionInput = z.input<typeof RequestDeletionRequest>;
 export type CreatePropertyInput = z.input<typeof CreatePropertyRequest>;
@@ -2546,6 +2553,28 @@ export class ApiClient {
       this.ws(workspaceId, `/storage-destination/items?status=${status}`),
     ).then((r) => r.data);
   }
+  /** The household's Family Document Vault (ADR-0054). Owners and admins see it; only an owner changes it. */
+  getVaultConnection(workspaceId: string) {
+    return this.request<{ connection: VaultConnectionDto | null }>(
+      'GET',
+      this.ws(workspaceId, '/family-vault'),
+    ).then((r) => r.connection);
+  }
+  startVaultConnection(workspaceId: string) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault'));
+  }
+  pasteVaultCode(workspaceId: string, input: PasteVaultCodeInput) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/code'), input);
+  }
+  checkVaultConnection(workspaceId: string) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/check'));
+  }
+  replaceVaultKey(workspaceId: string, input: ReplaceVaultKeyInput) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/key'), input);
+  }
+  disconnectVault(workspaceId: string, input: DisconnectVaultInput = {}) {
+    return this.request<void>('DELETE', this.ws(workspaceId, '/family-vault'), input);
+  }
   listRestores() {
     return this.request<{ data: RestoreJobDto[] }>('GET', '/v1/me/restores').then((r) => r.data);
   }
@@ -3362,6 +3391,7 @@ export type {
   StorageDestinationDto,
   StorageItemDto,
   StorageTestResultDto,
+  VaultConnectionDto,
   DeletionStatusDto,
   ExportJobDto,
   NotificationDto,
