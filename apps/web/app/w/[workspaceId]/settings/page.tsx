@@ -128,6 +128,7 @@ export default async function SettingsPage({
         initial={settings}
         categories={categories}
         currency={workspace.baseCurrency}
+        canEdit={isOwner}
       />
     );
   } else if (tab === 'ai-activity') {

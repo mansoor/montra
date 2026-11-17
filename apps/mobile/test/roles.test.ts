@@ -13,11 +13,28 @@ const as = (role: MemberRole, entities: { id: string; access?: 'read' | 'write' 
 describe('abilitiesOf', () => {
   it('lets owners and admins do everything', () => {
     for (const role of ['owner', 'admin'] as const)
-      expect(as(role)).toMatchObject({ record: true, setUp: true, importFiles: true, backUp: true });
+      expect(as(role)).toMatchObject({
+        record: true,
+        setUp: true,
+        importFiles: true,
+        backUp: true,
+        workspaceSettings: true,
+      });
   });
 
-  it('lets a partner set up and import, but not back up the workspace', () => {
-    expect(as('partner')).toMatchObject({ record: true, setUp: true, importFiles: true, backUp: false });
+  it('lets a partner set up and import, but not back up the workspace or change its settings', () => {
+    expect(as('partner')).toMatchObject({
+      record: true,
+      setUp: true,
+      importFiles: true,
+      backUp: false,
+      workspaceSettings: false,
+    });
+  });
+
+  it('keeps the workspace’s settings, such as receipt reminders, to owners and admins (ADR-0053 Q5)', () => {
+    for (const role of ['partner', 'accountant', 'member', 'viewer'] as const)
+      expect(as(role).workspaceSettings).toBe(false);
   });
 
   it('keeps a member to recording money', () => {

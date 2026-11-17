@@ -5,6 +5,8 @@ import type { CreatedInviteDto, FamilyMemberDto, WorkspaceDto } from '@montra/ap
 import { browserApi } from '@/lib/browser-api';
 import {
   defaultAccess,
+  accessChoices,
+  accessFor,
   grantsFor,
   INVITE_ROLES,
   inviteLink,
@@ -187,12 +189,14 @@ export function InviteForm({
                 <select
                   id={id(`acc-${e.id}`)}
                   className="input"
-                  value={access[e.id] ?? defaultAccess(role, e.type)}
+                  value={accessFor(role, access[e.id] ?? defaultAccess(role, e.type))}
                   onChange={(ev) => setAccess((a) => ({ ...a, [e.id]: ev.target.value as Access }))}
                 >
-                  <option value="none">{t('access.none')}</option>
-                  <option value="read">{t('access.read')}</option>
-                  <option value="write">{t('access.write')}</option>
+                  {accessChoices(role).map((a) => (
+                    <option key={a} value={a}>
+                      {t(`access.${a}`)}
+                    </option>
+                  ))}
                 </select>
               </div>
             ))}

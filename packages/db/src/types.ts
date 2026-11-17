@@ -360,6 +360,8 @@ export interface ChangeLogTable {
   op: 'insert' | 'update' | 'delete';
   entity_id: string | null;
   restricted: boolean;
+  /** Whose restricted row it is, as RLS checks it (`app.can_read_restricted`); null when not restricted (0062). */
+  restricted_member_id: string | null;
   changed_at: Date;
 }
 

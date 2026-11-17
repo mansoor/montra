@@ -1446,6 +1446,23 @@ Phase 11 leftovers:
   read while one waits to be mapped or checked). **Import a statement** opens the import flow; pull to refresh, and the
   list looks again every 5 seconds while one is being read. Rows don't open anything and undo stays on the web
   (`src/features/statements.ts`). Not run on a device.
+- **Three access fixes** (from ADR-0053's "Inconsistencies found"; each reproduced by a test before the fix,
+  `apps/api/test/access-rules.test.ts`):
+  - **A viewer is read-only, always** (migration 0061; 0059 and 0060 are kept for tax forms). The invite and
+    `PUT sharing/members/:id/grants` refuse `access: 'write'` for a viewer (422 `grant.viewer_write`); making someone a
+    viewer turns their write grants into read; `app.entity_access` caps a viewer at read whatever the grant says, and the
+    migration turned existing viewer write grants (and those in open invites to viewers) into read. The web's book
+    access lists offer a viewer none or read only.
+  - **Planning settings are owners' and admins'.** `PATCH planning/settings` had no role check, and RLS
+    (`workspace_update`) let a partner's or accountant's save update nothing while it answered 200. The API now
+    answers 403 before the update, and `RecommendationsService.updateSettings` throws 403 if the update reaches no
+    row. The web shows the settings read-only to everyone else; the phone shows receipt reminders only with the new
+    `workspaceSettings` ability (owners and admins), no longer under `setUp`.
+  - **The sync feed tells a person about their own private rows** (migration 0062). `GET sync/changes` listed
+    restricted changes to owners and admins only, so a linked login's phone never heard about its own payslips.
+    `app.change_log` now records whose restricted row changed (`restricted_member_id`: the column RLS checks), and the
+    feed asks `app.can_read_restricted` about each one. Changes logged before 0062 have no person and stay owners' and
+    admins' only.
 
 - **Tax forms received, PR 1 of 5** (TAX-01 typing only, TAX-02 partly, TAX-08 storage and row-level security;
   [ADR-0052](design/adr/0052-tax-forms-received.md), migration 0059; requirements section 3.8 adds TAX-01..10):

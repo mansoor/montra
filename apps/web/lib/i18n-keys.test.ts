@@ -32,6 +32,7 @@ const files = sources(ROOT).map((path) => ({ path: relative(ROOT, path), text: r
 
 /** Values that dynamic keys (`t(\`prefix.${x}\`)`) can take, so every combination is checked. */
 const DYNAMIC: Record<string, readonly string[]> = {
+  'access.': ['none', 'read', 'write'],
   'status.': ['operational', 'maintenance', 'incident', 'down'],
   'status.worker.': ['documents', 'jobs'],
   'ai.problem.': ['no_key', 'no_endpoint', 'not_configured'],

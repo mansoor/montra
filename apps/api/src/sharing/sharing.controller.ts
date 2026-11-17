@@ -36,6 +36,16 @@ import { Plans } from '../ops/plans.js';
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
+/** A viewer is read-only, always (ADR-0053 Q2); the database caps their access at read as a backstop (0061). */
+function refuseViewerWrites(role: string, grants: readonly { access: string }[]): void {
+  if (role === 'viewer' && grants.some((g) => g.access === 'write')) {
+    throw unprocessable(
+      'grant.viewer_write',
+      'A viewer can only read. Make them a member or partner to let them change a book',
+    );
+  }
+}
+
 /** Household and accountant sharing (UP-04, AUTH-10, BIZ-13). */
 @Controller('v1/workspaces/:workspaceId/sharing')
 @UseGuards(AuthGuard, WorkspaceGuard)
@@ -61,6 +71,7 @@ export class SharingController {
   async invite(@Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireWorkspaceAdmin(ctx);
     const req = parse(CreateInviteRequest, body);
+    refuseViewerWrites(req.role, req.entityGrants);
     // AUTH-09: inviting an accountant or an admin is a sensitive action.
     if (req.role === 'accountant' || req.role === 'admin') requireRecentAuth(ctx);
     const token = randomBytes(32).toString('base64url');
@@ -198,6 +209,16 @@ export class SharingController {
         .where('role', '<>', 'owner')
         .executeTakeFirst();
       if (res.numUpdatedRows === 0n) throw notFound('Member');
+      // A viewer is read-only: becoming one turns their write grants into read.
+      if (req.role === 'viewer') {
+        await trx
+          .updateTable('app.entity_grant')
+          .set({ access: 'read' })
+          .where('workspace_id', '=', ctx.workspaceId!)
+          .where('user_id', '=', id)
+          .where('access', '=', 'write')
+          .execute();
+      }
     });
     return (await this.loadMembers(ctx)).find((m) => m.userId === id);
   }
@@ -277,6 +298,14 @@ export class SharingController {
     const { grants } = parse(SetGrantsRequest, body);
     const id = parse(z.uuid(), userId);
     await this.db.run(dbCtx(ctx), async (trx) => {
+      const member = await trx
+        .selectFrom('app.workspace_member')
+        .select('role')
+        .where('workspace_id', '=', ctx.workspaceId!)
+        .where('user_id', '=', id)
+        .executeTakeFirst();
+      if (!member) throw notFound('Member');
+      refuseViewerWrites(member.role, grants);
       await trx
         .deleteFrom('app.entity_grant')
         .where('workspace_id', '=', ctx.workspaceId!)

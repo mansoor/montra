@@ -3497,6 +3497,7 @@
   "phone.title": "Mobile number",
   "planning.high_interest": "High-interest debt",
   "planning.high_interest_hint": "When income comes in higher than expected, debts at or above this rate are paid down before other goals.",
+  "planning.owner_only": "Only the workspace owner or an admin can change planning settings.",
   "planning.priorities": "Category priorities",
   "planning.priorities_hint": "When your plan is more than your income, suggestions cut lower-priority categories first and never below recent spending.",
   "planning.priority": "Priority",

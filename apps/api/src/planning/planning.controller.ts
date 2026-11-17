@@ -44,6 +44,7 @@ import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { parse } from '../common/zod.js';
+import { requireWorkspaceAdmin } from '../common/roles.js';
 import { BudgetsService } from './budgets.service.js';
 import { FlowService } from './flow.service.js';
 import { MonthSummaryService } from './month-summary.service.js';
@@ -360,8 +361,10 @@ export class PlanningController {
     return PlanningSettingsDto.parse(await this.recs.settings(dbCtx(ctx)));
   }
 
+  /** The workspace's settings (RLS `workspace_update`), so owners and admins only (ADR-0053 Q5). */
   @Patch('planning/settings')
   async updateSettings(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireWorkspaceAdmin(ctx);
     return PlanningSettingsDto.parse(
       await this.recs.updateSettings(dbCtx(ctx), parse(UpdatePlanningSettingsRequest, body)),
     );
