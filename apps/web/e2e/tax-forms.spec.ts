@@ -1,5 +1,9 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import pg from 'pg';
 import { nav, onboardHousehold } from './phase3-helpers';
 
 /**
@@ -178,4 +182,140 @@ test('tax forms are expected, typed in, checked against the books and reviewed',
   await expect(expected.filter({ hasText: '1099-INT' })).toContainText('Matches the books');
   await expect(expected.filter({ hasText: '1098' })).toContainText('Matches the books');
   await expect(expected.filter({ hasText: 'W-2' })).toContainText('Difference accepted');
+});
+
+/**
+ * ADR-0052 PR 3: a 1099-INT dropped on the screen is read in the background and matched by itself (TAX-01..03). There's
+ * no doc-worker in e2e, so this test plays its part: it takes the `taxform.read` job and hands on what the doc-worker
+ * would (masked text and the identifiers). The Node worker then reads it with the fake AI, matches the only account
+ * ending 4471 with interest, and the books agreeing confirm it. The same file again is refused.
+ */
+test('a tax form file is read, matched and confirmed by the books', async ({ page }) => {
+  test.setTimeout(150_000);
+  await onboardHousehold(page, `taxform-files-${Date.now()}@example.com`, 'Joint checking');
+  const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  const ws = `/api/v1/workspaces/${workspaceId}`;
+  const post = async (path: string, data: object) => {
+    const res = await page.request.post(`${ws}${path}`, { data });
+    expect(res.status(), `${path}: ${await res.text()}`).toBe(201);
+    return res.json();
+  };
+  const savings = (
+    await post('/accounts', {
+      name: 'Savings',
+      kind: 'savings',
+      last4: '4471',
+      institution: 'First Example Bank',
+      openingDate: '2024-01-01',
+    })
+  ).id as string;
+  const categories = (await (await page.request.get(`${ws}/categories`)).json()).data as {
+    id: string;
+    name: string;
+  }[];
+  await post('/transactions', {
+    date: '2025-06-30',
+    accountId: savings,
+    amount: { amount: '41207', currency: 'USD' },
+    payee: 'Interest paid',
+    categoryId: categories.find((c) => c.name === 'Interest income')!.id,
+  });
+
+  await nav(page, 'Tax forms');
+  await page.getByRole('navigation', { name: 'Tax year' }).getByRole('link', { name: '2025' }).click();
+  await expect(page).toHaveURL(/year=2025/);
+  const file = join(mkdtempSync(join(tmpdir(), 'montra-taxform-')), 'first-example-1099.pdf');
+  writeFileSync(file, '%PDF-1.4\n% a synthetic 1099-INT\n%%EOF\n');
+  await page.getByLabel('Choose files').setInputFiles(file);
+  await expect(page.getByTestId('tax-upload-results')).toContainText('first-example-1099.pdf: being read');
+  const beingRead = page.getByTestId('tax-being-read');
+  await expect(beingRead).toContainText('first-example-1099.pdf');
+  await expect(beingRead).toContainText('Reading');
+
+  // The doc-worker's part: its job for this form, completed with the masked text and the identifiers.
+  const year = await (await page.request.get(`${ws}/tax-forms?year=2025`)).json();
+  const formId = (year.forms as { id: string; status: string }[]).find((f) => f.status === 'reading')!.id;
+  const db = new pg.Client({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://montra_app:montra_app@localhost:5432/montra',
+  });
+  await db.connect();
+  try {
+    let done = false;
+    for (let i = 0; i < 60 && !done; i++) {
+      const { rows } = await db.query(`select * from app.dequeue_job('doc', 'e2e-tax-forms')`);
+      const job = rows[0];
+      if (!job?.id) {
+        await page.waitForTimeout(500);
+        continue;
+      }
+      if (job.type === 'taxform.read' && job.payload.formId === formId) {
+        await db.query('select app.complete_job($1, $2::jsonb)', [
+          job.id,
+          JSON.stringify({
+            kind: 'taxform_text',
+            pageCount: 1,
+            textLayer: true,
+            ocrEngine: null,
+            error: null,
+            pages: [
+              {
+                page: 1,
+                text: [
+                  'Form 1099-INT Interest Income 2025',
+                  "PAYER'S name: First Example Bank",
+                  "PAYER'S TIN ••••",
+                  "RECIPIENT'S TIN ••••",
+                  'Account number (see instructions) ••••',
+                  '1 Interest income 412.07',
+                ].join('\n'),
+                forms: [{ kind: '1099_int', corrected: false, taxYear: 2025 }],
+                copiesDropped: 0,
+                identifiers: {
+                  personTinLast4: '4321',
+                  issuerEin: '345678901',
+                  issuerTinLast4: null,
+                  accountLast4: '4471',
+                },
+              },
+            ],
+          }),
+        ]);
+        done = true;
+      } else {
+        // Another test's document: no doc-worker runs in e2e, so it's put back for later.
+        await db.query('select app.fail_job($1, $2, false)', [job.id, 'e2e: not this test’s job']);
+      }
+    }
+    expect(done).toBe(true);
+  } finally {
+    await db.end();
+  }
+
+  // The screen looks again by itself: the form is read, matched and agrees with the books.
+  const expected = page.getByTestId('tax-expected').filter({ hasText: '1099-INT · Savings' });
+  await expect(expected).toContainText('Matches the books', { timeout: 45_000 });
+  await expect(page.getByTestId('tax-being-read')).toHaveCount(0);
+  await expected.getByRole('link', { name: 'Open' }).click();
+  await expect(page.getByRole('heading', { name: '1099-INT from First Example Bank' })).toBeVisible();
+  const reading = page.getByTestId('tax-reading');
+  await expect(reading.getByTestId('tax-reading-stage')).toHaveText(
+    'Confirmed: every box checked agrees with the books.',
+  );
+  await expect(reading.getByTestId('tax-match-reason')).toHaveText(
+    'Matched: Savings is the only account ending 4471 with interest in 2025',
+  );
+  await expect(reading.getByRole('link', { name: 'Open first-example-1099.pdf' })).toBeVisible();
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    .analyze();
+  expect(violations.map((v) => ({ rule: v.id, nodes: v.nodes.map((n) => n.target.join(' ')) }))).toEqual([]);
+
+  // The same file again is refused, with the form made from it.
+  await nav(page, 'Tax forms');
+  await page.getByRole('navigation', { name: 'Tax year' }).getByRole('link', { name: '2025' }).click();
+  await page.getByLabel('Choose files').setInputFiles(file);
+  const results = page.getByTestId('tax-upload-results');
+  await expect(results).toContainText('first-example-1099.pdf: received already.');
+  await results.getByRole('link', { name: 'Open' }).click();
+  await expect(page).toHaveURL(new RegExp(`/tax-forms/${formId}$`));
 });

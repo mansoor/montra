@@ -195,3 +195,45 @@ export function byPerson(
 /** Whether a form's checks can be acted on: a `check` box that differs and isn't accepted yet. */
 export const acceptable = (c: TaxFormDto['checks'][number]): boolean =>
   c.kind === 'check' && (c.status === 'differs' || c.status === 'check_reading');
+
+// ----- Forms read from files (ADR-0052 PR 3) ----------------------------------------------------------------------
+
+/** The files the drop zone takes: PDFs and photos, as the API sniffs them. */
+export const UPLOAD_ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp';
+
+/**
+ * Where a form from a file stands in its reading, for the screen's words: being read (or waiting for a worker),
+ * couldn't be read (type it in), read and waiting for a person to confirm it, or confirmed (by a person or by the
+ * books agreeing). Null for a form typed in.
+ */
+export type ReadingStage =
+  'reading' | 'waiting' | 'unread' | 'to_confirm' | 'confirmed_by_books' | 'confirmed';
+
+export function readingStage(form: TaxFormDto): ReadingStage | null {
+  const r = form.reading;
+  if (!r) return null;
+  if (form.status === 'reading') {
+    if (r.problem === 'failed') return 'unread';
+    return r.problem === 'waiting' ? 'waiting' : 'reading';
+  }
+  if (form.status === 'confirmed') return r.confirmedBy === 'books' ? 'confirmed_by_books' : 'confirmed';
+  if (!r.kindKnown || !r.boxesRead || form.reason === 'unread') return 'unread';
+  return 'to_confirm';
+}
+
+/** Whether Confirm reading can be pressed: read, in Review, matched, and for a known person. */
+export function canConfirmReading(form: TaxFormDto): boolean {
+  return (
+    form.reading !== null &&
+    form.status === 'review' &&
+    form.reason !== 'unread' &&
+    form.reading.kindKnown &&
+    Object.keys(form.boxes).length > 0 &&
+    form.targets.length > 0 &&
+    form.personMemberId !== null
+  );
+}
+
+/** Whether the screen should look again soon: a form is still being read. */
+export const anyReading = (forms: readonly TaxFormDto[]): boolean =>
+  forms.some((f) => f.status === 'reading' && f.reading?.problem !== 'failed');

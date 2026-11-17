@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { TaxFormDto, TaxFormExpectedDto, TaxYearDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
-import { byPerson, resultChip } from '@/lib/tax-forms';
+import { anyReading, byPerson, resultChip } from '@/lib/tax-forms';
 import { useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { TaxFormDropZone, useRefreshWhile } from './tax-form-drop-zone';
 import { TaxFormEditor, type AccountOption, type EmployerOption, type Option } from './tax-form-editor';
 
 /** A form's result in words: Matches the books · Differs by $412.50 · Not tracked in the books · Needs a match … */
@@ -25,11 +26,13 @@ export function TaxFormResult({ form }: { form: TaxFormDto }) {
   );
 }
 
-/** A form's title: its kind and issuer. */
+/** A form's title: its kind and issuer; a file not read yet by its name. */
 export function formTitle(
   t: (k: string, v?: Record<string, string | number>) => string,
   form: TaxFormDto,
 ): string {
+  if (form.reading && !form.reading.kindKnown)
+    return form.reading.fileNames[0] ?? t('tax_forms.kind_unknown');
   return form.issuerName
     ? t('tax_forms.title_from', { kind: t(`tax_forms.kind.${form.kind}`), issuer: form.issuerName })
     : t(`tax_forms.kind.${form.kind}`);
@@ -66,7 +69,11 @@ export function TaxYearView({
   const forms = new Map(data.forms.map((f) => [f.id, f]));
   const base = `/w/${workspaceId}/tax-forms`;
   const keyOf = (e: TaxFormExpectedDto) => `${e.kind}:${e.employerId ?? e.accountId}`;
-  const unexpected = data.unexpectedFormIds.map((id) => forms.get(id)).filter((f): f is TaxFormDto => !!f);
+  const unexpected = data.unexpectedFormIds
+    .map((id) => forms.get(id))
+    .filter((f): f is TaxFormDto => !!f && f.status !== 'reading');
+  const reading = data.forms.filter((f) => f.status === 'reading');
+  useRefreshWhile(anyReading(data.forms));
 
   async function waive(e: TaxFormExpectedDto) {
     const done = await run(
@@ -91,6 +98,31 @@ export function TaxYearView({
   return (
     <div className="space-y-6">
       <StatusLine message={message} />
+      {canWrite && <TaxFormDropZone workspaceId={workspaceId} year={data.year} />}
+      {reading.length > 0 && (
+        <section aria-labelledby="tax-being-read" className="space-y-3">
+          <h2 id="tax-being-read" className="text-base font-semibold">
+            {t('tax_forms.being_read')}
+          </h2>
+          <ul className="card-flush divide-y divide-line">
+            {reading.map((f) => (
+              <li
+                key={f.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                data-testid="tax-being-read"
+              >
+                <p className="min-w-0 font-medium">{formTitle(t, f)}</p>
+                <div className="flex items-center gap-2">
+                  <TaxFormResult form={f} />
+                  <Link href={`${base}/${f.id}`} className="btn-secondary">
+                    {t('tax_forms.open')}
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section aria-labelledby="tax-expected" className="space-y-3">
         <div>
           <h2 id="tax-expected" className="text-base font-semibold">

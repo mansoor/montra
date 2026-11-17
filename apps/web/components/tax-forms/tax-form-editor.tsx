@@ -72,6 +72,8 @@ export function TaxFormEditor({
   const [error, setError] = useState<{ field?: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const id = form ? `tf-${form.id}` : 'tf-new';
+  // A form from a file that isn't confirmed may have been misread, or not read at all: its kind and year can change.
+  const kindEditable = !form || (form.source !== 'typed' && form.status !== 'confirmed');
 
   const setMoney = (k: string, v: string) => setFields((f) => ({ ...f, money: { ...f.money, [k]: v } }));
   const changeKind = (k: TaxFormKind) => {
@@ -92,7 +94,7 @@ export function TaxFormEditor({
 
   async function save() {
     setError(null);
-    const boxes = boxesOf(kind, fields, form?.boxes ?? {}, t);
+    const boxes = boxesOf(kind, fields, form && form.kind === kind ? form.boxes : {}, t);
     if (!boxes.ok) return setError({ field: boxes.field, text: boxes.error });
     const targets =
       kind === 'w2' ? (employerId ? [{ employerId }] : []) : accountIds.map((accountId) => ({ accountId }));
@@ -112,6 +114,8 @@ export function TaxFormEditor({
         const after = targets.map((x) => ('employerId' in x ? x.employerId : x.accountId)).join(',');
         const saved = await browserApi.updateTaxForm(workspaceId, form.id, {
           ...common,
+          ...(kindEditable && (kind !== form.kind || form.reading?.kindKnown === false) ? { kind } : {}),
+          ...(kindEditable && Number(taxYear) !== form.taxYear ? { taxYear: Number(taxYear) } : {}),
           targets: before === after ? undefined : targets,
           // A W-2 matched to an employer is for its person; don't send a different one.
           ...(kind === 'w2' && employerId ? { personMemberId: before === after ? undefined : null } : {}),
@@ -168,7 +172,7 @@ export function TaxFormEditor({
         void save();
       }}
     >
-      {!form && (
+      {kindEditable && (
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor={`${id}-kind`} className="field-label">
