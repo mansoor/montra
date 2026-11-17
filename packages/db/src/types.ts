@@ -45,6 +45,8 @@ export interface WorkspaceTable {
   mfa_policy: Generated<'standard' | 'everyone'>;
   /** AUTH-07 (ADR-0044): the web's idle sign-out, 5–30 minutes. */
   idle_timeout_minutes: Generated<number>;
+  /** ADR-0052 §8.4: accountants see members' tax forms. Only the owner changes it (a trigger backs the API). */
+  accountant_sees_tax_forms: Generated<boolean>;
   plan: Generated<string>;
   storage_quota_bytes: Int8Default;
   deleted_at: Date | null;
@@ -1278,17 +1280,89 @@ export interface DocumentIntakeTable {
   updated_at: Generated<Date>;
 }
 
-/** Per workspace, kind and signal: the account or biller it points to (migration 0058, ADR-0051 §3). */
+/**
+ * Per workspace, kind and signal: the account or biller it points to (migration 0058, ADR-0051 §3); for tax forms the
+ * employer or account (`tax_issuer`) or the family member (`tax_person`) (migration 0059, ADR-0052 §4).
+ */
 export interface MatchMemoryTable {
   workspace_id: string;
   id: Generated<string>;
-  kind: 'statement' | 'bill';
+  kind: 'statement' | 'bill' | 'tax_issuer' | 'tax_person';
   signal: string;
   target_id: string;
   confirmations: Generated<number>;
   last_confirmed_at: Date | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+export type TaxFormKind = 'w2' | '1099_int' | '1099_div' | '1098';
+export type TaxFormStatus = 'reading' | 'review' | 'confirmed' | 'dismissed' | 'superseded';
+
+/**
+ * A tax form received (migration 0059, ADR-0052 §3). `boxes` is checked by `parseTaxFormBoxes` in @montra/domain:
+ * money as strings of integer minor units.
+ */
+export interface TaxFormTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  tax_year: number;
+  kind: TaxFormKind;
+  corrected: Generated<boolean>;
+  supersedes_id: string | null;
+  issuer_name: string | null;
+  /** Nine digits, only when the printed TIN is EIN-shaped. */
+  issuer_ein: string | null;
+  issuer_tin_last4: string | null;
+  person_tin_last4: string | null;
+  account_last4: string | null;
+  person_member_id: string | null;
+  restricted: Generated<boolean>;
+  boxes: Json<Record<string, unknown>>;
+  file_ids: Generated<string[]>;
+  pages: number[] | null;
+  sha256: string | null;
+  status: Generated<TaxFormStatus>;
+  reason: string | null;
+  source: 'upload' | 'scan' | 'typed';
+  reading: Json<Record<string, unknown>> | null;
+  detected: Json<Record<string, unknown>> | null;
+  accepted: Json<Record<string, unknown>> | null;
+  job_id: string | null;
+  created_by: string | null;
+  confirmed_by: string | null;
+  confirmed_at: Date | null;
+  deleted_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** What a tax form is matched to: an employer, or one of several accounts (migration 0059). */
+export interface TaxFormTargetTable {
+  workspace_id: string;
+  id: Generated<string>;
+  tax_form_id: string;
+  employer_id: string | null;
+  account_id: string | null;
+  created_at: Generated<Date>;
+}
+
+/** An expected tax form that won't come (migration 0059, ADR-0052 §7.1). */
+export interface TaxFormWaiverTable {
+  workspace_id: string;
+  id: Generated<string>;
+  entity_id: string;
+  tax_year: number;
+  kind: TaxFormKind;
+  employer_id: string | null;
+  account_id: string | null;
+  person_member_id: string | null;
+  reason: 'not_issued' | 'combined' | 'other';
+  note: string | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
 }
 
 /** A provider that sends a budget category's bills (migration 0049, ADR-0048 §4). */
@@ -1758,6 +1832,9 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.document_scan': DocumentScanTable;
   'app.document_intake': DocumentIntakeTable;
   'app.match_memory': MatchMemoryTable;
+  'app.tax_form': TaxFormTable;
+  'app.tax_form_target': TaxFormTargetTable;
+  'app.tax_form_waiver': TaxFormWaiverTable;
   'app.biller': BillerTable;
   'app.household_bill': HouseholdBillTable;
   'app.notification': NotificationTable;
@@ -2361,6 +2438,9 @@ export type ReceiptRow = Selectable<ReceiptTable>;
 export type DocumentScanRow = Selectable<DocumentScanTable>;
 export type DocumentIntakeRow = Selectable<DocumentIntakeTable>;
 export type MatchMemoryRow = Selectable<MatchMemoryTable>;
+export type TaxFormRow = Selectable<TaxFormTable>;
+export type TaxFormTargetRow = Selectable<TaxFormTargetTable>;
+export type TaxFormWaiverRow = Selectable<TaxFormWaiverTable>;
 export type BillerRow = Selectable<BillerTable>;
 export type HouseholdBillRow = Selectable<HouseholdBillTable>;
 export type ReceiptLineRow = Selectable<ReceiptLineTable>;

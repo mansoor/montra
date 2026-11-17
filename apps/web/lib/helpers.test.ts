@@ -69,6 +69,7 @@ describe('view models', () => {
     timeZone: 'UTC',
     role: 'owner',
     security: { mfaPolicy: 'standard' as const, idleTimeoutMinutes: 30 },
+    accountantSeesTaxForms: false,
     entities: [
       {
         id: 'P',

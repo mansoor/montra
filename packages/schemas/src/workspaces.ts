@@ -52,5 +52,10 @@ export const WorkspaceDto = z.object({
   role: MemberRole,
   entities: z.array(EntityDto),
   security: WorkspaceSecurityDto,
+  /**
+   * The owner's setting (ADR-0052 §8.4): accountants see members' tax forms and include them in tax packages. Off by
+   * default; only the owner changes it (`PUT workspaces/:id/accountant-tax-forms`).
+   */
+  accountantSeesTaxForms: z.boolean(),
 });
 export type WorkspaceDto = z.infer<typeof WorkspaceDto>;

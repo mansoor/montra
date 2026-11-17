@@ -1203,5 +1203,17 @@
   "PRL-29": [
     "partial",
     "Phone: balances on the payroll screen and leave lines on each paycheck, read-only; contractor time entry is web-only; not run on a device"
+  ],
+  "TAX-01": [
+    "partial",
+    "Typing a form in (POST tax-forms; W-2, 1099-INT, 1099-DIV, 1098) with its employer or accounts and the person; upload, scan and several at once come with reading (ADR-0052 PR 3)"
+  ],
+  "TAX-02": [
+    "partial",
+    "Boxes kept per kind as minor-unit amounts, checked by one schema per kind (parseTaxFormBoxes in @montra/domain); a corrected form marks the one it replaces superseded. Reading once and refusing duplicate files come with PR 3"
+  ],
+  "TAX-08": [
+    "partial",
+    "Storage and row-level security (migration 0059): the SSN as its last four digits only; a member’s forms visible to them, owners and admins, and to accountants while the owner’s setting is on (owner only, recent sign-in, audited); always bounded by the books. AI minimization (PR 3) and retention (PR 5) to come"
   ]
 }

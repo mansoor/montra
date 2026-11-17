@@ -147,6 +147,8 @@ import { ScanJobs } from './scans/scan-jobs.js';
 import { IntakeJobs } from './intakes/intake-jobs.js';
 import { IntakesController } from './intakes/intakes.controller.js';
 import { IntakesService } from './intakes/intakes.service.js';
+import { TaxFormsController } from './tax-forms/tax-forms.controller.js';
+import { TaxFormsService } from './tax-forms/tax-forms.service.js';
 import { ScansController } from './scans/scans.controller.js';
 import { ScansService } from './scans/scans.service.js';
 import { MemberReportsService } from './payslips/member-reports.service.js';
@@ -190,6 +192,7 @@ export class AppModule {
       PayslipsController,
       ScansController,
       IntakesController,
+      TaxFormsController,
       HouseholdBillsController,
       BusinessController,
       AssetsController,
@@ -325,6 +328,7 @@ export class AppModule {
         ScanJobs,
         IntakesService,
         IntakeJobs,
+        TaxFormsService,
         MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },
       ],

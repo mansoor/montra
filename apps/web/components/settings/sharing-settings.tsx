@@ -54,6 +54,8 @@ export function SharingSettings({
         </ul>
       </section>
 
+      {workspace.role === 'owner' && <AccountantTaxForms workspace={workspace} />}
+
       {canManage && <SecurityRules workspace={workspace} />}
 
       {canManage && (
@@ -244,6 +246,43 @@ function MemberItem({
       )}
       <StatusLine message={message} />
     </li>
+  );
+}
+
+/**
+ * The owner's setting (ADR-0052 §8.4): accountants see members' tax forms and include them in tax packages. Owners
+ * only; it saves at once, and asks for a recent sign-in like other sensitive changes.
+ */
+function AccountantTaxForms({ workspace }: { workspace: WorkspaceDto }) {
+  const { busy, message, run, t } = useAction();
+  const [on, setOn] = useState(workspace.accountantSeesTaxForms);
+  return (
+    <section className="card space-y-2" aria-labelledby="accountant-tax-forms-heading">
+      <h2 id="accountant-tax-forms-heading" className="text-base font-semibold">
+        {t('sharing.tax_forms_title')}
+      </h2>
+      <label className="flex cursor-pointer items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          role="switch"
+          className="switch mt-0.5"
+          checked={on}
+          disabled={busy}
+          data-testid="accountant-tax-forms"
+          onChange={async (e) => {
+            const next = e.target.checked;
+            const saved = await run(
+              () => browserApi.setAccountantTaxForms(workspace.id, { accountantSeesTaxForms: next }),
+              t(next ? 'sharing.tax_forms_on' : 'sharing.tax_forms_off'),
+            );
+            if (saved) setOn(saved.accountantSeesTaxForms);
+          }}
+        />
+        <span>{t('sharing.tax_forms_label')}</span>
+      </label>
+      <p className="text-xs text-muted">{t('sharing.tax_forms_hint')}</p>
+      <StatusLine message={message} />
+    </section>
   );
 }
 
