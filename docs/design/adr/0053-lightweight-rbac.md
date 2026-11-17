@@ -215,6 +215,11 @@ too.
 These come from reading the code; none was run. The default table reproduces each one as it is. None is silently
 changed. Each fix is listed with its own commit and test in the delivery, and only if the owner says yes (Q2, Q5).
 
+**Update, 2026-11-16:** the owner decided 1–3 ahead of this ADR, and each was reproduced by a test and fixed
+(`apps/api/test/access-rules.test.ts`): viewers are read-only always (migration 0061), planning settings are owners'
+and admins' (a 403), and the sync feed asks `can_read_restricted` (migration 0062). Read 1–3 below as the state
+before that; the default table should start from the fixed behaviour. 4 and 5 are unchanged.
+
 1. **A viewer given a write grant on a book can write it.**
    - Nothing stops it: `PUT members/:id/grants` and the invite both accept `access: 'write'` for any role, and
      `entity_access` lets the grant win.

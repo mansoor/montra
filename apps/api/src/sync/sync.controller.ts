@@ -25,7 +25,6 @@ import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { Db } from '../db/database.js';
 import { parse } from '../common/zod.js';
-import { isAdmin } from '../common/roles.js';
 
 const Query_ = z.object({
   since: z.coerce.bigint().min(0n).default(0n),
@@ -38,8 +37,17 @@ const Query_ = z.object({
 });
 
 /**
+ * Whether the reader may hear about a change: restricted (payslip) rows follow RLS's rule, owners and admins and the
+ * person's own login (PAY-09, migration 0062). Asked of the database so the rule lives in one place.
+ */
+const readable = sql<boolean>`(not restricted or app.can_read_restricted(restricted_member_id))`.as(
+  'readable',
+);
+
+/**
  * Pull side of real-time sync (ADR-0008, PLT-06): ordered changes after `since`. RLS filters by entity access;
- * restricted (payslip) rows are only listed for owners. Clients re-read changed rows through the normal API.
+ * restricted (payslip) rows are listed only to those who may read them. Clients re-read changed rows through the
+ * normal API.
  */
 @Controller('v1/workspaces/:workspaceId/sync')
 @UseGuards(AuthGuard, WorkspaceGuard)
@@ -79,7 +87,8 @@ export class SyncController {
       }
       const rows = await trx
         .selectFrom('app.change_log')
-        .select(['seq', 'sub', 'table_name', 'row_id', 'op', 'restricted'])
+        .select(['seq', 'sub', 'table_name', 'row_id', 'op'])
+        .select(readable)
         .where('workspace_id', '=', ctx.workspaceId!)
         .where('seq', '>', since)
         .orderBy('seq')
@@ -94,7 +103,8 @@ export class SyncController {
         const lastSeq = page.at(-1)!.seq;
         const rest = await trx
           .selectFrom('app.change_log')
-          .select(['seq', 'sub', 'table_name', 'row_id', 'op', 'restricted'])
+          .select(['seq', 'sub', 'table_name', 'row_id', 'op'])
+          .select(readable)
           .where('workspace_id', '=', ctx.workspaceId!)
           .where('seq', '=', lastSeq)
           .where('sub', '>', page.at(-1)!.sub)
@@ -117,7 +127,7 @@ export class SyncController {
       // Clients re-read rows through the API, so one entry per row (latest operation) is enough.
       const byRow = new Map<string, (typeof page)[number]>();
       for (const r of page) {
-        if (r.restricted && !isAdmin(ctx.role)) continue;
+        if (!r.readable) continue;
         byRow.delete(`${r.table_name}:${r.row_id}`);
         byRow.set(`${r.table_name}:${r.row_id}`, r);
       }

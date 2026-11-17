@@ -267,6 +267,19 @@ describe('restricted payslip entries (PAY-09)', () => {
     expect((await visible(a.workspaceId, partnerId)).postings.some((p) => p.amount_minor === 341250n)).toBe(
       true,
     );
+
+    // The change feed records whose restricted rows changed, so it can ask the same question (migration 0062).
+    const logged = await withContext(db, { workspaceId: a.workspaceId, userId: partnerId }, async (trx) => {
+      const { rows } = await sql<{ table_name: string; readable: boolean }>`
+        select distinct table_name, app.can_read_restricted(restricted_member_id) as readable from app.change_log
+         where workspace_id = ${a.workspaceId} and restricted and restricted_member_id = ${memberId}
+         order by table_name`.execute(trx);
+      return rows;
+    });
+    expect(logged).toEqual([
+      { table_name: 'journal_entry', readable: true },
+      { table_name: 'posting', readable: true },
+    ]);
   });
 
   it('shows a partner the net pay line of a restricted entry and nothing else (ADR-0016)', async () => {

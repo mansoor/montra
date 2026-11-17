@@ -151,3 +151,57 @@ describe('planning settings are the workspace’s, so owners and admins change t
     expect(await bps()).toBe(1234);
   });
 });
+
+describe('the sync feed follows the same privacy rule as RLS (ADR-0053 Q5, PAY-09)', () => {
+  const SAM = 'access-sam@example.test';
+
+  it('tells a person about changes to their own payslips, and nobody else’s', async () => {
+    const people = await Promise.all(
+      ['Sam', 'Alex'].map(
+        async (name) =>
+          (await owner.post(url('/family-members'), { name, relationship: 'spouse_partner' })).body
+            .id as string,
+      ),
+    );
+    const [sam, alex] = people as [string, string];
+    await join(SAM, { role: 'partner', familyMember: { id: sam } });
+    const checking = (await owner.post(url('/accounts'), { name: 'Joint checking', kind: 'checking' })).body
+      .id;
+    const employerFor = async (memberId: string, name: string) =>
+      (
+        await owner.post(url('/employers'), {
+          memberId,
+          name,
+          payFrequency: 'monthly',
+          depositAccountId: checking,
+        })
+      ).body.id as string;
+    const samsJob = await employerFor(sam, 'Sam’s employer');
+    const alexsJob = await employerFor(alex, 'Alex’s employer');
+
+    const partner = h.as(SAM);
+    const head = (await partner.get(url('/sync/changes?head=true'))).body.latestSeq;
+    const slip = async (employerId: string) =>
+      (await owner.post(url('/payslips'), { employerId, payDate: '2026-10-01' })).body.id as string;
+    const samsSlip = await slip(samsJob);
+    const alexsSlip = await slip(alexsJob);
+
+    // The rows themselves: RLS lets Sam read his own payslip, not Alex's.
+    expect((await partner.get(url(`/payslips/${samsSlip}`))).status).toBe(200);
+    expect((await partner.get(url(`/payslips/${alexsSlip}`))).status).toBe(404);
+
+    const feed = async (who: Client) =>
+      ((await who.get(url(`/sync/changes?since=${head}&limit=1000`))).body.changes as any[])
+        .filter((c) => c.table === 'payslip')
+        .map((c) => c.id);
+    expect(await feed(partner)).toEqual([samsSlip]);
+    expect((await feed(owner)).sort()).toEqual([samsSlip, alexsSlip].sort());
+
+    // Deleting it is a change he hears about too.
+    expect((await owner.delete(url(`/payslips/${samsSlip}`))).status).toBe(204);
+    const after = (
+      (await partner.get(url(`/sync/changes?since=${head}&limit=1000`))).body.changes as any[]
+    ).filter((c) => c.table === 'payslip');
+    expect(after).toEqual([expect.objectContaining({ id: samsSlip, op: 'delete' })]);
+  });
+});

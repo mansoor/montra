@@ -1457,6 +1457,11 @@ Phase 11 leftovers:
     answers 403 before the update, and `RecommendationsService.updateSettings` throws 403 if the update reaches no
     row. The web shows the settings read-only to everyone else; the phone shows receipt reminders only with the new
     `workspaceSettings` ability (owners and admins), no longer under `setUp`.
+  - **The sync feed tells a person about their own private rows** (migration 0062). `GET sync/changes` listed
+    restricted changes to owners and admins only, so a linked login's phone never heard about its own payslips.
+    `app.change_log` now records whose restricted row changed (`restricted_member_id`: the column RLS checks), and the
+    feed asks `app.can_read_restricted` about each one. Changes logged before 0062 have no person and stay owners' and
+    admins' only.
 
 ---
 
