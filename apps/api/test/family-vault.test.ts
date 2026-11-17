@@ -103,6 +103,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.query(`delete from app.storage_destination where workspace_id = $1`, [wsId]);
+  // Connecting and "Check again" wake the vault's job (PR 3): nothing of ours may wake a worker in another test file.
+  await db.query(`delete from app.job where type = 'storage.vault'`);
   await db.end();
   await h.close();
 });
