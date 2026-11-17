@@ -12,8 +12,13 @@ import {
   PLAN_TYPES,
 } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
-import { CALENDAR_ITEM_KINDS, INTAKE_REASONS, TAX_FORM_RESULT_STATES } from '@montra/schemas';
-import { MONEY_BOXES } from './tax-forms';
+import {
+  CALENDAR_ITEM_KINDS,
+  INTAKE_REASONS,
+  TAX_FORM_READING_PROBLEMS,
+  TAX_FORM_RESULT_STATES,
+} from '@montra/schemas';
+import { MONEY_BOXES, READING_STAGES } from './tax-forms';
 import { ITEM_PERIODS } from './receipts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -37,6 +42,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'tax_forms.kind.': ['w2', '1099_int', '1099_div', '1098'],
   'tax_forms.result.': TAX_FORM_RESULT_STATES,
   'tax_forms.review_why.': TAX_FORM_RESULT_STATES,
+  'tax_forms.reading_stage.': READING_STAGES,
+  'tax_forms.reading_problem.': TAX_FORM_READING_PROBLEMS,
   'tax_forms.check_status.': [
     'matches',
     'explained',

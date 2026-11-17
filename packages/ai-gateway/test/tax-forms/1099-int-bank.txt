@@ -1,0 +1,13 @@
+Form 1099-INT Interest Income 2025
+PAYER'S name, street address, city or town, state or province, country, ZIP or foreign postal code, and telephone no.
+First Example Bank
+[redacted]
+PAYER'S TIN ••••
+RECIPIENT'S TIN ••••
+RECIPIENT'S name
+MEMBER_2
+[redacted]
+Account number (see instructions) ••••
+1 Interest income 412.07
+3 Interest on U.S. Savings Bonds and Treasury obligations 25.00
+4 Federal income tax withheld 41.20

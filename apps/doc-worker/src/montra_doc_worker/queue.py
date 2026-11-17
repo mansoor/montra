@@ -23,6 +23,7 @@ from .ocr import ocr_image
 from .ocr_receipt import ReceiptTextResult, ocr_receipt
 from .result import GridResult, OcrTextResult, check_magic
 from .storage import Storage
+from .taxform import TaxFormTextResult, members_from, read_tax_form
 
 log = logging.getLogger("montra.doc_worker")
 
@@ -31,7 +32,9 @@ CHANNEL = "montra_jobs"
 POLL_SECONDS = 5.0
 REQUEUE_EVERY_SECONDS = 60.0
 
-Handler = Callable[[dict[str, Any], Storage], GridResult | OcrTextResult | ReceiptTextResult]
+Handler = Callable[
+    [dict[str, Any], Storage], GridResult | OcrTextResult | ReceiptTextResult | TaxFormTextResult
+]
 
 
 def handle_doc_extract(payload: dict[str, Any], storage: Storage) -> GridResult | OcrTextResult:
@@ -59,7 +62,22 @@ def handle_receipt_ocr(payload: dict[str, Any], storage: Storage) -> ReceiptText
     return ocr_receipt([storage.read(k) for k in keys])
 
 
-HANDLERS: dict[str, Handler] = {"doc.extract": handle_doc_extract, "receipt.ocr": handle_receipt_ocr}
+def handle_taxform_read(payload: dict[str, Any], storage: Storage) -> TaxFormTextResult:
+    """A tax form file (ADR-0052 §6): masked text and identifiers per page for the Node `tax_form.match` job.
+
+    A file that can't be read is a result with an `error`, not a failed job, so the form still reaches Review.
+    """
+    key = payload.get("storageKey")
+    if not isinstance(key, str):
+        raise PermanentJobError("doc.bad_payload", "storageKey is required")
+    return read_tax_form(storage.read(key), members_from(payload.get("members")))
+
+
+HANDLERS: dict[str, Handler] = {
+    "doc.extract": handle_doc_extract,
+    "receipt.ocr": handle_receipt_ocr,
+    "taxform.read": handle_taxform_read,
+}
 
 
 class Worker:

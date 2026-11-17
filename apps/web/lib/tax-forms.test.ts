@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { TaxFormExpectedDto } from '@montra/api-client';
+import type { TaxFormDto, TaxFormExpectedDto } from '@montra/api-client';
 import {
+  anyReading,
   boxFields,
   boxesOf,
   byPerson,
+  canConfirmReading,
   checkChip,
   defaultTaxYear,
+  readingStage,
   resultChip,
   yearChoices,
 } from './tax-forms';
@@ -115,5 +118,54 @@ describe('results and groups', () => {
       ['Bea', ['Bea’s W-2', 'Bea’s savings']],
       [null, ['Joint savings']],
     ]);
+  });
+});
+
+describe('forms read from files (ADR-0052 PR 3)', () => {
+  const reading: NonNullable<TaxFormDto['reading']> = {
+    fileNames: ['w2.pdf'],
+    kindKnown: true,
+    boxesRead: true,
+    problem: null,
+    droppedBoxes: 0,
+    confirmedBy: null,
+    match: { automatic: true, reason: 'Matched', candidates: [] },
+    copyOfId: null,
+  };
+  const form = (over: Partial<TaxFormDto> = {}, r: Partial<typeof reading> | null = {}) =>
+    ({
+      status: 'review',
+      reason: null,
+      boxes: { box1: '100' },
+      targets: [{ employerId: 'e', accountId: null }],
+      personMemberId: 'p',
+      ...over,
+      reading: r === null ? null : { ...reading, ...r },
+    }) as TaxFormDto;
+
+  it('says where the reading stands', () => {
+    expect(readingStage(form({}, null))).toBeNull();
+    expect(readingStage(form({ status: 'reading' }, { boxesRead: false, kindKnown: false }))).toBe('reading');
+    expect(readingStage(form({ status: 'reading' }, { problem: 'waiting' }))).toBe('waiting');
+    expect(readingStage(form({ status: 'reading' }, { problem: 'failed' }))).toBe('unread');
+    expect(readingStage(form({ reason: 'unread', boxes: {} }, { boxesRead: false }))).toBe('unread');
+    expect(readingStage(form())).toBe('to_confirm');
+    expect(readingStage(form({ status: 'confirmed' }, { confirmedBy: 'books' }))).toBe('confirmed_by_books');
+    expect(readingStage(form({ status: 'confirmed' }, { confirmedBy: 'person' }))).toBe('confirmed');
+  });
+
+  it('offers Confirm reading only for a read form that is matched and has a person', () => {
+    expect(canConfirmReading(form())).toBe(true);
+    expect(canConfirmReading(form({ targets: [] }))).toBe(false);
+    expect(canConfirmReading(form({ personMemberId: null }))).toBe(false);
+    expect(canConfirmReading(form({ reason: 'unread', boxes: {} }))).toBe(false);
+    expect(canConfirmReading(form({ status: 'confirmed' }))).toBe(false);
+    expect(canConfirmReading(form({}, null))).toBe(false);
+  });
+
+  it('looks again while a form is being read, but not once its reading failed', () => {
+    expect(anyReading([form({ status: 'reading' })])).toBe(true);
+    expect(anyReading([form({ status: 'reading' }, { problem: 'failed' })])).toBe(false);
+    expect(anyReading([form()])).toBe(false);
   });
 });

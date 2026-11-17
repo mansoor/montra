@@ -38,11 +38,14 @@ import {
 import { taxIssuerSignal } from '@montra/importers';
 import type {
   AcceptTaxFormDifferenceRequest,
+  ConfirmTaxFormReadingRequest,
   CreateTaxFormRequest,
   CreateTaxFormWaiverRequest,
   RecordFromTaxFormRequest,
+  TaxFormCandidateDto,
   TaxFormCheckDto,
   TaxFormDto,
+  TaxFormReadingProblem,
   TaxFormReason,
   TaxFormResultDto,
   TaxFormResultState,
@@ -56,6 +59,7 @@ import { AppError, forbidden, notFound, unprocessable } from '../common/errors.j
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { incomeCategory } from '../accounts/income-categories.js';
 import { confirmMatch } from '../intakes/match-memory.js';
+import { JOB_STALL_MS } from '../jobs/queue.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { accountIncomeBooks, expectedInputs, mortgageBooks, w2Books } from './tax-form-books.js';
 
@@ -90,14 +94,35 @@ interface StoredAccepted {
   };
 }
 
+/**
+ * What `detected` (jsonb) holds for a form read from a file (ADR-0052 PR 3): how it was read and matched. It becomes
+ * the DTO's `reading`, plus the issuer's signal, kept to forget the memory when an automatic match is changed.
+ */
+export interface StoredReadingInfo {
+  fileNames: string[];
+  kindKnown: boolean;
+  boxesRead: boolean;
+  problem: TaxFormReadingProblem | null;
+  droppedBoxes: number;
+  confirmedBy: 'person' | 'books' | null;
+  match: { automatic: boolean; reason: string | null; candidates: TaxFormCandidateDto[] };
+  copyOfId: string | null;
+  signal: string | null;
+}
+
 /** A form's checks and what they come to. */
 interface Evaluation {
   checks: TaxFormCheck[];
   result: TaxFormResultDto;
+  /** For a form still being read: its job failed, or waits with nothing picking it up. */
+  jobProblem: 'failed' | 'waiting' | null;
 }
 
 /** The stored statuses that aren't a Review item whatever the books say. */
-const SET_ASIDE: TaxFormStatus[] = ['dismissed', 'superseded', 'reading'];
+const SET_ASIDE: TaxFormStatus[] = ['dismissed', 'superseded'];
+
+/** The reasons a person clears: a probable copy by confirming the reading, a conflict by picking the person. */
+const HELD_REASONS: readonly string[] = ['probable_copy', 'person_conflict'];
 
 const conflict = () =>
   new AppError(409, 'version.conflict', 'Someone else changed this form; reload and try again');
@@ -408,45 +433,82 @@ export class TaxFormsService {
   /**
    * Changes what a form says or what it's matched to. The boxes replace the old ones whole. Picking or changing the
    * match, or the person, is a match by hand: it confirms the match memory (`learnMatch`, ADR-0051 §3), and a change is
-   * a correction that starts it again.
+   * a correction that starts it again. A form from a file whose reading isn't confirmed can change its kind (it was
+   * misread, or couldn't be read); its status then follows from what it says now (`settleRead`).
    */
   async update(ctx: Actor, id: string, req: UpdateTaxFormRequest): Promise<TaxFormDto> {
     return this.db.run(ctx, async (trx) => {
       const form = await this.row(trx, ctx, id);
       if (form.deleted_at) throw notFound('Tax form');
       if (BigInt(form.version) !== BigInt(req.version)) throw conflict();
-      if (req.targets !== undefined) checkMatcher(ctx, form.kind, req.targets);
-      const boxes = req.boxes !== undefined ? checkedBoxes(form.kind, req.boxes) : undefined;
+      // Still being read: the reading would overwrite the change. Unless the reading failed or nothing picks it up.
+      if (form.status === 'reading' && !(await this.jobProblem(trx, ctx, form))) {
+        throw new AppError(409, 'tax_form.reading', 'This form is still being read; try again in a moment');
+      }
+      const typed = form.source === 'typed';
+      let kind = form.kind;
+      if (req.kind !== undefined && req.kind !== form.kind) {
+        if (typed || form.status === 'confirmed') {
+          throw unprocessable(
+            'tax_form.kind',
+            'Only a form read from a file and not confirmed changes its kind',
+          );
+        }
+        kind = req.kind;
+      }
+      const kindChanged = kind !== form.kind;
+      if (req.targets !== undefined) checkMatcher(ctx, kind, req.targets);
+      const boxes = req.boxes !== undefined ? checkedBoxes(kind, req.boxes) : kindChanged ? {} : undefined;
       const current = await this.targetsOf(trx, ctx, [id]);
       const targets: Target[] =
         req.targets ??
-        (current.get(id) ?? []).map((t) =>
-          t.employer_id ? { employerId: t.employer_id } : { accountId: t.account_id! },
-        );
+        (kindChanged
+          ? []
+          : (current.get(id) ?? []).map((t) =>
+              t.employer_id ? { employerId: t.employer_id } : { accountId: t.account_id! },
+            ));
       const person = req.personMemberId !== undefined ? req.personMemberId : form.person_member_id;
-      const placed = await this.place(trx, ctx, form.kind, targets, person);
+      const placed = await this.place(trx, ctx, kind, targets, person);
       const issuerEin = req.issuerEin !== undefined ? req.issuerEin : form.issuer_ein;
       const issuerTinLast4 = req.issuerTinLast4 !== undefined ? req.issuerTinLast4 : form.issuer_tin_last4;
       checkIssuerTin(issuerEin, issuerTinLast4);
       const supersedesId = req.supersedesId !== undefined ? req.supersedesId : form.supersedes_id;
       if (supersedesId && supersedesId !== form.supersedes_id)
-        await this.checkSupersedes(trx, ctx, supersedesId, form.kind, id);
+        await this.checkSupersedes(trx, ctx, supersedesId, kind, id);
 
       let status: TaxFormStatus = form.status;
       let reason: string | null = form.reason;
       if (req.dismissed === true) {
         status = 'dismissed';
-      } else if (form.status !== 'superseded' && form.status !== 'reading') {
-        // Typed forms are confirmed once they're matched; others stay as their reading left them until PR 3.
-        if (form.source === 'typed' || form.status === 'dismissed') {
+      } else if (typed) {
+        // Typed forms are confirmed once they're matched and have a person.
+        if (form.status !== 'superseded')
           ({ status, reason } = typedStatus(placed.targets.length > 0, placed.personMemberId !== null));
-        }
+      } else if (form.status === 'dismissed' || form.status === 'reading') {
+        // Back in Review (or out of a reading that failed): what it says now decides its reason.
+        status = 'review';
+        reason = null;
+      } else if (
+        reason === 'person_conflict' &&
+        (req.personMemberId !== undefined || req.targets !== undefined)
+      ) {
+        reason = null;
       }
+      const info = readingInfo(form);
+      const nextInfo: StoredReadingInfo | null = info
+        ? {
+            ...info,
+            kindKnown: info.kindKnown || req.kind !== undefined,
+            // Picked by a person now: no longer the automatic match.
+            match: req.targets !== undefined ? { ...info.match, automatic: false, reason: null } : info.match,
+          }
+        : null;
       const confirmedNow = status === 'confirmed' && form.status !== 'confirmed';
       const updated = await trx
         .updateTable('app.tax_form')
         .set({
           entity_id: placed.entityId,
+          kind,
           tax_year: req.taxYear ?? form.tax_year,
           corrected: req.corrected ?? form.corrected,
           supersedes_id: supersedesId,
@@ -457,6 +519,7 @@ export class TaxFormsService {
           account_last4: req.accountLast4 !== undefined ? req.accountLast4 : form.account_last4,
           person_member_id: placed.personMemberId,
           ...(boxes !== undefined ? { boxes: JSON.stringify(boxes) } : {}),
+          ...(nextInfo ? { detected: JSON.stringify(nextInfo) } : {}),
           status,
           reason,
           ...(confirmedNow ? { confirmed_by: ctx.userId, confirmed_at: new Date() } : {}),
@@ -471,7 +534,7 @@ export class TaxFormsService {
         const now = await this.row(trx, ctx, id);
         throw BigInt(now.version) !== BigInt(form.version) ? conflict() : forbidden();
       }
-      if (req.targets !== undefined) {
+      if (req.targets !== undefined || kindChanged) {
         await trx
           .deleteFrom('app.tax_form_target')
           .where('workspace_id', '=', ctx.workspaceId)
@@ -481,7 +544,7 @@ export class TaxFormsService {
       }
       if (supersedesId && supersedesId !== form.supersedes_id) await this.supersede(trx, ctx, supersedesId);
       await this.learn(trx, ctx, {
-        kind: form.kind,
+        kind,
         ein: issuerEin,
         accountLast4: req.accountLast4 !== undefined ? req.accountLast4 : form.account_last4,
         issuerName: req.issuerName !== undefined ? req.issuerName : form.issuer_name,
@@ -489,8 +552,122 @@ export class TaxFormsService {
         targets: req.targets !== undefined ? placed.targets : null,
         person: req.personMemberId !== undefined || req.targets !== undefined ? placed.personMemberId : null,
       });
+      if (!typed) await this.settleRead(trx, ctx, id);
       return this.read(trx, ctx, id);
     });
+  }
+
+  /**
+   * Confirm reading (§5.6): a person checked the boxes against the file. It needs the boxes, a match and the person;
+   * it clears a probable copy (it's kept as its own form), drops the masked reading, and confirms the match memory, as
+   * picking the match by hand would.
+   */
+  async confirm(ctx: Actor, id: string, req: ConfirmTaxFormReadingRequest): Promise<TaxFormDto> {
+    return this.db.run(ctx, async (trx) => {
+      const form = await this.live(trx, ctx, id);
+      if (BigInt(form.version) !== BigInt(req.version)) throw conflict();
+      if (form.source === 'typed')
+        throw unprocessable('tax_form.typed', 'A form typed in is confirmed already');
+      if (form.status === 'confirmed') return this.read(trx, ctx, id);
+      if (form.status !== 'review') {
+        throw unprocessable('tax_form.not_in_review', 'Only a form waiting in Review can be confirmed');
+      }
+      const info = readingInfo(form);
+      if (Object.keys((form.boxes as object | null) ?? {}).length === 0 || info?.kindKnown === false) {
+        throw unprocessable('tax_form.unread', 'Type the boxes in first');
+      }
+      const targets = (await this.targetsOf(trx, ctx, [id])).get(id) ?? [];
+      if (targets.length === 0)
+        throw unprocessable('tax_form.no_match', 'Match it to an employer or account first');
+      if (!form.person_member_id) throw unprocessable('tax_form.no_person', 'Say who it’s for first');
+      await this.confirmRead(trx, ctx, form, 'person');
+      return this.read(trx, ctx, id);
+    });
+  }
+
+  /**
+   * A form from a file, after it's read or changed: its status from what it says now (§3, §5.6). Unread (no boxes, or
+   * no kind) first; a probable copy or a person conflict until a person settles it; then no match, no person; then the
+   * checks: every `check` box agreeing with the books confirms the reading by that match, and a difference keeps it
+   * in Review. A reading that's neither (not tracked in the books) stays unconfirmed, and isn't a Review item.
+   */
+  async settleRead(trx: Trx, ctx: Ctx, id: string): Promise<void> {
+    const form = await this.row(trx, ctx, id);
+    if (form.source === 'typed' || form.status !== 'review') return;
+    const info = readingInfo(form);
+    const targets = (await this.targetsOf(trx, ctx, [id])).get(id) ?? [];
+    let reason: TaxFormReason | null;
+    if (Object.keys((form.boxes as object | null) ?? {}).length === 0 || info?.kindKnown === false)
+      reason = 'unread';
+    else if (form.reason && HELD_REASONS.includes(form.reason)) reason = form.reason as TaxFormReason;
+    else if (targets.length === 0) reason = 'no_match';
+    else if (!form.person_member_id) reason = 'no_person';
+    else {
+      const { checks } = await this.evaluate(trx, ctx, form, targets);
+      const { outcome } = checksOutcome(checks);
+      // Two sources agreeing to the cent: at least one box compared, and none differing (§5.6).
+      if (outcome === 'matches' && checks.some((c) => c.kind === 'check' && c.status === 'matches')) {
+        await this.confirmRead(trx, ctx, form, 'books');
+        return;
+      }
+      reason = outcome === 'differs' || outcome === 'check_reading' ? 'differs' : null;
+    }
+    if (reason === form.reason) return;
+    await trx
+      .updateTable('app.tax_form')
+      .set({ reason })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
+  }
+
+  /** Confirms a reading, by a person or by the books; the masked reading is cleared and the match is learned. */
+  private async confirmRead(trx: Trx, ctx: Ctx, form: TaxFormRow, by: 'person' | 'books'): Promise<void> {
+    const info = readingInfo(form);
+    const res = await trx
+      .updateTable('app.tax_form')
+      .set({
+        status: 'confirmed',
+        reason: null,
+        reading: null,
+        confirmed_by: by === 'person' ? ctx.userId : null,
+        confirmed_at: new Date(),
+        ...(info ? { detected: JSON.stringify({ ...info, confirmedBy: by, copyOfId: null }) } : {}),
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', form.id)
+      .executeTakeFirst();
+    if (!res.numUpdatedRows) throw forbidden();
+    // Confirmed, by a person or by the books agreeing: the match and the person are right, so the memory learns them.
+    const targets = (await this.targetsOf(trx, ctx, [form.id])).get(form.id) ?? [];
+    await this.learn(trx, ctx, {
+      kind: form.kind,
+      ein: form.issuer_ein,
+      accountLast4: form.account_last4,
+      issuerName: form.issuer_name,
+      personTinLast4: form.person_tin_last4,
+      targets: targets.map((t) =>
+        t.employer_id ? { employerId: t.employer_id } : { accountId: t.account_id! },
+      ),
+      person: form.person_member_id,
+    });
+  }
+
+  /** Why a form still `reading` isn't: its job failed, or nothing has picked it up (a worker isn't running). */
+  async jobProblem(trx: Trx, ctx: Ctx, form: TaxFormRow): Promise<'failed' | 'waiting' | null> {
+    if (form.status !== 'reading') return null;
+    const job = await trx
+      .selectFrom('app.job')
+      .select(['status', 'run_after'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('type', 'in', ['taxform.read', 'tax_form.match'])
+      .where(sql<string>`payload->>'formId'`, '=', form.id)
+      .orderBy('created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    if (!job || job.status === 'failed' || job.status === 'cancelled') return 'failed';
+    if (job.status === 'queued' && Date.now() - job.run_after.getTime() > JOB_STALL_MS) return 'waiting';
+    return null;
   }
 
   /** To the Trash for 30 days (BAK-06); restored from Settings → Your data. */
@@ -566,7 +743,7 @@ export class TaxFormsService {
 
   // ----- Inside a transaction -------------------------------------------------------------------------------------
 
-  private async row(trx: Trx, ctx: Ctx, id: string): Promise<TaxFormRow> {
+  async row(trx: Trx, ctx: Ctx, id: string): Promise<TaxFormRow> {
     const form = await trx
       .selectFrom('app.tax_form')
       .selectAll()
@@ -628,7 +805,7 @@ export class TaxFormsService {
       parsed = null;
     }
     const year = form.tax_year;
-    if (parsed && targets.length > 0 && form.status !== 'superseded') {
+    if (parsed && targets.length > 0 && form.status !== 'superseded' && form.status !== 'reading') {
       if (parsed.kind === 'w2') {
         checks = reconcileW2(year, parsed.boxes, await w2Books(trx, ctx, form, employerIds), accepted);
       } else if (parsed.kind === '1099_int') {
@@ -643,7 +820,13 @@ export class TaxFormsService {
       }
     }
     const { outcome, difference } = checksOutcome(checks);
-    const { state, review } = resultState(form, targets.length > 0, checks.length > 0 ? outcome : null);
+    const jobProblem = await this.jobProblem(trx, ctx, form);
+    const { state, review } = resultState(
+      form,
+      targets.length > 0,
+      checks.length > 0 ? outcome : null,
+      jobProblem,
+    );
     const recordable =
       parsed && (parsed.kind === '1099_int' || parsed.kind === '1099_div') && !stored.recorded
         ? await this.recordable(trx, ctx, form, accountIds, checks)
@@ -663,6 +846,7 @@ export class TaxFormsService {
             }
           : null,
       },
+      jobProblem,
     };
   }
 
@@ -770,7 +954,7 @@ export class TaxFormsService {
     return byForm;
   }
 
-  private async writeTargets(trx: Trx, ctx: Ctx, formId: string, targets: Target[]): Promise<void> {
+  async writeTargets(trx: Trx, ctx: Ctx, formId: string, targets: Target[]): Promise<void> {
     if (targets.length === 0) return;
     await trx
       .insertInto('app.tax_form_target')
@@ -791,7 +975,7 @@ export class TaxFormsService {
    * Where a form goes (§3, §4): its books from what it's matched to (the personal books until then), and its person,
    * which for a W-2 is the employer's member unless the request names the same person.
    */
-  private async place(
+  async place(
     trx: Trx,
     ctx: Ctx,
     kind: TaxFormKind,
@@ -861,7 +1045,7 @@ export class TaxFormsService {
     if (!member) throw notFound('Family member');
   }
 
-  private async personalBooks(trx: Trx, ctx: Ctx): Promise<string> {
+  async personalBooks(trx: Trx, ctx: Ctx): Promise<string> {
     const books = await trx
       .selectFrom('app.entity')
       .select('id')
@@ -890,7 +1074,7 @@ export class TaxFormsService {
   }
 
   /** The form a corrected one replaces stays visible, marked superseded (§6). */
-  private async supersede(trx: Trx, ctx: Ctx, id: string): Promise<void> {
+  async supersede(trx: Trx, ctx: Ctx, id: string): Promise<void> {
     await trx
       .updateTable('app.tax_form')
       .set({ status: 'superseded', reason: null })
@@ -928,10 +1112,19 @@ function resultState(
   form: TaxFormRow,
   matched: boolean,
   outcome: ReturnType<typeof checksOutcome>['outcome'] | null,
+  jobProblem: 'failed' | 'waiting' | null = null,
 ): { state: TaxFormResultState; review: boolean } {
   if (form.status === 'superseded') return { state: 'superseded', review: false };
   if (form.status === 'dismissed') return { state: 'dismissed', review: false };
-  if (form.status === 'reading') return { state: 'reading', review: false };
+  // A reading that failed is a form to type in; one nothing picks up is still being read, with a warning.
+  if (form.status === 'reading')
+    return jobProblem === 'failed' ? { state: 'unread', review: true } : { state: 'reading', review: false };
+  if (form.status === 'review' && form.reason === 'unread') return { state: 'unread', review: true };
+  // A person settles these first, matched or not.
+  if (form.status === 'review' && form.reason === 'person_conflict')
+    return { state: 'person_conflict', review: true };
+  if (form.status === 'review' && form.reason === 'probable_copy')
+    return { state: 'probable_copy', review: true };
   if (!matched) return { state: 'needs_match', review: true };
   if (form.status === 'review') {
     const waiting: Partial<Record<string, TaxFormResultState>> = {
@@ -1033,7 +1226,40 @@ function toDto(f: TaxFormRow, targets: TaxFormTargetRow[], evaluation: Evaluatio
     version: Number(f.version),
     result: evaluation.result,
     checks: evaluation.checks.map(checkDto),
+    reading: readingDto(f, evaluation.jobProblem),
   } as TaxFormDto;
+}
+
+/** How a form from a file was read (`detected`); null for one typed in. */
+export function readingInfo(f: TaxFormRow): StoredReadingInfo | null {
+  if (f.source === 'typed') return null;
+  const d = f.detected as Partial<StoredReadingInfo> | null;
+  return {
+    fileNames: d?.fileNames ?? [],
+    kindKnown: d?.kindKnown ?? true,
+    boxesRead: d?.boxesRead ?? false,
+    problem: d?.problem ?? null,
+    droppedBoxes: d?.droppedBoxes ?? 0,
+    confirmedBy: d?.confirmedBy ?? null,
+    match: d?.match ?? { automatic: false, reason: null, candidates: [] },
+    copyOfId: d?.copyOfId ?? null,
+    signal: d?.signal ?? null,
+  };
+}
+
+function readingDto(f: TaxFormRow, jobProblem: 'failed' | 'waiting' | null): TaxFormDto['reading'] {
+  const info = readingInfo(f);
+  if (!info) return null;
+  return {
+    fileNames: info.fileNames,
+    kindKnown: info.kindKnown,
+    boxesRead: info.boxesRead,
+    problem: jobProblem ?? info.problem,
+    droppedBoxes: info.droppedBoxes,
+    confirmedBy: f.status === 'confirmed' ? info.confirmedBy : null,
+    match: info.match,
+    copyOfId: info.copyOfId,
+  };
 }
 
 function waiverDto(w: TaxFormWaiverRow): TaxFormWaiverDto {

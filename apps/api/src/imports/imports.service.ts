@@ -4,6 +4,7 @@ import type { Selectable } from 'kysely';
 import { newId, type ImportBatchTable, type ImportRowTable, type Trx } from '@montra/db';
 import { asCurrencyCode, isBalanceSheet } from '@montra/domain';
 import { statementSignal } from '@montra/importers';
+import { TAX_FORM_JOB_TYPES } from '../tax-forms/job-types.js';
 import type {
   BulkImportRowsRequest,
   ColumnMappingDto,
@@ -453,7 +454,10 @@ export class ImportsService {
       status: job.status,
       progress: job.progress,
       error: job.error,
-      result: job.result as Record<string, unknown> | null,
+      // A tax form's masked text is still a member's form (ADR-0052 §8.4): jobs are readable by every member.
+      result: (TAX_FORM_JOB_TYPES as readonly string[]).includes(job.type)
+        ? null
+        : (job.result as Record<string, unknown> | null),
       createdAt: job.created_at.toISOString(),
       finishedAt: job.finished_at?.toISOString() ?? null,
     };

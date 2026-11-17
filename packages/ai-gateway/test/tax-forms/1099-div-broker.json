@@ -1,0 +1,29 @@
+{
+  "forms": [
+    {
+      "kind": "1099_div",
+      "taxYear": 2025,
+      "corrected": false,
+      "issuerName": "Sample Brokerage LLC",
+      "person": null,
+      "pages": [1],
+      "boxes": {
+        "box1a": "125040",
+        "box1b": "98010",
+        "box2a": "31000",
+        "box5": "1230",
+        "box7": "815",
+        "box8": "VARIOUS",
+        "states": [
+          {
+            "state": "CA",
+            "stateTaxWithheld": "2000"
+          }
+        ]
+      },
+      "droppedBoxes": 0,
+      "confidence": 0.95
+    }
+  ],
+  "otherForms": 0
+}

@@ -149,6 +149,7 @@ import { IntakesController } from './intakes/intakes.controller.js';
 import { IntakesService } from './intakes/intakes.service.js';
 import { TaxFormsController } from './tax-forms/tax-forms.controller.js';
 import { TaxFormsService } from './tax-forms/tax-forms.service.js';
+import { TaxFormReading } from './tax-forms/tax-form-reading.js';
 import { ScansController } from './scans/scans.controller.js';
 import { ScansService } from './scans/scans.service.js';
 import { MemberReportsService } from './payslips/member-reports.service.js';
@@ -329,6 +330,7 @@ export class AppModule {
         IntakesService,
         IntakeJobs,
         TaxFormsService,
+        TaxFormReading,
         MemberReportsService,
         { provide: FX_HTTP, useValue: httpGet },
       ],

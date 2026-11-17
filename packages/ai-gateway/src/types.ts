@@ -16,6 +16,7 @@ export type TaskName =
   | 'extract_receipt'
   | 'extract_payslip'
   | 'extract_bill'
+  | 'extract_tax_form'
   | 'propose_categories'
   | 'map_tax_lines'
   | 'flag_separation'
@@ -413,6 +414,40 @@ export interface PayslipExtraction {
   confidence: number;
 }
 
+/**
+ * A tax form's text for `extract_tax_form` (ADR-0052 §6): the doc-worker's masked text per page. There is no image
+ * field: a tax form's images never go to a provider, whatever the workspace allows (the owner's decision 5).
+ */
+export interface TaxFormDocument {
+  pages: readonly { page: number; text: string }[];
+  /** The year the person was looking at when they uploaded it, for forms that print none. */
+  taxYearHint: number | null;
+}
+
+/** One form read from a file. Identifiers never come from here: the doc-worker extracts them locally. */
+export interface TaxFormReading {
+  kind: 'w2' | '1099_int' | '1099_div' | '1098';
+  taxYear: number | null;
+  corrected: boolean;
+  /** The employer, payer or lender as printed. */
+  issuerName: string | null;
+  /** The person's pseudonym token (`MEMBER_n`); a name the model returned instead is dropped. */
+  person: string | null;
+  /** The pages of the file it's on. */
+  pages: number[];
+  /** The boxes as `@montra/domain` stores them: money as strings of minor units, valid for the kind. */
+  boxes: Record<string, unknown>;
+  /** Boxes the model returned that weren't valid for the kind, and were dropped. */
+  droppedBoxes: number;
+  confidence: number;
+}
+
+export interface TaxFormExtraction {
+  forms: TaxFormReading[];
+  /** Forms of other kinds in the file (a consolidated 1099's B section), left for a later phase. */
+  otherForms: number;
+}
+
 /** word_summary (REC-01..08, REC-07, BUD-02): AI words numbers that code computed (AIA-05). */
 /**
  * summarize_month (AIA-01, FLOW-01): the review of one month. Code computes every figure; the model only words them
@@ -459,6 +494,8 @@ export interface AiGateway {
   extractPayslip(doc: PayslipDocument, ctx: AiContext): Promise<TaskResult<PayslipExtraction>>;
   /** ADR-0048 §4: reads a bill's biller, amount due and due date. Same document rules as payslips. */
   extractBill(doc: PayslipDocument, ctx: AiContext): Promise<TaskResult<BillExtraction>>;
+  /** ADR-0052 §6: reads the tax forms in a file from its masked text. Never images. */
+  extractTaxForm(doc: TaxFormDocument, ctx: AiContext): Promise<TaskResult<TaxFormExtraction>>;
   proposeCategories(
     input: CategoryProposalInput,
     ctx: AiContext,

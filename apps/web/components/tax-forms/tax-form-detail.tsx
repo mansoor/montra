@@ -10,6 +10,7 @@ import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { TaxFormEditor, type AccountOption, type EmployerOption, type Option } from './tax-form-editor';
+import { TaxFormReadingPanel } from './tax-form-reading';
 import { TaxFormResult } from './tax-year-view';
 
 type Check = TaxFormDto['checks'][number];
@@ -113,8 +114,14 @@ export function TaxFormDetail({
         {form.corrected && <span className="chip">{t('tax_forms.corrected')}</span>}
       </div>
       <StatusLine message={message} />
+      <TaxFormReadingPanel
+        workspaceId={workspaceId}
+        form={form}
+        canWrite={canWrite}
+        canMatchEmployer={canMatchEmployer}
+      />
 
-      {form.checks.length === 0 ? (
+      {form.status === 'reading' ? null : form.checks.length === 0 ? (
         <p className="card text-sm text-muted">{t('tax_forms.no_checks')}</p>
       ) : (
         <section className="card-flush overflow-x-auto" aria-label={t('tax_forms.checks')}>
@@ -273,6 +280,7 @@ export function TaxFormDetail({
       )}
 
       {canWrite &&
+        form.status !== 'reading' &&
         (editing ? (
           <TaxFormEditor
             workspaceId={workspaceId}

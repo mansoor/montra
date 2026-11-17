@@ -431,11 +431,15 @@ import type {
   AccountantTaxFormsDto,
   CreateTaxFormRequest,
   CreateTaxFormWaiverRequest,
+  TaxFormCandidateDto,
   TaxFormCheckDto,
   TaxFormDto,
   TaxFormExpectedDto,
+  TaxFormReadingDto,
+  TaxFormReadingProblem,
   TaxFormResultDto,
   TaxFormReviewDto,
+  TaxFormUploadDto,
   TaxFormWaiverDto,
   TaxYearDto,
   UpdateTaxFormRequest,
@@ -446,11 +450,15 @@ export type CreateTaxFormWaiverInput = z.input<typeof CreateTaxFormWaiverRequest
 export type {
   AcceptTaxFormDifferenceRequest,
   AccountantTaxFormsDto,
+  TaxFormCandidateDto,
   TaxFormCheckDto,
   TaxFormDto,
   TaxFormExpectedDto,
+  TaxFormReadingDto,
+  TaxFormReadingProblem,
   TaxFormResultDto,
   TaxFormReviewDto,
+  TaxFormUploadDto,
   TaxFormWaiverDto,
   TaxYearDto,
 };
@@ -1582,6 +1590,27 @@ export class ApiClient {
   }
   getTaxForm(workspaceId: string, id: string) {
     return this.request<TaxFormDto>('GET', this.ws(workspaceId, `/tax-forms/${enc(id)}`));
+  }
+  /**
+   * Several PDFs or photos at once (TAX-01): each is stored and read in the background (`reading`), or refused when the
+   * same file was received already. `year` is the year on screen, for forms that print none.
+   */
+  uploadTaxFormFiles(
+    workspaceId: string,
+    files: readonly { file: Blob; name: string }[],
+    opts: { year?: number; source?: 'upload' | 'scan' } = {},
+  ) {
+    const form = new FormData();
+    if (opts.year !== undefined) form.append('year', String(opts.year));
+    if (opts.source) form.append('source', opts.source);
+    for (const f of files) form.append('file', f.file, f.name);
+    return this.request<TaxFormUploadDto>('POST', this.ws(workspaceId, '/tax-forms/files'), form);
+  }
+  /** Confirm reading: a person checked the boxes against the file. */
+  confirmTaxFormReading(workspaceId: string, id: string, version: number) {
+    return this.request<TaxFormDto>('POST', this.ws(workspaceId, `/tax-forms/${enc(id)}/confirm`), {
+      version,
+    });
   }
   /** A form typed in, with no file. */
   createTaxForm(workspaceId: string, input: CreateTaxFormInput) {

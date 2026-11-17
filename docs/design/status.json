@@ -1205,16 +1205,16 @@
     "Phone: balances on the payroll screen and leave lines on each paycheck, read-only; contractor time entry is web-only; not run on a device"
   ],
   "TAX-01": [
-    "partial",
-    "Typing a form in: POST tax-forms and the web Tax forms screen (W-2, 1099-INT, 1099-DIV, 1098) with its employer or accounts and the person; upload, scan and several at once come with reading (ADR-0052 PR 3)"
+    "done",
+    "Typing a form in (POST tax-forms, the web editor), and uploading several PDFs or photos at once (POST tax-forms/files, the web drop zone; source upload or scan), each read in the background. The phone’s Scan a form is TAX-09"
   ],
   "TAX-02": [
-    "partial",
-    "Boxes kept per kind as minor-unit amounts, checked by one schema per kind (parseTaxFormBoxes in @montra/domain); a corrected form marks the one it replaces superseded. Reading once and refusing duplicate files come with PR 3"
+    "done",
+    "Each file is read once (doc-worker taxform.read: text layer or OCR, titles, copies B/C/2 dropped; then tax_form.match with extract_tax_form v1), one form per form found (a consolidated 1099 gives several); boxes kept per kind as minor-unit amounts (parseTaxFormBoxes); the same file again is refused (sha256) with its form; a copy with the same kind, year, issuer, person and boxes waits in Review as a probable copy; a CORRECTED form or W-2c replaces the one it corrects (superseded)"
   ],
   "TAX-03": [
-    "partial",
-    "Matched by hand to an employer or account(s) and a person (PATCH tax-forms/:id, the web editor); a match by hand teaches the memory (tax_issuer by EIN, last four or name; tax_person by a keyed hash of the SSN’s last four). Accountants don’t match a W-2 to an employer. Automatic matching comes with reading (PR 3)"
+    "done",
+    "Matched by hand (PATCH tax-forms/:id, the web editor and suggested matches) or automatically (ADR-0052 §4): an issuer signal with an EIN confirmed once before, a name after three, or the one employer or account that fits every detail the form gives (name, last four digits, person, pay or income in the year), with the reason in words; the person from the W-2’s employer, the MEMBER_n token, the learned last four (keyed hash) or the only login, a conflict being a Review item. Confirming (by a person, or by the books agreeing) teaches the memory. Accountants don’t match a W-2 to an employer, by hand or automatically"
   ],
   "TAX-04": [
     "done",
@@ -1230,6 +1230,6 @@
   ],
   "TAX-08": [
     "partial",
-    "Storage and row-level security (migration 0059): the SSN as its last four digits only; a member’s forms visible to them, owners and admins, and to accountants while the owner’s setting is on (owner only, recent sign-in, audited); always bounded by the books. AI minimization (PR 3) and retention (PR 5) to come"
+    "Storage and row-level security (migration 0059): the SSN as its last four digits only; a member’s forms visible to them, owners and admins, and to accountants while the owner’s setting is on (owner only, recent sign-in, audited); always bounded by the books. AI minimization (PR 3): the doc-worker extracts the identifiers locally and masks TINs, account numbers, names (as MEMBER_n tokens), addresses and digit runs before any text leaves it; extract_tax_form takes text only, never images, masks again, drops a returned name and holds counts in its audit event; the masked text is kept out of GET jobs/:id; viewing a file is audited (tax_form.file_viewed). Retention (PR 5) to come"
   ]
 }
