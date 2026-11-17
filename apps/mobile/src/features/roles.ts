@@ -6,10 +6,12 @@ import type { EntityDto, MemberRole } from '@montra/schemas';
  *
  * - **record**: add and edit transactions, work the review queue, capture and match receipts, log trips. Everyone but
  *   a viewer, in books they can write. Members also submit staff spending claims (PRL-11) under this.
- * - **setUp**: categories, budgets, goals, suggestions, payslips, rent and loan payments, a business's profile,
- *   planning settings. Not members (the server's member allowlist) or viewers.
+ * - **setUp**: categories, budgets, goals, suggestions, payslips, rent and loan payments, a business's profile. Not
+ *   members (the server's member allowlist) or viewers.
  * - **importFiles**: statement imports, which the server allows owners, admins, partners and accountants.
  * - **backUp**: a whole-workspace backup, owners and admins only.
+ * - **workspaceSettings**: the workspace's own settings, such as planning settings (receipt reminders). Owners and
+ *   admins only: the server refuses everyone else (ADR-0053 Q5).
  */
 export interface Abilities {
   role: MemberRole;
@@ -17,6 +19,7 @@ export interface Abilities {
   setUp: boolean;
   importFiles: boolean;
   backUp: boolean;
+  workspaceSettings: boolean;
   /** True when the login may write these books. An unknown book (not loaded yet) is left to the server. */
   writes: (entityId: string | null | undefined) => boolean;
 }
@@ -42,6 +45,7 @@ export function abilitiesOf(ws: Workspace): Abilities {
     setUp: record && role !== 'member',
     importFiles: anyWritable && IMPORTERS.includes(role),
     backUp: isAdminRole(role),
+    workspaceSettings: isAdminRole(role),
     writes: (entityId) => role !== 'viewer' && !(entityId && readOnly.has(entityId)),
   };
 }
@@ -53,6 +57,7 @@ export const NO_ABILITIES: Abilities = {
   setUp: false,
   importFiles: false,
   backUp: false,
+  workspaceSettings: false,
   writes: () => false,
 };
 

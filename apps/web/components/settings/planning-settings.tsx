@@ -17,12 +17,15 @@ export function PlanningSettings({
   initial,
   categories,
   currency,
+  canEdit,
 }: {
   workspaceId: string;
   initial: PlanningSettingsDto;
   categories: CategoryDto[];
   /** The base currency: the receipt reminder amount is in it. */
   currency: string;
+  /** The workspace's settings: owners and admins change them, everyone else reads them (ADR-0053 Q5). */
+  canEdit: boolean;
 }) {
   const { t } = useI18n();
   const exp = minorUnits(asCurrencyCode(currency));
@@ -50,6 +53,7 @@ export function PlanningSettings({
         } catch {
           // Not a number: keep what was saved.
         }
+        if (!canEdit) return;
         void run(
           () =>
             browserApi.updatePlanningSettings(workspaceId, {
@@ -63,84 +67,89 @@ export function PlanningSettings({
         );
       }}
     >
-      <section className="card max-w-xl space-y-2">
-        <h2 className="text-base font-semibold">{t('planning.high_interest')}</h2>
-        <p className="text-sm text-muted">{t('planning.high_interest_hint')}</p>
-        <label className="flex items-center gap-2">
-          <input
-            className="input num w-24"
-            inputMode="decimal"
-            value={apr}
-            onChange={(e) => setApr(e.target.value)}
-          />
-          <span className="text-sm">%</span>
-        </label>
-      </section>
-      <section className="card max-w-xl space-y-2">
-        <h2 className="text-base font-semibold">{t('planning.receipt_reminder')}</h2>
-        <p className="text-sm text-muted">{t('planning.receipt_reminder_hint')}</p>
-        <label className="flex items-center gap-2">
-          <input
-            className="input num w-28"
-            inputMode="decimal"
-            aria-label={t('planning.receipt_reminder')}
-            value={reminder}
-            onChange={(e) => setReminder(e.target.value)}
-            data-testid="receipt-reminder"
-          />
-          <span className="text-sm">{currency}</span>
-        </label>
-      </section>
-      <section className="card-flush">
-        <div className="border-b border-line px-4 py-3">
-          <h2 className="text-base font-semibold">{t('planning.priorities')}</h2>
-          <p className="text-sm text-muted">{t('planning.priorities_hint')}</p>
-        </div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th scope="col" className="px-4 py-2">
-                {t('budget.category')}
-              </th>
-              <th scope="col" className="px-4 py-2">
-                {t('planning.priority')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {spending.map((c) => (
-              <tr key={c.id}>
-                <td className="px-4 py-1.5">
-                  {c.name} <span className="text-xs text-muted">· {c.group}</span>
-                </td>
-                <td className="px-4 py-1.5">
-                  <select
-                    className="input w-auto"
-                    aria-label={t('planning.priority_for', { name: c.name })}
-                    value={priorities[c.id] ?? ''}
-                    onChange={(e) => {
-                      const next = { ...priorities };
-                      if (e.target.value) next[c.id] = Number(e.target.value);
-                      else delete next[c.id];
-                      setPriorities(next);
-                    }}
-                  >
-                    <option value="">{t('planning.priority_default')}</option>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <option key={n} value={n}>
-                        {t(`planning.priority_${n}`)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
+      {!canEdit && <p className="text-sm text-muted">{t('planning.owner_only')}</p>}
+      <fieldset className="space-y-5" disabled={!canEdit}>
+        <section className="card max-w-xl space-y-2">
+          <h2 className="text-base font-semibold">{t('planning.high_interest')}</h2>
+          <p className="text-sm text-muted">{t('planning.high_interest_hint')}</p>
+          <label className="flex items-center gap-2">
+            <input
+              className="input num w-24"
+              inputMode="decimal"
+              value={apr}
+              onChange={(e) => setApr(e.target.value)}
+            />
+            <span className="text-sm">%</span>
+          </label>
+        </section>
+        <section className="card max-w-xl space-y-2">
+          <h2 className="text-base font-semibold">{t('planning.receipt_reminder')}</h2>
+          <p className="text-sm text-muted">{t('planning.receipt_reminder_hint')}</p>
+          <label className="flex items-center gap-2">
+            <input
+              className="input num w-28"
+              inputMode="decimal"
+              aria-label={t('planning.receipt_reminder')}
+              value={reminder}
+              onChange={(e) => setReminder(e.target.value)}
+              data-testid="receipt-reminder"
+            />
+            <span className="text-sm">{currency}</span>
+          </label>
+        </section>
+        <section className="card-flush">
+          <div className="border-b border-line px-4 py-3">
+            <h2 className="text-base font-semibold">{t('planning.priorities')}</h2>
+            <p className="text-sm text-muted">{t('planning.priorities_hint')}</p>
+          </div>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th scope="col" className="px-4 py-2">
+                  {t('budget.category')}
+                </th>
+                <th scope="col" className="px-4 py-2">
+                  {t('planning.priority')}
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      <button type="submit" className="btn-primary" disabled={busy}>
-        {t('common.save')}
-      </button>
+            </thead>
+            <tbody>
+              {spending.map((c) => (
+                <tr key={c.id}>
+                  <td className="px-4 py-1.5">
+                    {c.name} <span className="text-xs text-muted">· {c.group}</span>
+                  </td>
+                  <td className="px-4 py-1.5">
+                    <select
+                      className="input w-auto"
+                      aria-label={t('planning.priority_for', { name: c.name })}
+                      value={priorities[c.id] ?? ''}
+                      onChange={(e) => {
+                        const next = { ...priorities };
+                        if (e.target.value) next[c.id] = Number(e.target.value);
+                        else delete next[c.id];
+                        setPriorities(next);
+                      }}
+                    >
+                      <option value="">{t('planning.priority_default')}</option>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>
+                          {t(`planning.priority_${n}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      </fieldset>
+      {canEdit && (
+        <button type="submit" className="btn-primary" disabled={busy}>
+          {t('common.save')}
+        </button>
+      )}
       <StatusLine message={message} />
     </form>
   );

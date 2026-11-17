@@ -112,8 +112,8 @@ export default function Settings() {
         ) : null}
       </Card>
 
-      {/* Receipt reminders are the workspace's planning settings (AUTH-18). */}
-      {planning && can.setUp ? (
+      {/* Receipt reminders are the workspace's planning settings: owners and admins (AUTH-18, ADR-0053 Q5). */}
+      {planning && can.workspaceSettings ? (
         <Card testID="settings-receipt-reminders">
           <Body>{t('mobile.settings.receipt_reminders')}</Body>
           <Small>{t('mobile.settings.receipt_reminders_hint')}</Small>

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { RecommendationsService } from '../src/planning/recommendations.service.js';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
@@ -108,5 +109,45 @@ describe('a viewer is read-only (ADR-0053 Q2)', () => {
     // Back to partner: the grant stays read until someone gives write again.
     const back = await owner.patch(url(`/sharing/members/${partner.userId}`), { role: 'partner' });
     expect(back.body.grants).toEqual([{ entityId: business, access: 'read' }]);
+  });
+});
+
+describe('planning settings are the workspace’s, so owners and admins change them (ADR-0053 Q5)', () => {
+  const PARTNER = 'access-partner@example.test';
+  const ACCOUNTANT = 'access-accountant@example.test';
+  const ADMIN = 'access-admin@example.test';
+  const bps = async () => (await owner.get(url('/planning/settings'))).body.highInterestBps as number;
+
+  beforeAll(async () => {
+    await join(PARTNER, { role: 'partner' });
+    await join(ACCOUNTANT, { role: 'accountant', entityGrants: [{ entityId: business, access: 'write' }] });
+    await join(ADMIN, { role: 'admin' });
+  });
+
+  it('refuses a partner or an accountant instead of saving nothing', async () => {
+    const before = await bps();
+    for (const email of [PARTNER, ACCOUNTANT]) {
+      const res = await h.as(email).patch(url('/planning/settings'), { highInterestBps: before + 111 });
+      expect(await bps()).toBe(before);
+      expect({ email, status: res.status }).toEqual({ email, status: 403 });
+    }
+    // They still read them: recommendations use them.
+    expect((await h.as(PARTNER).get(url('/planning/settings'))).status).toBe(200);
+  });
+
+  it('fails loudly if the update reaches no row, rather than report a save', async () => {
+    const partner = await memberOf(PARTNER);
+    await expect(
+      h.app
+        .get(RecommendationsService)
+        .updateSettings({ workspaceId, userId: partner.userId }, { highInterestBps: 1 }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('saves an admin’s change', async () => {
+    const res = await h.as(ADMIN).patch(url('/planning/settings'), { highInterestBps: 1234 });
+    expect(res.status).toBe(200);
+    expect(res.body.highInterestBps).toBe(1234);
+    expect(await bps()).toBe(1234);
   });
 });

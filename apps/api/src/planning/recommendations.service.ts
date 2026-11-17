@@ -36,7 +36,7 @@ import {
   type RecommendationType,
 } from '@montra/schemas';
 import { z } from 'zod';
-import { notFound, unprocessable } from '../common/errors.js';
+import { forbidden, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { AiService } from '../ai/ai.service.js';
 import { Worker, type Job } from '../jobs/queue.js';
@@ -155,11 +155,13 @@ export class RecommendationsService {
   async updateSettings(ctx: Ctx, patch: Partial<PlanningSettings>): Promise<PlanningSettings> {
     return this.db.run(ctx, async (trx) => {
       const next = { ...(await this.settingsIn(trx, ctx)), ...patch };
-      await trx
+      const res = await trx
         .updateTable('app.workspace')
         .set({ priorities: JSON.stringify(next) })
         .where('id', '=', ctx.workspaceId)
-        .execute();
+        .executeTakeFirst();
+      // RLS lets only owners and admins update the workspace; anyone else would update nothing and hear it saved.
+      if (res.numUpdatedRows === 0n) throw forbidden('Only an owner or admin can change planning settings');
       return next;
     });
   }
