@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   AcceptTaxFormDifferenceRequest,
   AccountantTaxFormsDto,
+  ConfirmTaxFormReadingRequest,
   CreateTaxFormRequest,
   CreateTaxFormWaiverRequest,
   ListTaxFormsQuery,
   RecordFromTaxFormRequest,
   TaxFormDto,
+  TaxFormUploadDto,
   TaxYearDto,
   UpdateTaxFormRequest,
+  UploadTaxFormFieldsDto,
   WorkspaceDto,
 } from '../src/index.js';
 
@@ -143,6 +146,7 @@ describe('the form as sent', () => {
         sources: { payslipIds: [], transactionIds: [ACCOUNT], loanPaymentIds: [], journalEntryIds: [] },
       },
     ],
+    reading: null,
   };
 
   it('carries the boxes of its kind', () => {
@@ -162,6 +166,78 @@ describe('the form as sent', () => {
         checks: [{ ...form.checks[0], status: 'close enough' }],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('forms read from files (ADR-0052 PR 3)', () => {
+  const reading = {
+    fileNames: ['bank.pdf'],
+    kindKnown: true,
+    boxesRead: true,
+    problem: null,
+    droppedBoxes: 0,
+    confirmedBy: 'books',
+    match: {
+      automatic: true,
+      reason: 'Matched: Savings is the only account ending 4321 with interest in 2025',
+      candidates: [{ employerId: null, accountId: ACCOUNT, name: 'Savings', reason: 'Ends 4321' }],
+    },
+    copyOfId: null,
+  };
+
+  it('says how a form from a file was read, and refuses a problem it doesn’t know', () => {
+    const base = {
+      id: EMPLOYER,
+      entityId: ACCOUNT,
+      taxYear: 2025,
+      corrected: false,
+      supersedesId: null,
+      issuerName: null,
+      issuerEin: null,
+      issuerTinLast4: null,
+      personTinLast4: null,
+      accountLast4: null,
+      personMemberId: null,
+      targets: [],
+      fileIds: [ACCOUNT],
+      pages: [1],
+      status: 'confirmed',
+      reason: null,
+      source: 'upload',
+      createdBy: null,
+      confirmedBy: null,
+      confirmedAt: null,
+      deletedAt: null,
+      createdAt: '2026-02-01T00:00:00.000Z',
+      updatedAt: '2026-02-01T00:00:00.000Z',
+      version: 3,
+      result: { state: 'matches', difference: null, review: false, recordable: null, recorded: null },
+      checks: [],
+      kind: '1099_int',
+      boxes: { box1: '4107' },
+    };
+    expect(TaxFormDto.parse({ ...base, reading }).reading?.confirmedBy).toBe('books');
+    expect(TaxFormDto.safeParse({ ...base, reading: { ...reading, problem: 'gremlins' } }).success).toBe(
+      false,
+    );
+  });
+
+  it('takes the upload’s fields as text, and answers per file', () => {
+    expect(UploadTaxFormFieldsDto.parse({ year: '2025', source: 'scan' })).toEqual({
+      year: 2025,
+      source: 'scan',
+    });
+    expect(UploadTaxFormFieldsDto.safeParse({ year: '1999' }).success).toBe(false);
+    expect(
+      TaxFormUploadDto.parse({ files: [{ fileName: 'w2.pdf', status: 'duplicate', formId: EMPLOYER }] })
+        .files,
+    ).toHaveLength(1);
+  });
+
+  it('changes a misread form’s kind, and confirms a reading at a version', () => {
+    expect(UpdateTaxFormRequest.parse({ kind: '1098', boxes: {}, version: 2 }).kind).toBe('1098');
+    expect(ConfirmTaxFormReadingRequest.safeParse({ version: 2 }).success).toBe(true);
+    expect(ConfirmTaxFormReadingRequest.safeParse({}).success).toBe(false);
   });
 });
 
