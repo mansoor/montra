@@ -20,6 +20,11 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
+**Accepted, ready to build:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT,
+1099-DIV and 1098 read, matched and reconciled against the books, then added to the tax package), accepted by the
+owner on 2026-11-16. Five PRs, starting with PR 1 (migration 0059); no code yet. Role-based permissions (ADR-0053) are
+a separate proposal for later; tax forms use an owner-only setting for accountants instead.
+
 ### Test suite at the end of Phase 11 (green locally)
 
 | Suite                                                                                                                                               | Tests                                                               |
