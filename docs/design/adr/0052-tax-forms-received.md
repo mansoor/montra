@@ -2,8 +2,6 @@
 
 - Status: accepted (the owner, 2026-11-16; see Decisions at the end)
 - Date: 2026-11-16
-- Depends on: **ADR-0053** (lightweight role-based permissions). Who sees members' forms is its permission
-  `documents.view_members_private` (§8.4). PR 1 of this chain starts after ADR-0053's implementation merges.
 - Builds on: ADR-0048 §3 (a scan is read once; payslips and pseudonym tokens), ADR-0051 (intakes, match memory,
   Review), ADR-0016 / PAY-01..09 (payslips), ADR-0024 (loan tracking), ADR-0025 (retirement and investment accounts),
   ADR-0034 §7b (W-2 boxes, for the employer side), RPT-04 (the year-end tax package)
@@ -160,8 +158,12 @@ Three new tables, all with row-level security enabled and forced, policies, and 
 - **`app.tax_form_waiver`**: an expected form the person says won't come or is covered elsewhere (§7.1): `tax_year`,
   `kind`, `employer_id` or `account_id`, `reason` (`not_issued`, `combined`, `other`), `note`, who and when.
 
-And one change: `app.match_memory.kind` gains `tax_issuer` and `tax_person` (§4), with its write policy extended to
-the roles of §8.
+And two changes:
+
+- `app.match_memory.kind` gains `tax_issuer` and `tax_person` (§4), with its write policy extended to the roles of §8.
+- **`app.workspace.accountant_sees_tax_forms`** (`boolean not null default false`): the owner's setting that lets
+  accountants see members' tax forms and include them in tax packages (§8.4). It's a typed column rather than a key
+  in `ai_settings` (where the AI documents toggle lives, read only by the API), because row-level security reads it.
 
 Files are `app.file` rows, uploaded and served as other documents are; how they are encrypted is §8.3. The tables are
 exported in backups and restored with them, like payslips.
@@ -419,9 +421,10 @@ The year-end package (RPT-04) gains, for the books it's made for:
 - a line in `README.txt` that Montra checked the forms against the books and didn't prepare a return.
 
 W-2s, 1099-INT/DIV and personal mortgages' 1098s go in the personal package; a rental mortgage's 1098 in that rental's.
-Another member's forms go in only when the package's maker has `documents.view_members_private` (§8.4); their own
-forms always do. A form left out is counted in the README ("2 forms not included: you can't see them"). Before making
-the package, the panel warns when forms for that year differ or are missing.
+A member's forms go in when the package's maker is the person they're for, an owner or an admin, or an accountant
+while the owner's setting is on (§8.4); otherwise they're left out. The README counts any left out ("2 forms not
+included: you can't see them"). Before making the package, the panel warns when forms for that year differ or are
+missing.
 
 ### 8. Privacy and security
 
@@ -451,28 +454,40 @@ through the form, which applies its row-level security. Viewing or downloading t
 owner's decision 4): sealing would need a short-lived unsealed copy for the doc-worker to read each form, and receipts
 and payslips aren't sealed either.
 
-#### 8.4 Who sees a form (row-level security and permissions)
+#### 8.4 Who sees a form (row-level security and the owner's setting)
 
-Visibility goes through ADR-0053's lightweight role-based permissions: roles stay as defaults, each a named set of
-permissions, and the owner can switch single permissions on or off per person. The exact permission catalogue, and the
-check used in SQL and in the API, are ADR-0053's; this ADR uses one permission from it:
-
-- **`documents.view_members_private`**: see other household members' private documents. It governs members' tax
-  forms here, and the same permission will govern payslips (PAY-09). Granted by default to **owner and admin only**,
-  so an accountant, partner or member doesn't have it unless the owner switches it on for that person.
-
-The rules:
-
-- **Read**, for every kind: the person the form is for (their own login), and anyone holding
-  `documents.view_members_private`. This replaces `app.can_read_restricted(person_member_id)`, which encodes the same
-  default as a fixed role rule. While the person isn't known yet: the uploader, and anyone holding the permission.
-  Also bounded by the books: `app.can_read_entity(entity_id)`.
-- **Write**: the same people, except viewers. A member can upload and handle their own forms; anyone else handles the
-  forms they can read.
-- **The tax package** includes members' forms only for a maker holding the permission (§7.3).
+- **Read**, for every kind:
+  - the person the form is for (their own login), owners and admins: `app.can_read_restricted(person_member_id)`, the
+    payslip rule (PAY-09);
+  - **accountants, when the owner's setting is on**: "Accountants can see members' tax forms and include them in tax
+    packages" (`app.workspace.accountant_sees_tax_forms`, **off by default**). For forms in a set of books (a 1098 on
+    a rental's mortgage, later a business's 1099s) the accountant's own access to those books still applies.
+  - While the person isn't known yet: the uploader, owners and admins, and accountants when the setting is on.
+  - Always bounded by the books: `app.can_read_entity(entity_id)`.
+- **In SQL** this is one stable `SECURITY DEFINER` helper, `app.can_read_tax_form(p_member uuid)` (qualified names,
+  `set search_path`, like `can_read_restricted`): `app.can_read_restricted(p_member)`, or the current role is
+  `accountant` and the workspace's `accountant_sees_tax_forms` is true. The policies on `tax_form`, `tax_form_target`
+  and `tax_form_waiver` use it, so the setting is enforced by row-level security, not only by the API.
+- **Write**: the same people, except viewers. A member can upload and handle their own forms; an accountant (with the
+  setting on) handles the forms they can read.
+- **The tax package** includes members' forms only for a maker who can read them by these rules (§7.3).
+- **The setting:**
+  - Only an owner can change it, and only after a recent sign-in (`requireRecentAuth`, AUTH-09). The API refuses
+    anyone else, and a trigger on `app.workspace` refuses a change to the column unless `app.current_member_role()` is
+    `owner`, as defence in depth.
+  - Every change is written to the audit log (`workspace.accountant_tax_forms_changed`, with old and new values).
+  - On the web it's in **Settings → Workspace → Sharing** (`?tab=sharing`, where members, roles and invites are),
+    shown to owners only, under the members list. The phone shows it read-only.
+  - A future role-based permission model (ADR-0053, proposed and deferred) would turn this setting into a permission
+    that the owner can grant per person; the helper above is the one place that would change.
 - `tax_form_target` and `tax_form_waiver` follow their form's (and, for a waiver, the target's) rule.
-- The checks read payslips and postings under the reader's own row-level security. Someone who can read a W-2 can
-  already read that member's payslips, so a check never reveals more than the form.
+- The checks read payslips and postings under the reader's own row-level security. The person, owners and admins
+  can already read that member's payslips, so a check never reveals more than the form.
+- An accountant with the setting on can read the W-2 but not the member's payslips (PAY-09 is unchanged). Their W-2
+  checks get the payslip totals from one `SECURITY DEFINER` function, `app.tax_form_payslip_totals(p_form uuid)`,
+  which returns only the sums of §5.2 for that form's employer, person and year, and only when
+  `app.can_read_tax_form` allows the form. They see the totals and the differences, without drill-down into the
+  payslips.
 - Expected forms are listed only for employers and accounts the reader can see: a member doesn't learn that another
   member is expecting a W-2.
 - Account forms (1099-INT/DIV, 1098) follow the same rule as W-2s, not the account's visibility (the owner's decision
@@ -526,33 +541,42 @@ A new section, **3.8 Tax forms received**, in `docs/requirements/R1-requirements
 | TAX-05 | Differences, unmatched and unread forms are Review items; a difference can be fixed, re-read or accepted with a note.         | M        |
 | TAX-06 | A Tax forms screen per year lists the forms expected (from payslips, interest, dividends and mortgages) against those received. | M      |
 | TAX-07 | The year-end tax package includes the forms, an index and the reconciliation.                                                 | M        |
-| TAX-08 | Names and SSNs never reach the AI provider; only the last four digits of an SSN are kept; a member's forms are visible only to them and those with `documents.view_members_private`. | M |
-| TAX-10 | One reminder on 16 February lists the expected forms not yet received.                                                        | S        |
+| TAX-08 | Names and SSNs never reach the AI provider; only the last four digits of an SSN are kept; a member's forms are visible only to them, owners and admins, and to accountants when the owner allows it. | M |
 | TAX-09 | The phone scans forms and shows and acts on their results.                                                                    | S        |
+| TAX-10 | One reminder on 16 February lists the expected forms not yet received.                                                        | S        |
 
 ## Delivery
 
-Five PRs, in order, each reviewable alone and green on `pnpm verify`. **PR 1 starts after ADR-0053's implementation
-merges**, because its row-level security uses that ADR's permission check. Migration numbers are the next free ones
-when each lands; ADR-0053's migrations come first, so `0059` and `0060` below are placeholders.
+Five PRs, in order, each reviewable alone and green on `pnpm verify`. Nothing else has to land first. Migrations:
+`0059` (PR 1) and `0060` (PR 5).
 
-1. **Contracts, storage and typed forms** (TAX-01 typing only, TAX-02 partly, TAX-08 storage and RLS).
-   - Migration `0059_tax_forms.sql`: `app.tax_form`, `app.tax_form_target`, `app.tax_form_waiver`, RLS (§8.4) through
-     ADR-0053's check for `documents.view_members_private`, grants; `match_memory.kind` widened with its write policy; the two `ref.tax_line` rows and the categories' tax
-     lines (§5.7) as reference data and a data update.
+1. **Contracts, storage, typed forms and the owner's setting** (TAX-01 typing only, TAX-02 partly, TAX-08 storage and
+   RLS).
+   - Migration `0059_tax_forms.sql`: `app.tax_form`, `app.tax_form_target`, `app.tax_form_waiver`, grants;
+     `app.workspace.accountant_sees_tax_forms` with its owner-only trigger; `app.can_read_tax_form` and the RLS that
+     uses it, and `app.tax_form_payslip_totals` (§8.4); `match_memory.kind` widened with its write policy; the two `ref.tax_line` rows and the
+     categories' tax lines (§5.7) as reference data and a data update.
+   - The setting: read in the workspace DTO, changed by an owner-only endpoint with `requireRecentAuth` and an audit
+     row; the owners-only switch in Settings → Workspace → Sharing on the web.
    - Kysely types, `packages/schemas` DTOs (`TaxFormDto`, `TaxFormBoxesDto` per kind, `TaxFormCheckDto`,
      `TaxYearDto`), `@montra/domain/tax-forms.ts` (box schemas, `parseTaxFormBoxes`, thresholds, the wage base).
    - API: `GET tax-forms?year=`, `POST tax-forms` (typed in), `PATCH`, `DELETE` (to Trash), waivers. No reading yet.
    - R1 section 3.8 and `status.json` entries; traceability regenerated.
-   - Tests: `packages/db` RLS tests (a member can't see another member's W-2; an accountant can't by default and can
-     once the owner switches `documents.view_members_private` on for them; switching it off for an admin hides the
-     forms; the uploader sees an unmatched one; viewers can't write; staff roles' grants unchanged); schema and box-parser tests; API tests for typing a form in.
+   - Tests:
+     - `packages/db` RLS tests: a member can't see another member's W-2; an accountant can't see members' forms by
+       default, and can once the owner turns the setting on; an accountant still can't see a form in books they have
+       no access to; the uploader sees an unmatched form; viewers can't write; a non-owner (admin, accountant) can't
+       change the setting, even by a direct update; staff roles' grants unchanged.
+     - API tests: typing a form in; changing the setting needs an owner and a recent sign-in, and writes an audit row.
+     - Schema and box-parser tests.
    - Phone: no.
 2. **Reconciliation, expected forms, Review and the web screen** (TAX-04, TAX-05, TAX-06; TAX-03 by hand).
    - `reconcileW2`, `reconcile1099Int`, `reconcile1099Div`, `reconcile1098`, the reading checks, the known
      explanations and the expected-forms inference, all pure in `@montra/domain`, with table-driven tests per box,
      tolerance edge ($1.00 vs $1.01), the year boundary, YTD cross-check and `not_tracked`.
-   - API: the figures gathered under RLS; checks on `GET tax-forms/:id`; Review's "Tax forms to check"; matching by
+   - API: the figures gathered under RLS, and the payslip totals for an accountant through
+     `app.tax_form_payslip_totals` (§8.4; it's defined in PR 1's migration, so this PR adds none); checks on
+     `GET tax-forms/:id`; Review's "Tax forms to check"; matching by
      hand with `learnMatch`; accept a difference; Record from the form.
    - Web: `/tax-forms` (year, expected vs received, detail with checks and drill-downs, typing a form in, waivers),
      Review section. e2e `e2e/tax-forms.spec.ts` with typed-in forms against seeded payslips, interest and a loan.
@@ -582,8 +606,8 @@ when each lands; ADR-0053's migrations come first, so `0059` and `0060` below ar
      the notification sweep.
    - Migration `0060_tax_forms_reminder.sql`: the notification type (and its default preference rows, if the
      notification tables need them).
-   - Tests: the package's contents for a personal and a rental book; another member's form left out for a maker
-     without `documents.view_members_private` and included for one with it; retention dates; a backup round trip; the
+   - Tests: the package's contents for a personal and a rental book; a member's form left out for an accountant while
+     the setting is off and included once it's on, and included for an owner; retention dates; a backup round trip; the
      reminder sent once on 16 February, listing only what each recipient can see, and not sent when nothing is missing.
    - Phone: the package panel's warning and the notification's setting.
 
@@ -627,9 +651,11 @@ when each lands; ADR-0053's migrations come first, so `0059` and `0060` below ar
   and nothing else.
 - **Calculate the return's figures (Schedule B totals, the 1040 lines).** That's tax preparation, which Montra doesn't
   do.
-
-- **A fixed role rule for accountants** (a yes or no on whether the accountant role sees members' forms). The owner
-  chose permissions instead (ADR-0053), so the answer can differ per person without another fixed rule.
+- **Role-based permissions first (ADR-0053).** The owner first chose to decide accountants' access through a small
+  permission model (roles as default permission sets, switchable per person), then deferred it: one owner setting
+  covers the need now, and ADR-0053 can turn it into a permission later.
+- **A fixed role rule for accountants** (always or never). Accountants differ by household; the owner's setting lets
+  each workspace choose, off by default.
 - **Seal the files with the workspace key**, as payroll's ID copies are. That would keep a readable SSN out of the
   storage bucket, but the doc-worker would need a short-lived unsealed copy for each reading, and receipts and payslips
   aren't sealed either.
@@ -639,14 +665,11 @@ when each lands; ADR-0053's migrations come first, so `0059` and `0060` below ar
 1. **Reminders: yes.** One notification on 16 February listing the expected forms that are missing, and nothing else
    (§11). PR 5 adds it, with migration `0060`.
 2. **Who sees a form:** the person it's for, plus owners and admins, for every kind (§8.4).
-3. **Accountants: decided through permissions, not a role rule.** A small role-based permission model comes first, as
-   ADR-0053. Roles stay as defaults, each a named set of permissions, and the owner can switch single permissions on or
-   off per person. Here:
-   - seeing members' forms is `documents.view_members_private`, the same permission that will govern payslips, granted
-     by default to owner and admin only;
-   - including members' forms in a tax package needs the same permission;
-   - ADR-0053 is a dependency, and PR 1 of this chain starts after its implementation merges. The exact permission
-     catalogue is ADR-0053's.
+3. **Accountants: an owner-only workspace setting**, "Accountants can see members' tax forms and include them in tax
+   packages", a boolean, **off by default** (§8.4). Only an owner changes it, after a recent sign-in, and every change
+   is audit-logged. On 2026-11-16 the owner first tied this to a role-based permission model (ADR-0053), then
+   replaced that dependency with this setting: **ADR-0053 is drafted but deferred**, and tax forms don't wait for it.
+   A future ADR-0053 would turn the setting into a permission.
 4. **Files are stored like other documents** (storage encryption), not sealed (§8.3).
 5. **Images never go to the AI** for tax forms; masked text only (§6, §8.2).
 6. **Record from the form is offered**: the one-step entry that reclassifies a valued investment account's growth as
