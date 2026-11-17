@@ -17,15 +17,16 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
 | **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Requirements**       | 327 IDs in total: **251 done, 60 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
 **Being built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and
 1098 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on
-2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059)
-and **PR 2 is done** (the checks against the books, expected forms, Review and the `/tax-forms` screen; no migration);
-see §7g. Next is PR 3, reading uploaded forms and matching them automatically. Role-based permissions (ADR-0053) are a
-separate proposal for later; tax forms use an owner-only setting for accountants instead.
+2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059),
+**PR 2 is done** (the checks against the books, expected forms, Review and the `/tax-forms` screen; no migration) and
+**PR 3 is done** (reading uploaded forms, masked text only, and matching them automatically; no migration); see §7g.
+Next is PR 4, the phone. Role-based permissions (ADR-0053) are a separate proposal for later; tax forms use an
+owner-only setting for accountants instead.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
@@ -1518,6 +1519,31 @@ Phase 11 leftovers:
   - Tests: domain table tests per box, the $1.00/$1.01 edge, the year boundary, YTD cross-check, not tracked, reading
     checks, expected forms; API tests (`tax-form-checks.test.ts`) against real payslips, interest, a mortgage and an
     accountant; web helpers; e2e `tax-forms.spec.ts`. Where the build differs from the ADR is in "As built: PR 2".
+- **Tax forms received, PR 3 of 5** (TAX-01, TAX-02, TAX-03 done; TAX-08 AI minimization; ADR-0052, no migration):
+  - **Doc-worker `taxform.read`** (`taxform.py`): the PDF's text layer, else Tesseract; form titles per page (W-2, W-2c,
+    1099-INT, 1099-DIV, 1098, other 1099 sections), year and CORRECTED; copies B, C and 2 dropped; the person's SSN
+    and SSN-shaped TINs to their last four, the issuer's EIN, the account to its last four, by their labels; then the
+    text masked (members' names as `MEMBER_n`, every TIN and account number, digit runs, emails, phones, addresses and
+    the person's name lines). Nothing else leaves the worker. A file it can't read is a result with an `error`.
+  - **Gateway `extract_tax_form` v1:** text only (the document has no image field), masked again; boxes validated per
+    kind into minor units, a returned name dropped, counts only in the audit event. Fake provider `fake-tax-form.ts`
+    and an eval corpus (`packages/ai-gateway/test/tax-forms`: W-2s, 1099-INT, 1099-DIV, 1098, a consolidated 1099, a
+    W-2c and a corrected 1099).
+  - **API:** `POST tax-forms/files` (several files; the same file again refused with its form) makes a form in `reading`
+    per file and queues `taxform.read` then `tax_form.match`, which makes one form per form found, matches the issuer
+    (an EIN learned once, or the one clear candidate, with the reason in words; `decideTaxFormMatch` in
+    `@montra/importers`) and the person, finds probable copies and the forms a corrected one replaces, and confirms the
+    reading when every check agrees with the books. `POST tax-forms/:id/confirm` (Confirm reading),
+    `GET tax-forms/:id/files/:fileId` (audited), a misread form's kind changed by `PATCH`, `TaxFormDto.reading`.
+    Accountants match nothing to an employer. `GET jobs/:id` hides the chain's results.
+  - **Web:** a drop zone on `/tax-forms` (several PDFs or photos), a Being read list that refreshes itself, and on a
+    form: its file, where its reading stands, why it was matched or the matches to pick, a probable copy, Confirm
+    reading, and the kind of a form that couldn't be read.
+  - Tests: pytest on reportlab forms and rendered images (no SSN-shaped string, nine-digit TIN, name or address in the
+    output; real Tesseract in CI), the gateway's corpus, minimization and dropped names, matcher units, API tests
+    (`tax-form-reading.test.ts`: upload, the chain, the automatic rules, copies, corrections, consolidated 1099s, person
+    conflicts, accountants, unread forms, the file and jobs, and a W-2 rendered by `year-end-pdf.ts` read back to the
+    same boxes), web helpers and an e2e upload. Where the build differs from the ADR is in "As built: PR 3".
 
 ---
 

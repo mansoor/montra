@@ -699,6 +699,62 @@ Where PR 2 had to differ from or add to the text above, and why:
   "Expect it again" removes it. Drill-downs open each payslip and transaction; entries with no transaction link to the
   Journal.
 
+### As built: PR 3 (2026-11-17)
+
+Where PR 3 had to differ from or add to the text above, and why:
+
+- **A form in `reading` is made at upload, one per file.** `app.tax_form.kind` is `not null` (migration 0059) and the
+  kind isn't known until the file is read, so the form starts as `w2` with `detected.kindKnown = false`, shown by its
+  file name ("A form not read yet") until the reading sets it. The reading turns that form into the first form found;
+  any others in the file (a consolidated 1099) become new forms sharing its `file_ids` and `sha256`. This keeps the
+  ADR's "no migration" and gives a failed reading a row to stand in Review.
+- **Files are `app.file` rows of kind `other`.** There's no `tax_form` file kind without a migration. They're reachable
+  only through their form (`GET tax-forms/:id/files/:fileId`, audited as `tax_form.file_viewed`), as payslips are, but
+  an external storage destination that mirrors `other` files (the default) copies them too. An owner's question: a
+  `tax_form` file kind (migration `0063`) would let a destination leave them out. `retain_until` is left for PR 5.
+- **The doc-worker replaces members' names with their tokens itself.** It masks the person's name lines (after the
+  employee, recipient or borrower label, or above an address), so the gateway's pseudonyms would come too late: the job
+  carries the members' names and `MEMBER_n` tokens (in the gateway's order) and the doc-worker swaps them in first,
+  keeping only the token on a name line. A line after the employer's, payer's or lender's name label is kept: it's the
+  issuer the AI must read. The gateway masks again (`maskTaxFormText`), keeping form names and years that `maskText`
+  would take for digit runs.
+- **A file the doc-worker can't read is a result, not a failed job** (`error` with a code), so the form still reaches
+  Review to be typed in (`reading.problem`: `unreadable`). A chain that fails anyway shows its form as unread
+  (`failed`), and one nothing picks up for three minutes as `waiting`; both can be typed in. While a form is being
+  read, `PATCH` is refused (409), since the reading would overwrite it.
+- **`TaxFormDto.reading`** (null for a form typed in) says how it was read: file names, whether the kind and boxes were
+  read, the problem, boxes dropped as invalid, who confirmed it (a person or the books), the automatic match's reason
+  in words or the candidates to pick, and a probable copy's original. The `reading` column keeps the boxes as read (not
+  the masked text), and is cleared on confirmation. `GET jobs/:id` returns no result for the chain's jobs: the masked
+  text is still a member's form, and jobs are readable by every member.
+- **The automatic rules (§4), as built** (`decideTaxFormMatch` in `@montra/importers`):
+  - A candidate fits when every detail the form gives agrees and it had pay, interest, dividends or mortgage interest
+    in the year; the name or the last four digits must be among those details, so a form giving neither isn't matched
+    automatically. A 1099's name is compared with the account's name and its institution.
+  - A W-2's employer is looked for without the person first, since the employer decides the person; if the token or
+    the learned last four names someone else, the form isn't matched and waits as `person_conflict` with the employer
+    suggested. Archived employers and accounts count only when they were active that year.
+  - The person's learned last four (`tax_person`) is used after one confirmation, not ADR-0051's three: they're the
+    household's own digits.
+  - Confirming a reading, by a person or by the books agreeing, confirms the match memory as a match by hand does, so
+    next year's form from the same EIN matches from memory. Picking another match is a correction (`learnMatch`).
+  - Accountants match nothing to an employer, by hand or automatically (`W2_EMPLOYER_MATCHERS`, the owner's decision).
+- **Confirmation by the books happens when a form is read or changed**, not when it's shown (reads don't write): a form
+  that comes to match later shows "Matches the books" and leaves Review, but stays unconfirmed until it's changed or a
+  person confirms it. A reading with nothing in the books to check it against (not tracked) stays unconfirmed, outside
+  Review. Confirm reading (`POST tax-forms/:id/confirm`) needs the boxes, a match and the person, and clears a
+  probable copy (it's kept as a form of its own).
+- **Duplicates and corrections:** the same file is refused per file in the upload's answer (`duplicate`, with the form);
+  a probable copy and the form a corrected one replaces are found by kind, year, issuer (the EIN when both have one,
+  else the name) and person (the member, else the last four). A misread form's kind (and year) can be changed while it
+  isn't confirmed.
+- **Local AI mode is treated as unavailable** for tax forms: the forms the titles name wait to be typed in (§6).
+- **The W-2 round trip** is an API test: payroll's `year-end-pdf.ts` renders the W-2, a test-only text extractor stands
+  in for the doc-worker (the API tests have no Python), and the fake provider reads it back to the same boxes; the
+  doc-worker's own reading is pytest's, on reportlab forms and rendered images (real Tesseract in CI).
+- **TAX-01 is done** with uploads on the web; the phone's Scan a form is TAX-09 (PR 4), and the upload already takes
+  `source=scan`.
+
 ## Consequences
 
 - The year's books get an outside check: every phase 1 form either agrees with them, is explained, or lands in Review
