@@ -20,6 +20,11 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
+**Accepted, ready to build:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT,
+1099-DIV and 1098 read, matched and reconciled against the books, then added to the tax package), accepted by the
+owner on 2026-11-16. Five PRs, starting with PR 1 (migration 0059); no code yet. Role-based permissions (ADR-0053) are
+a separate proposal for later; tax forms use an owner-only setting for accountants instead.
+
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
@@ -1201,7 +1206,9 @@ Phase 11 leftovers:
     else waits in Review with the reason, its import in preview.
   - **Bills:** `POST scans { kind: 'bill', autoFile: true }` files the bill for a learned provider when its amount and
     due date were read; otherwise it waits in Review (and the scan can still be confirmed as before). Without `autoFile`
-    nothing changes, so the web's Add a bill keeps its flow. The phone's bill capture now asks for `autoFile`.
+    nothing changes. The phone's bill capture and the web's Add a bill both ask for `autoFile`: a bill filed
+    automatically closes the dialog with a message. The web's Bills list has **Void** on open and overdue bills
+    (`PATCH household-bills/:id { void: true }`), to undo one filed wrongly; the phone has no void yet.
   - **Review:** web `/review` and the phone's Review show **Statements and bills to file** above the transactions; each
     has the account or provider to pick (candidates first) and Put aside. The web opens a resolved statement in its
     import preview; the phone imports it only when clean (`commitIfClean`).

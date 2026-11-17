@@ -159,6 +159,11 @@ export function BillersManager({
                   <th scope="col" className="px-2 py-2">
                     {t('billers.status')}
                   </th>
+                  {addBill && (
+                    <th scope="col" className="px-2 py-2">
+                      <span className="sr-only">{t('billers.bill_actions')}</span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -178,6 +183,30 @@ export function BillersManager({
                         {t(`billers.status_${b.status}`)}
                       </span>
                     </td>
+                    {addBill && (
+                      <td className="px-2 py-2">
+                        {(b.status === 'open' || b.status === 'overdue') && (
+                          <button
+                            type="button"
+                            className="text-sm underline"
+                            disabled={busy}
+                            aria-label={t('billers.bill_void_named', { name: b.billerName })}
+                            onClick={() =>
+                              void run(
+                                () =>
+                                  browserApi.updateHouseholdBill(workspaceId, b.id, {
+                                    void: true,
+                                    version: b.version,
+                                  }),
+                                t('billers.bill_voided', { name: b.billerName }),
+                              )
+                            }
+                          >
+                            {t('billers.bill_void')}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
