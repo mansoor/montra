@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { normalizeEin, TAX_FORM_KINDS, TaxFormBoxesJsonSchemas } from '@montra/domain';
+import { normalizeEin, TAX_CHECK_STATUSES, TAX_FORM_KINDS, TaxFormBoxesJsonSchemas } from '@montra/domain';
 import { Id } from './common.js';
 import { MinorDto } from './budgets.js';
 
@@ -84,6 +84,83 @@ export type TaxFormTargetDto = z.infer<typeof TaxFormTargetDto>;
 
 const TargetInput = z.union([z.strictObject({ employerId: Id }), z.strictObject({ accountId: Id })]);
 
+/**
+ * One check of a form against the books (§5), worked out each time it's shown. `kind`: a `check` box that differs
+ * puts the form in Review; an `info` box is shown only. Amounts are minor units; `books` and `difference` are null
+ * where the books hold no figure for the box.
+ */
+export const TaxFormCheckDto = z.object({
+  /** The box as printed: `1`, `12D`, `1a`, `1+3+8`, `16 CA`. */
+  box: z.string(),
+  kind: z.enum(['check', 'info']),
+  form: MinorDto.nullable(),
+  books: MinorDto.nullable(),
+  difference: MinorDto.nullable(),
+  status: z.enum(TAX_CHECK_STATUSES),
+  /** How the books' figure was worked out, in words. */
+  rule: z.string(),
+  /** The known explanation that made it match ("Interest credited on 31 December, posted on 2 January"), or what a
+   * difference probably means ("a payslip seems to be missing"). */
+  explanation: z.string().nullable(),
+  /** The note of an accepted difference. */
+  acceptedNote: z.string().nullable(),
+  /** What was summed, for the drill-down (RPT-03). Empty for an accountant's payslip totals. */
+  sources: z.object({
+    payslipIds: z.array(Id),
+    transactionIds: z.array(Id),
+    loanPaymentIds: z.array(Id),
+    /** Entries with no transaction behind them (a balance, or income recorded from the form). */
+    journalEntryIds: z.array(Id),
+  }),
+});
+export type TaxFormCheckDto = z.infer<typeof TaxFormCheckDto>;
+
+/**
+ * What a form comes to (§7.1), in words and colour on the screen: Matches the books · Differs by $412.50 · Difference
+ * accepted · Not tracked in the books · Needs a match · Reading. The stored status comes first (a form being read, put
+ * aside, replaced, or waiting for a match or a person); then what its checks add up to.
+ */
+export const TAX_FORM_RESULT_STATES = [
+  'matches',
+  'differs',
+  'accepted',
+  'not_tracked',
+  'check_reading',
+  'needs_match',
+  'needs_person',
+  'unread',
+  'person_conflict',
+  'probable_copy',
+  'reading',
+  'dismissed',
+  'superseded',
+] as const;
+export const TaxFormResultState = z.enum(TAX_FORM_RESULT_STATES);
+export type TaxFormResultState = z.infer<typeof TaxFormResultState>;
+
+export const TaxFormResultDto = z.object({
+  state: TaxFormResultState,
+  /** For `differs`: the largest difference among the `check` boxes, form minus books. */
+  difference: MinorDto.nullable(),
+  /** Whether it's a Review item ("Tax forms to check"). */
+  review: z.boolean(),
+  /**
+   * Income the form reports on a valued account that posted none (§5.6): what Record from the form would move from
+   * investment gains to the income category, on 31 December. Null when it isn't offered.
+   */
+  recordable: z
+    .object({
+      amount: MinorDto,
+      accountId: Id,
+      accountName: z.string(),
+      categoryName: z.string(),
+    })
+    .nullable(),
+  /** The entry Record from the form made, while it stands. */
+  recorded: z.object({ journalEntryId: Id, amount: MinorDto, date: z.string() }).nullable(),
+});
+export type TaxFormResultDto = z.infer<typeof TaxFormResultDto>;
+
 const TaxFormFields = {
   id: Id,
   /** The books it belongs to: from what it's matched to, the personal books until then. */
@@ -116,6 +193,10 @@ const TaxFormFields = {
   createdAt: z.string(),
   updatedAt: z.string(),
   version: z.number().int(),
+  /** What its checks against the books come to, worked out on read (§5). */
+  result: TaxFormResultDto,
+  /** One per box (§5); empty until it's matched. */
+  checks: z.array(TaxFormCheckDto),
 };
 
 /** One form received, with the boxes of its kind. */
@@ -147,45 +228,40 @@ export const TaxFormWaiverDto = z.object({
 });
 export type TaxFormWaiverDto = z.infer<typeof TaxFormWaiverDto>;
 
+/** A form the year should bring (§7.1), inferred from payslips, interest, dividends and mortgages; never stored. */
+export const TaxFormExpectedDto = z.object({
+  kind: TaxFormKind,
+  employerId: Id.nullable(),
+  accountId: Id.nullable(),
+  personMemberId: Id.nullable(),
+  entityId: Id,
+  /** The employer's or the account's name. */
+  name: z.string(),
+  /** The books' figure that makes it expected: pay, interest, dividends or mortgage interest in the year. */
+  amount: MinorDto,
+  /** Received (a form of its kind matched to it), Won't come (a waiver), or Not yet. */
+  state: z.enum(['received', 'waived', 'missing']),
+  formId: Id.nullable(),
+  waiverId: Id.nullable(),
+});
+export type TaxFormExpectedDto = z.infer<typeof TaxFormExpectedDto>;
+
 /**
- * A year's tax forms (`GET tax-forms?year=`): those received and the waivers. Expected forms, inferred from payslips,
- * interest, dividends and mortgages, join it with the reconciliation (ADR-0052 PR 2).
+ * A year's tax forms (`GET tax-forms?year=`): those received, with their results; those expected, each received,
+ * waived or missing; and the waivers. Expected forms are listed only for the employers and accounts the reader can see.
  */
 export const TaxYearDto = z.object({
   year: z.number().int(),
   forms: z.array(TaxFormDto),
+  expected: z.array(TaxFormExpectedDto),
+  /** Received forms that match nothing expected ("Received, not expected"). */
+  unexpectedFormIds: z.array(Id),
   waivers: z.array(TaxFormWaiverDto),
 });
 export type TaxYearDto = z.infer<typeof TaxYearDto>;
 
 export const ListTaxFormsQuery = z.object({ year: z.coerce.number().int().min(2000).max(2100) });
 export type ListTaxFormsQuery = z.output<typeof ListTaxFormsQuery>;
-
-/**
- * One check of a form against the books (§5), worked out each time it's shown. `kind`: a `check` box that differs
- * puts the form in Review; an `info` box is shown only. Amounts are minor units; `books` and `difference` are null
- * where the books hold no figure for the box.
- */
-export const TaxFormCheckDto = z.object({
-  /** The box as printed: `1`, `12D`, `1a`, `1+3+8`. */
-  box: z.string(),
-  kind: z.enum(['check', 'info']),
-  form: MinorDto.nullable(),
-  books: MinorDto.nullable(),
-  difference: MinorDto.nullable(),
-  status: z.enum(['matches', 'explained', 'differs', 'accepted', 'check_reading', 'not_tracked', 'info']),
-  /** How the books' figure was worked out, in words. */
-  rule: z.string(),
-  /** The known explanation that made it match ("Interest credited on 31 December, posted on 2 January"). */
-  explanation: z.string().nullable(),
-  /** What was summed, for the drill-down (RPT-03). Empty for an accountant's payslip totals. */
-  sources: z.object({
-    payslipIds: z.array(Id),
-    transactionIds: z.array(Id),
-    loanPaymentIds: z.array(Id),
-  }),
-});
-export type TaxFormCheckDto = z.infer<typeof TaxFormCheckDto>;
 
 // ----- Typing a form in, and changing one ------------------------------------------------------------------------------
 
@@ -267,6 +343,24 @@ export const CreateTaxFormWaiverRequest = z
     path: ['kind'],
   });
 export type CreateTaxFormWaiverRequest = z.output<typeof CreateTaxFormWaiverRequest>;
+
+/** `GET tax-forms/review`: Review's "Tax forms to check" (§7.1), every year, oldest year first. */
+export const TaxFormReviewDto = z.object({ data: z.array(TaxFormDto) });
+export type TaxFormReviewDto = z.infer<typeof TaxFormReviewDto>;
+
+/** `POST tax-forms/:id/accept`: accept a box's difference with a note (§5.6). It holds while the difference stays. */
+export const AcceptTaxFormDifferenceRequest = z.strictObject({
+  box: z.string().min(1).max(40),
+  note: z.string().trim().min(1).max(500),
+});
+export type AcceptTaxFormDifferenceRequest = z.output<typeof AcceptTaxFormDifferenceRequest>;
+
+/**
+ * `POST tax-forms/:id/record`: Record from the form (§5.6). `amount` is the one the person confirmed, so a form changed
+ * meanwhile is refused rather than recorded at another figure.
+ */
+export const RecordFromTaxFormRequest = z.strictObject({ amount: MinorDto });
+export type RecordFromTaxFormRequest = z.output<typeof RecordFromTaxFormRequest>;
 
 /** `PUT workspaces/:id/accountant-tax-forms`: the owner's setting (ADR-0052 §8.4). Owner only, after a recent sign-in. */
 export const AccountantTaxFormsDto = z.strictObject({ accountantSeesTaxForms: z.boolean() });

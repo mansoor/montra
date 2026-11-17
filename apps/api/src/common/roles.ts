@@ -66,6 +66,9 @@ const MEMBER_WRITES = new Set([
   'POST tax-forms',
   'PATCH tax-forms/:id',
   'DELETE tax-forms/:id',
+  'POST tax-forms/:id/accept',
+  'POST tax-forms/:id/record',
+  'DELETE tax-forms/:id/record',
   'POST tax-forms/waivers',
   'DELETE tax-forms/waivers/:id',
 ]);

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AcceptTaxFormDifferenceRequest,
   AccountantTaxFormsDto,
   CreateTaxFormRequest,
   CreateTaxFormWaiverRequest,
   ListTaxFormsQuery,
+  RecordFromTaxFormRequest,
   TaxFormDto,
+  TaxYearDto,
   UpdateTaxFormRequest,
   WorkspaceDto,
 } from '../src/index.js';
@@ -125,11 +128,76 @@ describe('the form as sent', () => {
     createdAt: '2026-02-01T00:00:00.000Z',
     updatedAt: '2026-02-01T00:00:00.000Z',
     version: 1,
+    result: { state: 'needs_person', difference: null, review: true, recordable: null, recorded: null },
+    checks: [
+      {
+        box: '1+3+8',
+        kind: 'check',
+        form: '4107',
+        books: '4107',
+        difference: '0',
+        status: 'matches',
+        rule: 'Interest credited to the account(s) in the year',
+        explanation: null,
+        acceptedNote: null,
+        sources: { payslipIds: [], transactionIds: [ACCOUNT], loanPaymentIds: [], journalEntryIds: [] },
+      },
+    ],
   };
 
   it('carries the boxes of its kind', () => {
     expect(TaxFormDto.parse({ ...form, kind: '1099_int', boxes: { box1: '4107' } }).kind).toBe('1099_int');
     expect(TaxFormDto.safeParse({ ...form, kind: '1099_int', boxes: { box1a: '4107' } }).success).toBe(false);
+  });
+
+  it('carries its result and checks (§5, §7.1)', () => {
+    const parsed = TaxFormDto.parse({ ...form, kind: '1099_int', boxes: { box1: '4107' } });
+    expect(parsed.result.state).toBe('needs_person');
+    expect(parsed.checks[0]!.status).toBe('matches');
+    expect(
+      TaxFormDto.safeParse({
+        ...form,
+        kind: '1099_int',
+        boxes: { box1: '4107' },
+        checks: [{ ...form.checks[0], status: 'close enough' }],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('acting on a difference (§5.6)', () => {
+  it('accepts a box with a note, and records an amount in cents', () => {
+    expect(AcceptTaxFormDifferenceRequest.parse({ box: '2', note: ' Bonus paid as a gift card ' })).toEqual({
+      box: '2',
+      note: 'Bonus paid as a gift card',
+    });
+    expect(AcceptTaxFormDifferenceRequest.safeParse({ box: '2', note: ' ' }).success).toBe(false);
+    expect(RecordFromTaxFormRequest.safeParse({ amount: '125000' }).success).toBe(true);
+    expect(RecordFromTaxFormRequest.safeParse({ amount: '1250.00' }).success).toBe(false);
+  });
+
+  it('lists the year’s expected forms with their state', () => {
+    const year = TaxYearDto.parse({
+      year: 2025,
+      forms: [],
+      expected: [
+        {
+          kind: 'w2',
+          employerId: EMPLOYER,
+          accountId: null,
+          personMemberId: null,
+          entityId: ACCOUNT,
+          name: 'Acme',
+          amount: '9000000',
+          state: 'missing',
+          formId: null,
+          waiverId: null,
+        },
+      ],
+      unexpectedFormIds: [],
+      waivers: [],
+    });
+    expect(year.expected[0]!.state).toBe('missing');
   });
 });
 

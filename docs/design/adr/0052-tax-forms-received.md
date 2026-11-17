@@ -646,6 +646,59 @@ Where PR 1 had to differ from or add to the text above, and why:
   security, and employers are restricted (PAY-09), so an accountant types a W-2 unmatched and an owner, admin or the
   person matches it. PR 2's matching by hand should decide whether accountants with the setting on may.
 
+### As built: PR 2 (2026-11-16)
+
+Where PR 2 had to differ from or add to the text above, and why:
+
+- **The rules live in `@montra/domain/tax-form-checks.ts`**, beside `tax-forms.ts` rather than in it: `reconcileW2`,
+  `reconcile1099Int`, `reconcile1099Div`, `reconcile1098`, `w2ReadingIssues`, `checksOutcome`, `expectedTaxForms` and
+  `expectedAgainstReceived`. They return checks in English words (§5: "the rule in words"); the screens' own labels are
+  i18n keys.
+- **Every `TaxFormDto` carries its `result` and `checks`**, in the year's list, from `GET tax-forms/:id` and from every
+  write, so the screen and Review never ask twice. `TaxFormResultDto` is new (the state, the largest difference,
+  whether it's a Review item, what Record from the form would move, and what it moved). `TaxFormCheckDto` gains
+  `acceptedNote` and `sources.journalEntryIds` (entries with no transaction: a balance, or income recorded from the
+  form). `TaxYearDto` gains `expected` and `unexpectedFormIds`.
+- **A W-2's sums come from `app.tax_form_payslip_totals` for every reader**, not only accountants, so §5.2's sums are
+  worked out in one place. What the reader may also see of the payslips (their ids for the drill-down, the pay dates
+  for the gap, the last payslip's year-to-date figures and the labels of `other` pre-tax lines) is read under their
+  row-level security: an accountant gets the totals and the differences, but no drill-down and no year-to-date
+  cross-check.
+- **Box 14 is shown without the books' E − P beside it.** §5.2 pairs it with box 16; E − P beside a CASDI amount means
+  nothing, so only box 16 (state wages) has it.
+- **Reading checks change a box only when it differs from the books** (`check_reading` instead of `differs`); a box that
+  matches the books stands whatever the form's own arithmetic says. Box 4's check counts box 7 (Social Security tips)
+  with box 3, as the tax does. A misread `check` box is a Review item, like a difference.
+- **Known explanations, as built:** the year boundary is 27 December to 5 January, and only income credited (not an
+  entry taken back) counts. A 1098's box 4 explains a difference of either sign. "Interest paid at closing" can't be
+  checked to the cent, so it explains a shortfall only in the year the loan began (box 3, else the schedule's start)
+  and only up to one payment's interest.
+- **Taxes, foreign tax and penalties on a 1099's accounts are found by category name** (withholding, federal or income
+  tax; foreign tax; penalties, fees and Bank fees): there are no tax lines for them.
+- **"Not tracked" on a 1099** is a valued account (investment or other asset) whose income in the year nets to nothing.
+  An itemized account (checking, savings) with no interest posted differs instead: its interest is missing from the
+  books.
+- **Record from the form posts four lines, not two**: the income onto the account and the same amount off it, then the
+  income category and investment gains. The account's balance doesn't change, and because the entry touches the
+  account, the books' figures (the check, the expected forms, `interestEarned`) find the income. It's an `adjustment`
+  entry with no transaction, so it's taken back with **`DELETE tax-forms/:id/record`**, which reverses it on the same
+  date, rather than deleted from the transactions list. The entry is kept on the form as `accepted.recorded`;
+  `accepted` holds `{ boxes, recorded }`.
+- **Expected forms:** a W-2 from employers of type `employer` with posted payslips (their gross pay is the amount shown);
+  a 1098 from accounts of kind `mortgage` with a loan schedule. `interestEarned()` and the checks find interest and
+  dividends by Schedule B's tax line, plus income categories with no tax line by name (both, not one or the other).
+- **Matching by hand** (`taxIssuerSignal` in `@montra/importers`; PATCH or typing a form in with a match): the issuer's
+  signal learns the employer or the one account; the person's signal is `tin4:` with an HMAC-SHA256 of the last four
+  digits under the workspace's data key (`FieldCrypto.keyedHash`). Nothing uses the memory automatically until PR 3.
+- **Accountants don't match a W-2 to an employer**, even with the owner's setting on (`W2_EMPLOYER_MATCHERS` in the API;
+  an owner's question, see the PR). They can type a W-2 unmatched, read its checks and accept a difference.
+- **Not built in PR 2:** "Confirm reading" and the confirmation by matching (§5.6) wait for forms that are read
+  (PR 3): a typed form is the person's reading already. "Mark as corrected" has no button on the web yet; the API's
+  `corrected` and `supersedesId` do it. Review's count in the menu still counts transactions only.
+- **Web:** the year picker offers the last four years. "Won't come" records a waiver with its reason and note, and
+  "Expect it again" removes it. Drill-downs open each payslip and transaction; entries with no transaction link to the
+  Journal.
+
 ## Consequences
 
 - The year's books get an outside check: every phase 1 form either agrees with them, is explained, or lands in Review

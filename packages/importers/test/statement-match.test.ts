@@ -17,6 +17,8 @@ import {
   readTextSheets,
   sheetFingerprint,
   statementSignal,
+  taxIssuerSignal,
+  taxSignalHasEin,
   type ImportOutcome,
 } from '../src/index.js';
 
@@ -109,6 +111,21 @@ describe('signals', () => {
       /^name:PACIFIC GAS/,
     );
     expect(billSignal({})).toBeNull();
+  });
+
+  it('keys a tax form’s issuer by EIN, account digits, else name (ADR-0052 §4)', () => {
+    expect(taxIssuerSignal({ kind: 'w2', ein: '123456789', issuerName: 'Acme Corp' })).toBe(
+      'w2:ein:123456789',
+    );
+    expect(taxIssuerSignal({ kind: 'w2', issuerName: 'Acme Corp' })).toMatch(/^w2:name:ACME/);
+    expect(taxIssuerSignal({ kind: '1099_int', ein: '987654321', accountLast4: '4321' })).toBe(
+      '1099_int:ein:987654321:last4:4321',
+    );
+    expect(taxIssuerSignal({ kind: '1098', ein: '987654321' })).toBe('1098:ein:987654321');
+    expect(taxIssuerSignal({ kind: '1099_div', issuerName: 'Big Brokerage' })).toMatch(/^1099_div:name:BIG/);
+    expect(taxIssuerSignal({ kind: '1099_div' })).toBeNull();
+    expect(taxSignalHasEin('1099_int:ein:987654321:last4:4321')).toBe(true);
+    expect(taxSignalHasEin('w2:name:ACME')).toBe(false);
   });
 
   it('compares institutions as words', () => {

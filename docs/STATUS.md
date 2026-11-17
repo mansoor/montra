@@ -22,9 +22,10 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 **Being built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and
 1098 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on
-2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059;
-see §7g). Next is PR 2, the reconciliation, expected forms, Review and the `/tax-forms` screen. Role-based permissions
-(ADR-0053) are a separate proposal for later; tax forms use an owner-only setting for accountants instead.
+2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059)
+and **PR 2 is done** (the checks against the books, expected forms, Review and the `/tax-forms` screen; no migration);
+see §7g. Next is PR 3, reading uploaded forms and matching them automatically. Role-based permissions (ADR-0053) are a
+separate proposal for later; tax forms use an owner-only setting for accountants instead.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
@@ -1487,8 +1488,36 @@ Phase 11 leftovers:
   - `match_memory` learns `tax_issuer` and `tax_person` (members may write those kinds); the personal chart's Interest
     income and Dividends carry Schedule B's tax lines (`US_SCH_B_L1`, `US_SCH_B_L5`), set on older books by the
     migration.
-  - Where the build differs from the ADR is in its "As built: PR 1" section. No screen to type a form in yet (PR 2),
-    and nothing on the phone.
+  - Where the build differs from the ADR is in its "As built: PR 1" section. Nothing on the phone.
+- **Tax forms received, PR 2 of 5** (TAX-04, TAX-05, TAX-06 done; TAX-03 by hand; ADR-0052, no migration):
+  - **The checks** (`@montra/domain/tax-form-checks.ts`): `reconcileW2` (payslips: E − P, FICA wages capped at the wage
+    base, the taxes, 12 D/AA/W, one state's box 17), `reconcile1099Int` (boxes 1 + 3 + 8 against interest on the
+    account(s)), `reconcile1099Div` (1a against dividends), `reconcile1098` (the payments' interest, the principal on 1
+    January or the origination date). One check per box: form, books, difference, status, the rule in words and what
+    was summed. A box matches within $1.00; known explanations (box 12 C, box 2a, box 4, the year boundary, interest at
+    closing) make a difference match; reading checks on the form alone turn a difference into "check the reading"; the
+    last payslip's year-to-date figures say "a payslip seems to be missing" with the gap's dates; no payslips or a
+    valued account with no income is "not tracked". Worked out on every read, never stored.
+  - **API:** every `TaxFormDto` carries `result` and `checks`; `GET tax-forms?year=` adds `expected` (a W-2 per employer
+    with payslips, a 1099-INT/DIV per non-retirement account with $10 or more, a 1098 per mortgage with $600 or more of
+    interest; received, waived or missing) and `unexpectedFormIds`; `GET tax-forms/review`; `POST tax-forms/:id/accept`
+    (a box's difference with a note, held while it stays the same); `POST`/`DELETE tax-forms/:id/record` (Record from
+    the form on a valued account: income moved from investment gains on 31 December, balance unchanged; taken back by
+    a reversal). The books are read under the reader's row-level security; a W-2's sums come from
+    `app.tax_form_payslip_totals`, so an accountant sees totals without payslips. `interestEarned()` finds interest by
+    Schedule B's tax line first.
+  - **Matching by hand** teaches `match_memory`: `tax_issuer` (W-2 by EIN, else name; 1099/1098 by EIN and last four,
+    EIN, or name; one account only) and `tax_person` (`tin4:` + a keyed hash of the SSN's last four,
+    `FieldCrypto.keyedHash`). Accountants can't match a W-2 to an employer (`W2_EMPLOYER_MATCHERS`; an owner's question).
+  - **Web:** **Tax forms** in the Books group of the menu (USD workspaces, not viewers): a year picker, the expected forms
+    grouped by person (Received with the result, Not yet with "Won't come", Won't come with "Expect it again"), the forms
+    received but not expected, and **Type a form in**. A form's page shows its result, the checks with "How this was
+    worked out" (rule, explanation, links to the payslips and transactions), Accept the difference, Record from the
+    form, Change the form (boxes, issuer, person, match) and Delete. Review gains **Tax forms to check** under the
+    statements and bills.
+  - Tests: domain table tests per box, the $1.00/$1.01 edge, the year boundary, YTD cross-check, not tracked, reading
+    checks, expected forms; API tests (`tax-form-checks.test.ts`) against real payslips, interest, a mortgage and an
+    accountant; web helpers; e2e `tax-forms.spec.ts`. Where the build differs from the ADR is in "As built: PR 2".
 
 ---
 
