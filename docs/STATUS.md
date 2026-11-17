@@ -32,6 +32,14 @@ later; tax forms use an owner-only setting for accountants instead.
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
 
+**Proposed, waiting for the owner:** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's
+Family Document Vault as a per-workspace storage destination (`fdv`): a key pair per workspace, signed requests,
+documents sent one at a time into the vault's Inbox, either as a copy or with the vault as the record (Montra's copy
+removed only once the vault has filed it and the chosen backup exists), the vault's changes read back, and single-use
+view links. Draft only, no code. Its open questions (where the vault's client code lives, backups and tax packages
+for files only in the vault, and whether payslips and tax forms may go) must be answered before the build chain
+starts. The vault's API contract is private and is not copied into this repo.
+
 ### Test suite at the end of Phase 11 (green locally)
 
 | Suite                                                                                                                                               | Tests                                                               |
