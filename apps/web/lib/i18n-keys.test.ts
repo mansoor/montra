@@ -12,7 +12,8 @@ import {
   PLAN_TYPES,
 } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
-import { CALENDAR_ITEM_KINDS, INTAKE_REASONS } from '@montra/schemas';
+import { CALENDAR_ITEM_KINDS, INTAKE_REASONS, TAX_FORM_RESULT_STATES } from '@montra/schemas';
+import { MONEY_BOXES } from './tax-forms';
 import { ITEM_PERIODS } from './receipts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -32,6 +33,25 @@ const files = sources(ROOT).map((path) => ({ path: relative(ROOT, path), text: r
 
 /** Values that dynamic keys (`t(\`prefix.${x}\`)`) can take, so every combination is checked. */
 const DYNAMIC: Record<string, readonly string[]> = {
+  // ADR-0052: tax forms received.
+  'tax_forms.kind.': ['w2', '1099_int', '1099_div', '1098'],
+  'tax_forms.result.': TAX_FORM_RESULT_STATES,
+  'tax_forms.review_why.': TAX_FORM_RESULT_STATES,
+  'tax_forms.check_status.': [
+    'matches',
+    'explained',
+    'differs',
+    'accepted',
+    'check_reading',
+    'not_tracked',
+    'info',
+  ],
+  'tax_forms.expected_because.': ['w2', '1099_int', '1099_div', '1098'],
+  'tax_forms.waiver_reason.': ['not_issued', 'combined', 'other'],
+  'tax_forms.w2_': ['box16', 'box17'],
+  'tax_forms.box_name.': Object.entries(MONEY_BOXES).flatMap(([kind, boxes]) =>
+    boxes.map((b) => `${kind}.${b}`),
+  ),
   'access.': ['none', 'read', 'write'],
   'status.': ['operational', 'maintenance', 'incident', 'down'],
   'status.worker.': ['documents', 'jobs'],

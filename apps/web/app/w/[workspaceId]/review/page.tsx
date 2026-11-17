@@ -3,6 +3,7 @@ import { load, serverApi } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { DocumentQueue } from '@/components/review/document-queue';
 import { ReviewQueue } from '@/components/review/review-queue';
+import { TaxFormQueue } from '@/components/review/tax-form-queue';
 
 export const metadata: Metadata = { title: 'Review' };
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ workspa
         <p className="text-sm text-muted">{t('review.intro')}</p>
       </div>
       <DocumentQueue workspaceId={workspace.id} role={workspace.role} accounts={accounts} />
+      {workspace.role !== 'viewer' && workspace.baseCurrency === 'USD' && (
+        <TaxFormQueue workspaceId={workspace.id} />
+      )}
       <ReviewQueue
         workspace={workspace}
         accounts={accounts}

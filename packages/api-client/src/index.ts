@@ -427,10 +427,15 @@ export type { IntakeDto };
 
 // ----- Tax forms received (ADR-0052) -----
 import type {
+  AcceptTaxFormDifferenceRequest,
   AccountantTaxFormsDto,
   CreateTaxFormRequest,
   CreateTaxFormWaiverRequest,
+  TaxFormCheckDto,
   TaxFormDto,
+  TaxFormExpectedDto,
+  TaxFormResultDto,
+  TaxFormReviewDto,
   TaxFormWaiverDto,
   TaxYearDto,
   UpdateTaxFormRequest,
@@ -438,7 +443,17 @@ import type {
 export type CreateTaxFormInput = z.input<typeof CreateTaxFormRequest>;
 export type UpdateTaxFormInput = z.input<typeof UpdateTaxFormRequest>;
 export type CreateTaxFormWaiverInput = z.input<typeof CreateTaxFormWaiverRequest>;
-export type { AccountantTaxFormsDto, TaxFormDto, TaxFormWaiverDto, TaxYearDto };
+export type {
+  AcceptTaxFormDifferenceRequest,
+  AccountantTaxFormsDto,
+  TaxFormCheckDto,
+  TaxFormDto,
+  TaxFormExpectedDto,
+  TaxFormResultDto,
+  TaxFormReviewDto,
+  TaxFormWaiverDto,
+  TaxYearDto,
+};
 
 // ----- Payroll (PRL-01..05, ADR-0034) -----
 export type CreatePersonInput = z.input<typeof CreatePersonRequest>;
@@ -1584,6 +1599,21 @@ export class ApiClient {
   }
   deleteTaxFormWaiver(workspaceId: string, id: string) {
     return this.request<void>('DELETE', this.ws(workspaceId, `/tax-forms/waivers/${enc(id)}`));
+  }
+  /** Review's "Tax forms to check": forms that differ, wait for a match or a person, or couldn't be read. */
+  listTaxFormsToCheck(workspaceId: string) {
+    return this.request<TaxFormReviewDto>('GET', this.ws(workspaceId, '/tax-forms/review'));
+  }
+  /** Accept a box's difference with a note; it holds while the difference stays the same. */
+  acceptTaxFormDifference(workspaceId: string, id: string, input: AcceptTaxFormDifferenceRequest) {
+    return this.request<TaxFormDto>('POST', this.ws(workspaceId, `/tax-forms/${enc(id)}/accept`), input);
+  }
+  /** Record from the form: `amount` is the one the person confirmed. */
+  recordFromTaxForm(workspaceId: string, id: string, amount: string) {
+    return this.request<TaxFormDto>('POST', this.ws(workspaceId, `/tax-forms/${enc(id)}/record`), { amount });
+  }
+  undoRecordFromTaxForm(workspaceId: string, id: string) {
+    return this.request<TaxFormDto>('DELETE', this.ws(workspaceId, `/tax-forms/${enc(id)}/record`));
   }
 
   // ----- Reconciliation (DE-08) ----------------------------------------------------------------------------

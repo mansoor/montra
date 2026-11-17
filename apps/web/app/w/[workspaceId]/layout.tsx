@@ -78,6 +78,10 @@ export default async function WorkspaceLayout({
           ? [{ href: `${base}/rentals`, label: t('nav.rentals'), icon: 'rentals' as const }]
           : []),
         { href: `${base}/reports`, label: t('nav.reports'), icon: 'reports' },
+        // ADR-0052 §7.1: US forms, so for books kept in US dollars; not for viewers.
+        ...(workspace.baseCurrency === 'USD' && workspace.role !== 'viewer'
+          ? [{ href: `${base}/tax-forms`, label: t('nav.tax_forms'), icon: 'taxForms' as const }]
+          : []),
         { href: `${base}/ask`, label: t('nav.ask'), icon: 'ask' },
         { href: `${base}/journal`, label: t('nav.journal'), icon: 'journal' },
         { href: `${base}/rules`, label: t('nav.rules'), icon: 'rules' },
