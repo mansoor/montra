@@ -5,8 +5,19 @@ import { Id } from './common.js';
 export const StorageDestinationKind = z.enum(['s3', 'webdav']);
 export type StorageDestinationKind = z.infer<typeof StorageDestinationKind>;
 
-/** The kinds of file that can be copied. Exports never are: backups have their own folder. */
-export const STORAGE_FILE_KINDS = ['statement', 'receipt', 'payslip', 'lease', 'invoice', 'other'] as const;
+/**
+ * The kinds of file that can be copied, all of them by default. Exports never are: backups have their own folder. Tax
+ * forms (ADR-0052) are their own kind, so a connection can leave them out.
+ */
+export const STORAGE_FILE_KINDS = [
+  'statement',
+  'receipt',
+  'payslip',
+  'lease',
+  'invoice',
+  'other',
+  'tax_form',
+] as const;
 export const StorageFileKind = z.enum(STORAGE_FILE_KINDS);
 export type StorageFileKind = z.infer<typeof StorageFileKind>;
 

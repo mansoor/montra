@@ -18,6 +18,7 @@ import {
   boxLines,
   byPerson,
   canConfirmReading,
+  canMakeTaxPackage,
   canMatchEmployer,
   checkTone,
   defaultTaxYear,
@@ -28,6 +29,8 @@ import {
   matchedIds,
   matchUpdate,
   MONEY_BOXES,
+  packageWarning,
+  packageYears,
   personPickable,
   pickableCandidates,
   READING_STAGES,
@@ -527,6 +530,7 @@ describe('the words the tax form screens use', () => {
     'src/ui/TaxForms.tsx',
     'app/(tabs)/more.tsx',
     'app/_layout.tsx',
+    'app/your-data.tsx',
   ].map((p) => readFileSync(join(root, p), 'utf8'));
 
   it('are all in the catalog', () => {
@@ -548,7 +552,65 @@ describe('the words the tax form screens use', () => {
       'tax_forms.w2_box16',
       'tax_forms.w2_box17',
       'tax_forms.box_1098_box3',
+      'tax_forms.package_missing',
+      'tax_forms.package_to_check',
+      'tax_forms.package_anyway',
+      'notify.type_tax_forms_missing',
     ];
     expect(dynamic.filter((k) => !(k in en))).toEqual([]);
+  });
+});
+
+describe('the tax package panel (ADR-0052 §7.3)', () => {
+  const form = (entityId: string, review: boolean) =>
+    ({ entityId, result: { state: review ? 'differs' : 'matches', review } }) as TaxFormDto;
+  const expected = (entityId: string, state: TaxFormExpectedDto['state']) =>
+    ({ entityId, state }) as TaxFormExpectedDto;
+
+  it('warns about the chosen books’ missing forms and forms to check, and says it can still be made', () => {
+    const year = {
+      year: 2025,
+      forms: [form('home', true), form('home', true), form('home', false), form('rental', true)],
+      expected: [expected('home', 'missing'), expected('home', 'waived'), expected('rental', 'received')],
+    };
+    expect(packageWarning(year, 'home')).toEqual([
+      { key: 'tax_forms.package_missing', values: { count: 1, year: 2025 } },
+      { key: 'tax_forms.package_to_check', values: { count: 2, year: 2025 } },
+      { key: 'tax_forms.package_anyway' },
+    ]);
+    expect(packageWarning(year, 'rental')).toEqual([
+      { key: 'tax_forms.package_to_check', values: { count: 1, year: 2025 } },
+      { key: 'tax_forms.package_anyway' },
+    ]);
+  });
+
+  it('says nothing when every expected form came and agrees', () => {
+    const year = { year: 2025, forms: [form('home', false)], expected: [expected('home', 'received')] };
+    expect(packageWarning(year, 'home')).toEqual([]);
+  });
+
+  it('reads in words', () => {
+    const en = catalogs.en!;
+    expect(en['tax_forms.package_missing']).toContain('{year}');
+  });
+
+  it('offers last year first, and isn’t offered to members', () => {
+    expect(packageYears('2026-02-16')).toEqual([2025, 2026, 2024, 2023]);
+    expect(canMakeTaxPackage('member')).toBe(false);
+    expect(canMakeTaxPackage('accountant')).toBe(true);
+    expect(canMakeTaxPackage('viewer')).toBe(true);
+  });
+
+  it('asks the API for the package of one set of books and a year', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const f = (async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ id: 'job' }), { status: 201 });
+    }) as unknown as typeof fetch;
+    const api = createApi({ baseUrl: 'http://api', token: async () => 'dev:a@b.co', fetch: f });
+    await api.createTaxPackage('w1', { entityId: 'books', year: 2025 });
+    expect(calls.map((c) => [c.init.method, c.url, JSON.parse(String(c.init.body))])).toEqual([
+      ['POST', 'http://api/v1/workspaces/w1/tax-package', { entityId: 'books', year: 2025 }],
+    ]);
   });
 });

@@ -23,6 +23,7 @@ import { PayrollTaxesService } from '../payroll/payroll-taxes.service.js';
 import { RentService } from '../rentals/rent.service.js';
 import { RentalOpsService } from '../rentals/rental-ops.service.js';
 import { rentalEntities } from '../rentals/shared.js';
+import { TaxFormsService } from '../tax-forms/tax-forms.service.js';
 import { NotificationsService, type NewNotification } from './notifications.service.js';
 
 type Ctx = { workspaceId: string; userId: string };
@@ -37,6 +38,12 @@ const DEPOSIT_TITLES = {
 const LARGE_LOOKBACK_DAYS = 2;
 const RECENT_RECOMMENDATION_DAYS = 2;
 const DELIVER_EVERY_MS = 5 * 60_000;
+/**
+ * ADR-0052 §11: the tax forms reminder goes on 16 February (after the 31 January and 15 February issue dates). A night
+ * the sweep doesn't run is caught up within the week; the dedupe key keeps it to one per person and tax year.
+ */
+const TAX_FORMS_REMINDER = { from: '02-16', to: '02-22' };
+const FORM_NAMES = { w2: 'W-2', '1099_int': '1099-INT', '1099_div': '1099-DIV', '1098': '1098' } as const;
 
 @Injectable()
 export class NotificationJobs {
@@ -50,6 +57,7 @@ export class NotificationJobs {
     @Inject(RentService) private readonly rent: RentService,
     @Inject(RentalOpsService) private readonly ops: RentalOpsService,
     @Inject(PayrollTaxesService) private readonly payrollTaxes: PayrollTaxesService,
+    @Inject(TaxFormsService) private readonly taxForms: TaxFormsService,
   ) {}
 
   register(): void {
@@ -95,6 +103,7 @@ export class NotificationJobs {
       () => this.registrationRenewals(ctx, base, today),
       () => this.importReminder(ctx, base, today, prefs.importReminderDays),
       () => this.recommendations(ctx, base, today),
+      () => this.taxFormsMissing(ctx, base, today),
       ...(weekday === prefs.digestWeekday ? [() => this.digest(ctx, base, today)] : []),
     ];
     let created = 0;
@@ -265,6 +274,52 @@ export class NotificationJobs {
       }
       return out;
     });
+  }
+
+  /**
+   * TAX-10 (ADR-0052 §11): once a year, the forms last year's books expect that haven't come and aren't waived. Each
+   * person's list is what their own row-level security shows (§8.4): a member hears about their own W-2, an owner about
+   * everyone's. Nothing when nothing is missing; US-dollar workspaces only, and not viewers, as the screens.
+   */
+  private async taxFormsMissing(ctx: Ctx, base: string, today: CalendarDate): Promise<NewNotification[]> {
+    const day = today.slice(5);
+    if (day < TAX_FORMS_REMINDER.from || day > TAX_FORMS_REMINDER.to) return [];
+    const who = await this.db.run(ctx, async (trx) => {
+      const ws = await trx
+        .selectFrom('app.workspace as w')
+        .innerJoin('app.workspace_member as m', 'm.workspace_id', 'w.id')
+        .select(['w.base_currency', 'm.role'])
+        .where('w.id', '=', ctx.workspaceId)
+        .where('m.user_id', '=', ctx.userId)
+        .executeTakeFirst();
+      const people = await trx
+        .selectFrom('app.family_member')
+        .select(['id', 'name'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .execute();
+      return { ws, people: new Map(people.map((p) => [p.id, p.name])) };
+    });
+    if (!who.ws || who.ws.base_currency !== 'USD' || who.ws.role === 'viewer') return [];
+    const year = Number(today.slice(0, 4)) - 1;
+    const missing = await this.taxForms.missing(ctx, year);
+    if (missing.length === 0) return [];
+    const lines = missing.map((e) => {
+      const person = e.personMemberId ? who.people.get(e.personMemberId) : undefined;
+      return `${FORM_NAMES[e.kind]} from ${e.name}${person ? `, for ${person}` : ''}`;
+    });
+    return [
+      {
+        type: 'tax_forms_missing',
+        dedupeKey: `tax_forms_missing:${year}`,
+        title:
+          missing.length === 1
+            ? `A tax form for ${year} hasn’t come yet`
+            : `${missing.length} tax forms for ${year} haven’t come yet`,
+        // Names only, never an amount: email and push carry this too.
+        body: [...lines, 'If one isn’t coming, mark it as won’t come on the Tax forms screen.'].join('\n'),
+        link: `${base}/tax-forms?year=${year}`,
+      },
+    ];
   }
 
   private async rentals(ctx: Ctx, base: string, today: CalendarDate): Promise<NewNotification[]> {

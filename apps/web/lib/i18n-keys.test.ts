@@ -390,6 +390,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'monthly_review',
     'suggestion',
     'weekly_digest',
+    'tax_forms_missing',
   ],
   'security.kind_': [
     'sign_in_new_device',
@@ -418,7 +419,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'storage.kind_': ['s3', 'webdav'],
   'storage.status_': ['active', 'paused', 'failing'],
   'storage.copy_': ['pending', 'done', 'failed', 'pruned'],
-  'storage.file_kind_': ['statement', 'receipt', 'payslip', 'invoice', 'lease', 'other'],
+  'storage.file_kind_': ['statement', 'receipt', 'payslip', 'invoice', 'lease', 'other', 'tax_form'],
   'switch.problem_': ['unsupported_type', 'unreadable', 'no_transactions', 'needs_mapping'],
   'data.status_': ['queued', 'running', 'ready', 'failed', 'expired'],
   'trash.kind_': ['transaction', 'receipt'],

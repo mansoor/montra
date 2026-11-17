@@ -440,3 +440,33 @@ export function taxFormsToCheckFor(key: string): TaxFormsToCheck {
   if (!c) counters.set(key, (c = new TaxFormsToCheck()));
   return c;
 }
+
+// ----- The tax package (§7.3) ---------------------------------------------------------------------------------------
+
+/** Members don't make tax packages (the server refuses their exports, AUTH-17); everyone else can, viewers included. */
+export const canMakeTaxPackage = (role: MemberRole): boolean => role !== 'member';
+
+/** The package's years: last year first (the one being filed), then this year and the two before last. */
+export function packageYears(today: string): number[] {
+  const year = Number(today.slice(0, 4));
+  return [year - 1, year, year - 2, year - 3];
+}
+
+/**
+ * The tax package panel's warning, as the web's (§7.3): for the books and year chosen, the expected forms that haven't
+ * come and the forms to check (they differ from the books, or wait for a match, a person or a reading). Empty when
+ * there's nothing to say. Counts only what the maker can see: the year's list is read under their row-level security.
+ */
+export function packageWarning(
+  year: Pick<TaxYearDto, 'year' | 'forms' | 'expected'>,
+  entityId: string,
+): Message[] {
+  const toCheck = year.forms.filter((f) => f.entityId === entityId && f.result.review).length;
+  const missing = year.expected.filter((e) => e.entityId === entityId && e.state === 'missing').length;
+  if (!toCheck && !missing) return [];
+  return [
+    ...(missing ? [{ key: 'tax_forms.package_missing', values: { count: missing, year: year.year } }] : []),
+    ...(toCheck ? [{ key: 'tax_forms.package_to_check', values: { count: toCheck, year: year.year } }] : []),
+    { key: 'tax_forms.package_anyway' },
+  ];
+}

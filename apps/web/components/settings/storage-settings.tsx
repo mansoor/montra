@@ -14,7 +14,7 @@ import {
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
-const KINDS = ['statement', 'receipt', 'payslip', 'invoice', 'lease', 'other'] as const;
+const KINDS = ['statement', 'receipt', 'payslip', 'invoice', 'lease', 'tax_form', 'other'] as const;
 
 /** ADR-0031: a copy of every document, and backups, in storage the owner controls. */
 export function StorageSettings({

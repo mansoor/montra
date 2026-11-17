@@ -31,6 +31,8 @@ describe('the rows', () => {
     expect(NOTIFICATION_ROWS).not.toContain('backup_ready');
     expect(NOTIFICATION_ROWS).not.toContain('storage_failing');
     expect(NOTIFICATION_ROWS).toContain('weekly_digest');
+    // ADR-0052 §11: the 16 February tax forms reminder can be switched like any other.
+    expect(NOTIFICATION_ROWS).toContain('tax_forms_missing');
   });
 });
 
