@@ -41,8 +41,7 @@ is removed only once the vault has filed it and the chosen backup exists. Montra
 it sent, and opens documents through single-use view links. A file the vault doesn't return is listed in Review to be
 uploaded again, and backups and tax packages list any still missing. The owner chose to depend on the vault's client
 library as a published package: **PR 1 (contracts, migration 0063) is done** (see §7g), and PR 2 onwards waits for
-that package. On the
-vault's side, view links and deletes have shipped, and automatic filing is next. The vault's API contract is private
+the vault's first client release tarball (0.9.0-dev.60). On the vault's side, view links and deletes have shipped, and automatic filing is next. The vault's API contract is private
 and is not copied into this repo.
 
 ### Test suite at the end of Phase 11 (green locally)
@@ -1644,8 +1643,10 @@ Phase 11 leftovers:
     payslips, tax documents and other papers off) in `@montra/schemas`; the `VaultDestination` port and `VaultError` in
     `apps/api/src/storage/destinations/vault.ts`, with no adapter. Five `vault_*` security log kinds; the notification
     types are in the database only, for the PRs that send them.
-  - **Plan key `familyVault`**, on wherever `ownStorage` is (every existing version, by the migration). The console
-    lists it, and the billing page's list of what a plan includes names it already.
+  - **Plan key `familyVault`**, on wherever `ownStorage` is (every existing version, by the migration). The staff
+    console lists it; customers don't see it until a vault can be connected (`FEATURES_NOT_YET_SHOWN` in
+    `@montra/domain`, which PR 2 or 3 empties).
+  - Waits for the vault's first client release tarball (0.9.0-dev.60) before PR 2.
   - Tests: `packages/db/test/vault.test.ts` (one mirror and one vault, kinds and statuses, the outbox's checks and fixed
     id, RLS for each role and workspace, staff with no table or function, a file's place, the triggers, the job's
     functions), `packages/schemas/test/vault.test.ts` (the group mapping, table-driven over every file kind, and the

@@ -15,6 +15,18 @@ export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | '
 export const PLAN_FEATURES = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'] as const;
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
 
+/**
+ * Features kept out of what customers see (the billing page's "what's included") until they can be used. They are real
+ * entitlements all the same: stored in plan versions, checked by the API and shown in the staff console. Remove a key
+ * here when its feature ships. `familyVault`: until a vault can be connected (ADR-0054 PR 2 or 3).
+ */
+export const FEATURES_NOT_YET_SHOWN: ReadonlySet<PlanFeature> = new Set<PlanFeature>(['familyVault']);
+
+/** A plan's features as a customer sees them, in the same order, without those not shown yet. */
+export function customerFeatures<F extends string>(features: readonly F[]): F[] {
+  return features.filter((f) => !FEATURES_NOT_YET_SHOWN.has(f as unknown as PlanFeature));
+}
+
 /** What one plan version allows (ADR-0049 §1). */
 export interface PlanEntitlements {
   /** How many business books can be added. 0 means none. */

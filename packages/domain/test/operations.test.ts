@@ -14,6 +14,8 @@ import {
   parseEntitlements,
   PRO_STORAGE_BYTES,
   UNLIMITED_ENTITLEMENTS,
+  customerFeatures,
+  FEATURES_NOT_YET_SHOWN,
 } from '../src/operations.js';
 
 const now = new Date('2026-11-04T12:00:00Z');
@@ -154,6 +156,17 @@ describe('compareEntitlements (ADR-0049 §1)', () => {
     expect(compareEntitlements(base, vault)).toBe('more');
     expect(compareEntitlements(vault, base)).toBe('less');
     expect(UNLIMITED_ENTITLEMENTS.features).toContain('familyVault');
+  });
+
+  it('keeps the vault out of what customers see until a vault can be connected, and nothing else', () => {
+    expect([...FEATURES_NOT_YET_SHOWN]).toEqual(['familyVault']);
+    expect(customerFeatures(UNLIMITED_ENTITLEMENTS.features)).toEqual([
+      'payroll',
+      'staffTime',
+      'scans',
+      'voice',
+      'ownStorage',
+    ]);
   });
 });
 
