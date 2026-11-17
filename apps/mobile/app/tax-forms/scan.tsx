@@ -66,7 +66,6 @@ export default function ScanTaxForm() {
     let pdf: string | null = null;
     try {
       pdf = plan.images.length ? await combine(plan.images) : null;
-      await Promise.all(made.map((p) => removePage(p.uri)));
       if (pdf) {
         const up = await api.uploadTaxFormFile(
           ws.id,
@@ -91,7 +90,12 @@ export default function ScanTaxForm() {
       // What went up before the failure is shown; the rest can be scanned again.
       setError((err as Error).message);
     } finally {
-      if (pdf) await removePage(pdf).catch(() => undefined);
+      // Nothing of a form stays on the phone: the app's own pages and the PDF made from them go once it's sent.
+      await Promise.all(
+        [...made.map((p) => p.uri), ...(pdf ? [pdf] : [])].map((uri) =>
+          removePage(uri).catch(() => undefined),
+        ),
+      );
       setBusy(false);
     }
     if (results.length === 0) return;
