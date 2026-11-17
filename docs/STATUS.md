@@ -1445,6 +1445,13 @@ Phase 11 leftovers:
   read while one waits to be mapped or checked). **Import a statement** opens the import flow; pull to refresh, and the
   list looks again every 5 seconds while one is being read. Rows don't open anything and undo stays on the web
   (`src/features/statements.ts`). Not run on a device.
+- **Three access fixes** (from ADR-0053's "Inconsistencies found"; each reproduced by a test before the fix,
+  `apps/api/test/access-rules.test.ts`):
+  - **A viewer is read-only, always** (migration 0061; 0059 and 0060 are kept for tax forms). The invite and
+    `PUT sharing/members/:id/grants` refuse `access: 'write'` for a viewer (422 `grant.viewer_write`); making someone a
+    viewer turns their write grants into read; `app.entity_access` caps a viewer at read whatever the grant says, and the
+    migration turned existing viewer write grants (and those in open invites to viewers) into read. The web's book
+    access lists offer a viewer none or read only.
 
 ---
 

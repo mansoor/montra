@@ -27,7 +27,7 @@ option. It is open source, so the self-hosted edition can use the same stack. Se
 | admin | write on all | everything the owner can, except change or remove the owner (AUTH-14) |
 | partner | write on personal; business/rental **none** by default (configurable per entity) | daily use, budgets, imports |
 | member | write on personal; business/rental **none** by default (configurable per entity) | transactions, receipts, trips and the review queue only; no settings, rules, imports or sharing (AUTH-17) |
-| viewer | read on granted entities | view and export reports |
+| viewer | read on personal and granted entities; **read-only always**: a write grant is refused, becoming a viewer turns write grants into read, and the database caps a viewer at read (migration 0061, ADR-0053 Q2) | view and export reports |
 | accountant | read (or write if granted) on selected entities; MFA required | journals, trial balance, exports, period close if write |
 
 Policy checks live in one `PolicyService.can(user, action, resource)`, used by guards

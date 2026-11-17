@@ -6,6 +6,8 @@ import type { MfaPolicy } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import {
   defaultAccess,
+  accessChoices,
+  accessFor,
   grantsFor,
   INVITE_ROLES,
   isAdminRole,
@@ -214,12 +216,14 @@ function MemberItem({
               <select
                 id={`g-${member.userId}-${e.id}`}
                 className="input"
-                value={grants[e.id]}
+                value={accessFor(role, grants[e.id] ?? 'none')}
                 onChange={(ev) => setGrants((g) => ({ ...g, [e.id]: ev.target.value as Access }))}
               >
-                <option value="none">{t('access.none')}</option>
-                <option value="read">{t('access.read')}</option>
-                <option value="write">{t('access.write')}</option>
+                {accessChoices(role).map((a) => (
+                  <option key={a} value={a}>
+                    {t(`access.${a}`)}
+                  </option>
+                ))}
               </select>
             </div>
           ))}

@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql, type Kysely } from 'kysely';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import pg from 'pg';
-import { newId, withContext, type Database } from '../src/index.js';
-import { APP_URL } from './env.js';
+import { MIGRATIONS_DIR, newId, withContext, type Database } from '../src/index.js';
+import { ADMIN_URL, APP_URL } from './env.js';
 import { addMember, appDb, createWorkspace, postEntry, type Fixture } from './fixtures.js';
 
 let db: Kysely<Database>;
@@ -138,6 +140,88 @@ describe('cached access checks (performance migration 0009)', () => {
         await trx.selectFrom('app.entity').select('type').where('type', '=', 'business').execute(),
       ).toEqual([{ type: 'business' }]);
     });
+  });
+});
+
+describe('viewers are read-only (migration 0061, ADR-0053 Q2)', () => {
+  const grantWrite = (userId: string, entityId: string) =>
+    withContext(db, { workspaceId: a.workspaceId, userId: a.ownerId }, (trx) =>
+      trx
+        .insertInto('app.entity_grant')
+        .values({ workspace_id: a.workspaceId, user_id: userId, entity_id: entityId, access: 'write' })
+        .onConflict((oc) =>
+          oc.columns(['workspace_id', 'user_id', 'entity_id']).doUpdateSet({ access: 'write' }),
+        )
+        .execute(),
+    );
+  const accessOf = (userId: string, entityId: string) =>
+    withContext(db, { workspaceId: a.workspaceId, userId }, async (trx) => {
+      const { rows } = await sql<{
+        access: string;
+      }>`select app.entity_access(${entityId}::uuid) as access`.execute(trx);
+      return rows[0]!.access;
+    });
+
+  it('gives a viewer at most read, whatever their grant says', async () => {
+    const viewerId = await addMember(db, a, 'viewer-write@example.com', 'viewer');
+    await grantWrite(viewerId, a.businessId);
+    await grantWrite(viewerId, a.personalId);
+    expect(await accessOf(viewerId, a.businessId)).toBe('read');
+    expect(await accessOf(viewerId, a.personalId)).toBe('read');
+    expect((await visible(a.workspaceId, viewerId)).entities).toEqual(['business', 'personal']);
+    await expect(
+      withContext(db, { workspaceId: a.workspaceId, userId: viewerId }, (trx) =>
+        postEntry(trx, a, a.businessId, '2026-10-06', [
+          { account: a.accounts.office, amount: 1n },
+          { account: a.accounts.bizChecking, amount: -1n },
+        ]),
+      ),
+    ).rejects.toThrow(/row-level security/);
+    // Other roles still get what their grant says.
+    const writerId = await addMember(db, a, 'partner-write@example.com', 'partner');
+    await grantWrite(writerId, a.businessId);
+    expect(await accessOf(writerId, a.businessId)).toBe('write');
+  });
+
+  it('turns the write grants viewers already have, and those in open invites to viewers, into read', async () => {
+    const viewerId = await addMember(db, a, 'viewer-old-grant@example.com', 'viewer');
+    const writerId = await addMember(db, a, 'partner-keeps@example.com', 'partner');
+    await grantWrite(viewerId, a.businessId);
+    await grantWrite(writerId, a.businessId);
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    try {
+      const inviteId = newId();
+      const grants = [
+        { entityId: a.businessId, access: 'write' },
+        { entityId: a.personalId, access: 'none' },
+      ];
+      await admin.query(
+        `insert into app.workspace_invite (workspace_id, id, email, role, entity_grants, token_hash, invited_by)
+         values ($1, $2, 'viewer-invite@example.com', 'viewer', $3, $4, $5),
+                ($1, $6, 'partner-invite@example.com', 'partner', $3, $7, $5)`,
+        [a.workspaceId, inviteId, JSON.stringify(grants), newId(), a.ownerId, newId(), newId()],
+      );
+      await admin.query(readFileSync(join(MIGRATIONS_DIR, '0061_viewer_read_only.sql'), 'utf8'));
+      const { rows } = await admin.query(
+        `select user_id, access from app.entity_grant where workspace_id = $1 and entity_id = $2 and user_id = any($3)`,
+        [a.workspaceId, a.businessId, [viewerId, writerId]],
+      );
+      expect(Object.fromEntries(rows.map((r) => [r.user_id, r.access]))).toEqual({
+        [viewerId]: 'read',
+        [writerId]: 'write',
+      });
+      const invites = await admin.query(
+        `select role, entity_grants from app.workspace_invite where workspace_id = $1 order by role`,
+        [a.workspaceId],
+      );
+      expect(invites.rows).toEqual([
+        { role: 'partner', entity_grants: grants },
+        { role: 'viewer', entity_grants: [{ ...grants[0], access: 'read' }, grants[1]] },
+      ]);
+    } finally {
+      await admin.end();
+    }
   });
 });
 
