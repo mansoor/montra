@@ -6,6 +6,7 @@ import { browserApi } from '@/lib/browser-api';
 import { canConfirmReading, readingStage } from '@/lib/tax-forms';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { VaultBadges } from '../vault-badges';
 import { useRefreshWhile } from './tax-form-drop-zone';
 
 /**
@@ -50,6 +51,7 @@ export function TaxFormReadingPanel({
           ))}
         </ul>
       </div>
+      <VaultBadges workspaceId={workspaceId} fileIds={form.fileIds} />
       <p className="text-sm" data-testid="tax-reading-stage">
         {t(`tax_forms.reading_stage.${stage}`)}
         {stage === 'unread' && r.problem ? ` ${t(`tax_forms.reading_problem.${r.problem}`)}` : ''}

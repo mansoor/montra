@@ -108,7 +108,7 @@ afterAll(async () => {
   // Nothing of ours may wake a worker in another test file.
   await admin.query(`delete from app.storage_destination where workspace_id in (
     select id from app.workspace where name in ('Storage test', 'Dav test', 'Beside a vault'))`);
-  await admin.query(`delete from app.job where type = 'storage.mirror'`);
+  await admin.query(`delete from app.job where type in ('storage.mirror', 'storage.vault')`);
   await admin.end();
   await s3.close();
   await dav.close();

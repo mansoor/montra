@@ -17,6 +17,8 @@ import {
   INTAKE_REASONS,
   TAX_FORM_READING_PROBLEMS,
   TAX_FORM_RESULT_STATES,
+  VAULT_GROUP_MODES,
+  VAULT_GROUPS,
 } from '@montra/schemas';
 import { MONEY_BOXES, READING_STAGES } from './tax-forms';
 import { ITEM_PERIODS } from './receipts';
@@ -114,6 +116,9 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'admin.interval.': ['month', 'year'],
   'admin.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
   'billing.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
+  // ADR-0054 §6: the Family Document Vault's groups and modes.
+  'vault.group.': VAULT_GROUPS,
+  'vault.mode.': VAULT_GROUP_MODES,
   'auth.password_strength_': ['0', '1', '2', '3', '4'],
   'sharing.mfa_': ['standard', 'everyone'],
   'account.kind.': [

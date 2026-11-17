@@ -14,11 +14,12 @@ import {
 } from '@/lib/vault';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { VaultSending } from './family-vault-sending';
 
 /**
  * ADR-0054 §2, §13: the household's Family Document Vault, beside "Your own storage". Connecting in three steps (the
- * key Montra made, what to do in the vault, the code), waiting for approval, replacing the key and disconnecting.
- * Nothing is sent yet: the per-group choices and sending come with the next version (PR 3).
+ * key Montra made, what to do in the vault, the code), waiting for approval, replacing the key and disconnecting; once
+ * connected, what each group does and how sending is going (`VaultSending`).
  */
 export function FamilyVaultCard({
   workspace,
@@ -259,7 +260,6 @@ function Connected({
           {t('vault.kinds_allowed')} {d.vaultKinds.map((k) => k.name).join(', ')}
         </p>
       )}
-      <p className="text-sm text-muted">{t('vault.nothing_sent_yet')}</p>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -301,6 +301,7 @@ function Connected({
         )}
       </div>
       <StatusLine message={message} />
+      {d.stage === 'connected' && <VaultSending workspace={workspace} d={d} />}
       {owner && d.newKey && (
         <div className="space-y-3 border-t border-line pt-3" data-testid="vault-new-key">
           <h3 className="text-sm font-semibold">{t('vault.new_key_title')}</h3>

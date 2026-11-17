@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
 | **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 338 IDs in total: **255 done, 64 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Requirements**       | 338 IDs in total: **256 done, 65 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
@@ -42,8 +42,10 @@ decides whose Inbox each lands in. Montra's copy is removed only for a group sen
 filed the document. Montra reads back the vault's changes to what
 it sent, and opens documents through single-use view links. A file the vault doesn't return is listed in Review to be
 uploaded again, and backups and tax packages list any still missing. The owner chose to depend on the vault's client
-library as a published package: **PR 1 (contracts, migration 0063) is done**, and **PR 2 (connecting) is built** on
-`@fdv/client` 0.9.0-dev.59 from the vault's public GitHub release (see §7g). On the vault's side, view links and deletes have shipped, and automatic filing is next. The vault's API contract is private
+library as a published package: **PR 1 (contracts, migration 0063) and PR 2 (connecting) are done**, and **PR 3
+(sending, with a local copy kept; migration 0064) is built** on `@fdv/client` 0.9.0-dev.60 from the vault's public
+GitHub release (see §7g). "Sent with no local copy" is not offered until PR 5. On the vault's side, view links,
+deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
 and is not copied into this repo.
 
 ### Test suite at the end of Phase 11 (green locally)
@@ -1692,6 +1694,55 @@ Phase 11 leftovers:
     `apps/web/e2e/family-vault.spec.ts` (connect, check, replace and cancel, disconnect, against the fake).
   - Next: PR 3 (sending with a local copy kept, the job, the per-group choices), on `@fdv/client` 0.9.0-dev.60 when it
     is out.
+- **Family Document Vault, PR 3 of 6: sending** (VLT-07 done; VLT-01, VLT-02, VLT-03, VLT-04, VLT-08, VLT-09 partial;
+  ADR-0054 "As built: PR 3"; migration 0064). The plan key is now shown to customers (`FEATURES_NOT_YET_SHOWN` is empty).
+  - **The dependency** moves to `@fdv/client` 0.9.0-dev.60 (`v0.9.0-dev.60/fdv-client-0.9.0-dev.60.tgz`, 496,636
+    bytes, sha256 `303cac17c6a7455c…`, checked against the vault side's numbers; integrity in the lockfile). It adds
+    `content_available` on every intake state (stored on `vault_item`), routing to the Inbox of the person a paper is
+    about, and `sentFile()` (unused until PR 5).
+  - **Migration 0064:** a filed row may have no document id (a vault that lets Montra send but not read says only
+    "filed"); `vault_item.content_available`; the trigger on `app.file` wakes `storage.vault` two minutes after it
+    queues a file; `app.vault_file_busy(file)` (definer, owners and admins: is any receipt, payslip, import, scan,
+    intake or tax form still reading the file or in review) and `app.vault_file_states(files)` (definer, the badges).
+  - **The job** (`apps/api/src/storage/vault/vault.jobs.ts`, `storage.vault`, registered in the worker): per due
+    connection, under an owner's RLS: the signed check when it is due, failed or waiting (so approval is now noticed on
+    its own); `queued` → `pending` once Montra has finished with the file (or `not_kept` for a statement export or a type
+    or size the vault doesn't take); one send at a time with a pause, the id saved before the first send, a row whose
+    answer was lost asked about before it is sent again; the vault's hash checked; Inbox items asked about every 30
+    minutes, a hundred at a time; withdrawals and deletes for files deleted for good. Daily cap: a hold, not a failure.
+    A wait the vault asks for (busy, too many requests): waited out with jitter and backoff, never given up over. A
+    problem with the connection itself: `needs_vault` at once, owners and admins told once (`vault_attention`, a new
+    notification type they can't switch off, as `storage_failing`). Five failures in a row: `failing`, told once.
+  - **What Montra says** (D5): the group's vault kind, a title from the file's name (and a business's or rental's name),
+    the paper's date, the tax year, and the person a payslip, tax form or household bill belongs to (by name; the vault
+    routes it to their Inbox when they can receive it). Amounts and account last four only with "Describe documents in
+    more detail". Only hints the vault says it takes.
+  - **API** (`/v1/workspaces/:id/family-vault`): `PATCH` (groups, more detail, deletes, pause; payslips and tax
+    documents owner-only with a recent sign-in, an admin may turn them off; `sent_no_copy` refused), `GET`/`POST
+    existing` (the count and days at the daily limit; send them, owner-only, recent sign-in, the count shown must match),
+    `POST retry` (Try again; Send again for a file not kept), `GET items`, `GET files?ids=` (badges, for anyone who can
+    see the files).
+  - **Web:** the card's "Send these to the vault" table (each group's mode and vault kind, suggestions, the warning for
+    payslips and tax documents, the note that sending without a local copy comes later), the counts and the daily-limit
+    hold, Try again and Send again, Send existing documents with its estimate, Describe documents in more detail, Pause
+    sending. Badges ("Sending to the vault", "In the vault's Inbox", "In the vault", "Not taken by the vault") beside the
+    files of receipts, payslips and tax forms.
+  - **Not done here:** sent with no local copy, `FileBytes`, missing files (PR 5); the changes feed and the vault's own
+    name for a document, view links (PR 4); the phone (PR 6); badges on statements and bills (their screens don't list
+    files by id yet).
+  - **The fake vault reads a multipart body as UTF-8**, so a binary file (a real PNG or JPEG) hashes differently there
+    and Montra's hash check fails it. Tests send text-only bytes; asked of the vault's side. The real vault is
+    unaffected as far as Montra knows.
+  - Tests: `apps/api/test/family-vault-sending.test.ts` (the id saved before the first send and reused after a lost
+    answer, waiting while Montra reads a file, filed without a document id, one at a time oldest first and the backfill
+    with its count, statement exports, types and sealed copies never sent, the person hint and the vault's routing (to
+    the person, and to the acting member when that person is locked), the daily cap, busy waits, failing after five,
+    the connection stopped and owners told once, family-removed and lapsed items, a kind no longer allowed, a hash
+    mismatch and Try again, withdrawals, badges, pausing, group modes and owner-only payslips),
+    `apps/api/test/family-vault.test.ts` (updated for sending columns), `packages/db/test/vault.test.ts` (migration
+    0064), `packages/schemas/test/vault.test.ts`, `apps/web/lib/vault.test.ts`, and the Playwright spec (choosing what
+    is sent, the warning, the count of existing documents).
+  - Next: PR 4 (keeping in step: the changes feed, the vault's names, out of reach, view links).
 
 ---
 

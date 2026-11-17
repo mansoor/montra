@@ -1,11 +1,15 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * ADR-0054 §2, §13 (VLT-01): an owner connects the workspace to a Family Document Vault from Settings → Storage. The
- * API runs with FAMILY_VAULT_FAKE=on (playwright.config.ts), so the vault is the vault's own fake inside the API
- * process; the dev-only route stands in for the vault's owner registering Montra's key there. No real vault is used.
+ * ADR-0054 §2, §6, §13 (VLT-01, VLT-02, VLT-07): an owner connects the workspace to a Family Document Vault from
+ * Settings → Storage and chooses what each group does. The API runs with FAMILY_VAULT_FAKE=on (playwright.config.ts),
+ * so the vault is the vault's own fake inside the API process; the dev-only route stands in for the vault's owner
+ * registering Montra's key there. No real vault is used. Sending itself is tested against the same fake in the API's
+ * own tests (family-vault-sending.test.ts): the e2e worker is another process, without the API's in-process fake.
  */
-test('an owner connects the Family Document Vault, replaces the key and disconnects', async ({ page }) => {
+test('an owner connects the Family Document Vault, chooses what is sent, replaces the key and disconnects', async ({
+  page,
+}) => {
   test.setTimeout(120_000);
   await page.goto('/');
   await page.getByLabel('Email').fill(`vault-${Date.now()}@example.com`);
@@ -43,10 +47,53 @@ test('an owner connects the Family Document Vault, replaces the key and disconne
   await card.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
   await expect(card.getByTestId('vault-where')).toContainText('fake.example');
-  await expect(card.getByText('Nothing is sent yet.', { exact: false })).toBeVisible();
 
   await card.getByRole('button', { name: 'Check again' }).click();
   await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
+
+  // ADR-0054 §6 (PR 3): what each group does. Nothing goes until a sent group is mapped to one of the vault's kinds.
+  const sending = card.getByTestId('vault-sending');
+  await expect(sending.getByTestId('vault-unmapped')).toContainText('Receipts');
+  await expect(sending.getByRole('combobox', { name: 'What happens to Receipts' })).toHaveValue(
+    'sent_keep_copy',
+  );
+  // Sending without a local copy isn't offered yet: Montra keeps its copy of everything it sends.
+  await expect(
+    sending.getByRole('combobox', { name: 'What happens to Receipts' }).locator('option'),
+  ).toHaveText(["Don't send", 'Send, and keep a copy in Montra']);
+  await sending
+    .getByRole('combobox', { name: 'What Receipts are filed as in the vault' })
+    .selectOption('utility_bill');
+  await sending.getByRole('combobox', { name: 'What happens to Statements' }).selectOption('not_sent');
+  // Bills start with the vault's obvious kind for them.
+  await expect(sending.getByRole('combobox', { name: 'What Bills are filed as in the vault' })).toHaveValue(
+    'utility_bill',
+  );
+  await sending.getByRole('button', { name: 'Save' }).click();
+  await expect(sending.getByText('Saved.', { exact: false })).toBeVisible();
+  await expect(sending.getByTestId('vault-unmapped')).toHaveCount(0);
+
+  // Payslips go only after the warning, and only an owner turns them on.
+  await sending.getByRole('combobox', { name: 'What happens to Payslips' }).selectOption('sent_keep_copy');
+  await sending
+    .getByRole('combobox', { name: 'What Payslips are filed as in the vault' })
+    .selectOption('utility_bill');
+  let warning = '';
+  page.once('dialog', (d) => {
+    warning = d.message();
+    void d.accept();
+  });
+  await sending.getByRole('button', { name: 'Save' }).click();
+  await expect(sending.getByText('Saved.', { exact: false })).toBeVisible();
+  expect(warning).toContain('Where they go and who can see them there is set in the vault');
+  await expect(sending.getByRole('combobox', { name: 'What happens to Payslips' })).toHaveValue(
+    'sent_keep_copy',
+  );
+
+  // Nothing has been sent from this new workspace, and there is nothing already in Montra to send.
+  await expect(sending.getByText('Nothing has been sent yet.')).toBeVisible();
+  await sending.getByRole('button', { name: 'Send existing documents…' }).click();
+  await expect(sending.getByTestId('vault-existing-count')).toContainText('there are none');
 
   // Replace the key: a new public key to register, the current one signing until then. Cancelled here.
   page.once('dialog', (d) => d.accept());

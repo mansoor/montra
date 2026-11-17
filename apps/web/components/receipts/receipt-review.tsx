@@ -17,6 +17,7 @@ import {
 import { DateText } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { VaultBadges } from '../vault-badges';
 import { ReceiptViewer } from './receipt-viewer';
 
 /**
@@ -83,6 +84,7 @@ export function ReceiptReview({
   const viewer = (
     // The receipt itself, kept in view while the lines are checked (RCP-06).
     <aside aria-label={t('receipts.image')} className="lg:sticky lg:top-20 lg:h-[calc(100dvh-9rem)]">
+      <VaultBadges workspaceId={ws} fileIds={receipt.fileIds} />
       <ReceiptViewer
         pages={receipt.fileIds.map((fileId, i) => ({
           src: browserApi.receiptFilePath(ws, receipt.id, fileId),

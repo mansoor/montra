@@ -1758,10 +1758,13 @@ export interface VaultItemTable {
   not_kept_reason: string | null;
   resend_allowed: Generated<boolean>;
   auto_resends: Generated<number>;
+  /** Null for a document the vault filed that Montra may not read (migration 0064). */
   vault_document_id: string | null;
   vault_version: string | null;
   vault_sha256: string | null;
   vault_meta: Json<Record<string, unknown>> | null;
+  /** The vault says Montra could download the exact file it sent again; null until it has said (migration 0064). */
+  content_available: boolean | null;
   received_at: Date | null;
   filed_at: Date | null;
   source_key: string | null;

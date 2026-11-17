@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import pg from 'pg';
 import { newId, withContext, type Database, type Trx } from '../src/index.js';
 import { ADMIN_URL, APP_URL } from './env.js';
@@ -188,11 +188,18 @@ describe('the outbox’s rules (ADR-0054 §4)', () => {
     await admin.query(`update app.vault_item set vault_ref = 'ref-three' where file_id = $1`, [queued]);
   });
 
-  it('needs an id past sending, a document for filed and out of reach, and words for not kept', async () => {
+  it('needs an id past sending, a time for filed, a document for out of reach, and words for not kept', async () => {
     await expect(item({ status: 'received' })).rejects.toThrow(/check constraint/);
-    await expect(item({ status: 'filed', vault_ref: 'r-filed', filed_at: new Date() })).rejects.toThrow(
+    await expect(item({ status: 'filed', vault_ref: 'r-filed', vault_document_id: 'doc-0' })).rejects.toThrow(
       /check constraint/,
     );
+    // Migration 0064: a vault that lets Montra send but not read says only that it filed the item.
+    await item({
+      status: 'filed',
+      vault_ref: 'r-filed-unseen',
+      filed_at: new Date(),
+      content_available: false,
+    });
     await expect(item({ status: 'out_of_reach', vault_ref: 'r-oor' })).rejects.toThrow(/check constraint/);
     await expect(item({ status: 'not_kept', vault_ref: 'r-nk' })).rejects.toThrow(/check constraint/);
     await expect(item({ source_removed_at: new Date() })).rejects.toThrow(/check constraint/);
@@ -285,6 +292,12 @@ describe('who sees the vault’s tables (ADR-0054 §11)', () => {
         }
         await expect(c.query(`select * from app.vault_due()`)).rejects.toThrow(/permission denied/);
         await expect(c.query(`select app.vault_next()`)).rejects.toThrow(/permission denied/);
+        await expect(c.query(`select app.vault_file_busy(gen_random_uuid())`)).rejects.toThrow(
+          /permission denied/,
+        );
+        await expect(
+          c.query(`select * from app.vault_file_states(array[gen_random_uuid()])`),
+        ).rejects.toThrow(/permission denied/);
       });
     }
   });
@@ -467,6 +480,63 @@ describe('the job’s functions (ADR-0054 §12)', () => {
     expect(next).toBeInstanceOf(Date);
     await admin.query(`delete from app.file where id = $1`, [id]);
     await admin.query(`delete from app.storage_mirror_item where destination_id = $1`, [mirror]);
+  });
+
+  it('wakes the vault’s job a little after a file is queued (migration 0064)', async () => {
+    await admin.query(`delete from app.job where type = 'storage.vault' and status = 'queued'`);
+    const id = await file(a.workspaceId, 'receipt');
+    const { rows } = await admin.query(
+      `select run_after > now() + interval '1 minute' as later from app.job
+        where type = 'storage.vault' and status = 'queued' and workspace_id is null`,
+    );
+    expect(rows).toEqual([{ later: true }]);
+    await admin.query(`delete from app.job where type = 'storage.vault' and status = 'queued'`);
+    await admin.query(`delete from app.file where id = $1`, [id]);
+  });
+
+  it('says whether Montra is still reading a file, to owners and admins only (§3)', async () => {
+    const id = await file(a.workspaceId, 'receipt');
+    const busy = (userId: string) =>
+      as(a, userId, async (trx) => {
+        const { rows } = await sql<{
+          busy: boolean;
+        }>`select app.vault_file_busy(${id}::uuid) as busy`.execute(trx);
+        return rows[0]!.busy;
+      });
+    expect(await busy(a.ownerId)).toBe(false);
+    const entity = (
+      await admin.query(`select id from app.entity where workspace_id = $1 limit 1`, [a.workspaceId])
+    ).rows[0].id;
+    const receipt = (
+      await admin.query(
+        `insert into app.receipt (workspace_id, entity_id, attachment_ids, status, retain_until)
+         values ($1, $2, array[$3::uuid], 'processing', '2033-01-01') returning id`,
+        [a.workspaceId, entity, id],
+      )
+    ).rows[0].id;
+    expect(await busy(a.ownerId)).toBe(true);
+    await admin.query(`update app.receipt set status = 'needs_review' where id = $1`, [receipt]);
+    expect(await busy(a.ownerId)).toBe(true);
+    await admin.query(`update app.receipt set status = 'inbox' where id = $1`, [receipt]);
+    expect(await busy(a.ownerId)).toBe(false);
+    await admin.query(`update app.receipt set status = 'processing' where id = $1`, [receipt]);
+    // Not for anyone else to ask.
+    expect(await busy(memberId)).toBe(false);
+    await admin.query(`delete from app.receipt where id = $1`, [receipt]);
+    await admin.query(`delete from app.file where id = $1`, [id]);
+  });
+
+  it('gives a file’s badge for the current workspace only (§13)', async () => {
+    const id = await file(a.workspaceId, 'receipt');
+    const states = (f: Fixture, userId: string) =>
+      as(f, userId, async (trx) => {
+        const { rows } = await sql<{ file_id: string; status: string }>`
+          select file_id, status from app.vault_file_states(array[${id}::uuid])`.execute(trx);
+        return rows;
+      });
+    expect(await states(a, memberId)).toEqual([{ file_id: id, status: 'queued' }]);
+    expect(await states(b, b.ownerId)).toEqual([]);
+    await admin.query(`delete from app.file where id = $1`, [id]);
   });
 
   it('looks only at its check while the vault needs a person, and at nothing while paused', async () => {

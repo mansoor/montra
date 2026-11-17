@@ -3,12 +3,20 @@
  * request (RFC 9421) and reads the connection code; Montra adds what is Montra's: the address guard (§8), pinning the
  * vault's identity, and turning the vault's answers into a `VaultCheck` or a `VaultError` in Montra's words.
  *
- * PR 2 builds connecting: reading a code, identifying the vault, and the signed connection test. Sending, reading back,
- * links and deletes (the rest of `VaultDestination`) come with the PRs that use them.
+ * PR 2 builds connecting: reading a code, identifying the vault, and the signed connection test. PR 3 adds sending,
+ * asking what became of what was sent, withdrawing and deleting. Reading back, the feed and links (the rest of
+ * `VaultDestination`) come with the PRs that use them.
  */
+import type { Readable } from 'node:stream';
 import { ApiRequestError, createApi, createHttp, NetworkError } from '@fdv/client';
 import { createAppClient, parseConnectionString, type AppClient } from '@fdv/client/apps';
-import { VaultError, type VaultCheck, type VaultDestination } from '../destinations/vault.js';
+import {
+  VaultError,
+  type VaultCheck,
+  type VaultDestination,
+  type VaultDocument,
+  type VaultItemState,
+} from '../destinations/vault.js';
 import { assertVaultAddress, type VaultTransport } from './transport.js';
 
 /** What a pasted code says, once read: where the vault is, Montra's app and key there, and which vault it is. */
@@ -117,8 +125,71 @@ export interface VaultConnectionOptions {
   now?: () => number;
 }
 
+type IntakeState = Awaited<ReturnType<AppClient['status']>>;
+
+/** The vault's refusals of a document itself (§4.5), as Montra's three reasons. */
+const DOCUMENT_REFUSALS: Record<string, 'kind' | 'type' | 'size'> = {
+  kind_not_allowed: 'kind',
+  unsupported_type: 'type',
+  too_large: 'size',
+};
+
+/** An intake state from the vault, in Montra's terms (§4). */
+export function itemState(s: IntakeState): VaultItemState {
+  const contentAvailable = typeof s.content_available === 'boolean' ? s.content_available : null;
+  if (s.state === 'waiting') return { state: 'received', sha256: s.sha256 ?? null, contentAvailable };
+  // `unavailable`: filed, but Montra may not see the document now (it may only send, say). Still filed.
+  if (s.state === 'filed' || s.state === 'unavailable') {
+    const filedAt = s.filed_at ? new Date(s.filed_at) : null;
+    return {
+      state: 'filed',
+      documentId: s.document_id ?? null,
+      version: s.version_id ?? null,
+      sha256: s.sha256 ?? null,
+      filedAt: filedAt && Number.isFinite(filedAt.getTime()) ? filedAt : null,
+      contentAvailable,
+    };
+  }
+  if (s.state === 'refused') {
+    return { state: 'not_kept', why: 'refused', refusal: DOCUMENT_REFUSALS[s.refusal ?? ''] ?? null };
+  }
+  return {
+    state: 'not_kept',
+    why:
+      s.removed_reason === 'expired' ? 'lapsed' : s.removed_reason === 'withdrawn' ? 'withdrawn' : 'removed',
+    refusal: null,
+  };
+}
+
+/** The hints a document is sent with (§3, D5), in the vault's words: only what the caller chose to give. */
+export function hintsOf(doc: VaultDocument): Record<string, unknown> {
+  const hints: Record<string, unknown> = { kind: doc.vaultKind };
+  if (doc.title) hints.title = doc.title;
+  if (doc.date) hints.issued = doc.date;
+  if (doc.person) hints.person = { name: doc.person };
+  if (doc.taxYear) hints.tax_year = doc.taxYear;
+  const amount = doc.detail?.amounts?.[0];
+  if (amount) hints.amount = { value: amount.amount, currency: amount.currency };
+  if (doc.detail?.accountLast4) hints.account_last4 = doc.detail.accountLast4;
+  return hints;
+}
+
+/** The bytes on their own: a Node `Buffer` may be a view into a larger pool, which a multipart body mustn't read past. */
+async function bytesOf(body: Uint8Array | Readable): Promise<Uint8Array> {
+  if (body instanceof Uint8Array) return new Uint8Array(body);
+  const chunks: Buffer[] = [];
+  for await (const chunk of body)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
+const notFound = (e: unknown) => e instanceof ApiRequestError && e.status === 404;
+
 /** One run's connection to a vault: opened for a request or a job run, then closed. */
-export class VaultConnection implements Pick<VaultDestination, 'kind' | 'check' | 'close'> {
+export class VaultConnection implements Pick<
+  VaultDestination,
+  'kind' | 'check' | 'send' | 'status' | 'withdraw' | 'remove' | 'close'
+> {
   readonly kind = 'fdv' as const;
   private readonly client: AppClient;
   private readonly origin: string;
@@ -179,7 +250,78 @@ export class VaultConnection implements Pick<VaultDestination, 'kind' | 'check' 
       newKeyConfirmed: false,
       dailyResetAt: Number.isFinite(resets) ? new Date(resets) : null,
       clockOffsetMs: Number.isFinite(vaultNow) ? Math.trunc(now - vaultNow) : null,
+      hints: [...(me.send?.hints ?? [])],
+      limits: me.limits
+        ? {
+            filesPerDay: me.limits.files_per_day,
+            filesToday: me.limits.files_today,
+            maxUploadBytes: me.limits.max_upload_bytes,
+          }
+        : null,
     };
+  }
+
+  /**
+   * §4: one document, under the id Montra saved before this first attempt. The package signs it afresh. An id the
+   * vault already has answers with what became of it, so a resend is harmless; the same id with other bytes is a
+   * `hash_mismatch`. A refusal of the document itself (its kind, type or size) is an answer, not a failure.
+   */
+  async send(doc: VaultDocument, body: Uint8Array | Readable): Promise<VaultItemState> {
+    const bytes = await bytesOf(body);
+    try {
+      const sent = await this.client.send({
+        externalId: doc.ref,
+        hints: hintsOf(doc),
+        file: { bytes, filename: doc.fileName, contentType: doc.mediaType },
+      });
+      return itemState(sent.state);
+    } catch (e) {
+      if (e instanceof ApiRequestError && DOCUMENT_REFUSALS[e.code]) {
+        return { state: 'not_kept', why: 'refused', refusal: DOCUMENT_REFUSALS[e.code]! };
+      }
+      if (e instanceof ApiRequestError && e.code === 'external_id_conflict') {
+        throw new VaultError('hash_mismatch', { detail: `${e.status} ${e.code}` });
+      }
+      throw asVaultError(e, this.opts.transport);
+    }
+  }
+
+  /** §4.4, §12.3: what became of what Montra sent, a hundred ids at a time. Ids the vault doesn't know are left out. */
+  async status(refs: readonly string[]): Promise<Map<string, VaultItemState>> {
+    const out = new Map<string, VaultItemState>();
+    for (let i = 0; i < refs.length; i += 100) {
+      let page: Awaited<ReturnType<AppClient['statuses']>>;
+      try {
+        page = await this.client.statuses(refs.slice(i, i + 100));
+      } catch (e) {
+        throw asVaultError(e, this.opts.transport);
+      }
+      for (const s of page.items ?? []) out.set(s.external_id, itemState(s));
+    }
+    return out;
+  }
+
+  /** §10: takes an item back from the Inbox. Answers what became of it; null when the vault never had it. */
+  async withdraw(ref: string): Promise<VaultItemState | null> {
+    try {
+      return itemState(await this.client.withdraw(ref));
+    } catch (e) {
+      if (notFound(e)) return null;
+      // Filed already: what it is now, for the caller to decide.
+      if (e instanceof ApiRequestError && e.status === 409)
+        return (await this.status([ref])).get(ref) ?? null;
+      throw asVaultError(e, this.opts.transport);
+    }
+  }
+
+  /** §10: asks the vault to delete a document Montra sent; the vault does what its owner chose. Gone already is fine. */
+  async remove(documentId: string): Promise<void> {
+    try {
+      await this.client.delete(documentId);
+    } catch (e) {
+      if (notFound(e)) return;
+      throw asVaultError(e, this.opts.transport);
+    }
   }
 
   /** §2: retires a key Montra no longer signs with, signed with the current one. Best effort: the vault retires it too. */

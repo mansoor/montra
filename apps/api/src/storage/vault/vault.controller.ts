@@ -5,11 +5,22 @@ import {
   Get,
   HttpCode,
   Inject,
+  Patch,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { DisconnectVaultRequest, PasteVaultCodeRequest, ReplaceVaultKeyRequest } from '@montra/schemas';
+import {
+  DisconnectVaultRequest,
+  FileStorageStatesQuery,
+  PasteVaultCodeRequest,
+  ReplaceVaultKeyRequest,
+  RetryVaultItemsRequest,
+  SendExistingToVaultRequest,
+  UpdateVaultConnectionRequest,
+  VaultItemsQuery,
+} from '@montra/schemas';
 import { z } from 'zod';
 import {
   AuthGuard,
@@ -75,6 +86,50 @@ export class VaultController {
   replaceKey(@Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireRecentAuth(ctx);
     return this.vault.replaceKey(dbCtx(ctx), ctx.role!, parse(ReplaceVaultKeyRequest, body));
+  }
+
+  /**
+   * "Send these to the vault" (§6): owners change anything; turning payslips or tax documents on needs a recent sign-in.
+   * Admins may set those two back to not sent (D4).
+   */
+  @Patch()
+  update(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.vault.update(dbCtx(ctx), ctx.role!, parse(UpdateVaultConnectionRequest, body), () =>
+      requireRecentAuth(ctx),
+    );
+  }
+
+  /** §12: how many existing documents would be sent, and how long that takes. */
+  @Get('existing')
+  existing(@Ctx() ctx: RequestContext) {
+    return this.vault.existing(dbCtx(ctx), ctx.role!);
+  }
+
+  /** §12 "Send existing documents": owner only, with a recent sign-in. */
+  @Post('existing')
+  @HttpCode(200)
+  async sendExisting(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireRecentAuth(ctx);
+    await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
+    return this.vault.sendExisting(dbCtx(ctx), ctx.role!, parse(SendExistingToVaultRequest, body));
+  }
+
+  /** "Try again" and "Send again" (§4.5, §12): owners and admins (D4). */
+  @Post('retry')
+  @HttpCode(200)
+  retry(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    return this.vault.retry(dbCtx(ctx), ctx.role!, parse(RetryVaultItemsRequest, body ?? {}));
+  }
+
+  @Get('items')
+  items(@Ctx() ctx: RequestContext, @Query() query: unknown) {
+    return this.vault.items(dbCtx(ctx), ctx.role!, parse(VaultItemsQuery, query));
+  }
+
+  /** The badges on files (§13): anyone who can see the files. */
+  @Get('files')
+  files(@Ctx() ctx: RequestContext, @Query() query: unknown) {
+    return this.vault.fileStates(dbCtx(ctx), parse(FileStorageStatesQuery, query).ids);
   }
 
   @Delete()
