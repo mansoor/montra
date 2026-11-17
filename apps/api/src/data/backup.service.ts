@@ -31,6 +31,14 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { renderReport } from '../reports/report-render.js';
 import { ReportsService } from '../reports/reports.service.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
+import {
+  leftOutLine,
+  packageFileName,
+  README_LINE,
+  taxFormsCheckPdf,
+  taxFormsCsv,
+} from '../tax-forms/tax-form-package.js';
+import { TaxFormsService } from '../tax-forms/tax-forms.service.js';
 import { deriveKey, encryptFile, newKdfParams, type KdfParams } from './archive-crypto.js';
 import {
   ENCRYPTED,
@@ -107,6 +115,7 @@ export class BackupService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(ReportsService) private readonly reports: ReportsService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(TaxFormsService) private readonly taxForms: TaxFormsService,
   ) {}
 
   register(): void {
@@ -673,6 +682,18 @@ export class BackupService {
           ),
         );
         const kept = new Map<string, Set<string>>();
+        // Files carry no books or person, so RLS lets every member read their rows. A tax form's file goes only with a
+        // form the archive holds (ADR-0052 §8.4): a partner's or one set of books' archive leaves the others out.
+        const formFiles = filtering
+          ? new Set(
+              (
+                await sql<{ id: string }>`
+                  select distinct unnest(t.file_ids)::text as id from app.tax_form t
+                   where t.workspace_id = ${ctx.workspaceId}
+                     and ${entityId ? sql`t.entity_id = ${entityId}` : sql`true`}`.execute(trx)
+              ).rows.map((r) => r.id),
+            )
+          : null;
         const manifest: ArchiveManifest = {
           format: ARCHIVE_FORMAT,
           createdAt: new Date().toISOString(),
@@ -719,6 +740,8 @@ export class BackupService {
               let row: Record<string, unknown> | null = raw.row;
               if (filtering) row = withParents(info, row, kept);
               if (!row) continue;
+              if (table === 'file' && formFiles && row.kind === 'tax_form' && !formFiles.has(String(row.id)))
+                continue;
               row = await this.decrypted(trx, ctx, table, row);
               const line = JSON.stringify(row) + '\n';
               hash.update(line);
@@ -933,9 +956,13 @@ export class BackupService {
         );
       }
       zip.addBuffer(Buffer.from(index.join('\r\n') + '\r\n'), 'receipts.csv');
+      const forms = await this.taxFormsInPackage(ctx, zip, entityId, entity.name, year);
+      const formLines = forms
+        ? `${README_LINE}${forms.leftOut ? ` ${leftOutLine(forms.leftOut)}` : ''}\r\n\r\n`
+        : '';
       zip.addBuffer(
         Buffer.from(
-          `Tax package for ${entity.name}, ${year}.\r\n\r\nreports/ holds each report as PDF and CSV. receipts/ holds the receipts for the year, listed in receipts.csv.\r\n\r\nPrepared by Montra for your records and your tax professional. It isn't tax advice, and the figures are on a cash basis.\r\n`,
+          `Tax package for ${entity.name}, ${year}.\r\n\r\nreports/ holds each report as PDF and CSV. receipts/ holds the receipts for the year, listed in receipts.csv.\r\n\r\n${formLines}Prepared by Montra for your records and your tax professional. It isn't tax advice, and the figures are on a cash basis.\r\n`,
         ),
         'README.txt',
       );
@@ -951,6 +978,92 @@ export class BackupService {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * ADR-0052 §7.3 (TAX-07): the year's tax forms in these books, as the maker's row-level security shows them (§8.4): a
+   * member's forms are in an owner's or admin's package and the person's own, and in an accountant's only while the
+   * owner's setting is on; always bounded by the books. Those left out are counted, never named. Null when the books have
+   * no forms, none expected and none left out (and in workspaces not kept in US dollars): the package is as before.
+   */
+  private async taxFormsInPackage(
+    ctx: Ctx,
+    zip: yazl.ZipFile,
+    entityId: string,
+    booksName: string,
+    year: number,
+  ): Promise<{ forms: number; leftOut: number } | null> {
+    const base = await this.db.run(ctx, async (trx) => {
+      const ws = await trx
+        .selectFrom('app.workspace')
+        .select('base_currency')
+        .where('id', '=', ctx.workspaceId)
+        .executeTakeFirstOrThrow();
+      if (ws.base_currency !== 'USD') return null;
+      const { rows } = await sql<{ n: number }>`
+        select app.tax_forms_in_books(${entityId}::uuid, ${year}::integer) as n`.execute(trx);
+      const people = await trx
+        .selectFrom('app.family_member')
+        .select(['id', 'name'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .execute();
+      return { total: Number(rows[0]?.n ?? 0), people: new Map(people.map((p) => [p.id, p.name])) };
+    });
+    if (!base) return null;
+    const all = await this.taxForms.year(ctx, year);
+    const forms = all.forms.filter(
+      (f) => f.entityId === entityId && f.status !== 'dismissed' && f.status !== 'superseded',
+    );
+    const expected = all.expected.filter((e) => e.entityId === entityId && e.state !== 'received');
+    const leftOut = Math.max(0, base.total - forms.length);
+    if (forms.length === 0 && expected.length === 0 && leftOut === 0) return null;
+
+    // Each file once, named for the first form on it (a consolidated 1099 holds several).
+    const fileIds = [...new Set(forms.flatMap((f) => f.fileIds))];
+    const files = fileIds.length
+      ? await this.db.run(ctx, (trx) =>
+          trx
+            .selectFrom('app.file')
+            .select(['id', 'storage_key', 'mime'])
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', 'in', fileIds)
+            .where('deleted_at', 'is', null)
+            .execute(),
+        )
+      : [];
+    const byId = new Map(files.map((f) => [f.id, f]));
+    const pathOf = new Map<string, string>();
+    const taken = new Set<string>();
+    const paths = new Map<string, string[]>();
+    for (const f of forms) {
+      const mine: string[] = [];
+      for (const id of f.fileIds) {
+        const file = byId.get(id);
+        if (!file) continue;
+        let path = pathOf.get(id);
+        if (!path) {
+          try {
+            const bytes = await this.storage.get(file.storage_key);
+            const person = f.personMemberId ? (base.people.get(f.personMemberId) ?? null) : null;
+            path = `tax-forms/${packageFileName(f, person, file.mime, taken)}`;
+            zip.addBuffer(Buffer.from(bytes), path);
+            pathOf.set(id, path);
+          } catch (e) {
+            this.logger.warn(`A tax form's file could not be read: ${(e as Error).message}`);
+            continue;
+          }
+        }
+        mine.push(path);
+      }
+      paths.set(f.id, mine);
+    }
+    const input = { forms, expected, waivers: all.waivers, people: base.people, paths };
+    zip.addBuffer(Buffer.from(taxFormsCsv(input)), 'tax-forms.csv');
+    zip.addBuffer(
+      Buffer.from(await taxFormsCheckPdf({ ...input, year, booksName, leftOut })),
+      'tax-forms-check.pdf',
+    );
+    return { forms: forms.length, leftOut };
   }
 }
 

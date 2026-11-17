@@ -24,6 +24,7 @@ export const NOTIFICATION_ROWS: readonly NotificationType[] = [
   'monthly_review',
   'suggestion',
   'weekly_digest',
+  'tax_forms_missing',
 ];
 
 /** One channel of one type, leaving the other channels and types as they are. */

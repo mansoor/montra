@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — tax forms received (ADR-0052)
+
+The W-2s, 1099-INTs, 1099-DIVs and 1098s a household receives, read, matched and checked against the books (TAX-01..10). Five PRs, with
+migrations 0059 and 0060. The AI reading was tested with the fake provider only, and the phone screens haven't been run on a device.
+
+- **Storage and who sees a form** (TAX-08): only the last four digits of an SSN are kept. A member's forms are visible to them, owners and
+  admins, and to accountants only while the owner turns on "Accountants can see members' tax forms" (off by default, audited), always
+  within the books they can read.
+- **Typing in and uploading** (TAX-01, TAX-02): type a form in, or drop several PDFs or photos at once. Each is read once from its text (or
+  OCR); names, SSNs and account numbers are masked before anything reaches the AI, and images never do. Duplicates are refused, and a
+  corrected form replaces the one it corrects.
+- **Matching** (TAX-03): to the employer or accounts and the person, automatically when the evidence is clear (an EIN seen before, or the
+  one candidate that fits), and learned from each confirmation.
+- **Checks against the books** (TAX-04..06): box by box, to $1.00, with the rule and the payslips, transactions or loan payments behind
+  each figure, and known explanations such as interest posted after New Year. Differences go to Review, to fix, re-read or accept with a
+  note. A Tax forms screen per year shows the forms expected from payslips, interest, dividends and mortgages against those received.
+- **The phone** (TAX-09): Tax forms in More, Scan a form, a form's checks and actions, and Review with its badge.
+- **The tax package** (TAX-07): the year's forms, an index with what's missing, and the checks as a PDF, each in the package of the books
+  they belong to. The package panel warns first, on the web and the phone.
+- **Retention and the reminder** (TAX-08, TAX-10): form files are kept seven years after the tax year and are their own kind, which your
+  own storage can leave out; forms in the Trash go after 30 days. On 16 February, one notification lists last year's forms that haven't
+  come, each person seeing only theirs.
+
 ## v0.12.0-dev.1 — Phase 11: hardening, code complete
 
 Everything here that talks to an outside service has been tested with stubs only, and nothing has been deployed. `v1.0.0` needs what's

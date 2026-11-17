@@ -14,8 +14,10 @@ import type {
 import Link from 'next/link';
 import { browserApi } from '@/lib/browser-api';
 import { barPercent, formatBytes } from '@/lib/reports';
+import { showsTaxForms } from '@/lib/tax-forms';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { TaxPackageWarning } from './privacy-security';
 
 const saveBlob = (blob: Blob, fileName: string) => {
   const url = URL.createObjectURL(blob);
@@ -373,6 +375,9 @@ export function BackupPanel({
           >
             {t('data.tax_package_make')}
           </button>
+          {showsTaxForms(workspace) && taxEntity && (
+            <TaxPackageWarning workspaceId={workspace.id} entityId={taxEntity} year={Number(taxYear)} />
+          )}
         </div>
       </section>
     </div>

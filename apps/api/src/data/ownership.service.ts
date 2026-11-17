@@ -224,6 +224,11 @@ export class OwnershipService {
   /** One failure doesn't stop the rest, and it's picked up again next hour. */
   async retention(): Promise<Record<string, number>> {
     const done = { exports: 0, restores: 0, files: 0, workspaces: 0, users: 0, trash: 0, backups: 0 };
+    // The Trash first: a tax form purged there marks its files deleted, and they go below in the same run (§8.5).
+    const trash = await this.db.run({}, (trx) =>
+      sql<{ n: number }>`select app.purge_trash() as n`.execute(trx),
+    );
+    done.trash = Number(trash.rows[0]?.n ?? 0);
     const { rows } = await this.db.run({}, (trx) =>
       sql<{ kind: string; workspace_id: string | null; id: string; storage_key: string | null }>`
         select * from app.retention_due()`.execute(trx),
@@ -237,10 +242,6 @@ export class OwnershipService {
         this.logger.warn(`Retention failed for a ${r.kind}: ${(e as Error).message}`);
       }
     }
-    const trash = await this.db.run({}, (trx) =>
-      sql<{ n: number }>`select app.purge_trash() as n`.execute(trx),
-    );
-    done.trash = Number(trash.rows[0]?.n ?? 0);
     done.backups = await this.backups.runSchedules();
     return done;
   }

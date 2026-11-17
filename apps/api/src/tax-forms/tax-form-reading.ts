@@ -174,8 +174,9 @@ export class TaxFormReading {
             .values({
               workspace_id: ctx.workspaceId,
               id: fileId,
-              // No kind of its own yet (a migration): reachable only through its form, as payslips are.
-              kind: 'other',
+              // Its own kind (migration 0060), so the owner's storage can leave it out; reachable only through its form,
+              // as payslips are. It's kept until 31 December of the tax year + 7 (a trigger on the form sets it, §8.5).
+              kind: 'tax_form',
               storage_key: key,
               file_name: f.fileName || 'tax-form',
               mime: f.mime,

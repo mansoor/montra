@@ -43,6 +43,7 @@ export const DEFAULT_CHANNELS: Record<NotificationType, ChannelPrefs> = {
   backup_ready: on(true, false),
   storage_failing: on(true, false),
   ai_allowance: on(true, false),
+  tax_forms_missing: on(true, true),
 };
 
 /** ADR-0049 §6: reminders that can also go by text, on plans that include texts. */

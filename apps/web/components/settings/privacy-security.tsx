@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import type { AiSettingsDto, SecurityEventDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { packageWarning } from '@/lib/tax-forms';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
@@ -90,8 +92,12 @@ export function PrivacyPanel({
   );
 }
 
-/** UP-10: the tax package from where someone doing their taxes already is. */
-export function TaxPackageButton({
+/**
+ * ADR-0052 §7.3: before a tax package is made, the tax forms for those books and that year that differ from the books
+ * or haven't come. Read under the maker's own row-level security, so it counts only the forms they can see. Says
+ * nothing when all is well, or when the forms can't be read (the package is made either way).
+ */
+export function TaxPackageWarning({
   workspaceId,
   entityId,
   year,
@@ -99,6 +105,45 @@ export function TaxPackageButton({
   workspaceId: string;
   entityId: string;
   year: number;
+}) {
+  const { t } = useI18n();
+  const [warning, setWarning] = useState<{ toCheck: number; missing: number } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setWarning(null);
+    browserApi
+      .getTaxYear(workspaceId, year)
+      .then((y) => live && setWarning(packageWarning(y, entityId)))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [workspaceId, entityId, year]);
+  if (!warning) return null;
+  return (
+    <p className="basis-full text-sm text-warn" role="status" data-testid="tax-package-warning">
+      {warning.missing > 0 && `${t('tax_forms.package_missing', { count: warning.missing, year })} `}
+      {warning.toCheck > 0 && `${t('tax_forms.package_to_check', { count: warning.toCheck, year })} `}
+      {t('tax_forms.package_anyway')}{' '}
+      <Link className="underline" href={`/w/${workspaceId}/tax-forms?year=${year}`}>
+        {t('tax_forms.package_open')}
+      </Link>
+    </p>
+  );
+}
+
+/** UP-10: the tax package from where someone doing their taxes already is. */
+export function TaxPackageButton({
+  workspaceId,
+  entityId,
+  year,
+  taxForms = false,
+}: {
+  workspaceId: string;
+  entityId: string;
+  year: number;
+  /** Whether to warn about the year's tax forms first (`showsTaxForms`). */
+  taxForms?: boolean;
 }) {
   const { run, busy, message, t } = useAction();
   return (
@@ -122,6 +167,7 @@ export function TaxPackageButton({
         </Link>
       )}
       <StatusLine message={message} />
+      {taxForms && <TaxPackageWarning workspaceId={workspaceId} entityId={entityId} year={year} />}
     </span>
   );
 }

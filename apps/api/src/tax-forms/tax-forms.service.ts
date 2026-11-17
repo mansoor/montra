@@ -45,6 +45,7 @@ import type {
   TaxFormCandidateDto,
   TaxFormCheckDto,
   TaxFormDto,
+  TaxFormExpectedDto,
   TaxFormReadingProblem,
   TaxFormReason,
   TaxFormResultDto,
@@ -169,28 +170,73 @@ export class TaxFormsService {
         const t = targets.get(f.id) ?? [];
         dtos.push(toDto(f, t, await this.evaluate(trx, ctx, f, t)));
       }
-      const inputs = await expectedInputs(trx, ctx, year);
-      const matched = expectedAgainstReceived(
-        expectedTaxForms(year, inputs.employers, inputs.accounts),
-        forms.map((f) => ({
-          id: f.id,
-          kind: f.kind,
-          status: f.status,
-          targets: (targets.get(f.id) ?? []).map((t) => ({
-            employerId: t.employer_id,
-            accountId: t.account_id,
-          })),
-        })),
-        waivers.map((w) => ({ id: w.id, kind: w.kind, employerId: w.employer_id, accountId: w.account_id })),
-      );
+      const matched = await this.expected(trx, ctx, year, forms, targets, waivers);
       return {
         year,
         forms: dtos,
-        expected: matched.expected.map((e) => ({ ...e, amount: String(e.amount) })),
+        expected: matched.expected,
         unexpectedFormIds: matched.unexpectedFormIds,
         waivers: waivers.map(waiverDto),
       };
     });
+  }
+
+  /**
+   * The expected forms of a year that haven't come and aren't waived (§11), without working out any form's checks:
+   * what the 16 February reminder lists. Under the reader's row-level security, as the year's list is.
+   */
+  async missing(ctx: Ctx, year: number): Promise<TaxFormExpectedDto[]> {
+    return this.db.run(ctx, async (trx) => {
+      const forms = await trx
+        .selectFrom('app.tax_form')
+        .select(['id', 'kind', 'status'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('tax_year', '=', year)
+        .where('deleted_at', 'is', null)
+        .execute();
+      const targets = await this.targetsOf(
+        trx,
+        ctx,
+        forms.map((f) => f.id),
+      );
+      const waivers = await trx
+        .selectFrom('app.tax_form_waiver')
+        .select(['id', 'kind', 'employer_id', 'account_id'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('tax_year', '=', year)
+        .execute();
+      const matched = await this.expected(trx, ctx, year, forms, targets, waivers);
+      return matched.expected.filter((e) => e.state === 'missing');
+    });
+  }
+
+  /** The forms the year should bring (§7.1), each received, waived or missing. */
+  private async expected(
+    trx: Trx,
+    ctx: Ctx,
+    year: number,
+    forms: readonly Pick<TaxFormRow, 'id' | 'kind' | 'status'>[],
+    targets: ReadonlyMap<string, TaxFormTargetRow[]>,
+    waivers: readonly Pick<TaxFormWaiverRow, 'id' | 'kind' | 'employer_id' | 'account_id'>[],
+  ): Promise<{ expected: TaxFormExpectedDto[]; unexpectedFormIds: string[] }> {
+    const inputs = await expectedInputs(trx, ctx, year);
+    const matched = expectedAgainstReceived(
+      expectedTaxForms(year, inputs.employers, inputs.accounts),
+      forms.map((f) => ({
+        id: f.id,
+        kind: f.kind,
+        status: f.status,
+        targets: (targets.get(f.id) ?? []).map((t) => ({
+          employerId: t.employer_id,
+          accountId: t.account_id,
+        })),
+      })),
+      waivers.map((w) => ({ id: w.id, kind: w.kind, employerId: w.employer_id, accountId: w.account_id })),
+    );
+    return {
+      expected: matched.expected.map((e) => ({ ...e, amount: String(e.amount) })),
+      unexpectedFormIds: matched.unexpectedFormIds,
+    };
   }
 
   /**

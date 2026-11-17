@@ -8,6 +8,7 @@ import { TaxRateForm, UnmappedCategories } from '@/components/business/tax-tools
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
 import { TaxPackageButton } from '@/components/settings/privacy-security';
+import { showsTaxForms } from '@/lib/tax-forms';
 import { StatTile } from '@/components/ui/page-header';
 import { EntityTypeLine } from '@/components/business/entity-type-line';
 
@@ -56,7 +57,12 @@ export default async function TaxesPage({
             </Link>
           ))}
         </nav>
-        <TaxPackageButton workspaceId={workspaceId} entityId={entityId} year={year} />
+        <TaxPackageButton
+          workspaceId={workspaceId}
+          entityId={entityId}
+          year={year}
+          taxForms={showsTaxForms(workspace)}
+        />
       </div>
       <EntityTypeLine workspaceId={workspaceId} profile={business} />
 

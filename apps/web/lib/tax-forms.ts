@@ -3,7 +3,7 @@
  * typed boxes become the API's minor units, the result's colour, and the expected forms grouped by person. No float
  * math: amounts go through @montra/domain.
  */
-import type { TaxFormDto, TaxFormExpectedDto, TaxFormResultDto } from '@montra/api-client';
+import type { TaxFormDto, TaxFormExpectedDto, TaxFormResultDto, TaxYearDto } from '@montra/api-client';
 import { minorToInput, parseAmountInput } from './money';
 
 export type TaxFormKind = TaxFormDto['kind'];
@@ -244,3 +244,21 @@ export function canConfirmReading(form: TaxFormDto): boolean {
 /** Whether the screen should look again soon: a form is still being read. */
 export const anyReading = (forms: readonly TaxFormDto[]): boolean =>
   forms.some((f) => f.status === 'reading' && f.reading?.problem !== 'failed');
+
+/** Tax forms are US forms: shown in US-dollar workspaces, and not to viewers (as the menu and Review). */
+export const showsTaxForms = (ws: { baseCurrency: string; role: string }): boolean =>
+  ws.baseCurrency === 'USD' && ws.role !== 'viewer';
+
+/**
+ * The tax package panel's warning (ADR-0052 §7.3): for the books and year chosen, the forms to check (they differ from
+ * the books, or wait for a match, a person or a reading) and the expected forms that haven't come. Null when there's
+ * nothing to say.
+ */
+export function packageWarning(
+  year: Pick<TaxYearDto, 'forms' | 'expected'>,
+  entityId: string,
+): { toCheck: number; missing: number } | null {
+  const toCheck = year.forms.filter((f) => f.entityId === entityId && f.result.review).length;
+  const missing = year.expected.filter((e) => e.entityId === entityId && e.state === 'missing').length;
+  return toCheck || missing ? { toCheck, missing } : null;
+}
