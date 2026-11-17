@@ -262,6 +262,23 @@ Not every member has a salary. Members with income can have payslips, which reco
 | PAY-08 | Members without payslips can still record other income (gifts, part-time cash work, scholarships, stipends) tagged to them. | M |
 | PAY-09 | Payslip images and data are protected like receipts and visible only to workspace owners and the member's linked user. | M |
 
+### 3.8 Tax forms received
+
+Added on 2026-11-16 by [ADR-0052](../design/adr/0052-tax-forms-received.md). The forms a household receives (W-2, 1099-INT, 1099-DIV, 1098) are totals a third party worked out from the same events the books record, so each one is kept and checked against the books for its year. Montra doesn't prepare or file returns, and doesn't calculate tax.
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| TAX-01 | Upload or scan the tax forms a household receives (W-2, 1099-INT, 1099-DIV, 1098), several at once, or type one in. | M |
+| TAX-02 | Each form is read once; its boxes are kept as amounts; corrected forms replace the ones they correct; duplicates are refused. | M |
+| TAX-03 | Each form is matched to its employer or account(s) and to a household member, automatically when the evidence is clear, and learned. | M |
+| TAX-04 | Each form is checked against the books for its tax year, box by box, with the rule and the figures behind each check. | M |
+| TAX-05 | Differences, unmatched and unread forms are Review items; a difference can be fixed, re-read or accepted with a note. | M |
+| TAX-06 | A Tax forms screen per year lists the forms expected (from payslips, interest, dividends and mortgages) against those received. | M |
+| TAX-07 | The year-end tax package includes the forms, an index and the reconciliation. | M |
+| TAX-08 | Names and SSNs never reach the AI provider; only the last four digits of an SSN are kept; a member's forms are visible only to them, owners and admins, and to accountants when the owner allows it. | M |
+| TAX-09 | The phone scans forms and shows and acts on their results. | S |
+| TAX-10 | One reminder on 16 February lists the expected forms not yet received. | S |
+
 ## 4. Budgeting, planning and money flow
 
 The budget is the core of R1. Its job is to match planned spending to expected income, so the user always sees one number: **left to assign** (income not yet given a job) or **over-assigned** (plan exceeds income).

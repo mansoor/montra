@@ -20,10 +20,11 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
-**Accepted, ready to build:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT,
-1099-DIV and 1098 read, matched and reconciled against the books, then added to the tax package), accepted by the
-owner on 2026-11-16. Five PRs, starting with PR 1 (migration 0059); no code yet. Role-based permissions (ADR-0053) are
-a separate proposal for later; tax forms use an owner-only setting for accountants instead.
+**Being built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and
+1098 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on
+2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059;
+see §7g). Next is PR 2, the reconciliation, expected forms, Review and the `/tax-forms` screen. Role-based permissions
+(ADR-0053) are a separate proposal for later; tax forms use an owner-only setting for accountants instead.
 
 ### Test suite at the end of Phase 11 (green locally)
 
@@ -1441,6 +1442,32 @@ Phase 11 leftovers:
   read while one waits to be mapped or checked). **Import a statement** opens the import flow; pull to refresh, and the
   list looks again every 5 seconds while one is being read. Rows don't open anything and undo stays on the web
   (`src/features/statements.ts`). Not run on a device.
+
+- **Tax forms received, PR 1 of 5** (TAX-01 typing only, TAX-02 partly, TAX-08 storage and row-level security;
+  [ADR-0052](design/adr/0052-tax-forms-received.md), migration 0059; requirements section 3.8 adds TAX-01..10):
+  - **Storage:** `app.tax_form` (kind, year, issuer name and EIN, the person's SSN and the account number as last four
+    digits only, the person, the books, the boxes as JSON, status and reason, `deleted_at` for the Trash, `version`),
+    `app.tax_form_target` (an employer, or one or more accounts) and `app.tax_form_waiver` (an expected form that won't
+    come). Boxes are checked by one Zod schema per kind in `@montra/domain/tax-forms.ts` (`parseTaxFormBoxes`, money as
+    minor-unit strings parsed to bigint, unknown boxes refused), which `@montra/schemas` reuses for the DTOs. The same
+    module has the Social Security wage base and the 1099/1098 thresholds by year.
+  - **Who sees a form:** `app.can_read_tax_form(member)`: the person, owners and admins, and accountants while
+    **`app.workspace.accountant_sees_tax_forms`** is on; the uploader too while the person isn't known; always bounded
+    by the books. Writing needs write access to the books, so viewers and read-only grants can't.
+    `app.tax_form_payslip_totals(form)` gives a W-2's payslip sums to anyone who can read the form, so an accountant
+    gets totals without the payslips.
+  - **The owner's setting:** `PUT workspaces/:id/accountant-tax-forms`, owner only with a recent sign-in, audited as
+    `workspace.accountant_tax_forms_changed` with the old and new values; a trigger refuses anyone else even by a direct
+    update. `WorkspaceDto.accountantSeesTaxForms`. Web: owners get a **Tax forms** switch in Settings → Workspace →
+    Sharing, under the members list.
+  - **API:** `GET tax-forms?year=`, `GET`/`PATCH`/`DELETE tax-forms/:id` (delete moves to the Trash, restored from
+    Settings → Your data), `POST tax-forms` (typed in), `POST`/`DELETE tax-forms/waivers`. Members may handle their own
+    forms. No reading, matching rules or checks yet.
+  - `match_memory` learns `tax_issuer` and `tax_person` (members may write those kinds); the personal chart's Interest
+    income and Dividends carry Schedule B's tax lines (`US_SCH_B_L1`, `US_SCH_B_L5`), set on older books by the
+    migration.
+  - Where the build differs from the ADR is in its "As built: PR 1" section. No screen to type a form in yet (PR 2),
+    and nothing on the phone.
 
 ---
 
