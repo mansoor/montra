@@ -11,7 +11,7 @@ import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
-const FEATURES = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'] as const;
+const FEATURES = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'] as const;
 const GB = 1024 ** 3;
 const ROLES = ['support', 'admin', 'owner'] as const;
 

@@ -40,7 +40,7 @@ What is known about the vault's side, at that level:
 - **Filing automatically** (next on the vault's side): a vault owner may let items from an app be filed without a
   person, so they reach "filed" sooner. Montra needs no change for it.
 - The vault has a client library and a fake vault for tests. Today they are in its private repository; the vault's side
-  will publish them as a package (MIT licence) for Montra to depend on.
+  will publish them as a release tarball (MIT licence) for Montra to depend on, starting with vault 0.9.0-dev.60.
 
 Montra's side today (ADR-0031): one S3-compatible or WebDAV destination per workspace, which Montra only writes to. It
 mirrors files by kind (`STORAGE_FILE_KINDS`: statement, receipt, payslip, lease, invoice, other, tax_form) through an
@@ -479,8 +479,9 @@ A new subsection, **13.6 Family Document Vault**, in `docs/requirements/R1-requi
 A chain of small PRs into `develop`, each with its dev bump. The vault's sending, reading, view links and deletes have
 all shipped, so the record role can ship whole.
 
-**Precondition: the vault's client package is published** (owner's answer 1). Montra depends on it as a published npm
-package, with its fake vault, and never on the vault's private repository. Until it is published:
+**Precondition: the vault's first client release tarball (0.9.0-dev.60)** (owner's answer 1). Montra depends on the
+client package, with its fake vault, as a tarball attached to the vault's public releases and installed by its pinned
+URL (no registry, no token), and never on the vault's private repository. Until that release exists:
 
 - PR 1 can be built and merged: it needs no vault code, only the port, the tables and the DTOs, tested without a vault.
 - PR 2 onwards wait for the package. Their Montra-side code sits behind the `StorageDestination` port (extended for the
@@ -499,6 +500,63 @@ package, with its fake vault, and never on the vault's private repository. Until
    "Files to provide again" (§5a), the move backfill, bringing files back, deletes.
 6. **Phone**: status, badges, opening vault-held documents, and providing missing files again.
 
+### As built: PR 1 (2026-11-17)
+
+The contracts, with no vault code and no vault dependency: migration `0063_family_vault.sql`, the Kysely types, the
+DTOs and group mapping in `packages/schemas/src/storage.ts`, the port in `apps/api/src/storage/destinations/vault.ts`,
+the `familyVault` plan key, and VLT-01..11 (requirements 13.6, traced to a new P14). Nothing can make a vault
+connection yet. Where PR 1 differs from or adds to the text above, and why:
+
+- **`app.file.storage_key` stays NOT NULL until PR 5.** `scripts/check-migrations.mjs` would accept dropping it, but
+  the Kysely type would then be `string | null` at about 70 reads in 20 files, which is exactly the move to `FileBytes`
+  that PR 5 makes. No file can be held only in the vault before PR 5 anyway. The check that keeps `storage_key` set
+  while `location = 'montra'` (`file_storage_key_held`) is added now, so PR 5 only drops the NOT NULL.
+- **There is no `FileDto`.** Montra's records name their files by id, so §11's "`FileDto` gains `location`, `missing`
+  and a `vault` summary" is `FileStorageStateDto`, keyed by file id, to serve beside the records that hold files.
+  Review's missing files are their own list (`MissingFileDto`, `MissingFilesResponse`) rather than fields on today's
+  Review DTO. No existing DTO changed shape, so the web fixtures and phone types are unchanged; PR 3 and PR 5 attach
+  these where the badges and Review need them.
+- **The mirror stays a mirror.** `StorageDestinationKind` gains `fdv`, but `StorageDestinationDto.kind` is the new
+  `MirrorDestinationKind` (`s3`, `webdav`). The storage settings, the mirror's job, backups to storage and the
+  mirror's definer functions and trigger now look at mirror connections only, so a vault row beside a mirror changes
+  nothing they do (tested in `own-storage.test.ts`). `openDestination` takes mirror kinds only; the vault needs no
+  adapter yet, so none exists.
+- **The vault's tables can only hang off a vault connection.** Each has `destination_kind` (always `fdv`) in a
+  foreign key to a new unique index on `storage_destination (workspace_id, id, kind)`. `needs_vault` is allowed only on
+  `fdv` rows.
+- **A vault row has `folder` and `keep_backups`.** They stay NOT NULL; PR 2 stores the default folder name, unused.
+  `mirror_files` is the connection's "send files" switch; `file_kinds` is derived from the groups by `vaultFileKinds`.
+- **The outbox, beyond §11's list:** `vault_ref` is null until it is saved before the first send, unique per
+  connection, and a trigger refuses changing it once saved (§4.1). `resend_allowed` and `auto_resends` (at most one
+  automatic resend after a lapse, §4.5) carry "whether a resend is allowed"; `not_kept_reason` is the words. A `delete`
+  row without `filed_at` is a withdrawal from the Inbox (§10), so no extra status. Checks: an id past sending, a
+  document for `filed` and `out_of_reach`, words for `not_kept`, a source key before `source_removed_at`.
+- **The connection's state** adds `checked_at` and `next_check_at` (when the job should look for its own sake: the
+  daily check, the feed); the key change is `none`, `made` (sealed, not yet registered) or `registered` (waiting for
+  the vault side to confirm), with its time.
+- **The trigger queues, it doesn't schedule.** A new file is `queued` (§3: it waits until Montra is done with it), and
+  `storage.vault` doesn't exist until PR 3, so nothing wakes a job. `app.vault_due()` returns a connection with a due
+  row, or whose `next_check_at` has come; while `needs_vault`, only the latter, and nothing while paused.
+  `app.vault_next()` is the earliest of both.
+- **Deleted for good:** an Inbox item (`received`) is always marked to withdraw; a filed document is marked `delete`
+  only with "Also delete it in the vault" on and the vault allowing deletes (`can_delete`); any other row goes.
+- **Notification types** `vault_attention` and `files_missing` are in the database's check only. `NOTIFICATION_TYPES`
+  gains them with the PRs that send them (2 and 5): adding them now would add rows to notification settings for things
+  that can't happen yet. The five security log kinds are in `SecurityEventKind`, with their words, because they show
+  only once written.
+- **The plan key.** The migration adds `familyVault` to every plan version that has `ownStorage`, lifting the freeze on
+  versions with subscribers for that one update (adding a feature takes nothing away, ADR-0049 §1). The staff console
+  lists it and the API checks it (PR 2), but customers don't see it yet: `FEATURES_NOT_YET_SHOWN` in
+  `@montra/domain` keeps it out of the billing page's "what's included" (`includedFeatureKeys`, tested), until a vault
+  can be connected. PR 2 or 3 removes `familyVault` from that set; its words are already in the messages.
+- **The group mapping lives in `@montra/schemas`**, beside `STORAGE_FILE_KINDS`: `vaultGroupOf` (a group, or `never`
+  for sealed copies, logos and exports), `vaultGroupSwitches`, `vaultFileKinds`, `vaultSends`, the defaults and the two
+  restricted groups. Leaving out statement exports by type (§3, D8) needs the vault's list of types, so it comes with
+  sending (PR 3).
+- **The request DTOs** add what the screens need: the code is pasted against the connection's `version`; "Send
+  existing documents" carries the count the person was shown, so a different number is refused; disconnecting takes
+  `anyway` for §10's "Disconnect anyway". `VaultConnectionDto.stage` is `register`, `approval` or `connected` (§2).
+
 ## Consequences
 
 - Montra can hand a household's papers to the place the household already keeps them, without being the only copy.
@@ -513,8 +571,8 @@ package, with its fake vault, and never on the vault's private repository. Until
   person uploads it to Montra.
 - The vault's daily limits slow backfills and on-demand fetches to days for a large workspace. The status says so, and
   a backup or tax package lists what it couldn't get in time.
-- Montra depends on a package published by the vault's side. Upgrades are pinned and tested like any dependency, and
-  the chain past PR 1 waits for its first release.
+- Montra depends on a package released by the vault's side, as a tarball pinned by URL. Upgrades are pinned and tested
+  like any dependency, and the chain past PR 1 waits for its first client release tarball (0.9.0-dev.60).
 - Files held only in the vault don't count against Montra's storage quota (BAK-08). Retention dates (RCP-10, BAK-09)
   stop applying to the vault's copy: Montra deletes only its own.
 - The private key adds one more sealed secret per workspace; losing the KMS key means connecting again, not losing
@@ -553,8 +611,10 @@ package, with its fake vault, and never on the vault's private repository. Until
 The three questions that blocked the build, as the owner answered them:
 
 1. **Where the vault's client code lives: "published package".** Montra depends on the vault's MIT-licensed client
-   library, with its fake vault, as a published npm package. Montra writes no signer or vault client of its own in this
-   public repo. The vault's side publishes the package; until then only PR 1 can be built (Delivery).
+   library, with its fake vault, as a published package. Montra writes no signer or vault client of its own in this
+   public repo. The vault's side publishes the package; until then only PR 1 can be built (Delivery). The owner later
+   chose how it is published (2026-11-17): a release tarball on the vault's public releases from 0.9.0-dev.60,
+   installed by pinned URL, rather than an npm registry.
 2. **Files only in the vault: ask the vault, then the person.** Every file Montra sends to the vault is meant to stay
    readable to Montra. Finance papers (statements, payslips, W-2s, 1099s and the like) are always uploaded to Montra
    first and then sent to the vault, never the other way. When Montra needs a file it no longer holds, it asks the vault

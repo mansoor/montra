@@ -5,6 +5,7 @@ import type { Readable } from 'node:stream';
  * its own copy stays the one everything uses. Paths are relative to the connection's root and use `/`.
  *
  * Google Drive, OneDrive and Dropbox would implement this too, with a token refresh before each run (ADR-0031 §2).
+ * The household's Family Document Vault is a destination of another shape, `VaultDestination` (ADR-0054, `vault.ts`).
  */
 export interface StorageDestination {
   /** Writes a file, making folders as needed. Replaces a file of the same name. */

@@ -15,13 +15,14 @@ import { sql } from 'kysely';
 import yazl from 'yazl';
 import { newId, setContext, type ExportJobTable, type Trx } from '@montra/db';
 import { addDays, calendarDate, todayIn, type CalendarDate } from '@montra/domain';
-import type {
-  BackupScheduleDto,
-  CreateBackupRequest,
-  CreateTaxPackageRequest,
-  ExportJobDto,
-  ReportType,
-  SaveBackupScheduleRequest,
+import {
+  MIRROR_DESTINATION_KINDS,
+  type BackupScheduleDto,
+  type CreateBackupRequest,
+  type CreateTaxPackageRequest,
+  type ExportJobDto,
+  type ReportType,
+  type SaveBackupScheduleRequest,
 } from '@montra/schemas';
 import { AppError, notFound } from '../common/errors.js';
 import { KMS_PORT, FieldCrypto, type KmsPort } from '../crypto/crypto.service.js';
@@ -290,12 +291,16 @@ export class BackupService {
     return r;
   }
 
-  /** The workspace's own storage, if it has one and the caller can see it (owners only, by RLS). */
+  /**
+   * The workspace's own storage, if it has one and the caller can see it (owners only, by RLS). Backups go to the mirror,
+   * never to the household's vault (ADR-0054; BAK-05 unchanged).
+   */
   private async destinationIn(trx: Trx, ctx: Ctx) {
     return trx
       .selectFrom('app.storage_destination')
       .select(['id', 'status'])
       .where('workspace_id', '=', ctx.workspaceId)
+      .where('kind', 'in', MIRROR_DESTINATION_KINDS)
       .executeTakeFirst();
   }
 

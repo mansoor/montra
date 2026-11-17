@@ -76,7 +76,7 @@ describe('plans switched off (self-hosted, development)', () => {
       planName: 'Free',
       features: { businessEntities: true, rentalEntities: true },
       entitlements: {
-        features: ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'],
+        features: ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
         aiMonthlyMicroUsd: null,
       },
       canManage: true,

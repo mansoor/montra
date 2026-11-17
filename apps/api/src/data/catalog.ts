@@ -40,6 +40,9 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   restore_job: 'About archives, not the books',
   storage_destination: 'A secret, and a connection the owner makes again (ADR-0031)',
   storage_mirror_item: 'What was copied to a connection a restore can’t bring back (ADR-0031)',
+  vault_connection_state:
+    'About a vault connection, which a restored workspace makes again with a new key (ADR-0054 §7)',
+  vault_item: 'What was sent to a vault connection a restore doesn’t have (ADR-0054 §7)',
   notification_pref: 'Follows the person',
   security_event: 'Follows the person',
 };

@@ -24,6 +24,12 @@ export const SecurityEventKind = z.enum([
   'account_restored',
   'deletion_requested_by_support',
   'phone_changed',
+  // The household's Family Document Vault (ADR-0054 §11).
+  'vault_connected',
+  'vault_changed',
+  'vault_key_replaced',
+  'vault_move_started',
+  'vault_disconnected',
 ]);
 export type SecurityEventKind = z.infer<typeof SecurityEventKind>;
 

@@ -1243,5 +1243,17 @@
   "TAX-10": [
     "done",
     "tax_forms_missing (migration 0060): from 16 February (caught up within the week if the nightly sweep missed the day), once per person and tax year, the expected forms of last year not received or waived, each person’s list under their own row-level security (a member hears about their own W-2, an owner about everyone’s); nothing when nothing is missing; USD workspaces, not viewers. Names only, no amounts; in-app, email and push by default, switched in notification settings on the web and the phone"
+  ],
+  "VLT-02": [
+    "partial",
+    "Contracts only (ADR-0054 PR 1, migration 0063): one switch per group mapped from Montra's file kinds (vaultGroupOf, vaultFileKinds in @montra/schemas), a vault connection beside the mirror, the role and backup choices in the DTOs. Connecting and Settings come with PR 2 and PR 3"
+  ],
+  "VLT-03": [
+    "partial",
+    "The outbox (app.vault_item, migration 0063): a file is queued when its group is on and waits until Montra is done with it; its id is saved once and a trigger refuses changing it, unique per connection. Sending comes with PR 3"
+  ],
+  "VLT-07": [
+    "partial",
+    "Payslips and tax documents off by default; sealed copies of identity documents, logos and exports never queued, whatever the switches (the group mapping and the trigger on app.file, both tested). The owner-only switch and its warning come with PR 3"
   ]
 }

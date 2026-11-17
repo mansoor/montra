@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
 | **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 327 IDs in total: **255 done, 59 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Requirements**       | 338 IDs in total: **255 done, 62 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
@@ -32,7 +32,7 @@ later; tax forms use an owner-only setting for accountants instead.
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
 
-**Accepted, ready to build:** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
+**Being built:** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
 Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. It covers a key
 pair per workspace and signed requests. Documents go one way, Montra to the vault, one at a time, with one switch per
 group (receipts, statements, bills, payslips, tax documents, other); payslips and tax documents are off until an owner
@@ -40,8 +40,8 @@ turns them on, and the vault decides whose Inbox each lands in. The vault is eit
 is removed only once the vault has filed it and the chosen backup exists. Montra reads back the vault's changes to what
 it sent, and opens documents through single-use view links. A file the vault doesn't return is listed in Review to be
 uploaded again, and backups and tax packages list any still missing. The owner chose to depend on the vault's client
-library as a published package: PR 1 (contracts) can start now, and PR 2 onwards waits for that package. On the
-vault's side, view links and deletes have shipped, and automatic filing is next. The vault's API contract is private
+library as a published package: **PR 1 (contracts, migration 0063) is done** (see §7g), and PR 2 onwards waits for
+the vault's first client release tarball (0.9.0-dev.60). On the vault's side, view links and deletes have shipped, and automatic filing is next. The vault's API contract is private
 and is not copied into this repo.
 
 ### Test suite at the end of Phase 11 (green locally)
@@ -1624,6 +1624,35 @@ Phase 11 leftovers:
   - Tests: `apps/api/test/backup-files.test.ts` (a partner's backup without Sam's payslip file but with their own, without
     the owner's scan or the rental's receipt; an owner's full and one-book backups; restores of both),
     `payroll-people.test.ts` (no I-9 copies for a partner with read access), `data-ownership.test.ts` (the holders list).
+- **Family Document Vault, PR 1 of 6: contracts** (VLT-02, VLT-03 and VLT-07 partial; requirements 13.6 adds
+  VLT-01..11, traced to P14; [ADR-0054](design/adr/0054-family-document-vault-storage.md), migration 0063). No vault code
+  and no dependency on the vault; nothing can connect a vault yet, and nothing anyone sees changes except the plan key
+  (below).
+  - **Storage:** `app.storage_destination.kind` gains `fdv` and `status` gains `needs_vault` (vault rows only); the one
+    connection per workspace becomes one mirror and one vault. `app.vault_connection_state` (feed position, checks,
+    daily-cap holds, clock offset, key change) and `app.vault_item` (the outbox: `queued` → `pending` → `received` →
+    `filed`, or `not_kept`, `failed`, `out_of_reach`, `delete`; the id saved once and never changed, by trigger), both
+    owners and admins only and pinned to vault connections by a foreign key on the kind. `app.file` gains `location`
+    (`montra`, `vault`), `missing_since` and `missing_reason`, and `replaced_sha256`; `storage_key` stays NOT NULL
+    until PR 5.
+  - **Triggers and functions:** a stored file is queued for the vault when its group is on (never sealed copies, logos
+    or exports); deleting a file for good withdraws an Inbox item and deletes a filed document only when asked and
+    allowed. `app.vault_due()` and `app.vault_next()` for PR 3's job. The mirror's trigger, functions, settings, job and
+    backups to storage now look at mirrors only.
+  - **Contracts:** the DTOs and the group mapping (`vaultGroupOf`, `vaultFileKinds`; receipts, statements and bills on,
+    payslips, tax documents and other papers off) in `@montra/schemas`; the `VaultDestination` port and `VaultError` in
+    `apps/api/src/storage/destinations/vault.ts`, with no adapter. Five `vault_*` security log kinds; the notification
+    types are in the database only, for the PRs that send them.
+  - **Plan key `familyVault`**, on wherever `ownStorage` is (every existing version, by the migration). The staff
+    console lists it; customers don't see it until a vault can be connected (`FEATURES_NOT_YET_SHOWN` in
+    `@montra/domain`, which PR 2 or 3 empties).
+  - Waits for the vault's first client release tarball (0.9.0-dev.60) before PR 2.
+  - Tests: `packages/db/test/vault.test.ts` (one mirror and one vault, kinds and statuses, the outbox's checks and fixed
+    id, RLS for each role and workspace, staff with no table or function, a file's place, the triggers, the job's
+    functions), `packages/schemas/test/vault.test.ts` (the group mapping, table-driven over every file kind, and the
+    DTOs, never a private key), `apps/api/test/own-storage.test.ts` (a mirror beside a vault),
+    `apps/api/test/plans.test.ts` and `packages/domain/test/operations.test.ts` (the plan key). Where the build differs
+    from the ADR is in its "As built: PR 1".
 
 ---
 

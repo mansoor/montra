@@ -7,6 +7,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Selectable } from 'kysely';
 import type { ExportJobTable, StorageMirrorItemTable } from '@montra/db';
+import { MIRROR_DESTINATION_KINDS } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -96,14 +97,15 @@ export class StorageMirrorJobs {
     deadline: number,
     done: Record<string, number>,
   ) {
-    const dest = await this.db.run(ctx, (trx) =>
+    const dest = (await this.db.run(ctx, (trx) =>
       trx
         .selectFrom('app.storage_destination')
         .selectAll()
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', destinationId)
+        .where('kind', 'in', MIRROR_DESTINATION_KINDS)
         .executeTakeFirst(),
-    );
+    )) as DestinationRow | undefined;
     if (!dest || dest.status === 'paused') return;
     let remote: StorageDestination;
     try {

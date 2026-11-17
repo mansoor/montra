@@ -107,7 +107,7 @@ beforeAll(async () => {
 afterAll(async () => {
   // Nothing of ours may wake a worker in another test file.
   await admin.query(`delete from app.storage_destination where workspace_id in (
-    select id from app.workspace where name in ('Storage test', 'Dav test'))`);
+    select id from app.workspace where name in ('Storage test', 'Dav test', 'Beside a vault'))`);
   await admin.query(`delete from app.job where type = 'storage.mirror'`);
   await admin.end();
   await s3.close();
@@ -669,5 +669,67 @@ describe('WebDAV storage (ADR-0031 §2)', () => {
     const dest = (await dc.get(durl('/storage-destination'))).body.destination;
     expect(dest.lastError).toBeTruthy();
     expect(dest.webdav.url).toBe('not a url');
+  });
+});
+
+describe('beside the household’s vault (ADR-0054 §1, migration 0063)', () => {
+  const VAULT_OWNER = 'vault-beside-storage@example.com';
+  let vc: Client;
+  let vws: string;
+  let vault: string;
+  const vurl = (p: string) => `/v1/workspaces/${vws}${p}`;
+  const vaultItem = async (fileId: string) =>
+    (await admin.query(`select * from app.vault_item where file_id = $1`, [fileId])).rows[0];
+
+  beforeAll(async () => {
+    vc = h.as(VAULT_OWNER);
+    vws = (
+      await vc.post('/v1/workspaces', { name: 'Beside a vault', baseCurrency: 'USD', template: 'household' })
+    ).body.id;
+    // Nothing can connect a vault yet (PR 2); the row is what that will make.
+    vault = (
+      await admin.query(
+        `insert into app.storage_destination (workspace_id, kind, label, secret_enc, folder, file_kinds)
+         values ($1, 'fdv', 'Family Document Vault', decode('00', 'hex'), 'Montra/Beside a vault',
+                 array['statement', 'receipt', 'invoice']) returning id`,
+        [vws],
+      )
+    ).rows[0].id;
+  });
+
+  it('leaves the storage settings to the mirror: none shown, and one can still be connected', async () => {
+    expect((await vc.get(vurl('/storage-destination'))).body.destination).toBeNull();
+    const res = await vc.post(vurl('/storage-destination'), {
+      label: 'Backblaze',
+      connection: s3Connection(),
+      copyExisting: false,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.kind).toBe('s3');
+    expect((await vc.get(vurl('/storage-destination'))).body.destination.id).toBe(res.body.id);
+  });
+
+  it('copies an upload to the mirror, queues it for the vault, and the mirror’s job leaves the vault alone', async () => {
+    const fileId = await upload(VAULT_OWNER, vws, PNG, 'Vault lunch.png');
+    expect((await item(fileId)).status).toBe('pending');
+    expect(await vaultItem(fileId)).toMatchObject({
+      destination_id: vault,
+      status: 'queued',
+      vault_ref: null,
+    });
+    await mirror.run();
+    expect((await item(fileId)).status).toBe('done');
+    expect(await vaultItem(fileId)).toMatchObject({ status: 'queued', attempts: 0 });
+    expect(
+      (await admin.query(`select 1 from app.storage_mirror_item where destination_id = $1`, [vault]))
+        .rowCount,
+    ).toBe(0);
+  });
+
+  it('disconnects the mirror only', async () => {
+    expect((await vc.delete(vurl('/storage-destination'))).status).toBe(204);
+    const left = await admin.query(`select kind from app.storage_destination where workspace_id = $1`, [vws]);
+    expect(left.rows).toEqual([{ kind: 'fdv' }]);
+    expect((await vc.get(vurl('/storage-destination'))).body.destination).toBeNull();
   });
 });

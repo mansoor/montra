@@ -2,6 +2,7 @@
 
 import type { BillingDto, PlanEntitlementsDto, PlanOfferDto, SupportGrantDto } from '@montra/api-client';
 import { useState } from 'react';
+import { includedFeatureKeys } from '@/lib/billing';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
@@ -149,8 +150,8 @@ function Includes({ entitlements: e }: { entitlements: PlanEntitlementsDto }) {
       {e.rentalPortfolios > 0 && <li>{t('billing.includes_rental_count', { count: e.rentalPortfolios })}</li>}
       <li>{t('billing.includes_storage', { gb: Number(BigInt(e.storageBytes) / 1073741824n) })}</li>
       {e.familyLogins !== null && <li>{t('billing.includes_logins', { count: e.familyLogins })}</li>}
-      {e.features.map((f) => (
-        <li key={f}>{t(`billing.feature.${f}`)}</li>
+      {includedFeatureKeys(e).map((key) => (
+        <li key={key}>{t(key)}</li>
       ))}
     </ul>
   );
