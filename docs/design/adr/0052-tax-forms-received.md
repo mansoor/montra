@@ -613,6 +613,39 @@ Five PRs, in order, each reviewable alone and green on `pnpm verify`. Nothing el
 
 `docs/STATUS.md` and `status.json` are updated in each PR; `CHANGELOG.md` when the chain is done.
 
+### As built: PR 1 (2026-11-16)
+
+Where PR 1 had to differ from or add to the text above, and why:
+
+- **`@montra/domain` depends on Zod now.** §2 asks for a Zod schema per kind in `@montra/domain`, "the way plan
+  entitlements are", but `parseEntitlements` is hand-written and the package had no Zod. The box schemas are Zod, built
+  once from one definition for the stored form (money as strings) and the parsed one (bigint), and `@montra/schemas`
+  reuses them as `TaxFormW2BoxesDto` and its siblings (`W2BoxesDto` is already payroll's). Zod was in every client's
+  bundle already.
+- **`app.tax_form` has `deleted_at` and `version`.** §3 doesn't list them: `deleted_at` is the Trash (§7.1, §8.5), and
+  `version` lets `PATCH` refuse an edit made against an old copy (409), as other edited records do. Forms in the Trash
+  are listed and restored through the existing `trash` endpoints; purging them after 30 days comes with retention in
+  PR 5.
+- **A waiver keeps its books and person** (`entity_id`, `person_member_id`): taken from the employer, or given for an
+  account (defaulting to the account's default member), so a waiver is read by exactly the form's rule (§8.4) without
+  reading the employer, which an accountant can't.
+- **Writing needs write access to the books** (`app.can_write_entity`), not only "not a viewer": a read-only grant
+  stays read-only for the forms in those books too. Viewers are left out either way.
+- **`app.tax_form_payslip_totals` sums posted payslips only**, as the books do; drafts don't count.
+- **A typed form's status:** `confirmed` once it has a match and a person (a person typed the boxes), otherwise `review`
+  with `no_match` or `no_person`. A corrected form names the form it replaces (`supersedesId`), which becomes
+  `superseded`.
+- **`TaxYearDto` has no `expected` list yet.** Expected forms are inferred with the reconciliation (PR 2), which adds
+  the field.
+- **Schedule B tax lines** are `US_SCH_B_L1` (part I, interest) and `US_SCH_B_L5` (part II, ordinary dividends),
+  appended to `ref.tax_line` so earlier lines keep their sort order. The lookup by tax line in `interestEarned()` is
+  PR 2's, with the reconciliation that needs it.
+- **No row audit on `tax_form`.** The boxes and the masked reading stay out of the audit log; the setting's changes are
+  audited (`workspace.accountant_tax_forms_changed`).
+- **An accountant can't match a W-2 to an employer.** Matching reads the employer under the caller's row-level
+  security, and employers are restricted (PAY-09), so an accountant types a W-2 unmatched and an owner, admin or the
+  person matches it. PR 2's matching by hand should decide whether accountants with the setting on may.
+
 ## Consequences
 
 - The year's books get an outside check: every phase 1 form either agrees with them, is explained, or lands in Review

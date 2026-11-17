@@ -257,6 +257,7 @@ describe('settings helpers', () => {
     timeZone: 'UTC',
     role: 'owner' as const,
     security: { mfaPolicy: 'standard' as const, idleTimeoutMinutes: 30 },
+    accountantSeesTaxForms: false,
     entities: [
       {
         id: 'P',

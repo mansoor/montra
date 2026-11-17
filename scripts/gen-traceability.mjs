@@ -38,6 +38,8 @@ const byPrefix = {
   UP: null,
   // Moved into scope on 2026-11-10 (requirements 5.1, ADR-0034).
   PRL: 12,
+  // Added on 2026-11-16 (requirements 3.8, ADR-0052).
+  TAX: 13,
 };
 const later = 'Later';
 const overrides = {
@@ -149,6 +151,7 @@ const phaseName = {
   10: 'P10 Reports & data',
   11: 'P11 Hardening',
   12: 'P12 Payroll',
+  13: 'P13 Tax forms',
   [later]: 'Later (R2+)',
 };
 
