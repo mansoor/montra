@@ -100,6 +100,13 @@ async function upload(
     },
     payload: Buffer.concat(parts),
   });
+  // The doc queue is shared with other test files that play the doc-worker: keep these jobs out of their way (still
+  // queued, so the forms stay `reading` until `read` below plays the doc-worker for them).
+  await db.query(
+    `update app.job set run_after = now() + interval '1 day'
+      where workspace_id = $1 and type = 'taxform.read' and status = 'queued'`,
+    [wsId],
+  );
   return { status: res.statusCode, body: JSON.parse(res.body) };
 }
 
