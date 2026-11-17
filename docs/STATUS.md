@@ -20,6 +20,10 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
+**Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
+become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
+accountant setting is what it would replace.
+
 ### Test suite at the end of Phase 11 (green locally)
 
 | Suite                                                                                                                                               | Tests                                                               |
