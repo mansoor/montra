@@ -12,7 +12,7 @@ export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | '
  * Features a plan can switch on. Adding one is code: it goes here, and the same change's migration gives every
  * existing plan version a default, so an upgrade never takes away what someone had (ADR-0049 §1).
  */
-export const PLAN_FEATURES = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'] as const;
+export const PLAN_FEATURES = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'] as const;
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
 
 /** What one plan version allows (ADR-0049 §1). */

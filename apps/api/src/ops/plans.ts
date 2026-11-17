@@ -54,6 +54,7 @@ const FEATURE_NAMES: Record<PlanFeature, string> = {
   scans: 'Scanning documents',
   voice: 'Voice entry',
   ownStorage: 'Your own storage',
+  familyVault: 'Family Document Vault',
 };
 
 export function entitlementsDto(e: PlanEntitlements): PlanEntitlementsDto {

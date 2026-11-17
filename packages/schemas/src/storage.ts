@@ -2,8 +2,16 @@
 import { z } from 'zod';
 import { Id } from './common.js';
 
-export const StorageDestinationKind = z.enum(['s3', 'webdav']);
+/** Every kind of connection: the mirrors (ADR-0031) and the household's Family Document Vault, `fdv` (ADR-0054). */
+export const StorageDestinationKind = z.enum(['s3', 'webdav', 'fdv']);
 export type StorageDestinationKind = z.infer<typeof StorageDestinationKind>;
+
+/** The kinds that mirror files and take backups: what "Your own storage" connects. A workspace has at most one. */
+export const MirrorDestinationKind = z.enum(['s3', 'webdav']);
+export type MirrorDestinationKind = z.infer<typeof MirrorDestinationKind>;
+export const MIRROR_DESTINATION_KINDS = MirrorDestinationKind.options;
+export const isMirrorKind = (kind: string): kind is MirrorDestinationKind =>
+  (MIRROR_DESTINATION_KINDS as readonly string[]).includes(kind);
 
 /**
  * The kinds of file that can be copied, all of them by default. Exports never are: backups have their own folder. Tax
@@ -134,7 +142,7 @@ export type StorageTestResultDto = z.infer<typeof StorageTestResultDto>;
 
 export const StorageDestinationDto = z.object({
   id: Id,
-  kind: StorageDestinationKind,
+  kind: MirrorDestinationKind,
   label: z.string(),
   s3: z
     .object({
@@ -196,3 +204,333 @@ export const StorageItemsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type StorageItemsQuery = z.output<typeof StorageItemsQuery>;
+
+// ----- The household's Family Document Vault (ADR-0054; VLT-01..11) ----------------------------------------------------
+// Montra's side only, in Montra's words. Nothing here names the vault's routes, fields or codes: Montra talks to the vault
+// through the vault's own published client package (owner's answer 1).
+
+/** Every kind of file Montra stores (`app.file.kind`): the kinds that can be copied, and the two that never are. */
+export const FILE_KINDS = [...STORAGE_FILE_KINDS, 'export', 'logo'] as const;
+export const FileKind = z.enum(FILE_KINDS);
+export type FileKind = z.infer<typeof FileKind>;
+
+/** What a person switches on in "Send these to the vault" (§6): groups they recognise, not Montra's file kinds. */
+export const VAULT_GROUPS = [
+  'receipts',
+  'statements',
+  'bills',
+  'payslips',
+  'tax_documents',
+  'other',
+] as const;
+export const VaultGroup = z.enum(VAULT_GROUPS);
+export type VaultGroup = z.infer<typeof VaultGroup>;
+
+/**
+ * §6: the file kinds each group covers. Every kind in `STORAGE_FILE_KINDS` is in exactly one group; `export` and `logo`
+ * are in none (tests pin both).
+ */
+export const VAULT_GROUP_KINDS: Readonly<Record<VaultGroup, readonly StorageFileKind[]>> = {
+  receipts: ['receipt'],
+  statements: ['statement'],
+  // Household bills, a business's bills and invoice attachments are one kind in Montra.
+  bills: ['invoice'],
+  payslips: ['payslip'],
+  tax_documents: ['tax_form'],
+  other: ['lease', 'other'],
+};
+
+/** §6: on when a connection is made. Payslips and tax documents are restricted in Montra, so they start off. */
+export const VAULT_GROUP_DEFAULTS: Readonly<Record<VaultGroup, boolean>> = {
+  receipts: true,
+  statements: true,
+  bills: true,
+  payslips: false,
+  tax_documents: false,
+  other: false,
+};
+
+/** §6: groups only an owner may turn on, after a warning (an admin may turn them off). */
+export const VAULT_RESTRICTED_GROUPS: readonly VaultGroup[] = ['payslips', 'tax_documents'];
+
+/**
+ * §6: the group a file belongs to, or `never` for what never goes to the vault whatever the switches say: sealed copies
+ * of identity documents (ADR-0034 §3, including the documents kept with an I-9), logos and exports.
+ */
+export function vaultGroupOf(file: { kind: FileKind; sealed: boolean }): VaultGroup | 'never' {
+  if (file.sealed) return 'never';
+  for (const group of VAULT_GROUPS) {
+    if ((VAULT_GROUP_KINDS[group] as readonly string[]).includes(file.kind)) return group;
+  }
+  return 'never';
+}
+
+/** Each group's switch, with the defaults filled in for any not given. */
+export function vaultGroupSwitches(
+  on: Partial<Record<VaultGroup, boolean>> = {},
+): Record<VaultGroup, boolean> {
+  return Object.fromEntries(VAULT_GROUPS.map((g) => [g, on[g] ?? VAULT_GROUP_DEFAULTS[g]])) as Record<
+    VaultGroup,
+    boolean
+  >;
+}
+
+/**
+ * The connection's `file_kinds` (§11), derived from the groups that are on, in `STORAGE_FILE_KINDS` order, so the
+ * trigger on `app.file` keeps working by kind. Groups not given take their defaults.
+ */
+export function vaultFileKinds(on: Partial<Record<VaultGroup, boolean>> = {}): StorageFileKind[] {
+  const switches = vaultGroupSwitches(on);
+  return STORAGE_FILE_KINDS.filter((kind) => {
+    const group = vaultGroupOf({ kind, sealed: false });
+    return group !== 'never' && switches[group];
+  });
+}
+
+/** Whether a file goes to the vault with these switches. */
+export function vaultSends(
+  file: { kind: FileKind; sealed: boolean },
+  on: Partial<Record<VaultGroup, boolean>> = {},
+): boolean {
+  const group = vaultGroupOf(file);
+  return group !== 'never' && vaultGroupSwitches(on)[group];
+}
+
+/** §1: a copy, like a mirror, or the household's record of the documents sent there. */
+export const VaultRole = z.enum(['copy', 'record']);
+export type VaultRole = z.infer<typeof VaultRole>;
+
+/** §1: for the record role, where the backup copy is kept: at Montra (default), the owner's own storage, or none. */
+export const VaultBackup = z.enum(['montra', 'own_storage', 'none']);
+export type VaultBackup = z.infer<typeof VaultBackup>;
+
+/** §4, §11: a file's place in the vault's outbox. */
+export const VAULT_ITEM_STATUSES = [
+  'queued',
+  'pending',
+  'received',
+  'filed',
+  'not_kept',
+  'failed',
+  'out_of_reach',
+  'delete',
+] as const;
+export const VaultItemStatus = z.enum(VAULT_ITEM_STATUSES);
+export type VaultItemStatus = z.infer<typeof VaultItemStatus>;
+
+/** §2: where connecting has got to: Montra made the key and waits for the code, the vault must approve, or done. */
+export const VaultStage = z.enum(['register', 'approval', 'connected']);
+export type VaultStage = z.infer<typeof VaultStage>;
+
+/**
+ * One kind of document the vault lets Montra send, as the vault reported it at the last check (§3). Montra shows the
+ * vault's name and stores its key in the group's mapping; it never makes one up.
+ */
+export const VaultKindDto = z.object({ key: z.string().min(1).max(100), name: z.string().max(200) });
+export type VaultKindDto = z.infer<typeof VaultKindDto>;
+
+/** A group's switch, and the vault kind it maps to. A group switched on but not mapped isn't sent (§3). */
+export const VaultGroupSettingDto = z.object({
+  group: VaultGroup,
+  on: z.boolean(),
+  vaultKind: z.string().min(1).max(100).nullable(),
+});
+export type VaultGroupSettingDto = z.infer<typeof VaultGroupSettingDto>;
+
+/**
+ * The vault connection as owners and admins see it (§13). The private key is never in it; the public key and its
+ * fingerprint aren't secret and are shown so they can be compared with the vault.
+ */
+export const VaultConnectionDto = z.object({
+  id: Id,
+  stage: VaultStage,
+  status: z.enum(['active', 'paused', 'failing', 'needs_vault']),
+  /** The vault's address, once the code was accepted. */
+  address: z.string().nullable(),
+  /** The household's name, as the vault last reported it. */
+  householdName: z.string().nullable(),
+  publicKey: z.string(),
+  fingerprint: z.string(),
+  role: VaultRole,
+  backup: VaultBackup,
+  groups: z.array(VaultGroupSettingDto),
+  /** The kinds the vault lets Montra send, from the last check. */
+  vaultKinds: z.array(VaultKindDto),
+  /** §3, D5: amounts and account last-four digits too. Off by default. */
+  describeMore: z.boolean(),
+  /** §10, D10: "Also delete it in the vault when Montra deletes a file for good". Off by default. */
+  deleteWithMontra: z.boolean(),
+  /** The vault lets Montra delete what it sent. */
+  canDelete: z.boolean(),
+  items: z.object({
+    queued: z.number().int(),
+    pending: z.number().int(),
+    received: z.number().int(),
+    filed: z.number().int(),
+    notKept: z.number().int(),
+    failed: z.number().int(),
+    outOfReach: z.number().int(),
+  }),
+  /** §12: waiting for the vault's daily limits, until then. Not failures. */
+  heldUntil: z.object({ sending: z.string().nullable(), reading: z.string().nullable() }),
+  /** §7: Montra's clock against the vault's, in milliseconds; shown when it is large. */
+  clockOffsetMs: z.number().int().nullable(),
+  /** §2: a key change in progress. */
+  keyRotation: z.enum(['none', 'made', 'registered']),
+  lastSuccessAt: z.string().nullable(),
+  /** In words; for `needs_vault`, the vault's own message, which is written for people. */
+  lastError: z.string().nullable(),
+  lastErrorAt: z.string().nullable(),
+  createdAt: z.string(),
+  version: z.number().int(),
+});
+export type VaultConnectionDto = z.infer<typeof VaultConnectionDto>;
+
+/** §2 step 1: Montra makes a fresh key pair for the workspace. Nothing to send. */
+export const StartVaultConnectionRequest = z.object({}).strict();
+export type StartVaultConnectionRequest = z.output<typeof StartVaultConnectionRequest>;
+
+/** §2 step 3: the code the vault gave, pasted back. Montra checks it names its key before anything else. */
+export const PasteVaultCodeRequest = z
+  .object({
+    code: z.string().trim().min(1).max(4000),
+    version: z.number().int().positive(),
+  })
+  .strict();
+export type PasteVaultCodeRequest = z.output<typeof PasteVaultCodeRequest>;
+
+/** §6, §13: a change to the connection. Groups not named keep their setting. */
+export const UpdateVaultConnectionRequest = z
+  .object({
+    version: z.number().int().positive(),
+    role: VaultRole.optional(),
+    backup: VaultBackup.optional(),
+    groups: z
+      .array(
+        z
+          .object({
+            group: VaultGroup,
+            on: z.boolean().optional(),
+            vaultKind: z.string().min(1).max(100).nullable().optional(),
+          })
+          .strict(),
+      )
+      .max(VAULT_GROUPS.length)
+      .refine((gs) => new Set(gs.map((g) => g.group)).size === gs.length, 'Name each group once')
+      .optional(),
+    describeMore: z.boolean().optional(),
+    deleteWithMontra: z.boolean().optional(),
+    /** Paused sends nothing and keeps what's waiting. */
+    paused: z.boolean().optional(),
+  })
+  .strict();
+export type UpdateVaultConnectionRequest = z.output<typeof UpdateVaultConnectionRequest>;
+
+/** §2: "Replace the key". */
+export const ReplaceVaultKeyRequest = z.object({ version: z.number().int().positive() }).strict();
+export type ReplaceVaultKeyRequest = z.output<typeof ReplaceVaultKeyRequest>;
+
+/**
+ * §12: "Send existing documents": every file of the groups that are on, not in the trash. On a record connection it is
+ * a move (§5 then removes each source once filed). `expected` is the count the person was shown, so a different number
+ * is refused rather than surprising them.
+ */
+export const SendExistingToVaultRequest = z
+  .object({ expected: z.number().int().min(0).max(1_000_000) })
+  .strict();
+export type SendExistingToVaultRequest = z.output<typeof SendExistingToVaultRequest>;
+
+/** §10: disconnect. With files held only in the vault, it is refused unless `anyway` (they keep their references). */
+export const DisconnectVaultRequest = z.object({ anyway: z.boolean().default(false) }).strict();
+export type DisconnectVaultRequest = z.output<typeof DisconnectVaultRequest>;
+
+/** §10: "Bring the files back": what is still to download, over days if the vault's daily cap needs it. */
+export const VaultBringBackDto = z.object({
+  queued: z.number().int(),
+  heldUntil: z.string().nullable(),
+});
+export type VaultBringBackDto = z.infer<typeof VaultBringBackDto>;
+
+/** A file in the vault's outbox, for Settings' lists (as `StorageItemDto` for the mirror). */
+export const VaultItemDto = z.object({
+  fileId: Id,
+  fileName: z.string().nullable(),
+  group: VaultGroup.nullable(),
+  status: VaultItemStatus,
+  attempts: z.number().int(),
+  lastError: z.string().nullable(),
+  /** §4.5: why the vault didn't keep it, in words, and whether a person may send it again. */
+  notKeptReason: z.string().nullable(),
+  resendAllowed: z.boolean(),
+  receivedAt: z.string().nullable(),
+  filedAt: z.string().nullable(),
+  nextAttemptAt: z.string(),
+});
+export type VaultItemDto = z.infer<typeof VaultItemDto>;
+
+export const VaultItemsQuery = z.object({
+  status: VaultItemStatus.exclude(['delete']).default('failed'),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type VaultItemsQuery = z.output<typeof VaultItemsQuery>;
+
+/** Where a file's bytes are (§5): Montra's own storage, or only the vault. */
+export const FileLocation = z.enum(['montra', 'vault']);
+export type FileLocation = z.infer<typeof FileLocation>;
+
+/** §9, §13: what a file's badge says about the vault. */
+export const FileVaultSummaryDto = z.object({
+  status: VaultItemStatus,
+  /** What the vault calls the document, from its changes feed ("Bank statement, October 2026"). */
+  title: z.string().nullable(),
+  /** The family put a newer version in the vault; Montra doesn't re-read it on its own. */
+  newerVersion: z.boolean(),
+  notKeptReason: z.string().nullable(),
+});
+export type FileVaultSummaryDto = z.infer<typeof FileVaultSummaryDto>;
+
+/**
+ * A file's place, keyed by its id: Montra's records name their files by id, so this is served beside them rather than
+ * inside each (§11's "FileDto"). `vault` is null when the file was never sent.
+ */
+export const FileStorageStateDto = z.object({
+  fileId: Id,
+  location: FileLocation,
+  /** §5a: the vault didn't return it, and a person is asked to provide it again. */
+  missing: z.object({ since: z.string(), reason: z.string() }).nullable(),
+  vault: FileVaultSummaryDto.nullable(),
+});
+export type FileStorageStateDto = z.infer<typeof FileStorageStateDto>;
+
+/** §5a: one entry in Review, "Files to provide again". */
+export const MissingFileDto = z.object({
+  fileId: Id,
+  fileName: z.string(),
+  group: VaultGroup.nullable(),
+  /** When it was first stored in Montra. */
+  uploadedAt: z.string(),
+  missingSince: z.string(),
+  reason: z.string(),
+  /** What in Montra uses it, so the person knows which paper to look for. */
+  usedBy: z.array(
+    z.object({
+      kind: z.enum(['receipt', 'statement', 'payslip', 'tax_form', 'bill', 'lease', 'document']),
+      id: Id,
+      label: z.string(),
+    }),
+  ),
+});
+export type MissingFileDto = z.infer<typeof MissingFileDto>;
+
+export const MissingFilesResponse = z.object({ data: z.array(MissingFileDto) });
+export type MissingFilesResponse = z.infer<typeof MissingFilesResponse>;
+
+/** §5a: a missing file provided again, stored under the same id. A different hash is accepted and noted. */
+export const FileProvidedAgainDto = z.object({
+  fileId: Id,
+  location: FileLocation,
+  hashChanged: z.boolean(),
+  /** Queued for the vault again, when its group is still on. */
+  queuedForVault: z.boolean(),
+});
+export type FileProvidedAgainDto = z.infer<typeof FileProvidedAgainDto>;

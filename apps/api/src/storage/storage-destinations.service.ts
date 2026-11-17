@@ -7,8 +7,10 @@ import { sql } from 'kysely';
 import type { Selectable } from 'kysely';
 import type { StorageDestinationTable, Trx } from '@montra/db';
 import {
+  MIRROR_DESTINATION_KINDS,
   STORAGE_FILE_KINDS,
   type ConnectStorageRequest,
+  type MirrorDestinationKind,
   type StorageConnection,
   type StorageDestinationDto,
   type StorageItemDto,
@@ -31,7 +33,14 @@ import {
 import { isAdmin } from '../common/roles.js';
 
 type Ctx = { workspaceId: string; userId: string };
-export type DestinationRow = Selectable<StorageDestinationTable>;
+/**
+ * A mirror (ADR-0031). The workspace's vault connection (ADR-0054) is a row of the same table, never handled here; only it
+ * can be `needs_vault` (a check in migration 0063).
+ */
+export type DestinationRow = Selectable<StorageDestinationTable> & {
+  kind: MirrorDestinationKind;
+  status: 'active' | 'paused' | 'failing';
+};
 
 /** The AES-GCM associated data for the sealed secret. */
 export const SECRET_COLUMN = 'storage_destination.secret';
@@ -77,11 +86,12 @@ export class StorageDestinationsService {
   }
 
   async row(trx: Trx, ctx: Ctx): Promise<DestinationRow | undefined> {
-    return trx
+    return (await trx
       .selectFrom('app.storage_destination')
       .selectAll()
       .where('workspace_id', '=', ctx.workspaceId)
-      .executeTakeFirst();
+      .where('kind', 'in', MIRROR_DESTINATION_KINDS)
+      .executeTakeFirst()) as DestinationRow | undefined;
   }
 
   private async dto(trx: Trx, r: DestinationRow): Promise<StorageDestinationDto> {
@@ -248,7 +258,7 @@ export class StorageDestinationsService {
       if (await this.row(trx, ctx)) {
         throw new AppError(409, 'storage.exists', 'This workspace already has its own storage connected');
       }
-      const row = await trx
+      const row = (await trx
         .insertInto('app.storage_destination')
         .values({
           workspace_id: ctx.workspaceId,
@@ -271,7 +281,7 @@ export class StorageDestinationsService {
           created_by: ctx.userId,
         })
         .returningAll()
-        .executeTakeFirstOrThrow();
+        .executeTakeFirstOrThrow()) as DestinationRow;
       if (req.copyExisting && row.mirror_files) await this.queueExisting(trx, row);
       await this.security(trx, ctx, 'storage_connected', { kind: row.kind, label: row.label });
       return this.dto(trx, row);
@@ -329,14 +339,14 @@ export class StorageDestinationsService {
           set.consecutive_failures = 0;
         }
       }
-      const row = await trx
+      const row = (await trx
         .updateTable('app.storage_destination')
         .set(set as never)
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', current.id)
         .where('version', '=', current.version)
         .returningAll()
-        .executeTakeFirst();
+        .executeTakeFirst()) as DestinationRow | undefined;
       if (!row) throw conflict();
       if (sealed || req.paused === false) await this.wake(trx, ctx.workspaceId, row.id, true);
       await this.security(trx, ctx, 'storage_changed', {

@@ -495,7 +495,19 @@ export interface FileTable {
   sealed: Generated<boolean>;
   created_at: Generated<Date>;
   deleted_at: Date | null;
+  /**
+   * ADR-0054 §5 (migration 0063): `vault` once the vault is the record and Montra's copy is gone. `storage_key` stays
+   * set until PR 5 lets it be null for such files.
+   */
+  location: Generated<FileLocation>;
+  /** ADR-0054 §5a: the vault didn't return the file, and a person is asked to provide it again. Both or neither. */
+  missing_since: Date | null;
+  missing_reason: string | null;
+  /** ADR-0054 §5a: provided again with a hash different from the original's. */
+  replaced_sha256: string | null;
 }
+
+export type FileLocation = 'montra' | 'vault';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
@@ -1665,7 +1677,8 @@ export interface BackupScheduleTable {
 
 // Your own storage (migration 0029, ADR-0031).
 
-export type StorageDestinationKind = 's3' | 'webdav';
+/** `fdv` is the household's Family Document Vault (ADR-0054, migration 0063); the others are mirrors (ADR-0031). */
+export type StorageDestinationKind = 's3' | 'webdav' | 'fdv';
 export type StorageFileKind =
   'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'other' | 'tax_form';
 
@@ -1685,7 +1698,8 @@ export interface StorageDestinationTable {
   delete_with_montra: Generated<boolean>;
   keep_backups: Generated<number>;
   can_delete: Generated<boolean>;
-  status: Generated<'active' | 'paused' | 'failing'>;
+  /** `needs_vault` is for a vault connection only: something needs a person on the vault's side (ADR-0054 §12). */
+  status: Generated<'active' | 'paused' | 'failing' | 'needs_vault'>;
   consecutive_failures: Generated<number>;
   last_success_at: Date | null;
   last_error: string | null;
@@ -1708,6 +1722,55 @@ export interface StorageMirrorItemTable {
   bytes: Int8 | null;
   mirrored_at: Date | null;
   created_at: Generated<Date>;
+}
+
+// The household's Family Document Vault (migration 0063, ADR-0054 §11). Owners and admins only.
+
+export type VaultItemStatus =
+  'queued' | 'pending' | 'received' | 'filed' | 'not_kept' | 'failed' | 'out_of_reach' | 'delete';
+
+export interface VaultConnectionStateTable {
+  workspace_id: string;
+  destination_id: string;
+  destination_kind: Generated<'fdv'>;
+  feed_cursor: string | null;
+  feed_read_at: Date | null;
+  full_read_at: Date | null;
+  checked_at: Date | null;
+  next_check_at: Generated<Date>;
+  daily_reset_at: Date | null;
+  send_held_until: Date | null;
+  read_held_until: Date | null;
+  clock_offset_ms: number | null;
+  key_rotation: Generated<'none' | 'made' | 'registered'>;
+  key_rotation_at: Date | null;
+  updated_at: Generated<Date>;
+}
+
+export interface VaultItemTable {
+  workspace_id: string;
+  destination_id: string;
+  destination_kind: Generated<'fdv'>;
+  file_id: string;
+  /** Chosen once, before the first send; a trigger refuses changing it. */
+  vault_ref: string | null;
+  status: Generated<VaultItemStatus>;
+  not_kept_reason: string | null;
+  resend_allowed: Generated<boolean>;
+  auto_resends: Generated<number>;
+  vault_document_id: string | null;
+  vault_version: string | null;
+  vault_sha256: string | null;
+  vault_meta: Json<Record<string, unknown>> | null;
+  received_at: Date | null;
+  filed_at: Date | null;
+  source_key: string | null;
+  source_removed_at: Date | null;
+  attempts: Generated<number>;
+  next_attempt_at: Generated<Date>;
+  last_error: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
 }
 
 export interface RestoreJobTable {
@@ -1845,6 +1908,8 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.backup_schedule': BackupScheduleTable;
   'app.storage_destination': StorageDestinationTable;
   'app.storage_mirror_item': StorageMirrorItemTable;
+  'app.vault_connection_state': VaultConnectionStateTable;
+  'app.vault_item': VaultItemTable;
   'app.restore_job': RestoreJobTable;
   'app.subscription': SubscriptionTable;
   'app.plan': PlanTable;
