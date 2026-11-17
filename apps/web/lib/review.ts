@@ -125,6 +125,15 @@ export const GO_TARGETS: Record<string, string> = {
   u: 'rules',
 };
 
+/**
+ * The Review badge's number: transactions to review plus tax forms to check. A count that failed to load (null) adds
+ * nothing; null when neither loaded, so the badge stays hidden rather than showing a wrong 0.
+ */
+export function reviewBadgeTotal(transactions: number | null, taxForms: number | null): number | null {
+  if (transactions === null && taxForms === null) return null;
+  return (transactions ?? 0) + (taxForms ?? 0);
+}
+
 export function goSequence(
   state: { key: string; at: number } | null,
   key: string,
