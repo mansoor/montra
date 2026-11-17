@@ -1594,7 +1594,8 @@ Phase 11 leftovers:
     for 30 days are purged with the files no other form holds (`app.purge_trash`, now run first). The owner's storage
     copies `tax_form` by default, as payslips; connections that copied `other` keep copying them.
   - **Backups** restore the three tables (round trip tested); a partner's or one set of books' backup leaves out the
-    files of tax forms it doesn't hold. Payslip files still go into such backups (an owner's question on the PR).
+    files of tax forms it doesn't hold. Payslip files had the same gap, closed afterwards for every kind of file (see
+    "Files in partial backups" below).
   - **The reminder** `tax_forms_missing`: from 16 February (caught up to the 22nd), once per person and year, last
     year's expected forms not received or waived as each person can see them; nothing when nothing is missing. A row in
     notification settings on the web and the phone.
@@ -1603,6 +1604,22 @@ Phase 11 leftovers:
     partner's backup, the reminder's day, recipients and dedupe, and a workspace with nothing missing),
     `packages/db/test/tax-forms.test.ts` (the migration's data update, the storage mirror with and without `tax_form`,
     staff grants), web and phone helpers. Where the build differs from the ADR is in "As built: PR 5".
+- **Files in partial backups** (PAY-09, BAK-04, ADR-0019 §7; no migration). Files carry no books or person, so row-level
+  security lets every member read their `app.file` rows, and an archive of less than the whole workspace took every file
+  but tax forms'. A partner's backup of their personal books held another member's payslips (the payslip rows were left
+  out, their files weren't), the owner's scans, the files of books the partner had no grant to, and, with a read-only
+  grant to a business, its I-9 ID copies, decrypted. An owner's backup of one set of books held the other books' files.
+  - **Now** such an archive takes a file only with a row it holds that holds it: a payslip, receipt, bill, invoice, lease,
+    maintenance log, household bill, import, scan, intake, reimbursement, I-9 document, business logo or tax form. The
+    holders are `FILE_HOLDERS` in `apps/api/src/data/catalog.ts`, read in the archive's snapshot under the maker's RLS
+    and the archive's books (replacing PR 5's tax form rule). A test pins the list against the schema (every `uuid[]`
+    column named for files or attachments, and every foreign key to `app.file`). An owner's or admin's backup of the
+    workspace is as before. A file no row holds (an upload never used) is left out of a partial archive too.
+  - **Not a backup gap**: no journal entry or transaction holds a file; a receipt matched to a restricted entry (such as a
+    payslip's) follows the receipt's own row-level security (its books), in the app as in a backup.
+  - Tests: `apps/api/test/backup-files.test.ts` (a partner's backup without Sam's payslip file but with their own, without
+    the owner's scan or the rental's receipt; an owner's full and one-book backups; restores of both),
+    `payroll-people.test.ts` (no I-9 copies for a partner with read access), `data-ownership.test.ts` (the holders list).
 
 ---
 

@@ -43,6 +43,7 @@ import { deriveKey, encryptFile, newKdfParams, type KdfParams } from './archive-
 import {
   ENCRYPTED,
   exportedTables,
+  FILE_HOLDERS,
   insertOrder,
   plainName,
   readCatalog,
@@ -682,18 +683,11 @@ export class BackupService {
           ),
         );
         const kept = new Map<string, Set<string>>();
-        // Files carry no books or person, so RLS lets every member read their rows. A tax form's file goes only with a
-        // form the archive holds (ADR-0052 §8.4): a partner's or one set of books' archive leaves the others out.
-        const formFiles = filtering
-          ? new Set(
-              (
-                await sql<{ id: string }>`
-                  select distinct unnest(t.file_ids)::text as id from app.tax_form t
-                   where t.workspace_id = ${ctx.workspaceId}
-                     and ${entityId ? sql`t.entity_id = ${entityId}` : sql`true`}`.execute(trx)
-              ).rows.map((r) => r.id),
-            )
-          : null;
+        // Files carry no books or person, so RLS lets every member read their rows. A file goes only with a row the
+        // archive holds that holds it: a partner's archive leaves out the payslips' files of other members (PAY-09), the
+        // tax forms' (ADR-0052 §8.4), others' scans and the files of books they can't read; one set of books' leaves out
+        // the other books' files. An owner's or admin's archive of the workspace takes every file, as before.
+        const heldFiles = filtering ? await this.filesHeld(trx, ctx, catalog, tables, entityId) : null;
         const manifest: ArchiveManifest = {
           format: ARCHIVE_FORMAT,
           createdAt: new Date().toISOString(),
@@ -740,8 +734,7 @@ export class BackupService {
               let row: Record<string, unknown> | null = raw.row;
               if (filtering) row = withParents(info, row, kept);
               if (!row) continue;
-              if (table === 'file' && formFiles && row.kind === 'tax_form' && !formFiles.has(String(row.id)))
-                continue;
+              if (table === 'file' && heldFiles && !heldFiles.has(String(row.id))) continue;
               row = await this.decrypted(trx, ctx, table, row);
               const line = JSON.stringify(row) + '\n';
               hash.update(line);
@@ -791,6 +784,34 @@ export class BackupService {
         manifest.balances = Object.fromEntries([...balances].map(([k, v]) => [k, String(v)]));
         return manifest;
       });
+  }
+
+  /**
+   * The files that rows going into this archive hold: those the maker's RLS shows, in the archive's books. Read in the
+   * archive's snapshot, before the `file` table, which comes ahead of most of the rows that hold files.
+   */
+  private async filesHeld(
+    trx: Trx,
+    ctx: Ctx,
+    catalog: Map<string, TableInfo>,
+    tables: readonly string[],
+    entityId: string | null,
+  ): Promise<Set<string>> {
+    const held = new Set<string>();
+    for (const [table, columns] of Object.entries(FILE_HOLDERS)) {
+      const info = catalog.get(table);
+      if (!info || !tables.includes(table)) continue;
+      const scope = entityId ? scopeOf(info, entityId) : sql`true`;
+      for (const column of columns) {
+        const ref = sql.ref(`t.${column}`);
+        const { rows } = await sql<{ id: string | null }>`
+          select distinct ${column.endsWith('_ids') ? sql`unnest(${ref})` : ref}::text as id
+            from ${sql.table(`app.${table}`)} t
+           where t.workspace_id = ${ctx.workspaceId} and ${scope}`.execute(trx);
+        for (const r of rows) if (r.id) held.add(r.id);
+      }
+    }
+    return held;
   }
 
   /** Replaces an encrypted column with its text, so the archive is readable and can be re-encrypted on restore. */

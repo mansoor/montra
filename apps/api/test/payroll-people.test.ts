@@ -610,4 +610,36 @@ describe('backup and restore (ADR-0034 §3)', () => {
     expect(served.statusCode).toBe(200);
     expect(served.rawPayload.equals(PNG)).toBe(true);
   });
+
+  it('leaves the copies out of the backup of a partner who can read the books but not their payroll', async () => {
+    const partnerId = (await admin.query(`select id from app.app_user where email = $1`, [PARTNER])).rows[0]
+      .id;
+    expect(
+      (
+        await c.put(url(`/sharing/members/${partnerId}/grants`), {
+          grants: [{ entityId: biz, access: 'read' }],
+        })
+      ).status,
+    ).toBe(200);
+    try {
+      const created = await partner.post(url('/backups'), { entityId: biz });
+      expect(created.status).toBe(201);
+      await drain();
+      const res = await h.app.inject({
+        method: 'GET',
+        url: url(`/backups/${created.body.id}/download`),
+        headers: auth(PARTNER),
+      });
+      expect(res.statusCode).toBe(200);
+      const zip = await readZip(res.rawPayload);
+      const manifest = JSON.parse(zip.get('manifest.json')!.toString());
+      expect(manifest).toMatchObject({ partial: true, entityScoped: true });
+      expect(zip.get('data/payroll_i9_document.jsonl')!.toString()).toBe('');
+      expect(manifest.files.filter((f: any) => f.sealed)).toEqual([]);
+      expect(zip.get('data/file.jsonl')!.toString()).not.toContain('licence.png');
+      for (const bytes of zip.values()) expect(bytes.includes(PNG)).toBe(false);
+    } finally {
+      await c.put(url(`/sharing/members/${partnerId}/grants`), { grants: [] });
+    }
+  });
 });
