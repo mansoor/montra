@@ -206,8 +206,15 @@ export const UPLOAD_ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,.p
  * couldn't be read (type it in), read and waiting for a person to confirm it, or confirmed (by a person or by the
  * books agreeing). Null for a form typed in.
  */
-export type ReadingStage =
-  'reading' | 'waiting' | 'unread' | 'to_confirm' | 'confirmed_by_books' | 'confirmed';
+export const READING_STAGES = [
+  'reading',
+  'waiting',
+  'unread',
+  'to_confirm',
+  'confirmed_by_books',
+  'confirmed',
+] as const;
+export type ReadingStage = (typeof READING_STAGES)[number];
 
 export function readingStage(form: TaxFormDto): ReadingStage | null {
   const r = form.reading;
