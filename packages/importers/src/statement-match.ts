@@ -121,6 +121,29 @@ export function billSignal(c: { accountLast4?: string | null; billerName?: strin
   return `name:${normalizeDescription(name) || name.toUpperCase()}`;
 }
 
+/**
+ * A tax form's issuer signal (ADR-0052 §4), the most specific the form gives: a W-2 by its employer's EIN, else its
+ * name as payees are compared; a 1099 or 1098 by the issuer's EIN with the account's last four digits, else the EIN,
+ * else the name. Only a signal with an EIN is matched after one confirmation; a name-only one needs `LEARN_AFTER`.
+ */
+export function taxIssuerSignal(c: {
+  kind: string;
+  ein?: string | null;
+  accountLast4?: string | null;
+  issuerName?: string | null;
+}): string | null {
+  const name = c.issuerName?.trim();
+  const key = name ? normalizeDescription(name) || name.toUpperCase() : null;
+  const ein = c.ein && /^\d{9}$/.test(c.ein) ? c.ein : null;
+  const last4 = c.accountLast4 && /^\d{4}$/.test(c.accountLast4) ? c.accountLast4 : null;
+  if (c.kind === 'w2') return ein ? `w2:ein:${ein}` : key ? `w2:name:${key}` : null;
+  if (ein) return last4 ? `${c.kind}:ein:${ein}:last4:${last4}` : `${c.kind}:ein:${ein}`;
+  return key ? `${c.kind}:name:${key}` : null;
+}
+
+/** Whether a tax issuer signal names an EIN, so one confirmation (last year's) is enough to match it (§4). */
+export const taxSignalHasEin = (signal: string): boolean => /:ein:\d{9}/.test(signal);
+
 // ---------------------------------------------------------------------------------------------------------------
 // Clean imports
 // ---------------------------------------------------------------------------------------------------------------
