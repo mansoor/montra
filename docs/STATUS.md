@@ -17,17 +17,16 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
 | **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 327 IDs in total: **252 done, 60 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Requirements**       | 327 IDs in total: **255 done, 59 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
-**Being built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and
-1098 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on
-2026-11-16. Five PRs: **PR 1 is done** (storage, typing a form in and the owner's accountant setting; migration 0059),
-**PR 2 is done** (the checks against the books, expected forms, Review and the `/tax-forms` screen; no migration),
-**PR 3 is done** (reading uploaded forms, masked text only, and matching them automatically; no migration) and
-**PR 4 is done** (the phone: More → Tax forms, Scan a form, a form's checks and actions, Review and its badge; no
-migration; not run on a device yet); see §7g. Next is PR 5, the tax package, the reminder and retention. Role-based permissions (ADR-0053) are a separate proposal for later; tax forms use an
-owner-only setting for accountants instead.
+**Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
+read, matched and reconciled against the books, then added to the tax package), accepted by the owner on 2026-11-16.
+All five PRs are done: storage, typing a form in and the owner's accountant setting (PR 1, migration 0059); the checks
+against the books, expected forms, Review and the `/tax-forms` screen (PR 2); reading uploaded forms, masked text only,
+and matching them automatically (PR 3); the phone (PR 4, not run on a device yet); and the tax package, retention and
+the 16 February reminder (PR 5, migration 0060); see §7g. Role-based permissions (ADR-0053) are a separate proposal for
+later; tax forms use an owner-only setting for accountants instead.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
@@ -1571,6 +1570,31 @@ Phase 11 leftovers:
     Confirm reading, the boxes against the domain's schemas, the year's sections, the match sent, scan uploads, the
     badge's sum and its once-a-minute counter, the client's endpoints and multipart fields, and every i18n key the
     screens use). Where the build differs from the ADR is in "As built: PR 4".
+- **Tax forms received, PR 5 of 5** (TAX-07, TAX-08 and TAX-10 done; ADR-0052 complete; migration 0060). The phone's
+  new Tax package card isn't run on a device yet.
+  - **The tax package** (`runTaxPackage`, `src/tax-forms/tax-form-package.ts`): `tax-forms/` (each form's file once,
+    `W-2-Acme Corp-Sam.pdf`), `tax-forms.csv` (one row per form, then one per expected form not received or waived),
+    `tax-forms-check.pdf` (each form's checks as on the screen) and a README line that Montra checked the forms and
+    didn't prepare a return, counting any forms left out. Read under the maker's row-level security, so an accountant's
+    package has members' forms only while the owner's setting is on. USD workspaces; a package with no forms to show is
+    as before.
+  - **The panel's warning** (forms that differ or need a look, expected forms not yet come): web Settings → Your data,
+    Schedule E and business taxes (`TaxPackageWarning`, `packageWarning`); the phone's Your data gains a **Tax package**
+    card (books, year, warning, Make; not for members, whose exports the API refuses).
+  - **Retention**: tax form files are their own file kind, `tax_form` (moved from `other` by the migration), kept until
+    31 December of the tax year + 7 by a trigger that follows the year, purged by `data.retention`. Forms in the Trash
+    for 30 days are purged with the files no other form holds (`app.purge_trash`, now run first). The owner's storage
+    copies `tax_form` by default, as payslips; connections that copied `other` keep copying them.
+  - **Backups** restore the three tables (round trip tested); a partner's or one set of books' backup leaves out the
+    files of tax forms it doesn't hold. Payslip files still go into such backups (an owner's question on the PR).
+  - **The reminder** `tax_forms_missing`: from 16 February (caught up to the 22nd), once per person and year, last
+    year's expected forms not received or waived as each person can see them; nothing when nothing is missing. A row in
+    notification settings on the web and the phone.
+  - Tests: `apps/api/test/tax-form-package.test.ts` (personal and rental packages, accountant off and on, a partner's
+    package, retention and its year, the upload's kind, the Trash purge with a shared file, a backup round trip and a
+    partner's backup, the reminder's day, recipients and dedupe, and a workspace with nothing missing),
+    `packages/db/test/tax-forms.test.ts` (the migration's data update, the storage mirror with and without `tax_form`,
+    staff grants), web and phone helpers. Where the build differs from the ADR is in "As built: PR 5".
 
 ---
 

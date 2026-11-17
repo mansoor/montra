@@ -784,6 +784,56 @@ Where PR 4 had to differ from or add to the text above, and why:
 - **Not run on a device yet:** the owner tries it on the LAN APK build. The screens are covered by typecheck, lint and
   the Expo bundle; their logic by `apps/mobile/test/tax-forms.test.ts`.
 
+### As built: PR 5 (2026-11-17)
+
+Where PR 5 had to differ from or add to the text above, and why:
+
+- **Migration `0060_tax_forms_reminder.sql`**, the reserved number. The runner applies versions it hasn't recorded in
+  order, so on a database that has 0061 and 0062 it runs after them; it touches nothing they do, and it can be run
+  again harmlessly (the tests do, to check its data update). Besides the notification type it holds the file kind,
+  the retention trigger, the Trash purge and the package's count of forms left out, all below. Notification
+  preferences are a JSON map per person with defaults in the API, so the type needs no preference rows.
+- **Tax form files are their own kind, `tax_form`** (the owner's default from PR 3's question). New uploads are stored
+  as `tax_form`, the files existing forms hold move from `other` to `tax_form` (only those `app.tax_form.file_ids`
+  names), and `STORAGE_FILE_KINDS` gains it, so the owner's own storage (ADR-0031) can leave them out: "Tax forms" in
+  Settings → Storage on the web (the phone doesn't list kinds). **Copied by default, as payslips are**: the storage is
+  the owner's and the owner can read every form, and a connection that copied `other` files was already copying tax
+  forms, so it gains `tax_form` and goes on doing so; one that left `other` out still leaves them out. Nothing that was
+  copied stops, and nothing new starts, without the owner choosing. In their storage they sit under `tax-forms/`.
+- **Retention follows the year** (§8.5). A trigger on `app.tax_form` (`tax_form_file_retention`, `SECURITY DEFINER`)
+  sets its files' `retain_until` to 31 December of the tax year + 7 whenever a form is added or its year or files
+  change, since the year can change after upload (the reading, or a person, corrects it). A file holding several forms
+  follows the latest year among them. The migration sets it for files already held.
+- **The Trash** (PR 1 deferred it): `app.purge_trash()` also deletes forms in the Trash for over 30 days, their targets
+  with them, and marks their files deleted as of the form's deletion unless another form still holds them (a
+  consolidated 1099). The retention job now purges the Trash first, so those files leave storage in the same run.
+- **The reminder** goes from 16 February and is caught up within the week (to 22 February) if the nightly sweep didn't
+  run on the day; the dedupe key (`tax_forms_missing:<year>`) keeps it to one per person and tax year. It's read under
+  each person's row-level security through `TaxFormsService.missing` (the expected forms without working out any
+  form's checks), only in US-dollar workspaces and not for viewers. It names the forms ("W-2 from Beta LLC, for Sam")
+  and never an amount, since email and push carry it. In-app, email and push by default; switched in notification
+  settings on the web and the phone.
+- **The package**: the forms are read as the year's list is, under the maker's row-level security, so the owner's
+  setting applies through `app.can_read_tax_form` and nothing else needs to. Forms put aside or replaced by a corrected
+  form are left out (and not counted as left out); a form still being read is listed with its state. Expected forms are
+  those the maker can see (their employers and accounts). The count of forms left out comes from
+  `app.tax_forms_in_books(entity, year)` (`SECURITY DEFINER`, every form in the books for someone who can read the
+  books) less those the maker sees; it says how many, never which. The tax forms part is left out entirely (the package
+  is as before) in workspaces not kept in US dollars, and for books with no forms, none expected and none left out.
+- **Members don't make tax packages**: members' exports are refused (AUTH-17, `memberMayRequest`), so "the person the
+  forms are for" makes one only as a partner, admin or owner. A partner's package leaves out the other members' forms.
+- **The phone had no tax package.** The panel's warning needed one, so Your data gains **Tax package** (books, year, the
+  warning, Make), for everyone but members; the package then appears with the backups, to save as they are. The
+  warning, as on the web, counts the forms for those books and year that are Review items (differ, misread, unmatched,
+  no person, unread) and the expected forms not yet come, and says the package can still be made. On the web it's on
+  Settings → Your data, Schedule E and the business taxes page.
+- **Backups**: the three tables were already exported and restored (the catalog takes every table), and a round trip
+  keeps forms, targets, waivers and files. What PR 5 adds: files have no books or person, so row-level security lets
+  every member read their rows, and a partner's backup of their books (or an owner's of one set of books) took every
+  tax form's file. Such an archive now takes a tax form's file only with a form it holds. Payslip files have the same
+  gap, untouched here (see the PR). A restored workspace starts with the accountant setting off, as every new
+  workspace does: the owner turns it on again.
+
 ## Consequences
 
 - The year's books get an outside check: every phase 1 form either agrees with them, is explained, or lands in Review
