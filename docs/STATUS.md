@@ -1197,7 +1197,9 @@ Phase 11 leftovers:
     else waits in Review with the reason, its import in preview.
   - **Bills:** `POST scans { kind: 'bill', autoFile: true }` files the bill for a learned provider when its amount and
     due date were read; otherwise it waits in Review (and the scan can still be confirmed as before). Without `autoFile`
-    nothing changes, so the web's Add a bill keeps its flow. The phone's bill capture now asks for `autoFile`.
+    nothing changes. The phone's bill capture and the web's Add a bill both ask for `autoFile`: a bill filed
+    automatically closes the dialog with a message. The web's Bills list has **Void** on open and overdue bills
+    (`PATCH household-bills/:id { void: true }`), to undo one filed wrongly; the phone has no void yet.
   - **Review:** web `/review` and the phone's Review show **Statements and bills to file** above the transactions; each
     has the account or provider to pick (candidates first) and Put aside. The web opens a resolved statement in its
     import preview; the phone imports it only when clean (`commitIfClean`).

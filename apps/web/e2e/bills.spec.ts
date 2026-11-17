@@ -70,6 +70,11 @@ test('a bill typed in shows on the Bills tab, and a business provider files a ve
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('status').filter({ hasText: 'Filed the SDG&E bill' })).toBeVisible();
   await expect(billRow(page, 'SDG&E')).toContainText('$84.12', { timeout: REFRESH });
+  // A bill filed wrongly (by hand, or automatically once the provider is learned) is voided from the list.
+  await billRow(page, 'SDG&E').getByRole('button', { name: 'Void the SDG&E bill' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Voided the SDG&E bill.' })).toBeVisible();
+  await expect(billRow(page, 'SDG&E')).toContainText('Void', { timeout: REFRESH });
+  await expect(billRow(page, 'SDG&E').getByRole('button', { name: 'Void the SDG&E bill' })).toHaveCount(0);
 
   // A provider that isn't on the budget yet is added on the category chosen.
   await page.getByRole('button', { name: 'Add a bill' }).click();

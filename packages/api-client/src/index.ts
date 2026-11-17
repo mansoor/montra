@@ -83,6 +83,7 @@ import type {
   BillerDto,
   HouseholdBillDto,
   CreateHouseholdBillRequest,
+  UpdateHouseholdBillRequest,
   FiledBillDto,
   CreateScanRequest,
   ScanBillDetectedDto,
@@ -773,6 +774,7 @@ export type CreateExpectedIncomeInput = z.input<typeof CreateExpectedIncomeReque
 export type CreateBillerInput = z.input<typeof CreateBillerRequest>;
 export type UpdateBillerInput = z.input<typeof UpdateBillerRequest>;
 export type CreateHouseholdBillInput = z.input<typeof CreateHouseholdBillRequest>;
+export type UpdateHouseholdBillInput = z.input<typeof UpdateHouseholdBillRequest>;
 export type CreateScanInput = z.input<typeof CreateScanRequest>;
 export type UpdateExpectedIncomeInput = z.input<typeof UpdateExpectedIncomeRequest>;
 export type AcceptRecommendationInput = z.input<typeof AcceptRecommendationRequest>;
@@ -2658,6 +2660,14 @@ export class ApiClient {
    */
   createHouseholdBill(workspaceId: string, input: CreateHouseholdBillInput) {
     return this.request<FiledBillDto>('POST', this.ws(workspaceId, '/household-bills'), input);
+  }
+  /** Corrects a filed bill's amount or due date, or voids it (`void: true`), e.g. one filed automatically wrongly. */
+  updateHouseholdBill(workspaceId: string, id: string, input: UpdateHouseholdBillInput) {
+    return this.request<HouseholdBillDto>(
+      'PATCH',
+      this.ws(workspaceId, `/household-bills/${enc(id)}`),
+      input,
+    );
   }
   /** ADR-0048 §3: a statement, payslip or bill to read before it's filed. Poll `getScan` until it isn't `reading`. */
   createScan(workspaceId: string, input: CreateScanInput) {
