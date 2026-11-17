@@ -112,6 +112,9 @@ function Gate() {
         <Stack.Screen name="payslips/index" options={{ title: t('nav.payslips') }} />
         <Stack.Screen name="payslips/capture" options={{ title: t('mobile.payslips.capture_title') }} />
         <Stack.Screen name="payslips/[id]" options={{ title: t('mobile.payslips.review_title') }} />
+        <Stack.Screen name="tax-forms/index" options={{ title: t('tax_forms.title') }} />
+        <Stack.Screen name="tax-forms/scan" options={{ title: t('mobile.tax_forms.scan') }} />
+        <Stack.Screen name="tax-forms/[id]" options={{ title: t('mobile.tax_forms.form_title') }} />
         <Stack.Screen name="review" options={{ title: t('mobile.tab.review') }} />
         <Stack.Screen name="goals" options={{ title: t('nav.goals') }} />
         <Stack.Screen name="cash-flow" options={{ title: t('nav.cash_flow') }} />

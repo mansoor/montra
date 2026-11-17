@@ -97,6 +97,11 @@ import type {
   WorkspaceDto,
   CategoryDto,
   CategoryGroupDto,
+  TaxFormDto,
+  TaxFormReviewDto,
+  TaxFormUploadDto,
+  TaxYearDto,
+  UpdateTaxFormRequest,
 } from '@montra/schemas';
 import { CLOSED_CODES } from '@montra/sync';
 
@@ -213,7 +218,12 @@ export function createApi(opts: ApiOptions) {
    * Uploads a device file to `path`: natively for a page the app saved, else with FormData. Statements stay on
    * FormData: the native upload names the part after the file on disk, and the picker's copy has a generated name.
    */
-  async function sendFile<T>(path: string, file: UploadFile, native = true): Promise<T> {
+  async function sendFile<T>(
+    path: string,
+    file: UploadFile,
+    native = true,
+    fields: Record<string, string> = {},
+  ): Promise<T> {
     if (native && opts.uploadFile && file.uri.startsWith('file:')) {
       let res: { status: number; body: string };
       try {
@@ -226,6 +236,7 @@ export function createApi(opts: ApiOptions) {
     const form = new FormData();
     // React Native's FormData accepts { uri, name, type } for files.
     form.append('file', file as unknown as Blob);
+    for (const [k, v] of Object.entries(fields)) form.append(k, v);
     return request<T>('POST', path, undefined, form);
   }
 
@@ -598,6 +609,32 @@ export function createApi(opts: ApiOptions) {
     confirmPayslip: (w: string, id: string, input: ConfirmPayslipRequest) =>
       request<PayslipDto>('POST', `${ws(w)}/payslips/${id}/confirm`, input),
     deletePayslip: (w: string, id: string) => request<void>('DELETE', `${ws(w)}/payslips/${id}`),
+
+    // ----- Tax forms received (ADR-0052 §7.2): read and acted on online, never synced ------------------------------
+    taxYear: (w: string, year: number) => request<TaxYearDto>('GET', `${ws(w)}/tax-forms?year=${year}`),
+    /** Review's "Tax forms to check", every year. */
+    taxFormsToCheck: async (w: string) =>
+      (await request<TaxFormReviewDto>('GET', `${ws(w)}/tax-forms/review`)).data,
+    getTaxForm: (w: string, id: string) => request<TaxFormDto>('GET', `${ws(w)}/tax-forms/${id}`),
+    updateTaxForm: (w: string, id: string, input: UpdateTaxFormRequest) =>
+      request<TaxFormDto>('PATCH', `${ws(w)}/tax-forms/${id}`, input),
+    confirmTaxFormReading: (w: string, id: string, version: number) =>
+      request<TaxFormDto>('POST', `${ws(w)}/tax-forms/${id}/confirm`, { version }),
+    acceptTaxFormDifference: (w: string, id: string, input: { box: string; note: string }) =>
+      request<TaxFormDto>('POST', `${ws(w)}/tax-forms/${id}/accept`, input),
+    recordFromTaxForm: (w: string, id: string, amount: string) =>
+      request<TaxFormDto>('POST', `${ws(w)}/tax-forms/${id}/record`, { amount }),
+    undoRecordFromTaxForm: (w: string, id: string) =>
+      request<TaxFormDto>('DELETE', `${ws(w)}/tax-forms/${id}/record`),
+    /**
+     * One file to read (TAX-01), with the year on screen and where it came from. FormData, as statements: the native
+     * upload names the part after the file on disk, and the form is shown by its file name until it's read.
+     */
+    uploadTaxFormFile: (w: string, file: UploadFile, fields: { year: number; source: 'scan' | 'upload' }) =>
+      sendFile<TaxFormUploadDto>(`${ws(w)}/tax-forms/files`, file, false, {
+        year: String(fields.year),
+        source: fields.source,
+      }),
 
     registerPushDevice: (req: RegisterPushDeviceRequest) =>
       request<{ id: string }>('POST', '/v1/me/push-devices', req),
