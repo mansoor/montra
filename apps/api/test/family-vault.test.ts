@@ -416,10 +416,11 @@ describe('connecting (ADR-0054 §2; VLT-01, VLT-08)', () => {
       'vault.already_connected',
     );
     expect((await c.post(url('/family-vault'))).body.code).toBe('vault.exists');
-    // Admins may ask Montra to check again (D4).
+    // Admins may ask Montra to check again (D4). A check isn't a change to the settings: the version stays.
     const checked = await adminUser.post(url('/family-vault/check'));
     expect(checked.status).toBe(200);
     expect(checked.body.status).toBe('active');
+    expect(checked.body.version).toBe(res.body.version);
   });
 
   it('stops the connection, with the vault’s words, when the app is paused or removed there', async () => {

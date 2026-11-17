@@ -33,10 +33,13 @@ test('an owner connects the Family Document Vault, replaces the key and disconne
     expect(res.ok()).toBe(true);
     return ((await res.json()) as { code: string }).code;
   };
-  const code = await register(await key.inputValue());
+  const firstKey = await key.inputValue();
+  const code = await register(firstKey);
 
   // Step 3: paste it, with the line breaks people paste.
-  await card.getByLabel('Connection code from the vault').fill(`${code.slice(0, 20)}\n${code.slice(20)}`);
+  await card
+    .getByRole('textbox', { name: 'Connection code from the vault' })
+    .fill(`${code.slice(0, 20)}\n${code.slice(20)}`);
   await card.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
   await expect(card.getByTestId('vault-where')).toContainText('fake.example');
@@ -50,7 +53,7 @@ test('an owner connects the Family Document Vault, replaces the key and disconne
   await card.getByRole('button', { name: 'Replace the key' }).click();
   const newKey = card.getByTestId('vault-new-key');
   await expect(newKey.getByTestId('vault-public-key')).toHaveValue(/^ed25519:/);
-  expect(await newKey.getByTestId('vault-public-key').inputValue()).not.toBe(await key.inputValue());
+  expect(await newKey.getByTestId('vault-public-key').inputValue()).not.toBe(firstKey);
   await newKey.getByRole('button', { name: 'Keep the current key' }).click();
   await expect(card.getByTestId('vault-new-key')).toHaveCount(0);
 

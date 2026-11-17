@@ -312,7 +312,9 @@ export class VaultService {
     );
     return this.db.run(ctx, async (trx) => {
       const now = new Date();
-      const set: Record<string, unknown> = { updated_at: now, version: sql`version + 1` };
+      // A check refreshes status and what the vault reports, not the owner's settings, so the version stays: someone
+      // changing the settings while a check runs isn't sent back to reload.
+      const set: Record<string, unknown> = { updated_at: now };
       if (check instanceof VaultError) {
         set.last_error = check.shown;
         set.last_error_at = now;
