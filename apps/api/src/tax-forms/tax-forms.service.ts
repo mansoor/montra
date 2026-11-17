@@ -286,7 +286,6 @@ export class TaxFormsService {
       .selectAll()
       .where('workspace_id', '=', ctx.workspaceId)
       .where('tax_form_id', 'in', ids)
-      .orderBy('created_at')
       .orderBy('id')
       .execute();
     for (const r of rows) byForm.set(r.tax_form_id, [...(byForm.get(r.tax_form_id) ?? []), r]);
@@ -300,6 +299,8 @@ export class TaxFormsService {
       .values(
         targets.map((t) => ({
           workspace_id: ctx.workspaceId,
+          // Time-ordered ids keep the targets in the order they were given.
+          id: newId(),
           tax_form_id: formId,
           employer_id: 'employerId' in t ? t.employerId : null,
           account_id: 'accountId' in t ? t.accountId : null,
