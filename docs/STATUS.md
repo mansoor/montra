@@ -1509,13 +1509,15 @@ Phase 11 leftovers:
     Schedule B's tax line first.
   - **Matching by hand** teaches `match_memory`: `tax_issuer` (W-2 by EIN, else name; 1099/1098 by EIN and last four,
     EIN, or name; one account only) and `tax_person` (`tin4:` + a keyed hash of the SSN's last four,
-    `FieldCrypto.keyedHash`). Accountants can't match a W-2 to an employer (`W2_EMPLOYER_MATCHERS`; an owner's question).
+    `FieldCrypto.keyedHash`). Accountants can't match a W-2 to an employer (`W2_EMPLOYER_MATCHERS`; the owner confirmed this on 2026-11-16).
   - **Web:** **Tax forms** in the Books group of the menu (USD workspaces, not viewers): a year picker, the expected forms
     grouped by person (Received with the result, Not yet with "Won't come", Won't come with "Expect it again"), the forms
     received but not expected, and **Type a form in**. A form's page shows its result, the checks with "How this was
     worked out" (rule, explanation, links to the payslips and transactions), Accept the difference, Record from the
     form, Change the form (boxes, issuer, person, match) and Delete. Review gains **Tax forms to check** under the
-    statements and bills.
+    statements and bills. The menu's **Review badge** counts tax forms to check as well as transactions (owner's
+    choice, 2026-11-16; `reviewBadgeTotal`). The phone's badge (`reviewCount` in the sync feed) still counts
+    transactions only; it gains tax forms with the phone screens in PR 4.
   - Tests: domain table tests per box, the $1.00/$1.01 edge, the year boundary, YTD cross-check, not tracked, reading
     checks, expected forms; API tests (`tax-form-checks.test.ts`) against real payslips, interest, a mortgage and an
     accountant; web helpers; e2e `tax-forms.spec.ts`. Where the build differs from the ADR is in "As built: PR 2".

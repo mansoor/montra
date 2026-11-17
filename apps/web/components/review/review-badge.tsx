@@ -3,11 +3,14 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { browserApi } from '@/lib/browser-api';
-import { goSequence, isEditableTarget } from '@/lib/review';
+import { goSequence, isEditableTarget, reviewBadgeTotal } from '@/lib/review';
 import { onChanges } from '@/lib/sync';
 import { useI18n } from '../i18n';
 
-/** Count of transactions waiting for review, for the nav (refreshes on navigation and on realtime changes). */
+/**
+ * Count of what waits in Review for the nav: transactions to review plus tax forms to check (refreshes on navigation
+ * and on realtime transaction changes; tax forms change through their own pages, so navigation covers them).
+ */
 export function ReviewCountBadge({ workspaceId }: { workspaceId: string }) {
   const { t } = useI18n();
   const pathname = usePathname();
@@ -16,10 +19,19 @@ export function ReviewCountBadge({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     let alive = true;
     const refresh = () =>
-      browserApi.listReview(workspaceId, { limit: 1 }).then(
-        (r) => alive && setTotal(r.total),
-        () => undefined,
-      );
+      Promise.all([
+        browserApi.listReview(workspaceId, { limit: 1 }).then(
+          (r) => r.total,
+          () => null,
+        ),
+        browserApi.listTaxFormsToCheck(workspaceId).then(
+          (r) => r.data.length,
+          () => null,
+        ),
+      ]).then(([transactions, taxForms]) => {
+        const next = reviewBadgeTotal(transactions, taxForms);
+        if (alive && next !== null) setTotal(next);
+      });
     void refresh();
     const off = onChanges((changes) => {
       if (changes.some((c) => c.table === 'transaction')) void refresh();

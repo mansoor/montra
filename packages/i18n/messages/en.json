@@ -4329,7 +4329,7 @@
   "review.accepted_transfers": "{count, plural, one {Accepted # transaction} other {Accepted # transactions}}, {transfers, plural, one {# made a transfer.} other {# made transfers.}}",
   "review.another_account": "another account",
   "review.back_to_transactions": "Back to transactions",
-  "review.badge": "{count, plural, one {# transaction to review} other {# transactions to review}}",
+  "review.badge": "{count, plural, one {# item to review} other {# items to review}}",
   "review.change": "Change",
   "review.change_row": "Choose a different category for {payee}",
   "review.confidence": "Confidence",

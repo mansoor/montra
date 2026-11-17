@@ -136,8 +136,12 @@ test('tax forms are expected, typed in, checked against the books and reviewed',
     .filter({ has: page.getByRole('rowheader', { name: 'Box 1', exact: true }) });
   await expect(box1).toContainText('Matches');
 
-  // It's in Review, under the statements and bills.
+  // It's in Review, under the statements and bills, and the Review badge counts it.
   await nav(page, 'Review');
+  const badge = page.getByTestId('review-badge');
+  await expect(badge).toBeVisible();
+  const withForm = Number(await badge.textContent());
+  expect(withForm).toBeGreaterThanOrEqual(1);
   const queue = page.getByTestId('tax-form-queue');
   await expect(queue.getByRole('heading', { name: 'Tax forms to check' })).toBeVisible();
   await expect(queue.getByTestId('tax-form-item')).toContainText('W-2 from Acme Corp · 2025');
@@ -153,6 +157,8 @@ test('tax forms are expected, typed in, checked against the books and reviewed',
   await expect(page.getByTestId('tax-form-result').first()).toHaveText('Difference accepted');
   await nav(page, 'Review');
   await expect(page.getByTestId('tax-form-queue')).toHaveCount(0);
+  if (withForm === 1) await expect(page.getByTestId('review-badge')).toHaveCount(0);
+  else await expect(page.getByTestId('review-badge')).toHaveText(String(withForm - 1));
 
   // The bank's and the lender's forms agree with the books.
   const schedule = (await (await page.request.get(`${ws}/loans/${loan.id}/schedule`)).json()).data as {
