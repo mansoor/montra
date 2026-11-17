@@ -4,6 +4,7 @@ export {
   defaultAdapterFactory,
   Gateway,
   maskPayslipText,
+  maskTaxFormText,
   numbersIn,
   type GatewayOptions,
 } from './gateway.js';
@@ -36,3 +37,5 @@ export { MemoryStore } from './memory-store.js';
 export { decodeFakeReceiptImage, encodeFakeReceiptImage, parseReceiptText } from './fake-receipt.js';
 export { parsePayslipText } from './fake-payslip.js';
 export { parseBillText } from './fake-bill.js';
+export { parseTaxFormText } from './fake-tax-form.js';
+export { decimalToMinor, taxFormBoxesFromWire } from './tax-form-boxes.js';

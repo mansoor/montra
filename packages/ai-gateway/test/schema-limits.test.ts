@@ -11,6 +11,7 @@ import * as answerQuestion from '../src/tasks/answer-question/v1.js';
 import * as categorize from '../src/tasks/categorize/v1.js';
 import * as extractPayslip from '../src/tasks/extract-payslip/v2.js';
 import * as extractBill from '../src/tasks/extract-bill/v1.js';
+import * as extractTaxForm from '../src/tasks/extract-tax-form/v1.js';
 import * as extractReceipt from '../src/tasks/extract-receipt/v3.js';
 import * as extractStatementTable from '../src/tasks/extract-statement-table/v1.js';
 import * as flagCapital from '../src/tasks/flag-capital/v1.js';
@@ -41,6 +42,7 @@ const TASKS: Record<string, z.ZodType> = {
   answer_question: answerQuestion.Output,
   categorize: categorize.Output,
   extract_payslip: extractPayslip.Output,
+  extract_tax_form: extractTaxForm.Output,
   extract_receipt: extractReceipt.Output,
   extract_statement_table: extractStatementTable.Output,
   flag_capital: flagCapital.Output,

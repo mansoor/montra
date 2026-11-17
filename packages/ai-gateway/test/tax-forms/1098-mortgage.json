@@ -1,0 +1,24 @@
+{
+  "forms": [
+    {
+      "kind": "1098",
+      "taxYear": 2025,
+      "corrected": false,
+      "issuerName": "Example Home Loans",
+      "person": "MEMBER_1",
+      "pages": [1],
+      "boxes": {
+        "box1": "1184022",
+        "box2": "31245000",
+        "box3": "2019-06-14",
+        "box7": true,
+        "box9": 1,
+        "box10": "325000",
+        "box10Label": "Property tax"
+      },
+      "droppedBoxes": 0,
+      "confidence": 0.95
+    }
+  ],
+  "otherForms": 0
+}

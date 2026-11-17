@@ -1,0 +1,16 @@
+Form 1098 Mortgage Interest Statement 2025
+RECIPIENT'S/LENDER'S name, street address, city or town, state or province, country, ZIP or foreign postal code, and telephone no.
+Example Home Loans
+[redacted]
+RECIPIENT'S/LENDER'S TIN ••••
+PAYER'S/BORROWER'S TIN ••••
+PAYER'S/BORROWER'S name
+MEMBER_1
+[redacted]
+1 Mortgage interest received from payer(s)/borrower(s) 11,840.22
+2 Outstanding mortgage principal 312,450.00
+3 Mortgage origination date 06/14/2019
+7 X If address of property securing mortgage is the same as PAYER'S/BORROWER'S address
+9 Number of properties securing the mortgage 1
+10 Other Property tax 3,250.00
+Account number (see instructions) ••••

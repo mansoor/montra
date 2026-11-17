@@ -1,0 +1,13 @@
+Form 1099-DIV Dividends and Distributions 2025
+PAYER'S name: Sample Brokerage LLC
+RECIPIENT'S name
+[redacted]
+Account number (see instructions) ••••
+1a Total ordinary dividends 1,250.40
+1b Qualified dividends 980.10
+2a Total capital gain distr. 310.00
+5 Section 199A dividends 12.30
+7 Foreign tax paid 8.15
+8 Foreign country or U.S. possession VARIOUS
+14 State CA
+16 State tax withheld 20.00

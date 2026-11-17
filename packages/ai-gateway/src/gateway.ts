@@ -29,6 +29,8 @@ import * as categorizeV1 from './tasks/categorize/v1.js';
 import * as extractV1 from './tasks/extract-statement-table/v1.js';
 import * as payslipV2 from './tasks/extract-payslip/v2.js';
 import * as billV1 from './tasks/extract-bill/v1.js';
+import * as taxFormV1 from './tasks/extract-tax-form/v1.js';
+import { taxFormBoxesFromWire } from './tax-form-boxes.js';
 import * as receiptV3 from './tasks/extract-receipt/v3.js';
 import * as mapColumnsV1 from './tasks/map-columns/v1.js';
 import * as normalizeV1 from './tasks/normalize-payees/v1.js';
@@ -72,6 +74,9 @@ import type {
   PayslipDocument,
   PayslipExtraction,
   BillExtraction,
+  TaxFormDocument,
+  TaxFormExtraction,
+  TaxFormReading,
   ReceiptDocument,
   ReceiptExtraction,
   StatementTable,
@@ -1327,6 +1332,78 @@ export class Gateway implements AiGateway {
     );
   }
 
+  // ----- extract_tax_form (ADR-0052 §6) --------------------------------------------------------------------
+
+  /**
+   * Reads the tax forms in a file from the doc-worker's masked text. Never images: the document has no image field,
+   * and nothing here passes any, whatever the workspace allows (the owner's decision 5). The text is masked again here
+   * (TINs, digit runs, emails, phones, streets; member names as pseudonyms) before it leaves. Only boxes, the issuer's
+   * name and the person's token come back: a name returned as the person is dropped, and so is any box that isn't
+   * valid for the form's kind. The audit event holds counts only.
+   */
+  async extractTaxForm(doc: TaxFormDocument, ctx: AiContext): Promise<TaskResult<TaxFormExtraction>> {
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    let budget = 60_000;
+    const pages: { page: number; text: string }[] = [];
+    for (const p of doc.pages) {
+      if (!Number.isInteger(p.page) || p.page < 1 || budget <= 0) continue;
+      const text = maskTaxFormText(p.text, ctx.pseudonyms).slice(0, budget);
+      budget -= text.length;
+      if (text.trim()) pages.push({ page: p.page, text });
+    }
+    if (pages.length === 0) return { ok: false, reason: 'invalid_output', detail: 'no text to read' };
+    const pageNumbers = new Set(pages.map((p) => p.page));
+    const hint =
+      doc.taxYearHint !== null && doc.taxYearHint >= 2000 && doc.taxYearHint <= 2100 ? doc.taxYearHint : null;
+    return this.callProvider<TaxFormExtraction>(
+      {
+        task: 'extract_tax_form',
+        system: taxFormV1.SYSTEM,
+        promptVersion: taxFormV1.PROMPT_VERSION,
+        input: { taxYearHint: hint, pages },
+        schema: taxFormV1.Output,
+        validate: (o: taxFormV1.Output) => {
+          const forms: TaxFormReading[] = [];
+          let otherForms = 0;
+          for (const f of o.forms.slice(0, 50)) {
+            if (f.kind === 'other') {
+              otherForms++;
+              continue;
+            }
+            const { boxes, dropped } = taxFormBoxesFromWire(f.kind, f.boxes.slice(0, 200));
+            const person = f.person?.trim() ?? '';
+            const issuer = f.issuerName ? oneLine(f.issuerName, 200) : '';
+            forms.push({
+              kind: f.kind,
+              taxYear: f.taxYear !== null && f.taxYear >= 2000 && f.taxYear <= 2100 ? f.taxYear : null,
+              corrected: f.corrected === true,
+              // A token or something masked is no issuer's name.
+              issuerName: issuer && !/MEMBER_\d|••••/.test(issuer) ? issuer : null,
+              // Only a pseudonym token: a name the model returned anyway is dropped.
+              person: /^MEMBER_\d{1,3}$/.test(person) ? person : null,
+              pages: [...new Set(f.pages.filter((n) => pageNumbers.has(n)))].sort((a, b) => a - b),
+              boxes,
+              droppedBoxes: dropped + Math.max(0, f.boxes.length - 200),
+              confidence: round3(clamp01(f.confidence)),
+            });
+          }
+          return { forms, otherForms };
+        },
+        // How many forms and boxes were read: never amounts or names.
+        eventOutput: (v) => ({
+          forms: v.forms.length,
+          otherForms: v.otherForms,
+          boxes: v.forms.reduce((n, f) => n + Object.keys(f.boxes).length, 0),
+          droppedBoxes: v.forms.reduce((n, f) => n + f.droppedBoxes, 0),
+          withPerson: v.forms.filter((f) => f.person !== null).length,
+        }),
+        confidence: (v) => (v.forms.length ? Math.min(...v.forms.map((f) => f.confidence)) : 0),
+      },
+      ctx,
+      { spent: 0n },
+    );
+  }
+
   // ----- word_summary (REC-01..08, BUD-02) -----------------------------------------------------------------
 
   /**
@@ -1432,6 +1509,34 @@ const SSN = /\b\d{3}[- ]\d{2}[- ]\d{4}\b/g;
 /** Payslip OCR text for the model: Social Security numbers and digit runs masked, member names pseudonymized. */
 export function maskPayslipText(text: string, pseudonyms: AiContext['pseudonyms']): string {
   return pseudonymize(maskText(text.replace(SSN, MASK)), pseudonyms).slice(0, 20_000);
+}
+
+const EIN = /\b\d{2}-\d{7}\b/g;
+/** Truncated TINs as forms print them: XXX-XX-6789, ***-**-6789, •••-••-6789. */
+const MASKED_TIN = /[X*•]{3}[- ]?[X*•]{2}[- ]?\d{4}\b/gi;
+/** What a tax form's text keeps although it's digits: form names (W-2, 1099-INT, 1098) and years. */
+const FORM_WORDS =
+  /\b(?:W-[23]c?|1099(?:-[A-Z]{1,4})?|1098(?:-[A-Z])?|5498|1040)\b|(?<![\d\-*X•])(?:19|20)\d{2}(?![\d-])/g;
+
+/**
+ * Tax form text for the model (ADR-0052 §8.2): every TIN masked, form names and years kept, then the same masking as
+ * any text (digit runs of four or more, emails, phones, streets), then member names as pseudonyms.
+ */
+export function maskTaxFormText(text: string, pseudonyms: AiContext['pseudonyms']): string {
+  const kept: string[] = [];
+  const shielded = text
+    .replace(SSN, MASK)
+    .replace(EIN, MASK)
+    .replace(MASKED_TIN, MASK)
+    .replace(FORM_WORDS, (m) => {
+      kept.push(m);
+      return `${String.fromCharCode(0xe100 + kept.length - 1)}`;
+    });
+  const masked = maskText(shielded).replace(
+    /([-])/g,
+    (_m, c: string) => kept[c.charCodeAt(0) - 0xe100] ?? '',
+  );
+  return pseudonymize(masked, pseudonyms);
 }
 
 /**

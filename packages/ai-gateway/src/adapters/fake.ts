@@ -8,6 +8,7 @@ import { DATE_FORMATS, detectDateFormat, displayName, normalizeDescription } fro
 import type { CompletionRequest, CompletionResponse, ProviderAdapter } from '../types.js';
 import { decodeFakeReceiptImage, parseReceiptText } from '../fake-receipt.js';
 import { parsePayslipText } from '../fake-payslip.js';
+import { parseTaxFormText } from '../fake-tax-form.js';
 import * as receiptV3 from '../tasks/extract-receipt/v3.js';
 
 /** keyword (in payee/description) → category name fragments it points to. */
@@ -264,6 +265,9 @@ export class FakeAdapter implements ProviderAdapter {
           .filter((t): t is string => t !== null);
         return parsePayslipText(fromImages.length ? fromImages.join('\n') : String(input.ocrText ?? ''));
       }
+      case 'extract_tax_form':
+        // Text only: the request never carries images for a tax form.
+        return parseTaxFormText((input.pages as { page: number; text: string }[] | undefined) ?? []);
       case 'propose_categories':
         return fakePropose(input);
       case 'map_tax_lines':

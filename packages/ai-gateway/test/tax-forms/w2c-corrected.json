@@ -1,0 +1,19 @@
+{
+  "forms": [
+    {
+      "kind": "w2",
+      "taxYear": 2025,
+      "corrected": true,
+      "issuerName": "Acme Widgets Inc",
+      "person": "MEMBER_1",
+      "pages": [1],
+      "boxes": {
+        "box1": "8600000",
+        "box2": "999000"
+      },
+      "droppedBoxes": 0,
+      "confidence": 0.95
+    }
+  ],
+  "otherForms": 0
+}

@@ -36,6 +36,8 @@ export const DEFAULT_ROUTING: Record<TaskName | 'ping', TaskRoute> = {
   extract_receipt: { group: 'vision', effort: 'medium', batchSize: 1, maxTokens: 8000, cacheTtlDays: 0 },
   extract_payslip: { group: 'vision', effort: 'medium', batchSize: 1, maxTokens: 4000, cacheTtlDays: 0 },
   extract_bill: { group: 'vision', effort: 'medium', batchSize: 1, maxTokens: 1500, cacheTtlDays: 0 },
+  // Text only (never images), but the documents model reads broken OCR layouts best.
+  extract_tax_form: { group: 'vision', effort: 'medium', batchSize: 1, maxTokens: 8000, cacheTtlDays: 0 },
   ping: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 200, cacheTtlDays: 0 },
 };
 
