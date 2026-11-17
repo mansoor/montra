@@ -161,6 +161,61 @@ export const TaxFormResultDto = z.object({
 });
 export type TaxFormResultDto = z.infer<typeof TaxFormResultDto>;
 
+/** A suggested employer or account for a form read from a file, with why it's offered. */
+export const TaxFormCandidateDto = z.object({
+  employerId: Id.nullable(),
+  accountId: Id.nullable(),
+  name: z.string(),
+  /** In words: "Ends 4471 and earned interest in 2025". */
+  reason: z.string(),
+});
+export type TaxFormCandidateDto = z.infer<typeof TaxFormCandidateDto>;
+
+/** Why a file's form couldn't be read, so its boxes are typed in. */
+export const TAX_FORM_READING_PROBLEMS = [
+  /** AI is off, unavailable, over its budget or local (local readings aren't applied yet). */
+  'ai_unavailable',
+  /** The reading didn't come back usable. */
+  'ai_failed',
+  /** The file itself: corrupt, no text, too many pages, or a scan with no OCR on the server. */
+  'unreadable',
+  /** Read, but no W-2, 1099-INT, 1099-DIV or 1098 was found in it. */
+  'no_form_found',
+  /** Reading it failed and won't be retried. */
+  'failed',
+  /** Nothing has picked it up for a while: a worker may not be running. */
+  'waiting',
+] as const;
+export const TaxFormReadingProblem = z.enum(TAX_FORM_READING_PROBLEMS);
+export type TaxFormReadingProblem = z.infer<typeof TaxFormReadingProblem>;
+
+/**
+ * How a form from a file was read and matched (ADR-0052 §4, §6); null for a form typed in. The masked text never
+ * comes back, only what was done with it.
+ */
+export const TaxFormReadingDto = z.object({
+  /** The files' names, as uploaded. */
+  fileNames: z.array(z.string()),
+  /** The kind was found on the form; false when the person has to say which form it is. */
+  kindKnown: z.boolean(),
+  /** The boxes were read; false while it's being read, or when they're to be typed in. */
+  boxesRead: z.boolean(),
+  problem: TaxFormReadingProblem.nullable(),
+  /** Boxes the reading gave that weren't valid for the kind, and were left out. */
+  droppedBoxes: z.number().int(),
+  /** Who confirmed the reading: a person, or the books agreeing on every check (§5.6). */
+  confirmedBy: z.enum(['person', 'books']).nullable(),
+  /** Matched automatically, and why in words; otherwise the best candidates to pick from. */
+  match: z.object({
+    automatic: z.boolean(),
+    reason: z.string().nullable(),
+    candidates: z.array(TaxFormCandidateDto),
+  }),
+  /** The form this one looks like a copy of (same kind, year, issuer, person and boxes). */
+  copyOfId: Id.nullable(),
+});
+export type TaxFormReadingDto = z.infer<typeof TaxFormReadingDto>;
+
 const TaxFormFields = {
   id: Id,
   /** The books it belongs to: from what it's matched to, the personal books until then. */
@@ -197,6 +252,8 @@ const TaxFormFields = {
   result: TaxFormResultDto,
   /** One per box (§5); empty until it's matched. */
   checks: z.array(TaxFormCheckDto),
+  /** How it was read and matched, for a form from a file; null for one typed in. */
+  reading: TaxFormReadingDto.nullable(),
 };
 
 /** One form received, with the boxes of its kind. */
@@ -309,11 +366,13 @@ export const CreateTaxFormRequest = z.discriminatedUnion('kind', [
 export type CreateTaxFormRequest = z.output<typeof CreateTaxFormRequest>;
 
 /**
- * `PATCH tax-forms/:id`: change what a form says or what it's matched to. The kind can't change; the boxes are checked
- * against it, and replace the old ones whole. `version` is the one read, so two edits can't overwrite each other.
+ * `PATCH tax-forms/:id`: change what a form says or what it's matched to. The boxes are checked against the kind, and
+ * replace the old ones whole. The kind changes only on a form from a file whose reading isn't confirmed (it was misread,
+ * or couldn't be read), and then with its boxes. `version` is the one read, so two edits can't overwrite each other.
  */
 export const UpdateTaxFormRequest = z.strictObject({
   ...IdentificationInput,
+  kind: TaxFormKind.optional(),
   taxYear: TaxYearNumber.optional(),
   boxes: z.record(z.string(), z.unknown()).optional(),
   /** Put aside, or back in Review. */
@@ -361,6 +420,34 @@ export type AcceptTaxFormDifferenceRequest = z.output<typeof AcceptTaxFormDiffer
  */
 export const RecordFromTaxFormRequest = z.strictObject({ amount: MinorDto });
 export type RecordFromTaxFormRequest = z.output<typeof RecordFromTaxFormRequest>;
+
+/** `POST tax-forms/:id/confirm`: Confirm reading (§5.6): a person checked the boxes against the file. */
+export const ConfirmTaxFormReadingRequest = z.strictObject({ version: z.number().int() });
+export type ConfirmTaxFormReadingRequest = z.output<typeof ConfirmTaxFormReadingRequest>;
+
+/** `POST tax-forms/files` (multipart: files, and the fields `year` and `source`): several files at once (TAX-01). */
+export const UploadTaxFormFieldsDto = z.object({
+  /** The year on screen, for a form that prints none. */
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  /** `scan` from the phone's scanner; `upload` otherwise. */
+  source: z.enum(['upload', 'scan']).optional(),
+});
+export type UploadTaxFormFieldsDto = z.output<typeof UploadTaxFormFieldsDto>;
+
+/**
+ * What became of each file: being read (a form in `reading`, which the reading may split into several), or refused as
+ * a file already received, with the form made from it.
+ */
+export const TaxFormUploadDto = z.object({
+  files: z.array(
+    z.object({
+      fileName: z.string(),
+      status: z.enum(['reading', 'duplicate']),
+      formId: Id,
+    }),
+  ),
+});
+export type TaxFormUploadDto = z.infer<typeof TaxFormUploadDto>;
 
 /** `PUT workspaces/:id/accountant-tax-forms`: the owner's setting (ADR-0052 §8.4). Owner only, after a recent sign-in. */
 export const AccountantTaxFormsDto = z.strictObject({ accountantSeesTaxForms: z.boolean() });
