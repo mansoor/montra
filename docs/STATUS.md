@@ -20,9 +20,10 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Requirements**       | 252 IDs in total: **182 done, 56 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
-**Proposed, waiting for the owner:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2,
-1099-INT, 1099-DIV and 1098 read, matched and reconciled against the books, then added to the tax package). Plan
-only, delivered in five PRs once the owner answers its open questions; no code yet.
+**Accepted, waiting on ADR-0053:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2,
+1099-INT, 1099-DIV and 1098 read, matched and reconciled against the books, then added to the tax package), accepted
+by the owner on 2026-11-16. Delivered in five PRs; PR 1 starts after ADR-0053's lightweight permissions (which
+supply `documents.view_members_private`) are implemented and merged. No code yet.
 
 ### Test suite at the end of Phase 11 (green locally)
 

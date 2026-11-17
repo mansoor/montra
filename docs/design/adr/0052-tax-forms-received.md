@@ -1,7 +1,9 @@
 # ADR-0052: Tax forms received, read and reconciled against the books
 
-- Status: proposed
+- Status: accepted (the owner, 2026-11-16; see Decisions at the end)
 - Date: 2026-11-16
+- Depends on: **ADR-0053** (lightweight role-based permissions). Who sees members' forms is its permission
+  `documents.view_members_private` (§8.4). PR 1 of this chain starts after ADR-0053's implementation merges.
 - Builds on: ADR-0048 §3 (a scan is read once; payslips and pseudonym tokens), ADR-0051 (intakes, match memory,
   Review), ADR-0016 / PAY-01..09 (payslips), ADR-0024 (loan tracking), ADR-0025 (retirement and investment accounts),
   ADR-0034 §7b (W-2 boxes, for the employer side), RPT-04 (the year-end tax package)
@@ -44,7 +46,7 @@ What Montra has today:
   `@montra/domain/payroll-year-end.ts`, `necThreshold(year)`). That's the opposite direction from this ADR: here the
   household *receives* forms. The box names are reused where they fit (§2), nothing else.
 
-No requirement covers received tax forms; this ADR proposes `TAX-01..TAX-09` (§12).
+No requirement covers received tax forms; this ADR adds `TAX-01..TAX-10` (§12).
 
 **Montra does not prepare or file returns**, and doesn't calculate tax. It keeps the forms, checks them against the
 books, and hands both to whoever prepares the return.
@@ -417,8 +419,9 @@ The year-end package (RPT-04) gains, for the books it's made for:
 - a line in `README.txt` that Montra checked the forms against the books and didn't prepare a return.
 
 W-2s, 1099-INT/DIV and personal mortgages' 1098s go in the personal package; a rental mortgage's 1098 in that rental's.
-A form the package's maker can't read (§8) is left out, and the README says how many were. Before making the package,
-the panel warns when forms for that year differ or are missing.
+Another member's forms go in only when the package's maker has `documents.view_members_private` (§8.4); their own
+forms always do. A form left out is counted in the README ("2 forms not included: you can't see them"). Before making
+the package, the panel warns when forms for that year differ or are missing.
 
 ### 8. Privacy and security
 
@@ -444,23 +447,36 @@ the panel warns when forms for that year differ or are missing.
 Tax form files are stored like other documents (receipts, payslips): through `StoragePort`, encrypted at rest by the
 storage (S3 with KMS, or the host's disk and bucket encryption on the self-hosted path, ADR-0050), and served only
 through the form, which applies its row-level security. Viewing or downloading the original writes an audit row
-(`tax_form.file_viewed`). Whether to go further and seal them with the workspace key, as payroll's identity documents
-are, is an open question (Q4).
+(`tax_form.file_viewed`). They are not sealed with the workspace key the way payroll's identity documents are (the
+owner's decision 4): sealing would need a short-lived unsealed copy for the doc-worker to read each form, and receipts
+and payslips aren't sealed either.
 
-#### 8.4 Who sees a form (row-level security)
+#### 8.4 Who sees a form (row-level security and permissions)
 
-- **Read**: the person's own login and owners and admins: `app.can_read_restricted(person_member_id)`, the payslip
-  rule (PAY-09), for every kind. While the person isn't known yet, the uploader and owners and admins. Also bounded by
-  the books: `app.can_read_entity(entity_id)`.
-- **Write**: the same people, except viewers. A member can upload and handle their own forms; partners and accountants
-  handle the forms they can read.
+Visibility goes through ADR-0053's lightweight role-based permissions: roles stay as defaults, each a named set of
+permissions, and the owner can switch single permissions on or off per person. The exact permission catalogue, and the
+check used in SQL and in the API, are ADR-0053's; this ADR uses one permission from it:
+
+- **`documents.view_members_private`**: see other household members' private documents. It governs members' tax
+  forms here, and the same permission will govern payslips (PAY-09). Granted by default to **owner and admin only**,
+  so an accountant, partner or member doesn't have it unless the owner switches it on for that person.
+
+The rules:
+
+- **Read**, for every kind: the person the form is for (their own login), and anyone holding
+  `documents.view_members_private`. This replaces `app.can_read_restricted(person_member_id)`, which encodes the same
+  default as a fixed role rule. While the person isn't known yet: the uploader, and anyone holding the permission.
+  Also bounded by the books: `app.can_read_entity(entity_id)`.
+- **Write**: the same people, except viewers. A member can upload and handle their own forms; anyone else handles the
+  forms they can read.
+- **The tax package** includes members' forms only for a maker holding the permission (§7.3).
 - `tax_form_target` and `tax_form_waiver` follow their form's (and, for a waiver, the target's) rule.
 - The checks read payslips and postings under the reader's own row-level security. Someone who can read a W-2 can
   already read that member's payslips, so a check never reveals more than the form.
 - Expected forms are listed only for employers and accounts the reader can see: a member doesn't learn that another
   member is expecting a W-2.
-- These defaults are the narrowest; the owner may want account forms (1099-INT/DIV, 1098) visible to everyone who can
-  see the account, and accountants given read access (Q2, Q3).
+- Account forms (1099-INT/DIV, 1098) follow the same rule as W-2s, not the account's visibility (the owner's decision
+  2): they carry the person's name and often their SSN.
 
 #### 8.5 Retention
 
@@ -486,9 +502,18 @@ Not synced (ADR-0013). The phone reads and acts online, like intakes and imports
 
 ### 11. Notifications
 
-None in this ADR's delivery until the owner decides (Q1). The screen and the package panel show what's missing.
+One reminder a year, nothing else (the owner's decision 1):
 
-### 12. Requirements (proposed)
+- A new notification type, `tax_forms_missing`, sent on **16 February** (after the 31 January and 15 February issue
+  dates) for the previous tax year, listing the expected forms not yet received or waived (§7.1). Nothing is sent
+  when none are missing.
+- Each recipient's list holds only the forms they can see (§8.4): a member is told about their own W-2, and an owner
+  about everyone's.
+- In-app, push and email, switched on or off like every other type (NOT-01). It is sent by the existing notification
+  sweep, once per workspace and year.
+- Otherwise the screen and the package panel show what's missing.
+
+### 12. Requirements
 
 A new section, **3.8 Tax forms received**, in `docs/requirements/R1-requirements.md`, added by the first PR:
 
@@ -501,24 +526,27 @@ A new section, **3.8 Tax forms received**, in `docs/requirements/R1-requirements
 | TAX-05 | Differences, unmatched and unread forms are Review items; a difference can be fixed, re-read or accepted with a note.         | M        |
 | TAX-06 | A Tax forms screen per year lists the forms expected (from payslips, interest, dividends and mortgages) against those received. | M      |
 | TAX-07 | The year-end tax package includes the forms, an index and the reconciliation.                                                 | M        |
-| TAX-08 | Names and SSNs never reach the AI provider; only the last four digits of an SSN are kept; a member's forms are visible only to them and owners. | M |
+| TAX-08 | Names and SSNs never reach the AI provider; only the last four digits of an SSN are kept; a member's forms are visible only to them and those with `documents.view_members_private`. | M |
+| TAX-10 | One reminder on 16 February lists the expected forms not yet received.                                                        | S        |
 | TAX-09 | The phone scans forms and shows and acts on their results.                                                                    | S        |
 
 ## Delivery
 
-Five PRs, in order, each reviewable alone and green on `pnpm verify`. Migration numbers are the next free ones when
-each lands (0059 today).
+Five PRs, in order, each reviewable alone and green on `pnpm verify`. **PR 1 starts after ADR-0053's implementation
+merges**, because its row-level security uses that ADR's permission check. Migration numbers are the next free ones
+when each lands; ADR-0053's migrations come first, so `0059` and `0060` below are placeholders.
 
 1. **Contracts, storage and typed forms** (TAX-01 typing only, TAX-02 partly, TAX-08 storage and RLS).
-   - Migration `0059_tax_forms.sql`: `app.tax_form`, `app.tax_form_target`, `app.tax_form_waiver`, RLS (§8.4),
-     grants; `match_memory.kind` widened with its write policy; the two `ref.tax_line` rows and the categories' tax
+   - Migration `0059_tax_forms.sql`: `app.tax_form`, `app.tax_form_target`, `app.tax_form_waiver`, RLS (§8.4) through
+     ADR-0053's check for `documents.view_members_private`, grants; `match_memory.kind` widened with its write policy; the two `ref.tax_line` rows and the categories' tax
      lines (§5.7) as reference data and a data update.
    - Kysely types, `packages/schemas` DTOs (`TaxFormDto`, `TaxFormBoxesDto` per kind, `TaxFormCheckDto`,
      `TaxYearDto`), `@montra/domain/tax-forms.ts` (box schemas, `parseTaxFormBoxes`, thresholds, the wage base).
    - API: `GET tax-forms?year=`, `POST tax-forms` (typed in), `PATCH`, `DELETE` (to Trash), waivers. No reading yet.
    - R1 section 3.8 and `status.json` entries; traceability regenerated.
-   - Tests: `packages/db` RLS tests (a member can't see another member's W-2; the uploader sees an unmatched one;
-     viewers can't write; staff roles' grants unchanged); schema and box-parser tests; API tests for typing a form in.
+   - Tests: `packages/db` RLS tests (a member can't see another member's W-2; an accountant can't by default and can
+     once the owner switches `documents.view_members_private` on for them; switching it off for an admin hides the
+     forms; the uploader sees an unmatched one; viewers can't write; staff roles' grants unchanged); schema and box-parser tests; API tests for typing a form in.
    - Phone: no.
 2. **Reconciliation, expected forms, Review and the web screen** (TAX-04, TAX-05, TAX-06; TAX-03 by hand).
    - `reconcileW2`, `reconcile1099Int`, `reconcile1099Div`, `reconcile1098`, the reading checks, the known
@@ -547,13 +575,17 @@ each lands (0059 today).
      Review's "Tax forms to check". Pure modules in `src/features/tax-forms.ts` with unit tests.
    - Migration: none.
    - Phone: yes. Not run on a device until the owner tries it on the LAN build.
-5. **The tax package and retention** (TAX-07, TAX-08 retention).
+5. **The tax package, the reminder and retention** (TAX-07, TAX-10, TAX-08 retention).
    - `runTaxPackage` gains `tax-forms/`, `tax-forms.csv`, `tax-forms-check.pdf` and the README line; the package panel's
      warning on web and phone; `retain_until` on form files; backups and restore cover the three tables.
-   - Tests: the package's contents for a personal and a rental book, a restricted form left out for a maker who can't
-     read it, retention dates, a backup round trip.
-   - Migration: none, unless the owner says yes to reminders (Q1), which adds a notification type (`0060`).
-   - Phone: the package panel's warning only.
+   - The `tax_forms_missing` notification (§11): its type, its setting on web and phone, and the 16 February send in
+     the notification sweep.
+   - Migration `0060_tax_forms_reminder.sql`: the notification type (and its default preference rows, if the
+     notification tables need them).
+   - Tests: the package's contents for a personal and a rental book; another member's form left out for a maker
+     without `documents.view_members_private` and included for one with it; retention dates; a backup round trip; the
+     reminder sent once on 16 February, listing only what each recipient can see, and not sent when nothing is missing.
+   - Phone: the package panel's warning and the notification's setting.
 
 `docs/STATUS.md` and `status.json` are updated in each PR; `CHANGELOG.md` when the chain is done.
 
@@ -596,21 +628,27 @@ each lands (0059 today).
 - **Calculate the return's figures (Schedule B totals, the 1040 lines).** That's tax preparation, which Montra doesn't
   do.
 
-## Open questions for the owner
+- **A fixed role rule for accountants** (a yes or no on whether the accountant role sees members' forms). The owner
+  chose permissions instead (ADR-0053), so the answer can differ per person without another fixed rule.
+- **Seal the files with the workspace key**, as payroll's ID copies are. That would keep a readable SSN out of the
+  storage bucket, but the doc-worker would need a short-lived unsealed copy for each reading, and receipts and payslips
+  aren't sealed either.
 
-1. **Reminders:** should Montra remind about expected forms that haven't arrived? Proposed: one notification on
-   16 February (after the 31 January and 15 February issue dates) listing what's missing, and nothing else. Yes or no?
-2. **Who sees a form:** only the person it's for and owners/admins, for every kind (proposed), or should a 1099-INT,
-   1099-DIV or 1098 be visible to everyone who can see that account?
-3. **Accountants:** may the accountant role see members' W-2s and other forms, and include them in a tax package?
-   Today the accountant can't see members' payslips. Proposed: no, unless you say yes.
-4. **Sealing the files:** keep tax form files encrypted the way receipts and payslips are (storage encryption,
-   proposed), or also seal them with the workspace key like payroll's ID copies, so that your own storage bucket never
-   holds a readable SSN? Sealing needs a short-lived unsealed copy for reading each form.
-5. **Never images to the AI:** tax forms are read from masked text only, even when "allow documents to the AI" is on.
-   Accept weaker reading of poor photos for that (proposed), or allow images for 1099s and 1098s, which often print a
-   truncated SSN?
-6. **Record from the form:** offer the one-step entry that reclassifies a valued investment account's growth as
-   dividend or interest income from its 1099 (proposed), or only report "not tracked"?
-7. **The 1098's escrow box (10):** show a property-tax difference as information only (proposed), or make it a Review
-   item like the interest?
+## Decisions (owner, 2026-11-16)
+
+1. **Reminders: yes.** One notification on 16 February listing the expected forms that are missing, and nothing else
+   (§11). PR 5 adds it, with migration `0060`.
+2. **Who sees a form:** the person it's for, plus owners and admins, for every kind (§8.4).
+3. **Accountants: decided through permissions, not a role rule.** A small role-based permission model comes first, as
+   ADR-0053. Roles stay as defaults, each a named set of permissions, and the owner can switch single permissions on or
+   off per person. Here:
+   - seeing members' forms is `documents.view_members_private`, the same permission that will govern payslips, granted
+     by default to owner and admin only;
+   - including members' forms in a tax package needs the same permission;
+   - ADR-0053 is a dependency, and PR 1 of this chain starts after its implementation merges. The exact permission
+     catalogue is ADR-0053's.
+4. **Files are stored like other documents** (storage encryption), not sealed (§8.3).
+5. **Images never go to the AI** for tax forms; masked text only (§6, §8.2).
+6. **Record from the form is offered**: the one-step entry that reclassifies a valued investment account's growth as
+   dividend or interest income (§5.6).
+7. **The 1098's box 10 is information only**, never a Review item by itself (§5.5).
