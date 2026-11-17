@@ -8,6 +8,7 @@ import {
   initialTarget,
   isSettled,
   isWorking,
+  STATEMENT_ACCEPT,
   targetOptions,
   waitingImport,
 } from './intakes';
@@ -119,5 +120,11 @@ describe('statements and bills to file (ADR-0051)', () => {
     expect(isWorking(intake({ status: 'importing' }))).toBe(true);
     expect(isSettled(intake({ status: 'done' }))).toBe(true);
     expect(isSettled(intake({ status: 'review' }))).toBe(false);
+  });
+
+  it('takes every statement type and photos on the Statements screen', () => {
+    for (const ext of ['.csv', '.xlsx', '.xls', '.pdf', '.qif', '.ofx', '.qfx', '.jpg', '.png', '.webp'])
+      expect(STATEMENT_ACCEPT.split(',')).toContain(ext);
+    expect(STATEMENT_ACCEPT).toContain('image/jpeg');
   });
 });

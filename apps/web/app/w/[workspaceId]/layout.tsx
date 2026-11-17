@@ -60,6 +60,8 @@ export default async function WorkspaceLayout({
         },
         { href: `${base}/receipts`, label: t('nav.receipts'), icon: 'receipts' },
         { href: `${base}/payslips`, label: t('nav.payslips'), icon: 'payslips' },
+        // ADR-0051: statements without an account, and the import history.
+        { href: `${base}/statements`, label: t('nav.statements'), icon: 'imports' },
         { href: `${base}/upcoming`, label: t('nav.upcoming'), icon: 'upcoming' },
         { href: `${base}/recurring`, label: t('nav.recurring'), icon: 'recurring' },
       ],
@@ -78,7 +80,6 @@ export default async function WorkspaceLayout({
         { href: `${base}/reports`, label: t('nav.reports'), icon: 'reports' },
         { href: `${base}/ask`, label: t('nav.ask'), icon: 'ask' },
         { href: `${base}/journal`, label: t('nav.journal'), icon: 'journal' },
-        { href: `${base}/imports`, label: t('nav.imports'), icon: 'imports' },
         { href: `${base}/rules`, label: t('nav.rules'), icon: 'rules' },
         { href: `${base}/members`, label: t('nav.by_member'), icon: 'members' },
         { href: `${base}/insights`, label: t('nav.insights'), icon: 'insights' },
@@ -86,7 +87,7 @@ export default async function WorkspaceLayout({
     },
   ];
   // AUTH-17: members record money; setting the books up isn't theirs, so those pages stay out of their menu.
-  const setupOnly = new Set(['ask', 'journal', 'imports', 'rules'].map((p) => `${base}/${p}`));
+  const setupOnly = new Set(['ask', 'journal', 'imports', 'statements', 'rules'].map((p) => `${base}/${p}`));
   const shown =
     workspace.role === 'member'
       ? groups.map((g) => ({ ...g, items: g.items.filter((i) => !setupOnly.has(i.href)) }))

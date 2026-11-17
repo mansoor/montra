@@ -43,6 +43,7 @@ const WORKSPACE_PAGES = [
   '/ask',
   '/journal',
   '/imports',
+  '/statements',
   '/rules',
   '/members',
   '/insights',
