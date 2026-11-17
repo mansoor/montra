@@ -43,6 +43,10 @@ go, or lose data on the way out and back in.
    reason, and a test fails when a new table is neither. Secrets (`workspace_key`, `ai_credential`), caches, feeds and read models
    rebuilt by triggers are excluded. `_enc` columns are decrypted into the archive, because a backup under a key the user doesn't hold
    would be useless to them. An archive holds what its requester can read under RLS; only owners can take a whole workspace.
+   Files carry no books or person, so RLS lets every member read their rows: an archive of less than the whole workspace (a
+   partner's, or one set of books) takes a file only with a row it holds that holds it, such as a payslip, receipt, scan or I-9
+   document. The columns that hold files are listed in `FILE_HOLDERS` (`apps/api/src/data/catalog.ts`), and a test pins the list
+   against the schema.
 
 8. **Password protection without storing the password.** The key is derived in the request (scrypt, N=2^17) and wrapped by the KMS
    port for the job. The file is `MONTRABK1\n`, a JSON line of KDF parameters, the AES-256-GCM ciphertext of the ZIP, then the tag.

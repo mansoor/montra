@@ -831,8 +831,8 @@ Where PR 5 had to differ from or add to the text above, and why:
   keeps forms, targets, waivers and files. What PR 5 adds: files have no books or person, so row-level security lets
   every member read their rows, and a partner's backup of their books (or an owner's of one set of books) took every
   tax form's file. Such an archive now takes a tax form's file only with a form it holds. Payslip files have the same
-  gap, untouched here (see the PR). A restored workspace starts with the accountant setting off, as every new
-  workspace does: the owner turns it on again.
+  gap, untouched here (see the PR); closed afterwards for every kind of file (ADR-0019 §7, `FILE_HOLDERS`). A restored
+  workspace starts with the accountant setting off, as every new workspace does: the owner turns it on again.
 
 ## Consequences
 
