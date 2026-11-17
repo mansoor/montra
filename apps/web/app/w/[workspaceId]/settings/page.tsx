@@ -17,6 +17,8 @@ import { PlanningSettings } from '@/components/settings/planning-settings';
 import { NotificationSettings } from '@/components/settings/notification-settings';
 import { PrivacyPanel, SecurityActivity } from '@/components/settings/privacy-security';
 import { StorageSettings } from '@/components/settings/storage-settings';
+import { FamilyVaultCard } from '@/components/settings/family-vault';
+import { canSeeVault } from '@/lib/vault';
 import { CategorySettings } from '@/components/settings/category-settings';
 import { SETTINGS_TABS, settingsGroupOf, settingsTabOf } from '@/lib/settings-sections';
 import { isAdminRole } from '@/lib/settings';
@@ -166,12 +168,25 @@ export default async function SettingsPage({
       </div>
     );
   } else if (tab === 'storage') {
-    const [destination, failed] = isOwner
+    const [destination, failed, billing] = isOwner
       ? await load((api) =>
-          Promise.all([api.getStorageDestination(workspaceId), api.listStorageItems(workspaceId, 'failed')]),
+          Promise.all([
+            api.getStorageDestination(workspaceId),
+            api.listStorageItems(workspaceId, 'failed'),
+            api.getBilling(workspaceId),
+          ]),
         )
-      : [null, []];
-    body = <StorageSettings workspace={workspace} destination={destination} failed={failed} />;
+      : [null, [], null];
+    // ADR-0054: the Family Document Vault, for owners and admins whose plan has it.
+    const vault = canSeeVault(workspace.role, billing?.entitlements.features ?? [])
+      ? { connection: await load((api) => api.getVaultConnection(workspaceId)) }
+      : null;
+    body = (
+      <div className="space-y-5">
+        <StorageSettings workspace={workspace} destination={destination} failed={failed} />
+        {vault && <FamilyVaultCard workspace={workspace} connection={vault.connection} />}
+      </div>
+    );
   } else if (tab === 'billing') {
     const [billing, offers] = await load((api) => Promise.all([api.getBilling(workspaceId), api.getPlans()]));
     body = <BillingPanel workspaceId={workspaceId} billing={billing} offers={offers} />;

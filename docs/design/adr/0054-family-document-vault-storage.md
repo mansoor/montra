@@ -1,6 +1,7 @@
 # ADR-0054: The household's Family Document Vault as a storage provider
 
-- Status: accepted (the owner, 2026-11-17; see "Owner's answers" and "Defaults taken" at the end)
+- Status: accepted (the owner, 2026-11-17; see "Owner's answers", "Owner's clarification" and "Defaults taken" at the
+  end)
 - Date: 2026-11-17
 - Builds on: ADR-0031 (your own storage: the destination port, the outbox, retries, sealed secrets), ADR-0050 (hosting
   anywhere), ADR-0019 (backups, archives, retention, purge), ADR-0016 and ADR-0041 (restricted payslips), ADR-0034 §3
@@ -61,30 +62,29 @@ Points already agreed between the owner and the vault's plan:
 
 ## Decision
 
-### 1. A new destination kind, `fdv`, that can be the record
+### 1. A new destination kind, `fdv`: additional storage, and the household's record
 
-The vault becomes a third destination kind beside `s3` and `webdav`. Unlike them, it can be **the record** of a
-document, which ADR-0031 §1 ruled out for the others. For each connection the owner chooses one of two roles:
+The vault becomes a third destination kind beside `s3` and `webdav`. It is **additional** storage: Montra's own storage
+(and the owner's S3/WebDAV mirror, ADR-0031) go on as they are. Unlike a mirror, a document **filed** in the vault is
+the household's **record** of it, which ADR-0031 §1 ruled out for the others (owner's clarification, 2026-11-17).
 
-| Role                     | What Montra keeps                                                                                                    | Who has the record                   |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| **Copy to the vault**    | Its own copy of every file, as today. The vault gets a copy, like a mirror.                                          | Montra                               |
-| **The vault is the record** | Once a file is filed in the vault, Montra keeps a backup copy where the owner chose (below), and a reference to the vault document. | The vault, for the kinds sent there |
+What happens to each group of documents (§6) is chosen per group, as one of three **modes**:
 
-For "the vault is the record", the backup copy is one of:
+| Mode                            | What Montra keeps                                                                     | In the vault                       |
+| ------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------- |
+| **Not sent**                    | Its copy, locally, as today.                                                          | Nothing                            |
+| **Sent, keep a local copy**     | Its copy, locally, as today.                                                          | The filed document: the record     |
+| **Sent, no local copy**         | Nothing of its own once the vault has filed it (§5); it asks the vault, then a person, when it needs the file again (§5a). | The filed document: the record |
 
-- **At Montra** (the default): Montra's own copy stays. Nothing that reads files changes; the vault is the household's
-  record and Montra's copy is a convenience copy.
-- **At your own storage**: the workspace's S3/WebDAV destination (ADR-0031) holds the copy, and Montra's own copy is
-  removed once the vault has filed the file *and* the mirror has copied it.
-- **None ("vault only")**: Montra's copy is removed once the vault has filed it. Offered behind a warning that the
-  vault's settings then decide what Montra can still open; a file the vault won't return is asked for again (§5a).
+**"Local"** means where Montra normally keeps the file: its own storage (`StoragePort`). The owner's S3/WebDAV mirror
+keeps following its own per-kind setting (ADR-0031), whatever a group's mode. For a group sent with no local copy,
+Settings says when the mirror is set to copy that kind, so the mirror will still hold a copy; Montra never changes the
+mirror's setting on its own.
 
 So a workspace may have a vault connection **and** an S3/WebDAV connection. The one-per-workspace unique index becomes
 one per class: at most one mirror (`s3` or `webdav`) and at most one vault. ADR-0031 §3 already allowed for dropping it.
 
-What goes to the vault is chosen by document group (§6), not by Montra's internal file kinds. Copy and record are per
-connection, not per group, to keep the choice understandable; a later change can make them per group if asked for.
+What goes to the vault is chosen by document group (§6), not by Montra's internal file kinds.
 
 **One direction only** (owner's answer 2). Documents enter Montra first: finance papers such as statements, payslips,
 W-2s and 1099s are uploaded or scanned into Montra, read there, and then sent to the vault. Montra never imports a
@@ -93,8 +93,9 @@ reads back from the vault is only what Montra itself sent there.
 
 ### 2. Connecting: Montra makes the key, the vault owner registers it
 
-Only a workspace **owner** connects, changes the role or the groups, starts a move, or disconnects, with a recent
-sign-in (AUTH-09), as for taking a backup. Admins can see the status and press "Try again" (default taken, D4).
+Only a workspace **owner** connects, chooses a sent mode for payslips or tax documents, starts a move, replaces the
+key or disconnects, with a recent sign-in (AUTH-09), as for taking a backup. Admins can see the status and press "Try
+again" (default taken, D4).
 
 1. **Montra makes the key pair** in the API process when the owner chooses "Family Document Vault" in Settings →
    Storage. It is a fresh pair for this workspace, never one used before. The private key is sealed at once (§7); the
@@ -163,13 +164,14 @@ For each outbox row, oldest first, with **one request in flight per connection**
    - the vault refused it (a kind Montra may no longer send, a type it doesn't keep, too large): `not_kept` with the
      reason in words, and Montra keeps its copy.
 
-### 5. The vault is the record: removing Montra's copy
+### 5. Sent with no local copy: removing Montra's copy
 
-Only for a connection whose role is "the vault is the record", and only when **all** of these hold:
+Only for a file whose group's mode is **sent, no local copy** (§1), and only when **all** of these hold:
 
 1. the vault reports the item **filed** (never while it is only in the Inbox: an Inbox item can still be removed or
    lapse);
-2. the backup copy exists where the owner chose: Montra's own (nothing to do), or the mirror reports the file `done`;
+2. if the owner's S3/WebDAV mirror is set to copy that kind, the mirror reports the file `done` (it copies from
+   Montra's copy, so that copy stays until then); a mirror that doesn't copy the kind is not waited for;
 3. the file has no open Review item or running job;
 4. the connection is active.
 
@@ -208,21 +210,22 @@ than failing quietly or keeping only a reference.
 - A file that is missing never changes the books: the transactions, payslips and tax forms read from it stay as they
   are.
 
-### 6. What goes: one switch per document group (owner's answer 3)
+### 6. What goes: one mode per document group (owner's answer 3, owner's clarification)
 
-The vault connection has a per-workspace setting, **"Send these to the vault"**, with one switch per group. Groups are
-what a person recognises; each covers some of Montra's file kinds (`app.file.kind`):
+The vault connection has a per-workspace setting, **"Send these to the vault"**, with one mode per group (§1): not
+sent, sent and keep a local copy, or sent with no local copy. Groups are what a person recognises; each covers some of
+Montra's file kinds (`app.file.kind`):
 
-| Group                | Montra file kinds                                                                                 | Default |
-| -------------------- | ------------------------------------------------------------------------------------------------- | ------- |
-| **Receipts**         | `receipt`                                                                                         | on      |
-| **Statements**       | `statement` (PDFs and images; CSV, XLS and OFX exports stay in Montra, §3)                        | on      |
-| **Bills**            | `invoice`: household bills, a business's bills, and invoice attachments, which Montra stores as one kind | on |
-| **Payslips**         | `payslip`                                                                                         | **off** |
-| **Tax documents**    | `tax_form` (W-2, 1099, 1098; ADR-0052)                                                            | **off** |
-| **Other documents**  | `lease` and `other`                                                                               | off     |
+| Group                | Montra file kinds                                                                                 | Default mode |
+| -------------------- | ------------------------------------------------------------------------------------------------- | ------------ |
+| **Receipts**         | `receipt`                                                                                         | sent, keep a local copy |
+| **Statements**       | `statement` (PDFs and images; CSV, XLS and OFX exports stay in Montra, §3)                        | sent, keep a local copy |
+| **Bills**            | `invoice`: household bills, a business's bills, and invoice attachments, which Montra stores as one kind | sent, keep a local copy |
+| **Payslips**         | `payslip`                                                                                         | **not sent** |
+| **Tax documents**    | `tax_form` (W-2, 1099, 1098; ADR-0052)                                                            | **not sent** |
+| **Other documents**  | `lease` and `other`                                                                               | not sent     |
 
-Never sent, whatever the switches say:
+Never sent, whatever the modes say:
 
 - **Sealed copies of identity documents** (ADR-0034 §3), including the documents kept with an I-9: they are ciphertext
   the vault couldn't read, and are never mirrored either.
@@ -232,7 +235,8 @@ Never sent, whatever the switches say:
 (and, for tax forms, accountants when the owner allows it). In the vault, where they land and who sees them is the
 vault's decision (§3). So:
 
-- both switches are off by default, and only an owner can turn them on (an admin can turn them off);
+- both are not sent by default, and only an owner can choose a sent mode for them (an admin can set them back to not
+  sent);
 - turning one on shows a warning: "Montra will send these to your vault. Where they go and who can see them there is
   set in the vault, not in Montra." The choice is recorded in the security log;
 - a member's payslip or tax form is sent with that member as the hint for whom it belongs to, when the vault accepts
@@ -323,10 +327,9 @@ One migration (number assigned when it is written), append-only and backward com
   - the unique index `storage_destination_one` is replaced by two partial unique indexes: one for `kind in ('s3',
     'webdav')` and one for `kind = 'fdv'`;
   - for `fdv`, `config` holds the vault's address and pinned identity, Montra's app and key identifiers there, the
-    public key and fingerprint, the household's name as last reported, the role (`copy` or `record`), the
-    backup choice (`montra`, `own_storage`, `none`), the group switches and each group's vault kind, and the detail
-    switch; `secret_enc` holds the sealed private key(s); `delete_with_montra` is reused; `file_kinds` is derived from
-    the groups that are on, so the existing trigger logic keeps working;
+    public key and fingerprint, the household's name as last reported, each group's mode (§1) and vault
+    kind, and the detail switch; `secret_enc` holds the sealed private key(s); `delete_with_montra` is reused;
+    `file_kinds` is derived from the groups that are sent (either mode), so the existing trigger logic keeps working;
   - `status` gains `needs_vault` (waiting for approval, paused or removed on the vault's side, or a key waiting to be
     confirmed), with `last_error` in words.
 - **`app.vault_connection_state`** (one row per vault connection): the feed position and when it was last read, the
@@ -399,8 +402,8 @@ connection, a run does, in order:
 
 **Backfill.** "Also send the N documents already in Montra" (on connect) and "Send existing documents" later add
 `queued` rows for every file of the groups that are on, not in the trash. Settings shows how long it will take at the vault's
-current daily limit, and suggests asking the vault's owner for a temporary higher allowance. A **move** is the same
-backfill on a "record" connection: §5 then removes each source as its document is filed. The job resumes from the
+current daily limit, and suggests asking the vault's owner for a temporary higher allowance. For a group sent with no
+local copy it is a **move**: §5 then removes each source as its document is filed. The job resumes from the
 first row not yet received after a crash; asking about the id before resending makes a second send harmless anyway.
 
 ### 13. What people see
@@ -409,10 +412,10 @@ first row not yet received after a crash; asking about the id before resending m
 
 - connecting in three steps (§2): the public key and fingerprint with Copy, what to do in the vault, then paste the
   code; "Waiting for <name> to approve Montra in the vault" until it is approved;
-- the role and backup choice, in words: "Keep Montra's copy too" (default), "Keep a copy in my own storage", "Keep it
-  only in the vault" (with its warning);
-- "Send these to the vault": the group switches (§6), each with the vault kind it maps to; payslips and tax documents
-  off, owner-only to turn on, with the warning in §6;
+- "Send these to the vault": each group's mode (§6) in words, "Don't send", "Send, and keep a copy in Montra" or
+  "Send, and don't keep a copy in Montra" (with §5a's warning, and a note when the owner's own storage still copies
+  that kind), each sent group with the vault kind it maps to; payslips and tax documents not sent, owner-only to send,
+  with the warning in §6;
 - status: sending, in someone's Inbox, filed, not taken, failed, out of reach; the last error in words; any hold for the
   daily limit; the clock warning; "Check again", "Try again", "Send again", "Replace the key", "Bring files back",
   "Disconnect";
@@ -437,9 +440,9 @@ A new subsection, **13.6 Family Document Vault**, in `docs/requirements/R1-requi
 | ID     | Requirement                                                                                                                                       | Priority |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | VLT-01 | An owner connects the workspace to the household's Family Document Vault with a key pair Montra makes for that workspace, checks the vault's code and identity, and sees whether it's approved. | S |
-| VLT-02 | The owner chooses, with one switch per group (receipts, statements, bills, payslips, tax documents, other), what goes to the vault and how each group maps to the vault's kinds, and whether the vault is a copy or the record, with a backup copy at Montra, at their own storage, or none. The vault decides where each document lands. | S |
+| VLT-02 | The owner chooses, for each group (receipts, statements, bills, payslips, tax documents, other), whether it is not sent (kept only locally), sent with a local copy kept, or sent with no local copy, and how each sent group maps to the vault's kinds. A document filed in the vault is the household's record; "local" is Montra's own storage, and the owner's own S3/WebDAV keeps its own setting. The vault decides where each document lands. | S |
 | VLT-03 | Documents are sent one at a time after Montra has finished with them, are never filed twice, and show their vault status per file and in total. | S |
-| VLT-04 | Existing documents can be copied or moved; a move removes Montra's copy only after the vault has filed the document and the chosen backup exists. | S |
+| VLT-04 | Existing documents can be sent; for a group sent with no local copy, Montra removes its copy only after the vault has filed the document. | S |
 | VLT-05 | Documents go one way, Montra to the vault; the vault's changes to documents Montra sent are read and shown, and win on the document but never change the books; a document the vault no longer shows is marked so, without a reason. | S |
 | VLT-06 | A vault-held document opens through a single-use link made when the person clicks, never stored, logged or sent.                                   | S |
 | VLT-07 | Payslips and tax documents go to the vault only if an owner turns them on after a warning; sealed copies of identity documents, logos and exports never go. | M |
@@ -471,13 +474,13 @@ A new subsection, **13.6 Family Document Vault**, in `docs/requirements/R1-requi
 - **RLS and catalog tests** for the new tables (owners and admins only; excluded from archives with a reason).
 - **Web** unit tests and one Playwright spec against the fake vault (connect, send, file, open). **Phone** pure-module
   tests for the status line and badges.
-- **One live run** against the vault's development build behind HTTPS, by hand, before the record role is enabled
+- **One live run** against the vault's development build behind HTTPS, by hand, before "sent, no local copy" is enabled
   (the vault refuses plain http from another machine).
 
 ## Delivery
 
 A chain of small PRs into `develop`, each with its dev bump. The vault's sending, reading, view links and deletes have
-all shipped, so the record role can ship whole.
+all shipped, so "sent, no local copy" can ship whole.
 
 **Precondition: the vault's first client release tarball (0.9.0-dev.60)** (owner's answer 1). Montra depends on the
 client package, with its fake vault, as a tarball attached to the vault's public releases and installed by its pinned
@@ -492,12 +495,12 @@ URL (no registry, no token), and never on the vault's private repository. Until 
 2. **Connecting** (needs the package): the dependency, key making and sealing, the code check and identity pinning, the
    connection test, waiting for approval, replacing the key, disconnecting; the web Settings card; security log rows.
    Nothing is sent yet.
-3. **Sending, as a copy**: the outbox and `storage.vault` job, ids and status checks, caps and retries, notifications,
-   the group switches with the payslip and tax-document warning, the copy backfill; status in Settings and badges on
-   files.
+3. **Sending, with a local copy kept**: the outbox and `storage.vault` job, ids and status checks, caps and retries,
+   notifications, each group's mode (not sent, or sent and keep a local copy) with the payslip and tax-document
+   warning, the backfill; status in Settings and badges on files.
 4. **Keeping in step**: the changes feed, the vault's metadata on files, out of reach, starting over; view links.
-5. **The vault as the record**: `FileBytes` and moving the readers onto it, removing sources (§5), missing files and
-   "Files to provide again" (§5a), the move backfill, bringing files back, deletes.
+5. **Sent with no local copy**: the third mode, `FileBytes` and moving the readers onto it, removing sources (§5),
+   missing files and "Files to provide again" (§5a), the move backfill, bringing files back, deletes.
 6. **Phone**: status, badges, opening vault-held documents, and providing missing files again.
 
 ### As built: PR 1 (2026-11-17)
@@ -557,12 +560,82 @@ connection yet. Where PR 1 differs from or adds to the text above, and why:
   existing documents" carries the count the person was shown, so a different number is refused; disconnecting takes
   `anyway` for §10's "Disconnect anyway". `VaultConnectionDto.stage` is `register`, `approval` or `connected` (§2).
 
+### As built: PR 2 (2026-11-17)
+
+Connecting, over the vault's client package `@fdv/client` (MIT), installed in `apps/api` from the vault's public GitHub
+release by pinned URL, `v0.9.0-dev.59/fdv-client-0.9.0-dev.59.tgz` (no registry, no token); pnpm records its integrity
+in the lockfile. The precondition above named 0.9.0-dev.60; dev.59 is the first tarball and has everything connecting
+needs (dev.60 adds downloading the exact file sent and routing to the Inbox of the person a document is about, which the
+later PRs use). Where PR 2 differs from or adds to the text above, and why:
+
+- **The package.** It is ESM only; the API is already ESM (`"type": "module"`, NodeNext), so it imports it directly,
+  and the Docker image installs it from the lockfile like any dependency. Its fake vault (`@fdv/client/testing`) is
+  loaded only with `FAMILY_VAULT_FAKE=on`. Its contract scenarios (`./testing/contract`) hold a vault's own API to the
+  client and need vitest 5 or 6; Montra is on vitest 4 and has no vault API to hold to them, so they aren't used. A
+  pnpm hook (`.pnpmfile.cjs`) drops that optional vitest peer: otherwise pnpm links it to the workspace's vitest and
+  the API's production install carries vitest, vite and esbuild. Both Dockerfiles copy the hook.
+- **Where the code is.** `apps/api/src/storage/vault/`: `keys.ts` (the pair and its sealed shape), `transport.ts` (the
+  `fetch` the package is given), `connection.ts` (reading a code, identifying the vault, the signed connection test,
+  failures as `VaultError`), `vault.service.ts`, `vault.controller.ts` (`/v1/workspaces/:id/family-vault`), and
+  `fake.ts`. `VaultError` gains `invalid_code`, `other_key` and `not_a_vault`, and `VaultCheck` gains `actingAs`.
+- **Checking a code**, in §2's order: the package reads it strictly; its fingerprint must be the one of the key Montra
+  is waiting on; its address must pass the guard; the server's own description must say it is a Family Document Vault
+  that takes apps and give its installation id, which is pinned (a vault too old to give one isn't connected to), and a
+  code that names another installation is refused; then the signed connection test. A different installation id later,
+  in the description or the connection test, stops the connection (`needs_vault`, with the words to show).
+- **The address guard** refuses plain http and loopback even though the package itself accepts http to the same
+  machine (D6), and also `.local` and single-label names. Montra's `fetch` uses the mirror's guarded lookup on every
+  socket, follows no redirect, has a connect and a total timeout and refuses answers over 4 MB. The package turns any
+  failed `fetch` into "offline", so the transport keeps why it refused a request, and the adapter says that instead.
+- **Waiting for approval** is `stage: approval`, `status: needs_vault`; "Check again" (owners and admins, D4) moves it
+  on. Checking on its own needs the job (PR 3): `next_check_at` is set (15 minutes while waiting, daily once connected)
+  and nothing runs it yet; before a code is pasted it is `infinity`.
+- **A paused or removed app, a key the vault doesn't know or hasn't confirmed, the clock**: the vault's refusals for
+  these stop the connection with the vault's own words. A paused app's connection test answers but says it is paused,
+  which Montra treats the same. A vault Montra can't reach counts as a failed check, and five in a row turn the
+  connection `failing`.
+- **Replacing the key differs from §2.** The vault's API lets an app add a key of its own, and lets an owner add one in
+  the vault's Settings and get a new code. The package's fake (dev.59) has neither, and Montra writes no vault-shaped
+  answers, so PR 2 builds the second, which the fake can stand in for: "Replace the key" makes a new pair, sealed beside
+  the current one (`key_rotation = made`); Settings shows its public key and fingerprint; someone in the vault adds it
+  to Montra's app there; the owner pastes the code the vault gives. That code must name the new key and the same app,
+  at the pinned vault, and the connection test must pass signed with the new key. Then Montra switches, drops the old
+  key from `secret_enc` and asks the vault to retire it (best effort: the vault retires an older key by itself a few
+  days after a newer one is first used). Until then the current key signs, and "Keep the current key" cancels.
+  `registered` is unused until the app-added route is in the fake; the vault's side is asked for it.
+- **The key in use.** The package signs with a PKCS#8 key handed to it as bytes, not a `KeyObject` (§7). Montra unseals
+  it for one request or run and zeroes those bytes when the connection closes.
+- **Logging.** The API has no structured request log with redaction paths to extend. Nothing in the adapter logs, the
+  transport records nothing, and `VaultError.detail` carries a status and a code at most. A test watches the process's
+  output through a check and a bad paste.
+- **Nothing is sent.** A vault connection's `mirror_files` stays off, so the trigger on `app.file` queues nothing. Each
+  group is stored with its default mode (owner's clarification); choosing modes and mapping groups to the vault's kinds
+  come with sending (PR 3), so the Settings card shows the connection only, and says that nothing is sent yet.
+- **No migration.** The owner's clarification needs none: the role and the backup choice were only ever in `config`
+  (jsonb) and the DTOs, never in a column, so they are simply gone. Each group's mode is in `config` too.
+  `VaultGroupSettingDto` has `mode` instead of `on`; `VaultConnectionDto` loses `role` and `backup` and gains `newKey`
+  and `actingAs`; `ReplaceVaultKeyRequest` gains `cancel`. No client used them yet.
+- **The plan key stays hidden.** `familyVault` stays in `FEATURES_NOT_YET_SHOWN`, as a connection sends nothing yet;
+  the billing page lists it from PR 3. The Settings card shows to owners and admins whose plan has `familyVault`; only
+  an owner changes anything.
+- **Tests and the e2e run** use the package's fake inside the API process, behind `FAMILY_VAULT_FAKE=on`, which
+  production refuses to start with. With it on, a dev-only route (`POST /v1/dev/fake-vault/apps`) stands in for the
+  vault's owner registering Montra, so Playwright connects end to end. Paused, removed and approved apps, and an added
+  key, are set through the fake's own state, as its types offer. A dropped connection is a `fetch` that rejects;
+  redirects, size limits and timeouts are made by a local http server, against the transport with a test-only loopback
+  switch that no setting reaches.
+- **Security log rows**: `vault_connected` (host, household, approved, fingerprint), `vault_changed` (a key made or a
+  new key cancelled), `vault_key_replaced` and `vault_disconnected`. None carries a key or a code.
+- **Disconnecting** deletes the connection with its sealed key, state and outbox. It doesn't ask the vault to remove
+  Montra; Settings says to do that in the vault. `anyway` is taken and changes nothing until files can be held only in
+  the vault (PR 5).
+
 ## Consequences
 
 - Montra can hand a household's papers to the place the household already keeps them, without being the only copy.
-- For the record role, Montra reads files from somewhere it doesn't run. Every reader of file bytes moves to
+- For a group sent with no local copy, Montra reads files from somewhere it doesn't run. Every reader of file bytes moves to
   `FileBytes`, and each one must cope with "not available now". This is the largest part of the work and the reason
-  ADR-0031 rejected moving files in the first place; the default backup ("Keep Montra's copy too") avoids it entirely.
+  ADR-0031 rejected moving files in the first place; the default mode ("sent, keep a local copy") avoids it entirely.
 - The vault's owner, not Montra, decides what Montra may send, read back and download, where each document lands and
   who sees it there, and can change it at any time. A vault-only file can become unreadable from Montra without
   warning; Montra then asks a person for it (§5a). Montra's books never depend on reading it again, because files are
@@ -588,6 +661,9 @@ connection yet. Where PR 1 differs from or adds to the text above, and why:
   only option because the owner wants the vault to be where documents live.
 - **Make the vault the record with no backup choice**: Montra would depend on the vault's settings and limits for every
   file read. Kept as an option behind a warning instead, with missing files asked for again (§5a).
+- **One role for the whole connection** (a copy, or the record with a backup at Montra, at the owner's storage or
+  none), as first written: replaced by a mode per group (owner's clarification, 2026-11-17), so a household can keep a
+  local copy of some kinds and not others, and send some kinds and not others.
 - **Montra writes its own signer and client** in this public repo: it would put the vault's API shape in public code
   that Montra then has to keep in step by hand. The owner chose the vault's published package instead.
 - **Keep only a reference** ("in the vault as …") in backups and tax packages for files Montra no longer holds:
@@ -601,8 +677,8 @@ connection yet. Where PR 1 differs from or adds to the text above, and why:
 - **A long-lived token instead of signed requests**: not what the vault offers, and a token in Montra's database is
   worth more to a thief than a key that only signs within a short window.
 - **One key pair for all of Montra**: a single leak would reach every household's vault. One per workspace, as agreed.
-- **Send files as soon as they're uploaded**: Montra would often need them back for reading and Review, which in the
-  record role would cost the vault's daily read cap. Sending after processing avoids it.
+- **Send files as soon as they're uploaded**: Montra would often need them back for reading and Review, which for a
+  group sent with no local copy would cost the vault's daily read cap. Sending after processing avoids it.
 - **Reuse `storage_mirror_item` for the vault**: its states (copied or not) don't fit Inbox, filed, not kept and out of
   reach, and mixing them would complicate the mirror's job. A separate outbox keeps both simple.
 
@@ -626,6 +702,31 @@ The three questions that blocked the build, as the owner answered them:
    vault decide whose inbox it goes to." Applied in §3 and §6: one switch per group, payslips and tax documents allowed
    when an owner turns them on (off by default, with a warning), and no Inbox or person chosen by Montra.
 
+## Owner's clarification (2026-11-17)
+
+After PR 1, the owner said how the vault should sit beside Montra's storage, in these words:
+
+> Its a choice when someone add vault as the storage, they can choose to keep a local copy of all documents or
+> selective documents by type or not even send a specific type to vault and just keep it locally. When I say locally,
+> it refers to MonTra provided default storage or the user provided S3/Webdav and vault is additional storage and
+> anything filed there are records but user can choose to keep or not not keep local copy and choose to send or not
+> send any specific type of document.
+
+Applied as follows (§1, §5, §6, §11, §13, VLT-02, VLT-04):
+
+- The connection-wide role (copy or record) and the record role's backup choice are gone. Each group has a **mode**:
+  not sent (kept only locally); sent, keep a local copy; or sent, no local copy.
+- A document **filed** in the vault is the household's record in either sent mode. The vault wins on the document's
+  name and kind (§9) and never changes the books.
+- **"Local"** is read as where Montra normally keeps the file, its own storage. The owner's S3/WebDAV mirror keeps
+  following its own per-kind setting; for a group sent with no local copy, Settings says when the mirror still copies
+  that kind, and Montra doesn't change the mirror's setting on its own. Montra's copy is removed only once the vault has
+  filed the document and, when the mirror copies that kind, the mirror has it (§5).
+- Defaults: receipts, statements and bills are sent with a local copy kept; payslips, tax documents and other papers
+  are not sent. Only an owner may choose a sent mode for payslips and tax documents, after the warning (§6). Sealed
+  copies of identity documents, logos and exports are never sent.
+- D9's connection-wide "vault only" option becomes the third mode, per group.
+
 ## Defaults taken (owner may revisit)
 
 The other questions were not answered; the ADR's proposal stands for each:
@@ -638,10 +739,10 @@ The other questions were not answered; the ADR's proposal stands for each:
 - **D7. Fixed outbound addresses:** none published; the vault's address restriction for Montra stays off.
 - **D8. Types the vault can't keep** (CSV, XLS and OFX statement exports): they stay in Montra only, shown as "not a
   type the vault keeps"; no PDF rendering.
-- **D9. "Keep it only in the vault":** offered in the first version, behind its warning, now that missing files are
-  asked for again (§5a).
+- **D9.** Folded into the per-group mode by the owner's clarification: "sent, no local copy" is offered for each group,
+  behind its warning, now that missing files are asked for again (§5a). It is no longer a connection-wide option.
 - **D10. Deletes:** the vault's document is kept by default when Montra deletes a file for good, at a retention date
   too; "Also delete it in the vault" is an opt-in switch.
 - **D11. Plans:** a `familyVault` feature key, on for the existing plans, as `ownStorage` is.
-- **D12. Order:** build now. The vault's view links and deletes have shipped, so the record role ships whole; the
+- **D12. Order:** build now. The vault's view links and deletes have shipped, so "sent, no local copy" ships whole; the
   vault's automatic filing comes next on its side and needs no Montra change.

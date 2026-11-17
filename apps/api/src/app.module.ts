@@ -63,6 +63,10 @@ import { STORAGE_PORT, storageProvider } from './storage/storage.js';
 import { StorageController } from './storage/storage.controller.js';
 import { StorageDestinationsService } from './storage/storage-destinations.service.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
+import { fakeVaultTransport } from './storage/vault/fake.js';
+import { guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
+import { FakeVaultController, VaultController } from './storage/vault/vault.controller.js';
+import { VaultService } from './storage/vault/vault.service.js';
 import { JobQueue, Worker } from './jobs/queue.js';
 import { ImportsService } from './imports/imports.service.js';
 import { ImportJobs } from './imports/import-jobs.js';
@@ -210,6 +214,8 @@ export class AppModule {
       NotificationsController,
       DataController,
       StorageController,
+      VaultController,
+      ...(config.FAMILY_VAULT_FAKE ? [FakeVaultController] : []),
       RestoresController,
       AccountDataController,
       NotificationPrefsController,
@@ -317,6 +323,11 @@ export class AppModule {
         BackupService,
         StorageDestinationsService,
         StorageMirrorJobs,
+        VaultService,
+        {
+          provide: VAULT_TRANSPORT,
+          useFactory: () => (config.FAMILY_VAULT_FAKE ? fakeVaultTransport() : guardedVaultTransport()),
+        },
         RestoreService,
         OwnershipService,
         NotificationsService,

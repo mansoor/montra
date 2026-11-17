@@ -15,6 +15,9 @@ describe('VaultError (ADR-0054 §12)', () => {
     'not_allowed_host',
     'refused',
     'failed',
+    'invalid_code',
+    'other_key',
+    'not_a_vault',
   ];
 
   it('holds for the daily caps without counting them as failures', () => {

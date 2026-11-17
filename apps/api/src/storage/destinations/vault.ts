@@ -5,9 +5,10 @@ import type { Readable } from 'node:stream';
  * steps a mirror doesn't have. A mirror only writes and deletes paths; the vault takes documents under an id Montra
  * chooses, says what became of them, reads back what Montra sent, opens them for a person, and deletes them.
  *
- * This is Montra's side of the seam, in Montra's words, and nothing more. The adapter (PR 2 onwards) is written over
- * the vault's own published client package, which does the signing (owner's answer 1); no vault code, route, field or
- * code lives in this repository. Until that package is published there is no adapter, and nothing can open one.
+ * This is Montra's side of the seam, in Montra's words, and nothing more. The adapter (`../vault/connection.ts`) is
+ * written over the vault's own published client package, `@fdv/client`, which does the signing (owner's answer 1); no
+ * signer or vault client of Montra's own lives in this repository. PR 2 builds the connection test (`check`); sending,
+ * reading and the rest come with the PRs that use them.
  */
 export interface VaultDestination {
   readonly kind: 'fdv';
@@ -72,6 +73,8 @@ export interface VaultCheck {
   dailyResetAt: Date | null;
   /** Montra's clock against the vault's, measured from this answer (§7). */
   clockOffsetMs: number | null;
+  /** Whom Montra acts as in the vault, by the name the vault shows. The vault decides where documents land. */
+  actingAs: string | null;
 }
 
 /** What Montra says about a document (§3, D5). Never transactions, ledger data, or anything a person didn't upload. */
@@ -140,6 +143,12 @@ export type VaultErrorCode =
   | 'not_allowed_host'
   /** The vault turned down this request; not retried. */
   | 'refused'
+  /** §2: the pasted code isn't a connection code at all. */
+  | 'invalid_code'
+  /** §2: the pasted code names a key other than the one Montra made for this workspace. */
+  | 'other_key'
+  /** §2: the server at the code's address isn't a Family Document Vault that takes apps. */
+  | 'not_a_vault'
   /** The vault failed; retried with backoff. */
   | 'failed';
 
@@ -155,6 +164,11 @@ const MESSAGES: Record<VaultErrorCode, string> = {
   unreachable: 'Montra couldn’t reach the vault. Check its address, and that it’s reachable over https.',
   not_allowed_host: 'Montra can’t connect to that address. Use the vault’s public address, over https.',
   refused: 'The vault turned this down.',
+  invalid_code:
+    'That isn’t a connection code from Family Document Vault. Copy the whole code and paste it again.',
+  other_key:
+    'That code is for a different key from the one Montra made for this workspace. Register the key shown here, then paste the code the vault gives for it.',
+  not_a_vault: 'The address in that code isn’t a Family Document Vault that accepts connected apps.',
   failed: 'The vault couldn’t take this just now.',
 };
 

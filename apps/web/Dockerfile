@@ -21,7 +21,7 @@ ENV PNPM_HOME=/pnpm \
 RUN corepack enable
 WORKDIR /repo
 # `next build` type-checks everything in tsconfig.json, including vitest.config.ts, which imports vitest.shared.ts.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json vitest.shared.ts ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs tsconfig.base.json vitest.shared.ts ./
 COPY packages ./packages
 COPY apps/web ./apps/web
 # `--filter .` keeps the root dev dependencies (TypeScript) available to the package builds.
