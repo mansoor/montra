@@ -1206,11 +1206,27 @@
   ],
   "TAX-01": [
     "partial",
-    "Typing a form in (POST tax-forms; W-2, 1099-INT, 1099-DIV, 1098) with its employer or accounts and the person; upload, scan and several at once come with reading (ADR-0052 PR 3)"
+    "Typing a form in: POST tax-forms and the web Tax forms screen (W-2, 1099-INT, 1099-DIV, 1098) with its employer or accounts and the person; upload, scan and several at once come with reading (ADR-0052 PR 3)"
   ],
   "TAX-02": [
     "partial",
     "Boxes kept per kind as minor-unit amounts, checked by one schema per kind (parseTaxFormBoxes in @montra/domain); a corrected form marks the one it replaces superseded. Reading once and refusing duplicate files come with PR 3"
+  ],
+  "TAX-03": [
+    "partial",
+    "Matched by hand to an employer or account(s) and a person (PATCH tax-forms/:id, the web editor); a match by hand teaches the memory (tax_issuer by EIN, last four or name; tax_person by a keyed hash of the SSN’s last four). Accountants don’t match a W-2 to an employer. Automatic matching comes with reading (PR 3)"
+  ],
+  "TAX-04": [
+    "done",
+    "reconcileW2, reconcile1099Int, reconcile1099Div, reconcile1098 in @montra/domain (tax-form-checks.ts): one check per box with the rule, the explanation and the payslips, transactions, loan payments or entries behind it; $1.00 tolerance, reading checks, year boundary, box 12 C, box 2a, box 4, YTD cross-check, not tracked. Worked out on read; an accountant’s W-2 uses app.tax_form_payslip_totals. Interest and dividends found by Schedule B’s tax line first (interestEarned too)"
+  ],
+  "TAX-05": [
+    "done",
+    "GET tax-forms/review and Review’s “Tax forms to check” on the web: forms that differ or misread (not accepted), wait for a match or a person, or couldn’t be read. Fix the books through the drill-down, fix the boxes, change the match, accept a box’s difference with a note (POST tax-forms/:id/accept, holds while the difference stays), Record from the form on a valued account (POST/DELETE tax-forms/:id/record). The phone’s Review is TAX-09"
+  ],
+  "TAX-06": [
+    "done",
+    "Web /tax-forms per year (Reports group; USD workspaces; not viewers): expected forms inferred from payslips, interest, dividends and mortgages at the IRS thresholds (expectedTaxForms), grouped by person, each Received with its result, Not yet or Won’t come (waivers); received forms not expected; type a form in; a form’s checks with drill-downs"
   ],
   "TAX-08": [
     "partial",
