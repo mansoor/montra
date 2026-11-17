@@ -62,6 +62,12 @@ const MEMBER_WRITES = new Set([
   'POST sync/push',
   // Which books their own calendar shows (FLOW-05): a view choice, not a change to the books.
   'PUT calendar/books',
+  // Their own tax forms (ADR-0052 §8.4): row-level security keeps them to the forms that are theirs.
+  'POST tax-forms',
+  'PATCH tax-forms/:id',
+  'DELETE tax-forms/:id',
+  'POST tax-forms/waivers',
+  'DELETE tax-forms/waivers/:id',
 ]);
 
 /** True when a member may make this request. Reads are always allowed; RLS decides what they see. */

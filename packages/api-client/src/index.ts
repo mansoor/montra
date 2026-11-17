@@ -425,6 +425,21 @@ export type ListIntakesInput = z.input<typeof ListIntakesQuery>;
 export type ResolveIntakeInput = z.input<typeof ResolveIntakeRequest>;
 export type { IntakeDto };
 
+// ----- Tax forms received (ADR-0052) -----
+import type {
+  AccountantTaxFormsDto,
+  CreateTaxFormRequest,
+  CreateTaxFormWaiverRequest,
+  TaxFormDto,
+  TaxFormWaiverDto,
+  TaxYearDto,
+  UpdateTaxFormRequest,
+} from '@montra/schemas';
+export type CreateTaxFormInput = z.input<typeof CreateTaxFormRequest>;
+export type UpdateTaxFormInput = z.input<typeof UpdateTaxFormRequest>;
+export type CreateTaxFormWaiverInput = z.input<typeof CreateTaxFormWaiverRequest>;
+export type { AccountantTaxFormsDto, TaxFormDto, TaxFormWaiverDto, TaxYearDto };
+
 // ----- Payroll (PRL-01..05, ADR-0034) -----
 export type CreatePersonInput = z.input<typeof CreatePersonRequest>;
 export type UpdatePersonInput = z.input<typeof UpdatePersonRequest>;
@@ -942,6 +957,10 @@ export class ApiClient {
   /** ADR-0044: who must use two-step verification, and the web's idle sign-out. Owners and admins. */
   setWorkspaceSecurity(workspaceId: string, input: WorkspaceSecurityDto) {
     return this.request<WorkspaceSecurityDto>('PUT', this.ws(workspaceId, '/security'), input);
+  }
+  /** ADR-0052 §8.4: whether accountants see members' tax forms. The owner only, after a recent sign-in. */
+  setAccountantTaxForms(workspaceId: string, input: AccountantTaxFormsDto) {
+    return this.request<AccountantTaxFormsDto>('PUT', this.ws(workspaceId, '/accountant-tax-forms'), input);
   }
   listEntities(workspaceId: string) {
     return this.request<{ data: EntityDetailDto[] }>('GET', this.ws(workspaceId, '/entities')).then(
@@ -1539,6 +1558,32 @@ export class ApiClient {
   }
   getJob(workspaceId: string, jobId: string) {
     return this.request<JobDto>('GET', this.ws(workspaceId, `/jobs/${enc(jobId)}`));
+  }
+
+  // ----- Tax forms received (ADR-0052) ----------------------------------------------------------------------
+  /** A year's forms and waivers; each login sees the forms row-level security allows (§8.4). */
+  getTaxYear(workspaceId: string, year: number) {
+    return this.request<TaxYearDto>('GET', this.ws(workspaceId, `/tax-forms${query({ year })}`));
+  }
+  getTaxForm(workspaceId: string, id: string) {
+    return this.request<TaxFormDto>('GET', this.ws(workspaceId, `/tax-forms/${enc(id)}`));
+  }
+  /** A form typed in, with no file. */
+  createTaxForm(workspaceId: string, input: CreateTaxFormInput) {
+    return this.request<TaxFormDto>('POST', this.ws(workspaceId, '/tax-forms'), input);
+  }
+  updateTaxForm(workspaceId: string, id: string, input: UpdateTaxFormInput) {
+    return this.request<TaxFormDto>('PATCH', this.ws(workspaceId, `/tax-forms/${enc(id)}`), input);
+  }
+  /** To the Trash for 30 days. */
+  deleteTaxForm(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/tax-forms/${enc(id)}`));
+  }
+  createTaxFormWaiver(workspaceId: string, input: CreateTaxFormWaiverInput) {
+    return this.request<TaxFormWaiverDto>('POST', this.ws(workspaceId, '/tax-forms/waivers'), input);
+  }
+  deleteTaxFormWaiver(workspaceId: string, id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/tax-forms/waivers/${enc(id)}`));
   }
 
   // ----- Reconciliation (DE-08) ----------------------------------------------------------------------------

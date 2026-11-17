@@ -2,7 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { groupTemplates, newId, systemAccountTemplates, type Trx } from '@montra/db';
 import { sql } from 'kysely';
 import type { EntityType } from '@montra/domain';
-import type { CreateWorkspaceRequest, WorkspaceDto, WorkspaceSecurityDto } from '@montra/schemas';
+import type {
+  AccountantTaxFormsDto,
+  CreateWorkspaceRequest,
+  WorkspaceDto,
+  WorkspaceSecurityDto,
+} from '@montra/schemas';
 import { Db } from '../db/database.js';
 import type { AuthUser } from '../auth/auth.js';
 import { forbidden } from '../common/errors.js';
@@ -198,6 +203,49 @@ export class WorkspacesService {
         .executeTakeFirst();
       if (!row) throw forbidden();
       return { mfaPolicy: row.mfa_policy, idleTimeoutMinutes: row.idle_timeout_minutes };
+    });
+  }
+
+  /**
+   * The owner's setting that lets accountants see members' tax forms and include them in tax packages (ADR-0052 §8.4).
+   * The controller checks the owner and a recent sign-in; a trigger refuses anyone else too. Each change is audited
+   * with its old and new values.
+   */
+  async setAccountantTaxForms(
+    user: AuthUser,
+    workspaceId: string,
+    req: AccountantTaxFormsDto,
+  ): Promise<AccountantTaxFormsDto> {
+    return this.db.run({ workspaceId, userId: user.id }, async (trx) => {
+      const before = await trx
+        .selectFrom('app.workspace')
+        .select('accountant_sees_tax_forms')
+        .where('id', '=', workspaceId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!before) throw forbidden();
+      if (before.accountant_sees_tax_forms === req.accountantSeesTaxForms) return req;
+      const row = await trx
+        .updateTable('app.workspace')
+        .set({ accountant_sees_tax_forms: req.accountantSeesTaxForms })
+        .where('id', '=', workspaceId)
+        .returning('accountant_sees_tax_forms')
+        .executeTakeFirst();
+      if (!row) throw forbidden();
+      await trx
+        .insertInto('app.audit_log')
+        .values({
+          workspace_id: workspaceId,
+          actor_user_id: user.id,
+          action: 'workspace.accountant_tax_forms_changed',
+          subject_type: 'workspace',
+          subject_id: workspaceId,
+          diff: JSON.stringify({
+            accountantSeesTaxForms: [before.accountant_sees_tax_forms, row.accountant_sees_tax_forms],
+          }),
+        })
+        .execute();
+      return { accountantSeesTaxForms: row.accountant_sees_tax_forms };
     });
   }
 }

@@ -274,6 +274,22 @@ describe('Ory Kratos sessions (AUTH-01..09)', () => {
     expect(partner.status).toBe(201);
   });
 
+  it('asks the owner to sign in again before accountants see tax forms (ADR-0052 §8.4)', async () => {
+    add('tax-stale', { authenticatedAt: new Date(Date.now() - 30 * 60_000) });
+    add('tax-fresh');
+    const path = (id: string) => `/v1/workspaces/${id}/accountant-tax-forms`;
+    const stale = await call('POST', '/v1/workspaces', 'tax-stale', { name: 'Home', baseCurrency: 'USD' });
+    const refused = await call('PUT', path(stale.body.id), 'tax-stale', { accountantSeesTaxForms: true });
+    expect(refused).toMatchObject({ status: 403, body: { code: 'reauth.required' } });
+    expect(
+      (await call('GET', `/v1/workspaces/${stale.body.id}`, 'tax-stale')).body.accountantSeesTaxForms,
+    ).toBe(false);
+    const fresh = await call('POST', '/v1/workspaces', 'tax-fresh', { name: 'Home', baseCurrency: 'USD' });
+    expect(
+      (await call('PUT', path(fresh.body.id), 'tax-fresh', { accountantSeesTaxForms: true })).status,
+    ).toBe(200);
+  });
+
   it('lists devices and signs out other sessions, effective immediately (AUTH-07)', async () => {
     add('laptop', { identityId: 'id-multi', email: 'multi@example.com' });
     add('phone', { identityId: 'id-multi', email: 'multi@example.com' });

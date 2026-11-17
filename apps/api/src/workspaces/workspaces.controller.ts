@@ -1,9 +1,14 @@
 import { Body, Controller, Get, Inject, Param, Post, Put, UseGuards } from '@nestjs/common';
-import { CreateWorkspaceRequest, WorkspaceSecurityDto, type WorkspaceDto } from '@montra/schemas';
+import {
+  AccountantTaxFormsDto,
+  CreateWorkspaceRequest,
+  WorkspaceSecurityDto,
+  type WorkspaceDto,
+} from '@montra/schemas';
 import { AuthGuard, Ctx, requireRecentAuth, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { parse } from '../common/zod.js';
 import { notFound } from '../common/errors.js';
-import { requireWorkspaceAdmin } from '../common/roles.js';
+import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { WorkspacesService } from './workspaces.service.js';
 
 @Controller('v1/workspaces')
@@ -43,5 +48,21 @@ export class WorkspacesController {
     requireWorkspaceAdmin(ctx);
     requireRecentAuth(ctx);
     return this.workspaces.setSecurity(ctx.user, workspaceId, parse(WorkspaceSecurityDto, body));
+  }
+
+  /**
+   * Whether accountants see members' tax forms and include them in tax packages (ADR-0052 §8.4). The owner only, with a
+   * recent sign-in (AUTH-09): it opens members' SSNs and pay to someone outside the household.
+   */
+  @Put(':workspaceId/accountant-tax-forms')
+  @UseGuards(WorkspaceGuard)
+  setAccountantTaxForms(
+    @Ctx() ctx: RequestContext,
+    @Param('workspaceId') workspaceId: string,
+    @Body() body: unknown,
+  ): Promise<AccountantTaxFormsDto> {
+    requireRole(ctx, 'owner');
+    requireRecentAuth(ctx);
+    return this.workspaces.setAccountantTaxForms(ctx.user, workspaceId, parse(AccountantTaxFormsDto, body));
   }
 }

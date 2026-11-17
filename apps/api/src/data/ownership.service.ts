@@ -71,7 +71,7 @@ export class OwnershipService {
   async trash(ctx: Ctx): Promise<TrashItemDto[]> {
     return this.db.run(ctx, async (trx) => {
       const { rows } = await sql<{
-        kind: 'transaction' | 'receipt';
+        kind: TrashItemDto['kind'];
         id: string;
         title: string;
         deleted_at: Date;
@@ -87,6 +87,10 @@ export class OwnershipService {
         select 'receipt', r.id, coalesce(r.merchant, r.merchant_raw, 'Receipt'), r.deleted_at, r.total_minor::text, r.currency
           from app.receipt r
          where r.workspace_id = ${ctx.workspaceId} and r.deleted_at is not null
+        union all
+        select 'tax_form', f.id, coalesce(f.issuer_name, 'Tax form'), f.deleted_at, null, null
+          from app.tax_form f
+         where f.workspace_id = ${ctx.workspaceId} and f.deleted_at is not null
          order by deleted_at desc
          limit 500`.execute(trx);
       return rows.map((r) => ({
@@ -101,9 +105,22 @@ export class OwnershipService {
     });
   }
 
-  async restoreFromTrash(ctx: Ctx, kind: 'transaction' | 'receipt', id: string): Promise<void> {
+  async restoreFromTrash(ctx: Ctx, kind: TrashItemDto['kind'], id: string): Promise<void> {
     if (kind === 'transaction') {
       await this.transactions.restore(ctx, id);
+      return;
+    }
+    if (kind === 'tax_form') {
+      await this.db.run(ctx, async (trx) => {
+        const res = await trx
+          .updateTable('app.tax_form')
+          .set({ deleted_at: null })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', id)
+          .where('deleted_at', 'is not', null)
+          .executeTakeFirst();
+        if (!res.numUpdatedRows) throw notFound('Tax form');
+      });
       return;
     }
     await this.db.run(ctx, async (trx) => {

@@ -4970,6 +4970,7 @@
   "transfer.to": "To",
   "trash.empty": "Nothing in the trash.",
   "trash.kind_receipt": "Receipt",
+  "trash.kind_tax_form": "Tax form",
   "trash.kind_transaction": "Transaction",
   "trash.restore": "Restore",
   "trash.restore_named": "Restore {name}",

@@ -26,6 +26,7 @@ import {
   CreateTaxPackageRequest,
   RequestDeletionRequest,
   SaveBackupScheduleRequest,
+  TRASH_KINDS,
 } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -124,11 +125,7 @@ export class DataController {
     @Param('kind') kind: string,
     @Param('id') id: string,
   ): Promise<void> {
-    await this.ownership.restoreFromTrash(
-      dbCtx(ctx),
-      parse(z.enum(['transaction', 'receipt']), kind),
-      parse(Id, id),
-    );
+    await this.ownership.restoreFromTrash(dbCtx(ctx), parse(z.enum(TRASH_KINDS), kind), parse(Id, id));
   }
 
   @Get('storage')
