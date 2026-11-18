@@ -129,4 +129,69 @@ describe('ReceiptUploadQueue', () => {
     expect(removed).toEqual([page(1).uri]);
     await expect(q.enqueue({ id: 'r2', pages: [] })).rejects.toThrow(/at least one page/);
   });
+
+  it('asks before making a receipt from a possible duplicate, and makes it once the person says so', async () => {
+    const created: string[][] = [];
+    let uploads = 0;
+    const removed: string[] = [];
+    const q = new ReceiptUploadQueue({
+      store: new MemoryStore(),
+      uploader: {
+        async uploadPage(p) {
+          uploads++;
+          // The API's `duplicateOf`: the second page is the bytes of a file Montra already holds.
+          return { fileId: `file-${p.name}`, duplicate: p.name === 'page-2.jpg' };
+        },
+        async createReceipt(input) {
+          created.push(input.fileIds);
+        },
+      },
+      removeFile: async (uri) => void removed.push(uri),
+    });
+    await q.enqueue({ id: 'r1', pages: [page(1), page(2)] });
+    expect(await q.process()).toEqual({ sent: [], failed: [], offline: false });
+    expect(created).toEqual([]);
+    expect(removed).toEqual([]);
+    expect((await q.list())[0]).toMatchObject({ state: 'duplicate', error: null });
+    // Waiting for the person: another run neither uploads again nor makes it.
+    await q.process();
+    expect(uploads).toBe(2);
+    expect(created).toEqual([]);
+    await q.useAnyway('r1');
+    expect((await q.process()).sent).toEqual(['r1']);
+    expect(created).toEqual([['file-page-1.jpg', 'file-page-2.jpg']]);
+    expect(uploads).toBe(2);
+    expect(await q.list()).toEqual([]);
+  });
+
+  it('discards a possible duplicate without making anything from it', async () => {
+    const created: string[][] = [];
+    const q = new ReceiptUploadQueue({
+      store: new MemoryStore(),
+      uploader: {
+        uploadPage: async (p) => ({ fileId: `file-${p.name}`, duplicate: true }),
+        createReceipt: async (input) => void created.push(input.fileIds),
+      },
+    });
+    await q.enqueue({ id: 'r1', pages: [page(1)] });
+    await q.process();
+    await q.discard('r1');
+    await q.process();
+    expect(created).toEqual([]);
+    expect(await q.list()).toEqual([]);
+  });
+
+  it('makes a receipt at once when no page is a duplicate', async () => {
+    const created: string[][] = [];
+    const q = new ReceiptUploadQueue({
+      store: new MemoryStore(),
+      uploader: {
+        uploadPage: async (p) => ({ fileId: `file-${p.name}`, duplicate: false }),
+        createReceipt: async (input) => void created.push(input.fileIds),
+      },
+    });
+    await q.enqueue({ id: 'r1', pages: [page(1)] });
+    expect((await q.process()).sent).toEqual(['r1']);
+    expect(created).toEqual([['file-page-1.jpg']]);
+  });
 });

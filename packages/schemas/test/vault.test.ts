@@ -4,6 +4,8 @@ import {
   FILE_KINDS,
   MoveToVaultRequest,
   VaultMoveQuery,
+  VaultOpenLinkDto,
+  VaultOpenQuery,
   FileStorageStatesQuery,
   RetryVaultItemsRequest,
   VAULT_GROUP_MODES_OFFERED,
@@ -423,5 +425,16 @@ describe('sending (ADR-0054 §3, D8; As built: PR 3)', () => {
     expect(() => FileStorageStatesQuery.parse({ ids: 'not-an-id' })).toThrow();
     expect(RetryVaultItemsRequest.parse({})).toEqual({});
     expect(() => RetryVaultItemsRequest.parse({ fileIds: [] })).toThrow();
+  });
+});
+
+describe('opening from the phone (ADR-0054 §9, As built: PR 6)', () => {
+  it('answers the link made for the tap and what it opens as, and nothing else', () => {
+    const answer = { url: 'https://vault.example.org/api/v1/app-links/abc', mode: 'download' as const };
+    expect(VaultOpenLinkDto.parse(answer)).toEqual(answer);
+    expect(VaultOpenLinkDto.parse({ ...answer, extra: 'x' })).toEqual(answer);
+    expect(() => VaultOpenLinkDto.parse({ url: 'not a link', mode: 'view' })).toThrow();
+    expect(() => VaultOpenLinkDto.parse({ ...answer, mode: 'print' })).toThrow();
+    expect(VaultOpenQuery.parse({})).toEqual({ mode: 'view' });
   });
 });

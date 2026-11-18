@@ -474,10 +474,14 @@ describe('reading back the exact file Montra sent (ADR-0054 §5)', () => {
     app().paused = 'owner';
     try {
       expect(await files.readById(ctx(), f.id)).toMatchObject({ ok: false, reason: 'vault_unavailable' });
+      // The check is due now, by the database's own clock, which set it: Node's can run a few ms behind.
       const s = (
-        await db.query(`select next_check_at from app.vault_connection_state where workspace_id = $1`, [wsId])
+        await db.query(
+          `select next_check_at <= now() as due from app.vault_connection_state where workspace_id = $1`,
+          [wsId],
+        )
       ).rows[0];
-      expect(new Date(s.next_check_at).getTime()).toBeLessThanOrEqual(Date.now());
+      expect(s.due).toBe(true);
       await db.query(
         `update app.storage_destination set status = 'needs_vault' where workspace_id = $1 and kind = 'fdv'`,
         [wsId],

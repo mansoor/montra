@@ -804,6 +804,18 @@ export type FileStorageStatesResponse = z.infer<typeof FileStorageStatesResponse
 export const VaultOpenQuery = z.object({ mode: z.enum(['view', 'download']).default('view') }).strict();
 export type VaultOpenQuery = z.output<typeof VaultOpenQuery>;
 
+/**
+ * §9 on the phone (PR 6): `POST …/family-vault/files/:fileId/link` answers the single-use link in its body, because a
+ * React Native client can't read a redirect's target. The app opens it in the system browser at once and keeps it
+ * nowhere: not in state, a cache, the offline store or a log. `mode` is what it opens as: `download` when the vault
+ * can't show the type as pages. The answer is `no-store` and never kept for an idempotent replay.
+ */
+export const VaultOpenLinkDto = z.object({
+  url: z.string().url(),
+  mode: z.enum(['view', 'download']),
+});
+export type VaultOpenLinkDto = z.infer<typeof VaultOpenLinkDto>;
+
 /** §5a: one entry in Review, "Files to provide again". */
 export const MissingFileDto = z.object({
   fileId: Id,

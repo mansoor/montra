@@ -29,10 +29,12 @@ export function classifyUploadError(err: unknown, online = false): ErrorKind {
 
 /**
  * What a capture waiting on the phone is doing: uploading now, waiting to retry after an error (with the error and
- * when), gave up, or waiting for a connection.
+ * when), gave up, waiting for a connection, or uploaded and waiting for the person because it looks like a duplicate of
+ * a file already in Montra (ADR-0054, 2026-11-18).
  */
 export type QueuedStatus =
   | { kind: 'uploading' }
+  | { kind: 'duplicate' }
   | { kind: 'retrying'; error: string; at: Date }
   | { kind: 'failed'; error: string }
   | { kind: 'offline' };
@@ -42,6 +44,7 @@ export function queuedStatus(
   online: boolean,
   now: Date,
 ): QueuedStatus {
+  if (item.state === 'duplicate') return { kind: 'duplicate' };
   if (item.state === 'failed') return { kind: 'failed', error: item.error ?? '' };
   if (!online) return { kind: 'offline' };
   if (item.error && item.nextAttemptAt && new Date(item.nextAttemptAt) > now)

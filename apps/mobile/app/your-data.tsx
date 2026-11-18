@@ -1,5 +1,6 @@
 /**
- * Your data on the phone (BAK-04, NFR-06, AUTH-12, OPS-13): back up now and save the file, make a year's tax package (RPT-04, with
+ * Your data on the phone (BAK-04, NFR-06, AUTH-12, OPS-13): the storage in use, the owner's own storage and the Family
+ * Document Vault's status (ADR-0054 §13, read only), back up now and save the file, make a year's tax package (RPT-04, with
  * the tax forms' warning, ADR-0052 §7.3), see the security log, and delete the account. Restoring takes a large upload and a
  * preview worth reading properly, so it's on the web.
  */
@@ -44,6 +45,7 @@ import {
   Small,
   Title,
 } from '../src/ui/components';
+import { VaultStatusCard } from '../src/ui/Vault';
 
 const POLL_MS = 3000;
 
@@ -213,6 +215,8 @@ export default function YourData() {
           ) : null}
         </Card>
       ) : null}
+      {/* ADR-0054 §13: the household's Family Document Vault, read only; changing it is on the web. */}
+      <VaultStatusCard />
 
       {/* A whole-workspace backup is for the owner and admins (AUTH-14). */}
       {can.backUp ? (
