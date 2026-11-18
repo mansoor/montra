@@ -362,6 +362,8 @@ import type {
   VaultExistingDto,
   VaultItemDto,
   FileStorageStateDto,
+  MissingFileDto,
+  FileProvidedAgainDto,
   BusinessProfileDto,
   BusinessRegistrationsDto,
   BusinessRevealField,
@@ -2612,6 +2614,22 @@ export class ApiClient {
       this.ws(workspaceId, `/family-vault/files?ids=${fileIds.map(encodeURIComponent).join(',')}`),
     ).then((r) => r.data);
   }
+  /** Review → "Files to provide again" (ADR-0054 §5a): files the vault didn't give back, for whoever may provide them. */
+  listMissingFiles(workspaceId: string) {
+    return this.request<{ data: MissingFileDto[] }>('GET', this.ws(workspaceId, '/missing-files')).then(
+      (r) => r.data,
+    );
+  }
+  /** The paper again, stored under the same file id. */
+  provideMissingFile(workspaceId: string, fileId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<FileProvidedAgainDto>(
+      'POST',
+      this.ws(workspaceId, `/missing-files/${enc(fileId)}`),
+      form,
+    );
+  }
   listRestores() {
     return this.request<{ data: RestoreJobDto[] }>('GET', '/v1/me/restores').then((r) => r.data);
   }
@@ -3432,6 +3450,8 @@ export type {
   VaultExistingDto,
   VaultItemDto,
   FileStorageStateDto,
+  MissingFileDto,
+  FileProvidedAgainDto,
   DeletionStatusDto,
   ExportJobDto,
   NotificationDto,

@@ -23,6 +23,7 @@ import { sql, type Selectable } from 'kysely';
 import type { Trx, VaultConnectionStateTable } from '@montra/db';
 import { Db } from '../../db/database.js';
 import type { VaultChange, VaultDestination } from '../destinations/vault.js';
+import { clearShownAgain, markOutOfReach, MissingFiles } from '../missing-files.js';
 
 type Ctx = { workspaceId: string; userId: string };
 type State = Selectable<VaultConnectionStateTable>;
@@ -43,6 +44,8 @@ export interface FeedRead {
   outOfReach: number;
   /** Rows the feed described (Montra's own documents). */
   updated: number;
+  /** §5a: files only the vault held that are now missing, because the vault no longer shows them to Montra. */
+  missing: number;
 }
 
 /** What Montra keeps of a feed line (§9): what the vault calls the document. Never amounts, issuers or digits. */
@@ -65,7 +68,10 @@ export function vaultMetaOf(
 
 @Injectable()
 export class VaultFeed {
-  constructor(@Inject(Db) private readonly db: Db) {}
+  constructor(
+    @Inject(Db) private readonly db: Db,
+    @Inject(MissingFiles) private readonly missingFiles: MissingFiles,
+  ) {}
 
   /**
    * Reads the feed from the saved position, a page at a time, until it is caught up, `deadline` passes or `maxPages`
@@ -78,7 +84,14 @@ export class VaultFeed {
     deadline: number,
     maxPages = Number.POSITIVE_INFINITY,
   ): Promise<FeedRead> {
-    const out: FeedRead = { caughtUp: false, pages: 0, restarted: false, outOfReach: 0, updated: 0 };
+    const out: FeedRead = {
+      caughtUp: false,
+      pages: 0,
+      restarted: false,
+      outOfReach: 0,
+      updated: 0,
+      missing: 0,
+    };
     let state = await this.state(ctx, destinationId);
     if (!state) return out;
     if (state.feed_cursor === null && state.full_read_started_at === null) {
@@ -115,6 +128,9 @@ export class VaultFeed {
         const counted = await applyChanges(trx, ctx.workspaceId, destinationId, page.changes, now);
         const finishing = !page.more && fullStart !== null;
         const unseen = finishing ? await markUnseen(trx, ctx.workspaceId, destinationId, fullStart) : 0;
+        // §5a, §9: a file only the vault held that the vault no longer shows is missing; one shown again isn't.
+        const missing = await markOutOfReach(trx, ctx, destinationId);
+        await clearShownAgain(trx, ctx, destinationId);
         await trx
           .updateTable('app.vault_connection_state')
           .set({
@@ -127,9 +143,13 @@ export class VaultFeed {
           .where('workspace_id', '=', ctx.workspaceId)
           .where('destination_id', '=', destinationId)
           .execute();
-        return { ...counted, unseen };
+        return { ...counted, unseen, missing };
       });
       if (!applied) return out;
+      if (applied.missing.length) {
+        out.missing += applied.missing.length;
+        await this.missingFiles.tell(ctx, applied.missing);
+      }
       if (page.restart) out.restarted = true;
       out.updated += applied.updated;
       out.outOfReach += applied.outOfReach + applied.unseen;
@@ -201,6 +221,8 @@ async function applyChanges(
         vault_document_id: sql`coalesce(vault_document_id, ${c.documentId})`,
         received_at: sql`coalesce(received_at, ${now})`,
         filed_at: sql`coalesce(filed_at, ${now})`,
+        // §5: newly filed, so whether Montra's copy goes is looked at (only for a group sent with no local copy).
+        remove_at: sql`case when status = 'filed' then remove_at else ${now}::timestamptz end`,
         // The version Montra's send became; a newer one from the family doesn't replace it.
         vault_version: c.own && c.version ? c.version : sql`vault_version`,
         vault_meta: JSON.stringify(vaultMetaOf(c, now)),

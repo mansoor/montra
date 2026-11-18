@@ -98,8 +98,8 @@ export interface VaultGroupRow {
 }
 
 /**
- * Each group as Settings shows it. An owner chooses not sent or sent with a copy kept (sending with no local copy comes
- * with a later version); an admin may only set payslips or tax documents back to not sent (D4).
+ * Each group as Settings shows it. An owner chooses any of the three modes; an admin may only set payslips or tax
+ * documents back to not sent (D4).
  */
 export function vaultGroupRows(
   d: VaultConnectionDto,
@@ -128,7 +128,8 @@ export function vaultGroupRows(
 
 /**
  * What saving "Send these to the vault" changes: the groups whose mode or kind differs from what is saved (a suggested
- * kind counts as a change for a group that is sent), and the restricted groups that start being sent, for the warning.
+ * kind counts as a change for a group that is sent), the restricted groups that start being sent, for the warning, and
+ * the groups that start going without a local copy, for §5a's warning.
  */
 export function vaultGroupChanges(
   d: VaultConnectionDto,
@@ -136,9 +137,11 @@ export function vaultGroupChanges(
 ): {
   groups: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null }[];
   warn: VaultGroup[];
+  noCopy: VaultGroup[];
 } {
   const groups: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null }[] = [];
   const warn: VaultGroup[] = [];
+  const noCopy: VaultGroup[] = [];
   for (const next of draft) {
     const saved = d.groups.find((g) => g.group === next.group);
     if (!saved) continue;
@@ -152,8 +155,21 @@ export function vaultGroupChanges(
     if (VAULT_RESTRICTED_GROUPS.includes(next.group) && isSentMode(next.mode) && !isSentMode(saved.mode)) {
       warn.push(next.group);
     }
+    if (next.mode === 'sent_no_copy' && saved.mode !== 'sent_no_copy') noCopy.push(next.group);
   }
-  return { groups, warn };
+  return { groups, warn, noCopy };
+}
+
+/**
+ * §1, §13: a group sent with no local copy whose kinds the owner's own S3/WebDAV storage copies: Settings says that
+ * storage still holds a copy (Montra never changes its setting on its own).
+ */
+export function vaultMirrorKeeps(
+  d: Pick<VaultConnectionDto, 'mirrorGroups'>,
+  group: VaultGroup,
+  mode: VaultGroupMode,
+): boolean {
+  return mode === 'sent_no_copy' && d.mirrorGroups.includes(group);
 }
 
 /** §3: groups set to be sent but not mapped to one of the vault's kinds: they aren't sent, and Settings says so. */
@@ -171,6 +187,8 @@ export function vaultCounts(d: VaultConnectionDto): { key: string; n: number }[]
     { key: 'vault.count_not_kept', n: i.notKept },
     { key: 'vault.count_failed', n: i.failed },
     { key: 'vault.count_out_of_reach', n: i.outOfReach },
+    { key: 'vault.count_only_in_vault', n: d.files.onlyInVault },
+    { key: 'vault.count_missing', n: d.files.missing },
   ].filter((c) => c.n > 0);
 }
 
@@ -190,6 +208,8 @@ export function vaultEstimate(e: VaultExistingDto): { key: string; values?: Reco
 export function vaultBadge(
   s: FileStorageStateDto | undefined,
 ): { key: string; tone: 'good' | 'muted' | 'bad'; title: string | null } | null {
+  // §5a: the vault didn't give it back; Review asks for it again.
+  if (s?.missing) return { key: 'vault.badge_missing', tone: 'bad', title: s.missing.reason };
   const v = s?.vault;
   if (!v) return null;
   switch (v.status) {
@@ -199,7 +219,9 @@ export function vaultBadge(
     case 'received':
       return { key: 'vault.badge_inbox', tone: 'muted', title: null };
     case 'filed':
-      return { key: 'vault.badge_filed', tone: 'good', title: vaultName(s) };
+      return s?.location === 'vault'
+        ? { key: 'vault.badge_only_in_vault', tone: 'good', title: vaultName(s) }
+        : { key: 'vault.badge_filed', tone: 'good', title: vaultName(s) };
     case 'not_kept':
       return { key: 'vault.badge_not_kept', tone: 'muted', title: v.notKeptReason };
     case 'failed':
@@ -209,6 +231,24 @@ export function vaultBadge(
     default:
       return null;
   }
+}
+
+/**
+ * §5: a page of a document whose file only the vault holds isn't shown from Montra (the API answers 409
+ * `file.in_vault`): the viewer says so instead, with "Open it in the vault" when the vault has a document to open.
+ * Null for a file Montra holds (or whose state isn't known), which is shown as always.
+ */
+export function vaultOnlyPage(
+  states: readonly FileStorageStateDto[],
+  workspaceId: string,
+  fileId: string,
+): { openHref: string | null; missing: boolean } | null {
+  const s = states.find((x) => x.fileId === fileId);
+  if (!s || s.location !== 'vault') return null;
+  return {
+    openHref: s.vault?.canOpen && !s.missing ? vaultOpenHref(workspaceId, fileId) : null,
+    missing: s.missing !== null,
+  };
 }
 
 /** §9: what the vault calls a document, as its changes feed last said: its title, else its kind. */
@@ -240,6 +280,7 @@ export function vaultOpenProblemHref(
 }
 
 export const VAULT_OPEN_PROBLEMS = [
+  'in_vault',
   'out_of_reach',
   'links_full',
   'cannot_view',
@@ -252,6 +293,7 @@ export const VAULT_OPEN_PROBLEMS = [
 export type VaultOpenProblem = (typeof VAULT_OPEN_PROBLEMS)[number];
 
 const PROBLEM_KEYS: Record<VaultOpenProblem, string> = {
+  in_vault: 'vault.open_in_vault_only',
   out_of_reach: 'vault.open_out_of_reach',
   links_full: 'vault.open_links_full',
   cannot_view: 'vault.open_cannot_view',
@@ -309,6 +351,22 @@ export function isPersonOpening(headers: { get(name: string): string | null }): 
   const dest = headers.get('sec-fetch-dest');
   if (dest && dest !== 'document') return false;
   return true;
+}
+
+/**
+ * §5 (PR 5a's 409 `file.in_vault`): a file only the vault holds isn't served as a preview; the person opens it in the
+ * vault. For the API proxy: when a person's browser asked for a file at `…/files/<id>` and the answer was that code,
+ * where to send them instead: the page that says so, with "Open it in the vault". Null for anything else.
+ */
+export function inVaultRedirect(path: readonly string[], status: number, code: string | null): string | null {
+  if (status !== 409 || code !== 'file.in_vault') return null;
+  if (path[0] !== 'v1' || path[1] !== 'workspaces') return null;
+  const workspaceId = path[2] ?? '';
+  const at = path.lastIndexOf('files');
+  const fileId = at > 2 ? (path[at + 1] ?? '') : '';
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(workspaceId) || !uuid.test(fileId) || at !== path.length - 2) return null;
+  return vaultOpenProblemHref(workspaceId, fileId, 'in_vault', null);
 }
 
 /** §9: "Kept in step with the vault" in Settings: when the changes feed was last read, or that it isn't read. */

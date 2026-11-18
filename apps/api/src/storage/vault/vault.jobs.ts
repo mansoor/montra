@@ -10,7 +10,8 @@
  *    row whose last attempt got no answer is asked about before it is sent again;
  * 4. asks about rows in someone's Inbox, a hundred at a time, and marks them filed or not kept;
  * 5. reads the vault's changes feed a few times an hour, when the vault lets Montra read it (§9, `VaultFeed`);
- * 6. withdraws Inbox items and deletes documents for files deleted for good (§10).
+ * 6. removes Montra's copy of a filed file whose group is sent with no local copy, once all of §5 holds (`moveOne`);
+ * 7. withdraws Inbox items and deletes documents for files deleted for good (§10).
  *
  * The daily caps hold sending without counting as failures; a problem with the connection itself stops it and tells
  * owners once; five failures in a row turn it `failing`, as for a mirror. Nothing here logs a key, a signature, a
@@ -23,16 +24,20 @@ import type { StorageDestinationTable, Trx, VaultConnectionStateTable, VaultItem
 import { asCurrencyCode, toDecimalString } from '@montra/domain';
 import {
   isSentMode,
+  VAULT_GROUP_KINDS,
+  VAULT_GROUPS,
   vaultEffectiveModes,
   vaultGroupOf,
   vaultTypeKept,
   type FileKind,
+  type StorageFileKind,
   type VaultGroup,
 } from '@montra/schemas';
 import { Db } from '../../db/database.js';
 import { Worker } from '../../jobs/queue.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { FileBytes } from '../file-bytes.js';
+import { STORAGE_PORT, type StoragePort } from '../storage.js';
 import { backoffMs, MAX_ATTEMPTS } from '../backoff.js';
 import { VaultError, type VaultDocument, type VaultItemState } from '../destinations/vault.js';
 import type { VaultConnection } from './connection.js';
@@ -71,6 +76,8 @@ export const SETTLE_MS = 2 * MINUTE;
 const JITTER_MS = 15_000;
 /** A daily cap with no reset time said: look again in an hour. */
 const CAP_FALLBACK_MS = 60 * MINUTE;
+/** §5: a filed file whose copy can't go yet (the mirror, a reading, the vault's say-so) is looked at again after this. */
+export const REMOVE_WAIT_MS = 30 * MINUTE;
 
 /** In Montra's words, for Settings and the badges (§4.5, D8). Never a file name, never the vault's own words. */
 export const NOT_KEPT_WORDS = {
@@ -105,7 +112,7 @@ export interface VaultRunOptions {
   settleMs?: number;
 }
 
-type Done = Record<'sent' | 'filed' | 'notKept' | 'failed' | 'withdrawn' | 'deleted', number>;
+type Done = Record<'sent' | 'filed' | 'notKept' | 'failed' | 'withdrawn' | 'deleted' | 'moved', number>;
 type Outcome = 'ok' | 'stop' | 'hold';
 
 @Injectable()
@@ -119,6 +126,7 @@ export class VaultJobs {
     @Inject(VaultService) private readonly vault: VaultService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(VaultFeed) private readonly feed: VaultFeed,
+    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
   ) {}
 
   register(): void {
@@ -134,7 +142,7 @@ export class VaultJobs {
   /** One pass over every vault connection with work due, then the next wake-up. */
   async run(opts: VaultRunOptions = {}): Promise<Done> {
     const deadline = Date.now() + (opts.budgetMs ?? RUN_BUDGET_MS);
-    const done: Done = { sent: 0, filed: 0, notKept: 0, failed: 0, withdrawn: 0, deleted: 0 };
+    const done: Done = { sent: 0, filed: 0, notKept: 0, failed: 0, withdrawn: 0, deleted: 0, moved: 0 };
     const { rows } = await this.db.run({}, (trx) =>
       sql<{ workspace_id: string; destination_id: string; user_id: string | null }>`
         select * from app.vault_due()`.execute(trx),
@@ -218,6 +226,7 @@ export class VaultJobs {
       // What asking turned back into a send (a lapsed item's one resend, an id the vault doesn't know) goes now.
       if (!held && (await this.sendDue(ctx, row, config, conn, deadline, done, opts)) === 'stop') return;
       if (config.mayRead && (await this.readFeed(ctx, row, conn, deadline)) === 'stop') return;
+      if ((await this.removeSources(ctx, row, config, conn, deadline, done)) === 'stop') return;
       await this.deletes(ctx, row, conn, deadline, done);
     } finally {
       conn.close();
@@ -533,6 +542,8 @@ export class VaultJobs {
         vault_version: s.version ?? item.vault_version,
         vault_sha256: s.sha256 ?? item.vault_sha256,
         content_available: s.contentAvailable,
+        // §5: filed now, so whether Montra's copy goes is looked at (only for a group sent with no local copy).
+        remove_at: item.status === 'filed' ? item.remove_at : sql`now()`,
         attempts: 0,
         last_error: null,
       });
@@ -710,7 +721,290 @@ export class VaultJobs {
     }
   }
 
-  // ----- 6. Withdrawals and deletes (§10) ----------------------------------------------------------------------------
+  // ----- 6. Removing Montra's copy (§5) -------------------------------------------------------------------------------
+
+  /**
+   * §5: for a group sent with no local copy, Montra's copy of a file goes only when all of these hold:
+   *
+   * 1. the vault reports the item filed (never while it is only in someone's Inbox);
+   * 2. the vault says it could give back the exact file Montra sent (`content_available`), asked again when it hasn't
+   *    said so since the item was filed;
+   * 3. when the owner's own S3/WebDAV storage is set to copy that kind, it has copied this file (`done`): it copies from
+   *    Montra's copy, so that stays until then;
+   * 4. nothing in Montra is reading the file or waiting on a person for it (`app.vault_file_busy`);
+   *
+   * and the connection is active. Then, in one transaction, the file's `location` becomes `vault`, its key moves to the
+   * outbox row as the object still to remove, and an audit row says it moved. The object is deleted after the commit,
+   * and only then is `source_removed_at` set, so a crash in between leaves a row whose object the next run deletes.
+   */
+  private async removeSources(
+    ctx: Ctx,
+    row: Row,
+    config: VaultConfig,
+    conn: VaultConnection,
+    deadline: number,
+    done: Done,
+  ): Promise<Outcome> {
+    await this.finishRemovals(ctx, row.id);
+    const modes = vaultEffectiveModes(config.groups);
+    const kinds: StorageFileKind[] = VAULT_GROUPS.filter((g) => modes[g] === 'sent_no_copy').flatMap((g) => [
+      ...VAULT_GROUP_KINDS[g],
+    ]);
+    if (!kinds.length) {
+      // No group goes without a copy (any more): nothing is to be looked at.
+      await this.db.run(ctx, (trx) =>
+        trx
+          .updateTable('app.vault_item')
+          .set({ remove_at: null })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('destination_id', '=', row.id)
+          .where('remove_at', 'is not', null)
+          .execute(),
+      );
+      return 'ok';
+    }
+    // Files that moved before and that Montra put back to read them again (`FileBytes.ensureHeld`): theirs goes again
+    // once nothing reads them. Files filed while their group kept a copy move only with the move backfill.
+    await this.db.run(ctx, (trx) =>
+      sql`
+        update app.vault_item i set remove_at = now()
+          from app.file f
+         where i.workspace_id = ${ctx.workspaceId}::uuid and i.destination_id = ${row.id}::uuid
+           and i.status = 'filed' and i.remove_at is null and i.source_removed_at is not null
+           and f.workspace_id = i.workspace_id and f.id = i.file_id and f.location = 'montra'
+           and f.deleted_at is null and not f.sealed and f.kind = any (${kinds}::text[])`.execute(trx),
+    );
+    if (row.status !== 'active') {
+      // §5: only while the connection is active. Looked at again later, without spinning the worker meanwhile.
+      await this.waitRemoval(ctx, row.id, null);
+      return 'ok';
+    }
+    while (Date.now() < deadline) {
+      const { rows: items } = await this.db.run(ctx, (trx) =>
+        sql<Item>`
+          -- Claimed in a CTE, so the limit holds: an IN (... limit) can be run again per row.
+          with c as (
+            select workspace_id, destination_id, file_id from app.vault_item
+            where workspace_id = ${ctx.workspaceId}::uuid and destination_id = ${row.id}::uuid
+            and remove_at <= now()
+            order by remove_at, file_id
+            limit 20
+            for update skip locked)
+          update app.vault_item i set remove_at = now() + ${`${LEASE_MS} milliseconds`}::interval
+            from c
+           where i.workspace_id = c.workspace_id and i.destination_id = c.destination_id and i.file_id = c.file_id
+          returning i.*`.execute(trx),
+      );
+      if (!items.length) return 'ok';
+      // §5.2: what the vault last said may be from before it filed the item: ask again where it hasn't said yes.
+      const ask = items.filter((i) => i.status === 'filed' && i.content_available !== true && i.vault_ref);
+      if (ask.length) {
+        try {
+          const states = await conn.status(ask.map((i) => i.vault_ref!));
+          for (const i of ask) {
+            const s = states.get(i.vault_ref!);
+            if (s?.state !== 'filed') continue;
+            i.content_available = s.contentAvailable;
+            await this.setItem(
+              ctx,
+              { workspace_id: ctx.workspaceId, destination_id: row.id, file_id: i.file_id },
+              { content_available: s.contentAvailable },
+            );
+          }
+        } catch (e) {
+          const err = e instanceof VaultError ? e : new VaultError('failed');
+          await this.waitRemoval(
+            ctx,
+            row.id,
+            items.map((i) => i.file_id),
+          );
+          if (err.stopsConnection) {
+            await this.stop(ctx, row, err);
+            return 'stop';
+          }
+          if (err.countsAsFailure && err.code !== 'retry_later') await this.failed(ctx, row, err);
+          return 'hold';
+        }
+      }
+      for (const item of items) await this.moveOne(ctx, row.id, kinds, item, done);
+    }
+    return 'ok';
+  }
+
+  /** One file, if §5 holds for it now: moved in one transaction, then its object removed. */
+  private async moveOne(
+    ctx: Ctx,
+    destinationId: string,
+    kinds: readonly StorageFileKind[],
+    item: Item,
+    done: Done,
+  ): Promise<void> {
+    const key = { workspace_id: ctx.workspaceId, destination_id: destinationId, file_id: item.file_id };
+    const moved = await this.db.run(ctx, async (trx) => {
+      const f = await trx
+        .selectFrom('app.file')
+        .select(['id', 'kind', 'storage_key', 'location', 'sha256', 'deleted_at', 'sealed'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', item.file_id)
+        .forUpdate()
+        .executeTakeFirst();
+      const i = await trx
+        .selectFrom('app.vault_item')
+        .selectAll()
+        .where('workspace_id', '=', key.workspace_id)
+        .where('destination_id', '=', key.destination_id)
+        .where('file_id', '=', key.file_id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!i) return null;
+      const not = async (at: Date | null) => {
+        await trx
+          .updateTable('app.vault_item')
+          .set({ remove_at: at })
+          .where('workspace_id', '=', key.workspace_id)
+          .where('destination_id', '=', key.destination_id)
+          .where('file_id', '=', key.file_id)
+          .execute();
+        return null;
+      };
+      const later = () => not(new Date(Date.now() + REMOVE_WAIT_MS));
+      // Not a file whose copy goes: held only by the vault already, in the trash, sealed, or no longer in such a group.
+      if (
+        !f ||
+        f.location !== 'montra' ||
+        !f.storage_key ||
+        f.deleted_at ||
+        f.sealed ||
+        !(kinds as readonly string[]).includes(f.kind)
+      )
+        return not(null);
+      // 1. Filed, and what the vault holds is the file Montra holds.
+      if (i.status !== 'filed' || !i.filed_at) return not(null);
+      if (i.vault_sha256 && i.vault_sha256 !== f.sha256) return not(null);
+      // 2. The vault could give it back.
+      if (i.content_available !== true) return later();
+      // 3. The owner's own storage, when it copies this kind, has it.
+      const mirror = await sql<{ done: boolean }>`
+        select exists (select 1 from app.storage_mirror_item mi
+                        where mi.workspace_id = d.workspace_id and mi.destination_id = d.id
+                          and mi.file_id = ${f.id}::uuid and mi.status = 'done') as done
+          from app.storage_destination d
+         where d.workspace_id = ${ctx.workspaceId}::uuid and d.kind in ('s3', 'webdav') and d.mirror_files
+           and ${f.kind}::text = any (d.file_kinds)`.execute(trx);
+      if (mirror.rows.some((m) => !m.done)) return later();
+      // 4. Nothing in Montra is reading it or waiting on a person for it.
+      const busy = await sql<{ busy: boolean }>`select app.vault_file_busy(${f.id}::uuid) as busy`.execute(
+        trx,
+      );
+      if (busy.rows[0]?.busy) return later();
+
+      await trx
+        .updateTable('app.file')
+        .set({ location: 'vault', storage_key: null })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', f.id)
+        .execute();
+      await trx
+        .updateTable('app.vault_item')
+        .set({ source_key: f.storage_key, source_removed_at: null, remove_at: null, updated_at: new Date() })
+        .where('workspace_id', '=', key.workspace_id)
+        .where('destination_id', '=', key.destination_id)
+        .where('file_id', '=', key.file_id)
+        .execute();
+      await trx
+        .insertInto('app.audit_log')
+        .values({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: null,
+          actor_type: 'system',
+          action: 'file.moved_to_vault',
+          subject_type: 'file',
+          subject_id: f.id,
+          diff: JSON.stringify({ destinationId, vaultDocumentId: i.vault_document_id }),
+        })
+        .execute();
+      return f.storage_key;
+    });
+    if (!moved) return;
+    done.moved++;
+    await this.dropSource(ctx, key, moved);
+  }
+
+  /**
+   * §5: deletes an object whose file moved to the vault, then says so. Safe to run again: a missing object is no error,
+   * and an object that is some file's copy again is never deleted, only let go of.
+   */
+  private async dropSource(ctx: Ctx, key: ItemKey, source: string): Promise<void> {
+    const inUse = await this.db.run(ctx, (trx) =>
+      trx
+        .selectFrom('app.file')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('storage_key', '=', source)
+        .executeTakeFirst(),
+    );
+    if (!inUse) {
+      try {
+        await this.storage.delete(source);
+      } catch (e) {
+        // Left for the next run (`finishRemovals`); the vault holds the file meanwhile.
+        this.logger.warn(
+          `File ${key.file_id}: Montra's old copy couldn't be removed yet: ${(e as Error).name}`,
+        );
+        return;
+      }
+    }
+    const now = new Date();
+    await this.db.run(ctx, (trx) =>
+      trx
+        .updateTable('app.vault_item')
+        .set(inUse ? { source_key: null, updated_at: now } : { source_removed_at: now, updated_at: now })
+        .where('workspace_id', '=', key.workspace_id)
+        .where('destination_id', '=', key.destination_id)
+        .where('file_id', '=', key.file_id)
+        .where('source_key', '=', source)
+        .where('source_removed_at', 'is', null)
+        .execute(),
+    );
+  }
+
+  /** §5: objects a crash left behind between moving their files and deleting them. */
+  private async finishRemovals(ctx: Ctx, destinationId: string): Promise<void> {
+    const left = await this.db.run(ctx, (trx) =>
+      trx
+        .selectFrom('app.vault_item')
+        .select(['file_id', 'source_key'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('destination_id', '=', destinationId)
+        .where('source_key', 'is not', null)
+        .where('source_removed_at', 'is', null)
+        .limit(100)
+        .execute(),
+    );
+    for (const l of left) {
+      await this.dropSource(
+        ctx,
+        { workspace_id: ctx.workspaceId, destination_id: destinationId, file_id: l.file_id },
+        l.source_key!,
+      );
+    }
+  }
+
+  /** Looks at these rows (or every due one) again later, without spinning the worker meanwhile. */
+  private async waitRemoval(ctx: Ctx, destinationId: string, fileIds: readonly string[] | null) {
+    await this.db.run(ctx, (trx) => {
+      let q = trx
+        .updateTable('app.vault_item')
+        .set({ remove_at: new Date(Date.now() + REMOVE_WAIT_MS) })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('destination_id', '=', destinationId)
+        .where('remove_at', 'is not', null);
+      q = fileIds ? q.where('file_id', 'in', [...fileIds]) : q.where('remove_at', '<=', new Date());
+      return q.execute();
+    });
+  }
+
+  // ----- 7. Withdrawals and deletes (§10) ----------------------------------------------------------------------------
 
   private async deletes(
     ctx: Ctx,

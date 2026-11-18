@@ -11,6 +11,7 @@ import {
   vaultFeedLine,
   vaultGroupChanges,
   vaultGroupRows,
+  vaultMirrorKeeps,
   vaultUnmapped,
 } from '@/lib/vault';
 import { DateText, useI18n } from '../i18n';
@@ -55,13 +56,15 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
       aria-labelledby={`${id}-title`}
       onSubmit={(e) => {
         e.preventDefault();
-        const { groups, warn } = vaultGroupChanges(d, draft);
+        const { groups, warn, noCopy } = vaultGroupChanges(d, draft);
         if (!groups.length) return setMessage({ tone: 'good', text: t('vault.groups_unchanged') });
         if (draft.some((g) => isSentMode(g.mode) && !g.vaultKind)) {
           return setMessage({ tone: 'bad', text: t('vault.kind_needed') });
         }
         // §6: payslips and tax documents go only after this warning.
         if (warn.length && !window.confirm(t('vault.restricted_warning'))) return;
+        // §5a: Montra removes its own copies of these once the vault has filed them.
+        if (noCopy.length && !window.confirm(t('vault.no_copy_warning'))) return;
         void run(
           () => browserApi.updateVaultConnection(workspace.id, { version: d.version, groups }),
           t('vault.groups_saved'),
@@ -106,6 +109,11 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
                         </option>
                       ))}
                     </select>
+                    {vaultMirrorKeeps(d, r.group, g.mode) && (
+                      <span className="mt-1 block text-xs text-muted" data-testid="vault-mirror-keeps">
+                        {t('vault.mirror_keeps')}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 align-top">
                     {isSentMode(g.mode) ? (
@@ -133,7 +141,7 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-muted">{t('vault.no_copy_later')}</p>
+      <p className="text-xs text-muted">{t('vault.no_copy_hint')}</p>
       {unmapped.length > 0 && (
         <p className="text-sm text-bad" role="note" data-testid="vault-unmapped">
           {t('vault.unmapped', { groups: unmapped.map(groupName).join(', ') })}

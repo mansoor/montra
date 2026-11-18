@@ -57,10 +57,10 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   await expect(sending.getByRole('combobox', { name: 'What happens to Receipts' })).toHaveValue(
     'sent_keep_copy',
   );
-  // Sending without a local copy isn't offered yet: Montra keeps its copy of everything it sends.
+  // All three modes (PR 5b), sending without a local copy among them.
   await expect(
     sending.getByRole('combobox', { name: 'What happens to Receipts' }).locator('option'),
-  ).toHaveText(["Don't send", 'Send, and keep a copy in Montra']);
+  ).toHaveText(["Don't send", 'Send, and keep a copy in Montra', "Send, and don't keep a copy in Montra"]);
   await sending
     .getByRole('combobox', { name: 'What Receipts are filed as in the vault' })
     .selectOption('utility_bill');
@@ -88,6 +88,24 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   expect(warning).toContain('Where they go and who can see them there is set in the vault');
   await expect(sending.getByRole('combobox', { name: 'What happens to Payslips' })).toHaveValue(
     'sent_keep_copy',
+  );
+
+  // Receipts go without a local copy only after §5a's warning. From what is saved, so only this change is asked about.
+  await page.goto(`${base}/settings?tab=storage`);
+  await expect(sending.getByRole('combobox', { name: 'What happens to Payslips' })).toHaveValue(
+    'sent_keep_copy',
+  );
+  await sending.getByRole('combobox', { name: 'What happens to Receipts' }).selectOption('sent_no_copy');
+  let noCopyWarning = '';
+  page.once('dialog', (d) => {
+    noCopyWarning = d.message();
+    void d.accept();
+  });
+  await sending.getByRole('button', { name: 'Save' }).click();
+  await expect(sending.getByText('Saved.', { exact: false })).toBeVisible();
+  expect(noCopyWarning).toContain('Montra will remove its own copy of these documents');
+  await expect(sending.getByRole('combobox', { name: 'What happens to Receipts' })).toHaveValue(
+    'sent_no_copy',
   );
 
   // Nothing has been sent from this new workspace, and there is nothing already in Montra to send.

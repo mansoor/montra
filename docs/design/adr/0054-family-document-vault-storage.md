@@ -834,6 +834,81 @@ side's numbers; pnpm records its integrity), whose fake keeps a file's bytes exa
   UTF-8. Problem answers that say how long to wait now carry `Retry-After`, and a deliberate 503 isn't reported as a
   fault.
 
+### As built: PR 5b1 (2026-11-17)
+
+PR 5b is split again, as the brief allowed: **5b1** (this) turns on "sent with no local copy" with removing sources
+(§5), missing files and "Files to provide again" (§5a) with their Review badge and notification, uploading again,
+the web's handling of `file.in_vault`, and quota (BAK-08); **5b2** is the move backfill for files filed before a group
+was switched, bringing files back, the disconnect choice (§10), the missing count on an archive's screen (an
+`ExportJobDto` change), a background archive waiting once for the vault's daily reset, and restore marking. Still on
+`@fdv/client` 0.9.0-dev.62. Migration `0067_vault_no_local_copy.sql`. Where 5b1 differs from or adds to the text above,
+and why:
+
+- **The third mode is offered** (`VAULT_GROUP_MODES_OFFERED` is all three; the 422 `vault.mode_not_offered` is gone),
+  owner only as any change but turning payslips or tax documents off, and with a recent sign-in, as a move (§2).
+  Settings warns before saving it (§5a's words) and says when the owner's own storage still keeps a copy of that group
+  (`VaultConnectionDto.mirrorGroups`). The DTO also gains `files: { onlyInVault, missing }`, shown with the counts.
+- **What is removed.** A file whose document the vault files *while* its group is sent with no local copy (filed from
+  the Inbox, or sent and filed at once). Documents filed before the group was switched keep Montra's copy: moving them
+  is the move backfill, with its count and confirmation (5b2), not a side effect of saving the mode. A file Montra put
+  back to read it again (`FileBytes.ensureHeld`) loses its copy again, looked at 30 minutes later and waiting while
+  anything reads it.
+- **The conditions**, all checked in the transaction that moves the file, with the file and its outbox row locked:
+  1. the row is `filed` (never `received`: an Inbox item can still be removed or lapse);
+  2. the vault says it could give back the exact file Montra sent (`content_available`). What it said may be from
+     before it filed the item (the feed can file a row the job never asked about again), so a row without a yes is
+     asked about once more, in a batch, before anything is removed;
+  3. when the owner's S3/WebDAV mirror is set to copy that kind (`mirror_files` and the kind in its `file_kinds`,
+     paused or not), its row for the file is `done`; a mirror that doesn't copy the kind isn't waited for;
+  4. `app.vault_file_busy(file)` is false: no receipt, payslip, import, scan, intake or tax form reading it or waiting
+     on a person in Review (0064's definition), and, new here, no backup or tax package of the workspace being made;
+  5. the connection is `active` (§5.4);
+
+  and, as a guard rather than a condition, the vault's hash is the file's when the vault gave one. Then in that
+  transaction `location` becomes `vault`, `storage_key` null, the key goes to the row's `source_key` with
+  `source_removed_at` null, and an audit row `file.moved_to_vault` (system, the connection and the vault's document)
+  is written. After the commit the object is deleted and only then is `source_removed_at` set; a delete that fails (or
+  a crash) leaves the row for the next run, which finishes it first. An object that is some file's copy again is never
+  deleted. Tested: each condition alone, the crash and the resume, and that running again changes nothing (one audit
+  row).
+- **When the job looks.** A new column, `vault_item.remove_at`: set when a row is filed (by an answer or the feed), and
+  30 minutes on while a condition isn't met yet, cleared when the copy is gone or the file isn't one whose copy goes.
+  `vault_due()` and `vault_next()` count it, and sources still to remove, while the connection is active or failing; a
+  failing connection pushes them on rather than spinning the worker.
+- **Missing** (§5a) is marked for a file only the vault holds (`location = 'vault'`), not in the trash, when the vault
+  doesn't give it back (`vault_refused`) or the feed says its document is out of reach; never for the vault's daily
+  read cap, which is a wait (the reader gets `vault_read_cap`; a background archive's one wait comes with 5b2), and
+  never for a file Montra still holds, even with its object lost. The reason is Montra's words (`MISSING_WORDS`); an
+  audit row `file.marked_missing` per file. A file marked out of reach that the feed shows again is no longer missing
+  (`file.found_again`). §5a's "the caller can't wait" case is left out deliberately: a cap clears by itself the next
+  day, and asking a person to upload a file the vault will give back tomorrow would be wrong.
+- **Review → "Files to provide again"** (`GET …/missing-files`, `MissingFileDto`): owners and admins see every missing
+  file, anyone else but a viewer the ones they uploaded, each with what uses it (receipts, payslips, tax forms,
+  statements, household and business bills, leases), read under their own row-level security. It sits under the
+  statements and bills to file on the web, and on the phone's Review screen (ahead of PR 6), each with an Upload
+  action; its count joins the Review badge (`reviewBadgeTotal` on the web, `reviewBadge` on the phone, as tax forms').
+- **`files_missing`** joins `NOTIFICATION_TYPES` as a notification people don't switch off (as `vault_attention`): to
+  owners, admins and whoever uploaded a newly missing file, at most one a day each (deduplicated by the day), no file
+  names, linking to Review.
+- **Providing it again** (`POST …/missing-files/:fileId`, multipart; members may, for their own uploads): a PDF or a
+  JPEG, PNG or WebP photo, as an upload of a paper. Stored under a new key with the same file id; `location` back to
+  `montra`, the mark cleared, `sha256` and `bytes` the new file's; a different hash keeps the first original hash in
+  `replaced_sha256`; audited (`file.provided_again`). The file's vault row is replaced by a new `queued` one (a new
+  send, with a new id), so the old vault document is no longer Montra's to delete later; the mirror copies it again
+  when its copy was skipped or is of other bytes. It counts against the quota again.
+- **Quota (BAK-08)** moved here from 5b2 because removal changes it: `app.check_storage_quota()` and
+  `app.workspace_storage()` count only files Montra holds.
+- **The web's `file.in_vault`**: a receipt's or payslip's viewer shows "kept in Family Document Vault" with "Open in
+  the vault" (when the vault has a document to open) instead of the page, from the file's state; and a link to such a
+  file (Open original, a bill's or lease's file) lands, through the web's API proxy, on the vault page with
+  `problem=in_vault`, which offers the same plain link. The proxy only does that for a person's navigation
+  (`Sec-Fetch-Dest: document`) and that one code.
+- **Disconnecting** is refused (409 `vault.files_only_in_vault`, with `anyway` too) while any file is held only in the
+  vault: deleting the connection would delete the rows Montra reads those files back through. 5b2's choice replaces
+  this.
+- **The e2e run** sets receipts to "no local copy" with its warning, and lists, counts and uploads again a file marked
+  missing in the database (the fake vault lives in the API's process, so filing and refusing are API tests).
+
 ## Consequences
 
 - Montra can hand a household's papers to the place the household already keeps them, without being the only copy.

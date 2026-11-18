@@ -71,6 +71,8 @@ const MEMBER_WRITES = new Set([
   'DELETE tax-forms/:id/record',
   'POST tax-forms/waivers',
   'DELETE tax-forms/waivers/:id',
+  // A file they uploaded that the vault didn't give back (ADR-0054 §5a); the service keeps them to their own uploads.
+  'POST missing-files/:fileId',
 ]);
 
 /** True when a member may make this request. Reads are always allowed; RLS decides what they see. */

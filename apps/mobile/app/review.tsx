@@ -16,6 +16,7 @@ import { useLocal, useSync } from '../src/sync/SyncProvider';
 import { confidenceLabel, effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
 import { CategoryPicker } from '../src/ui/CategoryPicker';
 import { IntakeReview } from '../src/ui/IntakeReview';
+import { MissingFilesReview } from '../src/ui/MissingFiles';
 import { TaxFormReview } from '../src/ui/TaxForms';
 import { Body, Button, Card, Screen, Small, Title, useToast } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
@@ -85,6 +86,7 @@ export default function Review() {
         <Title>{t('mobile.tab.review')}</Title>
         <IntakeReview />
         <TaxFormReview />
+        <MissingFilesReview />
         <Body muted>{t('mobile.review.empty')}</Body>
       </Screen>
     );
@@ -99,6 +101,7 @@ export default function Review() {
       <Title>{t('mobile.tab.review')}</Title>
       <IntakeReview />
       <TaxFormReview />
+      <MissingFilesReview />
       <Small>
         {t('mobile.review.hint')} {t('mobile.review.remaining', { count: queue.length })}
       </Small>

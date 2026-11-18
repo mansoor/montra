@@ -29,6 +29,7 @@ import { Db } from '../db/database.js';
 import { PermanentJobError } from '../jobs/queue.js';
 import { VaultError } from './destinations/vault.js';
 import { DestinationError, type StorageDestination } from './destinations/types.js';
+import { MISSING_WORDS, MissingFiles } from './missing-files.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from './storage.js';
 import { StorageDestinationsService, type DestinationRow } from './storage-destinations.service.js';
 import { configOf, scheduleVault, VaultService } from './vault/vault.service.js';
@@ -81,6 +82,8 @@ export const NOT_AVAILABLE_WORDS: Record<NotAvailableReason, string> = {
 
 /** A daily read cap with no reset time said: look again in an hour. */
 const CAP_FALLBACK_MS = 60 * 60_000;
+/** §5: a file put back to be read again is looked at for removal again after this (as the vault's job waits). */
+const REMOVE_AGAIN_MS = 30 * 60_000;
 
 @Injectable()
 export class FileBytes {
@@ -93,6 +96,7 @@ export class FileBytes {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(StorageDestinationsService) private readonly destinations: StorageDestinationsService,
     @Inject(VaultService) private readonly vault: VaultService,
+    @Inject(MissingFiles) private readonly missing: MissingFiles,
     @Inject(CONFIG) config: AppConfig,
   ) {
     this.maxBytes = config.MAX_UPLOAD_BYTES + 1024 * 1024;
@@ -123,12 +127,22 @@ export class FileBytes {
     }
     if (copies?.userId && copies.vaultId && copies.vaultRef && copies.vaultStatus === 'filed') {
       if (opts.vault === false) return notAvailable('in_vault');
-      return this.fromVault(
+      const actor = { workspaceId: ctx.workspaceId, userId: copies.userId };
+      const got = await this.fromVault(actor, copies.vaultId, copies.vaultRef, file);
+      // §5a: the vault didn't give back a file only it holds: a person is asked to provide it again.
+      if (!got.ok && got.reason === 'vault_refused' && !file.storage_key) {
+        await this.missing.mark(actor, [file.id], MISSING_WORDS.refused);
+      }
+      return got;
+    }
+    if (copies?.userId && copies.vaultStatus === 'out_of_reach' && !file.storage_key) {
+      // §9: the vault says Montra may no longer see it, and nothing else holds it: missing (§5a).
+      await this.missing.mark(
         { workspaceId: ctx.workspaceId, userId: copies.userId },
-        copies.vaultId,
-        copies.vaultRef,
-        file,
+        [file.id],
+        MISSING_WORDS.outOfReach,
       );
+      return notAvailable('vault_refused');
     }
     return notAvailable('not_held');
   }
@@ -216,6 +230,22 @@ export class FileBytes {
       throw new AppError(409, 'file.changed', 'The file changed while Montra read it. Try again.');
     }
     this.logger.log(`File ${f.id}: Montra's copy put back`);
+    // §5: for a group sent with no local copy, the vault's job takes it away again once nothing reads it: it looks a
+    // while from now, by when whatever reads it has its record (a receipt being read, an import), and waits for that.
+    const copies = await this.copiesOf(ctx, f.id);
+    if (copies?.userId && copies.vaultId) {
+      await this.db.run({ workspaceId: ctx.workspaceId, userId: copies.userId }, async (trx) => {
+        const r = await trx
+          .updateTable('app.vault_item')
+          .set({ remove_at: new Date(Date.now() + REMOVE_AGAIN_MS) })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('file_id', '=', f.id)
+          .where('status', '=', 'filed')
+          .where('source_removed_at', 'is not', null)
+          .executeTakeFirst();
+        if (Number(r.numUpdatedRows)) await scheduleVault(trx, new Date(Date.now() + REMOVE_AGAIN_MS));
+      });
+    }
     return key;
   }
 

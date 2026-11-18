@@ -17,7 +17,6 @@ import {
   isSentMode,
   VAULT_GROUP_DEFAULTS,
   VAULT_GROUP_KINDS,
-  VAULT_GROUP_MODES_OFFERED,
   VAULT_GROUPS,
   VAULT_RESTRICTED_GROUPS,
   VaultGroup,
@@ -495,9 +494,10 @@ export class VaultService {
   }
 
   /**
-   * Disconnecting destroys the key with the connection; connecting again makes a new one (§7). Montra holds every file
-   * it sent until PR 5, so there is nothing to bring back first and `anyway` changes nothing yet. The app stays
-   * registered in the vault until someone there removes it; Settings says so.
+   * Disconnecting destroys the key with the connection; connecting again makes a new one (§7). The app stays registered
+   * in the vault until someone there removes it; Settings says so. While some files are held only in the vault, it is
+   * refused: the connection is how Montra reads them back (§10's "Bring the files back" and "Disconnect anyway" come
+   * with the next part of PR 5).
    */
   async disconnect(ctx: Ctx, role: string, _req: DisconnectVaultRequest): Promise<void> {
     if (role !== 'owner') throw ownerOnly();
@@ -505,6 +505,14 @@ export class VaultService {
       const row = await this.row(trx, ctx);
       if (!row) return;
       const config = configOf(row);
+      const only = await onlyInVault(trx, ctx.workspaceId);
+      if (only > 0) {
+        throw new AppError(
+          409,
+          'vault.files_only_in_vault',
+          `${only} file${only === 1 ? ' is' : 's are'} kept only in the vault. Montra reads them back through this connection, so it stays connected for now.`,
+        );
+      }
       await trx
         .deleteFrom('app.storage_destination')
         .where('workspace_id', '=', ctx.workspaceId)
@@ -522,9 +530,10 @@ export class VaultService {
   /**
    * "Send these to the vault" (§6): each group's mode and vault kind, describing documents in more detail, deleting
    * with Montra, and pausing. An owner changes anything; turning payslips or tax documents on needs a recent sign-in,
-   * and the web shows the warning first. An admin may set those two back to not sent, and nothing else (D4). Sending
-   * with no local copy isn't offered yet (As built: PR 3). A group no longer sent keeps nothing waiting: what hasn't
-   * reached the vault stays in Montra only; what has stays there.
+   * and the web shows the warning first. An admin may set those two back to not sent, and nothing else (D4). Choosing
+   * "sent, no local copy" needs a recent sign-in too: from then on, Montra removes its copy of each of the group's files
+   * the vault files (§5); files the vault had already filed keep their copy until a move. A group no longer sent keeps
+   * nothing waiting: what hasn't reached the vault stays in Montra only; what has stays there.
    */
   async update(
     ctx: Ctx,
@@ -559,13 +568,6 @@ export class VaultService {
         const cur = groups.find((x) => x.group === g.group)!;
         const mode = g.mode ?? cur.mode;
         const vaultKind = g.vaultKind === undefined ? cur.vaultKind : g.vaultKind;
-        if (!VAULT_GROUP_MODES_OFFERED.includes(mode)) {
-          throw new AppError(
-            422,
-            'vault.mode_not_offered',
-            'Sending without keeping a copy in Montra comes in a later version. For now, Montra keeps its copy.',
-          );
-        }
         if (
           vaultKind !== null &&
           vaultKind !== cur.vaultKind &&
@@ -581,6 +583,8 @@ export class VaultService {
         if (!owner && !(isRestricted && mode === 'not_sent' && vaultKind === cur.vaultKind))
           throw ownerOnly();
         if (isRestricted && isSentMode(mode) && !isSentMode(cur.mode)) assertRecent();
+        // §5: Montra will remove its copies of this group's files once the vault files them: a recent sign-in, as a move.
+        if (mode === 'sent_no_copy' && cur.mode !== 'sent_no_copy') assertRecent();
         if (isRestricted && isSentMode(mode) !== isSentMode(cur.mode)) {
           restricted.push({ group: g.group, sent: isSentMode(mode) });
         }
@@ -704,10 +708,12 @@ export class VaultService {
             from unnest(${files.map((f) => f.id)}::uuid[]) with ordinality as x(id, n)
            order by x.n
           on conflict do nothing`.execute(trx);
+        const modes = vaultEffectiveModes(config.groups);
         await this.security(trx, ctx, 'vault_move_started', {
           count: files.length,
           groups: shown.groups,
-          keepCopy: true,
+          // §12: for a group sent with no local copy it is a move (§5 removes each copy once filed).
+          keepCopy: !shown.groups.some((g) => modes[g.group] === 'sent_no_copy'),
         });
         await scheduleVault(trx);
       }
@@ -1018,6 +1024,23 @@ export class VaultService {
       .execute();
     const n = (s: string) => Number(counts.find((c) => c.status === s)?.n ?? 0);
     const modes = modesOf(config);
+    const held = await trx
+      .selectFrom('app.file')
+      .select([
+        (eb) => eb.fn.countAll<string>().as('only'),
+        (eb) => eb.fn.count<string>('missing_since').as('missing'),
+      ])
+      .where('workspace_id', '=', row.workspace_id)
+      .where('location', '=', 'vault')
+      .where('deleted_at', 'is', null)
+      .executeTakeFirst();
+    const mirror = await trx
+      .selectFrom('app.storage_destination')
+      .select(['file_kinds', 'mirror_files'])
+      .where('workspace_id', '=', row.workspace_id)
+      .where('kind', 'in', ['s3', 'webdav'])
+      .executeTakeFirst();
+    const mirrored = mirror?.mirror_files ? mirror.file_kinds : [];
     return {
       id: row.id,
       stage: config.stage,
@@ -1057,6 +1080,8 @@ export class VaultService {
         : null,
       clockOffsetMs: state?.clock_offset_ms ?? null,
       feedReadAt: iso(state?.feed_read_at),
+      files: { onlyInVault: Number(held?.only ?? 0), missing: Number(held?.missing ?? 0) },
+      mirrorGroups: VAULT_GROUPS.filter((g) => VAULT_GROUP_KINDS[g].some((k) => mirrored.includes(k))),
       keyRotation: state?.key_rotation ?? 'none',
       lastSuccessAt: iso(row.last_success_at),
       lastError: row.last_error,
@@ -1124,6 +1149,17 @@ function existingOf(files: readonly { group: VaultGroup }[], config: VaultConfig
     perDay,
     days: perDay && perDay > 0 ? Math.ceil(files.length / perDay) : null,
   };
+}
+
+/** §10: how many files of the workspace are held only in the vault (whatever their state), not in the trash. */
+async function onlyInVault(trx: Trx, workspaceId: string): Promise<number> {
+  const r = await trx
+    .selectFrom('app.file')
+    .select((eb) => eb.fn.countAll<string>().as('n'))
+    .where('workspace_id', '=', workspaceId)
+    .where('location', '=', 'vault')
+    .executeTakeFirst();
+  return Number(r?.n ?? 0);
 }
 
 function modesOf(config: VaultConfig): Record<VaultGroup, VaultGroupMode> {

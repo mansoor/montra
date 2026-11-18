@@ -254,6 +254,11 @@ describe('review queue (AI-03/04, PLT-10)', () => {
     expect(reviewBadgeTotal(6, null)).toBe(6);
     expect(reviewBadgeTotal(null, 2)).toBe(2);
     expect(reviewBadgeTotal(null, null)).toBeNull();
+    // ADR-0054 §5a: files to provide again join the count.
+    expect(reviewBadgeTotal(6, 2, 3)).toBe(11);
+    expect(reviewBadgeTotal(null, null, 3)).toBe(3);
+    expect(reviewBadgeTotal(6, 2, null)).toBe(8);
+    expect(reviewBadgeTotal(null, null, null)).toBeNull();
     expect(t('review.badge', { count: 1 })).toBe('1 item to review');
     expect(t('review.badge', { count: 8 })).toBe('8 items to review');
   });

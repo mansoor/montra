@@ -1,6 +1,6 @@
 /**
- * Tabs (08 §3): Home, Transactions, centre Add, Budget, More (the review count shows on More: transactions to review
- * and tax forms to check). The centre + opens the Add wheel (ADR-0048) instead of a screen: a bill, a transaction, a
+ * Tabs (08 §3): Home, Transactions, centre Add, Budget, More (the review count shows on More: transactions to review,
+ * tax forms to check and files to provide again). The centre + opens the Add wheel (ADR-0048) instead of a screen: a bill, a transaction, a
  * receipt, a statement or a payslip.
  */
 import { useState } from 'react';
@@ -11,6 +11,7 @@ import { useAbilities } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { wheelChoices, wheelRoute } from '../../src/features/add-wheel';
 import { reviewBadge } from '../../src/features/tax-forms';
+import { useMissingFiles } from '../../src/features/use-missing-files';
 import { useTaxFormsToCheck } from '../../src/features/use-tax-forms';
 import { AddWheel } from '../../src/ui/AddWheel';
 import { haptic } from '../../src/ui/haptics';
@@ -54,7 +55,8 @@ export default function TabsLayout() {
   const can = useAbilities();
   const { record } = can;
   const taxForms = useTaxFormsToCheck().count;
-  const review = record ? reviewBadge(state?.reviewCount ?? 0, taxForms) : 0;
+  const missingFiles = useMissingFiles().count;
+  const review = record ? reviewBadge(state?.reviewCount ?? 0, taxForms, missingFiles) : 0;
   const router = useRouter();
   const [wheel, setWheel] = useState(false);
   const choices = wheelChoices(can);
