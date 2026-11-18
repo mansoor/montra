@@ -966,6 +966,16 @@ describe('production settings (NFR-01)', () => {
     expect(loadConfig({ ...prod, KMS_MODE: 'aws', AWS_KMS_KEY_ID: 'key' }).KMS_MODE).toBe('aws');
   });
 
+  it('refuses the vault fake and the local-vault switch in production', () => {
+    const ready = { ...prod, KMS_MODE: 'aws', AWS_KMS_KEY_ID: 'key' };
+    expect(() => loadConfig({ ...ready, FAMILY_VAULT_FAKE: 'on' })).toThrow(/FAMILY_VAULT_FAKE/);
+    expect(() => loadConfig({ ...ready, FAMILY_VAULT_ALLOW_LOCAL_HTTP: 'on' })).toThrow(
+      /FAMILY_VAULT_ALLOW_LOCAL_HTTP/,
+    );
+    expect(loadConfig({ FAMILY_VAULT_ALLOW_LOCAL_HTTP: 'on' }).FAMILY_VAULT_ALLOW_LOCAL_HTTP).toBe(true);
+    expect(loadConfig({}).FAMILY_VAULT_ALLOW_LOCAL_HTTP).toBe(false);
+  });
+
   it('won’t turn billing on without its secrets', () => {
     expect(() => loadConfig({ BILLING_MODE: 'stripe' })).toThrow(/STRIPE_SECRET_KEY/);
   });

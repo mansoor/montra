@@ -1228,6 +1228,10 @@ The other questions were not answered; the ADR's proposal stands for each:
 - **D5. How much Montra says about a document:** the vault kind, a title, the date and whom it belongs to; amounts and
   account last-four digits only with "Describe documents in more detail", per connection rather than per group.
 - **D6. Montra and the vault on one machine:** no loopback exception; public HTTPS always.
+  - _Amended 2026-11-18 for development only:_ `FAMILY_VAULT_ALLOW_LOCAL_HTTP=on` lets a developer connect to a vault on
+    the same machine (`http://` or `https://` to `localhost`, `127.0.0.1` or `[::1]`, as an origin), for a live run
+    against a local vault preview. It allows nothing else (no private network addresses, no other names), view links
+    must still come back on the vault's own origin, and production refuses to start with it. Production keeps D6.
 - **D7. Fixed outbound addresses:** none published; the vault's address restriction for Montra stays off.
 - **D8. Types the vault can't keep** (CSV, XLS and OFX statement exports): they stay in Montra only, shown as "not a
   type the vault keeps"; no PDF rendering.
