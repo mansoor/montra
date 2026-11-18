@@ -1250,7 +1250,7 @@
   ],
   "VLT-03": [
     "partial",
-    "Sending (PR 3, storage.vault): a file goes once Montra has finished with it (app.vault_file_busy: no receipt, payslip, import, scan, intake or tax form still reading or in review), one at a time per connection with a pause between sends; its id is saved before the first send and never changes, and a row whose answer was lost is asked about before it is sent again (tested with a dropped answer at the socket). The vault's hash is checked against the file's. In someone's Inbox, filed, not kept and failed are counted in Settings and shown as badges on receipts, payslips and tax forms (app.vault_file_states, any member who can see the file). The vault's metadata from the changes feed comes with PR 4"
+    "Sending (PR 3, storage.vault): a file goes once Montra has finished with it (app.vault_file_busy: no receipt, payslip, import, scan, intake or tax form still reading or in review), one at a time per connection with a pause between sends; its id is saved before the first send and never changes, and a row whose answer was lost is asked about before it is sent again (tested with a dropped answer at the socket). The vault's hash is checked against the file's. In someone's Inbox, filed, not kept and failed are counted in Settings and shown as badges on receipts, payslips and tax forms (app.vault_file_states, any member who can see the file). Since PR 4 the badge also says what the vault calls the document (its title, else its kind) from the changes feed"
   ],
   "VLT-07": [
     "done",
@@ -1262,7 +1262,7 @@
   ],
   "VLT-08": [
     "partial",
-    "PR 2: one fresh key pair per workspace and connection, sealed in secret_enc and never in a DTO, an error, the security log, the process's output or an archive (tested); the key handed to the package is zeroed when a connection closes. Replace the key: a new pair sealed beside the current one, which keeps signing until the vault's code for the new one checks out (owner only, recent sign-in), then the old key is retired. Security log rows: vault_connected, vault_changed (key made or cancelled; groups, payslips and tax documents, detail, pausing since PR 3), vault_move_started (existing documents sent, PR 3), vault_key_replaced, vault_disconnected. Files moved and links made are audited with PR 4 and PR 5"
+    "PR 2: one fresh key pair per workspace and connection, sealed in secret_enc and never in a DTO, an error, the security log, the process's output or an archive (tested); the key handed to the package is zeroed when a connection closes. Replace the key: a new pair sealed beside the current one, which keeps signing until the vault's code for the new one checks out (owner only, recent sign-in), then the old key is retired. Security log rows: vault_connected, vault_changed (key made or cancelled; groups, payslips and tax documents, detail, pausing since PR 3), vault_move_started (existing documents sent, PR 3), vault_key_replaced, vault_disconnected. Each view link made is audited (file.vault_link_made: the file, who and view or download, never the link; PR 4); files moved are audited with PR 5"
   ],
   "VLT-04": [
     "partial",
@@ -1270,6 +1270,14 @@
   ],
   "VLT-09": [
     "partial",
-    "PR 3: the vault's daily sending cap holds sending until its reset, shown in Settings, without counting as a failure; a wait the vault asks for (busy, too many requests) is waited out with jitter and Montra's backoff, never giving up over it; a problem with the connection itself (paused, removed, a key it doesn't know, the clock) stops the whole connection with the vault's words and tells owners and admins once (vault_attention); five failures in a row turn it failing (storage_failing, once). All tested against the fake. The read cap comes with PR 4 and PR 5"
+    "PR 3: the vault's daily sending cap holds sending until its reset, shown in Settings, without counting as a failure; a wait the vault asks for (busy, too many requests) is waited out with jitter and Montra's backoff, never giving up over it; a problem with the connection itself (paused, removed, a key it doesn't know, the clock) stops the whole connection with the vault's words and tells owners and admins once (vault_attention); five failures in a row turn it failing (storage_failing, once). All tested against the fake. PR 4: the vault's hourly limit on view links is a wait in words with how long, not a failure; a wait the vault asks for while reading the feed is waited out, and not reaching it counts as a failure. The read cap comes with PR 5"
+  ],
+  "VLT-05": [
+    "partial",
+    "Keeping in step (PR 4, migration 0065): while the vault lets Montra read, storage.vault reads its changes feed every 20 minutes (and a person opening a document catches it up first), saving its place in the same transaction as each page and only if nobody moved it meanwhile. Only documents Montra sent are used: anything else the feed names is skipped, never stored or imported (tested with a grant on the family's papers). The vault's title, kind and date are kept on the outbox row (vault_meta) and shown on the file (\"In the vault as …\", \"The vault has a newer version\"); they never change the books (transactions, postings, receipts and the file row are unchanged, tested). A document the vault no longer shows is out_of_reach, \"No longer available in Family Document Vault\", with no reason, and filed again when shown again. A position the vault refuses (too old, or one it doesn't know after a restore) starts over: the whole feed is read again, and a filed document the full read didn't show is out of reach. Asking for a file the vault no longer returns (missing files) comes with PR 5"
+  ],
+  "VLT-06": [
+    "partial",
+    "Opening (PR 4): \"Open in the vault\" on filed documents is a plain link to a web route that refuses prefetches and other sites, asks the API (POST, outside the idempotency store), which checks the person can see the file (RLS on app.file), mints a single-use link under the connection's owner context and answers 303 to it; the web route sends the browser straight on. The link is in no body, log, table, notification or page (tested by searching every table and the process's output for it). A type the vault can't draw opens as a download when allowed; the vault's hourly limit, a vault that doesn't allow opening, and a document it no longer shows are said in words. Each link is audited without the link. The phone (system browser) comes with PR 6"
   ]
 }

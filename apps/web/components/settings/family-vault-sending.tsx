@@ -8,11 +8,12 @@ import {
   canManageVault,
   vaultCounts,
   vaultEstimate,
+  vaultFeedLine,
   vaultGroupChanges,
   vaultGroupRows,
   vaultUnmapped,
 } from '@/lib/vault';
-import { DateText } from '../i18n';
+import { DateText, useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
 /**
@@ -181,6 +182,7 @@ function VaultProgress({ workspace, d }: { workspace: WorkspaceDto; d: VaultConn
           {t('vault.daily_limit', { files: d.dailyLimit.files, today: d.dailyLimit.filesToday })}
         </p>
       )}
+      <FeedLine d={d} />
       <div className="flex flex-wrap gap-2">
         {d.items.failed > 0 && (
           <button
@@ -238,6 +240,17 @@ function VaultProgress({ workspace, d }: { workspace: WorkspaceDto; d: VaultConn
       )}
       <StatusLine message={message} />
     </div>
+  );
+}
+
+/** §9: when Montra last read what the vault did with its documents. */
+function FeedLine({ d }: { d: VaultConnectionDto }) {
+  const { t } = useI18n();
+  const line = vaultFeedLine(d);
+  return (
+    <p className="text-xs text-muted" data-testid="vault-feed">
+      {t(line.key)} {line.at && <DateText date={line.at.slice(0, 10)} />}
+    </p>
   );
 }
 
@@ -318,6 +331,31 @@ function VaultOptions({ workspace, d }: { workspace: WorkspaceDto; d: VaultConne
         <label htmlFor={`${id}-more`} className="text-sm">
           {t('vault.describe_more')}
           <span className="block text-xs text-muted">{t('vault.describe_more_hint')}</span>
+        </label>
+      </div>
+      <div className="flex items-start gap-2">
+        <input
+          id={`${id}-delete`}
+          type="checkbox"
+          className="mt-1"
+          checked={d.deleteWithMontra}
+          // §10, D10: off by default; offered only when the vault lets Montra delete what it sent.
+          disabled={busy || (!d.canDelete && !d.deleteWithMontra)}
+          data-testid="vault-delete-with-montra"
+          onChange={(e) =>
+            void run(() =>
+              browserApi.updateVaultConnection(workspace.id, {
+                version: d.version,
+                deleteWithMontra: e.target.checked,
+              }),
+            )
+          }
+        />
+        <label htmlFor={`${id}-delete`} className="text-sm">
+          {t('vault.delete_with_montra')}
+          <span className="block text-xs text-muted">
+            {d.canDelete ? t('vault.delete_with_montra_hint') : t('vault.delete_not_allowed')}
+          </span>
         </label>
       </div>
       <button

@@ -42,9 +42,11 @@ decides whose Inbox each lands in. Montra's copy is removed only for a group sen
 filed the document. Montra reads back the vault's changes to what
 it sent, and opens documents through single-use view links. A file the vault doesn't return is listed in Review to be
 uploaded again, and backups and tax packages list any still missing. The owner chose to depend on the vault's client
-library as a published package: **PR 1 (contracts, migration 0063) and PR 2 (connecting) are done**, and **PR 3
-(sending, with a local copy kept; migration 0064) is built** on `@fdv/client` 0.9.0-dev.60 from the vault's public
-GitHub release (see §7g). "Sent with no local copy" is not offered until PR 5. On the vault's side, view links,
+library as a published package: **PR 1 (contracts, migration 0063), PR 2 (connecting) and PR 3 (sending, with a
+local copy kept; migration 0064) are done**, and **PR 4 (keeping in step and view links; migration 0065) is built** on
+`@fdv/client` 0.9.0-dev.61 from the vault's public GitHub release (see §7g). "Sent with no local copy" is not offered
+until PR 5. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
+Ed25519 key and signatures; a separate PR replaces Montra's key code then. On the vault's side, view links,
 deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
 and is not copied into this repo.
 
@@ -1662,8 +1664,8 @@ Phase 11 leftovers:
   - **The dependency:** `@fdv/client` (MIT), pinned by URL to the vault's public release tarball
     `v0.9.0-dev.59/fdv-client-0.9.0-dev.59.tgz` in `apps/api` (integrity in the lockfile). ESM only; the API is ESM, so
     it imports it directly. It has no install scripts, makes no network call on import and depends only on
-    `libphonenumber-js`. Its contract scenarios need vitest 5 or 6 and aren't used; `.pnpmfile.cjs` drops their
-    optional vitest peer, so the API's production image doesn't carry vitest (both Dockerfiles copy it).
+    `libphonenumber-js`. Its contract scenarios need vitest 5 or 6 and aren't used; `.pnpmfile.cjs` dropped their
+    optional vitest peer, so the API's production image didn't carry vitest (gone with dev.61, which has no peers; PR 4).
   - **Connecting** (`apps/api/src/storage/vault/`, `/v1/workspaces/:id/family-vault`): an owner with a recent sign-in
     starts; Montra makes a fresh Ed25519 pair and seals the private key at once (`FieldCrypto`, `secret_enc`); the card
     shows the public key and fingerprint to register in the vault; the pasted code is checked in order (names that key,
@@ -1743,6 +1745,45 @@ Phase 11 leftovers:
     0064), `packages/schemas/test/vault.test.ts`, `apps/web/lib/vault.test.ts`, and the Playwright spec (choosing what
     is sent, the warning, the count of existing documents).
   - Next: PR 4 (keeping in step: the changes feed, the vault's names, out of reach, view links).
+- **Family Document Vault, PR 4 of 6: keeping in step and view links** (VLT-05 and VLT-06 partial; VLT-03, VLT-08,
+  VLT-09 updated; ADR-0054 "As built: PR 4"; migration 0065).
+  - **The dependency** moves to `@fdv/client` 0.9.0-dev.61 (`v0.9.0-dev.61/fdv-client-0.9.0-dev.61.tgz`, 501,417
+    bytes, sha256 `535a6bff7f8520f1…`, checked against the vault side's numbers; integrity in the lockfile). It has no
+    peer dependencies, so `.pnpmfile.cjs` and its Dockerfile copies are removed (the API's production install still has
+    no vitest). A network failure's short code (`ECONNREFUSED`) goes into `VaultError.detail`; its `cause` is never
+    logged. Its new key routes aren't used: vault 0.9.0-dev.63 replaces signing with API keys, and a separate PR follows.
+  - **Migration 0065:** `vault_connection_state.feed_next_at` and `full_read_started_at`, `vault_item.feed_seen_at`;
+    `vault_due()`/`vault_next()` count the feed while a connection is active or failing; `app.vault_file_open(file)`
+    (definer, members of the workspace: the document to open, its status and the owner the connection acts as).
+  - **The feed** (`apps/api/src/storage/vault/vault.feed.ts`, in `storage.vault`): every 20 minutes while the vault lets
+    Montra read, and caught up before a document is opened. Each page is applied with its position in one transaction,
+    only if nobody moved it meanwhile. Only Montra's own documents (by document id, or Montra's id for a filed item it
+    wasn't told the document of); the rest is skipped, never stored. `vault_meta` keeps the vault's title, kind, date
+    and version, never amounts or digits; the books are never touched. Unavailable: `out_of_reach` ("No longer available
+    in Family Document Vault"), filed again when shown again. A position refused (too old, or unknown after a restore):
+    the whole feed is read again, and filed documents it didn't show are out of reach.
+  - **Opening:** "Open in the vault" beside the badges of receipts, payslips and tax forms (filed documents the feed has
+    shown). A plain link to `/w/:id/vault/:file/open` (web route: no prefetch, no other site), which calls `POST
+    /v1/workspaces/:id/family-vault/files/:file/open` and passes its 303 straight to the browser. The API checks the
+    person can see the file, mints a single-use link under the connection's owner context, and audits
+    `file.vault_link_made` without the link. A type the vault can't draw opens as a download when allowed; the hourly
+    link limit is a wait in words (429, `Retry-After`); not allowed, not filed, no longer available: words, on
+    `/w/:id/vault/:file?problem=…`.
+  - **Settings:** "Also delete it in the vault when Montra deletes a file for good" (owner, off by default, offered when
+    the vault allows deletes) and when the vault's changes were last read. DTOs: `FileVaultSummaryDto` gains `kind` and
+    `canOpen`, `VaultConnectionDto` gains `feedReadAt`, new `VaultOpenQuery` (web fixtures updated; the phone has no
+    vault types yet).
+  - **For the owner:** with no read grant, a document the family puts a newer version into stops being readable to
+    Montra, so it shows as "No longer available" rather than "the vault has a newer version" (ADR "As built: PR 4").
+  - Tests: `apps/api/test/family-vault-feed.test.ts` (the feed's terms; a full read, then changes, from the saved place;
+    the books unchanged; a newer version; never storing the family's own papers; resuming after a page; out of reach
+    and back; starting over after a restore and an unknown position; a connection problem and an unreachable vault
+    while reading; no feed without read access; links made per click, 303, never in any table, output or answer;
+    audit; who may open; the hourly limit as a wait; download instead of view; not allowed to open; catching up before
+    opening), `packages/db/test/vault.test.ts` (migration 0065), `apps/web/lib/vault.test.ts` (names, the open route and
+    its outcomes, prefetches refused, the feed line), and the Playwright spec (the delete switch, the feed line, opening
+    a file that isn't there).
+  - Next: PR 5 (sent with no local copy, `FileBytes`, missing files, bringing files back).
 - **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
   and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
   row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are

@@ -9,7 +9,8 @@
  * 3. sends pending rows one at a time, with a pause between sends (§4): the id is saved before the first send, and a
  *    row whose last attempt got no answer is asked about before it is sent again;
  * 4. asks about rows in someone's Inbox, a hundred at a time, and marks them filed or not kept;
- * 5. withdraws Inbox items and deletes documents for files deleted for good (§10).
+ * 5. reads the vault's changes feed a few times an hour, when the vault lets Montra read it (§9, `VaultFeed`);
+ * 6. withdraws Inbox items and deletes documents for files deleted for good (§10).
  *
  * The daily caps hold sending without counting as failures; a problem with the connection itself stops it and tells
  * owners once; five failures in a row turn it `failing`, as for a mirror. Nothing here logs a key, a signature, a
@@ -35,6 +36,7 @@ import { STORAGE_PORT, type StoragePort } from '../storage.js';
 import { backoffMs, MAX_ATTEMPTS } from '../storage-mirror.jobs.js';
 import { VaultError, type VaultDocument, type VaultItemState } from '../destinations/vault.js';
 import type { VaultConnection } from './connection.js';
+import { FEED_MS, VaultFeed } from './vault.feed.js';
 import {
   configOf,
   VAULT_FAILING_AFTER,
@@ -116,6 +118,7 @@ export class VaultJobs {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(VaultService) private readonly vault: VaultService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(VaultFeed) private readonly feed: VaultFeed,
   ) {}
 
   register(): void {
@@ -214,6 +217,7 @@ export class VaultJobs {
       if ((await this.poll(ctx, row, conn, deadline, done)) === 'stop') return;
       // What asking turned back into a send (a lapsed item's one resend, an id the vault doesn't know) goes now.
       if (!held && (await this.sendDue(ctx, row, config, conn, deadline, done, opts)) === 'stop') return;
+      if (config.mayRead && (await this.readFeed(ctx, row, conn, deadline)) === 'stop') return;
       await this.deletes(ctx, row, conn, deadline, done);
     } finally {
       conn.close();
@@ -671,7 +675,39 @@ export class VaultJobs {
     return 'ok';
   }
 
-  // ----- 5. Withdrawals and deletes (§10) ----------------------------------------------------------------------------
+  // ----- 5. Keeping in step (§9) -------------------------------------------------------------------------------------
+
+  /**
+   * The changes feed, when it is due: to the end, or as far as the run's budget goes, then again soon. A wait the vault
+   * asks for is waited; not reaching it counts as a failure, as for sending; a connection problem stops the connection.
+   */
+  private async readFeed(ctx: Ctx, row: Row, conn: VaultConnection, deadline: number): Promise<Outcome> {
+    const state = await this.feed.state(ctx, row.id);
+    if (!state?.feed_next_at || state.feed_next_at.getTime() > Date.now()) return 'ok';
+    try {
+      const read = await this.feed.read(ctx, row.id, conn, deadline);
+      await this.feed.next(ctx, row.id, new Date(Date.now() + (read.caughtUp ? FEED_MS : MIN_GAP_MS)));
+      if (read.pages) await this.succeeded(ctx, row);
+      return 'ok';
+    } catch (e) {
+      const err =
+        e instanceof VaultError ? e : new VaultError('failed', { detail: (e as Error)?.name ?? 'error' });
+      this.logger.warn(`Reading the feed of vault ${row.id}: ${err.code} ${err.opts.detail ?? ''}`);
+      if (err.stopsConnection) {
+        await this.stop(ctx, row, err);
+        return 'stop';
+      }
+      const wait = Math.max(
+        err.opts.retryAfter ? err.opts.retryAfter.getTime() - Date.now() : 0,
+        backoffMs(row.consecutive_failures + 1),
+      );
+      await this.feed.next(ctx, row.id, new Date(Date.now() + wait + randomInt(JITTER_MS)));
+      if (err.code !== 'retry_later') await this.failed(ctx, row, err);
+      return 'hold';
+    }
+  }
+
+  // ----- 6. Withdrawals and deletes (§10) ----------------------------------------------------------------------------
 
   private async deletes(
     ctx: Ctx,

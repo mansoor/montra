@@ -4,14 +4,16 @@
  * vault's identity, and turning the vault's answers into a `VaultCheck` or a `VaultError` in Montra's words.
  *
  * PR 2 builds connecting: reading a code, identifying the vault, and the signed connection test. PR 3 adds sending,
- * asking what became of what was sent, withdrawing and deleting. Reading back, the feed and links (the rest of
- * `VaultDestination`) come with the PRs that use them.
+ * asking what became of what was sent, withdrawing and deleting. PR 4 adds the changes feed and view links. Reading back
+ * (the rest of `VaultDestination`) comes with PR 5.
  */
 import type { Readable } from 'node:stream';
 import { ApiRequestError, createApi, createHttp, NetworkError } from '@fdv/client';
 import { createAppClient, parseConnectionString, type AppClient } from '@fdv/client/apps';
 import {
   VaultError,
+  type VaultChange,
+  type VaultChangesPage,
   type VaultCheck,
   type VaultDestination,
   type VaultDocument,
@@ -69,7 +71,12 @@ export function asVaultError(e: unknown, transport?: VaultTransport, now = Date.
   if (e instanceof VaultError) return e;
   const refused = transport?.refused();
   if (refused) return refused;
-  if (e instanceof NetworkError) return new VaultError('unreachable', { detail: e.kind });
+  // The package's short code for why (ECONNREFUSED, say), and only a code: never its `cause`, nor a message, which
+  // can hold an address.
+  if (e instanceof NetworkError) {
+    const code = e.detail && /^[A-Z][A-Z0-9_]{1,39}$/.test(e.detail) ? ` ${e.detail}` : '';
+    return new VaultError('unreachable', { detail: `${e.kind}${code}` });
+  }
   if (e instanceof ApiRequestError) {
     const detail = `${e.status} ${e.code}`;
     const wait = e.retryAfterSeconds !== undefined ? new Date(now + e.retryAfterSeconds * 1000) : undefined;
@@ -185,10 +192,44 @@ async function bytesOf(body: Uint8Array | Readable): Promise<Uint8Array> {
 
 const notFound = (e: unknown) => e instanceof ApiRequestError && e.status === 404;
 
+type FeedPage = Awaited<ReturnType<AppClient['changes']>>;
+
+/** §9: the vault says Montra's position in the feed is no longer valid: too old, or not one it knows (a restore). */
+const positionRefused = (e: unknown) =>
+  e instanceof ApiRequestError &&
+  (e.code === 'cursor_expired' ||
+    (e.status === 422 && e.code === 'validation_failed' && e.detail === 'cursor'));
+
+/** A page of the feed in Montra's terms (§9). Never more than the port says: no amounts, issuers or account digits. */
+export function feedPage(page: FeedPage, restart: boolean): VaultChangesPage {
+  const changes: VaultChange[] = [];
+  for (const c of page.changes ?? []) {
+    if (c.change === 'unavailable') {
+      changes.push({ documentId: c.document_id, change: 'out_of_reach' });
+      continue;
+    }
+    const d = c.document;
+    if (!d?.id) continue;
+    const date = d.issued?.date ?? d.paper_date ?? null;
+    changes.push({
+      documentId: d.id,
+      change: 'updated',
+      own: d.own === true,
+      ref: d.own === true ? (d.external_id ?? null) : null,
+      kind: d.kind ? { key: d.kind.key, name: d.kind.label } : null,
+      title: d.title ?? null,
+      date: typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
+      version: d.version?.id ?? null,
+      sha256: d.version?.sha256 ?? null,
+    });
+  }
+  return { changes, cursor: page.cursor, more: page.more === true, restart };
+}
+
 /** One run's connection to a vault: opened for a request or a job run, then closed. */
 export class VaultConnection implements Pick<
   VaultDestination,
-  'kind' | 'check' | 'send' | 'status' | 'withdraw' | 'remove' | 'close'
+  'kind' | 'check' | 'send' | 'status' | 'changes' | 'link' | 'withdraw' | 'remove' | 'close'
 > {
   readonly kind = 'fdv' as const;
   private readonly client: AppClient;
@@ -247,6 +288,8 @@ export class VaultConnection implements Pick<
       mediaTypes: [...(me.limits?.accepted_types ?? [])],
       mayReadBack: scopes.has('documents.read') && scopes.has('documents.download'),
       mayDelete: scopes.has('documents.delete'),
+      mayRead: scopes.has('documents.read'),
+      mayOpen: scopes.has('documents.read') && scopes.has('documents.links'),
       newKeyConfirmed: false,
       dailyResetAt: Number.isFinite(resets) ? new Date(resets) : null,
       clockOffsetMs: Number.isFinite(vaultNow) ? Math.trunc(now - vaultNow) : null,
@@ -299,6 +342,60 @@ export class VaultConnection implements Pick<
       for (const s of page.items ?? []) out.set(s.external_id, itemState(s));
     }
     return out;
+  }
+
+  /**
+   * §9: a page of the changes feed, from `cursor` (null: the beginning). A position the vault refuses, as too old or one
+   * it doesn't know (after it was restored from a backup, say), starts from the beginning, and the page says so.
+   */
+  async changes(cursor: string | null): Promise<VaultChangesPage> {
+    try {
+      return feedPage(
+        await this.client.changes(cursor === null ? { limit: 100 } : { cursor, limit: 100 }),
+        false,
+      );
+    } catch (e) {
+      if (cursor === null || !positionRefused(e)) throw asVaultError(e, this.opts.transport);
+    }
+    try {
+      return feedPage(await this.client.changes({ limit: 100 }), true);
+    } catch (e) {
+      throw asVaultError(e, this.opts.transport);
+    }
+  }
+
+  /**
+   * §9: a single-use link for a person's browser, made now. The caller sends the browser to it at once and keeps it
+   * nowhere. A link that isn't on the vault's own https address is refused, so a vault can't send a person elsewhere.
+   */
+  async link(documentId: string, purpose: 'view' | 'download'): Promise<URL> {
+    let minted: Awaited<ReturnType<AppClient['link']>>;
+    try {
+      minted = await this.client.link(documentId, purpose);
+    } catch (e) {
+      if (notFound(e)) throw new VaultError('unavailable', { detail: '404' });
+      if (e instanceof ApiRequestError) {
+        const detail = `${e.status} ${e.code}`;
+        if (e.code === 'view_unavailable') throw new VaultError('cannot_view', { detail });
+        if (e.code === 'app_links_full') {
+          const wait =
+            e.retryAfterSeconds !== undefined ? Date.now() + e.retryAfterSeconds * 1000 : undefined;
+          throw new VaultError('links_full', { detail, ...(wait ? { retryAfter: new Date(wait) } : {}) });
+        }
+        // Not allowed to open documents is about this, not the connection: sending goes on.
+        if (e.code === 'scope_not_granted') throw new VaultError('cannot_open', { detail });
+      }
+      throw asVaultError(e, this.opts.transport);
+    }
+    let url: URL;
+    try {
+      url = new URL(minted.url);
+    } catch {
+      throw new VaultError('failed', { detail: 'link' });
+    }
+    if (url.protocol !== 'https:' || url.origin !== this.origin)
+      throw new VaultError('failed', { detail: 'link' });
+    return url;
   }
 
   /** §10: takes an item back from the Inbox. Answers what became of it; null when the vault never had it. */

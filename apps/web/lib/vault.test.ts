@@ -20,6 +20,13 @@ import {
   vaultGroupRows,
   vaultTone,
   vaultUnmapped,
+  isPersonOpening,
+  vaultFeedLine,
+  vaultName,
+  vaultOpenHref,
+  vaultOpenOutcome,
+  vaultOpenProblemHref,
+  vaultOpenProblemKey,
 } from './vault';
 
 // The Family Document Vault card in Settings → Storage (ADR-0054 §2, §13).
@@ -42,6 +49,7 @@ const connection = (over: Partial<VaultConnectionDto> = {}): VaultConnectionDto 
   heldUntil: { sending: null, reading: null },
   dailyLimit: { files: 100, filesToday: 4 },
   clockOffsetMs: 120,
+  feedReadAt: '2026-11-17T10:05:00.000Z',
   keyRotation: 'none',
   lastSuccessAt: '2026-11-17T10:00:00.000Z',
   lastError: null,
@@ -235,7 +243,15 @@ describe('how sending is going', () => {
       fileId: '00000000-0000-4000-8000-000000000009',
       location: 'montra',
       missing: null,
-      vault: { status: status as never, title: null, newerVersion: false, notKeptReason: null, ...more },
+      vault: {
+        status: status as never,
+        title: null,
+        kind: null,
+        newerVersion: false,
+        notKeptReason: null,
+        canOpen: false,
+        ...more,
+      },
     });
     expect(vaultBadge(undefined)).toBeNull();
     expect(vaultBadge({ ...state('filed'), vault: null })).toBeNull();
@@ -253,5 +269,120 @@ describe('how sending is going', () => {
     });
     expect(vaultBadge(state('failed'))?.tone).toBe('bad');
     expect(vaultBadge(state('delete'))).toBeNull();
+  });
+});
+
+// Keeping in step and opening a document in the vault (ADR-0054 §9, PR 4).
+describe('what the vault calls a document, and opening it', () => {
+  const ws = '00000000-0000-4000-8000-0000000000aa';
+  const file = '00000000-0000-4000-8000-0000000000bb';
+  const filed = (more: Record<string, unknown>): FileStorageStateDto => ({
+    fileId: file,
+    location: 'montra',
+    missing: null,
+    vault: {
+      status: 'filed',
+      title: null,
+      kind: null,
+      newerVersion: false,
+      notKeptReason: null,
+      canOpen: true,
+      ...more,
+    },
+  });
+
+  it('names a document as the vault does: its title, else its kind', () => {
+    expect(vaultName(filed({ title: 'October statement', kind: 'Bank statement' }))).toBe(
+      'October statement',
+    );
+    expect(vaultName(filed({ kind: 'Bank statement' }))).toBe('Bank statement');
+    expect(vaultName(filed({}))).toBeNull();
+    expect(vaultName(undefined)).toBeNull();
+    expect(vaultBadge(filed({ kind: 'Bank statement' }))?.title).toBe('Bank statement');
+    expect(vaultBadge(filed({ status: 'out_of_reach' }))?.key).toBe('vault.badge_out_of_reach');
+  });
+
+  it('opens through the web app’s own route, never with a link in the page', () => {
+    expect(vaultOpenHref(ws, file)).toBe(`/w/${ws}/vault/${file}/open?mode=view`);
+    expect(vaultOpenHref(ws, file, 'download')).toBe(`/w/${ws}/vault/${file}/open?mode=download`);
+    expect(vaultOpenProblemHref(ws, file, 'links_full', 12)).toBe(
+      `/w/${ws}/vault/${file}?problem=links_full&minutes=12`,
+    );
+    expect(vaultOpenProblemHref(ws, file, 'out_of_reach', null)).toBe(
+      `/w/${ws}/vault/${file}?problem=out_of_reach`,
+    );
+  });
+
+  it('sends the browser on to an https link at once, and anything else to words', () => {
+    const go = 'https://vault.example.com/api/v1/app-links/abc';
+    expect(vaultOpenOutcome({ status: 303, location: go, retryAfter: null, code: null })).toEqual({ go });
+    // Never anything but https, whatever answered.
+    expect(
+      vaultOpenOutcome({ status: 303, location: 'javascript:alert(1)', retryAfter: null, code: null }),
+    ).toEqual({ problem: 'failed', minutes: null });
+    expect(
+      vaultOpenOutcome({ status: 303, location: 'http://vault.example.com/x', retryAfter: null, code: null }),
+    ).toEqual({ problem: 'failed', minutes: null });
+    // The vault's hourly limit on links: a wait, in minutes.
+    expect(
+      vaultOpenOutcome({ status: 429, location: null, retryAfter: '600', code: 'vault.links_full' }),
+    ).toEqual({
+      problem: 'links_full',
+      minutes: 10,
+    });
+    expect(
+      vaultOpenOutcome({ status: 429, location: null, retryAfter: '5', code: 'vault.links_full' }),
+    ).toEqual({
+      problem: 'links_full',
+      minutes: 1,
+    });
+    expect(vaultOpenOutcome({ status: 429, location: null, retryAfter: null, code: null })).toEqual({
+      problem: 'links_full',
+      minutes: 60,
+    });
+    expect(
+      vaultOpenOutcome({ status: 410, location: null, retryAfter: null, code: 'vault.out_of_reach' }),
+    ).toEqual({
+      problem: 'out_of_reach',
+      minutes: null,
+    });
+    expect(
+      vaultOpenOutcome({ status: 422, location: null, retryAfter: null, code: 'vault.cannot_view' }),
+    ).toMatchObject({ problem: 'cannot_view' });
+    expect(
+      vaultOpenOutcome({ status: 404, location: null, retryAfter: null, code: 'not_found' }),
+    ).toMatchObject({ problem: 'not_found' });
+    expect(
+      vaultOpenOutcome({ status: 404, location: null, retryAfter: null, code: 'vault.not_in_vault' }),
+    ).toMatchObject({ problem: 'not_filed' });
+    expect(vaultOpenOutcome({ status: 502, location: null, retryAfter: null, code: null })).toMatchObject({
+      problem: 'failed',
+    });
+  });
+
+  it('says each problem in words, and the general words for anything it doesn’t know', () => {
+    expect(vaultOpenProblemKey('out_of_reach')).toBe('vault.open_out_of_reach');
+    expect(vaultOpenProblemKey('links_full')).toBe('vault.open_links_full');
+    expect(vaultOpenProblemKey('<script>')).toBe('vault.open_failed');
+    expect(vaultOpenProblemKey(undefined)).toBe('vault.open_failed');
+  });
+
+  it('makes a link only for a person’s click: never for a prefetch or another site', () => {
+    const h = (o: Record<string, string>) => ({ get: (n: string) => o[n.toLowerCase()] ?? null });
+    expect(isPersonOpening(h({ 'sec-fetch-site': 'same-origin', 'sec-fetch-dest': 'document' }))).toBe(true);
+    expect(isPersonOpening(h({}))).toBe(true);
+    expect(isPersonOpening(h({ 'sec-purpose': 'prefetch' }))).toBe(false);
+    expect(isPersonOpening(h({ 'sec-purpose': 'prefetch;prerender' }))).toBe(false);
+    expect(isPersonOpening(h({ purpose: 'prefetch' }))).toBe(false);
+    expect(isPersonOpening(h({ 'next-router-prefetch': '1' }))).toBe(false);
+    expect(isPersonOpening(h({ rsc: '1' }))).toBe(false);
+    expect(isPersonOpening(h({ 'sec-fetch-site': 'cross-site' }))).toBe(false);
+    expect(isPersonOpening(h({ 'sec-fetch-dest': 'image' }))).toBe(false);
+  });
+
+  it('says when the vault’s changes were last read, or that the vault doesn’t let Montra read them', () => {
+    expect(vaultFeedLine(connection())).toEqual({ key: 'vault.feed_read', at: '2026-11-17T10:05:00.000Z' });
+    expect(vaultFeedLine(connection({ feedReadAt: null }))).toEqual({ key: 'vault.feed_not_read', at: null });
+    expect(VaultConnectionSchema.parse(connection())).toBeTruthy();
   });
 });

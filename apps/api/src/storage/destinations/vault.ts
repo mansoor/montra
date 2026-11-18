@@ -8,8 +8,8 @@ import type { Readable } from 'node:stream';
  * This is Montra's side of the seam, in Montra's words, and nothing more. The adapter (`../vault/connection.ts`) is
  * written over the vault's own published client package, `@fdv/client`, which does the signing (owner's answer 1); no
  * signer or vault client of Montra's own lives in this repository. PR 2 builds the connection test (`check`); PR 3
- * sending, asking what became of a document, withdrawing it and deleting it; reading back, the feed and links come with
- * the PRs that use them.
+ * sending, asking what became of a document, withdrawing it and deleting it; PR 4 the changes feed and links; reading
+ * back comes with PR 5.
  */
 export interface VaultDestination {
   readonly kind: 'fdv';
@@ -26,7 +26,11 @@ export interface VaultDestination {
   /** §4.4, §12.3: what became of documents Montra sent, by id. An id the vault doesn't know is left out of the map. */
   status(refs: readonly string[]): Promise<Map<string, VaultItemState>>;
 
-  /** §9: one page of the changes feed for documents Montra sent. `null` starts from the beginning. */
+  /**
+   * §9: one page of the changes feed. `null` starts from the beginning, a full read of what Montra may see now. A
+   * position the vault says is no longer valid starts from the beginning too, and the page says so (`restart`). The
+   * feed may name documents Montra didn't send; the caller uses only its own (§1, one direction).
+   */
   changes(cursor: string | null): Promise<VaultChangesPage>;
 
   /**
@@ -71,6 +75,10 @@ export interface VaultCheck {
   mayReadBack: boolean;
   /** The vault lets Montra delete what it sent. */
   mayDelete: boolean;
+  /** §9: the vault lets Montra read its changes feed (and so see what became of what it sent). */
+  mayRead: boolean;
+  /** §9: the vault lets Montra make links for a person to open a document. */
+  mayOpen: boolean;
   /** A key change Montra registered has been confirmed on the vault's side (§2). */
   newKeyConfirmed: boolean;
   /** The vault's next daily reset, when it says. */
@@ -128,7 +136,10 @@ export type VaultItemState =
       refusal: 'kind' | 'type' | 'size' | null;
     };
 
-/** §9: one page of the feed. `restart` says Montra's position is no longer valid and the whole feed must be read again. */
+/**
+ * §9: one page of the feed. `restart`: the vault said Montra's position is no longer valid, so this page starts a full
+ * read from the beginning, and anything Montra holds that the full read doesn't show is out of reach.
+ */
 export interface VaultChangesPage {
   changes: VaultChange[];
   cursor: string;
@@ -136,15 +147,24 @@ export interface VaultChangesPage {
   restart: boolean;
 }
 
+/**
+ * §9: one line of the feed. `updated`: the document as the vault has it now. `own` says its current version is still
+ * the one Montra sent, and `ref` is then Montra's id for it; a document that isn't Montra's own has a newer version
+ * from the family, or isn't one Montra sent at all. `out_of_reach`: Montra may no longer see it, and never why.
+ */
 export type VaultChange =
   | {
       documentId: string;
       change: 'updated';
-      kind: string | null;
+      own: boolean;
+      ref: string | null;
+      /** The vault's kind, by its key and the name it shows. */
+      kind: { key: string; name: string } | null;
       title: string | null;
+      /** The paper's date, `YYYY-MM-DD`. */
       date: string | null;
       version: string | null;
-      newerVersion: boolean;
+      sha256: string | null;
     }
   | { documentId: string; change: 'out_of_reach' };
 
@@ -161,8 +181,14 @@ export type VaultErrorCode =
   | 'identity_changed'
   /** The vault's hash of a document doesn't match Montra's (§4.3). */
   | 'hash_mismatch'
-  /** The vault won't return the document (§5a). */
+  /** The vault won't return the document (§5a), or open it (§9). */
   | 'unavailable'
+  /** §9: too many links this hour; worth asking again after `retryAfter`. Not a failure. */
+  | 'links_full'
+  /** §9: the vault can't show this type of file as pages; a download link may do instead. */
+  | 'cannot_view'
+  /** §9: the vault doesn't let Montra open documents for a person. */
+  | 'cannot_open'
   /** Can't reach the vault: network, timeout, TLS. */
   | 'unreachable'
   /** The address guard refused the vault's address (§8). */
@@ -187,6 +213,10 @@ const MESSAGES: Record<VaultErrorCode, string> = {
     'A different vault answered at this address. Montra stopped sending until the connection is checked.',
   hash_mismatch: 'The vault received a different file from the one Montra sent.',
   unavailable: 'The vault didn’t return this file.',
+  links_full:
+    'Montra has opened as many documents from the vault as it may this hour. Try again a little later.',
+  cannot_view: 'The vault can’t show this kind of file as pages.',
+  cannot_open: 'The vault doesn’t let Montra open documents. An owner of the vault can allow it there.',
   unreachable: 'Montra couldn’t reach the vault. Check its address, and that it’s reachable over https.',
   not_allowed_host: 'Montra can’t connect to that address. Use the vault’s public address, over https.',
   refused: 'The vault turned this down.',
@@ -226,7 +256,13 @@ export class VaultError extends Error {
 
   /** A daily cap is a hold, not a failure: it doesn't count toward `failing` (§12). */
   get countsAsFailure(): boolean {
-    return this.code !== 'send_cap' && this.code !== 'read_cap';
+    return (
+      this.code !== 'send_cap' &&
+      this.code !== 'read_cap' &&
+      this.code !== 'links_full' &&
+      this.code !== 'cannot_view' &&
+      this.code !== 'cannot_open'
+    );
   }
 
   /** Tried again later on its own: waits and server failures, not refusals or anything a person must look at. */

@@ -83,6 +83,9 @@ const VaultConfig = z.object({
   mediaTypes: z.array(z.string()).default([]),
   mayReadBack: z.boolean().default(false),
   mayDelete: z.boolean().default(false),
+  /** §9: the vault lets Montra read its changes feed, and make links for a person to open a document. */
+  mayRead: z.boolean().default(false),
+  mayOpen: z.boolean().default(false),
   groups: z
     .array(z.object({ group: VaultGroup, mode: VaultGroupMode, vaultKind: z.string().nullable() }))
     .default([]),
@@ -844,7 +847,8 @@ export class VaultService {
       return {
         data: files.map((f) => {
           const v = byFile.get(f.id);
-          const title = v?.vault_meta && typeof v.vault_meta.title === 'string' ? v.vault_meta.title : null;
+          const meta = v?.vault_meta ?? null;
+          const text = (k: string) => (meta && typeof meta[k] === 'string' ? (meta[k] as string) : null);
           return {
             fileId: f.id,
             location: f.location,
@@ -855,9 +859,12 @@ export class VaultService {
             vault: v
               ? {
                   status: v.status,
-                  title,
-                  newerVersion: v.vault_meta?.newerVersion === true,
+                  title: text('title'),
+                  kind: text('kind'),
+                  newerVersion: meta?.newerVersion === true,
                   notKeptReason: v.not_kept_reason,
+                  // §9: filed, and the feed has shown it to Montra, so the vault has a document to open.
+                  canOpen: v.status === 'filed' && meta !== null && typeof meta.documentId === 'string',
                 }
               : null,
           };
@@ -959,6 +966,8 @@ export class VaultService {
       mediaTypes: check.mediaTypes,
       mayReadBack: check.mayReadBack,
       mayDelete: check.mayDelete,
+      mayRead: check.mayRead,
+      mayOpen: check.mayOpen,
       hints: check.hints,
       limits: check.limits,
     };
@@ -983,6 +992,8 @@ export class VaultService {
             ? null
             : Math.max(-86_400_000, Math.min(86_400_000, check.clockOffsetMs)),
         ...(more.keyRotation ? { key_rotation: more.keyRotation, key_rotation_at: null } : {}),
+        // §9: the job reads the feed only while the vault lets Montra read it; it starts at once the first time.
+        feed_next_at: check.approved && check.mayRead ? sql`coalesce(feed_next_at, now())` : null,
         updated_at: new Date(now),
       })
       .where('workspace_id', '=', ctx.workspaceId)
@@ -1045,6 +1056,7 @@ export class VaultService {
         ? { files: config.limits.filesPerDay, filesToday: config.limits.filesToday }
         : null,
       clockOffsetMs: state?.clock_offset_ms ?? null,
+      feedReadAt: iso(state?.feed_read_at),
       keyRotation: state?.key_rotation ?? 'none',
       lastSuccessAt: iso(row.last_success_at),
       lastError: row.last_error,

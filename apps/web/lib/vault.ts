@@ -199,7 +199,7 @@ export function vaultBadge(
     case 'received':
       return { key: 'vault.badge_inbox', tone: 'muted', title: null };
     case 'filed':
-      return { key: 'vault.badge_filed', tone: 'good', title: v.title };
+      return { key: 'vault.badge_filed', tone: 'good', title: vaultName(s) };
     case 'not_kept':
       return { key: 'vault.badge_not_kept', tone: 'muted', title: v.notKeptReason };
     case 'failed':
@@ -209,4 +209,111 @@ export function vaultBadge(
     default:
       return null;
   }
+}
+
+/** §9: what the vault calls a document, as its changes feed last said: its title, else its kind. */
+export function vaultName(s: FileStorageStateDto | undefined): string | null {
+  return s?.vault?.title ?? s?.vault?.kind ?? null;
+}
+
+export type VaultOpenMode = 'view' | 'download';
+
+/**
+ * §9 "Open in the vault": where the browser goes when the person clicks. A route of the web app's own, which asks the
+ * API for a single-use link and sends the browser straight on to it; the page never holds the link. A plain link, not
+ * Next's `<Link>`, so nothing prefetches it.
+ */
+export function vaultOpenHref(workspaceId: string, fileId: string, mode: VaultOpenMode = 'view'): string {
+  return `/w/${encodeURIComponent(workspaceId)}/vault/${encodeURIComponent(fileId)}/open?mode=${mode}`;
+}
+
+/** The page that says, in words, why a document didn't open. Only a code and a wait: never the link. */
+export function vaultOpenProblemHref(
+  workspaceId: string,
+  fileId: string,
+  problem: VaultOpenProblem,
+  minutes: number | null,
+): string {
+  const q = new URLSearchParams({ problem });
+  if (minutes !== null) q.set('minutes', String(minutes));
+  return `/w/${encodeURIComponent(workspaceId)}/vault/${encodeURIComponent(fileId)}?${q.toString()}`;
+}
+
+export const VAULT_OPEN_PROBLEMS = [
+  'out_of_reach',
+  'links_full',
+  'cannot_view',
+  'cannot_open',
+  'needs_vault',
+  'not_filed',
+  'not_found',
+  'failed',
+] as const;
+export type VaultOpenProblem = (typeof VAULT_OPEN_PROBLEMS)[number];
+
+const PROBLEM_KEYS: Record<VaultOpenProblem, string> = {
+  out_of_reach: 'vault.open_out_of_reach',
+  links_full: 'vault.open_links_full',
+  cannot_view: 'vault.open_cannot_view',
+  cannot_open: 'vault.open_cannot_open',
+  needs_vault: 'vault.open_needs_vault',
+  not_filed: 'vault.open_not_filed',
+  not_found: 'vault.open_not_found',
+  failed: 'vault.open_failed',
+};
+
+/** The words for a problem, by a code from the page's address (anything unknown is the general one). */
+export function vaultOpenProblemKey(problem: string | null | undefined): string {
+  return PROBLEM_KEYS[
+    (VAULT_OPEN_PROBLEMS as readonly string[]).includes(problem ?? '')
+      ? (problem as VaultOpenProblem)
+      : 'failed'
+  ];
+}
+
+/**
+ * What the API's answer to "open" means for the browser (§9): a redirect on to the single-use link, or a problem with
+ * the minutes to wait for the vault's hourly limit. Only an https link goes through; anything else is a problem.
+ */
+export function vaultOpenOutcome(answer: {
+  status: number;
+  location: string | null;
+  retryAfter: string | null;
+  code: string | null;
+}): { go: string } | { problem: VaultOpenProblem; minutes: number | null } {
+  if (answer.status === 303 && answer.location && /^https:\/\//.test(answer.location))
+    return { go: answer.location };
+  const code = (answer.code ?? '').replace(/^vault\./, '');
+  const seconds = Number(answer.retryAfter);
+  const minutes = Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.ceil(seconds / 60)) : null;
+  if (answer.status === 429 || code === 'links_full')
+    return { problem: 'links_full', minutes: minutes ?? 60 };
+  if (answer.status === 404 && code !== 'not_in_vault') return { problem: 'not_found', minutes: null };
+  if (code === 'not_in_vault') return { problem: 'not_filed', minutes: null };
+  if ((VAULT_OPEN_PROBLEMS as readonly string[]).includes(code))
+    return { problem: code as VaultOpenProblem, minutes: null };
+  if (answer.status === 410) return { problem: 'out_of_reach', minutes: null };
+  return { problem: 'failed', minutes: null };
+}
+
+/**
+ * Whether a request to open is a person's click and not a prefetch or another site's (§9: links are never prefetched).
+ * Browsers mark prefetches (`Sec-Purpose`, `Purpose`, Next's router), and say where a navigation came from.
+ */
+export function isPersonOpening(headers: { get(name: string): string | null }): boolean {
+  const purpose = `${headers.get('sec-purpose') ?? ''} ${headers.get('purpose') ?? ''}`.toLowerCase();
+  if (purpose.includes('prefetch') || purpose.includes('prerender')) return false;
+  if (headers.get('next-router-prefetch') || headers.get('rsc')) return false;
+  const site = headers.get('sec-fetch-site');
+  if (site && site !== 'same-origin' && site !== 'none') return false;
+  const dest = headers.get('sec-fetch-dest');
+  if (dest && dest !== 'document') return false;
+  return true;
+}
+
+/** §9: "Kept in step with the vault" in Settings: when the changes feed was last read, or that it isn't read. */
+export function vaultFeedLine(d: VaultConnectionDto): { key: string; at: string | null } {
+  return d.feedReadAt
+    ? { key: 'vault.feed_read', at: d.feedReadAt }
+    : { key: 'vault.feed_not_read', at: null };
 }

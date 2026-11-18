@@ -298,6 +298,9 @@ describe('who sees the vault’s tables (ADR-0054 §11)', () => {
         await expect(
           c.query(`select * from app.vault_file_states(array[gen_random_uuid()])`),
         ).rejects.toThrow(/permission denied/);
+        await expect(c.query(`select * from app.vault_file_open(gen_random_uuid())`)).rejects.toThrow(
+          /permission denied/,
+        );
       });
     }
   });
@@ -536,6 +539,65 @@ describe('the job’s functions (ADR-0054 §12)', () => {
       });
     expect(await states(a, memberId)).toEqual([{ file_id: id, status: 'queued' }]);
     expect(await states(b, b.ownerId)).toEqual([]);
+    await admin.query(`delete from app.file where id = $1`, [id]);
+  });
+
+  it('is due when its changes feed is, while active, and never because of it while it needs a person (migration 0065)', async () => {
+    await admin.query(`delete from app.vault_item where destination_id = $1`, [vault]);
+    await admin.query(`update app.storage_destination set status = 'active' where id = $1`, [vault]);
+    await admin.query(
+      `update app.vault_connection_state set next_check_at = now() + interval '1 day', feed_next_at = null
+        where destination_id = $1`,
+      [vault],
+    );
+    expect(await due()).toEqual([]);
+    await admin.query(
+      `update app.vault_connection_state set feed_next_at = now() - interval '1 second' where destination_id = $1`,
+      [vault],
+    );
+    expect(await due()).toEqual([{ destination_id: vault, user_id: a.ownerId }]);
+    const next = await asRole(
+      'montra_app',
+      async (c) => (await c.query(`select app.vault_next() as t`)).rows[0].t as Date,
+    );
+    expect(next.getTime()).toBeLessThanOrEqual(Date.now());
+    await admin.query(`update app.storage_destination set status = 'needs_vault' where id = $1`, [vault]);
+    expect(await due()).toEqual([]);
+    await admin.query(`update app.storage_destination set status = 'active' where id = $1`, [vault]);
+    await admin.query(`update app.vault_connection_state set feed_next_at = null where destination_id = $1`, [
+      vault,
+    ]);
+  });
+
+  it('says which document to open for a file, to members of its workspace only (§9, migration 0065)', async () => {
+    const id = await file(a.workspaceId, 'receipt');
+    await admin.query(
+      `update app.vault_item set status = 'filed', vault_ref = 'm1-open', filed_at = now(), vault_document_id = 'doc-9'
+        where file_id = $1`,
+      [id],
+    );
+    const target = (f: Fixture, userId: string) =>
+      as(f, userId, async (trx) => {
+        const { rows } = await sql<{
+          destination_id: string;
+          document_id: string;
+          status: string;
+          user_id: string;
+        }>`
+          select * from app.vault_file_open(${id}::uuid)`.execute(trx);
+        return rows;
+      });
+    const expected = [{ destination_id: vault, document_id: 'doc-9', status: 'filed', user_id: a.ownerId }];
+    expect(await target(a, memberId)).toEqual(expected);
+    expect(await target(a, viewerId)).toEqual(expected);
+    expect(await target(b, b.ownerId)).toEqual([]);
+    // A link is never kept: nothing in the vault's tables has a place for one.
+    const { rows } = await admin.query(
+      `select column_name from information_schema.columns
+        where table_schema = 'app' and table_name in ('vault_item', 'vault_connection_state')
+          and column_name ~ '(link|url)'`,
+    );
+    expect(rows).toEqual([]);
     await admin.query(`delete from app.file where id = $1`, [id]);
   });
 

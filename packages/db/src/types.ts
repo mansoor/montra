@@ -1744,6 +1744,10 @@ export interface VaultConnectionStateTable {
   clock_offset_ms: number | null;
   key_rotation: Generated<'none' | 'made' | 'registered'>;
   key_rotation_at: Date | null;
+  /** §9: when the job next reads the changes feed; null while Montra may not read (migration 0065). */
+  feed_next_at: Date | null;
+  /** §9: a full read of the feed in progress (the first, or starting over), since then (migration 0065). */
+  full_read_started_at: Date | null;
   updated_at: Generated<Date>;
 }
 
@@ -1765,6 +1769,8 @@ export interface VaultItemTable {
   vault_meta: Json<Record<string, unknown>> | null;
   /** The vault says Montra could download the exact file it sent again; null until it has said (migration 0064). */
   content_available: boolean | null;
+  /** §9: when the changes feed last showed this row's document (migration 0065). */
+  feed_seen_at: Date | null;
   received_at: Date | null;
   filed_at: Date | null;
   source_key: string | null;

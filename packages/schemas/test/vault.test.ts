@@ -162,6 +162,7 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     heldUntil: { sending: null, reading: null },
     dailyLimit: { files: 100, filesToday: 3 },
     clockOffsetMs: null,
+    feedReadAt: null,
     keyRotation: 'none',
     lastSuccessAt: null,
     lastError: null,
@@ -258,11 +259,16 @@ describe('files held in the vault, and missing files (ADR-0054 §5a, §9)', () =
       vault: {
         status: 'filed',
         title: 'Bank statement, October 2026',
+        kind: 'Bank statement',
         newerVersion: false,
         notKeptReason: null,
+        canOpen: true,
       },
     });
     expect(state.vault?.title).toBe('Bank statement, October 2026');
+    // §9: whether "Open in the vault" is offered, never a link.
+    expect(state.vault?.canOpen).toBe(true);
+    expect(JSON.stringify(state)).not.toMatch(/https?:/);
     expect(FileStorageStateDto.safeParse({ ...state, location: 'cloud' }).success).toBe(false);
   });
 

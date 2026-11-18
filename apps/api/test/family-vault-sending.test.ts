@@ -769,7 +769,14 @@ describe('badges and pausing (ADR-0054 §13)', () => {
         fileId: id,
         location: 'montra',
         missing: null,
-        vault: { status: 'received', title: null, newerVersion: false, notKeptReason: null },
+        vault: {
+          status: 'received',
+          title: null,
+          kind: null,
+          newerVersion: false,
+          notKeptReason: null,
+          canOpen: false,
+        },
       },
     ]);
     const other = (
