@@ -1075,7 +1075,9 @@ to the text above, and why:
 - **Opening on the phone** (`features/vault.ts` `openInVault`, `ui/Vault.tsx`): on the tap, the app asks for the link
   and hands it at once to the system browser (`Linking.openURL`). The link lives in that one call: it is never put in
   React state, a cache, the offline store or a log, and the result the screen sees doesn't carry it. Only an https link
-  is opened. Afterwards the phone says, in words, that it opened as a download when the vault can't show the type as
+  is opened: with the development-only `FAMILY_VAULT_ALLOW_LOCAL_HTTP` (D6, amended), a vault on the developer's machine
+  answers `http://localhost…` links, which the phone refuses with the general words, since its own `localhost` isn't
+  that machine anyway. Afterwards the phone says, in words, that it opened as a download when the vault can't show the type as
   pages, or why it didn't open: the hourly limit with the minutes to wait (from `Retry-After`; the phone's `ApiError`
   gains `retryAfterSeconds`), not allowed, no longer available, a type the vault can't show and won't let Montra
   download, the vault doesn't let Montra open documents, the connection needs a person, disconnected, not filed yet,
