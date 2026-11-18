@@ -1833,6 +1833,11 @@ Phase 11 leftovers:
   Checked and left as they are: `app.dequeue_job` (migration 0006) compares `id = (select … limit 1)`, a scalar
   subquery run once; the `/ai/tasks` claim in `ai.controller.ts` has `in (select … limit 20)` but no row lock, so a rerun
   sees the same rows and can't lease more. Tests: `apps/api/test/own-storage.test.ts` ("claiming a batch at a time").
+- **Local-mode AI task claim** (`GET ai/tasks`): two clients asking at once could both claim the same tasks, because the
+  unlocked `in (select … limit 20)` let the second update re-claim rows the first had just taken. It now claims through a
+  CTE with `for update skip locked`, like the mirror and vault jobs, so each task goes to one client and the batch is
+  `TASK_BATCH` (20). Tests: `apps/api/test/ai-local-tasks.test.ts` (the concurrent case failed before the fix: both
+  callers got the same 20 tasks).
 
 ---
 
