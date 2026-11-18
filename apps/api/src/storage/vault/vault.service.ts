@@ -1397,7 +1397,10 @@ export class VaultService {
       .orderBy('f.created_at')
       .orderBy('f.id')
       .execute();
-    return rows.map((r) => ({ id: r.id, group: vaultGroupOf({ kind: r.kind, sealed: false }) as VaultGroup }));
+    return rows.map((r) => ({
+      id: r.id,
+      group: vaultGroupOf({ kind: r.kind, sealed: false }) as VaultGroup,
+    }));
   }
 
   // ----- Inside ----------------------------------------------------------------------------------------------------

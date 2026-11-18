@@ -512,7 +512,9 @@ describe('the vault as the record, the rest (ADR-0054 §5, §10; PR 5b2)', () =>
     // Missing ones count: the connection is how the same vault would give them back.
     expect(vaultDisconnectChoice(connection({ files: { onlyInVault: 2, missing: 2 } }))).toBe('choose');
     expect(
-      vaultDisconnectChoice(connection({ files: { onlyInVault: 3, missing: 0 }, bringingBack: { then: 'keep' } })),
+      vaultDisconnectChoice(
+        connection({ files: { onlyInVault: 3, missing: 0 }, bringingBack: { then: 'keep' } }),
+      ),
     ).toBe('bringing_back');
   });
 

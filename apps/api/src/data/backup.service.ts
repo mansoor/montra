@@ -1052,9 +1052,15 @@ export class BackupService {
         );
       }
       zip.addBuffer(Buffer.from(index.join('\r\n') + '\r\n'), 'receipts.csv');
-      const forms = await this.taxFormsInPackage(ctx, zip, entityId, entity.name, year, missing, mayWait).catch(
-        abandon(zip, done),
-      );
+      const forms = await this.taxFormsInPackage(
+        ctx,
+        zip,
+        entityId,
+        entity.name,
+        year,
+        missing,
+        mayWait,
+      ).catch(abandon(zip, done));
       const formLines = forms
         ? `${README_LINE}${forms.leftOut ? ` ${leftOutLine(forms.leftOut)}` : ''}\r\n\r\n`
         : '';

@@ -130,13 +130,14 @@ describe('connections: one mirror and one vault per workspace (ADR-0054 §1)', (
     await expect(
       admin.query(`update app.storage_destination set secret_enc = null where id = $1`, [id]),
     ).rejects.toThrow(/storage_destination_secret_held/);
-    await admin.query(`update app.storage_destination set secret_enc = null, status = 'disconnected' where id = $1`, [
-      id,
-    ]);
-    await admin.query(`insert into app.vault_connection_state (workspace_id, destination_id) values ($1, $2)`, [
-      b.workspaceId,
-      id,
-    ]);
+    await admin.query(
+      `update app.storage_destination set secret_enc = null, status = 'disconnected' where id = $1`,
+      [id],
+    );
+    await admin.query(
+      `insert into app.vault_connection_state (workspace_id, destination_id) values ($1, $2)`,
+      [b.workspaceId, id],
+    );
     // Never due: with no key there is nothing the job can do.
     await admin.query(
       `update app.vault_connection_state set next_check_at = now() - interval '1 hour' where destination_id = $1`,
@@ -151,7 +152,9 @@ describe('connections: one mirror and one vault per workspace (ADR-0054 §1)', (
     expect(told.rows[0]!.d).toBe(true);
     // Bringing files back is a time and a choice together.
     await expect(
-      admin.query(`update app.vault_connection_state set bring_back_at = now() where destination_id = $1`, [id]),
+      admin.query(`update app.vault_connection_state set bring_back_at = now() where destination_id = $1`, [
+        id,
+      ]),
     ).rejects.toThrow(/vault_connection_state_bring_back/);
     await dropDestinations(b.workspaceId);
   });

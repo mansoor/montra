@@ -343,7 +343,8 @@ function SendExisting({ workspace, d }: { workspace: WorkspaceDto; d: VaultConne
 function MoveExisting({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
   const { run, busy, message, t } = useAction();
   const [move, setMove] = useState<VaultMoveDto | null>(null);
-  if (d.stage !== 'connected' || d.bringingBack || !d.groups.some((g) => g.mode === 'sent_no_copy')) return null;
+  if (d.stage !== 'connected' || d.bringingBack || !d.groups.some((g) => g.mode === 'sent_no_copy'))
+    return null;
   return (
     <div className="space-y-2" data-testid="vault-move">
       <h3 className="text-sm font-semibold">{t('vault.move_title')}</h3>

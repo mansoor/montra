@@ -343,10 +343,7 @@ export class MissingFiles {
  * A 409 for an upload whose bytes are another file's (`findDuplicate`): its name and date when the person may know of
  * it (owners and admins, or whoever uploaded it), else only that Montra already holds the same file.
  */
-export function possibleDuplicate(
-  dup: { fileName: string; uploadedAt: Date },
-  named: boolean,
-): AppError {
+export function possibleDuplicate(dup: { fileName: string; uploadedAt: Date }, named: boolean): AppError {
   return new AppError(
     409,
     'file.possible_duplicate',

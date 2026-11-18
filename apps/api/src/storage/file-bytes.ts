@@ -58,12 +58,7 @@ export type FileSource = 'montra' | 'mirror' | 'vault';
  * - `not_held`: nowhere Montra can read it.
  */
 export type NotAvailableReason =
-  | 'in_vault'
-  | 'vault_refused'
-  | 'vault_read_cap'
-  | 'vault_unavailable'
-  | 'vault_disconnected'
-  | 'not_held';
+  'in_vault' | 'vault_refused' | 'vault_read_cap' | 'vault_unavailable' | 'vault_disconnected' | 'not_held';
 
 export type FileBytesResult =
   | { ok: true; bytes: Uint8Array; from: FileSource }

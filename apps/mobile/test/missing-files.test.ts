@@ -141,7 +141,11 @@ describe('the words the list uses', () => {
 describe('a possible duplicate (the owner’s clarification, 2026-11-18)', () => {
   it('knows the API’s warning, with its words, and nothing else', () => {
     expect(
-      possibleDuplicate({ status: 409, code: 'file.possible_duplicate', message: 'This looks like a duplicate.' }),
+      possibleDuplicate({
+        status: 409,
+        code: 'file.possible_duplicate',
+        message: 'This looks like a duplicate.',
+      }),
     ).toBe('This looks like a duplicate.');
     expect(possibleDuplicate({ status: 409, code: 'file.not_missing', message: 'x' })).toBeNull();
     expect(possibleDuplicate(new Error('offline'))).toBeNull();

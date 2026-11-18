@@ -80,8 +80,12 @@ const contentCalls = () =>
     .length as number;
 const audits = async (fileId: string, action: string) =>
   Number(
-    (await db.query(`select count(*) from app.audit_log where subject_id = $1 and action = $2`, [fileId, action]))
-      .rows[0].count,
+    (
+      await db.query(`select count(*) from app.audit_log where subject_id = $1 and action = $2`, [
+        fileId,
+        action,
+      ])
+    ).rows[0].count,
   );
 const security = async (kind: string) =>
   (
@@ -99,7 +103,11 @@ const docOf = (id: string) => vstate().documents.find((d: any) => d.id === id);
 const binary = (id: string) => Buffer.concat([PNG, ALL_BYTES, Buffer.from(id), ALL_BYTES]);
 
 /** A file in Montra, as an upload stores it: its bytes in storage, its row (which fires the trigger). */
-async function file(kind: string, name: string, bytes?: Buffer): Promise<{ id: string; bytes: Buffer; key: string }> {
+async function file(
+  kind: string,
+  name: string,
+  bytes?: Buffer,
+): Promise<{ id: string; bytes: Buffer; key: string }> {
   const id = randomUUID();
   const b = bytes ?? binary(id);
   const key = storageKey(wsId, kind, id);
@@ -443,7 +451,9 @@ describe('moving files the vault had already filed (ADR-0054 §5, §12; the owne
     try {
       const f = await filed('Mirrored first.png');
       await setMode('sent_no_copy');
-      expect((await c.post(url('/family-vault/move'), { expected: 1, groups: ['receipts'] })).status).toBe(200);
+      expect((await c.post(url('/family-vault/move'), { expected: 1, groups: ['receipts'] })).status).toBe(
+        200,
+      );
       await run();
       expect((await fileRow(f.id)).location).toBe('montra');
       await h.app.get(StorageMirrorJobs).run();
@@ -453,10 +463,9 @@ describe('moving files the vault had already filed (ADR-0054 §5, §12; the owne
       ]);
       await removeNow(f.id);
       const row = await vaultRow();
-      const conn = await h.app.get((await import('../src/storage/vault/vault.service.js')).VaultService).openRow(
-        ctx(),
-        row,
-      );
+      const conn = await h.app
+        .get((await import('../src/storage/vault/vault.service.js')).VaultService)
+        .openRow(ctx(), row);
       try {
         await (jobs as any).removeSources(
           ctx(),
@@ -604,7 +613,9 @@ describe('disconnecting while files are kept only in the vault (ADR-0054 §10)',
     expect(gone.body.code).toBe('vault.files_only_in_vault');
     // People are told, once, with no file names.
     const told = (
-      await db.query(`select * from app.notification where workspace_id = $1 and type = 'files_missing'`, [wsId])
+      await db.query(`select * from app.notification where workspace_id = $1 and type = 'files_missing'`, [
+        wsId,
+      ])
     ).rows;
     expect(told.length).toBe(1);
   });
@@ -643,7 +654,9 @@ describe('disconnecting while files are kept only in the vault (ADR-0054 §10)',
       expect(got.ok && sha256(got.bytes)).toBe(row.sha256);
     }
     // Its groups are as they were.
-    expect((await connection()).groups.find((g: any) => g.group === 'receipts').vaultKind).toBe('utility_bill');
+    expect((await connection()).groups.find((g: any) => g.group === 'receipts').vaultKind).toBe(
+      'utility_bill',
+    );
   });
 
   it('“Bring the files back” then disconnects: once all are back, the connection goes', async () => {
@@ -743,7 +756,9 @@ describe('archives and the vault (ADR-0054 §5a)', () => {
         `Read cap backup.png (file ${f.id}): ${NOT_AVAILABLE_WORDS.vault_read_cap}`,
       );
     }
-    await db.query(`update app.vault_connection_state set read_held_until = null where workspace_id = $1`, [wsId]);
+    await db.query(`update app.vault_connection_state set read_held_until = null where workspace_id = $1`, [
+      wsId,
+    ]);
   });
 
   it('a restore marks the files the archive didn’t hold as missing, with the reason', async () => {
@@ -788,9 +803,9 @@ describe('archives and the vault (ADR-0054 §5a)', () => {
       for (const job of rows) await (worker as any).handlers.get(job.type)(job, { progress: async () => {} });
     };
     await inspect();
-    expect((await c.post(`/v1/me/restores/${id}/confirm`, { mode: 'new', name: 'Restored vault' })).status).toBe(
-      200,
-    );
+    expect(
+      (await c.post(`/v1/me/restores/${id}/confirm`, { mode: 'new', name: 'Restored vault' })).status,
+    ).toBe(200);
     await inspect();
     const done = (await c.get(`/v1/me/restores/${id}`)).body;
     expect(done).toMatchObject({ status: 'done', error: null });
@@ -809,10 +824,15 @@ describe('archives and the vault (ADR-0054 §5a)', () => {
     expect(restored.missing_since).not.toBeNull();
     expect(await audits(restored.id, 'file.marked_missing')).toBe(1);
     const list = (await c.get(`/v1/workspaces/${ws}/missing-files`)).body.data;
-    expect(list.find((x: any) => x.fileId === restored.id)).toMatchObject({ reason: MISSING_WORDS.notInBackup });
+    expect(list.find((x: any) => x.fileId === restored.id)).toMatchObject({
+      reason: MISSING_WORDS.notInBackup,
+    });
     // A file the archive held is Montra's, with its bytes.
     const back = (
-      await db.query(`select * from app.file where workspace_id = $1 and file_name = 'Kept in the archive.png'`, [ws])
+      await db.query(
+        `select * from app.file where workspace_id = $1 and file_name = 'Kept in the archive.png'`,
+        [ws],
+      )
     ).rows[0];
     expect(back).toMatchObject({ location: 'montra', missing_since: null });
     expect(Buffer.from(await storage.get(back.storage_key)).equals(kept.bytes)).toBe(true);

@@ -66,38 +66,42 @@ export function BillManager({
       const problem = receiptFileProblem(file, t);
       if (problem) return setMessage({ tone: 'bad', text: problem });
     }
-    void run(async () => {
-      let vendor = partyId;
-      if (partyId === NEW) {
-        vendor = (
-          await browserApi.createParty(workspaceId, { entityId, kind: 'vendor', name: newVendor.trim() })
-        ).id!;
-      } else if (partyId.startsWith('key:')) {
-        const p = found.find((v) => `key:${v.payeeKey}` === partyId)!;
-        vendor = (
-          await browserApi.createParty(workspaceId, {
-            entityId,
-            kind: 'vendor',
-            name: p.name,
-            payeeKey: p.payeeKey,
-          })
-        ).id!;
-      }
-      const uploaded = file ? await browserApi.uploadBusinessFile(workspaceId, file, file.name) : null;
-      // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
-      if (uploaded && anyDuplicate([uploaded]) && !window.confirm(t('files.duplicate_confirm'))) return null;
-      const fileIds = uploaded ? [uploaded.fileId] : [];
-      return browserApi.createBill(workspaceId, {
-        entityId,
-        partyId: vendor,
-        reference: reference.trim() || null,
-        billDate,
-        dueDate,
-        amount: String(parsed.minor),
-        expenseAccountId: categoryId,
-        fileIds,
-      });
-    }, (r) => (r ? t('bills.added') : t('missing_files.duplicate_cancelled'))).then((r) => {
+    void run(
+      async () => {
+        let vendor = partyId;
+        if (partyId === NEW) {
+          vendor = (
+            await browserApi.createParty(workspaceId, { entityId, kind: 'vendor', name: newVendor.trim() })
+          ).id!;
+        } else if (partyId.startsWith('key:')) {
+          const p = found.find((v) => `key:${v.payeeKey}` === partyId)!;
+          vendor = (
+            await browserApi.createParty(workspaceId, {
+              entityId,
+              kind: 'vendor',
+              name: p.name,
+              payeeKey: p.payeeKey,
+            })
+          ).id!;
+        }
+        const uploaded = file ? await browserApi.uploadBusinessFile(workspaceId, file, file.name) : null;
+        // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
+        if (uploaded && anyDuplicate([uploaded]) && !window.confirm(t('files.duplicate_confirm')))
+          return null;
+        const fileIds = uploaded ? [uploaded.fileId] : [];
+        return browserApi.createBill(workspaceId, {
+          entityId,
+          partyId: vendor,
+          reference: reference.trim() || null,
+          billDate,
+          dueDate,
+          amount: String(parsed.minor),
+          expenseAccountId: categoryId,
+          fileIds,
+        });
+      },
+      (r) => (r ? t('bills.added') : t('missing_files.duplicate_cancelled')),
+    ).then((r) => {
       if (r) {
         setAmount('');
         setReference('');

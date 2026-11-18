@@ -77,7 +77,11 @@ describe('files to provide again', () => {
 
 describe('a possible duplicate (the owner’s clarification, 2026-11-18)', () => {
   it('knows the API’s warning, with its words, and nothing else', () => {
-    const warned = { status: 409, code: 'file.possible_duplicate', message: 'This looks like a duplicate of “A.png”.' };
+    const warned = {
+      status: 409,
+      code: 'file.possible_duplicate',
+      message: 'This looks like a duplicate of “A.png”.',
+    };
     expect(possibleDuplicate(warned)).toBe('This looks like a duplicate of “A.png”.');
     expect(possibleDuplicate({ status: 409, code: 'file.not_missing', message: 'x' })).toBeNull();
     expect(possibleDuplicate({ status: 415, code: 'file.possible_duplicate' })).toBeNull();
@@ -87,12 +91,18 @@ describe('a possible duplicate (the owner’s clarification, 2026-11-18)', () =>
 
   it('asks before using uploads when any repeats a file Montra holds', () => {
     expect(anyDuplicate([{ duplicateOf: null }, { duplicateOf: null }])).toBe(false);
-    expect(anyDuplicate([{ duplicateOf: null }, { duplicateOf: { fileId: 'x', receiptId: null } }])).toBe(true);
+    expect(anyDuplicate([{ duplicateOf: null }, { duplicateOf: { fileId: 'x', receiptId: null } }])).toBe(
+      true,
+    );
     expect(anyDuplicate([])).toBe(false);
   });
 
   it('has the words it asks with', () => {
-    for (const k of ['files.duplicate_confirm', 'files.duplicate_anyway_confirm', 'missing_files.duplicate_cancelled'])
+    for (const k of [
+      'files.duplicate_confirm',
+      'files.duplicate_anyway_confirm',
+      'missing_files.duplicate_cancelled',
+    ])
       expect(k in en, k).toBe(true);
     expect(en['files.duplicate_anyway_confirm']).toContain('{detail}');
   });

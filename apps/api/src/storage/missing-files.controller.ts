@@ -10,9 +10,11 @@ import { CONFIG, type AppConfig } from '../config.js';
 import { MissingFiles } from './missing-files.js';
 
 /** "Upload anyway": the person saw the possible-duplicate warning and goes on. */
-export const AnywayQuery = z.object({ anyway: z.enum(['true', 'false']).default('false') }).transform((q) => ({
-  anyway: q.anyway === 'true',
-}));
+export const AnywayQuery = z
+  .object({ anyway: z.enum(['true', 'false']).default('false') })
+  .transform((q) => ({
+    anyway: q.anyway === 'true',
+  }));
 
 /**
  * Review → "Files to provide again" (ADR-0054 §5a; VLT-11): files Montra no longer holds that the household's Family
