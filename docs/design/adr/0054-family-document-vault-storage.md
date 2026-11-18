@@ -316,7 +316,9 @@ Business documents go when their group is on; a later version may offer a per-en
   Inbox, so the family isn't asked about a document that no longer exists in Montra.
 - **Disconnecting** when some files exist only in the vault (no copy at Montra or the owner's storage) first offers
   "Bring the files back" (downloads them, over several days if the vault's daily cap needs it) and only then
-  disconnects. "Disconnect anyway" keeps the references, shown as "In the vault, not connected".
+  disconnects. "Disconnect anyway" keeps the references, shown as "In the vault, not connected". As built (PR 5b2): a
+  soft disconnect that keeps the connection, `disconnected`, with no key, and lists those files in "Files to provide
+  again" until the same vault is connected again.
 
 ### 11. Data model and migration sketch
 
@@ -908,6 +910,94 @@ and why:
   this.
 - **The e2e run** sets receipts to "no local copy" with its warning, and lists, counts and uploads again a file marked
   missing in the database (the fake vault lives in the API's process, so filing and refusing are API tests).
+
+### As built: PR 5b2 (2026-11-18)
+
+The rest of "the vault as the record", on `@fdv/client` 0.9.0-dev.62 still (dev.63's API keys are a separate PR; nothing
+here touches keys or signing beyond wiping and making them as before). Migration `0068_vault_move_back.sql`. Where 5b2
+differs from or adds to the text above, and why:
+
+- **The move backfill, with the owner's answer "Offer to move now".** Right after an owner saves a group as "sent with no
+  local copy", the web asks for the count of that group's files the vault has already filed and Montra still holds
+  (`GET …/family-vault/move?groups=…`, `VaultMoveDto`) and, when there are any, asks "Move these N files too?". Nothing
+  moves unless the owner says yes (`POST …/family-vault/move` with `expected` and the groups; owner only, with a recent
+  sign-in; a different count is refused, as for "Send existing documents"; `vault_move_started` with `keepCopy: false`).
+  Settings keeps a "Move existing documents" section for later. Confirming only sets each counted row's `remove_at`;
+  the job's removal step (§5, `moveOne`) then takes them one file per transaction under the same conditions as any
+  removal, none skipped, and leaves a file whose conditions don't hold yet for 30 minutes. A file whose vault copy has a
+  different hash is never counted, since it would never move.
+- **"Bring the files back"** (`POST …/family-vault/bring-back`, owner, recent sign-in; and as a disconnect choice): every
+  group sent with no local copy becomes "sent, keep a local copy" (so nothing is removed again, and a confirmed move
+  waiting is dropped), and `vault_connection_state.bring_back_at` asks the job to copy each file held only in the vault
+  back into Montra, oldest first and one at a time, through `FileBytes` (the owner's own storage when it has a copy, else
+  the vault, counted against its daily reads). Each is stored under a new key, `location` back to `montra`, the outbox
+  row's `source_key`/`source_removed_at`/`remove_at` cleared (so only a confirmed move takes its copy again), and an audit
+  row `file.brought_back` with where it came from. The daily read cap holds the rest until the vault's reset; a file the
+  vault doesn't give back is missing (§5a) and the next is asked for. When none is left, the job ends it
+  (`finishBringBack`). Choosing "no local copy" again is refused while files are coming back (409 `vault.bringing_back`).
+  Settings says it is happening (`VaultConnectionDto.bringingBack`).
+- **The disconnect choice: a soft disconnect** (the owner's design decision for 5b2). With no file held only in the vault,
+  disconnecting removes the connection with its key, state and outbox, as before. With some, a disconnect that doesn't
+  say is refused with their count (409 `vault.files_only_in_vault`), so the web shows the choice:
+  - **"Bring the files back"** (`bringBack: true`): as above, then disconnects once they are back; removed when nothing
+    is held only in the vault any more, else kept as disconnected for the files the vault didn't give back.
+  - **"Disconnect anyway"** (`anyway: true`): the connection row stays, `status = 'disconnected'` (a new status, vault
+    rows only), with its outbox and the references Montra reads files back through. Sending stops (`mirror_files` off,
+    `file_kinds` empty, so the trigger queues nothing), the key is wiped (`secret_enc` null, allowed only for a
+    disconnected row), the state's holds and bring-back cleared, and `vault_due()`/`vault_next()` never count it. Every
+    file held only in the vault (the trash included) becomes missing with the reason "Montra was disconnected from
+    Family Document Vault, which keeps this file.", audited and told as any missing file, so it appears in "Files to
+    provide again". Readers get `vault_disconnected` in words (410 to a person; a permanent failure for a job) and the
+    vault is never asked. Opening is refused in words, and the badges stop offering "Open in the vault"
+    (`app.vault_disconnected()`, a definer for members). Changing, checking, retrying or moving answers 409
+    `vault.disconnected`. The security log says `vault_disconnected` with `kept: true`.
+  - **Connecting again** ("Connect again" on the disconnected card) makes a new key for the same row, keeping its groups
+    and outbox, and remembers the vault it was disconnected from (`previousIdentity`). When the pasted code checks out
+    for the same vault (its installation id), the files missing because of the disconnect aren't any more
+    (`file.found_again`, `reconnected: true`) and are read back as before; tested with the same app in the fake given
+    the new key. Another vault: the old outbox goes (its documents aren't Montra's to read there) and those files stay
+    missing. Cancelling a reconnect before the code goes back to disconnected.
+  - **5b1's refusal stays only where it is still needed:** a disconnected connection isn't removed while any file is
+    held only in the vault (its references are how the same vault would give them back), and the same 409 says so;
+    once each is provided again or deleted, "Remove the connection" removes it.
+- **The missing count on an archive's screen:** `ExportJobDto` gains `missingFiles` (from `export_job.missing_files`)
+  and `waitingUntil`. The web's archive list shows "N files couldn't be included" with a link to "Files to provide
+  again", and the phone's "Your data" the same words; the web fixtures (`missing-files.test.ts`) and the phone's
+  `data-settings` module change with it (the phone takes the DTO from `@montra/schemas`).
+- **Archives wait once for the daily read cap** (owner default): any archive, a backup (scheduled or asked for) or a tax
+  package, all of which are jobs, that meets the vault's daily read cap stops, is queued again for a minute after the
+  vault's reset with `vaultWaited` (`JobQueue.enqueue` gains `runAfter`), and shows "Waiting for Family Document Vault's
+  daily limit, until …"; that run lists anything still unavailable rather than waiting again. The ZIP begun is finished
+  before the job's temporary files go. Files read from the vault before the cap are read again after the reset (a new
+  day's allowance); nothing is kept between the runs. While it waits, `vault_file_busy` keeps Montra's copies, as for
+  any archive being made.
+- **Restore marking:** a file row whose bytes the archive didn't hold (it listed it as missing, or it was in the trash)
+  is restored with no key, `location = 'vault'` (Montra holds no copy), and missing with the reason "It wasn't in the
+  backup this was restored from.", audited (`file.marked_missing`, `restored: true`), listed in "Files to provide again"
+  and told once. Before, such a row was restored as Montra's with a key that named no object. Every restored file's
+  `location` and missing columns are now set explicitly, so an archive from before migration 0063 restores too.
+- **A possible duplicate** (the owner's clarification, 2026-11-18). A file the vault can still return is never missing
+  (`FileBytes` reads it), so nothing changed there; "Files to provide again" already sends the new copy to the vault.
+  What existed: receipts' and statements' uploads answered `duplicateOf` from the file's hash (statements warned on the
+  web with "Import anyway"; receipts' answer was not shown), intakes the same, and tax forms refuse a byte-for-byte
+  duplicate outright (ADR-0052). Payslips and bills had nothing. Reused, minimally: one lookup (`findDuplicate`, the
+  earliest file of the workspace with the same hash, held in Montra or only in the vault, not in the trash and not
+  missing, never a sealed one), used by receipts' existing check and added to the uploads of payslips, household bills
+  and business bills, which now answer the same `ReceiptFileDto` shape as receipts (`duplicateOf`). The web asks
+  "This looks like a duplicate of a file already in Montra. Use it anyway?" before a receipt, payslip or bill is made
+  from such an upload; cancel leaves it unused. "Files to provide again" answers 409 `file.possible_duplicate` ("This
+  looks like a duplicate of “name”, uploaded on date.", the name only for owners, admins or whoever uploaded it) unless
+  `?anyway=true`; the web and the phone ask, and going on stores it and sends it to the vault like any other. Tax forms
+  keep their refusal; the phone's own receipt and payslip uploads don't warn yet (PR 6).
+- **Tests:** `family-vault-move-back.test.ts` (the offer, the count, a wrong count refused and nothing moving without
+  the confirmation; the conditions per file, one `moveOne` call each, the mirror and an inactive connection; bringing
+  back byte for byte, the cap's wait and resume; the refused plain disconnect, "Disconnect anyway" with every effect,
+  reconnecting the same vault and reading back byte for byte, bring back then disconnect both ways; an archive's missing
+  count, a backup and a tax package waiting once and then listing; restore marking; the duplicate warning, cancel and
+  upload anyway, and `duplicateOf` on receipts (a vault-only file), payslips and bills), the db test (the new status,
+  the null key only when disconnected, never due, the definer for members and not staff), the schema tests, web
+  `vault.test.ts` and `missing-files.test.ts`, phone `missing-files.test.ts` and `data-settings.test.ts`, and the e2e
+  `files-to-provide.spec.ts` (the warning, cancel and upload anyway).
 
 ## Consequences
 

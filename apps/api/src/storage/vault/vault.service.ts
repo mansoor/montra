@@ -30,6 +30,9 @@ import {
   vaultTypeKept,
   type DisconnectVaultRequest,
   type FileKind,
+  type MoveToVaultRequest,
+  type VaultBringBackDto,
+  type VaultMoveDto,
   type FileStorageStatesResponse,
   type PasteVaultCodeRequest,
   type ReplaceVaultKeyRequest,
@@ -49,6 +52,7 @@ import { Db } from '../../db/database.js';
 import { defaultFolder } from '../destinations/paths.js';
 import { VaultError, type VaultCheck } from '../destinations/vault.js';
 import { SECRET_COLUMN } from '../storage-destinations.service.js';
+import { markMissing, MISSING_WORDS, MissingFiles } from '../missing-files.js';
 import { backoffMs } from '../backoff.js';
 import { readVaultCode, VaultConnection, type VaultCode } from './connection.js';
 import { makeVaultKey, VaultSecret } from './keys.js';
@@ -76,6 +80,11 @@ const VaultConfig = z.object({
   keyId: z.string().nullable().default(null),
   /** The vault's installation id, pinned when the code was accepted. */
   identity: z.string().nullable().default(null),
+  /**
+   * §10: the vault this connection was disconnected from, while connecting again: the same one (by its installation id)
+   * resumes reading the files only it holds; another starts afresh.
+   */
+  previousIdentity: z.string().nullable().default(null),
   householdName: z.string().nullable().default(null),
   actingAs: z.string().nullable().default(null),
   sendKinds: z.array(VaultKindDto).default([]),
@@ -127,6 +136,7 @@ export class VaultService {
     @Inject(Db) private readonly db: Db,
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
     @Inject(VAULT_TRANSPORT) private readonly transport: VaultTransport,
+    @Inject(MissingFiles) private readonly missing: MissingFiles,
   ) {}
 
   // ----- Reading ---------------------------------------------------------------------------------------------------
@@ -149,6 +159,7 @@ export class VaultService {
     if (role !== 'owner') throw ownerOnly();
     return this.db.run(ctx, async (trx) => {
       const existing = await this.row(trx, ctx);
+      if (existing?.status === 'disconnected') return this.reconnect(trx, ctx, existing);
       if (existing) {
         if (configOf(existing).stage === 'register') return this.dto(trx, existing);
         throw new AppError(
@@ -263,6 +274,7 @@ export class VaultService {
         appId: code.appId,
         keyId: code.keyId,
         identity: check.identity,
+        previousIdentity: null,
         ...(rotating
           ? { publicKey: config.newKey!.publicKey, fingerprint: config.newKey!.fingerprint, newKey: null }
           : {}),
@@ -292,6 +304,11 @@ export class VaultService {
         .executeTakeFirst();
       if (!saved) throw conflict();
       await this.saveState(trx, ctx, row.id, check, { keyRotation: 'none' });
+      // §10: connected again after a disconnect. The same vault resumes reading what only it holds; another vault's
+      // documents aren't Montra's to read, so the old references go and those files stay missing.
+      const reconnected = !rotating && config.previousIdentity !== null;
+      const sameVault = reconnected && config.previousIdentity === check.identity;
+      if (reconnected) await this.resume(trx, ctx, row.id, sameVault);
       if (check.approved) await scheduleVault(trx);
       if (rotating) {
         await this.security(trx, ctx, 'vault_key_replaced', { fingerprint: next.fingerprint });
@@ -301,6 +318,7 @@ export class VaultService {
           householdName: check.householdName,
           approved: check.approved,
           fingerprint: next.fingerprint,
+          ...(reconnected ? { reconnected: true, sameVault } : {}),
         });
       }
       return this.dto(trx, saved);
@@ -325,6 +343,7 @@ export class VaultService {
     if (!isAdmin(role)) throw ownersAndAdmins();
     const row = await this.db.run(ctx, (trx) => this.row(trx, ctx));
     if (!row) throw notConnected();
+    assertConnected(row);
     const config = configOf(row);
     if (config.stage === 'register' || !config.address || !config.appId || !config.keyId) {
       throw new AppError(409, 'vault.no_code', 'Paste the code from the vault first');
@@ -443,6 +462,7 @@ export class VaultService {
       const row = await this.row(trx, ctx);
       if (!row) throw notConnected();
       if (BigInt(row.version) !== BigInt(req.version)) throw conflict();
+      assertConnected(row);
       const config = configOf(row);
       if (config.stage === 'register' || !config.keyId) {
         throw new AppError(409, 'vault.no_code', 'Paste the code from the vault first');
@@ -494,34 +514,161 @@ export class VaultService {
   }
 
   /**
-   * Disconnecting destroys the key with the connection; connecting again makes a new one (§7). The app stays registered
-   * in the vault until someone there removes it; Settings says so. While some files are held only in the vault, it is
-   * refused: the connection is how Montra reads them back (§10's "Bring the files back" and "Disconnect anyway" come
-   * with the next part of PR 5).
+   * Disconnecting (§7, §10). With no file held only in the vault, the connection goes with its key, state and outbox;
+   * connecting again makes a new key. The app stays registered in the vault until someone there removes it; Settings
+   * says so.
+   *
+   * With files held only in the vault the owner chooses, and a disconnect that doesn't say is refused with their count
+   * (409 `vault.files_only_in_vault`) so the choice can be shown:
+   *
+   * - `bringBack`: every such file is copied back into Montra first, one at a time (`startBringBack`), and the
+   *   connection is disconnected once they are back;
+   * - `anyway`: a soft disconnect now. The connection stays, `disconnected`, with its outbox (the references Montra
+   *   reads those files back through): nothing is sent, the key is wiped, and the files become missing with that
+   *   reason, in "Files to provide again". Connecting the same vault again resumes reading them.
+   *
+   * A connection already disconnected with such files left stays as it is: removing it would lose those references, so
+   * that is refused until each is provided again or deleted. One being connected again, stopped before its code, goes
+   * back to disconnected.
    */
-  async disconnect(ctx: Ctx, role: string, _req: DisconnectVaultRequest): Promise<void> {
+  async disconnect(ctx: Ctx, role: string, req: DisconnectVaultRequest): Promise<void> {
     if (role !== 'owner') throw ownerOnly();
-    await this.db.run(ctx, async (trx) => {
+    const missing = await this.db.run(ctx, async (trx) => {
       const row = await this.row(trx, ctx);
-      if (!row) return;
+      if (!row) return [];
       const config = configOf(row);
       const only = await onlyInVault(trx, ctx.workspaceId);
-      if (only > 0) {
+      if (only === 0) {
+        await this.remove(trx, ctx, row);
+        return [];
+      }
+      if (row.status === 'disconnected') throw filesOnlyInVault(only, true);
+      if (config.stage === 'register' && config.previousIdentity !== null) {
+        return this.softDisconnect(trx, ctx, row, { cancelledReconnect: true });
+      }
+      if (req.bringBack) {
+        await this.startBringBack(trx, ctx, row, 'disconnect');
+        return [];
+      }
+      if (!req.anyway) throw filesOnlyInVault(only, false);
+      return this.softDisconnect(trx, ctx, row, { anyway: true });
+    });
+    await this.missing.tell(ctx, missing);
+  }
+
+  /**
+   * §10 "Bring the files back", staying connected: every file held only in the vault is copied back into Montra's
+   * storage by the job, one at a time, over days when the vault's daily read cap needs it, and every group sent with no
+   * local copy becomes "sent, keep a local copy", so nothing is removed again. Owner only, with a recent sign-in.
+   */
+  async bringBack(ctx: Ctx, role: string): Promise<VaultBringBackDto> {
+    if (role !== 'owner') throw ownerOnly();
+    return this.db.run(ctx, async (trx) => {
+      const row = await this.row(trx, ctx);
+      if (!row) throw notConnected();
+      assertConnected(row);
+      if (configOf(row).stage !== 'connected') {
+        throw new AppError(409, 'vault.not_connected', 'The vault hasn’t approved Montra yet');
+      }
+      return this.startBringBack(trx, ctx, row, 'keep');
+    });
+  }
+
+  /**
+   * The job's end of "Bring the files back" (§10), once no file held only in the vault is left to fetch (each is back
+   * in Montra, or missing because the vault didn't give it back): the hold is cleared and, when the owner chose to
+   * disconnect, the connection is disconnected: removed when nothing is held only in the vault any more, else kept as
+   * `disconnected` for the files still missing.
+   */
+  async finishBringBack(actor: Ctx, destinationId: string): Promise<void> {
+    const missing = await this.db.run(actor, async (trx) => {
+      const state = await trx
+        .selectFrom('app.vault_connection_state')
+        .select(['bring_back_then', 'bring_back_by'])
+        .where('workspace_id', '=', actor.workspaceId)
+        .where('destination_id', '=', destinationId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!state?.bring_back_then) return [];
+      await trx
+        .updateTable('app.vault_connection_state')
+        .set({ bring_back_at: null, bring_back_then: null, bring_back_by: null, updated_at: new Date() })
+        .where('workspace_id', '=', actor.workspaceId)
+        .where('destination_id', '=', destinationId)
+        .execute();
+      const who = { workspaceId: actor.workspaceId, userId: state.bring_back_by ?? actor.userId };
+      const only = await onlyInVault(trx, actor.workspaceId);
+      if (state.bring_back_then !== 'disconnect') {
+        await this.security(trx, who, 'vault_changed', { broughtBack: true, stillOnlyInVault: only });
+        return [];
+      }
+      const row = await this.row(trx, actor);
+      if (!row || row.id !== destinationId) return [];
+      if (only === 0) {
+        await this.remove(trx, who, row, { afterBringBack: true });
+        return [];
+      }
+      return this.softDisconnect(trx, who, row, { afterBringBack: true });
+    });
+    await this.missing.tell(actor, missing);
+  }
+
+  // ----- Moving existing documents (§5, §12) --------------------------------------------------------------------------
+
+  /**
+   * "Move existing documents" (§12): files of the groups sent with no local copy (`groups` narrows it) that the vault
+   * filed while their group still kept a copy, and that Montra still holds. Moving them removes Montra's copy of each
+   * under §5's conditions, as the job checks them one file at a time; nothing moves until the owner confirms the count.
+   */
+  async moveCount(ctx: Ctx, role: string, groups?: readonly VaultGroup[]): Promise<VaultMoveDto> {
+    if (!isAdmin(role)) throw ownersAndAdmins();
+    return this.db.run(ctx, async (trx) => {
+      const row = await this.row(trx, ctx);
+      if (!row) throw notConnected();
+      return moveOf(await this.movable(trx, ctx, row, groups));
+    });
+  }
+
+  /** "Move these N files too?" (§5): confirmed, each counted file is looked at by the job. Owner, recent sign-in. */
+  async move(ctx: Ctx, role: string, req: MoveToVaultRequest): Promise<VaultMoveDto> {
+    if (role !== 'owner') throw ownerOnly();
+    return this.db.run(ctx, async (trx) => {
+      const row = await this.row(trx, ctx);
+      if (!row) throw notConnected();
+      assertConnected(row);
+      if (configOf(row).stage !== 'connected') {
+        throw new AppError(409, 'vault.not_connected', 'The vault hasn’t approved Montra yet');
+      }
+      const files = await this.movable(trx, ctx, row, req.groups);
+      if (files.length !== req.expected) {
         throw new AppError(
           409,
-          'vault.files_only_in_vault',
-          `${only} file${only === 1 ? ' is' : 's are'} kept only in the vault. Montra reads them back through this connection, so it stays connected for now.`,
+          'vault.count_changed',
+          'The number of documents to move has changed. Look at it again, then move.',
         );
       }
-      await trx
-        .deleteFrom('app.storage_destination')
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('id', '=', row.id)
-        .execute();
-      await this.security(trx, ctx, 'vault_disconnected', {
-        host: config.address ? new URL(config.address).host : null,
-        householdName: config.householdName,
-      });
+      if (files.length) {
+        // The job's removal step (§5) takes them from here, one file per transaction, each condition checked again.
+        await trx
+          .updateTable('app.vault_item')
+          .set({ remove_at: sql`now()`, updated_at: new Date() })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('destination_id', '=', row.id)
+          .where(
+            'file_id',
+            'in',
+            files.map((f) => f.id),
+          )
+          .execute();
+        await this.security(trx, ctx, 'vault_move_started', {
+          count: files.length,
+          groups: moveOf(files).groups,
+          keepCopy: false,
+          alreadyFiled: true,
+        });
+        await scheduleVault(trx);
+      }
+      return moveOf(await this.movable(trx, ctx, row, req.groups));
     });
   }
 
@@ -553,9 +700,11 @@ export class VaultService {
       const row = await this.row(trx, ctx);
       if (!row) throw notConnected();
       if (BigInt(row.version) !== BigInt(req.version)) throw conflict();
+      assertConnected(row);
       const config = configOf(row);
       if (config.stage === 'register')
         throw new AppError(409, 'vault.no_code', 'Paste the code from the vault first');
+      const bringing = (await this.bringBackState(trx, ctx, row.id)) !== null;
       const modes = modesOf(config);
       const groups = VAULT_GROUPS.map((group) => ({
         group,
@@ -584,7 +733,17 @@ export class VaultService {
           throw ownerOnly();
         if (isRestricted && isSentMode(mode) && !isSentMode(cur.mode)) assertRecent();
         // §5: Montra will remove its copies of this group's files once the vault files them: a recent sign-in, as a move.
-        if (mode === 'sent_no_copy' && cur.mode !== 'sent_no_copy') assertRecent();
+        if (mode === 'sent_no_copy' && cur.mode !== 'sent_no_copy') {
+          // §10: not while the files are being brought back, which undoes it.
+          if (bringing) {
+            throw new AppError(
+              409,
+              'vault.bringing_back',
+              'Montra is bringing the files back from the vault. Choose this again once they are back.',
+            );
+          }
+          assertRecent();
+        }
         if (isRestricted && isSentMode(mode) !== isSentMode(cur.mode)) {
           restricted.push({ group: g.group, sent: isSentMode(mode) });
         }
@@ -687,6 +846,7 @@ export class VaultService {
     return this.db.run(ctx, async (trx) => {
       const row = await this.row(trx, ctx);
       if (!row) throw notConnected();
+      assertConnected(row);
       const config = configOf(row);
       if (config.stage !== 'connected') {
         throw new AppError(409, 'vault.not_connected', 'The vault hasn’t approved Montra yet');
@@ -731,6 +891,7 @@ export class VaultService {
     return this.db.run(ctx, async (trx) => {
       const row = await this.row(trx, ctx);
       if (!row) throw notConnected();
+      assertConnected(row);
       const now = new Date();
       let q = trx
         .updateTable('app.vault_item')
@@ -843,6 +1004,9 @@ export class VaultService {
         .where('id', 'in', [...ids])
         .execute();
       if (!files.length) return { data: [] };
+      // §10: nothing opens in a vault Montra is disconnected from.
+      const off = await sql<{ d: boolean }>`select app.vault_disconnected() as d`.execute(trx);
+      const disconnected = off.rows[0]?.d === true;
       const { rows } = await sql<{
         file_id: string;
         status: VaultItemDto['status'];
@@ -870,7 +1034,11 @@ export class VaultService {
                   newerVersion: meta?.newerVersion === true,
                   notKeptReason: v.not_kept_reason,
                   // §9: filed, and the feed has shown it to Montra, so the vault has a document to open.
-                  canOpen: v.status === 'filed' && meta !== null && typeof meta.documentId === 'string',
+                  canOpen:
+                    !disconnected &&
+                    v.status === 'filed' &&
+                    meta !== null &&
+                    typeof meta.documentId === 'string',
                 }
               : null,
           };
@@ -920,6 +1088,319 @@ export class VaultService {
       .filter((f) => vaultTypeKept({ mime: f.mime, fileName: f.file_name }, config.mediaTypes))
       .filter((f) => Number(f.bytes) <= max)
       .map((f) => ({ id: f.id, group: vaultGroupOf({ kind: f.kind, sealed: false }) as VaultGroup }));
+  }
+
+  // ----- Disconnecting and bringing back (§10) ------------------------------------------------------------------------
+
+  /** Removes the connection with its key, state and outbox: nothing is held only in the vault. */
+  private async remove(trx: Trx, ctx: Ctx, row: Row, detail: Record<string, unknown> = {}): Promise<void> {
+    const config = configOf(row);
+    await trx
+      .deleteFrom('app.storage_destination')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', row.id)
+      .execute();
+    await this.security(trx, ctx, 'vault_disconnected', {
+      host: config.address ? new URL(config.address).host : null,
+      householdName: config.householdName,
+      ...detail,
+    });
+  }
+
+  /**
+   * §10, a soft disconnect: the connection stays, `disconnected`, with its outbox. Nothing is sent or looked at, the
+   * key is wiped, and every file held only in the vault becomes missing ("disconnected from the vault"), so Review asks
+   * for it. Answers the files it marked, for the caller to tell people once the transaction has committed.
+   */
+  private async softDisconnect(
+    trx: Trx,
+    ctx: Ctx,
+    row: Row,
+    detail: Record<string, unknown>,
+  ): Promise<string[]> {
+    const config = configOf(row);
+    const now = new Date();
+    await trx
+      .updateTable('app.storage_destination')
+      .set({
+        config: JSON.stringify({ ...config, newKey: null } satisfies VaultConfig),
+        mirror_files: false,
+        file_kinds: [],
+        secret_enc: null,
+        status: 'disconnected',
+        consecutive_failures: 0,
+        last_error: null,
+        last_error_at: null,
+        updated_at: now,
+        version: sql`version + 1`,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', row.id)
+      .execute();
+    await trx
+      .updateTable('app.vault_connection_state')
+      .set({
+        next_check_at: sql<Date>`'infinity'::timestamptz`,
+        feed_next_at: null,
+        send_held_until: null,
+        read_held_until: null,
+        bring_back_at: null,
+        bring_back_then: null,
+        bring_back_by: null,
+        key_rotation: 'none',
+        key_rotation_at: null,
+        updated_at: now,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', row.id)
+      .execute();
+    await trx
+      .updateTable('app.vault_item')
+      .set({ remove_at: null })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', row.id)
+      .where('remove_at', 'is not', null)
+      .execute();
+    const held = await trx
+      .selectFrom('app.file')
+      .select('id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('location', '=', 'vault')
+      .execute();
+    const marked = await markMissing(
+      trx,
+      ctx,
+      held.map((f) => f.id),
+      MISSING_WORDS.disconnected,
+      { includeTrash: true },
+    );
+    await this.security(trx, ctx, 'vault_disconnected', {
+      host: config.address ? new URL(config.address).host : null,
+      householdName: config.householdName,
+      kept: true,
+      onlyInVault: held.length,
+      ...detail,
+    });
+    return marked;
+  }
+
+  /** §10: connecting again after a disconnect: a new key for the same connection, which keeps its outbox. */
+  private async reconnect(trx: Trx, ctx: Ctx, row: Row): Promise<VaultConnectionDto> {
+    const before = configOf(row);
+    const key = makeVaultKey();
+    const config: VaultConfig = VaultConfig.parse({
+      stage: 'register',
+      publicKey: key.publicKey,
+      fingerprint: key.fingerprint,
+      groups: before.groups,
+      describeMore: before.describeMore,
+      previousIdentity: before.previousIdentity ?? before.identity,
+    });
+    const now = new Date();
+    const saved = await trx
+      .updateTable('app.storage_destination')
+      .set({
+        config: JSON.stringify(config),
+        ...sendingColumns(config),
+        secret_enc: (await this.seal(trx, ctx, {
+          v: 1,
+          current: { pkcs8: key.pkcs8, keyId: null },
+          next: null,
+        }))!,
+        status: 'needs_vault',
+        can_delete: false,
+        consecutive_failures: 0,
+        last_error: null,
+        last_error_at: null,
+        updated_at: now,
+        version: sql`version + 1`,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', row.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    await trx
+      .updateTable('app.vault_connection_state')
+      .set({ next_check_at: sql<Date>`'infinity'::timestamptz`, feed_next_at: null, updated_at: now })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', row.id)
+      .execute();
+    await this.security(trx, ctx, 'vault_changed', {
+      keyMade: true,
+      fingerprint: key.fingerprint,
+      reconnecting: true,
+    });
+    return this.dto(trx, saved);
+  }
+
+  /**
+   * §10: the code of a connection made again checked out. The same vault (its installation id): the files it held that
+   * were missing because of the disconnect aren't any more, and are read back as before. Another vault: the outbox
+   * named the old vault's documents, which aren't Montra's to read there, so it goes and those files stay missing.
+   */
+  private async resume(trx: Trx, ctx: Ctx, destinationId: string, sameVault: boolean): Promise<void> {
+    if (sameVault) {
+      const found = await trx
+        .updateTable('app.file')
+        .set({ missing_since: null, missing_reason: null })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('location', '=', 'vault')
+        .where('missing_reason', '=', MISSING_WORDS.disconnected)
+        .where('id', 'in', (eb) =>
+          eb
+            .selectFrom('app.vault_item')
+            .select('file_id')
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('destination_id', '=', destinationId)
+            .where('status', '=', 'filed'),
+        )
+        .returning('id')
+        .execute();
+      if (found.length) {
+        await trx
+          .insertInto('app.audit_log')
+          .values(
+            found.map((f) => ({
+              workspace_id: ctx.workspaceId,
+              actor_user_id: ctx.userId,
+              action: 'file.found_again',
+              subject_type: 'file',
+              subject_id: f.id,
+              diff: JSON.stringify({ reconnected: true }),
+            })),
+          )
+          .execute();
+      }
+      return;
+    }
+    // An object still to remove after a crash (§5) keeps its row, so the job deletes it.
+    await trx
+      .deleteFrom('app.vault_item')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', destinationId)
+      .where((eb) => eb.or([eb('source_key', 'is', null), eb('source_removed_at', 'is not', null)]))
+      .execute();
+    await trx
+      .updateTable('app.vault_connection_state')
+      .set({ feed_cursor: null, feed_read_at: null, full_read_at: null, full_read_started_at: null })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', destinationId)
+      .execute();
+  }
+
+  /**
+   * §10 "Bring the files back": every group sent with no local copy becomes "sent, keep a local copy" (nothing is
+   * removed again, and a move waiting is dropped), and the job is asked to copy the files back, then to keep the
+   * connection or disconnect it.
+   */
+  private async startBringBack(
+    trx: Trx,
+    ctx: Ctx,
+    row: Row,
+    then: 'keep' | 'disconnect',
+  ): Promise<VaultBringBackDto> {
+    const config = configOf(row);
+    const switched = config.groups.filter((g) => g.mode === 'sent_no_copy').map((g) => g.group);
+    const next: VaultConfig = {
+      ...config,
+      groups: config.groups.map((g) =>
+        g.mode === 'sent_no_copy' ? { ...g, mode: 'sent_keep_copy' as const } : g,
+      ),
+    };
+    const now = new Date();
+    await trx
+      .updateTable('app.storage_destination')
+      .set({
+        config: JSON.stringify(next),
+        ...sendingColumns(next),
+        updated_at: now,
+        version: sql`version + 1`,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', row.id)
+      .execute();
+    await trx
+      .updateTable('app.vault_item')
+      .set({ remove_at: null })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', row.id)
+      .where('remove_at', 'is not', null)
+      .execute();
+    const state = await trx
+      .updateTable('app.vault_connection_state')
+      .set({ bring_back_at: sql`now()`, bring_back_then: then, bring_back_by: ctx.userId, updated_at: now })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', row.id)
+      .returning('read_held_until')
+      .executeTakeFirst();
+    await this.security(trx, ctx, 'vault_changed', {
+      bringBack: then,
+      ...(switched.length ? { groups: switched.map((group) => ({ group, mode: 'sent_keep_copy' })) } : {}),
+    });
+    await scheduleVault(trx);
+    const left = await trx
+      .selectFrom('app.file')
+      .select((eb) => eb.fn.countAll<string>().as('n'))
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('location', '=', 'vault')
+      .where('missing_since', 'is', null)
+      .executeTakeFirst();
+    const held = state?.read_held_until;
+    return {
+      queued: Number(left?.n ?? 0),
+      heldUntil: held && held.getTime() > Date.now() ? held.toISOString() : null,
+    };
+  }
+
+  private async bringBackState(trx: Trx, ctx: Ctx, destinationId: string) {
+    const s = await trx
+      .selectFrom('app.vault_connection_state')
+      .select('bring_back_then')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', destinationId)
+      .executeTakeFirst();
+    return s?.bring_back_then ?? null;
+  }
+
+  /**
+   * §5, §12: filed files of the groups sent with no local copy whose copy Montra still holds and isn't already going,
+   * oldest first: what "Move existing documents" counts. A file whose vault copy differs from Montra's never moves.
+   */
+  private async movable(
+    trx: Trx,
+    ctx: Ctx,
+    row: Row,
+    groups?: readonly VaultGroup[],
+  ): Promise<{ id: string; group: VaultGroup }[]> {
+    const config = configOf(row);
+    if (row.status === 'disconnected' || config.stage !== 'connected') return [];
+    const modes = vaultEffectiveModes(config.groups);
+    const kinds = VAULT_GROUPS.filter(
+      (g) => modes[g] === 'sent_no_copy' && (!groups || groups.includes(g)),
+    ).flatMap((g) => [...VAULT_GROUP_KINDS[g]]);
+    if (!kinds.length) return [];
+    const rows = await trx
+      .selectFrom('app.vault_item as i')
+      .innerJoin('app.file as f', (j) =>
+        j.onRef('f.workspace_id', '=', 'i.workspace_id').onRef('f.id', '=', 'i.file_id'),
+      )
+      .select(['f.id', 'f.kind'])
+      .where('i.workspace_id', '=', ctx.workspaceId)
+      .where('i.destination_id', '=', row.id)
+      .where('i.status', '=', 'filed')
+      .where('i.remove_at', 'is', null)
+      .where((eb) => eb.or([eb('i.vault_sha256', 'is', null), eb('i.vault_sha256', '=', eb.ref('f.sha256'))]))
+      .where('f.location', '=', 'montra')
+      .where('f.deleted_at', 'is', null)
+      .where('f.sealed', '=', false)
+      .where('f.kind', 'in', kinds)
+      .orderBy('f.created_at')
+      .orderBy('f.id')
+      .execute();
+    return rows.map((r) => ({
+      id: r.id,
+      group: vaultGroupOf({ kind: r.kind, sealed: false }) as VaultGroup,
+    }));
   }
 
   // ----- Inside ----------------------------------------------------------------------------------------------------
@@ -1081,6 +1562,7 @@ export class VaultService {
       clockOffsetMs: state?.clock_offset_ms ?? null,
       feedReadAt: iso(state?.feed_read_at),
       files: { onlyInVault: Number(held?.only ?? 0), missing: Number(held?.missing ?? 0) },
+      bringingBack: state?.bring_back_then ? { then: state.bring_back_then } : null,
       mirrorGroups: VAULT_GROUPS.filter((g) => VAULT_GROUP_KINDS[g].some((k) => mirrored.includes(k))),
       keyRotation: state?.key_rotation ?? 'none',
       lastSuccessAt: iso(row.last_success_at),
@@ -1151,7 +1633,41 @@ function existingOf(files: readonly { group: VaultGroup }[], config: VaultConfig
   };
 }
 
-/** §10: how many files of the workspace are held only in the vault (whatever their state), not in the trash. */
+/** §10: a disconnected connection has no key: nothing is sent, checked or changed until it is connected again. */
+function assertConnected(row: Row): void {
+  if (row.status === 'disconnected') {
+    throw new AppError(
+      409,
+      'vault.disconnected',
+      'Montra is disconnected from the vault. Connect it again first.',
+    );
+  }
+}
+
+/** §10: why a disconnect needs a choice, or can't remove the connection yet, in words. */
+function filesOnlyInVault(n: number, disconnected: boolean): AppError {
+  const files = `${n} file${n === 1 ? ' is' : 's are'} kept only in the vault.`;
+  return new AppError(
+    409,
+    'vault.files_only_in_vault',
+    disconnected
+      ? `${files} Montra keeps this connection, which is how it reads them back if the same vault is connected again, until each is uploaded again or deleted.`
+      : `${files} Bring them back into Montra first, or disconnect anyway and upload them again later.`,
+  );
+}
+
+/** How many are to move, by group. */
+function moveOf(files: readonly { group: VaultGroup }[]): VaultMoveDto {
+  return {
+    count: files.length,
+    groups: VAULT_GROUPS.map((group) => ({
+      group,
+      count: files.filter((f) => f.group === group).length,
+    })).filter((g) => g.count > 0),
+  };
+}
+
+/** §10: how many files of the workspace are held only in the vault (whatever their state), in the trash or not. */
 async function onlyInVault(trx: Trx, workspaceId: string): Promise<number> {
   const r = await trx
     .selectFrom('app.file')

@@ -58,6 +58,7 @@ import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { JOB_STALL_MS, JobQueue } from '../jobs/queue.js';
 import { FileBytes } from '../storage/file-bytes.js';
+import { findDuplicate } from '../storage/duplicates.js';
 import { STORAGE_PORT, sha256, storageKey, type StoragePort } from '../storage/storage.js';
 import { AiService, aiUnavailableWarning } from '../ai/ai.service.js';
 import {
@@ -170,15 +171,9 @@ export class ReceiptsService {
     const key = storageKey(ctx.workspaceId, 'receipt', id);
     await this.storage.put(key, bytes, mediaType);
     return this.db.run(ctx, async (trx) => {
-      const earlier = await trx
-        .selectFrom('app.file as f')
-        .select(['f.id'])
-        .where('f.workspace_id', '=', ctx.workspaceId)
-        .where('f.kind', '=', 'receipt')
-        .where('f.sha256', '=', digest)
-        .where('f.deleted_at', 'is', null)
-        .orderBy('f.created_at')
-        .executeTakeFirst();
+      // The same picture held already, in Montra or only in the vault (ADR-0054): the web warns, the person decides.
+      const dup = await findDuplicate(trx, ctx.workspaceId, digest, { kinds: ['receipt'] });
+      const earlier = dup ? { id: dup.fileId } : undefined;
       const usedBy = earlier
         ? await trx
             .selectFrom('app.receipt')

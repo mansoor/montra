@@ -65,6 +65,16 @@ export const ExportJobDto = z.object({
       error: z.string().nullable(),
     })
     .nullable(),
+  /**
+   * ADR-0054 §5a: files the archive couldn't include because Montra no longer holds them and the vault didn't give them
+   * back (its README lists them). Shown with a link to "Files to provide again".
+   */
+  missingFiles: z.number().int(),
+  /**
+   * A background archive (a scheduled backup or a tax package) that met the vault's daily read cap waits once for the
+   * vault's reset, until then, and is then made with whatever it can get. Null when it isn't waiting.
+   */
+  waitingUntil: z.string().nullable(),
 });
 export type ExportJobDto = z.infer<typeof ExportJobDto>;
 

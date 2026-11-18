@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ExportJobDto, NotificationPrefsDto, StorageDestinationDto } from '@montra/schemas';
+import { catalogs } from '@montra/i18n';
 import {
+  exportVaultNote,
   hasRunningExport,
   humanBytes,
   needsFreshSignIn,
@@ -84,5 +86,25 @@ describe('storageStatusLine (ADR-0031)', () => {
       'storage.summary_failed',
     );
     expect(storageStatusLine(d({}))).toEqual({ key: 'storage.summary_ok', values: { n: 3 } });
+  });
+});
+
+describe('an archive and the vault (ADR-0054 §5a)', () => {
+  const job = (over: Partial<ExportJobDto>) =>
+    ({ status: 'ready', missingFiles: 0, waitingUntil: null, ...over }) as ExportJobDto;
+
+  it('says what a made archive couldn’t include, and when one waits for the vault’s reset', () => {
+    expect(exportVaultNote(job({}))).toBeNull();
+    expect(exportVaultNote(job({ missingFiles: 2 }))).toEqual({
+      key: 'data.missing_files',
+      values: { count: 2 },
+    });
+    expect(exportVaultNote(job({ status: 'queued', waitingUntil: '2026-11-19T00:01:00.000Z' }))).toEqual({
+      key: 'data.waiting_for_vault',
+    });
+    // Waiting is over once it runs.
+    expect(exportVaultNote(job({ status: 'running', waitingUntil: null }))).toBeNull();
+    const en = catalogs.en!;
+    expect('data.missing_files' in en && 'data.waiting_for_vault' in en).toBe(true);
   });
 });

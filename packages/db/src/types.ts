@@ -1658,6 +1658,10 @@ export interface ExportJobTable {
   destination_attempts: Generated<number>;
   destination_next_at: Generated<Date | null>;
   scheduled: Generated<boolean>;
+  /** ADR-0054 §5a: files the archive couldn't include, listed in its README (migration 0068). */
+  missing_files: Generated<number>;
+  /** A background archive waiting once for the vault's daily read cap to reset, until then. */
+  waiting_until: Generated<Date | null>;
 }
 
 export type StorageCopyStatus = 'pending' | 'done' | 'failed' | 'pruned';
@@ -1690,8 +1694,11 @@ export interface StorageDestinationTable {
   label: string;
   /** What isn't secret: { endpoint, region, bucket, pathStyle } or { url, username }. */
   config: Json<Record<string, unknown>>;
-  /** Sealed by FieldCrypto as 'storage_destination.secret'. Never sent to a client. */
-  secret_enc: Buffer;
+  /**
+   * Sealed by FieldCrypto as 'storage_destination.secret'. Never sent to a client. Null only for a vault connection
+   * disconnected while files were held only in the vault: its key is wiped (ADR-0054 §10, migration 0068).
+   */
+  secret_enc: Buffer | null;
   secret_hint: string | null;
   folder: string;
   mirror_files: Generated<boolean>;
@@ -1700,7 +1707,7 @@ export interface StorageDestinationTable {
   keep_backups: Generated<number>;
   can_delete: Generated<boolean>;
   /** `needs_vault` is for a vault connection only: something needs a person on the vault's side (ADR-0054 §12). */
-  status: Generated<'active' | 'paused' | 'failing' | 'needs_vault'>;
+  status: Generated<'active' | 'paused' | 'failing' | 'needs_vault' | 'disconnected'>;
   consecutive_failures: Generated<number>;
   last_success_at: Date | null;
   last_error: string | null;
@@ -1749,6 +1756,12 @@ export interface VaultConnectionStateTable {
   feed_next_at: Date | null;
   /** §9: a full read of the feed in progress (the first, or starting over), since then (migration 0065). */
   full_read_started_at: Date | null;
+  /** §10 "Bring the files back": when the job next looks; null while none are being brought back (migration 0068). */
+  bring_back_at: Date | null;
+  /** What happens once they are back: the connection stays, or is disconnected. */
+  bring_back_then: 'keep' | 'disconnect' | null;
+  /** The owner who asked, for the security log. */
+  bring_back_by: string | null;
   updated_at: Generated<Date>;
 }
 

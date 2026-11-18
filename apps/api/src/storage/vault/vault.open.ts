@@ -60,6 +60,10 @@ export class VaultOpener {
     const actor = { workspaceId: ctx.workspaceId, userId: target.userId };
     const row = await this.db.run(actor, (trx) => this.vault.row(trx, actor));
     if (!row || row.id !== target.destinationId) throw notInVault();
+    // §10: disconnected, Montra has no key to ask the vault with.
+    if (row.status === 'disconnected') {
+      throw new VaultOpenRefused(409, 'vault.disconnected', 'Montra is disconnected from the vault.');
+    }
     const config = configOf(row);
     if (config.stage !== 'connected' || row.status === 'needs_vault') {
       throw new VaultOpenRefused(

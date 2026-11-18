@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { catalogs } from '@montra/i18n';
 import { MissingFileDto } from '@montra/schemas';
 import type { MissingFileDto as MissingFile } from '@montra/api-client';
-import { MISSING_FILE_USES, missingFileUses, providedAgainKey } from './missing-files';
+import {
+  anyDuplicate,
+  exportMissing,
+  MISSING_FILE_USES,
+  missingFileUses,
+  possibleDuplicate,
+  providedAgainKey,
+} from './missing-files';
 import { vaultCounts, vaultBadge, vaultOpenProblemKey, VAULT_OPEN_PROBLEMS } from './vault';
 
 // Review → "Files to provide again" (ADR-0054 §5a, PR 5b).
@@ -65,5 +72,49 @@ describe('files to provide again', () => {
     ];
     expect(keys.filter((k) => !(k in en))).toEqual([]);
     for (const k of keys.filter((k) => k.startsWith('missing_files.done'))) expect(en[k]).toContain('{name}');
+  });
+});
+
+describe('a possible duplicate (the owner’s clarification, 2026-11-18)', () => {
+  it('knows the API’s warning, with its words, and nothing else', () => {
+    const warned = {
+      status: 409,
+      code: 'file.possible_duplicate',
+      message: 'This looks like a duplicate of “A.png”.',
+    };
+    expect(possibleDuplicate(warned)).toBe('This looks like a duplicate of “A.png”.');
+    expect(possibleDuplicate({ status: 409, code: 'file.not_missing', message: 'x' })).toBeNull();
+    expect(possibleDuplicate({ status: 415, code: 'file.possible_duplicate' })).toBeNull();
+    expect(possibleDuplicate(null)).toBeNull();
+    expect(possibleDuplicate(new Error('network'))).toBeNull();
+  });
+
+  it('asks before using uploads when any repeats a file Montra holds', () => {
+    expect(anyDuplicate([{ duplicateOf: null }, { duplicateOf: null }])).toBe(false);
+    expect(anyDuplicate([{ duplicateOf: null }, { duplicateOf: { fileId: 'x', receiptId: null } }])).toBe(
+      true,
+    );
+    expect(anyDuplicate([])).toBe(false);
+  });
+
+  it('has the words it asks with', () => {
+    for (const k of [
+      'files.duplicate_confirm',
+      'files.duplicate_anyway_confirm',
+      'missing_files.duplicate_cancelled',
+    ])
+      expect(k in en, k).toBe(true);
+    expect(en['files.duplicate_anyway_confirm']).toContain('{detail}');
+  });
+});
+
+describe('an archive’s missing files (ADR-0054 §5a)', () => {
+  it('counts them on a made archive only', () => {
+    expect(exportMissing({ status: 'ready', missingFiles: 2 })).toBe(true);
+    expect(exportMissing({ status: 'ready', missingFiles: 0 })).toBe(false);
+    expect(exportMissing({ status: 'queued', missingFiles: 0 })).toBe(false);
+    expect(exportMissing({ status: 'failed', missingFiles: 3 })).toBe(false);
+    for (const k of ['data.missing_files', 'data.missing_files_link', 'data.waiting_for_vault'])
+      expect(k in en, k).toBe(true);
   });
 });

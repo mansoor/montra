@@ -43,6 +43,7 @@ import { Db } from '../db/database.js';
 import { JobQueue } from '../jobs/queue.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { FileBytes } from '../storage/file-bytes.js';
+import { findDuplicate } from '../storage/duplicates.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { NOT_OWNED, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 
@@ -355,8 +356,10 @@ export class PayslipsService {
     const digest = createHash('sha256').update(bytes).digest('hex');
     const key = storageKey(ctx.workspaceId, 'payslip', id);
     await this.storage.put(key, bytes, mediaType);
-    await this.db.run(ctx, (trx) =>
-      trx
+    const dup = await this.db.run(ctx, async (trx) => {
+      // The same file held already, in Montra or only in the vault (ADR-0054): the web warns, the person decides.
+      const earlier = await findDuplicate(trx, ctx.workspaceId, digest, { kinds: ['payslip'] });
+      await trx
         .insertInto('app.file')
         .values({
           workspace_id: ctx.workspaceId,
@@ -370,9 +373,16 @@ export class PayslipsService {
           uploaded_by: ctx.userId,
           retain_until: sql<string>`(current_date + make_interval(years => ${RETENTION_YEARS}))::date`,
         })
-        .execute(),
-    );
-    return { fileId: id, mediaType, bytes: bytes.length };
+        .execute();
+      return earlier;
+    });
+    return {
+      fileId: id,
+      mediaType,
+      bytes: bytes.length,
+      sha256: digest,
+      duplicateOf: dup ? { fileId: dup.fileId, receiptId: null } : null,
+    };
   }
 
   async file(ctx: Ctx, payslipId: string, fileId: string): Promise<{ bytes: Uint8Array; mime: string }> {

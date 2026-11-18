@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, Inject, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import type { FileProvidedAgainDto, MissingFilesResponse } from '@montra/schemas';
 import { z } from 'zod';
@@ -8,6 +8,13 @@ import { requireRole } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { MissingFiles } from './missing-files.js';
+
+/** "Upload anyway": the person saw the possible-duplicate warning and goes on. */
+export const AnywayQuery = z
+  .object({ anyway: z.enum(['true', 'false']).default('false') })
+  .transform((q) => ({
+    anyway: q.anyway === 'true',
+  }));
 
 /**
  * Review → "Files to provide again" (ADR-0054 §5a; VLT-11): files Montra no longer holds that the household's Family
@@ -27,12 +34,16 @@ export class MissingFilesController {
     return this.missing.list(dbCtx(ctx), ctx.role!);
   }
 
-  /** The paper again, as one file: stored under the same id. */
+  /**
+   * The paper again, as one file: stored under the same id. Bytes that are another file's are a 409
+   * `file.possible_duplicate` unless `?anyway=true`, the person's answer to that warning.
+   */
   @Post(':fileId')
   @HttpCode(200)
   async provide(
     @Ctx() ctx: RequestContext,
     @Param('fileId') fileId: string,
+    @Query() query: unknown,
     @Req() req: FastifyRequest,
   ): Promise<FileProvidedAgainDto> {
     requireRole(ctx, 'owner', 'admin', 'partner', 'accountant', 'member');
@@ -50,6 +61,7 @@ export class MissingFilesController {
       );
     }
     if (bytes.length === 0) throw new AppError(400, 'upload.empty', 'The file is empty');
-    return this.missing.provideAgain(dbCtx(ctx), ctx.role!, id, bytes);
+    const { anyway } = parse(AnywayQuery, query ?? {});
+    return this.missing.provideAgain(dbCtx(ctx), ctx.role!, id, bytes, anyway);
   }
 }

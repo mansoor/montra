@@ -358,8 +358,11 @@ import type {
   DisconnectVaultRequest,
   UpdateVaultConnectionRequest,
   SendExistingToVaultRequest,
+  MoveToVaultRequest,
   RetryVaultItemsRequest,
   VaultExistingDto,
+  VaultMoveDto,
+  VaultBringBackDto,
   VaultItemDto,
   FileStorageStateDto,
   MissingFileDto,
@@ -619,6 +622,7 @@ export type ReplaceVaultKeyInput = z.input<typeof ReplaceVaultKeyRequest>;
 export type DisconnectVaultInput = z.input<typeof DisconnectVaultRequest>;
 export type UpdateVaultConnectionInput = z.input<typeof UpdateVaultConnectionRequest>;
 export type SendExistingToVaultInput = z.input<typeof SendExistingToVaultRequest>;
+export type MoveToVaultInput = z.input<typeof MoveToVaultRequest>;
 export type RetryVaultItemsInput = z.input<typeof RetryVaultItemsRequest>;
 export type ConfirmRestoreInput = z.input<typeof ConfirmRestoreRequest>;
 export type RequestDeletionInput = z.input<typeof RequestDeletionRequest>;
@@ -1920,7 +1924,7 @@ export class ApiClient {
   uploadBusinessFile(workspaceId: string, file: Blob, fileName: string) {
     const form = new FormData();
     form.append('file', file, fileName);
-    return this.request<{ fileId: string }>('POST', this.ws(workspaceId, '/businesses/files'), form);
+    return this.request<ReceiptFileDto>('POST', this.ws(workspaceId, '/businesses/files'), form);
   }
   listParties(workspaceId: string, opts: { entityId: string; kind?: PartyDto['kind'] }) {
     return this.request<{ data: PartyDto[] }>('GET', this.ws(workspaceId, `/parties${query(opts)}`)).then(
@@ -2583,8 +2587,25 @@ export class ApiClient {
   replaceVaultKey(workspaceId: string, input: ReplaceVaultKeyInput) {
     return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/key'), input);
   }
+  /**
+   * §10: with files held only in the vault, say what becomes of them: `bringBack` (then disconnect) or `anyway`;
+   * neither is a 409 `vault.files_only_in_vault` so the choice can be shown.
+   */
   disconnectVault(workspaceId: string, input: DisconnectVaultInput = {}) {
     return this.request<void>('DELETE', this.ws(workspaceId, '/family-vault'), input);
+  }
+  /** §10 "Bring the files back", staying connected: copies every file held only in the vault back into Montra. */
+  bringBackFromVault(workspaceId: string) {
+    return this.request<VaultBringBackDto>('POST', this.ws(workspaceId, '/family-vault/bring-back'), {});
+  }
+  /** §5 "Move existing documents": how many filed files of groups sent with no local copy still have Montra's copy. */
+  getVaultMove(workspaceId: string, groups?: readonly string[]) {
+    const q = groups?.length ? `?groups=${groups.map(encodeURIComponent).join(',')}` : '';
+    return this.request<VaultMoveDto>('GET', this.ws(workspaceId, `/family-vault/move${q}`));
+  }
+  /** "Move these N files too?": only the count the person confirmed. */
+  moveToVault(workspaceId: string, input: MoveToVaultInput) {
+    return this.request<VaultMoveDto>('POST', this.ws(workspaceId, '/family-vault/move'), input);
   }
   /** "Send these to the vault" (ADR-0054 §6): each group's mode and vault kind, more detail, deletes, pausing. */
   updateVaultConnection(workspaceId: string, input: UpdateVaultConnectionInput) {
@@ -2621,12 +2642,13 @@ export class ApiClient {
     );
   }
   /** The paper again, stored under the same file id. */
-  provideMissingFile(workspaceId: string, fileId: string, file: Blob, fileName: string) {
+  /** `anyway`: the person saw the possible-duplicate warning (409 `file.possible_duplicate`) and goes on. */
+  provideMissingFile(workspaceId: string, fileId: string, file: Blob, fileName: string, anyway = false) {
     const form = new FormData();
     form.append('file', file, fileName);
     return this.request<FileProvidedAgainDto>(
       'POST',
-      this.ws(workspaceId, `/missing-files/${enc(fileId)}`),
+      this.ws(workspaceId, `/missing-files/${enc(fileId)}${anyway ? '?anyway=true' : ''}`),
       form,
     );
   }
@@ -3448,6 +3470,8 @@ export type {
   StorageTestResultDto,
   VaultConnectionDto,
   VaultExistingDto,
+  VaultMoveDto,
+  VaultBringBackDto,
   VaultItemDto,
   FileStorageStateDto,
   MissingFileDto,

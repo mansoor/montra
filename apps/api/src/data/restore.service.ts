@@ -21,6 +21,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { KMS_PORT, FieldCrypto, type KmsPort } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
+import { MISSING_WORDS, MissingFiles } from '../storage/missing-files.js';
 import { STORAGE_PORT, storageKey, type StoragePort, sha256 } from '../storage/storage.js';
 import { BadPasswordError, decryptFile, encryptFile, inspectArchive } from './archive-crypto.js';
 import { ARCHIVE_FORMAT, type ArchiveManifest } from './backup.service.js';
@@ -149,6 +150,7 @@ export class RestoreService {
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
     @Inject(KMS_PORT) private readonly kms: KmsPort,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(MissingFiles) private readonly missing: MissingFiles,
   ) {}
 
   register(): void {
@@ -416,9 +418,10 @@ export class RestoreService {
     if (r.status !== 'restoring') return { skipped: true };
     const written: string[] = [];
     try {
-      const result = await this.withPlainFile(r, (zip, manifest) =>
+      const { missing, ...result } = await this.withPlainFile(r, (zip, manifest) =>
         this.restoreInto(userId, r, zip, manifest, written),
       );
+      Object.assign(result, { missingFiles: missing.length });
       await this.db.run({ userId }, async (trx) => {
         await trx
           .updateTable('app.restore_job')
@@ -440,6 +443,8 @@ export class RestoreService {
           })
           .execute();
       });
+      // ADR-0054 §5a: files the archive didn't hold wait in Review to be provided again; people are told once a day.
+      await this.missing.tell({ workspaceId: result.workspaceId, userId }, missing);
       return result;
     } catch (e) {
       this.logger.warn(`Restore ${id} failed: ${(e as Error).message}`);
@@ -500,6 +505,7 @@ export class RestoreService {
         ),
       );
       const counts: Record<string, number> = {};
+      const missing: string[] = [];
       const later: { table: string; id: string; set: Record<string, unknown> }[] = [];
 
       // Every id gets its replacement first, so a row can point forward.
@@ -546,7 +552,15 @@ export class RestoreService {
           }
           const prepared = await this.prepare(trx, table, workspaceId, row, ids);
           if (table === 'file')
-            await this.copyFile(trx, zip, filesById.get(oldId ?? ''), prepared, workspaceId, written);
+            await this.copyFile(
+              trx,
+              zip,
+              filesById.get(oldId ?? ''),
+              prepared,
+              workspaceId,
+              written,
+              missing,
+            );
           if (table === 'entity' && existing)
             prepared.name = `${String(prepared.name)} (restored)`.slice(0, 200);
           const set: Record<string, unknown> = {};
@@ -572,7 +586,23 @@ export class RestoreService {
       }
 
       await this.check(trx, workspaceId, manifest, ids, kept);
-      return { workspaceId, counts };
+      if (missing.length) {
+        await trx
+          .insertInto('app.audit_log')
+          .values(
+            missing.map((fileId) => ({
+              workspace_id: workspaceId,
+              actor_user_id: null,
+              actor_type: 'system' as const,
+              action: 'file.marked_missing',
+              subject_type: 'file',
+              subject_id: fileId,
+              diff: JSON.stringify({ reason: MISSING_WORDS.notInBackup, restored: true }),
+            })),
+          )
+          .execute();
+      }
+      return { workspaceId, counts, missing };
     });
   }
 
@@ -653,12 +683,24 @@ export class RestoreService {
     row: Record<string, unknown>,
     workspaceId: string,
     written: string[],
+    missing: string[],
   ): Promise<void> {
     const key = storageKey(workspaceId, String(row.kind), String(row.id));
+    if (!file || !file.path || !zip.has(file.path)) {
+      // ADR-0054 §5a: the archive couldn't include it (Montra no longer held it when it was made, or it was in the
+      // trash). Montra holds no copy, so it is missing, with the reason, and Review asks for it again.
+      row.storage_key = null;
+      row.location = 'vault';
+      row.missing_since = new Date().toISOString();
+      row.missing_reason = MISSING_WORDS.notInBackup;
+      missing.push(String(row.id));
+      return;
+    }
     row.storage_key = key;
     // A restored workspace starts unconnected (ADR-0054 §7): whatever the archive holds of a file is Montra's copy.
-    if ('location' in row) row.location = 'montra';
-    if (!file || !zip.has(file.path)) return;
+    row.location = 'montra';
+    row.missing_since = null;
+    row.missing_reason = null;
     const bytes = await zip.bytes(file.path);
     if (sha256(bytes) !== file.sha256) throw new Error('A file does not match its checksum');
     written.push(key);

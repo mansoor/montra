@@ -122,6 +122,43 @@ describe('connections: one mirror and one vault per workspace (ADR-0054 §1)', (
     await dropDestinations(b.workspaceId);
   });
 
+  it('keeps a disconnected vault connection without its key, and only that (§10, migration 0068)', async () => {
+    await expect(destination(b.workspaceId, 's3', { status: 'disconnected' })).rejects.toThrow(
+      /storage_destination_disconnected/,
+    );
+    const id = await destination(b.workspaceId, 'fdv');
+    await expect(
+      admin.query(`update app.storage_destination set secret_enc = null where id = $1`, [id]),
+    ).rejects.toThrow(/storage_destination_secret_held/);
+    await admin.query(
+      `update app.storage_destination set secret_enc = null, status = 'disconnected' where id = $1`,
+      [id],
+    );
+    await admin.query(
+      `insert into app.vault_connection_state (workspace_id, destination_id) values ($1, $2)`,
+      [b.workspaceId, id],
+    );
+    // Never due: with no key there is nothing the job can do.
+    await admin.query(
+      `update app.vault_connection_state set next_check_at = now() - interval '1 hour' where destination_id = $1`,
+      [id],
+    );
+    const due = await admin.query(`select * from app.vault_due() where workspace_id = $1`, [b.workspaceId]);
+    expect(due.rows).toEqual([]);
+    // Its members can tell, without seeing the connection.
+    const told = await withContext(db, { workspaceId: b.workspaceId, userId: b.ownerId }, (trx) =>
+      sql<{ d: boolean }>`select app.vault_disconnected() as d`.execute(trx),
+    );
+    expect(told.rows[0]!.d).toBe(true);
+    // Bringing files back is a time and a choice together.
+    await expect(
+      admin.query(`update app.vault_connection_state set bring_back_at = now() where destination_id = $1`, [
+        id,
+      ]),
+    ).rejects.toThrow(/vault_connection_state_bring_back/);
+    await dropDestinations(b.workspaceId);
+  });
+
   it('hangs the vault’s state and outbox only off a vault connection', async () => {
     const mirror = (
       await admin.query<{ id: string }>(
@@ -301,6 +338,7 @@ describe('who sees the vault’s tables (ADR-0054 §11)', () => {
         await expect(c.query(`select * from app.vault_file_open(gen_random_uuid())`)).rejects.toThrow(
           /permission denied/,
         );
+        await expect(c.query(`select app.vault_disconnected()`)).rejects.toThrow(/permission denied/);
       });
     }
   });
