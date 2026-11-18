@@ -79,7 +79,6 @@ const dueNow = () =>
 const contentCalls = () =>
   vstate().calls.filter((x: any) => /^\/api\/v1\/apps\/intake\/[^/]+\/content$/.test(x.path))
     .length as number;
-const drain = () => worker.drain(['report'], 50);
 
 /** A binary file of every byte value, made different from every other by its id. */
 const binary = (id: string) => Buffer.concat([ALL_BYTES, Buffer.from(id), ALL_BYTES]);
@@ -200,7 +199,12 @@ function readZip(bytes: Buffer): Promise<Map<string, Buffer>> {
 async function archive(path: string, body: object): Promise<Map<string, Buffer>> {
   const created = await c.post(url(path), body);
   expect(created.status).toBe(201);
-  await drain();
+  // Run here, not by whichever test file drains the shared report queue next: only this process has the fake vault.
+  const { rows } = await db.query(
+    `delete from app.job where workspace_id = $1 and queue = 'report' and status = 'queued' returning *`,
+    [wsId],
+  );
+  for (const job of rows) await (worker as any).handlers.get(job.type)(job, { progress: async () => {} });
   expect((await c.get(url(`/backups/${created.body.id}`))).body).toMatchObject({
     status: 'ready',
     error: null,
@@ -266,6 +270,7 @@ afterAll(async () => {
   await db.query(`delete from app.storage_destination where workspace_id = $1`, [wsId]);
   // Nothing of ours may wake a worker in another test file.
   await db.query(`delete from app.job where type in ('storage.vault', 'storage.mirror')`);
+  await db.query(`delete from app.job where workspace_id = $1 and status = 'queued'`, [wsId]);
   await db.end();
   await s3.close();
   await h.close();
@@ -550,6 +555,11 @@ describe('every reader, for a file only the vault holds', () => {
   it('a new receipt made of it (read again by the doc-worker) puts Montra’s copy back first', async () => {
     const f = await heldOnlyInVault('Read again.png');
     const made = await c.post(url('/receipts'), { source: 'upload', fileIds: [f.id] });
+    // Kept out of the doc and AI queues other test files drain; this test only needs Montra's copy put back.
+    await db.query(
+      `delete from app.job where workspace_id = $1 and status = 'queued' and queue in ('doc', 'ai')`,
+      [wsId],
+    );
     expect(made.status).toBe(201);
     const row = await fileRow(f.id);
     expect(row.location).toBe('montra');
