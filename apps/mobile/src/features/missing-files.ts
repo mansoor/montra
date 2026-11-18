@@ -43,6 +43,17 @@ export function providedAgainMessage(
 }
 
 /**
+ * The owner's clarification (2026-11-18): the API's possible-duplicate warning (409 `file.possible_duplicate`), with its
+ * words, when a file provided again is the bytes of a file Montra already holds. The person cancels or uploads anyway.
+ * Null for any other answer.
+ */
+export function possibleDuplicate(err: unknown): string | null {
+  const e = err as { status?: unknown; code?: unknown; message?: unknown } | null;
+  if (!e || e.status !== 409 || e.code !== 'file.possible_duplicate') return null;
+  return typeof e.message === 'string' ? e.message : '';
+}
+
+/**
  * The count behind the Review badge, as tax forms': read when sync runs, at most once a minute, at once after an
  * upload; a failed read (offline) keeps the last count. One per workspace and login.
  */

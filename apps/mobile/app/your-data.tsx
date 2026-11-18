@@ -15,6 +15,7 @@ import type {
   StorageUsageDto,
 } from '@montra/schemas';
 import {
+  exportVaultNote,
   hasRunningExport,
   humanBytes,
   needsFreshSignIn,
@@ -146,6 +147,14 @@ export default function YourData() {
     }
   };
 
+  /** ADR-0054 §5a: files an archive couldn't include, or its wait for the vault's daily reset. */
+  const vaultNote = (j: ExportJobDto): string => {
+    const n = exportVaultNote(j);
+    if (!n) return '';
+    const words = t(n.key, n.values);
+    return ` · ${j.waitingUntil && n.key === 'data.waiting_for_vault' ? `${words} ${localDay(j.waitingUntil)}` : words}`;
+  };
+
   const save = async (job: ExportJobDto) => {
     setBusy(true);
     setError(null);
@@ -266,7 +275,7 @@ export default function YourData() {
           title={j.fileName ?? t(`data.kind_${j.kind}`)}
           subtitle={`${t(`data.status_${j.status}`)}${j.bytes ? ` · ${humanBytes(j.bytes)}` : ''}${
             j.storageCopy ? ` · ${t(`storage.copy_${j.storageCopy.status}`)}` : ''
-          }`}
+          }${vaultNote(j)}`}
           onPress={j.status === 'ready' ? () => void save(j) : undefined}
           testID="your-data-export"
         />

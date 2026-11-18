@@ -22,6 +22,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { BillsService } from '../business/bills.service.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
+import { findDuplicate } from '../storage/duplicates.js';
 import { FileBytes } from '../storage/file-bytes.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { billSignal } from '@montra/importers';
@@ -63,9 +64,12 @@ export class HouseholdBillsService {
       throw new AppError(415, 'bill.unsupported_type', 'Upload a PDF, or a JPEG, PNG or WebP photo');
     const id = newId();
     const key = storageKey(ctx.workspaceId, 'bill', id);
+    const digest = createHash('sha256').update(bytes).digest('hex');
     await this.storage.put(key, bytes, mediaType);
-    await this.db.run(ctx, (trx) =>
-      trx
+    const dup = await this.db.run(ctx, async (trx) => {
+      // The same file held already, in Montra or only in the vault (ADR-0054): the web warns, the person decides.
+      const earlier = await findDuplicate(trx, ctx.workspaceId, digest, { kinds: ['invoice'] });
+      await trx
         .insertInto('app.file')
         .values({
           workspace_id: ctx.workspaceId,
@@ -75,13 +79,20 @@ export class HouseholdBillsService {
           file_name: fileName.replace(/[\\/\0]/g, '_').slice(0, 255) || 'bill',
           mime: mediaType,
           bytes: bytes.length,
-          sha256: createHash('sha256').update(bytes).digest('hex'),
+          sha256: digest,
           uploaded_by: ctx.userId,
           retain_until: sql<string>`(current_date + make_interval(years => ${RETENTION_YEARS}))::date`,
         })
-        .execute(),
-    );
-    return { fileId: id, mediaType, bytes: bytes.length };
+        .execute();
+      return earlier;
+    });
+    return {
+      fileId: id,
+      mediaType,
+      bytes: bytes.length,
+      sha256: digest,
+      duplicateOf: dup ? { fileId: dup.fileId, receiptId: null } : null,
+    };
   }
 
   async list(ctx: Ctx, q: { entityId?: string; status?: string }): Promise<HouseholdBillDto[]> {

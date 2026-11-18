@@ -18,12 +18,14 @@ import {
   DisconnectVaultRequest,
   FileStorageStatesQuery,
   Id,
+  MoveToVaultRequest,
   PasteVaultCodeRequest,
   ReplaceVaultKeyRequest,
   RetryVaultItemsRequest,
   SendExistingToVaultRequest,
   UpdateVaultConnectionRequest,
   VaultItemsQuery,
+  VaultMoveQuery,
   VaultOpenQuery,
 } from '@montra/schemas';
 import { z } from 'zod';
@@ -118,6 +120,28 @@ export class VaultController {
     requireRecentAuth(ctx);
     await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
     return this.vault.sendExisting(dbCtx(ctx), ctx.role!, parse(SendExistingToVaultRequest, body));
+  }
+
+  /** §5 "Move existing documents": how many filed files of groups sent with no local copy Montra still holds. */
+  @Get('move')
+  moveCount(@Ctx() ctx: RequestContext, @Query() query: unknown) {
+    return this.vault.moveCount(dbCtx(ctx), ctx.role!, parse(VaultMoveQuery, query ?? {}).groups);
+  }
+
+  /** "Move these N files too?": owner only, with a recent sign-in, as a move (§2). */
+  @Post('move')
+  @HttpCode(200)
+  move(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireRecentAuth(ctx);
+    return this.vault.move(dbCtx(ctx), ctx.role!, parse(MoveToVaultRequest, body));
+  }
+
+  /** §10 "Bring the files back", staying connected: owner only, with a recent sign-in. */
+  @Post('bring-back')
+  @HttpCode(200)
+  bringBack(@Ctx() ctx: RequestContext) {
+    requireRecentAuth(ctx);
+    return this.vault.bringBack(dbCtx(ctx), ctx.role!);
   }
 
   /** "Try again" and "Send again" (§4.5, §12): owners and admins (D4). */

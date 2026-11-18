@@ -13,6 +13,7 @@ import type {
 } from '@montra/api-client';
 import Link from 'next/link';
 import { browserApi } from '@/lib/browser-api';
+import { exportMissing } from '@/lib/missing-files';
 import { barPercent, formatBytes } from '@/lib/reports';
 import { showsTaxForms } from '@/lib/tax-forms';
 import { DateText } from '../i18n';
@@ -177,6 +178,19 @@ export function BackupPanel({
                   </td>
                   <td className="px-2 py-2 text-sm">
                     {t(`data.status_${j.status}`)}
+                    {j.waitingUntil && (
+                      <span className="block text-xs text-muted" data-testid="export-waiting">
+                        {t('data.waiting_for_vault')} <DateText date={j.waitingUntil.slice(0, 10)} />
+                      </span>
+                    )}
+                    {exportMissing(j) && (
+                      <span className="block text-xs text-bad" data-testid="export-missing">
+                        {t('data.missing_files', { count: j.missingFiles })}{' '}
+                        <a className="underline" href={`/w/${workspace.id}/review#files-to-provide`}>
+                          {t('data.missing_files_link')}
+                        </a>
+                      </span>
+                    )}
                     {j.storageCopy && (
                       <span
                         className={`block text-xs ${j.storageCopy.status === 'failed' ? 'text-bad' : 'text-muted'}`}

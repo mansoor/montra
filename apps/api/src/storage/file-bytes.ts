@@ -53,10 +53,12 @@ export type FileSource = 'montra' | 'mirror' | 'vault';
  * - `vault_refused`: the vault didn't return it, or returned a different file; Montra never guesses why;
  * - `vault_read_cap`: the vault's daily reading is used up until `heldUntil`;
  * - `vault_unavailable`: the vault can't be asked now (not reached, or its connection needs a person, or is gone);
+ * - `vault_disconnected`: only the vault held it, and the owner disconnected Montra from the vault (§10): there is no
+ *   key to ask with until the same vault is connected again;
  * - `not_held`: nowhere Montra can read it.
  */
 export type NotAvailableReason =
-  'in_vault' | 'vault_refused' | 'vault_read_cap' | 'vault_unavailable' | 'not_held';
+  'in_vault' | 'vault_refused' | 'vault_read_cap' | 'vault_unavailable' | 'vault_disconnected' | 'not_held';
 
 export type FileBytesResult =
   | { ok: true; bytes: Uint8Array; from: FileSource }
@@ -77,6 +79,8 @@ export const NOT_AVAILABLE_WORDS: Record<NotAvailableReason, string> = {
   vault_read_cap:
     'Montra has read as many files from Family Document Vault as it may today. Try again later.',
   vault_unavailable: 'Montra couldn’t ask Family Document Vault for this file just now. Try again later.',
+  vault_disconnected:
+    'Montra was disconnected from Family Document Vault, which keeps this file. Upload it again in Review.',
   not_held: 'Montra doesn’t hold this file any more.',
 };
 
@@ -332,6 +336,8 @@ export class FileBytes {
     });
     const row = found.row;
     if (!row || row.id !== destinationId) return notAvailable('vault_unavailable');
+    // §10: disconnected, the key is gone; the file is missing until the same vault is connected again.
+    if (row.status === 'disconnected') return notAvailable('vault_disconnected');
     const config = configOf(row);
     if (config.stage !== 'connected' || row.status === 'needs_vault' || row.status === 'paused') {
       return notAvailable('vault_unavailable');

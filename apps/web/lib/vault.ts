@@ -6,6 +6,7 @@ import type {
   FileStorageStateDto,
   VaultConnectionDto,
   VaultExistingDto,
+  VaultMoveDto,
   WorkspaceDto,
 } from '@montra/api-client';
 import {
@@ -27,16 +28,21 @@ export function canSeeVault(
 
 export const canManageVault = (role: WorkspaceDto['role'] | null | undefined): boolean => role === 'owner';
 
-/** Where connecting has got to (§2): nothing yet, the key waiting for its code, waiting for approval, or connected. */
-export type VaultStep = 'start' | 'register' | 'approval' | 'connected';
+/**
+ * Where connecting has got to (§2): nothing yet, the key waiting for its code, waiting for approval, or connected; or
+ * disconnected with files kept only in the vault (§10), until it is connected again.
+ */
+export type VaultStep = 'start' | 'register' | 'approval' | 'connected' | 'disconnected';
 
 export function vaultStep(d: VaultConnectionDto | null): VaultStep {
-  return d ? d.stage : 'start';
+  if (!d) return 'start';
+  return d.status === 'disconnected' ? 'disconnected' : d.stage;
 }
 
 /** One line on the connection, as an i18n key and its values. */
 export function vaultStatusLine(d: VaultConnectionDto): { key: string; values?: Record<string, string> } {
   const name = d.householdName ?? '';
+  if (d.status === 'disconnected') return { key: 'vault.status_disconnected' };
   if (d.stage === 'register') return { key: 'vault.status_register' };
   if (d.stage === 'approval') {
     return name
@@ -46,6 +52,7 @@ export function vaultStatusLine(d: VaultConnectionDto): { key: string; values?: 
   if (d.status === 'paused') return { key: 'vault.status_paused' };
   if (d.status === 'needs_vault') return { key: 'vault.status_needs_vault' };
   if (d.status === 'failing') return { key: 'vault.status_failing' };
+  if (d.bringingBack) return { key: 'vault.status_bringing_back' };
   return name
     ? { key: 'vault.status_connected', values: { name } }
     : { key: 'vault.status_connected_unnamed' };
@@ -53,6 +60,7 @@ export function vaultStatusLine(d: VaultConnectionDto): { key: string; values?: 
 
 /** The chip's tone: good when connected and well, bad when something needs a person, muted otherwise. */
 export function vaultTone(d: VaultConnectionDto): 'good' | 'bad' | 'muted' {
+  if (d.status === 'disconnected') return 'bad';
   if (d.stage !== 'connected') return 'muted';
   if (d.status === 'active') return 'good';
   if (d.status === 'paused') return 'muted';
@@ -192,6 +200,29 @@ export function vaultCounts(d: VaultConnectionDto): { key: string; n: number }[]
   ].filter((c) => c.n > 0);
 }
 
+/**
+ * §5 "Move these N files too?": what to ask right after a group is saved as "no local copy", or in "Move existing
+ * documents". Null when there is nothing to move.
+ */
+export function vaultMoveQuestion(m: VaultMoveDto): { key: string; values: Record<string, string> } | null {
+  if (m.count === 0) return null;
+  return m.count === 1
+    ? { key: 'vault.move_offer_one', values: { count: '1' } }
+    : { key: 'vault.move_offer', values: { count: String(m.count) } };
+}
+
+/**
+ * §10: what "Disconnect" asks. With no file kept only in the vault, a plain confirmation; with some, a choice between
+ * bringing them back first and disconnecting anyway; while they are being brought back, nothing more.
+ */
+export function vaultDisconnectChoice(
+  d: Pick<VaultConnectionDto, 'files' | 'bringingBack'>,
+): 'confirm' | 'choose' | 'bringing_back' {
+  // Files missing already count: the connection is how they would be read back from the same vault.
+  if (d.bringingBack) return 'bringing_back';
+  return d.files.onlyInVault > 0 ? 'choose' : 'confirm';
+}
+
 /** "Send existing documents" (§12): how many, and how long at the vault's daily limit. */
 export function vaultEstimate(e: VaultExistingDto): { key: string; values?: Record<string, string> } {
   if (e.count === 0) return { key: 'vault.existing_none' };
@@ -286,6 +317,7 @@ export const VAULT_OPEN_PROBLEMS = [
   'cannot_view',
   'cannot_open',
   'needs_vault',
+  'disconnected',
   'not_filed',
   'not_found',
   'failed',
@@ -299,6 +331,7 @@ const PROBLEM_KEYS: Record<VaultOpenProblem, string> = {
   cannot_view: 'vault.open_cannot_view',
   cannot_open: 'vault.open_cannot_open',
   needs_vault: 'vault.open_needs_vault',
+  disconnected: 'vault.open_disconnected',
   not_filed: 'vault.open_not_filed',
   not_found: 'vault.open_not_found',
   failed: 'vault.open_failed',

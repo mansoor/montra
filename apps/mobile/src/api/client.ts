@@ -648,8 +648,12 @@ export function createApi(opts: ApiOptions) {
     listMissingFiles: async (w: string): Promise<MissingFileDto[]> =>
       (await request<MissingFilesResponse>('GET', `${ws(w)}/missing-files`)).data,
     /** The paper again, stored under the same file. FormData, as statements: the picker's copy has its own name. */
-    provideMissingFile: (w: string, fileId: string, file: UploadFile) =>
-      sendFile<FileProvidedAgainDto>(`${ws(w)}/missing-files/${encodeURIComponent(fileId)}`, file, false),
+    provideMissingFile: (w: string, fileId: string, file: UploadFile, anyway = false) =>
+      sendFile<FileProvidedAgainDto>(
+        `${ws(w)}/missing-files/${encodeURIComponent(fileId)}${anyway ? '?anyway=true' : ''}`,
+        file,
+        false,
+      ),
 
     registerPushDevice: (req: RegisterPushDeviceRequest) =>
       request<{ id: string }>('POST', '/v1/me/push-devices', req),

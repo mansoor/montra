@@ -3,7 +3,12 @@
 import { useEffect, useId, useState } from 'react';
 import type { MissingFileDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
-import { MISSING_FILE_ACCEPT, missingFileUses, providedAgainKey } from '@/lib/missing-files';
+import {
+  MISSING_FILE_ACCEPT,
+  missingFileUses,
+  possibleDuplicate,
+  providedAgainKey,
+} from '@/lib/missing-files';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
@@ -30,8 +35,18 @@ export function FilesToProvide({ workspaceId }: { workspaceId: string }) {
 
   async function upload(f: MissingFileDto, picked: File) {
     const done = await run(
-      () => browserApi.provideMissingFile(workspaceId, f.fileId, picked, picked.name),
-      (r) => t(providedAgainKey(r), { name: f.fileName }),
+      async () => {
+        try {
+          return await browserApi.provideMissingFile(workspaceId, f.fileId, picked, picked.name);
+        } catch (err) {
+          // The owner's clarification (2026-11-18): the same bytes as a file Montra holds. The person decides.
+          const detail = possibleDuplicate(err);
+          if (detail === null) throw err;
+          if (!window.confirm(t('files.duplicate_anyway_confirm', { detail }))) return null;
+          return browserApi.provideMissingFile(workspaceId, f.fileId, picked, picked.name, true);
+        }
+      },
+      (r) => (r ? t(providedAgainKey(r), { name: f.fileName }) : t('missing_files.duplicate_cancelled')),
     );
     if (done) setFiles((list) => list.filter((x) => x.fileId !== f.fileId));
   }

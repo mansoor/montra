@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
-import type { VaultConnectionDto, VaultExistingDto, VaultItemDto, WorkspaceDto } from '@montra/api-client';
+import type {
+  VaultConnectionDto,
+  VaultExistingDto,
+  VaultItemDto,
+  VaultMoveDto,
+  WorkspaceDto,
+} from '@montra/api-client';
 import { isSentMode, type VaultGroup, type VaultGroupMode } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import {
@@ -12,6 +18,7 @@ import {
   vaultGroupChanges,
   vaultGroupRows,
   vaultMirrorKeeps,
+  vaultMoveQuestion,
   vaultUnmapped,
 } from '@/lib/vault';
 import { DateText, useI18n } from '../i18n';
@@ -29,6 +36,8 @@ export function VaultSending({ workspace, d }: { workspace: WorkspaceDto; d: Vau
       <VaultGroups workspace={workspace} d={d} />
       <VaultProgress workspace={workspace} d={d} />
       {owner && <SendExisting workspace={workspace} d={d} />}
+      {owner && <MoveExisting workspace={workspace} d={d} />}
+      {owner && <BringBack workspace={workspace} d={d} />}
       {owner && <VaultOptions workspace={workspace} d={d} />}
     </div>
   );
@@ -68,7 +77,22 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
         void run(
           () => browserApi.updateVaultConnection(workspace.id, { version: d.version, groups }),
           t('vault.groups_saved'),
-        );
+        ).then(async (saved) => {
+          // §5, the owner's "offer to move now": what the vault had already filed of those groups keeps Montra's copy
+          // unless the owner says to move it too. Nothing moves without this confirmation.
+          if (!saved || !noCopy.length) return;
+          const offer = await browserApi.getVaultMove(workspace.id, noCopy).catch(() => null);
+          const ask = offer ? vaultMoveQuestion(offer) : null;
+          if (!offer || !ask) return;
+          if (!window.confirm(t(ask.key, ask.values))) {
+            setMessage({ tone: 'good', text: t('vault.move_not_now') });
+            return;
+          }
+          void run(
+            () => browserApi.moveToVault(workspace.id, { expected: offer.count, groups: noCopy }),
+            t('vault.move_queued', { count: offer.count }),
+          );
+        });
       }}
     >
       <h3 id={`${id}-title`} className="text-sm font-semibold">
@@ -310,6 +334,87 @@ function SendExisting({ workspace, d }: { workspace: WorkspaceDto; d: VaultConne
           )}
         </>
       )}
+      <StatusLine message={message} />
+    </div>
+  );
+}
+
+/** §5, §12 "Move existing documents": filed files of groups sent with no local copy that still have Montra's copy. */
+function MoveExisting({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
+  const { run, busy, message, t } = useAction();
+  const [move, setMove] = useState<VaultMoveDto | null>(null);
+  if (d.stage !== 'connected' || d.bringingBack || !d.groups.some((g) => g.mode === 'sent_no_copy'))
+    return null;
+  return (
+    <div className="space-y-2" data-testid="vault-move">
+      <h3 className="text-sm font-semibold">{t('vault.move_title')}</h3>
+      {!move ? (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={busy}
+          onClick={() =>
+            void run(() => browserApi.getVaultMove(workspace.id)).then((m) => {
+              if (m) setMove(m);
+            })
+          }
+        >
+          {t('vault.move_look')}
+        </button>
+      ) : move.count === 0 ? (
+        <p className="text-sm" data-testid="vault-move-count">
+          {t('vault.move_none')}
+        </p>
+      ) : (
+        <>
+          <p className="text-sm" data-testid="vault-move-count">
+            {t('vault.move_count', { count: move.count })}
+          </p>
+          <p className="text-xs text-muted">{t('vault.move_hint')}</p>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => browserApi.moveToVault(workspace.id, { expected: move.count }),
+                t('vault.move_queued', { count: move.count }),
+              ).then((r) => {
+                if (r) setMove(r);
+              })
+            }
+          >
+            {t('vault.move_send', { count: move.count })}
+          </button>
+        </>
+      )}
+      <StatusLine message={message} />
+    </div>
+  );
+}
+
+/** §10 "Bring the files back", staying connected: every file kept only in the vault copied back into Montra. */
+function BringBack({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
+  const { run, busy, message, t } = useAction();
+  const left = d.files.onlyInVault - d.files.missing;
+  if (d.stage !== 'connected' || d.bringingBack || left <= 0) return null;
+  return (
+    <div className="space-y-2" data-testid="vault-bring-back">
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={busy}
+        onClick={() => {
+          if (window.confirm(t('vault.bring_back_confirm', { count: left }))) {
+            void run(
+              () => browserApi.bringBackFromVault(workspace.id),
+              (r) => t('vault.bring_back_started', { count: r.queued }),
+            );
+          }
+        }}
+      >
+        {t('vault.bring_back')}
+      </button>
       <StatusLine message={message} />
     </div>
   );
