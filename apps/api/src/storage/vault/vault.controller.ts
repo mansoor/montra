@@ -5,21 +5,26 @@ import {
   Get,
   HttpCode,
   Inject,
+  Param,
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import {
   DisconnectVaultRequest,
   FileStorageStatesQuery,
+  Id,
   PasteVaultCodeRequest,
   ReplaceVaultKeyRequest,
   RetryVaultItemsRequest,
   SendExistingToVaultRequest,
   UpdateVaultConnectionRequest,
   VaultItemsQuery,
+  VaultOpenQuery,
 } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -36,6 +41,7 @@ import { parse } from '../../common/zod.js';
 import { Plans } from '../../ops/plans.js';
 import type { FakeVaultHandle } from './fake.js';
 import { VAULT_TRANSPORT, type VaultTransport } from './transport.js';
+import { VaultOpener, VaultOpenRefused } from './vault.open.js';
 import { VaultService } from './vault.service.js';
 
 /**
@@ -137,6 +143,39 @@ export class VaultController {
   async disconnect(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<void> {
     requireRecentAuth(ctx);
     await this.vault.disconnect(dbCtx(ctx), ctx.role!, parse(DisconnectVaultRequest, body ?? {}));
+  }
+}
+
+/**
+ * §9 "Open in the vault": anyone who can see the file. A single-use link is made for this click and the answer is a
+ * redirect to it, never a body with it in. POST, so nothing prefetches it, and outside the idempotency interceptor,
+ * which would store the answer for a replay.
+ */
+@Controller('v1/workspaces/:workspaceId/family-vault/files/:fileId/open')
+@UseGuards(AuthGuard, WorkspaceGuard)
+export class VaultOpenController {
+  constructor(@Inject(VaultOpener) private readonly opener: VaultOpener) {}
+
+  @Post()
+  @HttpCode(303)
+  async open(
+    @Ctx() ctx: RequestContext,
+    @Param('fileId') fileId: string,
+    @Query() query: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<void> {
+    void reply.header('cache-control', 'no-store');
+    void reply.header('referrer-policy', 'no-referrer');
+    let url: URL;
+    try {
+      url = await this.opener.open(dbCtx(ctx), parse(Id, fileId), parse(VaultOpenQuery, query).mode);
+    } catch (e) {
+      if (e instanceof VaultOpenRefused && e.retryAfterSeconds) {
+        void reply.header('retry-after', String(e.retryAfterSeconds));
+      }
+      throw e;
+    }
+    void reply.header('location', url.href);
   }
 }
 

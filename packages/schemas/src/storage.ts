@@ -497,6 +497,8 @@ export const VaultConnectionDto = z.object({
   dailyLimit: z.object({ files: z.number().int(), filesToday: z.number().int() }).nullable(),
   /** §7: Montra's clock against the vault's, in milliseconds; shown when it is large. */
   clockOffsetMs: z.number().int().nullable(),
+  /** §9: when Montra last read the vault's changes feed; null until it has (or while the vault doesn't let it read). */
+  feedReadAt: z.string().nullable(),
   /** §2: a key change in progress. */
   keyRotation: z.enum(['none', 'made', 'registered']),
   lastSuccessAt: z.string().nullable(),
@@ -630,9 +632,16 @@ export const FileVaultSummaryDto = z.object({
   status: VaultItemStatus,
   /** What the vault calls the document, from its changes feed ("Bank statement, October 2026"). */
   title: z.string().nullable(),
+  /** The vault's kind for the document, by the name the vault shows, from its changes feed. */
+  kind: z.string().nullable(),
   /** The family put a newer version in the vault; Montra doesn't re-read it on its own. */
   newerVersion: z.boolean(),
   notKeptReason: z.string().nullable(),
+  /**
+   * §9: "Open in the vault" is offered: the document is filed and the changes feed has shown it to Montra. The link is
+   * made only when the person clicks; nothing here holds one.
+   */
+  canOpen: z.boolean(),
 });
 export type FileVaultSummaryDto = z.infer<typeof FileVaultSummaryDto>;
 
@@ -667,6 +676,13 @@ export type FileStorageStatesQuery = z.output<typeof FileStorageStatesQuery>;
 
 export const FileStorageStatesResponse = z.object({ data: z.array(FileStorageStateDto) });
 export type FileStorageStatesResponse = z.infer<typeof FileStorageStatesResponse>;
+
+/**
+ * §9: "Open in the vault" for one file: `view` shows the vault's pages, `download` the file. The API answers with a
+ * redirect to a single-use link made for this click; the link is never in a body, a log or the database.
+ */
+export const VaultOpenQuery = z.object({ mode: z.enum(['view', 'download']).default('view') }).strict();
+export type VaultOpenQuery = z.output<typeof VaultOpenQuery>;
 
 /** §5a: one entry in Review, "Files to provide again". */
 export const MissingFileDto = z.object({

@@ -94,8 +94,21 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   await expect(sending.getByText('Nothing has been sent yet.')).toBeVisible();
   await sending.getByRole('button', { name: 'Send existing documents…' }).click();
   await expect(sending.getByTestId('vault-existing-count')).toContainText('there are none');
+
+  // ADR-0054 §9, §10 (PR 4). This vault lets Montra send and nothing more: it doesn't read what the vault did with its
+  // documents, and "Also delete it in the vault" isn't offered.
+  await expect(sending.getByTestId('vault-feed')).toContainText("the vault hasn't allowed it");
+  await expect(sending.getByTestId('vault-delete-with-montra')).toBeDisabled();
+  // "Open in the vault" goes through the web app's own route, which makes a link only for a click; for a file that
+  // isn't there it says so in words, and makes none.
+  await page.goto(`${base}/vault/00000000-0000-4000-8000-000000000001/open?mode=view`);
+  await expect(page.getByTestId('vault-open-problem')).toContainText(
+    "That file isn't here, or you can't see it.",
+  );
+  expect(page.url()).toContain('problem=not_found');
+
   // The saves above refresh the page's data in the background; start the key change from what is saved.
-  await page.reload();
+  await page.goto(`${base}/settings?tab=storage`);
   await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
 
   // Replace the key: a new public key to register, the current one signing until then. Cancelled here.

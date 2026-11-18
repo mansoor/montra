@@ -703,6 +703,72 @@ records its integrity). Migration `0064_vault_sending.sql`. Where PR 3 differs f
 - **The plan key is shown.** `FEATURES_NOT_YET_SHOWN` is empty, so the billing page lists "Documents sent to your Family
   Document Vault".
 
+### As built: PR 4 (2026-11-17)
+
+Keeping in step and view links, on `@fdv/client` **0.9.0-dev.61** (`v0.9.0-dev.61/fdv-client-0.9.0-dev.61.tgz`, 501,417
+bytes, sha256 `535a6bff7f8520f1…`, checked against the vault side's numbers; pnpm records its integrity). Migration
+`0065_vault_feed.sql`. Where PR 4 differs from or adds to the text above, and why:
+
+- **The package.** dev.61 has no peer dependencies, so the pnpm hook (`.pnpmfile.cjs`) and its copies in both
+  Dockerfiles are gone, and the API's production install still has no vitest, vite or esbuild. `NetworkError` now says
+  why in a short `detail`; Montra keeps it only when it is a code such as `ECONNREFUSED`, and never logs the error's
+  `cause`, which can hold an address. Its key routes are not used.
+- **The auth change is coming.** From vault 0.9.0-dev.63 connected apps use API keys the vault's owner makes (a client
+  id and a secret, sent as HTTP Basic) instead of Montra's Ed25519 key and signed requests. PR 4 doesn't touch keys or
+  signing: the feed and links are two more methods of `VaultConnection` (`changes`, `link`), behind the port, so a
+  separate PR changes only how the client is built.
+- **The feed** is read by `storage.vault` every 20 minutes while the vault lets Montra read (`documents.read`; without
+  it the feed is never asked for and `feed_next_at` is null), and caught up (at most five pages, five seconds) before a
+  document is opened when it was last read over a minute ago. Each page is applied in one transaction with saving the
+  position, and only if the position is still the one the page was read from, so the job and a person opening a
+  document never apply a page twice or out of order. `vault_due()` and `vault_next()` count the feed's time while the
+  connection is active or failing.
+- **Only Montra's own documents.** A line is matched to a row by the vault's document id, or, for a filed item whose
+  document Montra wasn't told, by Montra's own id (`external_id`, present only on Montra's own documents). Anything else
+  the feed names (whatever the vault's owner lets Montra read) is skipped and never stored; tested with a grant over the
+  family's papers.
+- **What is kept** (`vault_meta`): the document id, the kind's name and key, the title, the paper's date, the version,
+  `newerVersion` and when it was read; never amounts, issuers or account digits, though the feed has them. The badge
+  says "In the vault as: …" (the title, else the kind). Nothing else is written: the books, the receipt and the file row
+  are unchanged (tested). A received row the feed shows filed becomes `filed`.
+- **A newer version.** The vault marks a document Montra's own only while its current version is the one Montra sent.
+  With no read grant (Montra asks for none, §1), a document the family puts a newer version into stops being readable,
+  so the feed says it is unavailable and Montra shows "No longer available", not "the vault has a newer version". The
+  newer-version badge shows only where the vault's owner granted reads of that kind. Raised for the owner below.
+- **Out of reach** is a row status only while Montra keeps its copy (the only mode until PR 5); a shown-again document
+  is `filed` again. Missing files (§5a) come with PR 5.
+- **Starting over.** A position is refused when the vault answers that it is too old, or that it isn't a position at
+  all (what a restored vault says of one it never gave); the adapter then reads from the beginning and says so. The
+  first read is a full read too. `full_read_started_at` marks one in progress across runs, and `vault_item.feed_seen_at`
+  when the feed last showed each document; a full read that reaches the end marks out of reach any filed document of
+  Montra's it didn't show, **if it was filed before the read began** (one filed since may not be in the read's snapshot,
+  and the feed's own lines say what becomes of it).
+- **Opening.** "Open in the vault" is offered on a filed document the feed has shown (`canOpen`). It is a plain link,
+  never Next's `<Link>`, to a route of the web app (`/w/:id/vault/:file/open`), which refuses prefetches, prerenders
+  and other sites' navigations (`Sec-Purpose`, `Purpose`, `Sec-Fetch-Site`, `Sec-Fetch-Dest`), then calls the API's
+  `POST …/family-vault/files/:file/open` (outside the idempotency interceptor, which would store the answer) and sends
+  the browser on to the API's 303 at once. A form posting straight to the API would be simpler, but the web app's
+  `form-action` CSP applies to the redirect, and the vault's address is per workspace. Errors go to a page of words
+  (`/w/:id/vault/:file?problem=…`), which holds no link.
+- **Who opens.** The API checks the person can see the file under row-level security, then a definer function,
+  `app.vault_file_open(file)`, gives the document, its status and the owner the connection acts as. The connection and
+  its sealed key are for owners and admins, so the link is made under that owner's context, as the job does; the audit
+  row (`file.vault_link_made`, with `view` or `download`) names the person who clicked, never the link.
+- **The link** must be https on the vault's own origin, or it is refused. It is in no body, table, notification or
+  log: tested by searching every table and the process's output for its token after a click. Each click makes a new
+  one.
+- **A link that can't be made:** a type the vault can't draw opens as a download when the vault lets Montra download,
+  else "can't show this kind of file"; the vault's hourly limit is a 429 with `Retry-After` and words with the minutes,
+  not a failure; a vault that doesn't let Montra open documents is said in words, and sending goes on (its refusal
+  isn't treated as a connection problem here); a document the vault won't open is "No longer available", and the feed
+  is read again now, since the feed, not that answer, is the record. A connection problem wakes the connection check.
+  Opening works while sending is paused; the feed isn't caught up then.
+- **"Also delete it in the vault"** is now in Settings (owner only, off by default, offered when the vault lets Montra
+  delete), as the API has had it since PR 3. Settings also says when the vault's changes were last read.
+- **The phone** (PR 6) needs the link handed to the system browser; the API answers only with a redirect for now.
+- **The e2e run** checks the switch, the feed line and opening a file that isn't there. Opening a filed document is
+  tested in the API's tests, against the fake: filing happens in the fake inside the API process.
+
 ## Consequences
 
 - Montra can hand a household's papers to the place the household already keeps them, without being the only copy.
