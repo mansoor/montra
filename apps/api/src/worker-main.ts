@@ -19,6 +19,7 @@ import { ScanJobs } from './scans/scan-jobs.js';
 import { TaxFormReading } from './tax-forms/tax-form-reading.js';
 import { IntakeJobs } from './intakes/intake-jobs.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
+import { VaultJobs } from './storage/vault/vault.jobs.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
 const config = loadConfig();
@@ -56,6 +57,10 @@ await retention.schedule();
 const mirror = app.get(StorageMirrorJobs);
 mirror.register();
 await mirror.schedule();
+// Sends to the household's Family Document Vault (ADR-0054 §12). Each run schedules the next; this catches up too.
+const vault = app.get(VaultJobs);
+vault.register();
+await vault.schedule();
 // Nightly reconciliation of every workspace's books, and the hourly check for lapsed plans.
 const ops = app.get(OpsJobs);
 ops.register();

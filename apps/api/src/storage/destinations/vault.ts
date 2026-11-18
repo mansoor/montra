@@ -7,8 +7,9 @@ import type { Readable } from 'node:stream';
  *
  * This is Montra's side of the seam, in Montra's words, and nothing more. The adapter (`../vault/connection.ts`) is
  * written over the vault's own published client package, `@fdv/client`, which does the signing (owner's answer 1); no
- * signer or vault client of Montra's own lives in this repository. PR 2 builds the connection test (`check`); sending,
- * reading and the rest come with the PRs that use them.
+ * signer or vault client of Montra's own lives in this repository. PR 2 builds the connection test (`check`); PR 3
+ * sending, asking what became of a document, withdrawing it and deleting it; reading back, the feed and links come with
+ * the PRs that use them.
  */
 export interface VaultDestination {
   readonly kind: 'fdv';
@@ -43,8 +44,11 @@ export interface VaultDestination {
   /** §10: asks the vault to delete a filed document; the vault does what its owner set for Montra's deletes. */
   remove(documentId: string): Promise<void>;
 
-  /** §10: withdraws an item still in someone's Inbox, so the family isn't asked about a file Montra deleted. */
-  withdraw(ref: string): Promise<void>;
+  /**
+   * §10: withdraws an item still in someone's Inbox, so the family isn't asked about a file Montra deleted. Answers
+   * what became of it (filed already, say), or null for an id the vault doesn't know.
+   */
+  withdraw(ref: string): Promise<VaultItemState | null>;
 
   /** §2: registers a new public key under the current one. Montra keeps signing with the current key until confirmed. */
   registerKey(publicKey: string): Promise<void>;
@@ -75,6 +79,10 @@ export interface VaultCheck {
   clockOffsetMs: number | null;
   /** Whom Montra acts as in the vault, by the name the vault shows. The vault decides where documents land. */
   actingAs: string | null;
+  /** The hints the vault takes with a document (§3): Montra sends no others. */
+  hints: string[];
+  /** The vault's limits on sending, as of this answer (§12). */
+  limits: { filesPerDay: number; filesToday: number; maxUploadBytes: number } | null;
 }
 
 /** What Montra says about a document (§3, D5). Never transactions, ledger data, or anything a person didn't upload. */
@@ -92,15 +100,33 @@ export interface VaultDocument {
   date: string | null;
   /** The household member it belongs to, by name, when known and the vault takes the hint. */
   person: string | null;
-  /** Only with "Describe documents in more detail": amounts as minor-unit strings and an account's last four digits. */
+  /** A tax document's year, when known. */
+  taxYear?: number | null;
+  /** Only with "Describe documents in more detail": an amount as a decimal string and an account's last four digits. */
   detail?: { amounts?: { amount: string; currency: string }[]; accountLast4?: string };
 }
 
-/** §4: where a document is in the vault. */
+/**
+ * §4: where a document is in the vault. `contentAvailable` is whether the vault says Montra could download the exact
+ * file again (null when it doesn't say). A filed document Montra may not read has no `documentId`.
+ */
 export type VaultItemState =
-  | { state: 'received'; sha256: string | null }
-  | { state: 'filed'; documentId: string; version: string | null; sha256: string | null }
-  | { state: 'not_kept'; why: 'removed' | 'lapsed' | 'refused'; message: string | null };
+  | { state: 'received'; sha256: string | null; contentAvailable: boolean | null }
+  | {
+      state: 'filed';
+      documentId: string | null;
+      version: string | null;
+      sha256: string | null;
+      filedAt: Date | null;
+      contentAvailable: boolean | null;
+    }
+  | {
+      state: 'not_kept';
+      /** The family removed it, it lapsed undecided, the vault refused it, or Montra withdrew it. */
+      why: 'removed' | 'lapsed' | 'refused' | 'withdrawn';
+      /** For a refusal: a kind Montra may not send, a type the vault doesn't keep, or too large. */
+      refusal: 'kind' | 'type' | 'size' | null;
+    };
 
 /** §9: one page of the feed. `restart` says Montra's position is no longer valid and the whole feed must be read again. */
 export interface VaultChangesPage {

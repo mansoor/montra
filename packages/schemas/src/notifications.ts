@@ -20,6 +20,8 @@ export const NOTIFICATION_TYPES = [
   'ai_allowance',
   /** ADR-0052 §11: on 16 February, the expected tax forms that haven't come. */
   'tax_forms_missing',
+  /** ADR-0054 §12: the Family Document Vault needs a person (its connection stopped, or it didn't keep documents). */
+  'vault_attention',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;

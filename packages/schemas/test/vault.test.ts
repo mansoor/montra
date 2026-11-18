@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DisconnectVaultRequest,
   FILE_KINDS,
+  FileStorageStatesQuery,
+  RetryVaultItemsRequest,
+  VAULT_GROUP_MODES_OFFERED,
+  vaultEffectiveModes,
+  vaultSuggestKind,
+  vaultTypeKept,
   FileStorageStateDto,
   isMirrorKind,
   MissingFileDto,
@@ -154,6 +160,7 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     canDelete: true,
     items: { queued: 0, pending: 1, received: 2, filed: 3, notKept: 0, failed: 0, outOfReach: 0 },
     heldUntil: { sending: null, reading: null },
+    dailyLimit: { files: 100, filesToday: 3 },
     clockOffsetMs: null,
     keyRotation: 'none',
     lastSuccessAt: null,
@@ -270,5 +277,67 @@ describe('files held in the vault, and missing files (ADR-0054 §5a, §9)', () =
       usedBy: [{ kind: 'statement', id: ID, label: 'Checking, October 2026' }],
     };
     expect(MissingFileDto.parse({ ...missing, link: 'https://vault.example.com/one-time' })).toEqual(missing);
+  });
+});
+
+describe('sending (ADR-0054 §3, D8; As built: PR 3)', () => {
+  it('offers not sent and sent-with-a-copy only, until Montra can remove its copy (PR 5)', () => {
+    expect(VAULT_GROUP_MODES_OFFERED).toEqual(['not_sent', 'sent_keep_copy']);
+  });
+
+  it('sends a group only once it is mapped to one of the vault’s kinds', () => {
+    const modes = vaultEffectiveModes([
+      { group: 'receipts', mode: 'sent_keep_copy', vaultKind: 'receipt' },
+      { group: 'statements', mode: 'sent_keep_copy', vaultKind: null },
+      { group: 'payslips', mode: 'not_sent', vaultKind: 'pay_statement' },
+    ]);
+    expect(modes.receipts).toBe('sent_keep_copy');
+    expect(modes.statements).toBe('not_sent');
+    expect(modes.payslips).toBe('not_sent');
+    // A group not given is unmapped, so not sent, whatever its default.
+    expect(modes.bills).toBe('not_sent');
+    expect(vaultFileKinds(modes)).toEqual(['receipt']);
+  });
+
+  it('keeps statement exports in Montra, and anything the vault doesn’t take (D8)', () => {
+    const accepted = ['application/pdf', 'image/jpeg', 'image/png'];
+    expect(vaultTypeKept({ mime: 'application/pdf', fileName: 'October.pdf' }, accepted)).toBe(true);
+    expect(vaultTypeKept({ mime: 'image/png', fileName: 'lunch.png' }, accepted)).toBe(true);
+    expect(vaultTypeKept({ mime: 'image/heic', fileName: 'lunch.heic' }, accepted)).toBe(false);
+    for (const [mime, fileName] of [
+      ['text/csv', 'checking.csv'],
+      ['application/vnd.ms-excel', 'checking.xls'],
+      ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'checking.xlsx'],
+      ['application/x-ofx', 'checking.ofx'],
+      ['application/octet-stream', 'checking.qfx'],
+    ]) {
+      // Even a vault that says it takes everything doesn't get them.
+      expect(vaultTypeKept({ mime: mime!, fileName: fileName! }, [...accepted, mime!, '*/*']), fileName).toBe(
+        false,
+      );
+    }
+    expect(vaultTypeKept({ mime: 'image/webp', fileName: 'x.webp' }, ['image/*'])).toBe(true);
+    expect(vaultTypeKept({ mime: 'application/pdf', fileName: 'x.pdf' }, [])).toBe(false);
+  });
+
+  it('suggests the vault’s obvious kind for each group, and nothing when there is none', () => {
+    const kinds = [
+      { key: 'bank_statement', name: 'Bank statement' },
+      { key: 'utility_bill', name: 'Utility / bill' },
+      { key: 'pay_statement', name: 'Pay statement / payslip' },
+    ];
+    expect(vaultSuggestKind('statements', kinds)).toBe('bank_statement');
+    expect(vaultSuggestKind('bills', kinds)).toBe('utility_bill');
+    expect(vaultSuggestKind('payslips', kinds)).toBe('pay_statement');
+    expect(vaultSuggestKind('receipts', kinds)).toBeNull();
+    expect(vaultSuggestKind('tax_documents', [{ key: 'tax_form', name: 'Tax form' }])).toBe('tax_form');
+  });
+
+  it('reads the files a badge asks about, and retries by id', () => {
+    expect(FileStorageStatesQuery.parse({ ids: `${ID}, ${ID}` }).ids).toEqual([ID]);
+    expect(() => FileStorageStatesQuery.parse({ ids: '' })).toThrow();
+    expect(() => FileStorageStatesQuery.parse({ ids: 'not-an-id' })).toThrow();
+    expect(RetryVaultItemsRequest.parse({})).toEqual({});
+    expect(() => RetryVaultItemsRequest.parse({ fileIds: [] })).toThrow();
   });
 });

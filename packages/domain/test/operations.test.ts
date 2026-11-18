@@ -158,14 +158,15 @@ describe('compareEntitlements (ADR-0049 §1)', () => {
     expect(UNLIMITED_ENTITLEMENTS.features).toContain('familyVault');
   });
 
-  it('keeps the vault out of what customers see until a vault can be connected, and nothing else', () => {
-    expect([...FEATURES_NOT_YET_SHOWN]).toEqual(['familyVault']);
+  it('shows customers every feature now that the vault sends documents (ADR-0054 PR 3)', () => {
+    expect([...FEATURES_NOT_YET_SHOWN]).toEqual([]);
     expect(customerFeatures(UNLIMITED_ENTITLEMENTS.features)).toEqual([
       'payroll',
       'staffTime',
       'scans',
       'voice',
       'ownStorage',
+      'familyVault',
     ]);
   });
 });

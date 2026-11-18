@@ -66,6 +66,7 @@ import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { fakeVaultTransport } from './storage/vault/fake.js';
 import { guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
 import { FakeVaultController, VaultController } from './storage/vault/vault.controller.js';
+import { VaultJobs } from './storage/vault/vault.jobs.js';
 import { VaultService } from './storage/vault/vault.service.js';
 import { JobQueue, Worker } from './jobs/queue.js';
 import { ImportsService } from './imports/imports.service.js';
@@ -324,6 +325,7 @@ export class AppModule {
         StorageDestinationsService,
         StorageMirrorJobs,
         VaultService,
+        VaultJobs,
         {
           provide: VAULT_TRANSPORT,
           useFactory: () => (config.FAMILY_VAULT_FAKE ? fakeVaultTransport() : guardedVaultTransport()),

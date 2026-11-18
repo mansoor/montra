@@ -335,6 +335,90 @@ export function vaultKeepsCopy(
   return vaultModeOf(file, modes) !== 'sent_no_copy';
 }
 
+/**
+ * The modes Settings offers now (ADR-0054, As built: PR 3). `sent_no_copy` is chosen only once Montra can remove its
+ * own copy safely and ask the vault, then a person, for the file again (PR 5, `FileBytes`); until then the API refuses
+ * it, so no file is ever recorded as eligible for removal by a version that can't remove it.
+ */
+export const VAULT_GROUP_MODES_OFFERED: readonly VaultGroupMode[] = ['not_sent', 'sent_keep_copy'];
+
+/**
+ * Each group's mode as sending sees it (§3): a sent group with no vault kind mapped to it isn't sent. This is what the
+ * connection's `file_kinds` is derived from, so the trigger on `app.file` queues nothing for an unmapped group.
+ */
+export function vaultEffectiveModes(
+  groups: readonly { group: VaultGroup; mode: VaultGroupMode; vaultKind: string | null }[],
+): Record<VaultGroup, VaultGroupMode> {
+  const set = vaultGroupModes(Object.fromEntries(groups.map((g) => [g.group, g.mode])));
+  for (const group of VAULT_GROUPS) {
+    const mapped = groups.find((g) => g.group === group)?.vaultKind ?? null;
+    if (!mapped) set[group] = 'not_sent';
+  }
+  return set;
+}
+
+/**
+ * D8: exports of statements (CSV, spreadsheets, OFX, QFX, QIF) stay in Montra, whatever the vault says it takes: they
+ * are data Montra imports, not papers a household files.
+ */
+const KEPT_IN_MONTRA_TYPES = [
+  'text/csv',
+  'application/csv',
+  'text/comma-separated-values',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/x-ofx',
+  'application/ofx',
+  'application/vnd.intu.qfx',
+  'application/x-qfx',
+  'application/qif',
+  'application/x-qif',
+];
+const KEPT_IN_MONTRA_EXTENSIONS = ['csv', 'tsv', 'xls', 'xlsx', 'ofx', 'qfx', 'qif'];
+
+/**
+ * §3, D8: whether the vault keeps a file of this type: one of the types the vault said it takes, and never a statement
+ * export. Anything else stays in Montra only and is shown as "not a type the vault keeps".
+ */
+export function vaultTypeKept(
+  file: { mime: string; fileName: string },
+  accepted: readonly string[],
+): boolean {
+  const mime = file.mime.toLowerCase().split(';')[0]!.trim();
+  const ext = file.fileName.toLowerCase().split('.').pop() ?? '';
+  if (KEPT_IN_MONTRA_TYPES.includes(mime)) return false;
+  if (file.fileName.includes('.') && KEPT_IN_MONTRA_EXTENSIONS.includes(ext)) return false;
+  return accepted.some((a) => {
+    const t = a.toLowerCase().trim();
+    return t === mime || (t.endsWith('/*') && mime.startsWith(t.slice(0, -1)));
+  });
+}
+
+/** What each group usually is in a vault, by the words of the vault's own kinds: the suggestion Settings starts with. */
+const VAULT_KIND_HINTS: Readonly<Record<VaultGroup, readonly string[]>> = {
+  receipts: ['receipt'],
+  statements: ['bank statement', 'bank_statement', 'statement'],
+  bills: ['bill', 'invoice', 'utility'],
+  payslips: ['pay statement', 'pay_statement', 'payslip', 'pay stub', 'paystub'],
+  tax_documents: ['tax form', 'tax_form', 'tax document', 'w-2', 'w2', '1099'],
+  other: ['lease', 'other'],
+};
+
+/**
+ * §3: "Montra suggests the obvious ones". The first of the vault's kinds whose key or name has one of the group's
+ * words, or null; the owner chooses, and nothing is sent until they save.
+ */
+export function vaultSuggestKind(
+  group: VaultGroup,
+  kinds: readonly { key: string; name: string }[],
+): string | null {
+  for (const word of VAULT_KIND_HINTS[group]) {
+    const found = kinds.find((k) => k.key.toLowerCase() === word || k.name.toLowerCase().includes(word));
+    if (found) return found.key;
+  }
+  return null;
+}
+
 /** §4, §11: a file's place in the vault's outbox. */
 export const VAULT_ITEM_STATUSES = [
   'queued',
@@ -409,6 +493,8 @@ export const VaultConnectionDto = z.object({
   }),
   /** §12: waiting for the vault's daily limits, until then. Not failures. */
   heldUntil: z.object({ sending: z.string().nullable(), reading: z.string().nullable() }),
+  /** §12: how many documents the vault takes from Montra a day, and how many it has today, as of the last check. */
+  dailyLimit: z.object({ files: z.number().int(), filesToday: z.number().int() }).nullable(),
   /** §7: Montra's clock against the vault's, in milliseconds; shown when it is large. */
   clockOffsetMs: z.number().int().nullable(),
   /** §2: a key change in progress. */
@@ -513,6 +599,28 @@ export const VaultItemsQuery = z.object({
 });
 export type VaultItemsQuery = z.output<typeof VaultItemsQuery>;
 
+/**
+ * §12 "Send existing documents": how many files of the groups being sent are in Montra and not yet sent, by group, and
+ * how many days that takes at the vault's daily limit (null until the vault has said its limit).
+ */
+export const VaultExistingDto = z.object({
+  count: z.number().int(),
+  groups: z.array(z.object({ group: VaultGroup, count: z.number().int() })),
+  perDay: z.number().int().nullable(),
+  days: z.number().int().nullable(),
+});
+export type VaultExistingDto = z.infer<typeof VaultExistingDto>;
+
+/**
+ * §4, §13: "Try again" for files that failed, and "Send again" for one the vault didn't keep when a resend is allowed.
+ * Without `fileIds`, every failed file is tried again; a file not kept is sent again only when named.
+ */
+export const RetryVaultItemsRequest = z.object({ fileIds: z.array(Id).min(1).max(200).optional() }).strict();
+export type RetryVaultItemsRequest = z.output<typeof RetryVaultItemsRequest>;
+
+export const RetryVaultItemsResponse = z.object({ retried: z.number().int() });
+export type RetryVaultItemsResponse = z.infer<typeof RetryVaultItemsResponse>;
+
 /** Where a file's bytes are (§5): Montra's own storage, or only the vault. */
 export const FileLocation = z.enum(['montra', 'vault']);
 export type FileLocation = z.infer<typeof FileLocation>;
@@ -540,6 +648,25 @@ export const FileStorageStateDto = z.object({
   vault: FileVaultSummaryDto.nullable(),
 });
 export type FileStorageStateDto = z.infer<typeof FileStorageStateDto>;
+
+/** The badges for some files (§13): their ids, comma-separated, at most 100. */
+export const FileStorageStatesQuery = z.object({
+  ids: z
+    .string()
+    .transform((s) => [
+      ...new Set(
+        s
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      ),
+    ])
+    .pipe(z.array(Id).min(1).max(100)),
+});
+export type FileStorageStatesQuery = z.output<typeof FileStorageStatesQuery>;
+
+export const FileStorageStatesResponse = z.object({ data: z.array(FileStorageStateDto) });
+export type FileStorageStatesResponse = z.infer<typeof FileStorageStatesResponse>;
 
 /** §5a: one entry in Review, "Files to provide again". */
 export const MissingFileDto = z.object({

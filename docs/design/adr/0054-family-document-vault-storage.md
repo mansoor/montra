@@ -630,6 +630,79 @@ later PRs use). Where PR 2 differs from or adds to the text above, and why:
   Montra; Settings says to do that in the vault. `anyway` is taken and changes nothing until files can be held only in
   the vault (PR 5).
 
+### As built: PR 3 (2026-11-17)
+
+Sending, with a local copy kept, on `@fdv/client` **0.9.0-dev.60**, the release the precondition named
+(`v0.9.0-dev.60/fdv-client-0.9.0-dev.60.tgz`; its size and sha256 were checked against the vault side's, and pnpm
+records its integrity). Migration `0064_vault_sending.sql`. Where PR 3 differs from or adds to the text above, and why:
+
+- **"Sent with no local copy" isn't offered yet.** Settings offers "Don't send" and "Send, and keep a copy in Montra",
+  says that sending without a copy comes in a later version, and the API refuses `sent_no_copy`
+  (`VAULT_GROUP_MODES_OFFERED`). Offering it now, with Montra keeping the copy anyway, would record a choice the build
+  can't honour and leave files "eligible" for a removal whose safeguards (`FileBytes`, missing files, §5a) don't exist
+  yet; PR 5 adds the mode with them. The safer of the two options the owner left open.
+- **A group is sent only once it is mapped.** The defaults (receipts, statements and bills sent) have no vault kind
+  until the owner saves one (Montra suggests the obvious one, `vaultSuggestKind`), so nothing goes until the owner has
+  looked at the table. `file_kinds` is derived from the groups that are sent *and* mapped (`vaultEffectiveModes`), so
+  the trigger queues nothing for the others, and Settings lists sent groups not yet mapped. `mirror_files` is on once
+  the vault has approved Montra (`stage: connected`).
+- **"Done with it"** (§3) is `app.vault_file_busy`: no receipt or payslip being read or in review, no statement import
+  not yet committed, no scan or statement-or-bill intake waiting, no tax form being read or checked. A definer function,
+  because a scan is its uploader's alone and the job runs as an owner. A new file also waits two minutes, so the record
+  it belongs to exists first; the trigger wakes the job then.
+- **A filed item may have no document id.** A vault that lets Montra send but not read answers "filed" without saying
+  which document (the vault's `unavailable` state, as the fake also shows it), so `vault_item_check1` became a check on
+  `filed_at` alone. Montra records the id when it is told it.
+- **`content_available`** (dev.60) is stored on each row as the vault last said it; nothing uses it until PR 5.
+- **The id** is `m1-` and 40 characters of a SHA-256 over the workspace, the file and the row's creation time: opaque,
+  derived from ids, and new for a new row, so "Send again" after the family removed a document is a new send (the
+  vault's answer about the old id won't change), while "Try again" keeps the id. A row whose last attempt got no answer
+  is asked about before it is sent again; a row sent again on purpose (a lapse's one automatic resend, an id the vault
+  says it doesn't know) is sent directly.
+- **Claims use a CTE** (`with c as (… limit n for update skip locked) update … from c`), not the mirror's
+  `in (… limit n)`, which Postgres may run again per row and so lease more rows than it sends; found by the
+  one-at-a-time test. The mirror's job has the same shape and may want the same change.
+- **What Montra says** (§3, D5): the mapped kind, a title from the file's name (with a business's or rental's name),
+  the paper's date, the tax year, and the person: a payslip's member, a tax form's person, a household bill's member,
+  by name as the household knows them. Amounts (a receipt's total, a payslip's net, a bill's amount) and an account's or
+  card's last four go only with "Describe documents in more detail". Only hints the vault lists (`config.hints`); the
+  job checks the connection first when it doesn't know them yet. The vault routes a paper to the Inbox of the person it
+  is about when they can receive it (an adult with a sign-in, not locked or paused), else to the person Montra acts as;
+  Montra isn't told which. A recipient paused at that moment is a retriable "busy" from the vault: waited out like any
+  wait the vault asks for.
+- **Types the vault doesn't keep** (D8): statement exports (CSV, spreadsheets, OFX, QFX, QIF) never go, whatever the
+  vault takes; any other type the vault doesn't list, and files over its size limit, are `not_kept` with the words
+  "Not a type the vault keeps. It stays in Montra." (or too large), and no resend. The backfill leaves them out of its
+  count.
+- **Waits, caps and failures** (§12): the daily cap holds sending (`send_held_until`, shown) and isn't a failure; a wait
+  the vault asks for is waited at least that long, with up to 15 seconds' jitter and Montra's backoff, and a row never
+  gives up over it; can't reach the vault at all holds every row on the backoff; a refusal of the document itself is an
+  answer (`not_kept`), another client error fails the row at once; five failures in a row turn the connection
+  `failing` (`storage_failing`, once). A connection problem stops it (`needs_vault`), releases the row without counting
+  the attempt, and tells owners and admins once, as it stops (`vault_attention`, which joins `NOTIFICATION_TYPES` as a
+  notification people don't switch off, like `storage_failing`). While stopped, only the check runs, every 15 minutes.
+- **Not kept** (§4.5): removed by the family is `not_kept` with a resend allowed, and owners and admins hear about it
+  once a day at most (`vault_attention`, no file names); a lapse is sent again once on its own, under the same id, then
+  waits for "Send again"; a kind the vault no longer lets Montra send is `not_kept` with a resend allowed (a mapped
+  kind gone from the vault's last list holds the row as `queued` with the words instead, until the mapping changes).
+- **Withdrawals and deletes** (§10) run in this job, as the triggers from PR 1 already mark the rows: an Inbox item for
+  a file deleted for good is withdrawn, and a filed one is deleted in the vault only with "Also delete it in the vault"
+  on and allowed. The switch is in the API (`deleteWithMontra`) but not yet in Settings; PR 5 shows it with the rest of
+  deleting.
+- **Backfill** ("Send existing documents") queues every file of the sent and mapped groups not already in the outbox,
+  not in the trash, oldest first, after the owner (recent sign-in) confirms the count shown with the days it takes at
+  the vault's daily limit. It is recorded as `vault_move_started` with `keepCopy: true`.
+- **Badges** are on the files of receipts, payslips and tax forms, for anyone who can see those files: the API asks only
+  about files the caller sees under row-level security, and `app.vault_file_states` answers with the status and the
+  words. Statements and bills don't list their files by id on screen yet, so they get badges later.
+- **The fake reads a multipart body as UTF-8**, so the bytes of a binary file (a real PNG, JPEG or most PDFs) arrive
+  changed and Montra's hash check fails them; Montra's tests send text-only files. Asked of the vault's side; the real
+  vault isn't known to do this.
+- **The e2e run** covers choosing what is sent, the warning and the count of existing documents. Sending itself is
+  tested in the API's tests: Playwright's worker is another process, without the API's in-process fake.
+- **The plan key is shown.** `FEATURES_NOT_YET_SHOWN` is empty, so the billing page lists "Documents sent to your Family
+  Document Vault".
+
 ## Consequences
 
 - Montra can hand a household's papers to the place the household already keeps them, without being the only copy.

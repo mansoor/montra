@@ -1,8 +1,21 @@
 /**
- * The household's Family Document Vault in Settings → Storage (ADR-0054 §2, §13): who sees the card, where connecting
- * has got to, and its status in words.
+ * The household's Family Document Vault in Settings → Storage (ADR-0054 §2, §6, §13): who sees the card, where
+ * connecting has got to, its status in words, what each group does, and the badge on a file.
  */
-import type { VaultConnectionDto, WorkspaceDto } from '@montra/api-client';
+import type {
+  FileStorageStateDto,
+  VaultConnectionDto,
+  VaultExistingDto,
+  WorkspaceDto,
+} from '@montra/api-client';
+import {
+  isSentMode,
+  VAULT_GROUP_MODES_OFFERED,
+  VAULT_RESTRICTED_GROUPS,
+  vaultSuggestKind,
+  type VaultGroup,
+  type VaultGroupMode,
+} from '@montra/schemas';
 
 /** Owners and admins see the card, when the plan has the vault (D4, D11). Only an owner changes anything. */
 export function canSeeVault(
@@ -68,4 +81,132 @@ export const clockIsOff = (offsetMs: number | null): boolean =>
  */
 export function cleanPastedCode(text: string): string {
   return text.replace(/\s+/g, '');
+}
+
+/** One row of "Send these to the vault" (§6, §13), as the person looking at it may change it. */
+export interface VaultGroupRow {
+  group: VaultGroup;
+  mode: VaultGroupMode;
+  /** The vault kind it maps to; for a group not mapped yet, the obvious one, for the person to save. */
+  vaultKind: string | null;
+  mapped: boolean;
+  /** Payslips and tax documents: only an owner sends them, after a warning (§6). */
+  restricted: boolean;
+  /** The modes this person may choose here. */
+  modes: readonly VaultGroupMode[];
+  editable: boolean;
+}
+
+/**
+ * Each group as Settings shows it. An owner chooses not sent or sent with a copy kept (sending with no local copy comes
+ * with a later version); an admin may only set payslips or tax documents back to not sent (D4).
+ */
+export function vaultGroupRows(
+  d: VaultConnectionDto,
+  role: WorkspaceDto['role'] | null | undefined,
+): VaultGroupRow[] {
+  const owner = role === 'owner';
+  return d.groups.map((g) => {
+    const restricted = VAULT_RESTRICTED_GROUPS.includes(g.group);
+    const adminMayTurnOff = role === 'admin' && restricted && isSentMode(g.mode);
+    const modes: readonly VaultGroupMode[] = owner
+      ? VAULT_GROUP_MODES_OFFERED
+      : adminMayTurnOff
+        ? (['not_sent', g.mode] as VaultGroupMode[])
+        : [g.mode];
+    return {
+      group: g.group,
+      mode: g.mode,
+      vaultKind: g.vaultKind ?? vaultSuggestKind(g.group, d.vaultKinds),
+      mapped: g.vaultKind !== null,
+      restricted,
+      modes,
+      editable: owner || adminMayTurnOff,
+    };
+  });
+}
+
+/**
+ * What saving "Send these to the vault" changes: the groups whose mode or kind differs from what is saved (a suggested
+ * kind counts as a change for a group that is sent), and the restricted groups that start being sent, for the warning.
+ */
+export function vaultGroupChanges(
+  d: VaultConnectionDto,
+  draft: readonly { group: VaultGroup; mode: VaultGroupMode; vaultKind: string | null }[],
+): {
+  groups: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null }[];
+  warn: VaultGroup[];
+} {
+  const groups: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null }[] = [];
+  const warn: VaultGroup[] = [];
+  for (const next of draft) {
+    const saved = d.groups.find((g) => g.group === next.group);
+    if (!saved) continue;
+    const change: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null } = {
+      group: next.group,
+    };
+    if (next.mode !== saved.mode) change.mode = next.mode;
+    const kind = isSentMode(next.mode) ? next.vaultKind : saved.vaultKind;
+    if (kind !== saved.vaultKind) change.vaultKind = kind;
+    if (change.mode !== undefined || change.vaultKind !== undefined) groups.push(change);
+    if (VAULT_RESTRICTED_GROUPS.includes(next.group) && isSentMode(next.mode) && !isSentMode(saved.mode)) {
+      warn.push(next.group);
+    }
+  }
+  return { groups, warn };
+}
+
+/** §3: groups set to be sent but not mapped to one of the vault's kinds: they aren't sent, and Settings says so. */
+export function vaultUnmapped(d: VaultConnectionDto): VaultGroup[] {
+  return d.groups.filter((g) => isSentMode(g.mode) && !g.vaultKind).map((g) => g.group);
+}
+
+/** The counts Settings shows, in order, leaving out the ones at nought. */
+export function vaultCounts(d: VaultConnectionDto): { key: string; n: number }[] {
+  const i = d.items;
+  return [
+    { key: 'vault.count_sending', n: i.queued + i.pending },
+    { key: 'vault.count_inbox', n: i.received },
+    { key: 'vault.count_filed', n: i.filed },
+    { key: 'vault.count_not_kept', n: i.notKept },
+    { key: 'vault.count_failed', n: i.failed },
+    { key: 'vault.count_out_of_reach', n: i.outOfReach },
+  ].filter((c) => c.n > 0);
+}
+
+/** "Send existing documents" (§12): how many, and how long at the vault's daily limit. */
+export function vaultEstimate(e: VaultExistingDto): { key: string; values?: Record<string, string> } {
+  if (e.count === 0) return { key: 'vault.existing_none' };
+  if (e.days === null) return { key: 'vault.existing_count', values: { count: String(e.count) } };
+  return e.days <= 1
+    ? { key: 'vault.existing_today', values: { count: String(e.count) } }
+    : { key: 'vault.existing_days', values: { count: String(e.count), days: String(e.days) } };
+}
+
+/**
+ * The small badge on a file (§13): where it is with the vault, or nothing for a file that isn't sent. The vault's
+ * reason for not keeping a file is in words already, shown as the badge's title.
+ */
+export function vaultBadge(
+  s: FileStorageStateDto | undefined,
+): { key: string; tone: 'good' | 'muted' | 'bad'; title: string | null } | null {
+  const v = s?.vault;
+  if (!v) return null;
+  switch (v.status) {
+    case 'queued':
+    case 'pending':
+      return { key: 'vault.badge_sending', tone: 'muted', title: null };
+    case 'received':
+      return { key: 'vault.badge_inbox', tone: 'muted', title: null };
+    case 'filed':
+      return { key: 'vault.badge_filed', tone: 'good', title: v.title };
+    case 'not_kept':
+      return { key: 'vault.badge_not_kept', tone: 'muted', title: v.notKeptReason };
+    case 'failed':
+      return { key: 'vault.badge_failed', tone: 'bad', title: null };
+    case 'out_of_reach':
+      return { key: 'vault.badge_out_of_reach', tone: 'muted', title: null };
+    default:
+      return null;
+  }
 }

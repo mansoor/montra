@@ -103,6 +103,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.query(`delete from app.storage_destination where workspace_id = $1`, [wsId]);
+  // Connecting and "Check again" wake the vault's job (PR 3): nothing of ours may wake a worker in another test file.
+  await db.query(`delete from app.job where type = 'storage.vault'`);
   await db.end();
   await h.close();
 });
@@ -301,9 +303,10 @@ describe('connecting (ADR-0054 §2; VLT-01, VLT-08)', () => {
       { group: 'other', mode: 'not_sent', vaultKind: null },
     ]);
     const row = await vaultRow();
-    // Nothing is sent yet (PR 3): the trigger queues nothing while "send files" is off.
+    // Nothing is sent before the vault approves Montra, and no group is mapped to a vault kind yet (PR 3), so the
+    // trigger queues nothing.
     expect(row).toMatchObject({ kind: 'fdv', mirror_files: false, status: 'needs_vault', secret_hint: null });
-    expect(row.file_kinds).toEqual(['statement', 'receipt', 'invoice']);
+    expect(row.file_kinds).toEqual([]);
     expect(row.config).not.toHaveProperty('pkcs8');
     expect(JSON.stringify(row.config)).not.toMatch(/private|pkcs8/i);
     // Sealed: the ciphertext carries neither the key nor anything readable.
@@ -400,7 +403,9 @@ describe('connecting (ADR-0054 §2; VLT-01, VLT-08)', () => {
     const row = await vaultRow();
     // The pinned identity is the vault's own installation id, as it reported it.
     expect(row.config.identity).toMatch(/^[0-9a-f-]{36}$/);
-    expect(row.mirror_files).toBe(false);
+    // Sending is on once connected; nothing is queued until the owner maps a group (PR 3).
+    expect(row.mirror_files).toBe(true);
+    expect(row.file_kinds).toEqual([]);
     const s = await state();
     expect(s.checked_at).not.toBeNull();
     expect(s.next_check_at.getTime()).toBeGreaterThan(Date.now());
