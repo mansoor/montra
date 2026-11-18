@@ -13,6 +13,7 @@ import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
+import { keptOnlyInVault, useFileStorageStates, VaultBadges, VaultOnlyPage } from '../../src/ui/Vault';
 
 export default function PayslipReview() {
   const th = useTheme();
@@ -28,6 +29,8 @@ export default function PayslipReview() {
   const [picks, setPicks] = useState<Record<string, string | null>>({});
   const [accountNames, setAccountNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  // ADR-0054 §13: where the payslip's files are with the vault; a page kept only there isn't asked for (§5).
+  const fileStates = useFileStorageStates(payslip?.fileIds ?? []);
 
   const load = useCallback(async () => {
     try {
@@ -116,9 +119,12 @@ export default function PayslipReview() {
         <Banner text={t('mobile.payslips.matched')} />
       ) : null}
 
+      <VaultBadges fileIds={payslip.fileIds} states={fileStates} />
       {bearer
         ? payslip.fileIds.map((fileId, i) =>
-            unshown.has(fileId) ? (
+            keptOnlyInVault(fileStates, fileId) ? (
+              <VaultOnlyPage key={fileId} fileId={fileId} states={fileStates} page={i + 1} />
+            ) : unshown.has(fileId) ? (
               <Small key={fileId}>{t('mobile.payslips.file_on_web')}</Small>
             ) : (
               <Image

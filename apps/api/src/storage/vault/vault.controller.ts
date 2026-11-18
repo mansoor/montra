@@ -15,11 +15,11 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import {
+  ConnectVaultRequest,
   DisconnectVaultRequest,
   FileStorageStatesQuery,
   Id,
   MoveToVaultRequest,
-  PasteVaultCodeRequest,
   ReplaceVaultKeyRequest,
   RetryVaultItemsRequest,
   SendExistingToVaultRequest,
@@ -27,6 +27,7 @@ import {
   VaultItemsQuery,
   VaultMoveQuery,
   VaultOpenQuery,
+  type VaultOpenLinkDto,
 } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -64,36 +65,11 @@ export class VaultController {
     return { connection: await this.vault.get(dbCtx(ctx), ctx.role!) };
   }
 
-  /** §2 step 1: Montra makes the key pair. */
-  @Post()
-  async start(@Ctx() ctx: RequestContext) {
-    requireRecentAuth(ctx);
-    await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
-    return this.vault.start(dbCtx(ctx), ctx.role!);
-  }
-
-  /** §2 step 3: the code from the vault. Also ends a key change. */
-  @Post('code')
-  @HttpCode(200)
-  async paste(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRecentAuth(ctx);
-    await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
-    return this.vault.paste(dbCtx(ctx), ctx.role!, parse(PasteVaultCodeRequest, body));
-  }
-
   /** "Check again": owners and admins (D4). */
   @Post('check')
   @HttpCode(200)
   check(@Ctx() ctx: RequestContext) {
     return this.vault.checkAgain(dbCtx(ctx), ctx.role!);
-  }
-
-  /** "Replace the key", or cancel a new key not yet confirmed. */
-  @Post('key')
-  @HttpCode(200)
-  replaceKey(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRecentAuth(ctx);
-    return this.vault.replaceKey(dbCtx(ctx), ctx.role!, parse(ReplaceVaultKeyRequest, body));
   }
 
   /**
@@ -171,6 +147,36 @@ export class VaultController {
 }
 
 /**
+ * §2, §7: the two requests that carry a vault API key's secret, an owner's with a recent sign-in. Outside the
+ * idempotency interceptor, which keeps a hash of each request's body and the answer for a replay: nothing made from
+ * the secret is stored anywhere but its sealed value. The answers carry no secret either way.
+ */
+@Controller('v1/workspaces/:workspaceId/family-vault')
+@UseGuards(AuthGuard, WorkspaceGuard)
+export class VaultKeyController {
+  constructor(
+    @Inject(VaultService) private readonly vault: VaultService,
+    @Inject(Plans) private readonly plans: Plans,
+  ) {}
+
+  /** §2: connect with the connection string the vault gave for Montra's API key (and its secret, when not in it). */
+  @Post()
+  async connect(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireRecentAuth(ctx);
+    await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
+    return this.vault.connect(dbCtx(ctx), ctx.role!, parse(ConnectVaultRequest, body ?? {}));
+  }
+
+  /** "Replace the key": a new key the owner generated in the vault, checked before Montra switches to it. */
+  @Post('key')
+  @HttpCode(200)
+  replaceKey(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireRecentAuth(ctx);
+    return this.vault.replaceKey(dbCtx(ctx), ctx.role!, parse(ReplaceVaultKeyRequest, body ?? {}));
+  }
+}
+
+/**
  * §9 "Open in the vault": anyone who can see the file. A single-use link is made for this click and the answer is a
  * redirect to it, never a body with it in. POST, so nothing prefetches it, and outside the idempotency interceptor,
  * which would store the answer for a replay.
@@ -188,40 +194,85 @@ export class VaultOpenController {
     @Query() query: unknown,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    void reply.header('cache-control', 'no-store');
-    void reply.header('referrer-policy', 'no-referrer');
-    let url: URL;
-    try {
-      url = await this.opener.open(dbCtx(ctx), parse(Id, fileId), parse(VaultOpenQuery, query).mode);
-    } catch (e) {
-      if (e instanceof VaultOpenRefused && e.retryAfterSeconds) {
-        void reply.header('retry-after', String(e.retryAfterSeconds));
-      }
-      throw e;
-    }
-    void reply.header('location', url.href);
+    const opened = await openOrSayWhy(this.opener, ctx, fileId, query, reply);
+    void reply.header('location', opened.url.href);
   }
 }
 
-const RegisterRequest = z
-  .object({ publicKey: z.string().min(1).max(200), approved: z.boolean().default(true) })
-  .strict();
+/**
+ * §9 on the phone (PR 6): the same single-use link, made on the tap, in the body of the answer rather than a redirect,
+ * which a React Native client can't read the target of. The app hands it straight to the system browser and keeps it
+ * nowhere. As the redirect: POST, so nothing prefetches it; `no-store`, so no cache keeps it; and outside the
+ * idempotency interceptor, which would store this answer, link and all, for a replay. Nothing logs it.
+ */
+@Controller('v1/workspaces/:workspaceId/family-vault/files/:fileId/link')
+@UseGuards(AuthGuard, WorkspaceGuard)
+export class VaultOpenLinkController {
+  constructor(@Inject(VaultOpener) private readonly opener: VaultOpener) {}
+
+  @Post()
+  @HttpCode(200)
+  async link(
+    @Ctx() ctx: RequestContext,
+    @Param('fileId') fileId: string,
+    @Query() query: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<VaultOpenLinkDto> {
+    const opened = await openOrSayWhy(this.opener, ctx, fileId, query, reply);
+    return { url: opened.url.href, mode: opened.mode };
+  }
+}
+
+/** Makes the link for one click, with the headers both answers carry; a refusal says how long to wait, when it can. */
+async function openOrSayWhy(
+  opener: VaultOpener,
+  ctx: RequestContext,
+  fileId: string,
+  query: unknown,
+  reply: FastifyReply,
+): Promise<{ url: URL; mode: 'view' | 'download' }> {
+  void reply.header('cache-control', 'no-store');
+  void reply.header('pragma', 'no-cache');
+  void reply.header('referrer-policy', 'no-referrer');
+  try {
+    return await opener.open(dbCtx(ctx), parse(Id, fileId), parse(VaultOpenQuery, query).mode);
+  } catch (e) {
+    if (e instanceof VaultOpenRefused && e.retryAfterSeconds) {
+      void reply.header('retry-after', String(e.retryAfterSeconds));
+    }
+    throw e;
+  }
+}
+
+const RegisterRequest = z.object({ approved: z.boolean().default(true) }).strict();
 
 /**
- * Only with `FAMILY_VAULT_FAKE=on` (never in production, `config.ts`): stands in for the vault's owner registering
- * Montra in the in-process fake vault, so the e2e run can connect a workspace end to end without any real vault.
+ * Only with `FAMILY_VAULT_FAKE=on` (never in production, `config.ts`): stands in for the vault's owner connecting
+ * Montra in the in-process fake vault and generating its API keys, so the e2e run can connect a workspace end to end
+ * without any real vault. It answers what the vault shows its owner: the connection string and the fake's secret.
  */
 @Controller('v1/dev/fake-vault')
 @UseGuards(AuthGuard)
 export class FakeVaultController {
   constructor(@Inject(VAULT_TRANSPORT) private readonly transport: VaultTransport) {}
 
-  @Post('apps')
-  async register(@Body() body: unknown) {
+  private fake(): FakeVaultHandle {
     const fake = this.transport.fake as FakeVaultHandle | undefined;
     if (!fake) throw new AppError(404, 'not_found', 'Not found');
-    const req = parse(RegisterRequest, body);
-    const { code } = await fake.register(req.publicKey, { approved: req.approved });
-    return { code };
+    return fake;
+  }
+
+  @Post('apps')
+  async register(@Body() body: unknown) {
+    const fake = this.fake();
+    const req = parse(RegisterRequest, body ?? {});
+    const k = await fake.register({ approved: req.approved });
+    return { appId: k.appId, clientId: k.clientId, code: k.code, secret: k.secret };
+  }
+
+  @Post('apps/:appId/keys')
+  async newKey(@Param('appId') appId: string) {
+    const k = await this.fake().newKey(appId);
+    return { appId: k.appId, clientId: k.clientId, code: k.code, secret: k.secret };
   }
 }

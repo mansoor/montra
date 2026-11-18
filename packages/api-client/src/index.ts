@@ -353,7 +353,9 @@ import type {
   StorageTestResultDto,
   UpdateStorageRequest,
   VaultConnectionDto,
-  PasteVaultCodeRequest,
+  VaultKeyDto,
+  VaultKeyProblem,
+  ConnectVaultRequest,
   ReplaceVaultKeyRequest,
   DisconnectVaultRequest,
   UpdateVaultConnectionRequest,
@@ -617,7 +619,7 @@ export type SaveBackupScheduleInput = z.input<typeof SaveBackupScheduleRequest>;
 export type ConnectStorageInput = z.input<typeof ConnectStorageRequest>;
 export type UpdateStorageInput = z.input<typeof UpdateStorageRequest>;
 export type StorageConnectionInput = z.input<typeof StorageConnection>;
-export type PasteVaultCodeInput = z.input<typeof PasteVaultCodeRequest>;
+export type ConnectVaultInput = z.input<typeof ConnectVaultRequest>;
 export type ReplaceVaultKeyInput = z.input<typeof ReplaceVaultKeyRequest>;
 export type DisconnectVaultInput = z.input<typeof DisconnectVaultRequest>;
 export type UpdateVaultConnectionInput = z.input<typeof UpdateVaultConnectionRequest>;
@@ -2575,15 +2577,17 @@ export class ApiClient {
       this.ws(workspaceId, '/family-vault'),
     ).then((r) => r.connection);
   }
-  startVaultConnection(workspaceId: string) {
-    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault'));
-  }
-  pasteVaultCode(workspaceId: string, input: PasteVaultCodeInput) {
-    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/code'), input);
+  /**
+   * §2 (API keys): connects with the connection string the vault gave for Montra's API key, and its secret when the
+   * string doesn't include it. Also connects again a connection that is kept (with its `version`).
+   */
+  connectVault(workspaceId: string, input: ConnectVaultInput) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault'), input);
   }
   checkVaultConnection(workspaceId: string) {
     return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/check'));
   }
+  /** §2 "Replace the key": a new key an owner generated in the vault, checked before Montra switches to it. */
   replaceVaultKey(workspaceId: string, input: ReplaceVaultKeyInput) {
     return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/key'), input);
   }
@@ -3469,6 +3473,8 @@ export type {
   StorageItemDto,
   StorageTestResultDto,
   VaultConnectionDto,
+  VaultKeyDto,
+  VaultKeyProblem,
   VaultExistingDto,
   VaultMoveDto,
   VaultBringBackDto,

@@ -48,10 +48,15 @@ export class VaultOpener {
   ) {}
 
   /**
-   * A single-use link for one file, made now. `view` falls back to a download link when the vault can't show the type
-   * as pages and lets Montra download. The caller redirects to it at once and keeps it nowhere.
+   * A single-use link for one file, made now, and what it opens as. `view` falls back to a download link when the vault
+   * can't show the type as pages and lets Montra download. The caller hands it on at once (a redirect for the web, the
+   * body of a `no-store` answer for the phone, PR 6) and keeps it nowhere.
    */
-  async open(ctx: Ctx, fileId: string, mode: 'view' | 'download'): Promise<URL> {
+  async open(
+    ctx: Ctx,
+    fileId: string,
+    mode: 'view' | 'download',
+  ): Promise<{ url: URL; mode: 'view' | 'download' }> {
     const target = await this.target(ctx, fileId);
     if (target.status === 'out_of_reach') throw new VaultOpenRefused(410, 'vault.out_of_reach', OUT_OF_REACH);
     if (target.status !== 'filed' || !target.userId) {
@@ -74,7 +79,15 @@ export class VaultOpener {
     }
     if (!config.mayOpen) throw refused(new VaultError('cannot_open'));
 
-    const conn = await this.vault.openRow(actor, row);
+    let conn: Awaited<ReturnType<VaultService['openRow']>>;
+    try {
+      conn = await this.vault.openRow(actor, row);
+    } catch (e) {
+      // A connection made before API keys, or a sealed key Montra can't read: an owner pastes a new key.
+      const err = e instanceof VaultError ? e : new VaultError('failed', { detail: 'open' });
+      if (err.stopsConnection) await this.wakeCheck(actor, row.id);
+      throw refused(err);
+    }
     let url: URL;
     let made: 'view' | 'download' = mode;
     try {
@@ -139,7 +152,7 @@ export class VaultOpener {
         })
         .execute(),
     );
-    return url;
+    return { url, mode: made };
   }
 
   /** The file as the person sees it (RLS on `app.file`), then its row in the vault's outbox, through a definer. */
@@ -191,6 +204,8 @@ const notInVault = () => new AppError(404, 'vault.not_in_vault', 'This file isnâ
 
 /** A `VaultError` as an answer to the person who clicked: its words, never its detail. */
 function refused(e: VaultError): VaultOpenRefused {
+  // The connection itself, or a vault key the vault refuses (revoked, expired, not valid, or from before API keys).
+  if (e.stopsConnection) return new VaultOpenRefused(409, 'vault.needs_vault', e.shown);
   switch (e.code) {
     case 'links_full': {
       const s = e.opts.retryAfter
@@ -201,9 +216,6 @@ function refused(e: VaultError): VaultOpenRefused {
     case 'cannot_view':
     case 'cannot_open':
       return new VaultOpenRefused(422, `vault.${e.code}`, e.shown);
-    case 'connection':
-    case 'identity_changed':
-      return new VaultOpenRefused(409, 'vault.needs_vault', e.shown);
     case 'retry_later': {
       const s = e.opts.retryAfter
         ? Math.max(1, Math.ceil((e.opts.retryAfter.getTime() - Date.now()) / 1000))

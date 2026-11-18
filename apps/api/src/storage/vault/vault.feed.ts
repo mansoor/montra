@@ -5,6 +5,10 @@
  * shows it. It never changes Montra's books: transactions, receipts, payslips, tax form boxes and matches stay as Montra
  * has them, and nothing here writes anywhere but the vault's own tables.
  *
+ * - **Newer versions** (vault 0.9.0-dev.63, the owner's choice): a document Montra's send made stays Montra's to read
+ *   after the family adds newer versions. The feed says it `changed`, with the newer version; Montra keeps it `filed`
+ *   and readable, updates "In the vault as: …" and notes the newer version. The exact file Montra sent is still read
+ *   back only by Montra's own id (`sentFile`), never by the document.
  * - **Only Montra's own documents** (§1, one direction). The feed may name documents Montra didn't send (whatever the
  *   vault's owner let it read); those are skipped, never stored, never imported.
  * - **The position** is saved only after a page is processed, in the same transaction, and only if nobody else moved it
@@ -48,7 +52,11 @@ export interface FeedRead {
   missing: number;
 }
 
-/** What Montra keeps of a feed line (§9): what the vault calls the document. Never amounts, issuers or digits. */
+/**
+ * What Montra keeps of a feed line (§9): what the vault calls the document. Never amounts, issuers or digits.
+ * `newerVersion` is worked out against the row (`applyChanges`): whether the vault's current version is a newer one than
+ * the version Montra's send became.
+ */
 export function vaultMetaOf(
   c: Extract<VaultChange, { change: 'updated' }>,
   at: Date,
@@ -60,8 +68,6 @@ export function vaultMetaOf(
     title: c.title,
     date: c.date,
     version: c.version,
-    // The vault's current version isn't the one Montra sent: the family put a newer one in. Montra doesn't re-read it.
-    newerVersion: !c.own,
     readAt: at.toISOString(),
   };
 }
@@ -223,9 +229,13 @@ async function applyChanges(
         filed_at: sql`coalesce(filed_at, ${now})`,
         // §5: newly filed, so whether Montra's copy goes is looked at (only for a group sent with no local copy).
         remove_at: sql`case when status = 'filed' then remove_at else ${now}::timestamptz end`,
-        // The version Montra's send became; a newer one from the family doesn't replace it.
-        vault_version: c.own && c.version ? c.version : sql`vault_version`,
-        vault_meta: JSON.stringify(vaultMetaOf(c, now)),
+        // The version Montra's send became, kept: a newer one from the family doesn't replace it. The document stays
+        // Montra's own (dev.63), so `own` alone no longer says which version is Montra's.
+        vault_version:
+          c.own && c.version ? sql`coalesce(vault_version, ${c.version}::text)` : sql`vault_version`,
+        // The family put a newer version in: shown, never re-read (Montra's own file is the one it sent).
+        vault_meta: sql`${JSON.stringify(vaultMetaOf(c, now))}::jsonb || jsonb_build_object('newerVersion',
+          coalesce(${c.version}::text is not null and vault_version is not null and vault_version <> ${c.version}::text, false))`,
         feed_seen_at: now,
         last_error: null,
         updated_at: now,

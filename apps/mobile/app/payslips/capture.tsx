@@ -21,6 +21,8 @@ import { NotAllowed } from '../../src/ui/NotAllowed';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { Icon } from '../../src/ui/icons';
 import { useTheme } from '../../src/ui/theme';
+import { askDuplicate } from '../../src/ui/Vault';
+import { anyDuplicate, DUPLICATE_QUESTION } from '../../src/features/vault';
 
 interface Read {
   fileIds: string[];
@@ -51,14 +53,18 @@ export default function PayslipCapture() {
     );
   }, [api, ws, employerId]);
 
-  const uploadAll = async (pages: CapturedPage[]) => {
-    const fileIds: string[] = [];
-    for (const p of pages) {
-      const f = await api.uploadPayslipFile(ws, { uri: p.uri, name: p.name, type: p.type });
-      fileIds.push(f.fileId);
-    }
+  /** The pages' file ids, or null when one is a possible duplicate and the person chose not to use them. */
+  const uploadAll = async (pages: CapturedPage[]): Promise<string[] | null> => {
+    const uploads = [];
+    for (const p of pages)
+      uploads.push(await api.uploadPayslipFile(ws, { uri: p.uri, name: p.name, type: p.type }));
     await Promise.all(pages.filter((p) => p.shot).map((p) => removePage(p.uri)));
-    return fileIds;
+    // ADR-0054 (2026-11-18): the bytes of a file Montra already holds. Asked, as on the web; no makes nothing.
+    if (anyDuplicate(uploads) && !(await askDuplicate())) {
+      setError(t(DUPLICATE_QUESTION.cancelled));
+      return null;
+    }
+    return uploads.map((u) => u.fileId);
   };
 
   const make = async (forEmployer: string, fileIds: string[], scanId?: string) => {
@@ -75,6 +81,7 @@ export default function PayslipCapture() {
     setError(null);
     try {
       const fileIds = await uploadAll(pages);
+      if (!fileIds) return;
       if (employerId) return await make(employerId, fileIds);
       const scan = await api.createScan(ws, 'payslip', fileIds);
       const done = await waitForScan(() => api.getScan(ws, scan.id));

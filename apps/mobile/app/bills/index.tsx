@@ -2,13 +2,14 @@
  * Bills on the phone (ADR-0048 §4): the bills from the budget's providers, due ones first, each with its amount and
  * due date, overdue ones marked, and paid ones once their payment came in. "Scan a bill" adds one.
  */
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import type { HouseholdBillDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { Banner, Body, Button, Card, Row, Screen, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
+import { useFileStorageStates, VaultBadges } from '../../src/ui/Vault';
 
 export default function Bills() {
   const th = useTheme();
@@ -33,27 +34,33 @@ export default function Bills() {
   );
 
   const due = (bills ?? []).filter((b) => b.status === 'open' || b.status === 'overdue').reverse();
-  const done = (bills ?? []).filter((b) => b.status === 'paid');
+  const done = (bills ?? []).filter((b) => b.status === 'paid').slice(0, 20);
+  // ADR-0054 §13: where each bill's files are with the vault, for the bills on screen (the API takes 100 ids at most).
+  const fileStates = useFileStorageStates([...due, ...done].flatMap((b) => b.fileIds));
   const row = (b: HouseholdBillDto, i: number, all: HouseholdBillDto[]) => (
-    <Row
-      key={b.id}
-      testID="bill-row"
-      title={b.billerName}
-      subtitle={[
-        t('mobile.bills.due_on', { date: fmtDate(b.dueDate) }),
-        b.status === 'overdue'
-          ? t('mobile.bills.overdue')
-          : b.status === 'paid'
-            ? t('mobile.bills.paid')
-            : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')}
-      right={
-        <Small color={b.status === 'overdue' ? th.danger : undefined}>{fmtMoney(b.amount, b.currency)}</Small>
-      }
-      last={i === all.length - 1}
-    />
+    <Fragment key={b.id}>
+      <Row
+        testID="bill-row"
+        title={b.billerName}
+        subtitle={[
+          t('mobile.bills.due_on', { date: fmtDate(b.dueDate) }),
+          b.status === 'overdue'
+            ? t('mobile.bills.overdue')
+            : b.status === 'paid'
+              ? t('mobile.bills.paid')
+              : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        right={
+          <Small color={b.status === 'overdue' ? th.danger : undefined}>
+            {fmtMoney(b.amount, b.currency)}
+          </Small>
+        }
+        last={i === all.length - 1}
+      />
+      <VaultBadges fileIds={b.fileIds} states={fileStates} />
+    </Fragment>
   );
   return (
     <Screen testID="bills">
@@ -69,7 +76,7 @@ export default function Bills() {
       {bills && due.length === 0 ? <Body muted>{t('mobile.bills.none_due')}</Body> : null}
       {due.length ? <Card>{due.map(row)}</Card> : null}
       {done.length ? <Title>{t('mobile.bills.paid_title')}</Title> : null}
-      {done.length ? <Card>{done.slice(0, 20).map(row)}</Card> : null}
+      {done.length ? <Card>{done.map(row)}</Card> : null}
     </Screen>
   );
 }

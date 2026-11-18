@@ -5,10 +5,13 @@ import type { VaultConnectionDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import {
   canManageVault,
-  cleanPastedCode,
-  clockIsOff,
+  vaultActsAsLine,
+  vaultConnectInput,
   vaultDisconnectChoice,
   vaultHost,
+  vaultKeyLine,
+  vaultKeyPermissions,
+  vaultReplaceInput,
   vaultStatusLine,
   vaultStep,
   vaultTone,
@@ -18,9 +21,10 @@ import { StatusLine, useAction } from '../use-action';
 import { VaultSending } from './family-vault-sending';
 
 /**
- * ADR-0054 §2, §13: the household's Family Document Vault, beside "Your own storage". Connecting in three steps (the
- * key Montra made, what to do in the vault, the code), waiting for approval, replacing the key and disconnecting; once
- * connected, what each group does and how sending is going (`VaultSending`).
+ * ADR-0054 §2, §13: the household's Family Document Vault, beside "Your own storage". An owner connects with the API
+ * key the vault generates for Montra (its connection string, and its secret when the string doesn't include it);
+ * waiting for approval, the key's state, whom Montra acts as, replacing the key and disconnecting; once connected, what
+ * each group does and how sending is going (`VaultSending`).
  */
 export function FamilyVaultCard({
   workspace,
@@ -67,91 +71,65 @@ function StatusChip({ d }: { d: VaultConnectionDto }) {
   );
 }
 
-function Start({ workspace, owner }: { workspace: WorkspaceDto; owner: boolean }) {
-  const { run, busy, message, t } = useAction();
-  if (!owner) return <p className="text-sm">{t('vault.owner_connects')}</p>;
-  return (
-    <div className="space-y-2">
-      <button
-        type="button"
-        className="btn-primary"
-        disabled={busy}
-        onClick={() => run(() => browserApi.startVaultConnection(workspace.id))}
-      >
-        {t('vault.connect')}
-      </button>
-      <StatusLine message={message} />
-    </div>
-  );
-}
-
-/** A public key and its fingerprint, with Copy. Not secret: shown so the owner can compare them with the vault. */
-function PublicKey({ publicKey, fingerprint }: { publicKey: string; fingerprint: string }) {
+/** What to do in the vault to get a key for Montra. */
+function KeySteps() {
   const { t } = useAction();
-  const id = useId();
-  const [copied, setCopied] = useState(false);
   return (
-    <div className="space-y-1">
-      <label htmlFor={`${id}-key`} className="field-label">
-        {t('vault.public_key')}
-      </label>
-      <div className="flex gap-2">
-        <input
-          id={`${id}-key`}
-          className="input w-full font-mono text-xs"
-          readOnly
-          value={publicKey}
-          data-testid="vault-public-key"
-          onFocus={(e) => e.target.select()}
-        />
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(publicKey);
-              setCopied(true);
-            } catch {
-              setCopied(false);
-            }
-          }}
-        >
-          {copied ? t('common.copied') : t('common.copy')}
-        </button>
-      </div>
-      <p className="text-xs text-muted">
-        {t('vault.fingerprint')} <span className="font-mono">{fingerprint}</span>
-      </p>
-    </div>
+    <ol className="list-decimal space-y-2 pl-5 text-sm">
+      <li className="space-y-1">
+        <p>{t('vault.step_generate')}</p>
+        <p className="text-xs text-muted">{t('vault.step_register_addresses')}</p>
+      </li>
+      <li>
+        <p>{t('vault.step_paste')}</p>
+      </li>
+    </ol>
   );
 }
 
-/** Step 3, and the end of a key change: the code the vault gave. */
-function PasteCode({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
+/**
+ * The connection string the vault showed with Montra's key, and its secret when the string doesn't include it. The
+ * secret is a password field and is never shown back: once sent, Montra seals it and the web never sees it again.
+ */
+function KeyForm({
+  label,
+  submit,
+  onSend,
+  done,
+  onDone,
+}: {
+  label: string;
+  submit: string;
+  onSend: (text: string, secret: string) => Promise<VaultConnectionDto> | null;
+  done: (r: VaultConnectionDto) => string;
+  /** Called once it worked, with the words to say: for a form that closes then. */
+  onDone?: (words: string) => void;
+}) {
   const { run, busy, message, setMessage, t } = useAction();
   const id = useId();
-  const [code, setCode] = useState('');
+  const [text, setText] = useState('');
+  const [secret, setSecret] = useState('');
   return (
     <form
       className="space-y-2"
-      aria-label={t('vault.paste_code')}
+      aria-label={label}
+      autoComplete="off"
       onSubmit={(e) => {
         e.preventDefault();
-        const clean = cleanPastedCode(code);
-        if (!clean) return setMessage({ tone: 'bad', text: t('vault.code_needed') });
-        void run(
-          () => browserApi.pasteVaultCode(workspace.id, { code: clean, version: d.version }),
-          (r) =>
-            r.stage === 'connected'
-              ? t('vault.connected_now', { name: r.householdName ?? '' })
-              : t('vault.waiting_now', { name: r.householdName ?? '' }),
-        ).then((r) => {
-          if (r) setCode('');
+        const sending = onSend(text, secret);
+        if (!sending) return setMessage({ tone: 'bad', text: t('vault.key_needed') });
+        void run(() => sending, done).then((r) => {
+          // Nothing pasted stays in the page once it is used.
+          if (r) {
+            setText('');
+            setSecret('');
+            onDone?.(done(r));
+          }
         });
       }}
     >
       <label htmlFor={`${id}-code`} className="field-label">
-        {t('vault.paste_code')}
+        {label}
       </label>
       <textarea
         id={`${id}-code`}
@@ -159,17 +137,98 @@ function PasteCode({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnecti
         rows={3}
         autoComplete="off"
         spellCheck={false}
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
       />
+      <label htmlFor={`${id}-secret`} className="field-label">
+        {t('vault.secret_label')}
+      </label>
+      <input
+        id={`${id}-secret`}
+        className="input w-full font-mono text-xs"
+        type="password"
+        autoComplete="off"
+        spellCheck={false}
+        value={secret}
+        onChange={(e) => setSecret(e.target.value)}
+      />
+      <p className="text-xs text-muted">{t('vault.secret_hint')}</p>
       <button type="submit" className="btn-primary" disabled={busy}>
-        {t('vault.use_code')}
+        {submit}
       </button>
       <StatusLine message={message} />
     </form>
   );
 }
 
+/** Connecting, or connecting a kept connection again (`version`). */
+function ConnectForm({ workspace, version }: { workspace: WorkspaceDto; version?: number }) {
+  const { t } = useAction();
+  return (
+    <KeyForm
+      label={t('vault.paste_code')}
+      submit={t('vault.use_code')}
+      onSend={(text, secret) => {
+        const input = vaultConnectInput(text, secret, version);
+        return input ? browserApi.connectVault(workspace.id, input) : null;
+      }}
+      done={(r) =>
+        r.stage === 'connected'
+          ? t('vault.connected_now', { name: r.householdName ?? '' })
+          : t('vault.waiting_now', { name: r.householdName ?? '' })
+      }
+    />
+  );
+}
+
+/** "Replace the key": a new key the owner generated in the vault, checked before Montra switches to it. */
+function ReplaceKeyForm({
+  workspace,
+  d,
+  onDone,
+}: {
+  workspace: WorkspaceDto;
+  d: VaultConnectionDto;
+  onDone: (words: string) => void;
+}) {
+  const { t } = useAction();
+  return (
+    <KeyForm
+      label={t('vault.new_key_label')}
+      submit={t('vault.use_new_key')}
+      onSend={(text, secret) => {
+        const input = vaultReplaceInput(text, secret, d.version);
+        return input ? browserApi.replaceVaultKey(workspace.id, input) : null;
+      }}
+      done={() => t('vault.key_replaced')}
+      onDone={onDone}
+    />
+  );
+}
+
+function Start({ workspace, owner }: { workspace: WorkspaceDto; owner: boolean }) {
+  const { t } = useAction();
+  const [open, setOpen] = useState(false);
+  if (!owner) return <p className="text-sm">{t('vault.owner_connects')}</p>;
+  if (!open) {
+    return (
+      <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
+        {t('vault.connect')}
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-4" data-testid="vault-connect">
+      <KeySteps />
+      <ConnectForm workspace={workspace} />
+    </div>
+  );
+}
+
+/**
+ * A connection begun before the vault's API keys, never given its code (Montra made a key pair then): it needs a key,
+ * pasted as when connecting, and keeps its groups.
+ */
 function Register({
   workspace,
   d,
@@ -180,35 +239,45 @@ function Register({
   owner: boolean;
 }) {
   const { run, busy, message, t } = useAction();
-  if (!owner) return <p className="text-sm">{t('vault.owner_connects')}</p>;
   return (
     <div className="space-y-4">
-      <ol className="list-decimal space-y-3 pl-5 text-sm">
-        <li className="space-y-2">
-          <p>{t('vault.step_key')}</p>
-          <PublicKey publicKey={d.publicKey} fingerprint={d.fingerprint} />
-        </li>
-        <li className="space-y-1">
-          <p>{t('vault.step_register')}</p>
-          <p className="text-xs text-muted">{t('vault.step_register_addresses')}</p>
-        </li>
-        <li>
-          <p>{t('vault.step_code')}</p>
-        </li>
-      </ol>
-      <PasteCode workspace={workspace} d={d} />
-      <div>
-        <button
-          type="button"
-          className="text-sm underline"
-          disabled={busy}
-          onClick={() => run(() => browserApi.disconnectVault(workspace.id), t('vault.cancelled'))}
-        >
-          {t('vault.cancel_connecting')}
-        </button>
-        <StatusLine message={message} />
-      </div>
+      <KeyProblem d={d} />
+      {owner ? (
+        <>
+          <KeySteps />
+          <ConnectForm workspace={workspace} version={d.version} />
+          <div>
+            <button
+              type="button"
+              className="text-sm underline"
+              disabled={busy}
+              onClick={() => run(() => browserApi.disconnectVault(workspace.id), t('vault.cancelled'))}
+            >
+              {t('vault.cancel_connecting')}
+            </button>
+            <StatusLine message={message} />
+          </div>
+        </>
+      ) : (
+        <p className="text-sm">{t('vault.owner_connects')}</p>
+      )}
     </div>
+  );
+}
+
+/** Why the key needs replacing, or when it expires, in words (API keys). */
+function KeyProblem({ d }: { d: VaultConnectionDto }) {
+  const { t } = useAction();
+  const line = vaultKeyLine(d);
+  if (!line || line.tone === 'muted') return null;
+  return (
+    <p
+      className={`text-sm ${line.tone === 'bad' ? 'text-bad' : 'text-warn'}`}
+      role="note"
+      data-testid="vault-key-problem"
+    >
+      {t(line.key, line.values)}
+    </p>
   );
 }
 
@@ -221,8 +290,14 @@ function Connected({
   d: VaultConnectionDto;
   owner: boolean;
 }) {
-  const { run, busy, message, t } = useAction();
+  const { run, busy, message, setMessage, t } = useAction();
   const [choosing, setChoosing] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const actsAs = vaultActsAsLine(d);
+  const keyLine = vaultKeyLine(d);
+  const permissions = vaultKeyPermissions(d);
+  // A key that no longer works is replaced straight away; a working one when the owner asks.
+  const showReplace = owner && (replacing || d.keyProblem !== null);
   return (
     <div className="space-y-4">
       <dl className="grid gap-2 text-sm sm:grid-cols-2">
@@ -234,30 +309,36 @@ function Connected({
         </div>
         <div>
           <dt className="text-xs text-muted">{t('vault.acting_as')}</dt>
-          <dd>{d.actingAs ?? '—'}</dd>
+          <dd data-testid="vault-acts-as">{actsAs ? t(actsAs.key, actsAs.values) : '—'}</dd>
         </div>
         <div>
-          <dt className="text-xs text-muted">{t('vault.fingerprint')}</dt>
-          <dd className="font-mono text-xs">{d.fingerprint}</dd>
+          <dt className="text-xs text-muted">{t('vault.key')}</dt>
+          <dd data-testid="vault-key">
+            {d.key?.name ?? t('vault.key_unnamed')}
+            {keyLine && keyLine.tone === 'muted' && (
+              <span className="block text-xs text-muted">{t(keyLine.key, keyLine.values)}</span>
+            )}
+            {permissions.length > 0 && (
+              <span className="block text-xs text-muted">
+                {t('vault.key_may')} {permissions.map((p) => t(p)).join(', ')}
+              </span>
+            )}
+          </dd>
         </div>
         <div>
           <dt className="text-xs text-muted">{t('vault.last_check')}</dt>
           <dd>{d.lastSuccessAt ? <DateText date={d.lastSuccessAt.slice(0, 10)} /> : t('storage.never')}</dd>
         </div>
       </dl>
+      <KeyProblem d={d} />
       {d.stage === 'approval' && (
         <p className="text-sm" role="note">
           {t('vault.approval_hint')}
         </p>
       )}
-      {d.lastError && (
+      {d.lastError && !d.keyProblem && (
         <p className="text-sm text-bad" role="note" data-testid="vault-error">
           {d.lastError}
-        </p>
-      )}
-      {clockIsOff(d.clockOffsetMs) && (
-        <p className="text-sm text-bad" role="note">
-          {t('vault.clock_off')}
         </p>
       )}
       {d.vaultKinds.length > 0 && (
@@ -274,17 +355,8 @@ function Connected({
         >
           {t('vault.check_again')}
         </button>
-        {owner && !d.newKey && (
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={busy}
-            onClick={() => {
-              if (window.confirm(t('vault.confirm_replace_key'))) {
-                void run(() => browserApi.replaceVaultKey(workspace.id, { version: d.version }));
-              }
-            }}
-          >
+        {owner && !showReplace && (
+          <button type="button" className="btn-secondary" onClick={() => setReplacing(true)}>
             {t('vault.replace_key')}
           </button>
         )}
@@ -355,33 +427,34 @@ function Connected({
         </div>
       )}
       <StatusLine message={message} />
-      {d.stage === 'connected' && <VaultSending workspace={workspace} d={d} />}
-      {owner && d.newKey && (
+      {showReplace && (
         <div className="space-y-3 border-t border-line pt-3" data-testid="vault-new-key">
           <h3 className="text-sm font-semibold">{t('vault.new_key_title')}</h3>
           <p className="text-sm">{t('vault.new_key_steps')}</p>
-          <PublicKey publicKey={d.newKey.publicKey} fingerprint={d.newKey.fingerprint} />
-          <PasteCode workspace={workspace} d={d} />
-          <button
-            type="button"
-            className="text-sm underline"
-            disabled={busy}
-            onClick={() =>
-              run(() => browserApi.replaceVaultKey(workspace.id, { version: d.version, cancel: true }))
-            }
-          >
-            {t('vault.cancel_new_key')}
-          </button>
+          <ReplaceKeyForm
+            workspace={workspace}
+            d={d}
+            onDone={(words) => {
+              setReplacing(false);
+              setMessage({ tone: 'good', text: words });
+            }}
+          />
+          {replacing && !d.keyProblem && (
+            <button type="button" className="text-sm underline" onClick={() => setReplacing(false)}>
+              {t('vault.cancel_new_key')}
+            </button>
+          )}
         </div>
       )}
+      {d.stage === 'connected' && <VaultSending workspace={workspace} d={d} />}
     </div>
   );
 }
 
 /**
  * §10: disconnected while files were kept only in the vault. Nothing is sent and the key is gone; those files are in
- * Review's "Files to provide again". Connecting the same vault again reads them back; the connection can be removed
- * once none is left.
+ * Review's "Files to provide again". Connecting the same vault again (with a new key) reads them back; the connection
+ * can be removed once none is left.
  */
 function Disconnected({
   workspace,
@@ -393,6 +466,7 @@ function Disconnected({
   owner: boolean;
 }) {
   const { run, busy, message, t } = useAction();
+  const [again, setAgain] = useState(false);
   return (
     <div className="space-y-3" data-testid="vault-disconnected">
       <p className="text-sm">
@@ -407,26 +481,31 @@ function Disconnected({
         </a>
       )}
       {owner ? (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy}
-            onClick={() => run(() => browserApi.startVaultConnection(workspace.id))}
-          >
-            {t('vault.connect_again')}
-          </button>
-          {d.files.onlyInVault === 0 && (
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={busy}
-              onClick={() => run(() => browserApi.disconnectVault(workspace.id), t('vault.disconnected'))}
-            >
-              {t('vault.remove_connection')}
-            </button>
+        <>
+          <div className="flex flex-wrap gap-2">
+            {!again && (
+              <button type="button" className="btn-primary" onClick={() => setAgain(true)}>
+                {t('vault.connect_again')}
+              </button>
+            )}
+            {d.files.onlyInVault === 0 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() => run(() => browserApi.disconnectVault(workspace.id), t('vault.disconnected'))}
+              >
+                {t('vault.remove_connection')}
+              </button>
+            )}
+          </div>
+          {again && (
+            <div className="space-y-4">
+              <KeySteps />
+              <ConnectForm workspace={workspace} version={d.version} />
+            </div>
           )}
-        </div>
+        </>
       ) : (
         <p className="text-sm">{t('vault.owner_connects')}</p>
       )}

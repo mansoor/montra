@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased — the household's Family Document Vault (ADR-0054)
+
+The household's Family Document Vault as a storage destination beside your own storage (VLT-01..11). Nine PRs, with migrations 0063 to
+0068, on the vault's client package `@fdv/client` 0.9.0-dev.65, installed from the vault's public release by pinned URL. Tested against the
+package's fake vault only: the hand-run live test against the vault's development build behind HTTPS, and the phone on a device, are still
+to do.
+
+- **Connecting** (VLT-01, VLT-08): an owner generates an API key for Montra in the vault and pastes its connection string (and the secret
+  when the string doesn't include it). Montra checks the address (public HTTPS only), the vault's identity, which it pins, and the key,
+  then seals the secret; it is never shown, logged, archived or put in a backup. Settings shows whom Montra acts as, the key's permissions
+  and expiry, warns 14 days before it expires, and takes a new key. Connections made with the earlier signing keys need a new key.
+- **What goes** (VLT-02, VLT-07): each group (receipts, statements, bills, payslips, tax documents, other) is not sent, sent with a copy
+  kept in Montra, or sent with no copy in Montra, and mapped to one of the vault's kinds. Payslips and tax documents go only when an owner
+  turns them on after a warning; sealed identity documents, logos and exports never go. The vault decides whose Inbox each lands in.
+- **Sending** (VLT-03, VLT-04, VLT-09): one at a time once Montra has finished with a document, never filed twice, with the vault's daily
+  limits, waits and connection problems handled in words and never counted as failures. Existing documents can be sent, with how long it
+  takes, and moved when a group keeps no copy.
+- **Keeping in step and opening** (VLT-05, VLT-06): the vault's changes feed names each document Montra sent ("In the vault as: …", a newer
+  version, "No longer available") without changing the books. "Open in the vault" makes a single-use link on the click, never stored or
+  logged: a redirect on the web, and on the phone a link in the answer handed straight to the system browser.
+- **No copy in Montra** (VLT-04, VLT-11, BAK-08): Montra removes its copy only once the vault has filed the document, could give it back,
+  your own storage has its copy and nothing is reading it. Every reader of a file reads it from Montra, your own storage or the vault. A
+  file the vault doesn't give back is listed in Review → Files to provide again, on the web and the phone; backups and tax packages list
+  what they couldn't include, and wait once for the vault's daily limit. Files kept only in the vault don't count against storage.
+- **Bringing files back and disconnecting** (VLT-04, VLT-11): files kept only in the vault can be brought back into Montra, and
+  disconnecting while some are there either brings them back first or keeps the connection disconnected until the same vault is connected
+  again. A restore marks files the backup didn't hold as missing.
+- **Possible duplicates:** an upload that repeats a file Montra or the vault already holds asks before it's used, on the web and the
+  phone (receipts, payslips, bills and files provided again).
+- **The phone** (VLT-10): the vault's status in Your data, the badges on receipts, payslips, tax forms and bills, opening documents in the
+  vault, a page kept only in the vault shown in words, and Files to provide again in Review with its badge.
+
 ## Unreleased — tax forms received (ADR-0052)
 
 The W-2s, 1099-INTs, 1099-DIVs and 1098s a household receives, read, matched and checked against the books (TAX-01..10). Five PRs, with

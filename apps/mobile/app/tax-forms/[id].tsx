@@ -49,6 +49,7 @@ import {
 import { Icon } from '../../src/ui/icons';
 import { resultText, taxFormTitle, toneColor } from '../../src/ui/TaxForms';
 import { useTheme } from '../../src/ui/theme';
+import { useFileStorageStates, VaultBadges } from '../../src/ui/Vault';
 
 type Check = TaxFormDto['checks'][number];
 
@@ -98,6 +99,9 @@ export default function TaxFormScreen() {
     const timer = setInterval(() => void reload(), 5000);
     return () => clearInterval(timer);
   }, [stage, reload]);
+
+  // ADR-0054 §13: where the form's files are with the vault. Read online only; offline there are none to show.
+  const fileStates = useFileStorageStates(form?.fileIds ?? []);
 
   if (!form)
     return (
@@ -170,6 +174,7 @@ export default function TaxFormScreen() {
         {resultText(form)}
         {form.corrected ? ` · ${t('tax_forms.corrected')}` : ''}
       </Body>
+      <VaultBadges fileIds={form.fileIds} states={fileStates} />
       {cached.stale ? <Banner tone="warning" text={t('mobile.tax_forms.offline')} /> : null}
       {error ? <Banner tone="danger" text={error} /> : null}
 

@@ -78,6 +78,18 @@ const changesCalls = () =>
   vstate().calls.filter((x: any) => x.path === '/api/v1/apps/changes').length as number;
 const open = (fileId: string, who: Client = c, mode?: 'view' | 'download') =>
   who.post(url(`/family-vault/files/${fileId}/open${mode ? `?mode=${mode}` : ''}`));
+/** The phone's variant (PR 6): the same link, in the body of a `no-store` answer. */
+const link = (
+  fileId: string,
+  who: Client = c,
+  mode?: 'view' | 'download',
+  headers?: Record<string, string>,
+) => who.post(url(`/family-vault/files/${fileId}/link${mode ? `?mode=${mode}` : ''}`), undefined, headers);
+/** What a browser gets from the vault for a link: the fake's own answer, never Montra's. */
+const follow = async (href: string) => {
+  const res = await fake.vault.fetch(href, { method: 'GET', headers: {} });
+  return { status: res.status, location: res.headers.get('location') ?? '' };
+};
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /** A file in Montra, as an upload stores it: binary, every byte value (the fake keeps them exactly from 0.9.0-dev.62). */
@@ -163,13 +175,10 @@ beforeAll(async () => {
   expect((await partner.post(`/v1/invites/${invite.body.token}/accept`)).status).toBeLessThan(300);
   await stranger.post('/v1/workspaces', { name: 'Someone else', baseCurrency: 'USD', template: 'household' });
 
-  const started = await c.post(url('/family-vault'));
-  const registered = await fake.register(started.body.publicKey, { kinds: KINDS, scopes: SCOPES });
+  // The vault's owner connects Montra there and generates its API key; the owner pastes the connection string.
+  const registered = await fake.register({ kinds: KINDS, scopes: SCOPES });
   appId = registered.appId;
-  const pasted = await c.post(url('/family-vault/code'), {
-    code: registered.code,
-    version: started.body.version,
-  });
+  const pasted = await c.post(url('/family-vault'), { connectionString: registered.codeWithSecret });
   expect(pasted.body.stage).toBe('connected');
   destinationId = pasted.body.id;
   const mapped = await c.patch(url('/family-vault'), {
@@ -378,31 +387,53 @@ describe('keeping in step (ADR-0054 §9)', () => {
     ).toEqual({ total_minor: '4250', merchant: 'Grocer' });
   });
 
-  it('says when the family put a newer version in the vault, and doesn’t re-read it', async () => {
-    const { fileId, doc } = await filed('Newer.png');
+  it('keeps a document the family put a newer version into readable, with its new title, and doesn’t re-read it', async () => {
+    // Vault 0.9.0-dev.63, the owner's choice: the app whose send made a document keeps reading it after the family
+    // adds newer versions, with no read grant (Montra asks for none, §1). Before, the vault stopped showing it to
+    // Montra, which said "No longer available".
+    const { fileId, doc, ref } = await filed('Newer.png');
     await feedDue();
     await run();
     const was = await item(fileId);
-    // Montra may read a document beyond its own only through a grant (one it doesn't ask for); with one, the vault
-    // shows the newer version as a change.
-    app().grants = [{ category: 'bills', lookback_months: 12, sensitive_kinds: [] }];
+    expect(was.vault_meta.newerVersion).toBe(false);
+    expect(was.vault_version).toBeTruthy();
+    expect(app().grants ?? []).toEqual([]);
+
+    addVersion(doc, 'application/pdf', 2);
+    docOf(doc).title = 'Newer, renamed by the family';
+    await feedDue();
+    await run();
+    const row = await item(fileId);
+    expect(row.status).toBe('filed');
+    expect(row.vault_meta).toMatchObject({ newerVersion: true, title: 'Newer, renamed by the family' });
+    expect(row.vault_meta.version).not.toBe(was.vault_version);
+    // The version Montra's send became stays the one recorded: a newer one doesn't replace it.
+    expect(row.vault_version).toBe(was.vault_version);
+    const badge = (await c.get(url(`/family-vault/files?ids=${fileId}`))).body.data[0];
+    expect(badge.vault).toMatchObject({
+      status: 'filed',
+      newerVersion: true,
+      title: 'Newer, renamed by the family',
+      canOpen: true,
+    });
+    expect((await c.get(url('/family-vault'))).body.connection.items.outOfReach).toBe(0);
+    // Montra's own file is as it was: nothing re-read, nothing replaced. By Montra's id (`sentFile`), the vault still
+    // gives the version Montra's send became (here, the paper this fake filed it as), not the family's newer one;
+    // byte for byte against Montra's own file in family-vault-file-bytes.test.ts.
+    expect((await db.query(`select sha256 from app.file where id = $1`, [fileId])).rows[0].sha256).toBe(
+      row.vault_sha256,
+    );
+    const ctx = { workspaceId: wsId, userId: (await vaultRow()).created_by };
+    const conn = await h.app.get(VaultService).openRow(ctx, await vaultRow());
     try {
-      addVersion(doc, 'application/pdf', 2);
-      await feedDue();
-      await run();
-      const row = await item(fileId);
-      expect(row.vault_meta.newerVersion).toBe(true);
-      expect(row.vault_version).toBe(was.vault_version);
-      expect(row.status).toBe('filed');
-      const badge = (await c.get(url(`/family-vault/files?ids=${fileId}`))).body.data[0];
-      expect(badge.vault.newerVersion).toBe(true);
-      // Montra's own file is as it was: nothing re-read, nothing replaced.
-      expect((await db.query(`select sha256 from app.file where id = $1`, [fileId])).rows[0].sha256).toBe(
-        (await item(fileId)).vault_sha256,
-      );
+      const sent = await conn.sentFile(ref);
+      expect(Buffer.from(sent.bytes).toString()).toBe(`version 1 of ${doc}`);
     } finally {
-      app().grants = [];
+      conn.close();
     }
+    // And it still opens.
+    const opened = await open(fileId);
+    expect(opened.status).toBe(303);
   });
 
   it('never stores or imports a document it didn’t send, whatever the vault lets it read', async () => {
@@ -756,5 +787,163 @@ describe('opening a document in the vault (ADR-0054 §9)', () => {
     expect((await open(gone.fileId)).status).toBe(410);
     expect((await item(gone.fileId)).status).toBe('out_of_reach');
     expect(app().links.length).toBe(links);
+  });
+});
+
+describe('opening a document from the phone: the link in the body (ADR-0054 §9, PR 6)', () => {
+  let doc: { fileId: string; ref: string; doc: string };
+  beforeAll(async () => {
+    doc = await filed('To open on the phone.png');
+    await feedDue();
+    await run();
+    app().links = [];
+  });
+
+  it('answers the single-use link made on the tap in a no-store body, and the vault opens it once only', async () => {
+    const one = await link(doc.fileId, partner);
+    expect(one.status).toBe(200);
+    expect(one.body).toEqual({
+      url: expect.stringMatching(/^https:\/\/fake\.example\/api\/v1\/app-links\/[A-Za-z0-9_-]+$/),
+      mode: 'view',
+    });
+    expect(one.headers.location).toBeUndefined();
+    expect(one.headers['cache-control']).toBe('no-store');
+    expect(one.headers.pragma).toBe('no-cache');
+    expect(one.headers['referrer-policy']).toBe('no-referrer');
+    // Each tap makes its own.
+    const two = await link(doc.fileId);
+    expect(two.body.url).not.toBe(one.body.url);
+    expect(app().links.length).toBe(2);
+    // Single-use: the vault lets the first visit in and turns any other away.
+    const first = await follow(one.body.url);
+    expect(first.status).toBe(303);
+    expect(first.location).not.toMatch(/#(used|ended)$/);
+    expect((await follow(one.body.url)).location).toMatch(/#used$/);
+    // Audited as the redirect is: who and which file, never the link.
+    const audit = (
+      await db.query(
+        `select a.diff, u.email from app.audit_log a join app.app_user u on u.id = a.actor_user_id
+          where a.workspace_id = $1 and a.action = 'file.vault_link_made' and a.subject_id = $2 order by a.id`,
+        [wsId, doc.fileId],
+      )
+    ).rows;
+    expect(audit).toEqual([
+      { diff: { mode: 'view' }, email: PARTNER },
+      { diff: { mode: 'view' }, email: OWNER },
+    ]);
+  });
+
+  it('never stores, logs or replays the link: not in any table, the idempotency store included', async () => {
+    const written: string[] = [];
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: any) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const key = randomUUID();
+    let first: any;
+    let again: any;
+    try {
+      // A client that sends an idempotency key gets a new link each time, not a stored answer.
+      first = await link(doc.fileId, c, 'download', { 'idempotency-key': key });
+      again = await link(doc.fileId, c, 'download', { 'idempotency-key': key });
+    } finally {
+      out.mockRestore();
+      err.mockRestore();
+    }
+    expect(first.status).toBe(200);
+    expect(first.body.mode).toBe('download');
+    expect(again.body.url).not.toBe(first.body.url);
+    const tokens = [first.body.url, again.body.url].map((u: string) => u.split('/').at(-1)!);
+    for (const token of tokens) {
+      expect(token.length).toBeGreaterThan(20);
+      expect(written.join('')).not.toContain(token);
+    }
+    expect(
+      (await db.query(`select count(*)::int as n from app.idempotency_key where key = $1`, [key])).rows[0].n,
+    ).toBe(0);
+    const tables = (
+      await db.query(
+        `select table_name from information_schema.tables where table_schema = 'app' and table_type = 'BASE TABLE'`,
+      )
+    ).rows.map((r) => r.table_name as string);
+    for (const t of tables) {
+      for (const token of tokens) {
+        const { rows } = await db.query(`select count(*)::int as n from app."${t}" x where x::text like $1`, [
+          `%${token}%`,
+        ]);
+        expect(rows[0].n, t).toBe(0);
+      }
+    }
+    const said = JSON.stringify([
+      (await c.get(url(`/family-vault/files?ids=${doc.fileId}`))).body,
+      (await c.get(url('/family-vault'))).body,
+    ]);
+    expect(said).not.toContain('app-links');
+  });
+
+  it('says the vault’s hourly link limit in words, with how long to wait, and doesn’t count it as a failure', async () => {
+    app().links = [];
+    app().links_per_hour = 1;
+    try {
+      expect((await link(doc.fileId)).status).toBe(200);
+      const full = await link(doc.fileId);
+      expect(full.status).toBe(429);
+      expect(full.body.code).toBe('vault.links_full');
+      expect(full.body.detail).toMatch(/as many documents/);
+      expect(full.body.url).toBeUndefined();
+      expect(Number(full.headers['retry-after'])).toBeGreaterThan(0);
+      expect(full.headers['cache-control']).toBe('no-store');
+      const row = await vaultRow();
+      expect(row.status).toBe('active');
+      expect(row.consecutive_failures).toBe(0);
+    } finally {
+      app().links_per_hour = 60;
+      app().links = [];
+    }
+  });
+
+  it('says what opens as a download, what can’t open, and who may not', async () => {
+    const odd = await filed('Odd type on the phone.png', { mime: 'application/octet-stream' });
+    await feedDue();
+    await run();
+    const res = await link(odd.fileId);
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe('download');
+    const was = app().scopes;
+    app().scopes = was.filter((s: string) => s !== 'documents.download');
+    try {
+      await c.post(url('/family-vault/check'));
+      const words = await link(odd.fileId);
+      expect(words.status).toBe(422);
+      expect(words.body.code).toBe('vault.cannot_view');
+      app().scopes = was.filter((s: string) => s !== 'documents.links');
+      await c.post(url('/family-vault/check'));
+      const notAllowed = await link(doc.fileId);
+      expect(notAllowed.status).toBe(422);
+      expect(notAllowed.body.code).toBe('vault.cannot_open');
+    } finally {
+      app().scopes = was;
+      await c.post(url('/family-vault/check'));
+    }
+    expect((await stranger.post(url(`/family-vault/files/${doc.fileId}/link`))).status).toBe(403);
+    expect((await c.post(url(`/family-vault/files/${randomUUID()}/link`))).status).toBe(404);
+    expect((await c.get(url(`/family-vault/files/${doc.fileId}/link`))).status).toBe(404);
+    expect((await link(await file('lease', 'Lease on the phone.pdf'))).body.code).toBe('vault.not_in_vault');
+  });
+
+  it('says a document the vault no longer shows is no longer available', async () => {
+    const gone = await filed('Gone from the phone.png');
+    await feedDue();
+    await run();
+    await feedFresh();
+    docOf(gone.doc).visibility = 'private';
+    const res = await link(gone.fileId);
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe('vault.out_of_reach');
+    expect(res.body.detail).toBe('No longer available in Family Document Vault.');
   });
 });

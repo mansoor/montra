@@ -30,7 +30,7 @@
     "@expo-google-fonts/noto-sans-thai": "0.4.2",
     "@fastify/helmet": "^13.2.0",
     "@fastify/multipart": "^9.4.0",
-    "@fdv/client": "https://github.com/mansoor/family-documents-vault/releases/download/v0.9.0-dev.62/fdv-client-0.9.0-dev.62.tgz",
+    "@fdv/client": "https://github.com/mansoor/family-documents-vault/releases/download/v0.9.0-dev.65/fdv-client-0.9.0-dev.65.tgz",
     "@montra/ai-gateway": "workspace:*",
     "@montra/categorize": "workspace:*",
     "@montra/db": "workspace:*",

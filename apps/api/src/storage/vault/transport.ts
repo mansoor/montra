@@ -8,7 +8,11 @@
  * - The address is checked as each connection is made, through the socket's `lookup`, so a name that later resolves to
  *   a private address is refused (DNS rebinding).
  * - Redirects are never followed, every request has a connect and a total timeout, and answers are size-limited.
- * - Nothing here logs: not the headers (which carry signatures), not the body, not the address.
+ * - Nothing here logs: not the headers (the Authorization header carries the API key), not the body, not the address.
+ *
+ * Development only: `FAMILY_VAULT_ALLOW_LOCAL_HTTP=on` lets a developer connect to a vault running on the same machine
+ * (`http://localhost:…`, `127.0.0.1` or `[::1]`), for a live run against a local vault. Nothing else is allowed by it: no
+ * private network addresses, no other names. Production refuses to start with it (`config.ts`).
  *
  * Tests and the e2e run use the package's own fake vault instead, in this process, behind `FAMILY_VAULT_FAKE=on`, which
  * production refuses to start with (`config.ts`). Montra never talks to a real vault in tests.
@@ -34,9 +38,28 @@ export interface VaultTransport {
   readonly fake?: unknown;
 }
 
+let localHttpAllowed = false;
+
+/** Development only (`FAMILY_VAULT_ALLOW_LOCAL_HTTP=on`, refused in production): allows a vault on this machine. */
+export function allowLocalVaultHttp(on: boolean): void {
+  localHttpAllowed = on;
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+/** True for a vault on this machine, when development allows it: http or https to localhost, 127.0.0.1 or ::1. */
+export function isAllowedLocalVault(url: URL): boolean {
+  return (
+    localHttpAllowed &&
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    LOOPBACK_HOSTS.has(url.hostname.replace(/^\[|\]$/g, '').toLowerCase())
+  );
+}
+
 /**
  * Refuses a vault address before any connection is tried: https, an origin only, and not a private, loopback,
- * link-local or local-only host (§8, D6). Returns the parsed origin.
+ * link-local or local-only host (§8, D6), except a vault on this machine when development allows it. Returns the
+ * parsed origin.
  */
 export function assertVaultAddress(address: string): URL {
   let url: URL;
@@ -45,6 +68,13 @@ export function assertVaultAddress(address: string): URL {
   } catch {
     throw new VaultError('not_allowed_host', { detail: 'unparseable' });
   }
+  const origin =
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    (url.pathname === '/' || url.pathname === '');
+  if (origin && isAllowedLocalVault(url)) return url;
   if (url.protocol !== 'https:') throw new VaultError('not_allowed_host', { detail: 'not https' });
   if (
     url.username ||
@@ -123,6 +153,8 @@ export function guardedVaultTransport(options: GuardedFetchOptions = {}): VaultT
     refused = null;
     return new Promise<ResponseLike>((resolve, reject) => {
       let url: URL;
+      // A vault on this machine, when development allows it: reached directly, without the public-address lookup.
+      let local = false;
       try {
         url = new URL(address);
         if (opts.insecureLoopbackForTests) {
@@ -130,6 +162,7 @@ export function guardedVaultTransport(options: GuardedFetchOptions = {}): VaultT
         } else {
           assertVaultAddress(url.origin);
         }
+        local = !opts.insecureLoopbackForTests && isAllowedLocalVault(url);
       } catch (e) {
         refused = e instanceof VaultError ? e : new VaultError('not_allowed_host', { detail: 'refused' });
         return reject(refused);
@@ -146,10 +179,12 @@ export function guardedVaultTransport(options: GuardedFetchOptions = {}): VaultT
       const headers: Record<string, string> = { ...init.headers };
       if (body) headers['content-length'] = String(body.length);
       // Without keep-alive, so nothing lingers between runs; every socket is looked up through the guard.
-      const agent = opts.insecureLoopbackForTests
-        ? undefined
-        : new https.Agent({ keepAlive: false, lookup: guardedLookup as never });
-      const request = (opts.insecureLoopbackForTests ? http : https).request(
+      const plain = opts.insecureLoopbackForTests || (local && url.protocol === 'http:');
+      const agent =
+        opts.insecureLoopbackForTests || local
+          ? undefined
+          : new https.Agent({ keepAlive: false, lookup: guardedLookup as never });
+      const request = (plain ? http : https).request(
         url,
         { method: init.method, headers, ...(agent ? { agent } : {}) },
         (res) => {
@@ -181,9 +216,7 @@ export function guardedVaultTransport(options: GuardedFetchOptions = {}): VaultT
       const total = setTimeout(() => request.destroy(new Error('timeout')), opts.totalTimeoutMs);
       request.setTimeout(opts.connectTimeoutMs, () => request.destroy(new Error('connect timeout')));
       request.on('socket', (socket) => {
-        socket.once(opts.insecureLoopbackForTests ? 'connect' : 'secureConnect', () =>
-          request.setTimeout(opts.totalTimeoutMs),
-        );
+        socket.once(plain ? 'connect' : 'secureConnect', () => request.setTimeout(opts.totalTimeoutMs));
       });
       request.on('error', (e) => {
         clearTimeout(total);

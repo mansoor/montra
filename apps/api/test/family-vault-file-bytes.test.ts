@@ -59,6 +59,8 @@ let wsId: string;
 let ownerId: string;
 let personal: string;
 let appId: string;
+/** The vault API key's secret, to look for where it must never be. */
+let keySecret: string;
 let url: (p: string) => string;
 let realFetch: VaultTransport['fetch'];
 
@@ -246,13 +248,11 @@ beforeAll(async () => {
   expect((await partner.post(`/v1/invites/${invite.body.token}/accept`)).status).toBeLessThan(300);
   await stranger.post('/v1/workspaces', { name: 'Someone else', baseCurrency: 'USD', template: 'household' });
 
-  const started = await c.post(url('/family-vault'));
-  const registered = await fake.register(started.body.publicKey, { kinds: KINDS, scopes: SCOPES });
+  // The vault's owner connects Montra there and generates its API key; the owner pastes the connection string.
+  const registered = await fake.register({ kinds: KINDS, scopes: SCOPES });
   appId = registered.appId;
-  const pasted = await c.post(url('/family-vault/code'), {
-    code: registered.code,
-    version: started.body.version,
-  });
+  keySecret = registered.secret;
+  const pasted = await c.post(url('/family-vault'), { connectionString: registered.codeWithSecret });
   expect(pasted.body.stage).toBe('connected');
   const mapped = await c.patch(url('/family-vault'), {
     version: pasted.body.version,
@@ -391,21 +391,30 @@ describe('reading back the exact file Montra sent (ADR-0054 §5)', () => {
     } finally {
       docOf(f.doc).visibility = 'household';
     }
-    // A vault that no longer lets Montra download says the same.
+    // A key that may not download (API keys) is the key's, not the file's: not available now, never missing, and
+    // owners see which permission the key lacks (a 403 per action).
+    const g = await heldOnlyInVault('No download.png');
     const was = app().scopes;
     app().scopes = was.filter((s: string) => s !== 'documents.download');
     try {
-      expect(await files.readById(ctx(), f.id)).toMatchObject({ ok: false, reason: 'vault_refused' });
+      expect(await files.readById(ctx(), g.id)).toMatchObject({ ok: false, reason: 'vault_unavailable' });
+      expect(
+        (await db.query(`select missing_since from app.file where id = $1`, [g.id])).rows[0].missing_since,
+      ).toBeNull();
     } finally {
       app().scopes = was;
     }
     // And the connection carries on: nothing about this stops sending.
     const row = (
-      await db.query(`select status from app.storage_destination where workspace_id = $1 and kind = 'fdv'`, [
-        wsId,
-      ])
+      await db.query(
+        `select status, last_error from app.storage_destination where workspace_id = $1 and kind = 'fdv'`,
+        [wsId],
+      )
     ).rows[0];
     expect(row.status).toBe('active');
+    expect(row.last_error).toBe(
+      'The vault key doesn’t allow downloading Montra’s documents. An owner can paste a key that does.',
+    );
   });
 
   it('refuses a different file under Montra’s id', async () => {
@@ -465,10 +474,14 @@ describe('reading back the exact file Montra sent (ADR-0054 §5)', () => {
     app().paused = 'owner';
     try {
       expect(await files.readById(ctx(), f.id)).toMatchObject({ ok: false, reason: 'vault_unavailable' });
+      // The check is due now, by the database's own clock, which set it: Node's can run a few ms behind.
       const s = (
-        await db.query(`select next_check_at from app.vault_connection_state where workspace_id = $1`, [wsId])
+        await db.query(
+          `select next_check_at <= now() as due from app.vault_connection_state where workspace_id = $1`,
+          [wsId],
+        )
       ).rows[0];
-      expect(new Date(s.next_check_at).getTime()).toBeLessThanOrEqual(Date.now());
+      expect(s.due).toBe(true);
       await db.query(
         `update app.storage_destination set status = 'needs_vault' where workspace_id = $1 and kind = 'fdv'`,
         [wsId],
@@ -582,6 +595,18 @@ describe('every reader, for a file only the vault holds', () => {
     expect(entry).toBeTruthy();
     expect(zip.get(entry.path)!.equals(f.bytes)).toBe(true);
     expect(zip.get('README.txt')!.toString()).not.toContain(f.id);
+    // The vault key's secret, or its client ID, is in no part of a backup (ADR-0054 §7).
+    const clientId = (
+      await db.query(
+        `select config->>'clientId' as id from app.storage_destination where workspace_id = $1 and kind = 'fdv'`,
+        [wsId],
+      )
+    ).rows[0].id as string;
+    expect(clientId).toMatch(/^fdvc_/);
+    for (const [name, bytes] of zip) {
+      expect(bytes.includes(Buffer.from(keySecret)), name).toBe(false);
+      expect(bytes.includes(Buffer.from(clientId)), name).toBe(false);
+    }
   });
 
   it('a backup lists a file the vault doesn’t return, and is ready all the same', async () => {
@@ -760,13 +785,15 @@ describe('the client, in Montra’s terms', () => {
     const throwing = (e: unknown) => ({ sentFile: async () => Promise.reject(e) });
     const cases: [unknown, string][] = [
       [new ApiRequestError(404, 'not_found', 'Nothing by that id.'), 'unavailable'],
-      [new ApiRequestError(403, 'scope_not_granted', 'Not allowed.'), 'unavailable'],
+      [new ApiRequestError(403, 'scope_not_granted', 'Not allowed.'), 'not_permitted'],
       [new ApiRequestError(413, 'larger_than_daily_read', 'Too large.'), 'unavailable'],
       [
         new ApiRequestError(429, 'app_read_day_full', 'Used up.', undefined, { retryAfterSeconds: 60 }),
         'read_cap',
       ],
       [new ApiRequestError(401, 'app_paused', 'Paused.'), 'connection'],
+      [new ApiRequestError(401, 'app_key_revoked', 'Revoked.'), 'key_revoked'],
+      [new ApiRequestError(401, 'app_key_expired', 'Expired.'), 'key_expired'],
       [new ApiRequestError(500, 'internal', 'Oops.'), 'failed'],
     ];
     for (const [e, code] of cases) {

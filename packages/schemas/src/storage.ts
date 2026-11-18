@@ -432,9 +432,44 @@ export const VAULT_ITEM_STATUSES = [
 export const VaultItemStatus = z.enum(VAULT_ITEM_STATUSES);
 export type VaultItemStatus = z.infer<typeof VaultItemStatus>;
 
-/** §2: where connecting has got to: Montra made the key and waits for the code, the vault must approve, or done. */
+/**
+ * §2: where connecting has got to: the vault must approve, or done. `register` is only ever on a connection begun before
+ * API keys (vault 0.9.0-dev.63), when Montra made a key pair and waited for its code; one is never made now.
+ */
 export const VaultStage = z.enum(['register', 'approval', 'connected']);
 export type VaultStage = z.infer<typeof VaultStage>;
+
+/**
+ * §2, §7 (API keys, vault 0.9.0-dev.63): a vault API key's client ID, `fdvc_` and 22 base64url characters. It names the
+ * key; it isn't secret.
+ */
+export const VAULT_CLIENT_ID_PATTERN = /^fdvc_[A-Za-z0-9_-]{22}$/;
+/** A key's secret, `fdvs_` and 43 base64url characters. Pasted once, sealed, and never shown, logged or archived. */
+export const VAULT_SECRET_PATTERN = /^fdvs_[A-Za-z0-9_-]{43}$/;
+/** §12: owners are warned this many days before the vault key expires, as the vault warns its own owners. */
+export const VAULT_KEY_WARN_DAYS = 14;
+
+/**
+ * Why the vault key no longer works, so an owner must paste a new one: the vault says it was revoked, has expired or
+ * isn't valid, or the connection was made with a signing key before the vault used API keys (`signed`).
+ */
+export const VaultKeyProblem = z.enum(['revoked', 'expired', 'invalid', 'signed']);
+export type VaultKeyProblem = z.infer<typeof VaultKeyProblem>;
+
+/**
+ * The vault API key Montra uses, as the vault last described it (`GET /apps/me`): never its secret. `permissions` are
+ * what the key may do (`documents.send`, `documents.read`, …); `expiresAt` null means it never expires.
+ */
+export const VaultKeyDto = z.object({
+  clientId: z.string(),
+  name: z.string().nullable(),
+  permissions: z.array(z.string()),
+  createdAt: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  /** Within `VAULT_KEY_WARN_DAYS` of expiring, and not expired yet. */
+  expiresSoon: z.boolean(),
+});
+export type VaultKeyDto = z.infer<typeof VaultKeyDto>;
 
 /**
  * One kind of document the vault lets Montra send, as the vault reported it at the last check (§3). Montra shows the
@@ -452,8 +487,8 @@ export const VaultGroupSettingDto = z.object({
 export type VaultGroupSettingDto = z.infer<typeof VaultGroupSettingDto>;
 
 /**
- * The vault connection as owners and admins see it (§13). The private key is never in it; the public key and its
- * fingerprint aren't secret and are shown so they can be compared with the vault.
+ * The vault connection as owners and admins see it (§13). The key's secret is never in it, nor anything made from it;
+ * only the key's client ID, name, permissions and dates, as the vault describes them.
  */
 export const VaultConnectionDto = z.object({
   id: Id,
@@ -468,14 +503,16 @@ export const VaultConnectionDto = z.object({
   address: z.string().nullable(),
   /** The household's name, as the vault last reported it. */
   householdName: z.string().nullable(),
-  publicKey: z.string(),
-  fingerprint: z.string(),
+  /** The API key Montra uses, as the vault last described it; null before a check has said, or without a key. */
+  key: VaultKeyDto.nullable(),
+  /** The key no longer works and an owner must paste a new one, and why; null while it works. */
+  keyProblem: VaultKeyProblem.nullable(),
   /**
-   * §2 "Replace the key": the new public key and its fingerprint, made and sealed, waiting for the code the vault gives
-   * once someone there has added it. Montra keeps signing with the current key until then.
+   * Whom Montra acts as in the vault (APP8): itself (`app`), or one person of the family (`person`), as the vault last
+   * said. Null until a check has said. The vault decides whose Inbox each document lands in.
    */
-  newKey: z.object({ publicKey: z.string(), fingerprint: z.string() }).nullable(),
-  /** Who Montra acts as in the vault, as the vault last said; the vault decides whose Inbox each document lands in. */
+  actsAs: z.enum(['app', 'person']).nullable(),
+  /** The name the vault gives whom Montra acts as: the person's, or Montra's own app name when it acts as itself. */
   actingAs: z.string().nullable(),
   groups: z.array(VaultGroupSettingDto),
   /** The kinds the vault lets Montra send, from the last check. */
@@ -499,8 +536,6 @@ export const VaultConnectionDto = z.object({
   heldUntil: z.object({ sending: z.string().nullable(), reading: z.string().nullable() }),
   /** §12: how many documents the vault takes from Montra a day, and how many it has today, as of the last check. */
   dailyLimit: z.object({ files: z.number().int(), filesToday: z.number().int() }).nullable(),
-  /** §7: Montra's clock against the vault's, in milliseconds; shown when it is large. */
-  clockOffsetMs: z.number().int().nullable(),
   /** §9: when Montra last read the vault's changes feed; null until it has (or while the vault doesn't let it read). */
   feedReadAt: z.string().nullable(),
   /**
@@ -518,8 +553,6 @@ export const VaultConnectionDto = z.object({
    * copy, Settings says the owner's storage still holds one; Montra never changes that setting on its own.
    */
   mirrorGroups: z.array(VaultGroup),
-  /** §2: a key change in progress. */
-  keyRotation: z.enum(['none', 'made', 'registered']),
   lastSuccessAt: z.string().nullable(),
   /** In words; for `needs_vault`, the vault's own message, which is written for people. */
   lastError: z.string().nullable(),
@@ -529,18 +562,32 @@ export const VaultConnectionDto = z.object({
 });
 export type VaultConnectionDto = z.infer<typeof VaultConnectionDto>;
 
-/** §2 step 1: Montra makes a fresh key pair for the workspace. Nothing to send. */
-export const StartVaultConnectionRequest = z.object({}).strict();
-export type StartVaultConnectionRequest = z.output<typeof StartVaultConnectionRequest>;
+/** A pasted connection string: people paste with line breaks or spaces, and a string has none of its own. */
+const pastedConnectionString = z
+  .string()
+  .transform((s) => s.replace(/\s+/g, ''))
+  .pipe(z.string().min(1, 'Paste the connection string from the vault').max(4000));
+/** A pasted client ID or secret, trimmed. Its shape is checked by the API, which says what is wrong in words. */
+const pastedKeyPart = z
+  .string()
+  .trim()
+  .max(200)
+  .transform((s) => (s === '' ? undefined : s))
+  .optional();
 
-/** §2 step 3: the code the vault gave, pasted back. Montra checks it names its key before anything else. */
-export const PasteVaultCodeRequest = z
+/**
+ * §2 (API keys, vault 0.9.0-dev.63): an owner connects with the connection string the vault shows when it generates an
+ * API key for Montra (`fdvapp2.…`), and the key's secret when the string doesn't include it. `version` is needed to
+ * connect again a connection that is kept (disconnected, or made before API keys), and left out for a new one.
+ */
+export const ConnectVaultRequest = z
   .object({
-    code: z.string().trim().min(1).max(4000),
-    version: z.number().int().positive(),
+    connectionString: pastedConnectionString,
+    secret: pastedKeyPart,
+    version: z.number().int().positive().optional(),
   })
   .strict();
-export type PasteVaultCodeRequest = z.output<typeof PasteVaultCodeRequest>;
+export type ConnectVaultRequest = z.output<typeof ConnectVaultRequest>;
 
 /** §6, §13: a change to the connection. Groups not named keep their mode and mapping. */
 export const UpdateVaultConnectionRequest = z
@@ -568,12 +615,22 @@ export const UpdateVaultConnectionRequest = z
 export type UpdateVaultConnectionRequest = z.output<typeof UpdateVaultConnectionRequest>;
 
 /**
- * §2: "Replace the key": makes a new pair, sealed beside the current one, whose code is then pasted as when connecting.
- * `cancel` drops a new key that hasn't been confirmed yet, and Montra goes on with the current one.
+ * §2 "Replace the key", owner-driven: the new key an owner generated for Montra in the vault, as its connection string
+ * or its client ID, with its secret unless the string includes it. Montra checks it (`GET /apps/me`: the same app in the
+ * same vault) before it switches; until then the current key goes on working.
  */
 export const ReplaceVaultKeyRequest = z
-  .object({ version: z.number().int().positive(), cancel: z.boolean().default(false) })
-  .strict();
+  .object({
+    version: z.number().int().positive(),
+    connectionString: pastedConnectionString.optional(),
+    clientId: pastedKeyPart,
+    secret: pastedKeyPart,
+  })
+  .strict()
+  .refine(
+    (r) => (r.connectionString ? 1 : 0) + (r.clientId ? 1 : 0) === 1,
+    'Paste the new key’s connection string, or its client ID',
+  );
 export type ReplaceVaultKeyRequest = z.output<typeof ReplaceVaultKeyRequest>;
 
 /**
@@ -746,6 +803,18 @@ export type FileStorageStatesResponse = z.infer<typeof FileStorageStatesResponse
  */
 export const VaultOpenQuery = z.object({ mode: z.enum(['view', 'download']).default('view') }).strict();
 export type VaultOpenQuery = z.output<typeof VaultOpenQuery>;
+
+/**
+ * §9 on the phone (PR 6): `POST …/family-vault/files/:fileId/link` answers the single-use link in its body, because a
+ * React Native client can't read a redirect's target. The app opens it in the system browser at once and keeps it
+ * nowhere: not in state, a cache, the offline store or a log. `mode` is what it opens as: `download` when the vault
+ * can't show the type as pages. The answer is `no-store` and never kept for an idempotent replay.
+ */
+export const VaultOpenLinkDto = z.object({
+  url: z.string().url(),
+  mode: z.enum(['view', 'download']),
+});
+export type VaultOpenLinkDto = z.infer<typeof VaultOpenLinkDto>;
 
 /** §5a: one entry in Review, "Files to provide again". */
 export const MissingFileDto = z.object({
