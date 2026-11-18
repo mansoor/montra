@@ -16,8 +16,16 @@ describe('VaultError (ADR-0054 §12)', () => {
     'refused',
     'failed',
     'invalid_code',
-    'other_key',
+    'old_code',
+    'secret_needed',
+    'invalid_key',
+    'other_app',
     'not_a_vault',
+    'key_revoked',
+    'key_expired',
+    'key_invalid',
+    'key_signed',
+    'not_permitted',
   ];
 
   it('holds for the daily caps without counting them as failures', () => {
@@ -26,11 +34,28 @@ describe('VaultError (ADR-0054 §12)', () => {
     }
   });
 
-  it('stops the whole connection for a connection problem or a different vault, and nothing else', () => {
+  it('stops the whole connection for a connection problem, a different vault or a key that no longer works', () => {
     expect(all.filter((code) => new VaultError(code).stopsConnection)).toEqual([
       'connection',
       'identity_changed',
+      'key_revoked',
+      'key_expired',
+      'key_invalid',
+      'key_signed',
     ]);
+    // A key that lacks a permission stops the connection only when it may not send.
+    expect(new VaultError('not_permitted', { permission: 'documents.send' }).stopsConnection).toBe(true);
+    expect(new VaultError('not_permitted', { permission: 'documents.delete' }).stopsConnection).toBe(false);
+  });
+
+  it('says why a key needs replacing, for the key problems only', () => {
+    expect(all.filter((code) => new VaultError(code).keyProblem !== null)).toEqual([
+      'key_revoked',
+      'key_expired',
+      'key_invalid',
+      'key_signed',
+    ]);
+    expect(new VaultError('key_signed').keyProblem).toBe('signed');
   });
 
   it('tries again on its own only after a wait, a server failure or a dropped connection', () => {

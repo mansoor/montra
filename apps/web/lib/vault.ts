@@ -29,8 +29,9 @@ export function canSeeVault(
 export const canManageVault = (role: WorkspaceDto['role'] | null | undefined): boolean => role === 'owner';
 
 /**
- * Where connecting has got to (§2): nothing yet, the key waiting for its code, waiting for approval, or connected; or
- * disconnected with files kept only in the vault (§10), until it is connected again.
+ * Where connecting has got to (§2): nothing yet, waiting for approval, or connected; or disconnected with files kept
+ * only in the vault (§10), until it is connected again. `register` is only a connection begun before the vault's API
+ * keys, which never got its code: it needs a key, as when connecting.
  */
 export type VaultStep = 'start' | 'register' | 'approval' | 'connected' | 'disconnected';
 
@@ -43,7 +44,7 @@ export function vaultStep(d: VaultConnectionDto | null): VaultStep {
 export function vaultStatusLine(d: VaultConnectionDto): { key: string; values?: Record<string, string> } {
   const name = d.householdName ?? '';
   if (d.status === 'disconnected') return { key: 'vault.status_disconnected' };
-  if (d.stage === 'register') return { key: 'vault.status_register' };
+  if (d.keyProblem) return { key: 'vault.status_needs_key' };
   if (d.stage === 'approval') {
     return name
       ? { key: 'vault.status_approval', values: { name } }
@@ -60,7 +61,7 @@ export function vaultStatusLine(d: VaultConnectionDto): { key: string; values?: 
 
 /** The chip's tone: good when connected and well, bad when something needs a person, muted otherwise. */
 export function vaultTone(d: VaultConnectionDto): 'good' | 'bad' | 'muted' {
-  if (d.status === 'disconnected') return 'bad';
+  if (d.status === 'disconnected' || d.keyProblem) return 'bad';
   if (d.stage !== 'connected') return 'muted';
   if (d.status === 'active') return 'good';
   if (d.status === 'paused') return 'muted';
@@ -77,18 +78,91 @@ export function vaultHost(address: string | null): string {
   }
 }
 
-/** Signatures are accepted only within a short window of the vault's clock (§7): warn well before that. */
-export const CLOCK_WARNING_MS = 2 * 60_000;
-
-export const clockIsOff = (offsetMs: number | null): boolean =>
-  offsetMs !== null && Math.abs(offsetMs) > CLOCK_WARNING_MS;
-
 /**
- * A pasted code, as the API takes it: people paste with line breaks or spaces from wherever they copied it, and a
- * code has none of its own.
+ * A pasted connection string, as the API takes it: people paste with line breaks or spaces from wherever they copied
+ * it, and a string has none of its own.
  */
 export function cleanPastedCode(text: string): string {
   return text.replace(/\s+/g, '');
+}
+
+/**
+ * What an owner pasted to connect or to replace the key, as the API takes it: the connection string, and the secret
+ * when they pasted one (trimmed; empty is none). `version` for a kept connection. Null when there is nothing to send.
+ */
+export function vaultConnectInput(
+  text: string,
+  secret: string,
+  version?: number,
+): { connectionString: string; secret?: string; version?: number } | null {
+  const connectionString = cleanPastedCode(text);
+  if (!connectionString) return null;
+  const s = secret.trim();
+  return { connectionString, ...(s ? { secret: s } : {}), ...(version !== undefined ? { version } : {}) };
+}
+
+/**
+ * "Replace the key" as the API takes it: a connection string, or (when what was pasted is a client ID, `fdvc_…`) the
+ * client ID; the secret either way when pasted. Null when there is nothing to send.
+ */
+export function vaultReplaceInput(
+  text: string,
+  secret: string,
+  version: number,
+): { version: number; connectionString?: string; clientId?: string; secret?: string } | null {
+  const pasted = cleanPastedCode(text);
+  if (!pasted) return null;
+  const s = secret.trim();
+  return {
+    version,
+    ...(pasted.startsWith('fdvc_') ? { clientId: pasted } : { connectionString: pasted }),
+    ...(s ? { secret: s } : {}),
+  };
+}
+
+/**
+ * The vault key as Settings says it (API keys, vault 0.9.0-dev.63): why it needs replacing, else when it expires (a
+ * warning within `VAULT_KEY_WARN_DAYS`), never, or nothing known yet. Never anything of its secret.
+ */
+export function vaultKeyLine(d: VaultConnectionDto): {
+  key: string;
+  values?: Record<string, string>;
+  tone: 'bad' | 'warn' | 'muted';
+} | null {
+  if (d.keyProblem) return { key: `vault.key_problem.${d.keyProblem}`, tone: 'bad' };
+  if (!d.key) return null;
+  if (!d.key.expiresAt) return { key: 'vault.key_never_expires', tone: 'muted' };
+  const date = d.key.expiresAt.slice(0, 10);
+  return d.key.expiresSoon
+    ? { key: 'vault.key_expires_soon', values: { date }, tone: 'warn' }
+    : { key: 'vault.key_expires', values: { date }, tone: 'muted' };
+}
+
+/** What the key may do, in words, as the vault last said: each permission's i18n key, in the vault's order. */
+export function vaultKeyPermissions(d: VaultConnectionDto): string[] {
+  const order = [
+    'documents.send',
+    'documents.read',
+    'documents.download',
+    'documents.links',
+    'documents.delete',
+  ];
+  return order
+    .filter((p) => d.key?.permissions.includes(p))
+    .map((p) => `vault.permission.${p.split('.')[1]}`);
+}
+
+/** Whom Montra acts as in the vault (APP8): itself, or a person, by the name the vault gives; null until it says. */
+export function vaultActsAsLine(
+  d: VaultConnectionDto,
+): { key: string; values: Record<string, string> } | null {
+  if (!d.actsAs) return null;
+  const name = d.actingAs ?? '';
+  return d.actsAs === 'app'
+    ? { key: 'vault.acts_as_itself', values: { name } }
+    : name
+      ? { key: 'vault.acts_as_person', values: { name } }
+      : { key: 'vault.acts_as_person_unnamed', values: {} };
 }
 
 /** One row of "Send these to the vault" (§6, §13), as the person looking at it may change it. */

@@ -1,13 +1,14 @@
 /**
- * Connecting the workspace to the household's Family Document Vault (ADR-0054 §2, §7, §8; VLT-01, VLT-08). Montra makes
- * the key pair, the vault's owner registers it in the vault and gets a code, the owner pastes the code back, and Montra
- * checks it: the code names Montra's key, the address passes the guard, the vault says which vault it is (pinned), and
- * a signed connection test passes or says it waits for someone there to approve. Replacing the key and disconnecting
- * are here too. Nothing is sent yet: the connection's "send files" switch stays off until sending ships (PR 3).
+ * Connecting the workspace to the household's Family Document Vault (ADR-0054 §2, §7, §8; VLT-01, VLT-08). Since vault
+ * 0.9.0-dev.63 an owner generates an API key for Montra in the vault and pastes its connection string (and its secret,
+ * when the string doesn't include it); Montra checks it: the string is the vault's, the address passes the guard, the
+ * vault says which vault it is (pinned), and the connection test with the key (`GET /apps/me`) passes or says it waits
+ * for someone there to approve. Replacing the key (an owner pastes the new one, checked before Montra switches) and
+ * disconnecting are here too.
  *
  * Only an owner connects, replaces the key or disconnects, with a recent sign-in (the controller asks for it; D4).
- * Owners and admins see the connection and may ask Montra to check it again. The private key goes in sealed and never
- * comes back out: not in a DTO, an error, a log line, the security log or an archive.
+ * Owners and admins see the connection and may ask Montra to check it again. The key's secret goes in sealed and never
+ * comes back out: not in a DTO, an error, a log line, the security log, an archive or a backup.
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { sql, type Selectable } from 'kysely';
@@ -28,13 +29,13 @@ import {
   vaultGroupModes,
   vaultGroupOf,
   vaultTypeKept,
+  type ConnectVaultRequest,
   type DisconnectVaultRequest,
   type FileKind,
   type MoveToVaultRequest,
   type VaultBringBackDto,
   type VaultMoveDto,
   type FileStorageStatesResponse,
-  type PasteVaultCodeRequest,
   type ReplaceVaultKeyRequest,
   type RetryVaultItemsRequest,
   type SendExistingToVaultRequest,
@@ -44,6 +45,8 @@ import {
   type VaultExistingDto,
   type VaultItemDto,
   type VaultItemsQuery,
+  VAULT_KEY_WARN_DAYS,
+  VaultKeyProblem,
 } from '@montra/schemas';
 import { AppError } from '../../common/errors.js';
 import { isAdmin } from '../../common/roles.js';
@@ -54,8 +57,8 @@ import { VaultError, type VaultCheck } from '../destinations/vault.js';
 import { SECRET_COLUMN } from '../storage-destinations.service.js';
 import { markMissing, MISSING_WORDS, MissingFiles } from '../missing-files.js';
 import { backoffMs } from '../backoff.js';
-import { readVaultCode, VaultConnection, type VaultCode } from './connection.js';
-import { makeVaultKey, VaultSecret } from './keys.js';
+import { assertKeyShape, readConnectionString, VaultConnection } from './connection.js';
+import { sealedKey, VaultSecret, type VaultKey } from './keys.js';
 import { assertVaultAddress, VAULT_TRANSPORT, type VaultTransport } from './transport.js';
 
 type Ctx = { workspaceId: string; userId: string };
@@ -72,12 +75,33 @@ const NEXT_CHECK_MS = { connected: 24 * 3600_000, waiting: 15 * 60_000 };
 /** What isn't secret, as stored in `config` for an `fdv` row (§11). Parsed again whenever it is read. */
 const VaultConfig = z.object({
   stage: VaultStage,
-  publicKey: z.string(),
-  fingerprint: z.string(),
-  newKey: z.object({ publicKey: z.string(), fingerprint: z.string() }).nullable().default(null),
+  /**
+   * How Montra proves who it is to the vault: `key`, an API key an owner pasted (vault 0.9.0-dev.63 on); `signed`, the
+   * Ed25519 key pair of a connection made before, which the vault no longer takes, so it needs a new key. A connection
+   * saved before API keys has no `auth`, so it reads as `signed`.
+   */
+  auth: z.enum(['signed', 'key']).default('signed'),
   address: z.string().nullable().default(null),
   appId: z.string().nullable().default(null),
-  keyId: z.string().nullable().default(null),
+  /** The API key's client ID: it names the key, and isn't secret. The secret is sealed in `secret_enc`. */
+  clientId: z.string().nullable().default(null),
+  /** The key as the vault last described it (`GET /apps/me`): its permissions and when it expires. */
+  key: z
+    .object({
+      clientId: z.string(),
+      name: z.string().nullable(),
+      permissions: z.array(z.string()),
+      createdAt: z.string().nullable(),
+      expiresAt: z.string().nullable(),
+    })
+    .nullable()
+    .default(null),
+  /** The vault refused the key (revoked, expired, not valid): an owner must paste a new one. */
+  keyProblem: VaultKeyProblem.nullable().default(null),
+  /** §12: the key expiry owners were told of, once (`VAULT_KEY_WARN_DAYS` before). */
+  keyWarnedFor: z.string().nullable().default(null),
+  /** Whom Montra acts as in the vault (APP8): itself, or one person. */
+  actsAs: z.enum(['app', 'person']).nullable().default(null),
   /** The vault's installation id, pinned when the code was accepted. */
   identity: z.string().nullable().default(null),
   /**
@@ -129,6 +153,35 @@ const conflict = () =>
   );
 /** A `VaultError` as an answer to the person who asked: its words, never its detail. */
 const refusal = (e: VaultError) => new AppError(422, `vault.${e.code}`, e.shown);
+const DAY_MS = 24 * 3600_000;
+
+/** What was pasted, once read: where the vault is, which vault it says it is, and the key. */
+interface Pasted {
+  address: string;
+  identity: string | null;
+  key: VaultKey;
+}
+
+/**
+ * A connection string, and the secret when the string doesn't include it, read and checked for shape. Nothing goes on
+ * the network, and nothing pasted is ever in what this throws: only Montra's words.
+ */
+function readPasted(connectionString: string, secret: string | undefined): Pasted {
+  try {
+    const c = readConnectionString(connectionString);
+    const s = secret ?? c.secret;
+    if (!s) throw new VaultError('secret_needed');
+    assertKeyShape(c.clientId, s);
+    assertVaultAddress(c.address);
+    return {
+      address: new URL(c.address).origin,
+      identity: c.identity,
+      key: { clientId: c.clientId, secret: s },
+    };
+  } catch (e) {
+    throw refusal(e instanceof VaultError ? e : new VaultError('invalid_code'));
+  }
+}
 
 @Injectable()
 export class VaultService {
@@ -152,27 +205,49 @@ export class VaultService {
   // ----- Connecting (§2) ---------------------------------------------------------------------------------------------
 
   /**
-   * Step 1: a fresh key pair for this workspace, the private key sealed at once. Asking again before a code is pasted
-   * gives back the same key, so a reload doesn't leave the vault with a key Montra has thrown away.
+   * §2 (API keys, vault 0.9.0-dev.63): an owner connects with the connection string the vault showed when it generated
+   * an API key for Montra, and the key's secret when the string doesn't include it. Checked in order: the string and the
+   * key's shape, the address guard, that the server there is a vault that takes apps (its installation id is pinned),
+   * and the connection test with the key (`GET /apps/me`), which says whether Montra is on yet. Nothing is saved unless
+   * all of that holds, and the secret is sealed at once.
+   *
+   * With no connection, one is made. A kept one is connected again with its `version`: one disconnected while files
+   * were kept only in the vault (§10), or one begun before API keys that never got its code. A working connection takes
+   * a new key through "Replace the key", as does one made before API keys.
    */
-  async start(ctx: Ctx, role: string): Promise<VaultConnectionDto> {
+  async connect(ctx: Ctx, role: string, req: ConnectVaultRequest): Promise<VaultConnectionDto> {
     if (role !== 'owner') throw ownerOnly();
-    return this.db.run(ctx, async (trx) => {
-      const existing = await this.row(trx, ctx);
-      if (existing?.status === 'disconnected') return this.reconnect(trx, ctx, existing);
-      if (existing) {
-        if (configOf(existing).stage === 'register') return this.dto(trx, existing);
+    const existing = await this.db.run(ctx, (trx) => this.row(trx, ctx));
+    if (existing) {
+      const kept = existing.status === 'disconnected' || configOf(existing).stage === 'register';
+      if (!kept) {
         throw new AppError(
           409,
           'vault.exists',
-          'This workspace is already connected to a Family Document Vault',
+          'This workspace is already connected to a Family Document Vault. To use a new key, replace the key.',
         );
       }
-      const key = makeVaultKey();
+      if (req.version === undefined || BigInt(existing.version) !== BigInt(req.version)) throw conflict();
+    }
+    const given = readPasted(req.connectionString, req.secret);
+    const check = await this.tryCheck(given.address, given.key, null);
+    if (check instanceof VaultError) throw refusal(check);
+    if (given.identity !== null && given.identity !== check.identity) {
+      throw refusal(new VaultError('identity_changed', { detail: 'code' }));
+    }
+    return existing ? this.connectAgain(ctx, existing, given, check) : this.connectNew(ctx, given, check);
+  }
+
+  private async connectNew(ctx: Ctx, given: Pasted, check: VaultCheck): Promise<VaultConnectionDto> {
+    return this.db.run(ctx, async (trx) => {
       const config: VaultConfig = VaultConfig.parse({
-        stage: 'register',
-        publicKey: key.publicKey,
-        fingerprint: key.fingerprint,
+        ...this.reported(check),
+        stage: check.approved ? 'connected' : 'approval',
+        auth: 'key',
+        address: given.address,
+        appId: check.appId,
+        clientId: given.key.clientId,
+        identity: check.identity,
         groups: VAULT_GROUPS.map((group) => ({ group, mode: VAULT_GROUP_DEFAULTS[group], vaultKind: null })),
       });
       const ws = await trx
@@ -180,6 +255,7 @@ export class VaultService {
         .select('name')
         .where('id', '=', ctx.workspaceId)
         .executeTakeFirstOrThrow();
+      const now = new Date();
       const row = await trx
         .insertInto('app.storage_destination')
         .values({
@@ -187,109 +263,71 @@ export class VaultService {
           kind: 'fdv',
           label: VAULT_LABEL,
           config: JSON.stringify(config),
-          secret_enc: (await this.seal(trx, ctx, {
-            v: 1,
-            current: { pkcs8: key.pkcs8, keyId: null },
-            next: null,
-          }))!,
+          secret_enc: (await this.seal(trx, ctx, given.key))!,
           secret_hint: null,
           // Unused for a vault (backups never go there), but the column is NOT NULL (ADR-0054, As built: PR 1).
           folder: defaultFolder(ws.name),
           // Nothing is sent until the vault has approved Montra and the owner has mapped a group (§3).
           ...sendingColumns(config),
-          status: 'needs_vault',
+          can_delete: check.mayDelete,
+          status: check.approved ? 'active' : 'needs_vault',
+          ...(check.approved ? { last_success_at: now } : {}),
           created_by: ctx.userId,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
-      // Nothing for the job to look at until there is a code.
       await trx
         .insertInto('app.vault_connection_state')
-        .values({
-          workspace_id: ctx.workspaceId,
-          destination_id: row.id,
-          next_check_at: sql<Date>`'infinity'::timestamptz`,
-        })
+        .values({ workspace_id: ctx.workspaceId, destination_id: row.id })
         .execute();
-      await this.security(trx, ctx, 'vault_changed', { keyMade: true, fingerprint: key.fingerprint });
+      await this.saveState(trx, ctx, row.id, check);
+      if (check.approved) await scheduleVault(trx);
+      await this.security(trx, ctx, 'vault_connected', {
+        host: new URL(given.address).host,
+        householdName: check.householdName,
+        approved: check.approved,
+        clientId: given.key.clientId,
+        actsAs: check.actsAs,
+      });
       return this.dto(trx, row);
     });
   }
 
   /**
-   * Step 3, and the end of a key change: the code the vault gave. Checked in order: it names the key Montra is waiting
-   * on, its address passes the guard, the server there is a vault that takes apps (and, for a key change, the one
-   * pinned), and a signed connection test passes. Nothing is saved unless all of that holds.
+   * §10: a kept connection connected again, keeping its groups and outbox. When it was disconnected from a vault (by
+   * its installation id), the same vault resumes reading what only it holds; another vault's documents aren't Montra's
+   * to read there, so the old references go and those files stay missing.
    */
-  async paste(ctx: Ctx, role: string, req: PasteVaultCodeRequest): Promise<VaultConnectionDto> {
-    if (role !== 'owner') throw ownerOnly();
-    const row = await this.db.run(ctx, (trx) => this.row(trx, ctx));
-    if (!row) throw notConnected();
-    if (BigInt(row.version) !== BigInt(req.version)) throw conflict();
-    const config = configOf(row);
-    const rotating = config.newKey !== null;
-    if (!rotating && config.stage !== 'register') {
-      throw new AppError(
-        409,
-        'vault.already_connected',
-        'Montra is already connected to this vault. To use a new code, replace the key or disconnect first.',
-      );
-    }
-
-    let code: VaultCode;
-    try {
-      code = readVaultCode(req.code);
-      const expected = rotating ? config.newKey!.fingerprint : config.fingerprint;
-      if (code.fingerprint !== expected) throw new VaultError('other_key');
-      // A new key is for the same app in the same vault.
-      if (rotating && code.appId !== config.appId) throw new VaultError('other_key', { detail: 'other app' });
-      assertVaultAddress(code.address);
-    } catch (e) {
-      throw refusal(e instanceof VaultError ? e : new VaultError('invalid_code'));
-    }
-
-    const secret = await this.unseal(ctx, row);
-    const key = rotating ? secret.next : secret.current;
-    if (!key) throw conflict();
-    const check = await this.tryCheck(
-      code.address,
-      code.appId,
-      code.keyId,
-      key.pkcs8,
-      rotating ? config.identity : null,
-    );
-    if (check instanceof VaultError) throw refusal(check);
-    if (code.identity !== null && code.identity !== check.identity) {
-      throw refusal(new VaultError('identity_changed', { detail: 'code' }));
-    }
-
-    const oldKeyId = secret.current.keyId;
-    const updated = await this.db.run(ctx, async (trx) => {
+  private async connectAgain(
+    ctx: Ctx,
+    row: Row,
+    given: Pasted,
+    check: VaultCheck,
+  ): Promise<VaultConnectionDto> {
+    const before = configOf(row);
+    const previous = before.previousIdentity ?? (row.status === 'disconnected' ? before.identity : null);
+    return this.db.run(ctx, async (trx) => {
       const now = new Date();
-      const next: VaultConfig = {
-        ...config,
+      const next: VaultConfig = VaultConfig.parse({
         ...this.reported(check),
         stage: check.approved ? 'connected' : 'approval',
-        address: new URL(code.address).origin,
-        appId: code.appId,
-        keyId: code.keyId,
+        auth: 'key',
+        address: given.address,
+        appId: check.appId,
+        clientId: given.key.clientId,
         identity: check.identity,
         previousIdentity: null,
-        ...(rotating
-          ? { publicKey: config.newKey!.publicKey, fingerprint: config.newKey!.fingerprint, newKey: null }
-          : {}),
-      };
-      const sealed: VaultSecret = rotating
-        ? { v: 1, current: { pkcs8: secret.next!.pkcs8, keyId: code.keyId }, next: null }
-        : { v: 1, current: { pkcs8: secret.current.pkcs8, keyId: code.keyId }, next: null };
+        groups: before.groups,
+        describeMore: before.describeMore,
+      });
       const saved = await trx
         .updateTable('app.storage_destination')
         .set({
           config: JSON.stringify(next),
           ...sendingColumns(next),
-          secret_enc: (await this.seal(trx, ctx, sealed))!,
+          secret_enc: (await this.seal(trx, ctx, given.key))!,
           can_delete: check.mayDelete,
-          status: check.approved ? (row.status === 'paused' ? 'paused' : 'active') : 'needs_vault',
+          status: check.approved ? 'active' : 'needs_vault',
           consecutive_failures: 0,
           last_error: null,
           last_error_at: null,
@@ -304,40 +342,26 @@ export class VaultService {
         .executeTakeFirst();
       if (!saved) throw conflict();
       await this.saveState(trx, ctx, row.id, check, { keyRotation: 'none' });
-      // §10: connected again after a disconnect. The same vault resumes reading what only it holds; another vault's
-      // documents aren't Montra's to read, so the old references go and those files stay missing.
-      const reconnected = !rotating && config.previousIdentity !== null;
-      const sameVault = reconnected && config.previousIdentity === check.identity;
+      const reconnected = previous !== null;
+      const sameVault = reconnected && previous === check.identity;
       if (reconnected) await this.resume(trx, ctx, row.id, sameVault);
       if (check.approved) await scheduleVault(trx);
-      if (rotating) {
-        await this.security(trx, ctx, 'vault_key_replaced', { fingerprint: next.fingerprint });
-      } else {
-        await this.security(trx, ctx, 'vault_connected', {
-          host: new URL(code.address).host,
-          householdName: check.householdName,
-          approved: check.approved,
-          fingerprint: next.fingerprint,
-          ...(reconnected ? { reconnected: true, sameVault } : {}),
-        });
-      }
+      await this.security(trx, ctx, 'vault_connected', {
+        host: new URL(given.address).host,
+        householdName: check.householdName,
+        approved: check.approved,
+        clientId: given.key.clientId,
+        actsAs: check.actsAs,
+        ...(reconnected ? { reconnected: true, sameVault } : {}),
+      });
       return this.dto(trx, saved);
     });
-
-    // The old key is no longer used. The vault retires it on its own a few days after the new one is first used; this
-    // only makes it sooner, so a vault that doesn't take it changes nothing.
-    if (rotating && oldKeyId && oldKeyId !== code.keyId) {
-      const conn = this.open(code.address, code.appId, code.keyId, secret.next!.pkcs8, check.identity);
-      await conn.retireKey(oldKeyId).catch(() => undefined);
-      conn.close();
-    }
-    return updated;
   }
 
   /**
-   * "Check again" (§2 step 4, §12.1): the signed connection test, now. Approved: connected. Still waiting: as it was.
-   * A problem with the connection itself, or a different vault at the address, stops it (`needs_vault`) with the words
-   * to show; anything else is a failed check, and five in a row turn it `failing`.
+   * "Check again" (§2 step 4, §12.1): the connection test, now. Approved: connected. Still waiting: as it was. A key the
+   * vault refuses, a problem with the connection itself, or a different vault at the address, stops it (`needs_vault`)
+   * with the words to show; anything else is a failed check, and five in a row turn it `failing`.
    */
   async checkAgain(ctx: Ctx, role: string): Promise<VaultConnectionDto> {
     if (!isAdmin(role)) throw ownersAndAdmins();
@@ -345,8 +369,8 @@ export class VaultService {
     if (!row) throw notConnected();
     assertConnected(row);
     const config = configOf(row);
-    if (config.stage === 'register' || !config.address || !config.appId || !config.keyId) {
-      throw new AppError(409, 'vault.no_code', 'Paste the code from the vault first');
+    if (config.stage === 'register' || !config.address) {
+      throw new AppError(409, 'vault.no_code', 'Connect the vault with an API key first');
     }
     const done = await this.checkRow(ctx, row);
     // "Check again" also wakes sending, now that the connection may work again.
@@ -357,32 +381,32 @@ export class VaultService {
   }
 
   /**
-   * The signed connection test for a saved connection, and what it changes (§12.1): for "Check again" and the job.
-   * `stopped` says this check stopped a connection that wasn't stopped before, and `turnedFailing` that it made it
-   * `failing`, so the job tells owners once. A check refreshes the status and what the vault reports, not the owner's
-   * settings, so the version stays: someone changing the settings while a check runs isn't sent back to reload.
+   * The connection test for a saved connection, and what it changes (§12.1): for "Check again" and the job. `stopped`
+   * says this check stopped a connection that wasn't stopped before, and `turnedFailing` that it made it `failing`, so
+   * the job tells owners once. A check refreshes the status and what the vault reports (the key's permissions and
+   * expiry, whom Montra acts as), not the owner's settings, so the version stays: someone changing the settings while a
+   * check runs isn't sent back to reload.
+   *
+   * A connection made before API keys is never sent to the vault: it stops at once, as needing a new key.
    */
   async checkRow(
     ctx: Ctx,
     row: Row,
   ): Promise<{ row: Row; check: VaultCheck | VaultError; stopped: boolean; turnedFailing: boolean }> {
     const before = configOf(row);
-    if (!before.address || !before.appId || !before.keyId) {
+    let check: VaultCheck | VaultError;
+    if (before.auth !== 'key') {
+      check = new VaultError('key_signed');
+    } else if (!before.address || !before.clientId) {
       return {
         row,
-        check: new VaultError('failed', { detail: 'no code' }),
+        check: new VaultError('failed', { detail: 'no key' }),
         stopped: false,
         turnedFailing: false,
       };
+    } else {
+      check = await this.tryCheck(before.address, await this.unseal(ctx, row), before.identity);
     }
-    const secret = await this.unseal(ctx, row);
-    const check = await this.tryCheck(
-      before.address,
-      before.appId,
-      before.keyId,
-      secret.current.pkcs8,
-      before.identity,
-    );
     return this.db.run(ctx, async (trx) => {
       const cur =
         (await trx
@@ -404,7 +428,13 @@ export class VaultService {
         if (check.stopsConnection) {
           if (cur.status !== 'paused') set.status = 'needs_vault';
           stopped = cur.status !== 'paused' && cur.status !== 'needs_vault';
-          nextCheck = new Date(now.getTime() + NEXT_CHECK_MS.waiting);
+          // Nothing changes for a refused key until an owner pastes a new one: looked at daily, not every 15 minutes.
+          nextCheck = new Date(
+            now.getTime() + (check.keyProblem ? NEXT_CHECK_MS.connected : NEXT_CHECK_MS.waiting),
+          );
+          if (check.keyProblem) {
+            set.config = JSON.stringify({ ...config, keyProblem: check.keyProblem } satisfies VaultConfig);
+          }
         } else if (check.countsAsFailure) {
           const failures = cur.consecutive_failures + 1;
           set.consecutive_failures = failures;
@@ -420,6 +450,7 @@ export class VaultService {
         const next: VaultConfig = {
           ...config,
           ...this.reported(check),
+          keyProblem: null,
           stage: check.approved ? 'connected' : 'approval',
         };
         set.config = JSON.stringify(next);
@@ -452,36 +483,80 @@ export class VaultService {
   }
 
   /**
-   * "Replace the key" (§2): a new pair, sealed beside the current one. Someone in the vault adds its public key to
-   * Montra's app there and gets a code, which the owner pastes as when connecting; Montra signs with the current key
-   * until that code checks out. `cancel` drops a new key not yet confirmed.
+   * "Replace the key" (§2), owner-driven: the owner generates a new API key for Montra in the vault and pastes it, as its
+   * connection string or its client ID, with its secret unless the string includes it. Montra checks it with the vault
+   * (`GET /apps/me`: the same app, at the same vault, by its installation id) and only then switches: the new key is
+   * sealed in place of the old one, which goes on working until then. The old key is the owner's to revoke in the
+   * vault; Montra can't. Also how a connection made before API keys, or one whose key was revoked or expired, gets a
+   * key that works.
    */
   async replaceKey(ctx: Ctx, role: string, req: ReplaceVaultKeyRequest): Promise<VaultConnectionDto> {
     if (role !== 'owner') throw ownerOnly();
-    return this.db.run(ctx, async (trx) => {
-      const row = await this.row(trx, ctx);
-      if (!row) throw notConnected();
-      if (BigInt(row.version) !== BigInt(req.version)) throw conflict();
-      assertConnected(row);
-      const config = configOf(row);
-      if (config.stage === 'register' || !config.keyId) {
-        throw new AppError(409, 'vault.no_code', 'Paste the code from the vault first');
+    const row = await this.db.run(ctx, (trx) => this.row(trx, ctx));
+    if (!row) throw notConnected();
+    if (BigInt(row.version) !== BigInt(req.version)) throw conflict();
+    assertConnected(row);
+    const config = configOf(row);
+    if (config.stage === 'register' || !config.address) {
+      throw new AppError(409, 'vault.no_code', 'Connect the vault with an API key first');
+    }
+    let given: Pasted;
+    if (req.connectionString) {
+      given = readPasted(req.connectionString, req.secret);
+    } else {
+      if (!req.secret) throw new AppError(422, 'vault.secret_needed', 'Paste the new key’s secret too.');
+      try {
+        assertKeyShape(req.clientId!, req.secret);
+      } catch (e) {
+        throw refusal(e as VaultError);
       }
-      const secret = await this.unseal(ctx, row, trx);
-      const key = req.cancel ? null : makeVaultKey();
+      given = {
+        address: config.address,
+        identity: null,
+        key: { clientId: req.clientId!, secret: req.secret },
+      };
+    }
+    if (config.auth === 'key' && given.key.clientId === config.clientId) {
+      throw new AppError(
+        422,
+        'vault.same_key',
+        'That’s the key Montra already uses. Generate a new key for Montra in the vault, and paste that.',
+      );
+    }
+    // The same vault: a different one at the address, or named in the string, is refused before the key is used.
+    const check = await this.tryCheck(given.address, given.key, config.identity);
+    if (check instanceof VaultError) throw refusal(check);
+    if (given.identity !== null && given.identity !== check.identity) {
+      throw refusal(new VaultError('identity_changed', { detail: 'code' }));
+    }
+    // The same app: another app's documents aren't the ones Montra sent.
+    if (config.appId !== null && check.appId !== config.appId) throw refusal(new VaultError('other_app'));
+
+    return this.db.run(ctx, async (trx) => {
       const now = new Date();
+      const next: VaultConfig = {
+        ...config,
+        ...this.reported(check),
+        stage: check.approved ? 'connected' : 'approval',
+        auth: 'key',
+        address: given.address,
+        appId: check.appId,
+        clientId: given.key.clientId,
+        keyProblem: null,
+        keyWarnedFor: null,
+      };
       const saved = await trx
         .updateTable('app.storage_destination')
         .set({
-          config: JSON.stringify({
-            ...config,
-            newKey: key ? { publicKey: key.publicKey, fingerprint: key.fingerprint } : null,
-          } satisfies VaultConfig),
-          secret_enc: (await this.seal(trx, ctx, {
-            v: 1,
-            current: secret.current,
-            next: key ? { pkcs8: key.pkcs8, keyId: null } : null,
-          }))!,
+          config: JSON.stringify(next),
+          ...sendingColumns(next),
+          secret_enc: (await this.seal(trx, ctx, given.key))!,
+          can_delete: check.mayDelete,
+          status: check.approved ? (row.status === 'paused' ? 'paused' : 'active') : 'needs_vault',
+          consecutive_failures: 0,
+          last_error: null,
+          last_error_at: null,
+          ...(check.approved ? { last_success_at: now } : {}),
           updated_at: now,
           version: sql`version + 1`,
         })
@@ -491,24 +566,14 @@ export class VaultService {
         .returningAll()
         .executeTakeFirst();
       if (!saved) throw conflict();
-      await trx
-        .updateTable('app.vault_connection_state')
-        .set({
-          key_rotation: key ? 'made' : 'none',
-          key_rotation_at: key ? now : null,
-          updated_at: now,
-        })
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('destination_id', '=', row.id)
-        .execute();
-      if (key || config.newKey) {
-        await this.security(
-          trx,
-          ctx,
-          'vault_changed',
-          key ? { newKeyMade: true, fingerprint: key.fingerprint } : { newKeyCancelled: true },
-        );
-      }
+      await this.saveState(trx, ctx, row.id, check, { keyRotation: 'none' });
+      if (check.approved) await scheduleVault(trx);
+      await this.security(trx, ctx, 'vault_key_replaced', {
+        clientId: given.key.clientId,
+        previousClientId: config.clientId,
+        ...(config.auth !== 'key' ? { fromSigned: true } : {}),
+        ...(config.keyProblem ? { previousKeyProblem: config.keyProblem } : {}),
+      });
       return this.dto(trx, saved);
     });
   }
@@ -1047,13 +1112,15 @@ export class VaultService {
     });
   }
 
-  /** A signing connection for the job (§12): the key unsealed for this run, zeroed when it is closed. */
+  /**
+   * A connection for the job, a link or a read-back (§12): the key unsealed for this run only, dropped when it is
+   * closed. A connection made before API keys has no key the vault takes: `key_signed`, which stops it.
+   */
   async openRow(ctx: Ctx, row: Row): Promise<VaultConnection> {
     const config = configOf(row);
-    if (!config.address || !config.appId || !config.keyId)
-      throw new VaultError('failed', { detail: 'no code' });
-    const secret = await this.unseal(ctx, row);
-    return this.open(config.address, config.appId, config.keyId, secret.current.pkcs8, config.identity);
+    if (config.auth !== 'key') throw new VaultError('key_signed');
+    if (!config.address || !config.clientId) throw new VaultError('failed', { detail: 'no key' });
+    return this.open(config.address, await this.unseal(ctx, row), config.identity);
   }
 
   /** The files of the groups being sent that aren't in the outbox, oldest first, of a type and size the vault keeps. */
@@ -1123,7 +1190,7 @@ export class VaultService {
     await trx
       .updateTable('app.storage_destination')
       .set({
-        config: JSON.stringify({ ...config, newKey: null } satisfies VaultConfig),
+        config: JSON.stringify({ ...config, keyWarnedFor: null } satisfies VaultConfig),
         mirror_files: false,
         file_kinds: [],
         secret_enc: null,
@@ -1182,55 +1249,6 @@ export class VaultService {
       ...detail,
     });
     return marked;
-  }
-
-  /** §10: connecting again after a disconnect: a new key for the same connection, which keeps its outbox. */
-  private async reconnect(trx: Trx, ctx: Ctx, row: Row): Promise<VaultConnectionDto> {
-    const before = configOf(row);
-    const key = makeVaultKey();
-    const config: VaultConfig = VaultConfig.parse({
-      stage: 'register',
-      publicKey: key.publicKey,
-      fingerprint: key.fingerprint,
-      groups: before.groups,
-      describeMore: before.describeMore,
-      previousIdentity: before.previousIdentity ?? before.identity,
-    });
-    const now = new Date();
-    const saved = await trx
-      .updateTable('app.storage_destination')
-      .set({
-        config: JSON.stringify(config),
-        ...sendingColumns(config),
-        secret_enc: (await this.seal(trx, ctx, {
-          v: 1,
-          current: { pkcs8: key.pkcs8, keyId: null },
-          next: null,
-        }))!,
-        status: 'needs_vault',
-        can_delete: false,
-        consecutive_failures: 0,
-        last_error: null,
-        last_error_at: null,
-        updated_at: now,
-        version: sql`version + 1`,
-      })
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('id', '=', row.id)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-    await trx
-      .updateTable('app.vault_connection_state')
-      .set({ next_check_at: sql<Date>`'infinity'::timestamptz`, feed_next_at: null, updated_at: now })
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('destination_id', '=', row.id)
-      .execute();
-    await this.security(trx, ctx, 'vault_changed', {
-      keyMade: true,
-      fingerprint: key.fingerprint,
-      reconnecting: true,
-    });
-    return this.dto(trx, saved);
   }
 
   /**
@@ -1414,12 +1432,11 @@ export class VaultService {
       .executeTakeFirst();
   }
 
-  private open(address: string, appId: string, keyId: string, pkcs8: string, pinned: string | null) {
+  private open(address: string, key: VaultKey, pinned: string | null) {
     return new VaultConnection({
       address,
-      appId,
-      keyId,
-      privateKey: Buffer.from(pkcs8, 'base64'),
+      clientId: key.clientId,
+      secret: key.secret,
       pinned,
       transport: this.transport,
     });
@@ -1428,14 +1445,12 @@ export class VaultService {
   /** The connection test, as a result or the `VaultError` it came to. The key is held only for this. */
   private async tryCheck(
     address: string,
-    appId: string,
-    keyId: string,
-    pkcs8: string,
+    key: VaultKey,
     pinned: string | null,
   ): Promise<VaultCheck | VaultError> {
     let conn: VaultConnection | undefined;
     try {
-      conn = this.open(address, appId, keyId, pkcs8, pinned);
+      conn = this.open(address, key, pinned);
       return await conn.check();
     } catch (e) {
       return e instanceof VaultError ? e : new VaultError('failed', { detail: 'check' });
@@ -1449,6 +1464,8 @@ export class VaultService {
     return {
       householdName: check.householdName,
       actingAs: check.actingAs,
+      actsAs: check.actsAs,
+      key: check.key,
       sendKinds: check.sendKinds,
       mediaTypes: check.mediaTypes,
       mayReadBack: check.mayReadBack,
@@ -1528,9 +1545,9 @@ export class VaultService {
       status: row.status,
       address: config.address,
       householdName: config.householdName,
-      publicKey: config.publicKey,
-      fingerprint: config.fingerprint,
-      newKey: config.newKey,
+      key: config.key ? { ...config.key, expiresSoon: expiresSoon(config.key.expiresAt) } : null,
+      keyProblem: config.auth !== 'key' ? 'signed' : config.keyProblem,
+      actsAs: config.actsAs,
       actingAs: config.actingAs,
       groups: VAULT_GROUPS.map((group) => ({
         group,
@@ -1559,12 +1576,10 @@ export class VaultService {
       dailyLimit: config.limits
         ? { files: config.limits.filesPerDay, filesToday: config.limits.filesToday }
         : null,
-      clockOffsetMs: state?.clock_offset_ms ?? null,
       feedReadAt: iso(state?.feed_read_at),
       files: { onlyInVault: Number(held?.only ?? 0), missing: Number(held?.missing ?? 0) },
       bringingBack: state?.bring_back_then ? { then: state.bring_back_then } : null,
       mirrorGroups: VAULT_GROUPS.filter((g) => VAULT_GROUP_KINDS[g].some((k) => mirrored.includes(k))),
-      keyRotation: state?.key_rotation ?? 'none',
       lastSuccessAt: iso(row.last_success_at),
       lastError: row.last_error,
       lastErrorAt: iso(row.last_error_at),
@@ -1573,19 +1588,20 @@ export class VaultService {
     };
   }
 
-  private seal(trx: Trx, ctx: Ctx, secret: VaultSecret) {
-    return this.crypto.encrypt(
-      trx,
-      ctx.workspaceId,
-      SECRET_COLUMN,
-      JSON.stringify(VaultSecret.parse(secret)),
-    );
+  /** The key, sealed as one JSON value under the workspace's data key (§7). */
+  private seal(trx: Trx, ctx: Ctx, key: VaultKey) {
+    return this.crypto.encrypt(trx, ctx.workspaceId, SECRET_COLUMN, JSON.stringify(sealedKey(key)));
   }
 
-  private async unseal(ctx: Ctx, row: Row, trx?: Trx): Promise<VaultSecret> {
-    const open = (t: Trx) => this.crypto.decrypt(t, ctx.workspaceId, SECRET_COLUMN, row.secret_enc);
-    const plain = trx ? await open(trx) : await this.db.run(ctx, open);
-    return VaultSecret.parse(JSON.parse(plain!));
+  /** The key, for one request or run. Only a connection with `auth: 'key'` is ever unsealed. */
+  private async unseal(ctx: Ctx, row: Row): Promise<VaultKey> {
+    const plain = await this.db.run(ctx, (t) =>
+      this.crypto.decrypt(t, ctx.workspaceId, SECRET_COLUMN, row.secret_enc),
+    );
+    const parsed = VaultSecret.safeParse(JSON.parse(plain ?? 'null'));
+    // Never the value in an error: a key Montra can't read is one an owner replaces.
+    if (!parsed.success) throw new VaultError('key_invalid', { detail: 'sealed' });
+    return { clientId: parsed.data.clientId, secret: parsed.data.secret };
   }
 
   private async security(trx: Trx, ctx: Ctx, kind: string, detail: Record<string, unknown>): Promise<void> {
@@ -1683,3 +1699,10 @@ function modesOf(config: VaultConfig): Record<VaultGroup, VaultGroupMode> {
 }
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+
+/** §12: a key that expires within `VAULT_KEY_WARN_DAYS`, and hasn't yet. */
+export function expiresSoon(expiresAt: string | null, now = Date.now()): boolean {
+  if (!expiresAt) return false;
+  const t = Date.parse(expiresAt);
+  return Number.isFinite(t) && t > now && t - now <= VAULT_KEY_WARN_DAYS * DAY_MS;
+}

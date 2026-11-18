@@ -1,17 +1,20 @@
 /**
- * Montra's adapter over the vault's own client package (ADR-0054 §2, §12.1; owner's answer 1). The package signs every
- * request (RFC 9421) and reads the connection code; Montra adds what is Montra's: the address guard (§8), pinning the
- * vault's identity, and turning the vault's answers into a `VaultCheck` or a `VaultError` in Montra's words.
+ * Montra's adapter over the vault's own client package (ADR-0054 §2, §12.1; owner's answer 1). Since vault
+ * 0.9.0-dev.63 the package sends the vault API key an owner pasted (a client ID and a secret, as HTTP Basic) on every
+ * request, and reads the connection string; Montra adds what is Montra's: the address guard (§8), pinning the vault's
+ * identity, and turning the vault's answers into a `VaultCheck` or a `VaultError` in Montra's words.
  *
- * PR 2 builds connecting: reading a code, identifying the vault, and the signed connection test. PR 3 adds sending,
+ * PR 2 built connecting: reading what was pasted, identifying the vault, and the connection test. PR 3 adds sending,
  * asking what became of what was sent, withdrawing and deleting. PR 4 adds the changes feed and view links. PR 5 adds
- * reading back the exact file Montra sent (`sentFile`).
+ * reading back the exact file Montra sent (`sentFile`). The API-key PR replaces signing with the key.
  */
 import type { Readable } from 'node:stream';
 import { ApiRequestError, createApi, createHttp, NetworkError } from '@fdv/client';
 import { createAppClient, parseConnectionString, type AppClient } from '@fdv/client/apps';
+import { VAULT_CLIENT_ID_PATTERN, VAULT_SECRET_PATTERN } from '@montra/schemas';
 import {
   VaultError,
+  type VaultPermission,
   type VaultChange,
   type VaultChangesPage,
   type VaultCheck,
@@ -21,53 +24,78 @@ import {
 } from '../destinations/vault.js';
 import { assertVaultAddress, type VaultTransport } from './transport.js';
 
-/** What a pasted code says, once read: where the vault is, Montra's app and key there, and which vault it is. */
-export interface VaultCode {
+/**
+ * What a pasted connection string says, once read: where the vault is, which key, which vault (when it says), and the
+ * key's secret when the owner chose to include it. The secret goes no further than sealing.
+ */
+export interface VaultConnectionString {
   address: string;
-  appId: string;
-  keyId: string;
-  /** The vault's installation id, when the code says it. */
+  clientId: string;
+  /** The vault's installation id, when the string says it. */
   identity: string | null;
-  fingerprint: string;
+  secret: string | null;
 }
 
-/** Reads a pasted code through the package, strictly; anything else is `invalid_code`. Checks nothing on the network. */
-export function readVaultCode(text: string): VaultCode {
+/** The prefix of a connection string made before API keys (vault 0.9.0-dev.63), which signed requests instead. */
+const SIGNED_PREFIX = 'fdvapp1.';
+
+/**
+ * Reads a pasted connection string (`fdvapp2.…`) through the package, strictly; one made before API keys is `old_code`,
+ * anything else `invalid_code`. Checks nothing on the network, and never says what was pasted.
+ */
+export function readConnectionString(text: string): VaultConnectionString {
+  if (text.startsWith(SIGNED_PREFIX)) throw new VaultError('old_code');
   let c: ReturnType<typeof parseConnectionString>;
   try {
     c = parseConnectionString(text);
   } catch {
     throw new VaultError('invalid_code');
   }
-  return {
-    address: c.url,
-    appId: c.app_id,
-    keyId: c.key_id,
-    identity: c.instance_id,
-    fingerprint: c.fingerprint,
-  };
+  return { address: c.url, clientId: c.client_id, identity: c.instance_id, secret: c.secret ?? null };
+}
+
+/** Checks a client ID and a secret are in the vault's shapes before either goes anywhere near a header (§7). */
+export function assertKeyShape(clientId: string, secret: string): void {
+  if (!VAULT_CLIENT_ID_PATTERN.test(clientId) || !VAULT_SECRET_PATTERN.test(secret)) {
+    throw new VaultError('invalid_key');
+  }
 }
 
 /**
- * The vault's refusals that mean the connection itself needs a person (§12): the key, the app's state on the vault's
- * side, the person it acts as, a permission, the clock or the address. Their messages are written for people.
+ * The vault's refusals that mean the connection itself needs a person (§12): the app's state on the vault's side, the
+ * person it acts as, or the address. Their messages are written for people.
  */
 const CONNECTION_REFUSALS = new Set([
-  'app_key_unknown',
-  'app_key_pending',
   'app_revoked',
   'app_paused',
   'app_not_approved',
   'address_not_allowed',
   'https_required',
-  'signature_stale',
   'member_locked',
   'member_paused',
-  'scope_not_granted',
 ]);
 
-/** Any failure from the package, or the transport, as a `VaultError`. `detail` carries codes only, never content. */
-export function asVaultError(e: unknown, transport?: VaultTransport, now = Date.now()): VaultError {
+/**
+ * The vault's 401s about the key itself (API keys, vault 0.9.0-dev.63): in Montra's words, so owners know to paste a new
+ * one. A request with no key at all can only mean something on the way took it off, so it is "not valid" too.
+ */
+const KEY_REFUSALS: Record<string, 'key_revoked' | 'key_expired' | 'key_invalid'> = {
+  app_key_revoked: 'key_revoked',
+  app_key_expired: 'key_expired',
+  app_key_invalid: 'key_invalid',
+  app_key_required: 'key_invalid',
+};
+
+/**
+ * Any failure from the package, or the transport, as a `VaultError`. `detail` carries codes only, never content.
+ * `permission` is what the action needs, so a 403 for a key without it says which (`not_permitted`).
+ */
+export function asVaultError(
+  e: unknown,
+  transport?: VaultTransport,
+  now = Date.now(),
+  permission?: VaultPermission,
+): VaultError {
   if (e instanceof VaultError) return e;
   const refused = transport?.refused();
   if (refused) return refused;
@@ -80,12 +108,18 @@ export function asVaultError(e: unknown, transport?: VaultTransport, now = Date.
   if (e instanceof ApiRequestError) {
     const detail = `${e.status} ${e.code}`;
     const wait = e.retryAfterSeconds !== undefined ? new Date(now + e.retryAfterSeconds * 1000) : undefined;
+    const key = KEY_REFUSALS[e.code];
+    if (key) return new VaultError(key, { detail });
+    if (e.code === 'scope_not_granted') {
+      return new VaultError('not_permitted', { detail, ...(permission ? { permission } : {}) });
+    }
     if (CONNECTION_REFUSALS.has(e.code))
       return new VaultError('connection', { vaultMessage: e.message, detail });
     if (e.code === 'app_day_full')
       return new VaultError('send_cap', { detail, ...(wait ? { heldUntil: wait } : {}) });
     if (e.code === 'app_read_day_full')
       return new VaultError('read_cap', { detail, ...(wait ? { heldUntil: wait } : {}) });
+    // A wait the vault asks for (busy, too many requests, `rate_limited`): retried, never a failure (PR 3).
     if (e.status === 429 || e.status === 503 || (e.retriable && wait))
       return new VaultError('retry_later', { detail, ...(wait ? { retryAfter: wait } : {}) });
     if (e.status >= 500) return new VaultError('failed', { detail });
@@ -94,7 +128,7 @@ export function asVaultError(e: unknown, transport?: VaultTransport, now = Date.
   return new VaultError('failed', { detail: e instanceof Error ? e.name : 'unknown' });
 }
 
-/** What the server at an address says it is, before anything is signed: product, apps, and its installation id. */
+/** What the server at an address says it is, before the key is sent: product, apps, and its installation id. */
 export async function identifyVault(address: string, transport: VaultTransport): Promise<string> {
   const origin = assertVaultAddress(address).origin;
   let caps: Awaited<ReturnType<ReturnType<typeof createApi>['capabilities']>>;
@@ -122,10 +156,9 @@ export async function identifyVault(address: string, transport: VaultTransport):
 
 export interface VaultConnectionOptions {
   address: string;
-  appId: string;
-  keyId: string;
-  /** PKCS#8 DER. Zeroed when the connection is closed. */
-  privateKey: Buffer;
+  /** The API key: its client ID and secret, unsealed for this request or run only. */
+  clientId: string;
+  secret: string;
   /** The identity pinned at connect time, or null while connecting. */
   pinned: string | null;
   transport: VaultTransport;
@@ -232,29 +265,32 @@ export class VaultConnection implements Pick<
   'kind' | 'check' | 'send' | 'status' | 'changes' | 'sentFile' | 'link' | 'withdraw' | 'remove' | 'close'
 > {
   readonly kind = 'fdv' as const;
-  private readonly client: AppClient;
+  private client: AppClient | null;
   private readonly origin: string;
 
   constructor(private readonly opts: VaultConnectionOptions) {
+    // Montra's guard first (public https only, D6): the package itself would also take plain http to this machine.
     this.origin = assertVaultAddress(opts.address).origin;
+    assertKeyShape(opts.clientId, opts.secret);
     this.client = createAppClient({
-      baseUrl: this.origin,
-      appId: opts.appId,
-      keyId: opts.keyId,
-      privateKey: new Uint8Array(
-        opts.privateKey.buffer,
-        opts.privateKey.byteOffset,
-        opts.privateKey.byteLength,
-      ),
+      url: this.origin,
+      clientId: opts.clientId,
+      secret: opts.secret,
       fetch: opts.transport.fetch,
       ...(opts.now ? { now: opts.now } : {}),
     });
   }
 
+  private get app(): AppClient {
+    if (!this.client) throw new VaultError('failed', { detail: 'closed' });
+    return this.client;
+  }
+
   /**
-   * §2 step 3, §12.1: who is at the address (pinned, or to pin), then the signed connection test. A different vault at
-   * a pinned address is `identity_changed`; an app paused or removed in the vault is a `connection` problem; one still
-   * waiting for a person there comes back with `approved: false`.
+   * §2, §12.1: who is at the address (pinned, or to pin), then the connection test with the key (`GET /apps/me`). A
+   * different vault at a pinned address is `identity_changed`; a key the vault refuses is `key_*`; an app paused or
+   * removed in the vault is a `connection` problem; one still waiting for a person there comes back with
+   * `approved: false`.
    */
   async check(): Promise<VaultCheck> {
     const identity = await identifyVault(this.origin, this.opts.transport);
@@ -263,7 +299,7 @@ export class VaultConnection implements Pick<
     }
     let me: Awaited<ReturnType<AppClient['me']>>;
     try {
-      me = await this.client.me();
+      me = await this.app.me();
     } catch (e) {
       throw asVaultError(e, this.opts.transport);
     }
@@ -278,11 +314,25 @@ export class VaultConnection implements Pick<
     const now = this.opts.now?.() ?? Date.now();
     const vaultNow = Date.parse(me.vault?.now ?? '');
     const resets = Date.parse(me.limits?.day_resets_at ?? '');
+    // What this request may do: the app's scopes that the key has too (dev.63).
     const scopes = new Set<string>(me.scopes ?? []);
+    const k = me.key;
     return {
       approved: me.state === 'active',
       identity,
+      appId: me.app.id,
+      key: k
+        ? {
+            clientId: k.client_id,
+            name: k.name ?? null,
+            permissions: [...(k.permissions ?? [])],
+            createdAt: k.created_at ?? null,
+            expiresAt: k.expires_at ?? null,
+          }
+        : null,
+      actsAs: me.acts_as === 'app' || me.acts_as === 'person' ? me.acts_as : null,
       householdName: me.vault?.display_name ?? null,
+      // Member fields may be null (APP8): Montra shows what the vault says, or nothing.
       actingAs: me.acting_as?.name ?? null,
       sendKinds: (me.send?.kinds ?? []).map((k) => ({ key: k.key, name: k.label })),
       mediaTypes: [...(me.limits?.accepted_types ?? [])],
@@ -290,7 +340,6 @@ export class VaultConnection implements Pick<
       mayDelete: scopes.has('documents.delete'),
       mayRead: scopes.has('documents.read'),
       mayOpen: scopes.has('documents.read') && scopes.has('documents.links'),
-      newKeyConfirmed: false,
       dailyResetAt: Number.isFinite(resets) ? new Date(resets) : null,
       clockOffsetMs: Number.isFinite(vaultNow) ? Math.trunc(now - vaultNow) : null,
       hints: [...(me.send?.hints ?? [])],
@@ -305,14 +354,15 @@ export class VaultConnection implements Pick<
   }
 
   /**
-   * §4: one document, under the id Montra saved before this first attempt. The package signs it afresh. An id the
-   * vault already has answers with what became of it, so a resend is harmless; the same id with other bytes is a
-   * `hash_mismatch`. A refusal of the document itself (its kind, type or size) is an answer, not a failure.
+   * §4: one document, under the id Montra saved before this first attempt. An id the vault already has answers with
+   * what became of it, so a resend is harmless; the same id with other bytes is a `hash_mismatch`. A refusal of the
+   * document itself (its kind, type or size) is an answer, not a failure. A 503 busy (nobody who can review it now, or
+   * an owner changing whom Montra acts as) is a wait, retried with backoff (PR 3).
    */
   async send(doc: VaultDocument, body: Uint8Array | Readable): Promise<VaultItemState> {
     const bytes = await bytesOf(body);
     try {
-      const sent = await this.client.send({
+      const sent = await this.app.send({
         externalId: doc.ref,
         hints: hintsOf(doc),
         file: { bytes, filename: doc.fileName, contentType: doc.mediaType },
@@ -325,7 +375,7 @@ export class VaultConnection implements Pick<
       if (e instanceof ApiRequestError && e.code === 'external_id_conflict') {
         throw new VaultError('hash_mismatch', { detail: `${e.status} ${e.code}` });
       }
-      throw asVaultError(e, this.opts.transport);
+      throw asVaultError(e, this.opts.transport, Date.now(), 'documents.send');
     }
   }
 
@@ -335,9 +385,9 @@ export class VaultConnection implements Pick<
     for (let i = 0; i < refs.length; i += 100) {
       let page: Awaited<ReturnType<AppClient['statuses']>>;
       try {
-        page = await this.client.statuses(refs.slice(i, i + 100));
+        page = await this.app.statuses(refs.slice(i, i + 100));
       } catch (e) {
-        throw asVaultError(e, this.opts.transport);
+        throw asVaultError(e, this.opts.transport, Date.now(), 'documents.send');
       }
       for (const s of page.items ?? []) out.set(s.external_id, itemState(s));
     }
@@ -351,38 +401,41 @@ export class VaultConnection implements Pick<
   async changes(cursor: string | null): Promise<VaultChangesPage> {
     try {
       return feedPage(
-        await this.client.changes(cursor === null ? { limit: 100 } : { cursor, limit: 100 }),
+        await this.app.changes(cursor === null ? { limit: 100 } : { cursor, limit: 100 }),
         false,
       );
     } catch (e) {
-      if (cursor === null || !positionRefused(e)) throw asVaultError(e, this.opts.transport);
+      if (cursor === null || !positionRefused(e))
+        throw asVaultError(e, this.opts.transport, Date.now(), 'documents.read');
     }
     try {
-      return feedPage(await this.client.changes({ limit: 100 }), true);
+      return feedPage(await this.app.changes({ limit: 100 }), true);
     } catch (e) {
-      throw asVaultError(e, this.opts.transport);
+      throw asVaultError(e, this.opts.transport, Date.now(), 'documents.read');
     }
   }
 
   /**
    * §5: the exact file Montra sent under `ref`, as the vault has it, counted against its daily read cap. Whether the vault
-   * returns it is the vault's decision (its document in the trash or private to someone, Montra not allowed to download,
-   * or a file too large for a day's reading): all of those are `unavailable`, and Montra never guesses which. The day's
-   * reading used up is `read_cap`, held until the vault says. A connection problem stops the connection as for any call.
+   * returns it is the vault's decision (its document in the trash or private to someone, or a file too large for a day's
+   * reading): all of those are `unavailable`, and Montra never guesses which. A key without `documents.download` is
+   * `not_permitted` instead: the key's, not the file's. The day's reading used up is `read_cap`, held until the vault
+   * says. A connection problem stops the connection as for any call.
    */
   async sentFile(ref: string): Promise<{ bytes: Uint8Array; mediaType: string | null }> {
     let got: Awaited<ReturnType<AppClient['sentFile']>>;
     try {
-      got = await this.client.sentFile(ref);
+      got = await this.app.sentFile(ref);
     } catch (e) {
       if (notFound(e)) throw new VaultError('unavailable', { detail: '404' });
       if (e instanceof ApiRequestError) {
         const detail = `${e.status} ${e.code}`;
-        // Not allowed to download is about this file's reading, not the connection: sending goes on.
-        if (e.code === 'scope_not_granted' || e.code === 'larger_than_daily_read' || e.status === 410)
+        if (e.code === 'larger_than_daily_read' || e.status === 410)
           throw new VaultError('unavailable', { detail });
       }
-      throw asVaultError(e, this.opts.transport);
+      // A key that may not download is the key's, not the file's (API keys): `not_permitted`, which an owner fixes with
+      // a key that may, never a file asked for again. Sending goes on.
+      throw asVaultError(e, this.opts.transport, Date.now(), 'documents.download');
     }
     if (got.status !== 200) throw new VaultError('failed', { detail: `content ${got.status}` });
     return { bytes: got.bytes, mediaType: got.contentType };
@@ -395,7 +448,7 @@ export class VaultConnection implements Pick<
   async link(documentId: string, purpose: 'view' | 'download'): Promise<URL> {
     let minted: Awaited<ReturnType<AppClient['link']>>;
     try {
-      minted = await this.client.link(documentId, purpose);
+      minted = await this.app.link(documentId, purpose);
     } catch (e) {
       if (notFound(e)) throw new VaultError('unavailable', { detail: '404' });
       if (e instanceof ApiRequestError) {
@@ -409,7 +462,7 @@ export class VaultConnection implements Pick<
         // Not allowed to open documents is about this, not the connection: sending goes on.
         if (e.code === 'scope_not_granted') throw new VaultError('cannot_open', { detail });
       }
-      throw asVaultError(e, this.opts.transport);
+      throw asVaultError(e, this.opts.transport, Date.now(), 'documents.links');
     }
     let url: URL;
     try {
@@ -425,36 +478,31 @@ export class VaultConnection implements Pick<
   /** §10: takes an item back from the Inbox. Answers what became of it; null when the vault never had it. */
   async withdraw(ref: string): Promise<VaultItemState | null> {
     try {
-      return itemState(await this.client.withdraw(ref));
+      return itemState(await this.app.withdraw(ref));
     } catch (e) {
       if (notFound(e)) return null;
       // Filed already: what it is now, for the caller to decide.
       if (e instanceof ApiRequestError && e.status === 409)
         return (await this.status([ref])).get(ref) ?? null;
-      throw asVaultError(e, this.opts.transport);
+      throw asVaultError(e, this.opts.transport, Date.now(), 'documents.send');
     }
   }
 
   /** §10: asks the vault to delete a document Montra sent; the vault does what its owner chose. Gone already is fine. */
   async remove(documentId: string): Promise<void> {
     try {
-      await this.client.delete(documentId);
+      await this.app.delete(documentId);
     } catch (e) {
       if (notFound(e)) return;
-      throw asVaultError(e, this.opts.transport);
+      throw asVaultError(e, this.opts.transport, Date.now(), 'documents.delete');
     }
   }
 
-  /** §2: retires a key Montra no longer signs with, signed with the current one. Best effort: the vault retires it too. */
-  async retireKey(keyId: string): Promise<void> {
-    try {
-      await this.client.retireKey(keyId);
-    } catch (e) {
-      throw asVaultError(e, this.opts.transport);
-    }
-  }
-
+  /**
+   * Lets go of the client, and with it the key. A JavaScript string can't be zeroed, so the secret is held only for this
+   * connection's life (one request or one run) and dropped here; it is never copied anywhere else.
+   */
   close(): void {
-    this.opts.privateKey.fill(0);
+    this.client = null;
   }
 }

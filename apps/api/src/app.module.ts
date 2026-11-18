@@ -71,6 +71,7 @@ import { guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transpor
 import {
   FakeVaultController,
   VaultController,
+  VaultKeyController,
   VaultOpenController,
 } from './storage/vault/vault.controller.js';
 import { VaultFeed } from './storage/vault/vault.feed.js';
@@ -225,6 +226,7 @@ export class AppModule {
       DataController,
       StorageController,
       VaultController,
+      VaultKeyController,
       VaultOpenController,
       MissingFilesController,
       ...(config.FAMILY_VAULT_FAKE ? [FakeVaultController] : []),

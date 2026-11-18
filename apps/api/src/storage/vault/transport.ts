@@ -8,7 +8,7 @@
  * - The address is checked as each connection is made, through the socket's `lookup`, so a name that later resolves to
  *   a private address is refused (DNS rebinding).
  * - Redirects are never followed, every request has a connect and a total timeout, and answers are size-limited.
- * - Nothing here logs: not the headers (which carry signatures), not the body, not the address.
+ * - Nothing here logs: not the headers (the Authorization header carries the API key), not the body, not the address.
  *
  * Tests and the e2e run use the package's own fake vault instead, in this process, behind `FAMILY_VAULT_FAKE=on`, which
  * production refuses to start with (`config.ts`). Montra never talks to a real vault in tests.
