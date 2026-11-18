@@ -38,14 +38,15 @@ export function VaultStatusCard() {
   const color = useToneColor();
   const ws = session.status === 'signed_in' ? session.workspace : null;
   const role = ws?.role ?? 'viewer';
+  const wsId = ws?.id ?? '';
   const [loaded, setLoaded] = useState<{ d: VaultConnectionDto | null; plan: boolean } | null>(null);
 
   useEffect(() => {
-    if (!ws || (role !== 'owner' && role !== 'admin')) return;
+    if (!wsId || (role !== 'owner' && role !== 'admin')) return;
     let live = true;
     void Promise.all([
-      api.vaultConnection(ws.id),
-      api.billing(ws.id).then(
+      api.vaultConnection(wsId),
+      api.billing(wsId).then(
         (b) => b.mode === 'off' || b.entitlements.features.includes('familyVault'),
         () => false,
       ),
@@ -56,7 +57,7 @@ export function VaultStatusCard() {
     return () => {
       live = false;
     };
-  }, [api, ws, role]);
+  }, [api, wsId, role]);
 
   const card = loaded ? vaultCard(loaded.d, role, loaded.plan) : null;
   if (!card) return null;
