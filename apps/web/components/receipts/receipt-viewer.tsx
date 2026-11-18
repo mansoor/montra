@@ -135,6 +135,11 @@ export function ReceiptViewer({
             key={page.src}
             src={page.src}
             alt={page.alt}
+            // A PDF can fail as an image before the page hydrates, when React isn't yet listening for `error`: the
+            // ref catches an image that has already finished without pixels, so the PDF viewer still takes over.
+            ref={(el) => {
+              if (el && el.complete && el.naturalWidth === 0) setPdf((p) => ({ ...p, [index]: true }));
+            }}
             onError={() => setPdf((p) => ({ ...p, [index]: true }))}
             className="mx-auto block max-w-none border border-line bg-[var(--paper)] shadow-sm"
             style={

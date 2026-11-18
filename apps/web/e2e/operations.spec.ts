@@ -77,6 +77,34 @@ test('pages come with security headers', async ({ page }) => {
   expect(headers['x-frame-options']).toBe('DENY');
 });
 
+/**
+ * NFR-01: pages are never framed, but the files under /api are framed by Montra's own pages: the receipt, payslip and
+ * bill viewers show a PDF in an <iframe> through the /api proxy, which DENY blocked.
+ */
+test('Montra’s own pages can frame the files under /api, and nothing else', async ({ page }) => {
+  await page.goto('/sign-in');
+  const api = await page.request.get('/api/v1/me');
+  expect(api.headers()['x-frame-options']).toBe('SAMEORIGIN');
+  expect(api.headers()['content-security-policy']).toContain("frame-ancestors 'self'");
+
+  const framed = (src: string) =>
+    page.evaluate(async (url) => {
+      const f = document.createElement('iframe');
+      f.src = url;
+      document.body.appendChild(f);
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        return f.contentWindow?.location.pathname ?? null;
+      } catch {
+        return 'blocked';
+      } finally {
+        f.remove();
+      }
+    }, src);
+  expect(await framed('/api/v1/me')).toBe('/api/v1/me');
+  expect(await framed('/sign-in')).toBe('blocked');
+});
+
 /** OPS-08: self-hosted and in tests, plans are off and the page says so. Paying is covered by the API tests, with Stripe stubbed. */
 test('the plan page, a guided tour, and contacting support', async ({ page }) => {
   test.setTimeout(120_000);

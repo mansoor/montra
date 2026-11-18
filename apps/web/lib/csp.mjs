@@ -11,10 +11,11 @@ import { URL } from 'node:url';
 const OIDC_PROVIDERS = ['https://appleid.apple.com', 'https://accounts.google.com'];
 
 /**
- * @param {{ kratosUrl?: string, dev?: boolean }} options
+ * @param {{ kratosUrl?: string, dev?: boolean, frameable?: boolean }} options `frameable`: Montra's own pages may show
+ *   the response in a frame (the files under /api the receipt and payslip viewers show); never another site.
  * @returns {string}
  */
-export function contentSecurityPolicy({ kratosUrl, dev = false } = {}) {
+export function contentSecurityPolicy({ kratosUrl, dev = false, frameable = false } = {}) {
   const kratos = new URL(kratosUrl || 'http://localhost:4455').origin;
   return [
     "default-src 'self'",
@@ -25,9 +26,28 @@ export function contentSecurityPolicy({ kratosUrl, dev = false } = {}) {
     "font-src 'self' data:",
     // Wide because local AI mode calls an endpoint on the person's own network, whatever they've named it.
     'connect-src * ws: wss:',
-    "frame-ancestors 'none'",
+    frameable ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
     "base-uri 'self'",
     `form-action 'self' ${kratos} ${OIDC_PROVIDERS.join(' ')}`,
     "object-src 'none'",
   ].join('; ');
+}
+
+/**
+ * The security headers (NFR-01) for a path. Pages can't be framed at all. Responses under /api can be framed by
+ * Montra's own pages only: the receipt, payslip and bill viewers show a PDF through the /api proxy in an <iframe>,
+ * which `X-Frame-Options: DENY` and `frame-ancestors 'none'` blocked.
+ *
+ * @param {{ kratosUrl?: string, dev?: boolean, frameable?: boolean }} options
+ * @returns {{ key: string, value: string }[]}
+ */
+export function securityHeaders({ kratosUrl, dev = false, frameable = false } = {}) {
+  return [
+    { key: 'Content-Security-Policy', value: contentSecurityPolicy({ kratosUrl, dev, frameable }) },
+    { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+    { key: 'X-Content-Type-Options', value: 'nosniff' },
+    { key: 'X-Frame-Options', value: frameable ? 'SAMEORIGIN' : 'DENY' },
+    { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+    { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  ];
 }
