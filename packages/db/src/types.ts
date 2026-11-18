@@ -1774,8 +1774,11 @@ export interface VaultItemTable {
   feed_seen_at: Date | null;
   received_at: Date | null;
   filed_at: Date | null;
+  /** §5: Montra's object still to remove once the vault is the record, and when it was removed. */
   source_key: string | null;
   source_removed_at: Date | null;
+  /** §5: when the job next looks at removing Montra's copy of a filed file; null when there is nothing to look at (0067). */
+  remove_at: Date | null;
   attempts: Generated<number>;
   next_attempt_at: Generated<Date>;
   last_error: string | null;

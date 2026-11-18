@@ -45,8 +45,10 @@ uploaded again, and backups and tax packages list any still missing. The owner c
 library as a published package: **PR 1 (contracts, migration 0063), PR 2 (connecting), PR 3 (sending, with a
 local copy kept; migration 0064) and PR 4 (keeping in step and view links; migration 0065) are done**, and **PR 5a
 (`FileBytes`: every reader of a file's bytes reads it from Montra, the owner's storage or the vault; migration 0066) is
-built** on `@fdv/client` 0.9.0-dev.62 from the vault's public GitHub release (see §7g). "Sent with no local copy" is not
-offered until PR 5b. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
+done** on `@fdv/client` 0.9.0-dev.62 from the vault's public GitHub release (see §7g). **PR 5b1** ("sent with no local
+copy": removing Montra's copy, missing files and Review's "Files to provide again", quota; migration 0067) is built;
+PR 5b2 (the move backfill, bringing files back, the disconnect choice, the archive's missing count and its one wait, and
+restore marking) is next. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
 Ed25519 key and signatures; a separate PR replaces Montra's key code then. On the vault's side, view links,
 deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
 and is not copied into this repo.
@@ -1829,6 +1831,38 @@ Phase 11 leftovers:
     longer available" for that case changes then. `sentFile` already returns Montra's exact bytes, so 5a and 5b don't
     depend on it.
   - Next: PR 5b (sent with no local copy: removal, missing files, the move backfill, bringing files back, deletes).
+- **Family Document Vault, PR 5b1 of 6: sent with no local copy** (VLT-02, VLT-04, VLT-05, VLT-08, VLT-11 and BAK-08
+  updated; VLT-10 started; ADR-0054 "As built: PR 5b1"; migration 0067). PR 5b is split again: 5b1 turns the third
+  mode on with its removal and missing files; 5b2 does the rest.
+  - **The third mode** is offered in Settings and the API (owner only, a recent sign-in, §5a's warning); Settings says
+    when the owner's own storage still keeps a copy of such a group, and counts files kept only in the vault and to
+    upload again (`VaultConnectionDto.files`, `.mirrorGroups`).
+  - **Removing Montra's copy** (`storage.vault`, `removeSources`/`moveOne`): only for a document filed while its group
+    is in that mode (or a file put back to be read again), and only when the vault has filed it, says it could give the
+    exact file back (`content_available`, asked again first), the owner's mirror has it when it copies that kind, nothing
+    reads it or has it in Review (`app.vault_file_busy`, now also while a backup or tax package is being made), and the
+    connection is active. One transaction moves it (`location = 'vault'`, the key to `source_key`, an audit row
+    `file.moved_to_vault`), then the object is deleted and `source_removed_at` set; a crash in between is finished by the
+    next run. `vault_item.remove_at` (0067) says when to look, counted by `vault_due()`/`vault_next()`.
+  - **Missing files** (§5a): a file only the vault holds that it doesn't give back, or whose document the feed says is
+    out of reach, gets `missing_since` and a reason in words (audited); never for the daily read cap, never for a file
+    Montra holds. Review → "Files to provide again" on the web and the phone (`GET/POST …/missing-files`), with what
+    uses each file and an Upload action; its count joins the Review badge on both. `files_missing` (no file names, at
+    most once a day) to owners, admins and the uploader. Uploading again keeps the file id, clears the mark, notes a
+    different hash (`replaced_sha256`), and sends it to the vault again as a new send.
+  - **The web's `file.in_vault`:** receipt and payslip viewers say the file is kept in the vault, with "Open in the
+    vault"; a link to such a file goes, through the API proxy, to the vault page with the same link.
+  - **Quota (BAK-08):** files held only in the vault don't count (`check_storage_quota`, `workspace_storage`).
+  - **Disconnecting** is refused while files are held only in the vault, until 5b2's choice.
+  - Tests: `apps/api/test/family-vault-no-copy.test.ts` (the mode offered and existing filed files kept; each removal
+    condition alone, the crash and the resume; missing on refusal and out of reach, the Review list and who sees it, one
+    notification a day; found again; never for a file Montra holds; uploading again, a different hash, who may; the
+    quota; disconnecting refused), web `vault.test.ts`, `missing-files.test.ts`, `phase3.test.ts`, phone
+    `missing-files.test.ts`, and e2e `files-to-provide.spec.ts` and `family-vault.spec.ts`.
+  - **Not done here (5b2):** the move backfill for files filed before a group was switched, bringing files back and
+    "Disconnect anyway", the missing count on an archive's screen (`ExportJobDto`, web fixtures and phone types), a
+    background archive waiting once for the vault's daily reset, and restore marking files that weren't in the archive.
+  - Next: PR 5b2, then the dev.63 PR (API keys) and PR 6 (the phone).
 - **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
   and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
   row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are

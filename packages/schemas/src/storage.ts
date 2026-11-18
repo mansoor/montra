@@ -336,11 +336,10 @@ export function vaultKeepsCopy(
 }
 
 /**
- * The modes Settings offers now (ADR-0054, As built: PR 3). `sent_no_copy` is chosen only once Montra can remove its
- * own copy safely and ask the vault, then a person, for the file again (PR 5, `FileBytes`); until then the API refuses
- * it, so no file is ever recorded as eligible for removal by a version that can't remove it.
+ * The modes Settings offers. `sent_no_copy` is offered from PR 5b, which removes Montra's copy safely (§5) and asks the
+ * vault, then a person, for a file again (§5a); PR 3 to 5a offered only the first two.
  */
-export const VAULT_GROUP_MODES_OFFERED: readonly VaultGroupMode[] = ['not_sent', 'sent_keep_copy'];
+export const VAULT_GROUP_MODES_OFFERED: readonly VaultGroupMode[] = VAULT_GROUP_MODES;
 
 /**
  * Each group's mode as sending sees it (§3): a sent group with no vault kind mapped to it isn't sent. This is what the
@@ -499,6 +498,16 @@ export const VaultConnectionDto = z.object({
   clockOffsetMs: z.number().int().nullable(),
   /** §9: when Montra last read the vault's changes feed; null until it has (or while the vault doesn't let it read). */
   feedReadAt: z.string().nullable(),
+  /**
+   * §5, §5a: files whose copy Montra removed because the vault is their record (`onlyInVault`), and of those, files the
+   * vault didn't give back that wait in Review for a person to provide again (`missing`).
+   */
+  files: z.object({ onlyInVault: z.number().int(), missing: z.number().int() }),
+  /**
+   * §1, §13: the groups whose kinds the owner's own S3/WebDAV storage is set to copy. For a group sent with no local
+   * copy, Settings says the owner's storage still holds one; Montra never changes that setting on its own.
+   */
+  mirrorGroups: z.array(VaultGroup),
   /** §2: a key change in progress. */
   keyRotation: z.enum(['none', 'made', 'registered']),
   lastSuccessAt: z.string().nullable(),

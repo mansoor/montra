@@ -256,18 +256,19 @@ describe('each group’s mode (ADR-0054 §6; VLT-02, VLT-07)', () => {
     expect(await item(id)).toBeUndefined();
   });
 
-  it('maps groups to the vault’s kinds, refusing a kind it doesn’t offer and sending with no local copy', async () => {
+  it('maps groups to the vault’s kinds, refusing a kind it doesn’t offer, and offers sending with no local copy', async () => {
     expect((await patch({ groups: [{ group: 'receipts', vaultKind: 'passport' }] })).body.code).toBe(
       'vault.kind_not_allowed',
     );
+    // Offered since PR 5b (family-vault-no-copy.test.ts tests what it does); this file's sending keeps a copy.
     const noCopy = await patch({
       groups: [{ group: 'receipts', mode: 'sent_no_copy', vaultKind: 'utility_bill' }],
     });
-    expect(noCopy.status).toBe(422);
-    expect(noCopy.body.code).toBe('vault.mode_not_offered');
+    expect(noCopy.status).toBe(200);
+    expect(noCopy.body.groups.find((g: any) => g.group === 'receipts').mode).toBe('sent_no_copy');
     const res = await patch({
       groups: [
-        { group: 'receipts', vaultKind: 'utility_bill' },
+        { group: 'receipts', mode: 'sent_keep_copy', vaultKind: 'utility_bill' },
         { group: 'statements', vaultKind: 'bank_statement' },
       ],
     });

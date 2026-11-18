@@ -13,23 +13,19 @@ import { useI18n } from './i18n';
  * Nothing for files that aren't sent, and nothing at all when the badges can't be loaded: they never stand in the way of
  * the document itself.
  */
-export function VaultBadges({ workspaceId, fileIds }: { workspaceId: string; fileIds: readonly string[] }) {
+export function VaultBadges({
+  workspaceId,
+  fileIds,
+  states: given,
+}: {
+  workspaceId: string;
+  fileIds: readonly string[];
+  /** Already loaded by the page (`useFileStorageStates`), so they aren't asked for twice. */
+  states?: readonly FileStorageStateDto[];
+}) {
   const { t } = useI18n();
-  const [states, setStates] = useState<FileStorageStateDto[]>([]);
-  const key = fileIds.slice(0, 100).join(',');
-  useEffect(() => {
-    if (!key) return;
-    let live = true;
-    browserApi
-      .getFileStorageStates(workspaceId, key.split(','))
-      .then((s) => {
-        if (live) setStates(s);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [workspaceId, key]);
+  const loaded = useFileStorageStates(workspaceId, given ? [] : fileIds);
+  const states = given ?? loaded;
 
   const badges = new Map<string, NonNullable<ReturnType<typeof vaultBadge>>>();
   for (const s of states) {
@@ -72,4 +68,27 @@ export function VaultBadges({ workspaceId, fileIds }: { workspaceId: string; fil
       ))}
     </span>
   );
+}
+
+/**
+ * Where some files are with the vault (§13), for anyone who can see them; empty until loaded, and when they can't be
+ * loaded: they never stand in the way of the document itself.
+ */
+export function useFileStorageStates(workspaceId: string, fileIds: readonly string[]): FileStorageStateDto[] {
+  const [states, setStates] = useState<FileStorageStateDto[]>([]);
+  const key = fileIds.slice(0, 100).join(',');
+  useEffect(() => {
+    if (!key) return;
+    let live = true;
+    browserApi
+      .getFileStorageStates(workspaceId, key.split(','))
+      .then((s) => {
+        if (live) setStates(s);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [workspaceId, key]);
+  return states;
 }

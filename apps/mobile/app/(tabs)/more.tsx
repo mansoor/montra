@@ -3,6 +3,7 @@ import { useRouter, type Href } from 'expo-router';
 import { t } from '../../src/i18n';
 import { config } from '../../src/config';
 import { reviewBadge, showsTaxForms } from '../../src/features/tax-forms';
+import { useMissingFiles } from '../../src/features/use-missing-files';
 import { useTaxFormsToCheck } from '../../src/features/use-tax-forms';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
@@ -24,7 +25,8 @@ export default function More() {
   const can = useAbilities();
   const queued = sync ? sync.pending + sync.drafts : 0;
   const taxForms = useTaxFormsToCheck().count;
-  const toReview = reviewBadge(sync?.reviewCount ?? 0, taxForms);
+  const missingFiles = useMissingFiles().count;
+  const toReview = reviewBadge(sync?.reviewCount ?? 0, taxForms, missingFiles);
   // ADR-0052 §7.2: US forms, for books kept in US dollars; not for viewers.
   const taxFormsShown = state.status === 'signed_in' && showsTaxForms(state.workspace);
   const sections: Array<{ label: string; items: Item[] }> = [

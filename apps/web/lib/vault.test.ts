@@ -18,6 +18,9 @@ import {
   vaultEstimate,
   vaultGroupChanges,
   vaultGroupRows,
+  vaultMirrorKeeps,
+  vaultOnlyPage,
+  inVaultRedirect,
   vaultTone,
   vaultUnmapped,
   isPersonOpening,
@@ -50,6 +53,8 @@ const connection = (over: Partial<VaultConnectionDto> = {}): VaultConnectionDto 
   dailyLimit: { files: 100, filesToday: 4 },
   clockOffsetMs: 120,
   feedReadAt: '2026-11-17T10:05:00.000Z',
+  files: { onlyInVault: 0, missing: 0 },
+  mirrorGroups: [],
   keyRotation: 'none',
   lastSuccessAt: '2026-11-17T10:00:00.000Z',
   lastError: null,
@@ -129,7 +134,7 @@ describe('Send these to the vault', () => {
     { key: 'pay_statement', name: 'Pay statement / payslip' },
   ];
 
-  it('offers an owner not sent or sent with a copy, suggesting the vault’s obvious kind for a group not mapped', () => {
+  it('offers an owner all three modes, suggesting the vault’s obvious kind for a group not mapped', () => {
     const rows = vaultGroupRows(connection({ vaultKinds: kinds }), 'owner');
     expect(rows.map((r) => r.group)).toEqual([...VAULT_GROUPS]);
     const statements = rows.find((r) => r.group === 'statements')!;
@@ -138,11 +143,16 @@ describe('Send these to the vault', () => {
       vaultKind: 'bank_statement',
       mapped: false,
       editable: true,
-      modes: ['not_sent', 'sent_keep_copy'],
+      modes: ['not_sent', 'sent_keep_copy', 'sent_no_copy'],
     });
     expect(rows.find((r) => r.group === 'payslips')).toMatchObject({ restricted: true, mode: 'not_sent' });
-    // No group offers sending without a local copy yet (PR 5).
-    expect(rows.every((r) => !r.modes.includes('sent_no_copy'))).toBe(true);
+    // Sending without a local copy is offered from PR 5b, for every group, to an owner only.
+    expect(rows.every((r) => r.modes.includes('sent_no_copy'))).toBe(true);
+    expect(
+      vaultGroupRows(connection({ vaultKinds: kinds }), 'admin').some((r) =>
+        r.modes.includes('sent_no_copy'),
+      ),
+    ).toBe(false);
   });
 
   it('lets an admin only turn payslips or tax documents off (D4)', () => {
@@ -179,6 +189,7 @@ describe('Send these to the vault', () => {
         { group: 'bills', vaultKind: 'utility_bill' },
       ],
       warn: [],
+      noCopy: [],
     });
     const payslipsOn = draft.map((g) =>
       g.group === 'payslips' ? { ...g, mode: 'sent_keep_copy' as const, vaultKind: 'pay_statement' } : g,
@@ -190,9 +201,24 @@ describe('Send these to the vault', () => {
       mode: 'sent_keep_copy',
       vaultKind: 'pay_statement',
     });
+    // §5a: a group that starts going without a local copy is warned about; one already so isn't, again.
+    const noCopy = draft.map((g) => (g.group === 'receipts' ? { ...g, mode: 'sent_no_copy' as const } : g));
+    expect(vaultGroupChanges(d, noCopy).noCopy).toEqual(['receipts']);
+    const already = connection({
+      vaultKinds: kinds,
+      groups: d.groups.map((g) => (g.group === 'receipts' ? { ...g, mode: 'sent_no_copy' as const } : g)),
+    });
+    expect(vaultGroupChanges(already, noCopy).noCopy).toEqual([]);
     // Turning a group off leaves its kind as it was.
     const off = draft.map((g) => (g.group === 'receipts' ? { ...g, mode: 'not_sent' as const } : g));
     expect(vaultGroupChanges(d, off).groups).toContainEqual({ group: 'receipts', mode: 'not_sent' });
+  });
+
+  it('says when the owner’s own storage still keeps a copy of a group sent without one', () => {
+    const d = connection({ mirrorGroups: ['receipts', 'statements'] });
+    expect(vaultMirrorKeeps(d, 'receipts', 'sent_no_copy')).toBe(true);
+    expect(vaultMirrorKeeps(d, 'receipts', 'sent_keep_copy')).toBe(false);
+    expect(vaultMirrorKeeps(d, 'bills', 'sent_no_copy')).toBe(false);
   });
 
   it('says which sent groups aren’t mapped, so aren’t sent', () => {
@@ -222,6 +248,11 @@ describe('how sending is going', () => {
       { key: 'vault.count_inbox', n: 4 },
       { key: 'vault.count_filed', n: 9 },
       { key: 'vault.count_not_kept', n: 1 },
+    ]);
+    // §5, §5a: files kept only in the vault, and those to upload again.
+    expect(vaultCounts(connection({ files: { onlyInVault: 7, missing: 2 } }))).toEqual([
+      { key: 'vault.count_only_in_vault', n: 7 },
+      { key: 'vault.count_missing', n: 2 },
     ]);
   });
 
@@ -269,6 +300,22 @@ describe('how sending is going', () => {
     });
     expect(vaultBadge(state('failed'))?.tone).toBe('bad');
     expect(vaultBadge(state('delete'))).toBeNull();
+    // §5: kept only in the vault; §5a: missing, whatever the vault's status, with the reason in words.
+    expect(vaultBadge({ ...state('filed'), location: 'vault' })?.key).toBe('vault.badge_only_in_vault');
+    expect(
+      vaultBadge({
+        ...state('filed'),
+        location: 'vault',
+        missing: {
+          since: '2026-11-17T10:00:00.000Z',
+          reason: 'Family Document Vault didn’t give this file back.',
+        },
+      }),
+    ).toEqual({
+      key: 'vault.badge_missing',
+      tone: 'bad',
+      title: 'Family Document Vault didn’t give this file back.',
+    });
   });
 });
 
@@ -384,5 +431,57 @@ describe('what the vault calls a document, and opening it', () => {
     expect(vaultFeedLine(connection())).toEqual({ key: 'vault.feed_read', at: '2026-11-17T10:05:00.000Z' });
     expect(vaultFeedLine(connection({ feedReadAt: null }))).toEqual({ key: 'vault.feed_not_read', at: null });
     expect(VaultConnectionSchema.parse(connection())).toBeTruthy();
+  });
+});
+
+// Sent with no local copy (ADR-0054 §5, PR 5b): a file only the vault holds is opened there, never previewed here.
+describe('a file kept only in the vault', () => {
+  const ws = '00000000-0000-4000-8000-0000000000aa';
+  const file = '00000000-0000-4000-8000-0000000000bb';
+  const state = (more: Partial<FileStorageStateDto>): FileStorageStateDto => ({
+    fileId: file,
+    location: 'vault',
+    missing: null,
+    vault: {
+      status: 'filed',
+      title: null,
+      kind: null,
+      newerVersion: false,
+      notKeptReason: null,
+      canOpen: true,
+    },
+    ...more,
+  });
+
+  it('shows the viewer’s notice with “Open it in the vault” instead of the page', () => {
+    expect(vaultOnlyPage([state({})], ws, file)).toEqual({
+      openHref: vaultOpenHref(ws, file),
+      missing: false,
+    });
+    // Nothing to open yet (the feed hasn't shown it), or missing: the notice, without the link.
+    expect(vaultOnlyPage([state({ vault: { ...state({}).vault!, canOpen: false } })], ws, file)).toEqual({
+      openHref: null,
+      missing: false,
+    });
+    expect(
+      vaultOnlyPage([state({ missing: { since: '2026-11-17T00:00:00.000Z', reason: 'x' } })], ws, file),
+    ).toEqual({ openHref: null, missing: true });
+    // Montra holds it, or nothing is known yet: shown as always.
+    expect(vaultOnlyPage([state({ location: 'montra' })], ws, file)).toBeNull();
+    expect(vaultOnlyPage([], ws, file)).toBeNull();
+  });
+
+  it('sends a person who followed a link to such a file to the page that says so (409 file.in_vault)', () => {
+    const path = ['v1', 'workspaces', ws, 'receipts', '00000000-0000-4000-8000-0000000000cc', 'files', file];
+    expect(inVaultRedirect(path, 409, 'file.in_vault')).toBe(
+      vaultOpenProblemHref(ws, file, 'in_vault', null),
+    );
+    expect(vaultOpenProblemKey('in_vault')).toBe('vault.open_in_vault_only');
+    // Anything else goes through as it came.
+    expect(inVaultRedirect(path, 409, 'version.conflict')).toBeNull();
+    expect(inVaultRedirect(path, 410, 'file.in_vault')).toBeNull();
+    expect(inVaultRedirect(['v1', 'workspaces', ws, 'files', 'not-an-id'], 409, 'file.in_vault')).toBeNull();
+    expect(inVaultRedirect([...path, 'extra'], 409, 'file.in_vault')).toBeNull();
+    expect(inVaultRedirect(['v1', 'me', 'files', file], 409, 'file.in_vault')).toBeNull();
   });
 });

@@ -163,6 +163,8 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     dailyLimit: { files: 100, filesToday: 3 },
     clockOffsetMs: null,
     feedReadAt: null,
+    files: { onlyInVault: 2, missing: 1 },
+    mirrorGroups: ['receipts'],
     keyRotation: 'none',
     lastSuccessAt: null,
     lastError: null,
@@ -287,8 +289,8 @@ describe('files held in the vault, and missing files (ADR-0054 §5a, §9)', () =
 });
 
 describe('sending (ADR-0054 §3, D8; As built: PR 3)', () => {
-  it('offers not sent and sent-with-a-copy only, until Montra can remove its copy (PR 5)', () => {
-    expect(VAULT_GROUP_MODES_OFFERED).toEqual(['not_sent', 'sent_keep_copy']);
+  it('offers all three modes, sending with no local copy included, now that Montra removes its copy safely (PR 5b)', () => {
+    expect(VAULT_GROUP_MODES_OFFERED).toEqual(['not_sent', 'sent_keep_copy', 'sent_no_copy']);
   });
 
   it('sends a group only once it is mapped to one of the vault’s kinds', () => {

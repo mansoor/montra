@@ -22,6 +22,8 @@ export const NOTIFICATION_TYPES = [
   'tax_forms_missing',
   /** ADR-0054 §12: the Family Document Vault needs a person (its connection stopped, or it didn't keep documents). */
   'vault_attention',
+  /** ADR-0054 §5a: files Montra no longer holds that the vault didn't give back; at most one a day, no file names. */
+  'files_missing',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;

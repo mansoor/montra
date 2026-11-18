@@ -63,6 +63,8 @@ import { STORAGE_PORT, storageProvider } from './storage/storage.js';
 import { StorageController } from './storage/storage.controller.js';
 import { StorageDestinationsService } from './storage/storage-destinations.service.js';
 import { FileBytes } from './storage/file-bytes.js';
+import { MissingFilesController } from './storage/missing-files.controller.js';
+import { MissingFiles } from './storage/missing-files.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { fakeVaultTransport } from './storage/vault/fake.js';
 import { guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
@@ -224,6 +226,7 @@ export class AppModule {
       StorageController,
       VaultController,
       VaultOpenController,
+      MissingFilesController,
       ...(config.FAMILY_VAULT_FAKE ? [FakeVaultController] : []),
       RestoresController,
       AccountDataController,
@@ -332,6 +335,7 @@ export class AppModule {
         BackupService,
         StorageDestinationsService,
         FileBytes,
+        MissingFiles,
         StorageMirrorJobs,
         VaultService,
         VaultJobs,
