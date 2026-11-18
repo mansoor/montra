@@ -50,7 +50,7 @@ import { Db } from '../../db/database.js';
 import { defaultFolder } from '../destinations/paths.js';
 import { VaultError, type VaultCheck } from '../destinations/vault.js';
 import { SECRET_COLUMN } from '../storage-destinations.service.js';
-import { backoffMs } from '../storage-mirror.jobs.js';
+import { backoffMs } from '../backoff.js';
 import { readVaultCode, VaultConnection, type VaultCode } from './connection.js';
 import { makeVaultKey, VaultSecret } from './keys.js';
 import { assertVaultAddress, VAULT_TRANSPORT, type VaultTransport } from './transport.js';

@@ -20,14 +20,14 @@ import {
   type StorageDestination,
 } from './destinations/index.js';
 import { StorageDestinationsService, type DestinationRow } from './storage-destinations.service.js';
+import { backoffMs, MAX_ATTEMPTS } from './backoff.js';
+import { FileBytes } from './file-bytes.js';
 
 type Ctx = { workspaceId: string; userId: string };
 type Item = Selectable<StorageMirrorItemTable>;
 type ExportRow = Selectable<ExportJobTable>;
 
-/** Minutes to wait after each failed attempt; the last repeats. A row gives up after MAX_ATTEMPTS. */
-const BACKOFF_MIN = [1, 5, 15, 60, 180, 360, 720, 1440];
-export const MAX_ATTEMPTS = 10;
+export { backoffMs, MAX_ATTEMPTS } from './backoff.js';
 /** Failures in a row, with no success between, before the connection shows as failing and owners hear about it. */
 export const FAILING_AFTER = 5;
 const LEASE_MS = 10 * 60_000;
@@ -37,9 +37,6 @@ export const BACKUP_BATCH = 5;
 const RUN_BUDGET_MS = 2 * 60_000;
 /** Never wake again sooner than this, so a row that can't make progress can't spin the worker. */
 const MIN_GAP_MS = 30_000;
-
-export const backoffMs = (attempts: number) =>
-  BACKOFF_MIN[Math.min(Math.max(attempts, 1), BACKOFF_MIN.length) - 1]! * 60_000;
 
 @Injectable()
 export class StorageMirrorJobs {
@@ -51,6 +48,7 @@ export class StorageMirrorJobs {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(StorageDestinationsService) private readonly destinations: StorageDestinationsService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(FileBytes) private readonly files: FileBytes,
   ) {}
 
   register(): void {
@@ -237,7 +235,17 @@ export class StorageMirrorJobs {
       const file = await this.db.run(ctx, (trx) =>
         trx
           .selectFrom('app.file')
-          .select(['id', 'kind', 'file_name', 'mime', 'bytes', 'storage_key', 'created_at', 'deleted_at'])
+          .select([
+            'id',
+            'kind',
+            'file_name',
+            'mime',
+            'bytes',
+            'storage_key',
+            'sha256',
+            'created_at',
+            'deleted_at',
+          ])
           .where('workspace_id', '=', ctx.workspaceId)
           .where('id', '=', item.file_id)
           // A sealed copy of an identity document is ciphertext the owner couldn't open (ADR-0034 §3): never copied.
@@ -260,7 +268,13 @@ export class StorageMirrorJobs {
         await this.updateItem(ctx, item, { status: 'skipped', attempts: 0, last_error: null });
         return null;
       }
-      const bytes = await this.storage.get(file.storage_key);
+      // Montra's copy (ADR-0054 §5): a file only the vault holds isn't fetched from there just to copy it here.
+      const got = await this.files.read(ctx, file, { vault: false });
+      if (!got.ok) {
+        await this.updateItem(ctx, item, { status: 'skipped', attempts: 0, last_error: got.words });
+        return null;
+      }
+      const bytes = got.bytes;
       const path = filePath(dest.folder, file);
       await remote.put(path, bytes, { contentType: file.mime, bytes: bytes.length });
       await this.updateItem(ctx, item, {

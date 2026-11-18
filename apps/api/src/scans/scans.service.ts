@@ -11,6 +11,7 @@ import { notFound, unprocessable } from '../common/errors.js';
 import { JobQueue } from '../jobs/queue.js';
 import { AiService, aiUnavailableWarning } from '../ai/ai.service.js';
 import { workspaceIssuers } from '../intakes/intakes.service.js';
+import { FileBytes } from '../storage/file-bytes.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -20,9 +21,13 @@ export class ScansService {
     @Inject(Db) private readonly db: Db,
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(AiService) private readonly ai: AiService,
+    @Inject(FileBytes) private readonly files: FileBytes,
   ) {}
 
   async create(ctx: Ctx, req: CreateScanRequest): Promise<ScanDto> {
+    // The doc-worker reads files by Montra's key: one only the vault holds is asked of it and kept here again first
+    // (ADR-0054 §5).
+    const keys = await this.files.ensureHeld(ctx, req.fileIds);
     return this.db.run(ctx, async (trx) => {
       const files = await trx
         .selectFrom('app.file')
@@ -59,7 +64,7 @@ export class ScansService {
           payload: {
             workspaceId: ctx.workspaceId,
             fileId: f.id,
-            storageKey: f.storage_key,
+            storageKey: f.storage_key ?? keys.get(f.id),
             fileName: f.file_name,
             mime: f.mime,
             fileType: 'pdf',
@@ -81,7 +86,10 @@ export class ScansService {
               ...ctx,
               queue: 'doc',
               type: 'receipt.ocr',
-              payload: { workspaceId: ctx.workspaceId, storageKeys: ordered.map((f) => f!.storage_key) },
+              payload: {
+                workspaceId: ctx.workspaceId,
+                storageKeys: ordered.map((f) => f!.storage_key ?? keys.get(f!.id)),
+              },
               then: { queue: 'ai', type: 'scan.read', payload: read },
             });
       }

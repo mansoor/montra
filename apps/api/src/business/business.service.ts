@@ -31,6 +31,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { payeeKeyOf } from '../categorization/categorizer.service.js';
 import { Db } from '../db/database.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
+import { FileBytes, type ReadOptions } from '../storage/file-bytes.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { checkLogo } from './logo.js';
 import { otherRegistrationDto, otherRegistrations, registrationsDto } from './registrations.js';
@@ -53,6 +54,7 @@ export class BusinessService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
   ) {}
 
   // ----- Profile -------------------------------------------------------------------------------------------
@@ -756,14 +758,23 @@ export class BusinessService {
     return id;
   }
 
-  async fileBytes(trx: Trx, ctx: Ctx, fileId: string): Promise<{ bytes: Uint8Array; mime: string }> {
+  /**
+   * A file's bytes through `FileBytes` (ADR-0054 §5). By default for a person viewing it, so a file only the vault holds
+   * is a 409 to open it there; `{ vault: true }` when Montra itself needs the bytes (an invoice emailed again).
+   */
+  async fileBytes(
+    trx: Trx,
+    ctx: Ctx,
+    fileId: string,
+    opts: ReadOptions = { vault: false },
+  ): Promise<{ bytes: Uint8Array; mime: string }> {
     const f = await trx
       .selectFrom('app.file')
-      .select(['storage_key', 'mime'])
+      .select(['id', 'storage_key', 'sha256', 'mime'])
       .where('workspace_id', '=', ctx.workspaceId)
       .where('id', '=', fileId)
       .executeTakeFirst();
     if (!f) throw notFound('File');
-    return { bytes: await this.storage.get(f.storage_key), mime: f.mime };
+    return { bytes: await this.files.bytes(ctx, f, opts), mime: f.mime };
   }
 }

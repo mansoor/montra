@@ -8,8 +8,9 @@ import { asDestinationError, DestinationError, type StorageDestination } from '.
 const TIMEOUT_MS = 120_000;
 
 /**
- * WebDAV: Nextcloud, ownCloud, Synology, Apache and nginx (ADR-0031 §2). Montra needs only PUT, MKCOL and DELETE, so this is written
- * over `node:http` rather than taken as a dependency. Redirects aren't followed: the address given must be the folder itself.
+ * WebDAV: Nextcloud, ownCloud, Synology, Apache and nginx (ADR-0031 §2). Montra needs only PUT, MKCOL, DELETE and (for a
+ * file it no longer holds, ADR-0054 §5) GET, so this is written over `node:http` rather than taken as a dependency.
+ * Redirects aren't followed: the address given must be the folder itself.
  */
 export class WebDavDestination implements StorageDestination {
   private readonly base: URL;
@@ -42,6 +43,13 @@ export class WebDavDestination implements StorageDestination {
     if (status !== 200 && status !== 204 && status !== 404) throw davError(status);
   }
 
+  async get(path: string, maxBytes: number): Promise<Uint8Array> {
+    const chunks: Buffer[] = [];
+    const status = await this.request('GET', path.split('/'), { into: chunks, maxBytes });
+    if (status !== 200) throw davError(status);
+    return new Uint8Array(Buffer.concat(chunks));
+  }
+
   close() {
     this.agents.httpAgent.destroy();
     this.agents.httpsAgent.destroy();
@@ -64,9 +72,16 @@ export class WebDavDestination implements StorageDestination {
   }
 
   private request(
-    method: 'PUT' | 'MKCOL' | 'DELETE',
+    method: 'PUT' | 'MKCOL' | 'DELETE' | 'GET',
     parts: string[],
-    opts: { body?: Uint8Array | Readable; headers?: Record<string, string>; folder?: boolean } = {},
+    opts: {
+      body?: Uint8Array | Readable;
+      headers?: Record<string, string>;
+      folder?: boolean;
+      /** GET: where the answer's bytes go, and the most it may be. */
+      into?: Buffer[];
+      maxBytes?: number;
+    } = {},
   ): Promise<number> {
     const target = this.url(parts, opts.folder);
     const client = target.protocol === 'https:' ? https : http;
@@ -80,7 +95,20 @@ export class WebDavDestination implements StorageDestination {
           timeout: TIMEOUT_MS,
         },
         (res) => {
-          res.resume(); // the body isn't needed
+          const into = opts.into && res.statusCode === 200 ? opts.into : null;
+          if (!into) res.resume(); // the body isn't needed
+          let size = 0;
+          if (into) {
+            res.on('data', (chunk: Buffer) => {
+              size += chunk.length;
+              if (size > (opts.maxBytes ?? Infinity)) {
+                req.destroy();
+                reject(new DestinationError('full', 'larger than a file may be'));
+                return;
+              }
+              into.push(chunk);
+            });
+          }
           res.on('end', () => resolve(res.statusCode ?? 0));
           res.on('error', (e) => reject(asDestinationError(e)));
         },

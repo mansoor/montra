@@ -32,8 +32,8 @@ import {
 import { Db } from '../../db/database.js';
 import { Worker } from '../../jobs/queue.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
-import { STORAGE_PORT, type StoragePort } from '../storage.js';
-import { backoffMs, MAX_ATTEMPTS } from '../storage-mirror.jobs.js';
+import { FileBytes } from '../file-bytes.js';
+import { backoffMs, MAX_ATTEMPTS } from '../backoff.js';
 import { VaultError, type VaultDocument, type VaultItemState } from '../destinations/vault.js';
 import type { VaultConnection } from './connection.js';
 import { FEED_MS, VaultFeed } from './vault.feed.js';
@@ -115,7 +115,7 @@ export class VaultJobs {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Worker) private readonly worker: Worker,
-    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(VaultService) private readonly vault: VaultService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(VaultFeed) private readonly feed: VaultFeed,
@@ -413,7 +413,10 @@ export class VaultJobs {
         ref = vaultRef(item.workspace_id, item.file_id, item.created_at);
         await this.setItem(ctx, key, { vault_ref: ref });
       }
-      const bytes = await this.storage.get(file.storage_key);
+      // Montra's copy (or the mirror's), never the vault's own: only what Montra holds is sent (ADR-0054 §5).
+      const got = await this.files.read(ctx, file, { vault: false });
+      if (!got.ok) throw new VaultError('failed', { detail: `file ${got.reason}` });
+      const bytes = got.bytes;
       const doc = await this.describe(ctx, config, group, {
         ref,
         fileId: file.id,

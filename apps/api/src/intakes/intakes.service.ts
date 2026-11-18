@@ -27,6 +27,7 @@ import { LedgerService } from '../ledger/ledger.service.js';
 import { ImportsService, fileTypeOf } from '../imports/imports.service.js';
 import { HouseholdBillsService } from '../planning/household-bills.service.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { confirmMatch, readMemory } from './match-memory.js';
 
@@ -74,6 +75,7 @@ export class IntakesService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(ImportsService) private readonly imports: ImportsService,
@@ -140,6 +142,9 @@ export class IntakesService {
 
   /** A statement uploaded already (`POST uploads`), to find its account. */
   async create(ctx: Ctx, req: CreateIntakeRequest): Promise<IntakeDto> {
+    // The doc-worker reads files by Montra's key: one only the vault holds is asked of it and kept here again first
+    // (ADR-0054 §5).
+    const keys = await this.files.ensureHeld(ctx, [req.fileId]);
     const id = await this.db.run(ctx, async (trx) => {
       const file = await trx
         .selectFrom('app.file')
@@ -148,8 +153,9 @@ export class IntakesService {
         .where('id', '=', req.fileId)
         .where('deleted_at', 'is', null)
         .executeTakeFirst();
-      if (!file) throw notFound('Uploaded file');
-      return this.start(trx, ctx, file, null);
+      const key = file?.storage_key ?? keys.get(req.fileId);
+      if (!file || !key) throw notFound('Uploaded file');
+      return this.start(trx, ctx, { ...file, storage_key: key }, null);
     });
     return this.get(ctx, id);
   }

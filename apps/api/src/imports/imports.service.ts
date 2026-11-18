@@ -19,6 +19,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { JobQueue } from '../jobs/queue.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { confirmMatch, intakeImportCommitted, intakeImportUndone } from '../intakes/match-memory.js';
+import { FileBytes, heldKey } from '../storage/file-bytes.js';
 
 type Ctx = { workspaceId: string; userId: string };
 type Batch = Selectable<ImportBatchTable>;
@@ -49,6 +50,7 @@ export class ImportsService {
     @Inject(Db) private readonly db: Db,
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(LedgerService) private readonly ledger: LedgerService,
+    @Inject(FileBytes) private readonly files: FileBytes,
   ) {}
 
   /** Starts an import of an uploaded file into an account (IMP-01). Parsing runs in the worker. */
@@ -57,6 +59,9 @@ export class ImportsService {
     req: CreateImportRequest,
     opts: { migrationId?: string } = {},
   ): Promise<ImportBatchDto> {
+    // The doc-worker reads files by Montra's key: one only the vault holds is asked of it and kept here again first
+    // (ADR-0054 §5).
+    await this.files.ensureHeld(ctx, [req.fileId]);
     const id = await this.db.run(ctx, (trx) => this.startBatch(trx, ctx, req, opts));
     return this.get(ctx, id);
   }
@@ -135,7 +140,7 @@ export class ImportsService {
             payload: {
               workspaceId: ctx.workspaceId,
               fileId: file.id,
-              storageKey: file.storage_key,
+              storageKey: heldKey(file),
               fileName: file.file_name,
               mime: file.mime,
               fileType,

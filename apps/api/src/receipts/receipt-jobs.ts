@@ -16,7 +16,7 @@ import type { ReceiptDto } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
-import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { AiService } from '../ai/ai.service.js';
 import { ReceiptsService, toMinor, type LineInput } from './receipts.service.js';
 
@@ -40,7 +40,7 @@ export class ReceiptJobs {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Worker) private readonly worker: Worker,
-    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(ReceiptsService) private readonly receipts: ReceiptsService,
   ) {}
@@ -64,7 +64,7 @@ export class ReceiptJobs {
       const r = await this.receipts.row(trx, ctx, p.receiptId);
       return trx
         .selectFrom('app.file')
-        .select(['id', 'storage_key', 'mime', 'bytes'])
+        .select(['id', 'storage_key', 'sha256', 'mime', 'bytes'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where(
           'id',
@@ -88,7 +88,7 @@ export class ReceiptJobs {
       if (total > MAX_IMAGE_BYTES) break;
       images.push({
         mediaType: f.mime as ImagePart['mediaType'],
-        data: Buffer.from(await this.storage.get(f.storage_key)).toString('base64'),
+        data: Buffer.from(await this.files.forJob(ctx, f)).toString('base64'),
       });
     }
 

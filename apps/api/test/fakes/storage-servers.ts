@@ -100,7 +100,7 @@ export async function fakeS3(opts: { buckets: string[]; accessKeyId: string }): 
   return Object.assign(fake, { url, close: () => close(server) }) as FakeServer;
 }
 
-/** WebDAV with Basic auth, rooted at `/dav/`: MKCOL, PUT, DELETE and PROPFIND, with real folder rules (no PUT into a missing one). */
+/** WebDAV with Basic auth, rooted at `/dav/`: MKCOL, PUT, GET, DELETE and PROPFIND, with real folder rules (no PUT into a missing one). */
 export async function fakeWebDav(opts: { username: string; password: string }): Promise<FakeServer> {
   const folders = new Set<string>(['']);
   const fake: Partial<FakeServer> = { objects: new Map(), log: [], failWith: null, refuseDeletes: false };
@@ -128,6 +128,12 @@ export async function fakeWebDav(opts: { username: string; password: string }): 
         if (Number(req.headers['content-length']) !== body.length) return send(400);
         fake.objects!.set(path, body);
         return send(201);
+      case 'GET': {
+        const o = fake.objects!.get(path);
+        if (!o) return send(404);
+        res.writeHead(200, { 'content-length': o.length });
+        return res.end(o);
+      }
       case 'DELETE':
         if (fake.refuseDeletes) return send(403);
         if (!fake.objects!.delete(path)) return send(404);

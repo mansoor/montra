@@ -42,10 +42,11 @@ decides whose Inbox each lands in. Montra's copy is removed only for a group sen
 filed the document. Montra reads back the vault's changes to what
 it sent, and opens documents through single-use view links. A file the vault doesn't return is listed in Review to be
 uploaded again, and backups and tax packages list any still missing. The owner chose to depend on the vault's client
-library as a published package: **PR 1 (contracts, migration 0063), PR 2 (connecting) and PR 3 (sending, with a
-local copy kept; migration 0064) are done**, and **PR 4 (keeping in step and view links; migration 0065) is built** on
-`@fdv/client` 0.9.0-dev.61 from the vault's public GitHub release (see §7g). "Sent with no local copy" is not offered
-until PR 5. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
+library as a published package: **PR 1 (contracts, migration 0063), PR 2 (connecting), PR 3 (sending, with a
+local copy kept; migration 0064) and PR 4 (keeping in step and view links; migration 0065) are done**, and **PR 5a
+(`FileBytes`: every reader of a file's bytes reads it from Montra, the owner's storage or the vault; migration 0066) is
+built** on `@fdv/client` 0.9.0-dev.62 from the vault's public GitHub release (see §7g). "Sent with no local copy" is not
+offered until PR 5b. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
 Ed25519 key and signatures; a separate PR replaces Montra's key code then. On the vault's side, view links,
 deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
 and is not copied into this repo.
@@ -1790,6 +1791,44 @@ Phase 11 leftovers:
     its outcomes, prefetches refused, the feed line), and the Playwright spec (the delete switch, the feed line, opening
     a file that isn't there).
   - Next: PR 5 (sent with no local copy, `FileBytes`, missing files, bringing files back).
+- **Family Document Vault, PR 5a of 6: reading a file whoever holds it** (VLT-11 partial; VLT-05 and VLT-09 updated;
+  ADR-0054 "As built: PR 5a"; migration 0066). PR 5 is split: 5a moves every reader onto `FileBytes` and removes
+  nothing; 5b turns on "sent with no local copy".
+  - **The dependency** moves to `@fdv/client` 0.9.0-dev.62 (`v0.9.0-dev.62/fdv-client-0.9.0-dev.62.tgz`, 504,907
+    bytes, sha256 `aa97e8fbc64bbe16…`, checked against the vault side's numbers; integrity in the lockfile). Its fake
+    keeps a file's bytes exactly as sent, so the vault suites now send binary files of every byte value. Not dev.63
+    (API keys), which a separate PR takes.
+  - **Migration 0066:** `app.file.storage_key` drops NOT NULL (the 0063 check still keeps a key on every file Montra
+    holds); `app.workspace_storage_keys` skips null keys and adds sources the vault's job still has to remove;
+    `app.file_copies(file)` (definer, members: where the mirror's and the vault's copies are, and the owner the
+    connections act as).
+  - **`FileBytes`** (`apps/api/src/storage/file-bytes.ts`): Montra's copy, then the mirror's (a new `get` on S3 and
+    WebDAV), then the vault's (`sentFile`, by Montra's own id, the exact file sent), each checked against the file's
+    hash; or a typed reason in words (`in_vault`, `vault_refused`, `vault_read_cap`, `vault_unavailable`, `not_held`).
+    The vault's daily read cap is held until its reset (`read_held_until`), never a failure; a connection problem wakes
+    the connection's check. Every reader uses it: previews (a file only the vault holds is a 409 "Open it there"; one
+    the mirror holds is served), AI reading, imports, intakes and migrations (jobs: permanent in words, or retried on a
+    hold), backups and tax packages (they hold every file they can get and list the rest in the README instead of
+    failing), payroll documents, invoices, and the mirror's and the vault's own sending (which never ask the vault). A
+    receipt, payslip, scan, intake or import made from a file only the vault holds puts Montra's copy back first
+    (`ensureHeld`), since the doc-worker reads by key. A test fails if any other code reads a file by its key.
+  - **Not done here (5b):** the third mode in Settings and the API, removing sources and resuming after a crash, missing
+    files (`missing_since`, Review's "Files to provide again" with Upload, the badge, `files_missing` once a day,
+    uploading again under the same id), the count of missing files on an archive's screen, the move backfill, bringing
+    files back, the disconnect choice, the web's handling of `file.in_vault`, and whether a background archive waits for
+    the vault's daily reset.
+  - Tests: `apps/api/test/family-vault-file-bytes.test.ts` (the schema; reading back every byte of a file only the
+    vault holds, counted against the vault's reads; Montra's id, not the vault's newer version; refused, a different
+    file, the read cap held, a paused or stopped connection; Montra's copy first, a lost object read back; previews sent
+    to the vault; jobs; a new receipt putting Montra's copy back; a backup and a tax package with a file from the vault
+    and one the vault won't return; the vault's and the mirror's jobs never asking the vault; the mirror read back,
+    under the owner's context for a partner, and passed over when its copy differs; the client's refusals in Montra's
+    terms; no other reader by key), and the PR 3 and PR 4 vault suites, now with binary files.
+  - **For the dev.63 PR:** the owner chose that the app that sent a document keeps reading it, in the feed and through
+    view links, after the family adds a newer version; from dev.63 the feed reports the newer version, so PR 4's "No
+    longer available" for that case changes then. `sentFile` already returns Montra's exact bytes, so 5a and 5b don't
+    depend on it.
+  - Next: PR 5b (sent with no local copy: removal, missing files, the move backfill, bringing files back, deletes).
 - **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
   and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
   row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are

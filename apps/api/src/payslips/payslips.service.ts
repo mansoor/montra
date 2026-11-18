@@ -42,6 +42,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { JobQueue } from '../jobs/queue.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { NOT_OWNED, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 
@@ -75,6 +76,7 @@ export class PayslipsService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
@@ -379,17 +381,21 @@ export class PayslipsService {
       if (!p.attachment_ids.includes(fileId)) throw notFound('File');
       return trx
         .selectFrom('app.file')
-        .select(['storage_key', 'mime'])
+        .select(['id', 'storage_key', 'sha256', 'mime'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', fileId)
         .executeTakeFirstOrThrow();
     });
-    return { bytes: await this.storage.get(f.storage_key), mime: f.mime };
+    // A person viewing it: a file only the vault holds opens there (ADR-0054 §5).
+    return { bytes: await this.files.bytes(ctx, f, { vault: false }), mime: f.mime };
   }
 
   // ----- Drafts ---------------------------------------------------------------------------------------------
 
   async create(ctx: Ctx, req: CreatePayslipRequest): Promise<PayslipDto> {
+    // The doc-worker reads files by Montra's key: one only the vault holds is asked of it and kept here again first
+    // (ADR-0054 §5). A scan's pages are new, so Montra holds them.
+    if (!req.scanId && req.fileIds.length) await this.files.ensureHeld(ctx, req.fileIds);
     return this.db.run(ctx, async (trx) => {
       const employer = await this.employer(trx, ctx, req.employerId);
       const entity = await trx
@@ -524,7 +530,10 @@ export class PayslipsService {
       ...ctx,
       queue: 'doc',
       type: 'receipt.ocr',
-      payload: { workspaceId: ctx.workspaceId, storageKeys: fileIds.map((id) => byId.get(id)!) },
+      payload: {
+        workspaceId: ctx.workspaceId,
+        storageKeys: fileIds.map((id) => byId.get(id)).filter((k): k is string => Boolean(k)),
+      },
       then: { queue: 'ai', type: 'payslip.extract', payload: extract },
     });
   }

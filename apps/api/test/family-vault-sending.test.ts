@@ -23,6 +23,8 @@ const OWNER = 'owner-vault-send@example.com';
 const ADMIN = 'admin-vault-send@example.com';
 const PARTNER = 'partner-vault-send@example.com';
 const KINDS = ['bank_statement', 'utility_bill', 'pay_statement'];
+/** Every byte value, so a file changed on its way to the vault doesn't hash as sent. */
+const ALL_BYTES = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
 
 let h: Harness;
 let c: Client;
@@ -82,13 +84,8 @@ async function file(
 ): Promise<string> {
   const id = randomUUID();
   const ws = opts.ws ?? wsId;
-  // Text only: the fake vault reads a multipart body as UTF-8, so binary bytes wouldn't hash as sent (As built: PR 3).
-  const bytes =
-    opts.bytes ??
-    Buffer.from(`%PDF-1.4
-% ${name} ${id}
-%%EOF
-`);
+  // Binary, every byte value: the fake keeps what it is sent exactly from 0.9.0-dev.62, so a hash check is a real one.
+  const bytes = opts.bytes ?? Buffer.concat([ALL_BYTES, Buffer.from(`${name} ${id}`), ALL_BYTES]);
   const key = storageKey(ws, kind, id);
   await storage.put(key, bytes, opts.mime ?? 'image/png');
   await db.query(
