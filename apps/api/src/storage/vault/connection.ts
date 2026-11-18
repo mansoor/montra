@@ -4,8 +4,8 @@
  * vault's identity, and turning the vault's answers into a `VaultCheck` or a `VaultError` in Montra's words.
  *
  * PR 2 builds connecting: reading a code, identifying the vault, and the signed connection test. PR 3 adds sending,
- * asking what became of what was sent, withdrawing and deleting. PR 4 adds the changes feed and view links. Reading back
- * (the rest of `VaultDestination`) comes with PR 5.
+ * asking what became of what was sent, withdrawing and deleting. PR 4 adds the changes feed and view links. PR 5 adds
+ * reading back the exact file Montra sent (`sentFile`).
  */
 import type { Readable } from 'node:stream';
 import { ApiRequestError, createApi, createHttp, NetworkError } from '@fdv/client';
@@ -229,7 +229,7 @@ export function feedPage(page: FeedPage, restart: boolean): VaultChangesPage {
 /** One run's connection to a vault: opened for a request or a job run, then closed. */
 export class VaultConnection implements Pick<
   VaultDestination,
-  'kind' | 'check' | 'send' | 'status' | 'changes' | 'link' | 'withdraw' | 'remove' | 'close'
+  'kind' | 'check' | 'send' | 'status' | 'changes' | 'sentFile' | 'link' | 'withdraw' | 'remove' | 'close'
 > {
   readonly kind = 'fdv' as const;
   private readonly client: AppClient;
@@ -362,6 +362,30 @@ export class VaultConnection implements Pick<
     } catch (e) {
       throw asVaultError(e, this.opts.transport);
     }
+  }
+
+  /**
+   * §5: the exact file Montra sent under `ref`, as the vault has it, counted against its daily read cap. Whether the vault
+   * returns it is the vault's decision (its document in the trash or private to someone, Montra not allowed to download,
+   * or a file too large for a day's reading): all of those are `unavailable`, and Montra never guesses which. The day's
+   * reading used up is `read_cap`, held until the vault says. A connection problem stops the connection as for any call.
+   */
+  async sentFile(ref: string): Promise<{ bytes: Uint8Array; mediaType: string | null }> {
+    let got: Awaited<ReturnType<AppClient['sentFile']>>;
+    try {
+      got = await this.client.sentFile(ref);
+    } catch (e) {
+      if (notFound(e)) throw new VaultError('unavailable', { detail: '404' });
+      if (e instanceof ApiRequestError) {
+        const detail = `${e.status} ${e.code}`;
+        // Not allowed to download is about this file's reading, not the connection: sending goes on.
+        if (e.code === 'scope_not_granted' || e.code === 'larger_than_daily_read' || e.status === 410)
+          throw new VaultError('unavailable', { detail });
+      }
+      throw asVaultError(e, this.opts.transport);
+    }
+    if (got.status !== 200) throw new VaultError('failed', { detail: `content ${got.status}` });
+    return { bytes: got.bytes, mediaType: got.contentType };
   }
 
   /**

@@ -500,7 +500,8 @@ URL (no registry, no token), and never on the vault's private repository. Until 
    warning, the backfill; status in Settings and badges on files.
 4. **Keeping in step**: the changes feed, the vault's metadata on files, out of reach, starting over; view links.
 5. **Sent with no local copy**: the third mode, `FileBytes` and moving the readers onto it, removing sources (§5),
-   missing files and "Files to provide again" (§5a), the move backfill, bringing files back, deletes.
+   missing files and "Files to provide again" (§5a), the move backfill, bringing files back, deletes. Built as two PRs:
+   5a, `FileBytes`, the readers and the migration, removing nothing; 5b, the rest.
 6. **Phone**: status, badges, opening vault-held documents, and providing missing files again.
 
 ### As built: PR 1 (2026-11-17)
@@ -768,6 +769,70 @@ bytes, sha256 `535a6bff7f8520f1…`, checked against the vault side's numbers; p
 - **The phone** (PR 6) needs the link handed to the system browser; the API answers only with a redirect for now.
 - **The e2e run** checks the switch, the feed line and opening a file that isn't there. Opening a filed document is
   tested in the API's tests, against the fake: filing happens in the fake inside the API process.
+
+### As built: PR 5a (2026-11-17)
+
+PR 5 is split in two, as the brief allowed when moving every reader onto `FileBytes` made one PR too large to review:
+**5a** (this) is `FileBytes`, every reader moved onto it, the migration and the vault's read-back, and removes nothing;
+**5b** turns on "sent with no local copy": removing sources (§5), missing files and "Files to provide again" (§5a), the
+move backfill, bringing files back and the disconnect choice (§10). On `@fdv/client` **0.9.0-dev.62**
+(`v0.9.0-dev.62/fdv-client-0.9.0-dev.62.tgz`, 504,907 bytes, sha256 `aa97e8fbc64bbe16…`, checked against the vault
+side's numbers; pnpm records its integrity), whose fake keeps a file's bytes exactly as sent. Migration
+`0066_vault_file_bytes.sql`. Where PR 5a differs from or adds to the text above, and why:
+
+- **`storage_key` loses its NOT NULL**, as PR 1 planned, in a plain `alter column … drop not null`, which
+  `check-migrations` accepts without a `-- contract:` marker: it takes nothing away from code still running, and no row
+  has a null key until 5b removes a source. `file_storage_key_held` (0063) still keeps a key on every file Montra holds.
+  The Kysely type is `string | null`, so every reader had to be moved for the build to pass.
+- **`FileBytes`** (`apps/api/src/storage/file-bytes.ts`) tries Montra's copy, the mirror's, then the vault's, and checks
+  the file's hash on the mirror's and the vault's. It answers bytes with where they came from, or a typed reason with
+  words: `in_vault`, `vault_refused`, `vault_read_cap` (with when), `vault_unavailable` or `not_held`. Montra's own copy
+  failing to read falls through to the copies, so a lost object is read back too. Readers: receipts, payslips,
+  household bills, business bills, invoices, rentals, tax forms, I-9 documents and reimbursements (previews); AI
+  reading of receipts and payslips, statement imports, intakes and migrations (jobs); backups and tax packages; the
+  mirror's and the vault's own sending. A test reads the API's source and fails if anything else reads a file by its
+  key; only Montra's own archives (backups, restores) still are.
+- **The copies are read under the owner's context.** The mirror's outbox and the vault's are for owners and admins,
+  and a partner's backup needs their files too. As for opening (PR 4), the file is read under the caller's own
+  row-level security first; then a definer, `app.file_copies(file)`, says where its copies are and which owner the
+  connections act as (members of the workspace only), and the copy is read as that owner.
+- **The mirror is read back** with a new `get(path, maxBytes)` on S3 and WebDAV, by the path the mirror recorded when it
+  copied the file, and only by `FileBytes`.
+- **The vault is asked by Montra's own id** (`sentFile(ref)`, the package's `AppClient.sentFile`, which replaces the
+  port's `download(documentId)`), so the answer is the exact file Montra sent even after the family adds a newer
+  version, and asking needs no read grant over the family's papers. Only a `filed` row is asked: an Inbox item isn't
+  the record, and an `out_of_reach` one is missing by §5a. Not found, not allowed to download, and too large for a
+  day's reading are all "the vault didn't return it", with no guess at why; a different file under Montra's id is the
+  same. Its daily read cap holds every read until the vault's reset (`read_held_until`), so nothing asks again before
+  then, and isn't a failure; a connection problem wakes the connection's check, which stops it and tells owners as in
+  PR 3. The transport's answer limit is raised from 4 MB to an upload's limit plus 1 MB, so a file Montra may hold can
+  come back.
+- **Showing a file to a person never asks the vault** (§5). A preview of a file only the vault holds answers 409
+  `file.in_vault`, "Open it there", and the person uses "Open in the vault" (PR 4); one the mirror holds is served from
+  there. The web's handling of that answer comes with 5b, when such files first exist.
+- **Re-reading needs Montra's copy.** The doc-worker reads files by key, inside the transaction that queues it, where
+  the vault can't be asked. So a receipt, payslip, scan, intake or import made from a file only the vault holds first
+  asks for it (`ensureHeld`), stores it under a new key and sets `location` back to `montra`; 5b's removal takes it
+  away again once nothing is reading it. Inside a transaction a missing key is a 409 to try again (`heldKey`), never a
+  null key in a job.
+- **Jobs** that read a file (AI reading, imports, intakes) fail for good, in words, on a file the vault won't return,
+  and are retried by the queue on a hold or a vault that can't be asked now.
+- **Backups and tax packages** hold every file they can get, from wherever it is, and list the rest by name, id and
+  reason at the end of their README, with "Upload them again in Montra"; they never fail for a file. On screen, the
+  count and a link to "Files to provide again" come with 5b (an `ExportJobDto` change). A background archive doesn't
+  yet wait for the vault's next daily reset (§5a says once): it lists a file held by the cap like any other, and 5b
+  decides whether to add the wait.
+- **The mirror's and the vault's own jobs never ask the vault.** The mirror marks a file only the vault holds
+  `skipped`, with the words, rather than spend the vault's daily reads on a copy; the vault's job only sends what
+  Montra (or the mirror) holds.
+- **A restore** keeps every file as Montra's (`location = 'montra'`): a restored workspace starts unconnected (§7).
+- **A purge** removes the objects of a workspace's files and any source the vault's job still has to remove (a crash
+  between 5b's commit and its delete), and no key that isn't there.
+- **Tests** (`family-vault-file-bytes.test.ts`) make a file held only in the vault as 5b will: sent to the fake, filed
+  there by a person from the bytes the fake received, then Montra's object removed. Files are binary, every byte value
+  from 0 to 255, here and now in the PR 3 and PR 4 suites too, which used text files while the fake read a body as
+  UTF-8. Problem answers that say how long to wait now carry `Retry-After`, and a deliberate 503 isn't reported as a
+  fault.
 
 ## Consequences
 

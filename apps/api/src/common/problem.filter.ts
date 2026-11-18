@@ -47,10 +47,15 @@ export class ProblemFilter implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost): void {
     const reply = host.switchToHttp().getResponse<FastifyReply>();
     const p = this.toProblem(error);
-    if (p.status >= 500) {
+    // A 503 Montra answers on purpose (a file to fetch from the vault later, say) is not a fault to report.
+    if (p.status >= 500 && !(error instanceof AppError && error.status === 503)) {
       this.logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
       this.errors.captureException(error, { code: p.code });
     }
+    // An answer that says how long to wait (ADR-0054 §5a: the vault's daily read cap, say) says it in the header too.
+    const wait =
+      error instanceof AppError ? (error as { retryAfterSeconds?: unknown }).retryAfterSeconds : undefined;
+    if (typeof wait === 'number' && wait > 0) void reply.header('retry-after', String(Math.ceil(wait)));
     void reply.status(p.status).header('content-type', 'application/problem+json').send(p);
   }
 

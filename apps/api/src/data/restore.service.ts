@@ -656,6 +656,8 @@ export class RestoreService {
   ): Promise<void> {
     const key = storageKey(workspaceId, String(row.kind), String(row.id));
     row.storage_key = key;
+    // A restored workspace starts unconnected (ADR-0054 §7): whatever the archive holds of a file is Montra's copy.
+    if ('location' in row) row.location = 'montra';
     if (!file || !zip.has(file.path)) return;
     const bytes = await zip.bytes(file.path);
     if (sha256(bytes) !== file.sha256) throw new Error('A file does not match its checksum');

@@ -62,6 +62,7 @@ import { MAIL_PORT, mailProvider } from './mail/mail.service.js';
 import { STORAGE_PORT, storageProvider } from './storage/storage.js';
 import { StorageController } from './storage/storage.controller.js';
 import { StorageDestinationsService } from './storage/storage-destinations.service.js';
+import { FileBytes } from './storage/file-bytes.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { fakeVaultTransport } from './storage/vault/fake.js';
 import { guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
@@ -330,6 +331,7 @@ export class AppModule {
         RentalJobs,
         BackupService,
         StorageDestinationsService,
+        FileBytes,
         StorageMirrorJobs,
         VaultService,
         VaultJobs,
@@ -337,7 +339,13 @@ export class AppModule {
         VaultOpener,
         {
           provide: VAULT_TRANSPORT,
-          useFactory: () => (config.FAMILY_VAULT_FAKE ? fakeVaultTransport() : guardedVaultTransport()),
+          // An answer may be a file Montra sent (ADR-0054 §5), as large as an upload may be.
+          useFactory: () =>
+            config.FAMILY_VAULT_FAKE
+              ? fakeVaultTransport()
+              : guardedVaultTransport({
+                  maxBytes: Math.max(4 * 1024 * 1024, config.MAX_UPLOAD_BYTES + 1024 * 1024),
+                }),
         },
         RestoreService,
         OwnershipService,

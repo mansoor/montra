@@ -40,7 +40,7 @@ import type {
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
-import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { AccountsService } from '../accounts/accounts.service.js';
 import { ReviewService } from '../categorization/review.service.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
@@ -99,7 +99,7 @@ function suggestKind(name: string, fileKind: AccountKind | null): AccountKind {
 export class MigrationsService {
   constructor(
     @Inject(Db) private readonly db: Db,
-    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(AccountsService) private readonly accounts: AccountsService,
     @Inject(ReviewService) private readonly review: ReviewService,
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
@@ -478,7 +478,7 @@ export class MigrationsService {
     for (const fileId of fileIds) {
       const file = await trx
         .selectFrom('app.file')
-        .select(['id', 'file_name', 'mime', 'storage_key'])
+        .select(['id', 'file_name', 'mime', 'storage_key', 'sha256'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', fileId)
         .where('deleted_at', 'is', null)
@@ -498,7 +498,7 @@ export class MigrationsService {
       }
       let sheets: Sheet[];
       try {
-        const bytes = await this.storage.get(file.storage_key);
+        const bytes = await this.files.bytes(ctx, file);
         sheets = type === 'xlsx' ? await readXlsx(bytes) : readTextSheets(type, bytes);
       } catch {
         out.push({ ...base, problem: 'unreadable' });

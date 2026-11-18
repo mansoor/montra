@@ -14,7 +14,7 @@ import type {
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
-import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { businessEntity } from '../business/shared.js';
 import { PayRunsService } from './pay-runs.service.js';
 import { conflict, payrollEntity, personName, type Ctx } from './shared.js';
@@ -25,7 +25,7 @@ const dateOf = (v: unknown) => calendarDate(String(v).slice(0, 10));
 export class ReimbursementsService {
   constructor(
     @Inject(Db) private readonly db: Db,
-    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(PayRunsService) private readonly runs: PayRunsService,
   ) {}
 
@@ -199,12 +199,14 @@ export class ReimbursementsService {
       if (!r.file_ids.includes(fileId)) throw notFound('File');
       const f = await trx
         .selectFrom('app.file')
-        .select(['storage_key', 'mime', 'file_name'])
+        .select(['id', 'storage_key', 'sha256', 'mime', 'file_name'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', fileId)
         .executeTakeFirst();
       if (!f) throw notFound('File');
-      return { bytes: await this.storage.get(f.storage_key), mime: f.mime, fileName: f.file_name };
+      // A person viewing it: a file only the vault holds opens there (ADR-0054 §5).
+      const bytes = await this.files.bytes(ctx, f, { vault: false });
+      return { bytes, mime: f.mime, fileName: f.file_name };
     });
   }
 

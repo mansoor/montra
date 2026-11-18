@@ -8,8 +8,8 @@ import type { Readable } from 'node:stream';
  * This is Montra's side of the seam, in Montra's words, and nothing more. The adapter (`../vault/connection.ts`) is
  * written over the vault's own published client package, `@fdv/client`, which does the signing (owner's answer 1); no
  * signer or vault client of Montra's own lives in this repository. PR 2 builds the connection test (`check`); PR 3
- * sending, asking what became of a document, withdrawing it and deleting it; PR 4 the changes feed and links; reading
- * back comes with PR 5.
+ * sending, asking what became of a document, withdrawing it and deleting it; PR 4 the changes feed and links; PR 5
+ * reading back the file Montra sent (`sentFile`).
  */
 export interface VaultDestination {
   readonly kind: 'fdv';
@@ -34,10 +34,12 @@ export interface VaultDestination {
   changes(cursor: string | null): Promise<VaultChangesPage>;
 
   /**
-   * §5: the bytes of a document Montra sent, counted against the vault's daily read cap. A document the vault won't
-   * return is a `VaultError('unavailable')`; Montra never guesses why.
+   * §5: the exact file Montra sent under `ref`, counted against the vault's daily read cap. Asked by Montra's own id, not
+   * the vault's document, so it is the file Montra sent even after the family put a newer version in. A file the vault
+   * won't return is a `VaultError('unavailable')`, and Montra never guesses why; the day's reading used up is
+   * `read_cap`. The caller checks the hash.
    */
-  download(documentId: string): Promise<{ body: Readable; bytes: number; sha256: string | null }>;
+  sentFile(ref: string): Promise<{ bytes: Uint8Array; mediaType: string | null }>;
 
   /**
    * §9: a single-use link for a person's browser, made when they click. The caller redirects to it at once and never

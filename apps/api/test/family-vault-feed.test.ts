@@ -24,6 +24,8 @@ const OWNER = 'owner-vault-feed@example.com';
 const PARTNER = 'partner-vault-feed@example.com';
 const STRANGER = 'stranger-vault-feed@example.com';
 const KINDS = ['bank_statement', 'utility_bill', 'pay_statement'];
+/** Every byte value, so a file changed on its way to the vault doesn't hash as sent. */
+const ALL_BYTES = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
 const SCOPES = [
   'documents.send',
   'documents.read',
@@ -78,10 +80,10 @@ const open = (fileId: string, who: Client = c, mode?: 'view' | 'download') =>
   who.post(url(`/family-vault/files/${fileId}/open${mode ? `?mode=${mode}` : ''}`));
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
-/** A file in Montra, as an upload stores it (text only: the fake reads a multipart body as UTF-8, As built: PR 3). */
+/** A file in Montra, as an upload stores it: binary, every byte value (the fake keeps them exactly from 0.9.0-dev.62). */
 async function file(kind: string, name: string): Promise<string> {
   const id = randomUUID();
-  const bytes = Buffer.from(`%PDF-1.4\n% ${name} ${id}\n%%EOF\n`);
+  const bytes = Buffer.concat([ALL_BYTES, Buffer.from(`${name} ${id}`), ALL_BYTES]);
   const key = storageKey(wsId, kind, id);
   await storage.put(key, bytes, 'image/png');
   await db.query(

@@ -1,5 +1,11 @@
 import type { Readable } from 'node:stream';
-import { DeleteObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+  S3ServiceException,
+} from '@aws-sdk/client-s3';
 import type { S3Secret, S3Settings } from '@montra/schemas';
 import { agentsFor, assertAllowedUrl, type HostPolicy } from './guard.js';
 import { asDestinationError, DestinationError, type StorageDestination } from './types.js';
@@ -42,6 +48,24 @@ export class S3Destination implements StorageDestination {
   async delete(path: string) {
     // S3 answers 204 whether or not the object was there.
     await this.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: path }));
+  }
+
+  async get(path: string, maxBytes: number): Promise<Uint8Array> {
+    try {
+      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: path }));
+      if ((res.ContentLength ?? 0) > maxBytes) {
+        (res.Body as Readable | undefined)?.destroy?.();
+        throw new DestinationError('full', 'larger than a file may be');
+      }
+      const bytes = new Uint8Array(await res.Body!.transformToByteArray());
+      if (bytes.length > maxBytes) throw new DestinationError('full', 'larger than a file may be');
+      return bytes;
+    } catch (e) {
+      if (e instanceof DestinationError) throw e;
+      if (e instanceof S3ServiceException && e.name === 'NoSuchKey')
+        throw new DestinationError('not_found', e.name);
+      throw s3Error(e);
+    }
   }
 
   close() {

@@ -39,6 +39,7 @@ import { Db } from '../db/database.js';
 import { memoryState, readMemory } from '../intakes/match-memory.js';
 import { JobQueue, PermanentJobError, Worker, type Job } from '../jobs/queue.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { STORAGE_PORT, sha256, storageKey, type StoragePort } from '../storage/storage.js';
 import { expectedInputs } from './tax-form-books.js';
 import { TaxFormsService, W2_EMPLOYER_MATCHERS, type StoredReadingInfo } from './tax-forms.service.js';
@@ -104,6 +105,7 @@ export class TaxFormReading {
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
     @Inject(TaxFormsService) private readonly forms: TaxFormsService,
     @Inject(Worker) private readonly worker: Worker,
+    @Inject(FileBytes) private readonly files: FileBytes,
   ) {}
 
   register(): void {
@@ -254,7 +256,7 @@ export class TaxFormReading {
       if (form.deleted_at || !form.file_ids.includes(fileId)) throw notFound('File');
       const file = await trx
         .selectFrom('app.file')
-        .select(['storage_key', 'mime', 'file_name'])
+        .select(['id', 'storage_key', 'sha256', 'mime', 'file_name'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', fileId)
         .executeTakeFirst();
@@ -272,7 +274,8 @@ export class TaxFormReading {
         .execute();
       return file;
     });
-    return { bytes: await this.storage.get(f.storage_key), mime: f.mime, name: f.file_name };
+    // A person viewing it: a file only the vault holds opens there (ADR-0054 §5).
+    return { bytes: await this.files.bytes(ctx, f, { vault: false }), mime: f.mime, name: f.file_name };
   }
 
   /** Members' names with the tokens the gateway gives them (AiService.runtime: MEMBER_1 is the first member made). */

@@ -482,7 +482,11 @@ export interface FileTable {
   workspace_id: string;
   id: string;
   kind: 'statement' | 'receipt' | 'payslip' | 'lease' | 'invoice' | 'export' | 'other' | 'logo' | 'tax_form';
-  storage_key: string;
+  /**
+   * Montra's object, or null for a file held only in the vault (ADR-0054 §5, migration 0066). Read a file's bytes
+   * through `FileBytes`, never by this key alone; a check keeps it set while `location = 'montra'`.
+   */
+  storage_key: string | null;
   file_name: string;
   mime: string;
   bytes: Int8;
@@ -495,10 +499,7 @@ export interface FileTable {
   sealed: Generated<boolean>;
   created_at: Generated<Date>;
   deleted_at: Date | null;
-  /**
-   * ADR-0054 §5 (migration 0063): `vault` once the vault is the record and Montra's copy is gone. `storage_key` stays
-   * set until PR 5 lets it be null for such files.
-   */
+  /** ADR-0054 §5 (migration 0063): `vault` once the vault is the record and Montra's copy is gone (no `storage_key`). */
   location: Generated<FileLocation>;
   /** ADR-0054 §5a: the vault didn't return the file, and a person is asked to provide it again. Both or neither. */
   missing_since: Date | null;
