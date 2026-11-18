@@ -268,6 +268,12 @@ finished:
     a migration of payee history and rules.
 12. ~~**Patch schemas that fill defaults.**~~ Done: every `Update…` schema now leaves omitted fields out, and
     `packages/schemas/test/patches.test.ts` checks them all.
+13. **Receipt line quantity and unit price** (owner, 2026-11-18). `extract_receipt` v3 already reads `qty` and
+    `unitPrice` when the receipt prints them, and leaves them null otherwise. Wanted: read them wherever possible, and
+    when the quantity isn't printed, default the line to quantity 1 with the unit price equal to the line total, so
+    every line shows quantity × unit price = total.
+14. **Phone receipts don't show tax and tip** (owner, 2026-11-18). The web receipt shows them; the phone doesn't, so
+    there the line items don't add up to the receipt total.
 
 ---
 
