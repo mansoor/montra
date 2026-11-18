@@ -163,13 +163,10 @@ beforeAll(async () => {
   expect((await partner.post(`/v1/invites/${invite.body.token}/accept`)).status).toBeLessThan(300);
   await stranger.post('/v1/workspaces', { name: 'Someone else', baseCurrency: 'USD', template: 'household' });
 
-  const started = await c.post(url('/family-vault'));
-  const registered = await fake.register(started.body.publicKey, { kinds: KINDS, scopes: SCOPES });
+  // The vault's owner connects Montra there and generates its API key; the owner pastes the connection string.
+  const registered = await fake.register({ kinds: KINDS, scopes: SCOPES });
   appId = registered.appId;
-  const pasted = await c.post(url('/family-vault/code'), {
-    code: registered.code,
-    version: started.body.version,
-  });
+  const pasted = await c.post(url('/family-vault'), { connectionString: registered.codeWithSecret });
   expect(pasted.body.stage).toBe('connected');
   destinationId = pasted.body.id;
   const mapped = await c.patch(url('/family-vault'), {
@@ -378,31 +375,53 @@ describe('keeping in step (ADR-0054 §9)', () => {
     ).toEqual({ total_minor: '4250', merchant: 'Grocer' });
   });
 
-  it('says when the family put a newer version in the vault, and doesn’t re-read it', async () => {
-    const { fileId, doc } = await filed('Newer.png');
+  it('keeps a document the family put a newer version into readable, with its new title, and doesn’t re-read it', async () => {
+    // Vault 0.9.0-dev.63, the owner's choice: the app whose send made a document keeps reading it after the family
+    // adds newer versions, with no read grant (Montra asks for none, §1). Before, the vault stopped showing it to
+    // Montra, which said "No longer available".
+    const { fileId, doc, ref } = await filed('Newer.png');
     await feedDue();
     await run();
     const was = await item(fileId);
-    // Montra may read a document beyond its own only through a grant (one it doesn't ask for); with one, the vault
-    // shows the newer version as a change.
-    app().grants = [{ category: 'bills', lookback_months: 12, sensitive_kinds: [] }];
+    expect(was.vault_meta.newerVersion).toBe(false);
+    expect(was.vault_version).toBeTruthy();
+    expect(app().grants ?? []).toEqual([]);
+
+    addVersion(doc, 'application/pdf', 2);
+    docOf(doc).title = 'Newer, renamed by the family';
+    await feedDue();
+    await run();
+    const row = await item(fileId);
+    expect(row.status).toBe('filed');
+    expect(row.vault_meta).toMatchObject({ newerVersion: true, title: 'Newer, renamed by the family' });
+    expect(row.vault_meta.version).not.toBe(was.vault_version);
+    // The version Montra's send became stays the one recorded: a newer one doesn't replace it.
+    expect(row.vault_version).toBe(was.vault_version);
+    const badge = (await c.get(url(`/family-vault/files?ids=${fileId}`))).body.data[0];
+    expect(badge.vault).toMatchObject({
+      status: 'filed',
+      newerVersion: true,
+      title: 'Newer, renamed by the family',
+      canOpen: true,
+    });
+    expect((await c.get(url('/family-vault'))).body.connection.items.outOfReach).toBe(0);
+    // Montra's own file is as it was: nothing re-read, nothing replaced. By Montra's id (`sentFile`), the vault still
+    // gives the version Montra's send became (here, the paper this fake filed it as), not the family's newer one;
+    // byte for byte against Montra's own file in family-vault-file-bytes.test.ts.
+    expect((await db.query(`select sha256 from app.file where id = $1`, [fileId])).rows[0].sha256).toBe(
+      row.vault_sha256,
+    );
+    const ctx = { workspaceId: wsId, userId: (await vaultRow()).created_by };
+    const conn = await h.app.get(VaultService).openRow(ctx, await vaultRow());
     try {
-      addVersion(doc, 'application/pdf', 2);
-      await feedDue();
-      await run();
-      const row = await item(fileId);
-      expect(row.vault_meta.newerVersion).toBe(true);
-      expect(row.vault_version).toBe(was.vault_version);
-      expect(row.status).toBe('filed');
-      const badge = (await c.get(url(`/family-vault/files?ids=${fileId}`))).body.data[0];
-      expect(badge.vault.newerVersion).toBe(true);
-      // Montra's own file is as it was: nothing re-read, nothing replaced.
-      expect((await db.query(`select sha256 from app.file where id = $1`, [fileId])).rows[0].sha256).toBe(
-        (await item(fileId)).vault_sha256,
-      );
+      const sent = await conn.sentFile(ref);
+      expect(Buffer.from(sent.bytes).toString()).toBe(`version 1 of ${doc}`);
     } finally {
-      app().grants = [];
+      conn.close();
     }
+    // And it still opens.
+    const opened = await open(fileId);
+    expect(opened.status).toBe(303);
   });
 
   it('never stores or imports a document it didn’t send, whatever the vault lets it read', async () => {

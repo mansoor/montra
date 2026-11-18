@@ -15,9 +15,11 @@
  *    including the files a "Move existing documents" confirmed;
  * 8. withdraws Inbox items and deletes documents for files deleted for good (§10).
  *
- * The daily caps hold sending without counting as failures; a problem with the connection itself stops it and tells
- * owners once; five failures in a row turn it `failing`, as for a mirror. Nothing here logs a key, a signature, a
- * code, a file's name or its contents: only ids and codes.
+ * The daily caps hold sending without counting as failures, and so does a wait the vault asks for (a 503 busy, say):
+ * retried with backoff; a problem with the connection itself, or a vault key it refuses, stops it and tells owners once;
+ * five failures in a row turn it `failing`, as for a mirror. Owners are told once, `VAULT_KEY_WARN_DAYS` ahead, that the
+ * vault key expires. Nothing here logs a key, a secret, a connection string, a file's name or its contents: only ids
+ * and codes.
  */
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -27,6 +29,7 @@ import { asCurrencyCode, toDecimalString } from '@montra/domain';
 import {
   isSentMode,
   VAULT_GROUP_KINDS,
+  VAULT_KEY_WARN_DAYS,
   VAULT_GROUPS,
   vaultEffectiveModes,
   vaultGroupOf,
@@ -50,6 +53,7 @@ import {
   VAULT_FAILING_AFTER,
   VAULT_LABEL,
   VaultService,
+  expiresSoon,
   type VaultConfig,
 } from './vault.service.js';
 
@@ -201,8 +205,9 @@ export class VaultJobs {
     if (config.stage === 'register') return;
     const state = await this.loadState(ctx, destinationId);
 
-    // 1. The connection itself (§12.1).
+    // 1. The connection itself (§12.1). One made before API keys is checked at once, which stops it as needing a key.
     const mustCheck =
+      config.auth !== 'key' ||
       row.status !== 'active' ||
       config.stage !== 'connected' ||
       config.hints === null ||
@@ -225,12 +230,15 @@ export class VaultJobs {
       if (!checked.check.approved || row.status === 'paused') return;
     }
     if (config.stage !== 'connected') return;
+    await this.warnKeyExpiry(ctx, row, config);
 
     let conn: VaultConnection;
     try {
       conn = await this.vault.openRow(ctx, row);
     } catch (e) {
       this.logger.warn(`Vault ${row.id} couldn't open: ${(e as Error).name}`);
+      // A sealed key Montra can't read is one an owner replaces: said, not left failing silently.
+      if (e instanceof VaultError && e.stopsConnection) await this.stop(ctx, row, e);
       return;
     }
     try {
@@ -1339,8 +1347,9 @@ export class VaultJobs {
   }
 
   /**
-   * §12: a problem with the connection itself stops it at once (`needs_vault`), with the vault's own words for owners,
-   * and nothing is retried until a check passes. Owners hear about it once, as it stops.
+   * §12: a problem with the connection itself stops it at once (`needs_vault`), with the words for owners, and nothing
+   * is retried until a check passes. A vault key the vault refuses is marked as needing a new one. Owners hear about it
+   * once, as it stops.
    */
   private async stop(ctx: Ctx, row: Row, err: VaultError) {
     const now = new Date();
@@ -1355,7 +1364,15 @@ export class VaultJobs {
       if (!before || before.status === 'paused') return false;
       await trx
         .updateTable('app.storage_destination')
-        .set({ status: 'needs_vault', last_error: err.shown, last_error_at: now, updated_at: now })
+        .set({
+          status: 'needs_vault',
+          last_error: err.shown,
+          last_error_at: now,
+          updated_at: now,
+          ...(err.keyProblem
+            ? { config: sql`config || jsonb_build_object('keyProblem', ${err.keyProblem}::text)` }
+            : {}),
+        } as never)
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', row.id)
         .execute();
@@ -1368,6 +1385,34 @@ export class VaultJobs {
       return before.status !== 'needs_vault';
     });
     if (turned) await this.tellAttention(ctx, row, err);
+  }
+
+  /**
+   * §12: owners are told once, `VAULT_KEY_WARN_DAYS` before the vault key expires, as the vault tells its own owners;
+   * Settings says it too. Once per expiry: a new key with its own expiry is told of again when its time comes.
+   */
+  private async warnKeyExpiry(ctx: Ctx, row: Row, config: VaultConfig) {
+    const expiresAt = config.key?.expiresAt ?? null;
+    if (!expiresAt || !expiresSoon(expiresAt) || config.keyWarnedFor === expiresAt) return;
+    await this.tell(
+      ctx,
+      row,
+      {
+        type: 'vault_attention',
+        dedupeKey: `vault_attention:key_expires:${row.id}:${expiresAt}`,
+        title: `Montra’s key for ${VAULT_LABEL} expires soon`,
+        body: `It expires on ${expiresAt.slice(0, 10)}, within ${VAULT_KEY_WARN_DAYS} days. An owner needs to generate a new API key for Montra in the vault and paste it in Montra’s storage settings.`,
+      },
+      { ownersOnly: true },
+    );
+    await this.db.run(ctx, (trx) =>
+      trx
+        .updateTable('app.storage_destination')
+        .set({ config: sql`config || jsonb_build_object('keyWarnedFor', ${expiresAt}::text)` } as never)
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', row.id)
+        .execute(),
+    );
   }
 
   // ----- Telling people (no file names, ever) -------------------------------------------------------------------------
@@ -1399,18 +1444,19 @@ export class VaultJobs {
     });
   }
 
-  /** Each owner and admin, under their own RLS, as the mirror tells them. */
+  /** Each owner and admin (or owners only), under their own RLS, as the mirror tells them. */
   private async tell(
     ctx: Ctx,
     row: Row,
     n: { type: 'vault_attention' | 'storage_failing'; dedupeKey: string; title: string; body: string },
+    opts: { ownersOnly?: boolean } = {},
   ) {
     const people = await this.db.run(ctx, (trx) =>
       trx
         .selectFrom('app.workspace_member')
         .select('user_id')
         .where('workspace_id', '=', ctx.workspaceId)
-        .where('role', 'in', ['owner', 'admin'])
+        .where('role', 'in', opts.ownersOnly ? ['owner'] : ['owner', 'admin'])
         .where('status', '=', 'active')
         .execute(),
     );

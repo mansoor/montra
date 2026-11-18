@@ -2,10 +2,11 @@ import { expect, test } from '@playwright/test';
 
 /**
  * ADR-0054 §2, §6, §13 (VLT-01, VLT-02, VLT-07): an owner connects the workspace to a Family Document Vault from
- * Settings → Storage and chooses what each group does. The API runs with FAMILY_VAULT_FAKE=on (playwright.config.ts),
- * so the vault is the vault's own fake inside the API process; the dev-only route stands in for the vault's owner
- * registering Montra's key there. No real vault is used. Sending itself is tested against the same fake in the API's
- * own tests (family-vault-sending.test.ts): the e2e worker is another process, without the API's in-process fake.
+ * Settings → Storage with the API key the vault generates for Montra (vault 0.9.0-dev.63), and chooses what each group
+ * does. The API runs with FAMILY_VAULT_FAKE=on (playwright.config.ts), so the vault is the vault's own fake inside the
+ * API process; the dev-only routes stand in for the vault's owner connecting Montra there and generating its keys. No
+ * real vault is used. Sending itself is tested against the same fake in the API's own tests
+ * (family-vault-sending.test.ts): the e2e worker is another process, without the API's in-process fake.
  */
 test('an owner connects the Family Document Vault, chooses what is sent, replaces the key and disconnects', async ({
   page,
@@ -25,28 +26,38 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   const card = page.getByTestId('vault-card');
   await expect(card.getByRole('heading', { name: 'Family Document Vault' })).toBeVisible();
 
-  // Step 1: Montra makes the key, and shows only its public half.
-  await card.getByRole('button', { name: 'Connect Family Document Vault' }).click();
-  const key = card.getByTestId('vault-public-key');
-  await expect(key).toHaveValue(/^ed25519:/);
-  await expect(card.getByTestId('vault-status')).toHaveText('Waiting for the code');
-
-  // Step 2, in the vault (its fake): register the key and get the code.
-  const register = async (publicKey: string) => {
-    const res = await page.request.post('/api/v1/dev/fake-vault/apps', { data: { publicKey } });
+  // In the vault (its fake): its owner connects Montra and generates an API key, shown with its secret once.
+  type Key = { appId: string; clientId: string; code: string; secret: string };
+  const generated = async (path: string) => {
+    const res = await page.request.post(path, { data: {} });
     expect(res.ok()).toBe(true);
-    return ((await res.json()) as { code: string }).code;
+    return (await res.json()) as Key;
   };
-  const firstKey = await key.inputValue();
-  const code = await register(firstKey);
+  const first = await generated('/api/v1/dev/fake-vault/apps');
+  expect(first.code).toMatch(/^fdvapp2\./);
 
-  // Step 3: paste it, with the line breaks people paste.
+  // In Montra: no key to make or copy any more, only what the vault gave to paste. The connection string (with the
+  // line breaks people paste) and, as it doesn't include it, the secret.
+  await card.getByRole('button', { name: 'Connect Family Document Vault' }).click();
+  await expect(card.getByTestId('vault-public-key')).toHaveCount(0);
+  await expect(card.getByText('generate an API key for it', { exact: false })).toBeVisible();
+  const secretField = card.getByLabel("Client secret (fdvs_…), if the connection string doesn't include it");
+  await expect(secretField).toHaveAttribute('type', 'password');
   await card
-    .getByRole('textbox', { name: 'Connection code from the vault' })
-    .fill(`${code.slice(0, 20)}\n${code.slice(20)}`);
+    .getByRole('textbox', { name: 'Connection string from the vault' })
+    .fill(`${first.code.slice(0, 20)}\n${first.code.slice(20)}`);
+  // Without the secret, the API says what is missing, in words.
+  await card.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(card.getByText('doesn’t include the secret', { exact: false })).toBeVisible();
+  await secretField.fill(first.secret);
   await card.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
   await expect(card.getByTestId('vault-where')).toContainText('fake.example');
+  // Montra acts as itself in the vault (APP8), and the card says what its key is, never its secret.
+  await expect(card.getByTestId('vault-acts-as')).toHaveText('Itself, as Montra');
+  await expect(card.getByTestId('vault-key')).toContainText('Expires on');
+  await expect(card.getByTestId('vault-key')).toContainText('send documents');
+  expect(await page.content()).not.toContain(first.secret);
 
   await card.getByRole('button', { name: 'Check again' }).click();
   await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
@@ -129,14 +140,25 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   await page.goto(`${base}/settings?tab=storage`);
   await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
 
-  // Replace the key: a new public key to register, the current one signing until then. Cancelled here.
-  page.once('dialog', (d) => d.accept());
+  // Replace the key, owner-driven: the owner generates a new key in the vault and pastes it; Montra checks it with the
+  // vault and switches. Started and left first, then done with the new key's client ID and secret.
   await card.getByRole('button', { name: 'Replace the key' }).click();
   const newKey = card.getByTestId('vault-new-key');
-  await expect(newKey.getByTestId('vault-public-key')).toHaveValue(/^ed25519:/);
-  expect(await newKey.getByTestId('vault-public-key').inputValue()).not.toBe(firstKey);
+  await expect(newKey).toBeVisible();
   await newKey.getByRole('button', { name: 'Keep the current key' }).click();
   await expect(card.getByTestId('vault-new-key')).toHaveCount(0);
+  const second = await generated(`/api/v1/dev/fake-vault/apps/${first.appId}/keys`);
+  await card.getByRole('button', { name: 'Replace the key' }).click();
+  await newKey
+    .getByRole('textbox', { name: "The new key's connection string, or its client ID" })
+    .fill(second.clientId);
+  await newKey
+    .getByLabel("Client secret (fdvs_…), if the connection string doesn't include it")
+    .fill(second.secret);
+  await newKey.getByRole('button', { name: 'Use the new key' }).click();
+  await expect(card.getByText('Montra uses the new key now.', { exact: false })).toBeVisible();
+  await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
+  expect(await page.content()).not.toContain(second.secret);
 
   // Disconnect: the key is thrown away.
   page.once('dialog', (d) => d.accept());

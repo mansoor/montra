@@ -365,6 +365,18 @@ export class FileBytes {
         e instanceof VaultError ? e : new VaultError('failed', { detail: (e as Error)?.name ?? 'error' });
       this.logger.warn(`File ${file.id}: asking the vault for it: ${err.code} ${err.opts.detail ?? ''}`);
       if (err.code === 'unavailable') return notAvailable('vault_refused');
+      if (err.code === 'not_permitted') {
+        // The key may not download (API keys): the key's, not the file's, so the file isn't missing. Owners see why.
+        await this.db.run(actor, (trx) =>
+          trx
+            .updateTable('app.storage_destination')
+            .set({ last_error: err.shown, last_error_at: new Date(), updated_at: new Date() })
+            .where('workspace_id', '=', actor.workspaceId)
+            .where('id', '=', destinationId)
+            .execute(),
+        );
+        return notAvailable('vault_unavailable');
+      }
       if (err.code === 'read_cap') {
         const reset = found.state?.daily_reset_at;
         const until =

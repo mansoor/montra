@@ -2,7 +2,7 @@
 
 - Status: accepted (the owner, 2026-11-17; see "Owner's answers", "Owner's clarification" and "Defaults taken" at the
   end)
-- Date: 2026-11-17
+- Date: 2026-11-17; amended 2026-11-18 for the vault's API keys ("API keys (vault 0.9.0-dev.63–65)")
 - Builds on: ADR-0031 (your own storage: the destination port, the outbox, retries, sealed secrets), ADR-0050 (hosting
   anywhere), ADR-0019 (backups, archives, retention, purge), ADR-0016 and ADR-0041 (restricted payslips), ADR-0034 §3
   (sealed copies of identity documents), ADR-0052 (tax forms, a restricted kind)
@@ -92,6 +92,9 @@ document that started in the vault, and asks the vault's owner for no reads over
 reads back from the vault is only what Montra itself sent there.
 
 ### 2. Connecting: Montra makes the key, the vault owner registers it
+
+_Steps 1–3 and the key rotation below are superseded by "API keys (vault 0.9.0-dev.63–65)" (2026-11-18): the vault
+makes the key, and an owner pastes it into Montra._
 
 Only a workspace **owner** connects, chooses a sent mode for payslips or tax documents, starts a move, replaces the
 key or disconnects, with a recent sign-in (AUTH-09), as for taking a backup. Admins can see the status and press "Try
@@ -246,6 +249,9 @@ Business documents go when their group is on; a later version may offer a per-en
 
 ### 7. Keys and other secrets
 
+_The private key here became the vault API key's secret from vault 0.9.0-dev.63: see "API keys (vault
+0.9.0-dev.63–65)" (2026-11-18)._
+
 - The private key (and, during rotation, the second one) is sealed as one JSON value with `FieldCrypto`: AES-256-GCM
   under the workspace's KMS-wrapped data key, bound to `storage_destination.secret` as today's secrets are
   (ADR-0031 §3). On a self-hosted install the KMS adapter is whichever ADR-0050 §3 configured.
@@ -275,6 +281,9 @@ Business documents go when their group is on; a later version may offer a per-en
   fixed today, so Montra publishes none and Settings says to leave that restriction off (default taken, D7).
 
 ### 9. Keeping in step with the vault, and opening documents
+
+_From vault 0.9.0-dev.63 a document Montra's send made stays readable to Montra after the family adds newer versions:
+see "API keys (vault 0.9.0-dev.63–65)" (2026-11-18)._
 
 - **Only Montra's own documents.** The feed and downloads are used only for documents Montra sent (§1, one direction).
   A paper the family filed in the vault themselves is never read or imported.
@@ -441,14 +450,14 @@ A new subsection, **13.6 Family Document Vault**, in `docs/requirements/R1-requi
 
 | ID     | Requirement                                                                                                                                       | Priority |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| VLT-01 | An owner connects the workspace to the household's Family Document Vault with a key pair Montra makes for that workspace, checks the vault's code and identity, and sees whether it's approved. | S |
+| VLT-01 | An owner connects the workspace to the household's Family Document Vault with an API key the vault generates for Montra, checks the vault's connection string and identity, and sees whether it's approved, whom Montra acts as, and when the key expires. | S |
 | VLT-02 | The owner chooses, for each group (receipts, statements, bills, payslips, tax documents, other), whether it is not sent (kept only locally), sent with a local copy kept, or sent with no local copy, and how each sent group maps to the vault's kinds. A document filed in the vault is the household's record; "local" is Montra's own storage, and the owner's own S3/WebDAV keeps its own setting. The vault decides where each document lands. | S |
 | VLT-03 | Documents are sent one at a time after Montra has finished with them, are never filed twice, and show their vault status per file and in total. | S |
 | VLT-04 | Existing documents can be sent; for a group sent with no local copy, Montra removes its copy only after the vault has filed the document. | S |
 | VLT-05 | Documents go one way, Montra to the vault; the vault's changes to documents Montra sent are read and shown, and win on the document but never change the books; a document the vault no longer shows is marked so, without a reason. | S |
 | VLT-06 | A vault-held document opens through a single-use link made when the person clicks, never stored, logged or sent.                                   | S |
 | VLT-07 | Payslips and tax documents go to the vault only if an owner turns them on after a warning; sealed copies of identity documents, logos and exports never go. | M |
-| VLT-08 | The private key is sealed, never shown, logged or reused across workspaces, and can be replaced; connecting, changes, moves and disconnecting are in the security log; files moved and links made are audited. | M |
+| VLT-08 | The vault key's secret is sealed, never shown, logged, archived or reused across workspaces, and an owner can replace the key; connecting, changes, moves and disconnecting are in the security log; files moved and links made are audited. | M |
 | VLT-09 | The vault's daily limits and waits are respected without counting as failures; problems are shown in words, and owners are told once when the vault needs a person. | S |
 | VLT-10 | The phone shows the vault status and badges, opens vault-held documents, and uploads missing files again.                                          | C |
 | VLT-11 | When Montra needs a file it no longer holds, it asks the vault; a file the vault doesn't return is listed in Review to be provided again, and backups and tax packages list any file still missing. | M |
@@ -999,6 +1008,53 @@ differs from or adds to the text above, and why:
   `vault.test.ts` and `missing-files.test.ts`, phone `missing-files.test.ts` and `data-settings.test.ts`, and the e2e
   `files-to-provide.spec.ts` (the warning, cancel and upload anyway).
 
+### As built: API keys (2026-11-18)
+
+On `@fdv/client` **0.9.0-dev.65** (`v0.9.0-dev.65/fdv-client-0.9.0-dev.65.tgz`, 509,935 bytes, sha256
+`5f97657d1dd676e8…`, checked against the vault side's numbers; pnpm records its integrity), as "API keys (vault
+0.9.0-dev.63–65)" above decides. No migration. Where it differs from or adds to that, and why:
+
+- **Contracts.** `ConnectVaultRequest` (`connectionString`, the `secret` when the string doesn't include it, and
+  `version` to connect a kept connection again) replaces `StartVaultConnectionRequest` and `PasteVaultCodeRequest`, and
+  `POST …/family-vault` takes it; `POST …/family-vault/code` is gone. `ReplaceVaultKeyRequest` is now `version` with
+  either `connectionString` or `clientId`, and `secret`. `VaultConnectionDto` loses `publicKey`, `fingerprint`, `newKey`,
+  `keyRotation` and `clockOffsetMs`, and gains `key` (`VaultKeyDto`: client ID, name, permissions, created, expires,
+  `expiresSoon`), `keyProblem` (`revoked`, `expired`, `invalid`, or `signed` for a connection made before API keys) and
+  `actsAs`. The schemas export the vault's shapes (`VAULT_CLIENT_ID_PATTERN`, `VAULT_SECRET_PATTERN`) and
+  `VAULT_KEY_WARN_DAYS`. The web fixtures change with them; the phone has no vault connection DTO, so nothing there.
+- **Where the code is.** `keys.ts` is now the sealed shape alone; `connection.ts` reads connection strings
+  (`readConnectionString`), checks a key's shape before the package sees it, and maps the key 401s and per-action 403s;
+  `vault.service.ts` has `connect` (new, or again for a kept connection) and `replaceKey`; `VaultKeyController` holds the
+  two routes that carry a secret, outside the idempotency interceptor. The port loses `registerKey`; `VaultCheck` gains
+  `appId`, `key` and `actsAs`, and loses `newKeyConfirmed`. `VaultError` gains `key_revoked`, `key_expired`,
+  `key_invalid`, `key_signed`, `not_permitted` (with the permission), `old_code`, `secret_needed`, `invalid_key` and
+  `other_app`, and loses `other_key`.
+- **`config`** gains `auth` (`key`, or `signed` when absent), `clientId`, `key`, `keyProblem`, `keyWarnedFor` (the expiry
+  owners were told of) and `actsAs`, and loses `publicKey`, `fingerprint`, `newKey` and `keyId`. `appId` now comes from
+  `/apps/me`.
+- **The rotation states are left unused**, not removed: `vault_connection_state.key_rotation` stays `none` (its check
+  still allows `made` and `registered`), and `key_rotation_at` null. Dropping the column would need a `-- contract:`
+  migration for no gain; a later contract migration can take it with anything else unused.
+- **A key problem is looked at daily, not every 15 minutes**: nothing changes until an owner pastes a new key, and a
+  wrong secret would count toward the vault's ten failed tries a minute.
+- **Connecting needs no "start" any more**, so a new connection is never at `stage: register`; the stage stays in the
+  DTO for a connection begun before API keys. "Connect again" after a soft disconnect (PR 5b2) pastes a key on the kept
+  row with its `version`; the same vault (installation id) resumes reading the files only it holds, as before.
+- **Opening** a document of a connection whose key no longer works answers 409 `vault.needs_vault` with the words, and
+  wakes the check, as any connection problem does.
+- **Tests.** `family-vault.test.ts` (rewritten: connecting with a string with and without the secret; refusals of an
+  old string, a missing, malformed or wrong secret, private addresses and another vault, none echoing what was pasted;
+  revoked, expired and invalid keys in words; replacing the key, including refusals of the same key, another app and
+  another vault; acting as a person and approval; a connection made before API keys, connected and begun; the secret
+  nowhere in a DTO, the security log, the process's output or any table but sealed), `family-vault-sending.test.ts` (a
+  503 busy with nobody to review, retried and never a failure; the job's key problems, replaced; the 14-day warning,
+  once, to owners), `family-vault-feed.test.ts` (a newer family version stays filed and readable, with its new title,
+  `sentFile` still the send's own), `family-vault-file-bytes.test.ts` (a key without `documents.download` is
+  unavailable, not missing; the secret is in no part of a backup), `vault-port.test.ts`, the schema and web tests, and
+  the e2e `family-vault.spec.ts` (connect with the string and the secret apart, acts as itself, replace the key with a
+  client ID). The fake generates keys as the vault does, after its owner's second step, and `expireAppKey` stands in
+  for time.
+
 ## Consequences
 
 - Montra can hand a household's papers to the place the household already keeps them, without being the only copy.
@@ -1017,12 +1073,77 @@ differs from or adds to the text above, and why:
   like any dependency, and the chain past PR 1 waits for its first client release tarball (0.9.0-dev.60).
 - Files held only in the vault don't count against Montra's storage quota (BAK-08). Retention dates (RCP-10, BAK-09)
   stop applying to the vault's copy: Montra deletes only its own.
-- The private key adds one more sealed secret per workspace; losing the KMS key means connecting again, not losing
-  documents.
+- The vault key's secret (a private key before vault 0.9.0-dev.63) adds one more sealed secret per workspace; losing the
+  KMS key means pasting a new key, not losing documents. A key expires as its owner chose: owners are warned 14 days
+  ahead and paste the next one.
 - Two destinations per workspace (a mirror and a vault) means the storage settings and the phone's status line show two
   connections.
 - BAK-05 is unchanged: the vault is not where scheduled backups go. A backup archive could be sent to the vault later
   if the vault takes that kind of file.
+
+## API keys (vault 0.9.0-dev.63–65), 2026-11-18
+
+The vault replaced signed requests with API keys in 0.9.0-dev.63, at the owner's choice, as a hard cutover inside v1
+(the vault keeps breaking changes inside v1 until its 0.9.0 release, and moves them to v2 with a deprecation period
+after). Dev.64 changed the vault's Settings only; dev.65 (APP8) lets a connected app act as itself. Montra moves to
+`@fdv/client` 0.9.0-dev.65 in one PR. This section replaces what §2, §7 and §15 say about Montra's key pair and
+signing, and what §9 says about a newer version. Everything else stands.
+
+- **The vault makes the key, not Montra** (replaces §2 steps 1–3). An owner of the vault connects Montra in its
+  Settings → Connected apps and generates an API key for it: a client ID (`fdvc_` and 22 base64url characters, not
+  secret) and a secret (`fdvs_` and 43), with the key's own permissions (some of Montra's scopes) and an expiry (30, 90
+  or 365 days, any number up to 3650, or never). The vault shows the secret once, with a connection string
+  (`fdvapp2.…`: the address, the client ID, the installation id when known, and the secret only if the owner chose to
+  include it). A Montra owner, with a recent sign-in as before (D4), pastes the string, and the secret when the string
+  doesn't include it. Montra checks, in order: the string (strictly, through the package; an `fdvapp1.` string from
+  before API keys is refused with what to do instead), the key's shape, the address guard (§8, still public HTTPS only,
+  although the package itself takes plain http to this machine), the server's own description (a vault that takes apps,
+  whose installation id is pinned as before), and `GET /apps/me` with the key. Nothing is saved unless all of it holds.
+  There is no key pair, no fingerprint and no "Montra makes a key" step any more.
+- **Requests carry the key** (replaces "signed afresh" in §4 and §12): HTTP Basic, `client_id:secret`, through the
+  package's `createAppClient({ url, clientId, secret })`. Montra writes no client of its own, as before.
+- **The secret is sealed, never shown** (replaces §7's first three points). `secret_enc` holds `{ v: 2, clientId,
+  secret }`, sealed with `FieldCrypto` as before. It is unsealed only for one request or one job run, never returned,
+  logged, archived or put in a backup, and no DTO carries it. The two requests that carry it (connecting and replacing
+  the key) are outside the idempotency interceptor, so not even a hash of a body with the secret in it is stored. The
+  client ID, the key's name, permissions, creation and expiry are not secret, and Settings shows them.
+- **The clock** (§7's last point) no longer matters to the vault: nothing is signed within a window. Montra still records
+  the offset it measures, for support, and no longer warns about it.
+- **The key's state.** Each connection check reads `/apps/me`'s `key` (client ID, name, permissions, `created_at`,
+  `expires_at` with null for never, `last_used_at`) and stores it. Owners are warned in Settings, and once by a
+  `vault_attention` notification, 14 days before it expires (the vault's own `APP_KEY_WARN_DAYS`). The vault's 401s
+  about the key are said in Montra's words, which an owner can act on: "The vault key was revoked / has expired / isn't
+  valid — an owner needs to paste a new key". Each stops the connection (`needs_vault`), as any connection problem
+  does (§12), and marks it as needing a new key. A 403 for a permission the key lacks says which, per action:
+  sending without `documents.send` stops the connection, while reading, downloading, opening or deleting without
+  theirs stops only that action, with its words. A download the key may not make is the key's problem, not the file's:
+  it never makes a file missing (§5a). `429 rate_limited` after ten failed tries a minute is a wait, as other waits
+  are.
+- **Replacing the key is owner-driven** (replaces §2's rotation). An owner generates a new key in the vault (an app has
+  two live keys at most, so it can move to the next one before the old one ends) and pastes its connection string, or
+  its client ID, with its secret. Montra checks it with `GET /apps/me`: the same vault (installation id) and the same
+  app, then switches, sealing the new key in place of the old one. Until then the old key goes on working. Montra
+  never makes, renews or retires a key: the old one is the owner's to revoke in the vault. A vault restore revokes every
+  key, and a view link made with a key ends when the key is revoked or expires.
+- **Whom Montra acts as** (APP8). A connected app acts as itself by default; `/apps/me` says `acts_as` (`app` or
+  `person`) and `acting_as` (the person's name, or the app's own when it acts as itself). Settings shows which. What
+  Montra sends that nothing routes goes to the app's "Reviewed by" person; when nobody eligible can review, or a send
+  races an owner switching whom the app acts as, the vault answers 503 busy (retriable, with `Retry-After`), which
+  Montra waits out with backoff and never counts as a failure, as PR 3 does for any wait. If the owner who connected an
+  app acting as itself leaves the household, its keys are revoked, which Montra says as above. Member fields in app
+  views may be null; Montra shows what the vault says, or nothing.
+- **Newer versions** (replaces §9's "the vault has a newer version" and PR 4's "No longer available" for this case; the
+  owner's choice). The app that made a document keeps reading it (the feed, the document, its content, view links) after
+  the family adds newer versions. The feed says it `changed` with the new version; Montra updates "In the vault as: …",
+  notes the newer version, and keeps it `filed` and readable. The version Montra's send became is kept as it was. The
+  exact file Montra sent is still read back only by Montra's own id (`sentFile()`; there is no `?version`), so
+  `FileBytes` gets Montra's bytes, not the family's. A delete still needs the current version to be Montra's own send.
+- **Connections made before API keys** stop working (the hard cutover; nothing real is connected). Montra never sends
+  their sealed Ed25519 key to the vault: they read as needing a new key, in Settings and in words when checked, and the
+  job stops them and tells owners once rather than failing quietly. A connected one takes a new key through "Replace the
+  key" (the same app at the same vault); one begun but never given its code connects with a connection string. No
+  migration: the stored shape is jsonb `config` and the sealed `secret_enc`, and a config saved before has no `auth`, so
+  it reads as `signed`.
 
 ## Alternatives considered
 
@@ -1043,8 +1164,10 @@ differs from or adds to the text above, and why:
   says what the document is and, where the vault accepts it, whom it belongs to.
 - **Montra reaches the vault on the home network** (private address or a tailnet): refused by the address guard, and
   outside the agreed "public HTTPS only".
-- **A long-lived token instead of signed requests**: not what the vault offers, and a token in Montra's database is
-  worth more to a thief than a key that only signs within a short window.
+- **A long-lived token instead of signed requests**: not what the vault offered at first, and a token in Montra's database
+  is worth more to a thief than a key that only signs within a short window. The vault's owner chose API keys later
+  (vault 0.9.0-dev.63): each with its own permissions and expiry, revocable, and sealed in Montra like any secret; see
+  "API keys (vault 0.9.0-dev.63–65)".
 - **One key pair for all of Montra**: a single leak would reach every household's vault. One per workspace, as agreed.
 - **Send files as soon as they're uploaded**: Montra would often need them back for reading and Review, which for a
   group sent with no local copy would cost the vault's daily read cap. Sending after processing avoids it.

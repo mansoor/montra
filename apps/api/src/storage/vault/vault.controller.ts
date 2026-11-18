@@ -15,11 +15,11 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import {
+  ConnectVaultRequest,
   DisconnectVaultRequest,
   FileStorageStatesQuery,
   Id,
   MoveToVaultRequest,
-  PasteVaultCodeRequest,
   ReplaceVaultKeyRequest,
   RetryVaultItemsRequest,
   SendExistingToVaultRequest,
@@ -64,36 +64,11 @@ export class VaultController {
     return { connection: await this.vault.get(dbCtx(ctx), ctx.role!) };
   }
 
-  /** §2 step 1: Montra makes the key pair. */
-  @Post()
-  async start(@Ctx() ctx: RequestContext) {
-    requireRecentAuth(ctx);
-    await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
-    return this.vault.start(dbCtx(ctx), ctx.role!);
-  }
-
-  /** §2 step 3: the code from the vault. Also ends a key change. */
-  @Post('code')
-  @HttpCode(200)
-  async paste(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRecentAuth(ctx);
-    await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
-    return this.vault.paste(dbCtx(ctx), ctx.role!, parse(PasteVaultCodeRequest, body));
-  }
-
   /** "Check again": owners and admins (D4). */
   @Post('check')
   @HttpCode(200)
   check(@Ctx() ctx: RequestContext) {
     return this.vault.checkAgain(dbCtx(ctx), ctx.role!);
-  }
-
-  /** "Replace the key", or cancel a new key not yet confirmed. */
-  @Post('key')
-  @HttpCode(200)
-  replaceKey(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    requireRecentAuth(ctx);
-    return this.vault.replaceKey(dbCtx(ctx), ctx.role!, parse(ReplaceVaultKeyRequest, body));
   }
 
   /**
@@ -171,6 +146,36 @@ export class VaultController {
 }
 
 /**
+ * §2, §7: the two requests that carry a vault API key's secret, an owner's with a recent sign-in. Outside the
+ * idempotency interceptor, which keeps a hash of each request's body and the answer for a replay: nothing made from
+ * the secret is stored anywhere but its sealed value. The answers carry no secret either way.
+ */
+@Controller('v1/workspaces/:workspaceId/family-vault')
+@UseGuards(AuthGuard, WorkspaceGuard)
+export class VaultKeyController {
+  constructor(
+    @Inject(VaultService) private readonly vault: VaultService,
+    @Inject(Plans) private readonly plans: Plans,
+  ) {}
+
+  /** §2: connect with the connection string the vault gave for Montra's API key (and its secret, when not in it). */
+  @Post()
+  async connect(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireRecentAuth(ctx);
+    await this.plans.requireFeature(dbCtx(ctx), 'familyVault');
+    return this.vault.connect(dbCtx(ctx), ctx.role!, parse(ConnectVaultRequest, body ?? {}));
+  }
+
+  /** "Replace the key": a new key the owner generated in the vault, checked before Montra switches to it. */
+  @Post('key')
+  @HttpCode(200)
+  replaceKey(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireRecentAuth(ctx);
+    return this.vault.replaceKey(dbCtx(ctx), ctx.role!, parse(ReplaceVaultKeyRequest, body ?? {}));
+  }
+}
+
+/**
  * §9 "Open in the vault": anyone who can see the file. A single-use link is made for this click and the answer is a
  * redirect to it, never a body with it in. POST, so nothing prefetches it, and outside the idempotency interceptor,
  * which would store the answer for a replay.
@@ -203,25 +208,35 @@ export class VaultOpenController {
   }
 }
 
-const RegisterRequest = z
-  .object({ publicKey: z.string().min(1).max(200), approved: z.boolean().default(true) })
-  .strict();
+const RegisterRequest = z.object({ approved: z.boolean().default(true) }).strict();
 
 /**
- * Only with `FAMILY_VAULT_FAKE=on` (never in production, `config.ts`): stands in for the vault's owner registering
- * Montra in the in-process fake vault, so the e2e run can connect a workspace end to end without any real vault.
+ * Only with `FAMILY_VAULT_FAKE=on` (never in production, `config.ts`): stands in for the vault's owner connecting
+ * Montra in the in-process fake vault and generating its API keys, so the e2e run can connect a workspace end to end
+ * without any real vault. It answers what the vault shows its owner: the connection string and the fake's secret.
  */
 @Controller('v1/dev/fake-vault')
 @UseGuards(AuthGuard)
 export class FakeVaultController {
   constructor(@Inject(VAULT_TRANSPORT) private readonly transport: VaultTransport) {}
 
-  @Post('apps')
-  async register(@Body() body: unknown) {
+  private fake(): FakeVaultHandle {
     const fake = this.transport.fake as FakeVaultHandle | undefined;
     if (!fake) throw new AppError(404, 'not_found', 'Not found');
-    const req = parse(RegisterRequest, body);
-    const { code } = await fake.register(req.publicKey, { approved: req.approved });
-    return { code };
+    return fake;
+  }
+
+  @Post('apps')
+  async register(@Body() body: unknown) {
+    const fake = this.fake();
+    const req = parse(RegisterRequest, body ?? {});
+    const k = await fake.register({ approved: req.approved });
+    return { appId: k.appId, clientId: k.clientId, code: k.code, secret: k.secret };
+  }
+
+  @Post('apps/:appId/keys')
+  async newKey(@Param('appId') appId: string) {
+    const k = await this.fake().newKey(appId);
+    return { appId: k.appId, clientId: k.clientId, code: k.code, secret: k.secret };
   }
 }

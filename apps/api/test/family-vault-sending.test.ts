@@ -37,6 +37,8 @@ let jobs: VaultJobs;
 let storage: StoragePort;
 let wsId: string;
 let appId: string;
+/** The vault API key Montra was connected with. */
+let keyId: string;
 let url: (p: string) => string;
 let realFetch: VaultTransport['fetch'];
 
@@ -144,13 +146,11 @@ beforeAll(async () => {
     const invite = await c.post(url('/sharing/invites'), { email, role });
     expect((await who.post(`/v1/invites/${invite.body.token}/accept`)).status).toBeLessThan(300);
   }
-  const started = await c.post(url('/family-vault'));
-  const registered = await fake.register(started.body.publicKey, { kinds: KINDS });
+  // The vault's owner connects Montra there and generates its API key; the owner pastes the connection string.
+  const registered = await fake.register({ kinds: KINDS });
   appId = registered.appId;
-  const pasted = await c.post(url('/family-vault/code'), {
-    code: registered.code,
-    version: started.body.version,
-  });
+  keyId = registered.keyId;
+  const pasted = await c.post(url('/family-vault'), { connectionString: registered.codeWithSecret });
   expect(pasted.body.stage).toBe('connected');
 });
 
@@ -535,7 +535,7 @@ describe('the person a document belongs to (ADR-0054 §3, §6; vault 0.9.0-dev.6
     expect(sent.inbox_member_id).toBe('fake-other-adult');
   });
 
-  it('goes to the acting member’s Inbox when that person can’t receive it now, and says more when asked', async () => {
+  it('goes to the reviewer’s Inbox when that person can’t receive it now, and says more when asked', async () => {
     fake.vault.state.suspensions.set('fake-other-adult', {
       reason: 'locked' as never,
       since: new Date().toISOString(),
@@ -549,7 +549,9 @@ describe('the person a document belongs to (ADR-0054 §3, §6; vault 0.9.0-dev.6
     const sent = intake((await item(id)).vault_ref);
     expect(sent.hints.person).toEqual({ name: 'Alex' });
     expect(sent.hints.amount).toEqual({ value: '4123.45', currency: 'USD' });
-    expect(sent.inbox_member_id).toBe(app().member_id);
+    // Montra acts as itself (APP8, the vault's default): what nothing routes goes to its "Reviewed by" person.
+    expect(app().member_id).toBeNull();
+    expect(sent.inbox_member_id).toBe(app().reviewer_member_id);
     fake.vault.state.suspensions.delete('fake-other-adult');
     await patch({ describeMore: false, groups: [{ group: 'payslips', mode: 'not_sent' }] });
   });
@@ -655,6 +657,135 @@ describe('caps, retries and the connection (ADR-0054 §12; VLT-09)', () => {
     expect((await vaultRow()).status).toBe('active');
     expect((await item(a)).status).toBe('received');
     expect((await item(b)).status).toBe('received');
+  });
+
+  it('treats a 503 busy, as when nobody can review what Montra sends, as a retry with backoff, never a failure', async () => {
+    // Montra acts as itself (APP8): what nothing routes goes to its reviewer, and with nobody who can review it the
+    // vault answers 503 busy, retriable.
+    const reviewer = app().reviewer_member_id;
+    expect(reviewer).toBeTruthy();
+    app().reviewer_member_id = null;
+    const id = await file('receipt', 'Nobody to review.png');
+    try {
+      await run();
+      const row = await item(id);
+      expect(row).toMatchObject({ status: 'pending' });
+      expect(row.last_error).toBe('The vault asked Montra to wait a little before trying again.');
+      expect(row.next_attempt_at.getTime()).toBeGreaterThan(Date.now());
+      expect(await vaultRow()).toMatchObject({ status: 'active', consecutive_failures: 0, last_error: null });
+      // Many times over, still never a failure: the row doesn't give up and the connection doesn't turn failing.
+      await db.query(`update app.vault_item set attempts = $2 where file_id = $1`, [id, MAX_ATTEMPTS + 2]);
+      for (let i = 0; i < VAULT_FAILING_AFTER + 1; i++) {
+        await dueNow();
+        await run();
+      }
+      expect((await item(id)).status).toBe('pending');
+      expect(await vaultRow()).toMatchObject({ status: 'active', consecutive_failures: 0 });
+    } finally {
+      app().reviewer_member_id = reviewer;
+    }
+    await dueNow();
+    await run();
+    expect((await item(id)).status).toBe('received');
+  });
+});
+
+describe('the vault API key (vault 0.9.0-dev.63)', () => {
+  const told = async (like: string) =>
+    (
+      await db.query(
+        `select u.email, count(*)::int as n from app.notification n join app.app_user u on u.id = n.user_id
+          where n.workspace_id = $1 and n.type = 'vault_attention' and n.title like $2
+          group by u.email order by u.email`,
+        [wsId, like],
+      )
+    ).rows;
+  const checkNow = () =>
+    db.query(`update app.vault_connection_state set next_check_at = now() where workspace_id = $1`, [wsId]);
+
+  it('stops on a key revoked in the vault, with words, marked as needing a new key, until an owner pastes one', async () => {
+    await fake.revokeKey(appId, keyId);
+    const id = await file('receipt', 'After revoking.png');
+    await run();
+    const row = await vaultRow();
+    expect(row.status).toBe('needs_vault');
+    expect(row.last_error).toBe('The vault key was revoked. An owner needs to paste a new key.');
+    expect(row.config.keyProblem).toBe('revoked');
+    expect(await item(id)).toMatchObject({ status: 'pending', attempts: 0 });
+    const dto = await get();
+    expect(dto).toMatchObject({ keyProblem: 'revoked', status: 'needs_vault' });
+    expect((await told('%needs someone to look%')).length).toBe(2);
+    // A check says the same, and isn't asked again every 15 minutes: nothing changes until a new key.
+    await checkNow();
+    await run();
+    expect((await vaultRow()).last_error).toBe(
+      'The vault key was revoked. An owner needs to paste a new key.',
+    );
+    expect(
+      (
+        await db.query(`select next_check_at from app.vault_connection_state where workspace_id = $1`, [wsId])
+      ).rows[0].next_check_at.getTime(),
+    ).toBeGreaterThan(Date.now() + 12 * 3600_000);
+
+    // The owner generates a new key in the vault and pastes it: checked, then Montra switches, and what waited goes.
+    const next = await fake.newKey(appId);
+    const replaced = await c.post(url('/family-vault/key'), {
+      version: dto.version,
+      connectionString: next.codeWithSecret,
+    });
+    expect(replaced.status).toBe(200);
+    expect(replaced.body).toMatchObject({ status: 'active', keyProblem: null, lastError: null });
+    expect(replaced.body.key.clientId).toBe(next.clientId);
+    keyId = next.keyId;
+    await run();
+    expect((await item(id)).status).toBe('received');
+  });
+
+  it('says an expired key has expired, and an owner’s new key carries on', async () => {
+    fake.vault.expireAppKey((await get()).key.clientId);
+    await checkNow();
+    await run();
+    expect(await vaultRow()).toMatchObject({
+      status: 'needs_vault',
+      last_error: 'The vault key has expired. An owner needs to paste a new key.',
+    });
+    expect((await get()).keyProblem).toBe('expired');
+    const next = await fake.newKey(appId);
+    const replaced = await c.post(url('/family-vault/key'), {
+      version: (await get()).version,
+      clientId: next.clientId,
+      secret: next.secret,
+    });
+    expect(replaced.body).toMatchObject({ status: 'active', keyProblem: null });
+    keyId = next.keyId;
+  });
+
+  it('warns owners, once, 14 days before the key expires, and says so in Settings', async () => {
+    const before = await get();
+    expect(before.key.expiresSoon).toBe(false);
+    const soon = await fake.newKey(appId, { expiresInDays: 10 });
+    const replaced = await c.post(url('/family-vault/key'), {
+      version: before.version,
+      connectionString: soon.code,
+      secret: soon.secret,
+    });
+    expect(replaced.status).toBe(200);
+    expect(replaced.body.key).toMatchObject({ clientId: soon.clientId, expiresSoon: true });
+    expect(new Date(replaced.body.key.expiresAt).getTime() - Date.now()).toBeLessThan(11 * 86_400_000);
+    // The old key is the owner's to revoke in the vault: Montra uses the new one already.
+    await fake.revokeKey(appId, keyId);
+    keyId = soon.keyId;
+    await checkNow();
+    await run();
+    expect(await told('%expires soon%')).toEqual([{ email: OWNER, n: 1 }]);
+    // Once: later runs and checks don't tell again.
+    for (let i = 0; i < 2; i++) {
+      await checkNow();
+      await run();
+    }
+    expect(await told('%expires soon%')).toEqual([{ email: OWNER, n: 1 }]);
+    expect((await vaultRow()).config.keyWarnedFor).toBe(replaced.body.key.expiresAt);
+    expect((await vaultRow()).status).toBe('active');
   });
 });
 

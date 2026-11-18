@@ -209,14 +209,10 @@ async function setMode(mode: 'sent_keep_copy' | 'sent_no_copy') {
 
 /** Connects the workspace to the fake vault, as Montra's app there (a new app the first time). */
 async function connect() {
-  const started = await c.post(url('/family-vault'));
-  expect(started.status).toBeLessThan(300);
-  const registered = await fake.register(started.body.publicKey, { kinds: KINDS, scopes: SCOPES });
+  // The vault's owner connects Montra there and generates its API key; the owner pastes the connection string.
+  const registered = await fake.register({ kinds: KINDS, scopes: SCOPES });
   appId = registered.appId;
-  const pasted = await c.post(url('/family-vault/code'), {
-    code: registered.code,
-    version: started.body.version,
-  });
+  const pasted = await c.post(url('/family-vault'), { connectionString: registered.codeWithSecret });
   expect(pasted.body.stage).toBe('connected');
 }
 
@@ -628,21 +624,16 @@ describe('disconnecting while files are kept only in the vault (ADR-0054 §10)',
       )
     ).rows.map((r) => r.id as string);
     expect(missing.length).toBeGreaterThan(0);
-    const started = await c.post(url('/family-vault'));
-    expect(started.status).toBe(201);
-    expect(started.body).toMatchObject({ stage: 'register', status: 'needs_vault' });
-    // The same app in the same vault, with Montra's new key added by someone there.
-    const raw = Buffer.from(started.body.publicKey.slice('ed25519:'.length), 'base64url');
-    app().keys.push({
-      id: randomUUID(),
-      raw: new Uint8Array(raw),
-      added_by: 'owner',
-      created_at: new Date().toISOString(),
-      retired: false,
+    const before = await connection();
+    expect(before).toMatchObject({ status: 'disconnected' });
+    // The same app in the same vault, with a new API key its owner generated there, pasted with its secret apart.
+    const key = await fake.newKey(appId);
+    const pasted = await c.post(url('/family-vault'), {
+      connectionString: key.code,
+      secret: key.secret,
+      version: before.version,
     });
-    const code = await fake.codeFor(appId);
-    const pasted = await c.post(url('/family-vault/code'), { code, version: started.body.version });
-    expect(pasted.status).toBe(200);
+    expect(pasted.status).toBe(201);
     expect(pasted.body).toMatchObject({ stage: 'connected', status: 'active' });
     expect(await security('vault_connected')).toMatchObject({ reconnected: true, sameVault: true });
     for (const id of missing) {

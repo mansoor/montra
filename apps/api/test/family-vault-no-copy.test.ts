@@ -244,13 +244,10 @@ beforeAll(async () => {
   const invite = await c.post(url('/sharing/invites'), { email: PARTNER, role: 'partner' });
   expect((await partner.post(`/v1/invites/${invite.body.token}/accept`)).status).toBeLessThan(300);
 
-  const started = await c.post(url('/family-vault'));
-  const registered = await fake.register(started.body.publicKey, { kinds: KINDS, scopes: SCOPES });
+  // The vault's owner connects Montra there and generates its API key; the owner pastes the connection string.
+  const registered = await fake.register({ kinds: KINDS, scopes: SCOPES });
   appId = registered.appId;
-  const pasted = await c.post(url('/family-vault/code'), {
-    code: registered.code,
-    version: started.body.version,
-  });
+  const pasted = await c.post(url('/family-vault'), { connectionString: registered.codeWithSecret });
   expect(pasted.body.stage).toBe('connected');
   await setMode('sent_keep_copy');
 });

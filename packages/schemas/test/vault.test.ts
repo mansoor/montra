@@ -13,7 +13,9 @@ import {
   FileStorageStateDto,
   isMirrorKind,
   MissingFileDto,
-  PasteVaultCodeRequest,
+  ConnectVaultRequest,
+  VAULT_CLIENT_ID_PATTERN,
+  VAULT_SECRET_PATTERN,
   SendExistingToVaultRequest,
   STORAGE_FILE_KINDS,
   StorageDestinationDto,
@@ -151,10 +153,17 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     status: 'active',
     address: 'https://vault.example.com',
     householdName: 'The Smiths',
-    publicKey: 'MCowBQYDK2VwAyEA-public-part',
-    fingerprint: 'SHA256:abcd',
-    newKey: null,
-    actingAs: 'Sam',
+    key: {
+      clientId: `fdvc_${'a'.repeat(22)}`,
+      name: 'Montra',
+      permissions: ['documents.send', 'documents.read'],
+      createdAt: '2026-11-17T10:00:00.000Z',
+      expiresAt: null,
+      expiresSoon: false,
+    },
+    keyProblem: null,
+    actsAs: 'app',
+    actingAs: 'Montra',
     groups: VAULT_GROUPS.map((group) => ({ group, mode: VAULT_GROUP_DEFAULTS[group], vaultKind: null })),
     vaultKinds: [{ key: 'receipt', name: 'Receipt' }],
     describeMore: false,
@@ -163,12 +172,10 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     items: { queued: 0, pending: 1, received: 2, filed: 3, notKept: 0, failed: 0, outOfReach: 0 },
     heldUntil: { sending: null, reading: null },
     dailyLimit: { files: 100, filesToday: 3 },
-    clockOffsetMs: null,
     feedReadAt: null,
     files: { onlyInVault: 2, missing: 1 },
     bringingBack: null,
     mirrorGroups: ['receipts'],
-    keyRotation: 'none',
     lastSuccessAt: null,
     lastError: null,
     lastErrorAt: null,
@@ -176,10 +183,19 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     version: 1,
   };
 
-  it('never carries a private key, whatever a server puts in', () => {
-    const parsed = VaultConnectionDto.parse({ ...dto, privateKey: 'secret', secret: 'x', secretEnc: 'y' });
+  it('never carries the key’s secret, whatever a server puts in', () => {
+    const parsed = VaultConnectionDto.parse({
+      ...dto,
+      key: { ...dto.key, secret: `fdvs_${'s'.repeat(43)}` },
+      privateKey: 'secret',
+      secret: 'x',
+      secretEnc: 'y',
+    });
     expect(parsed).toEqual(dto);
-    expect(JSON.stringify(parsed)).not.toMatch(/secret|private/i);
+    expect(JSON.stringify(parsed)).not.toMatch(/secret|private|fdvs_/i);
+    // A key that needs replacing says why.
+    expect(VaultConnectionDto.parse({ ...dto, keyProblem: 'signed', key: null }).keyProblem).toBe('signed');
+    expect(VaultConnectionDto.safeParse({ ...dto, keyProblem: 'lost' }).success).toBe(false);
   });
 
   it('adds `fdv` as a kind of connection, but the mirror’s settings stay S3 and WebDAV', () => {
@@ -190,13 +206,34 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     expect(StorageDestinationDto.shape.kind.safeParse('fdv').success).toBe(false);
   });
 
-  it('takes a pasted code, trimmed and bounded, with the version it was made against', () => {
-    expect(PasteVaultCodeRequest.parse({ code: '  abc-123 \n', version: 1 })).toEqual({
-      code: 'abc-123',
-      version: 1,
+  it('takes a pasted connection string without the spaces people paste, a secret trimmed, and bounds both', () => {
+    expect(ConnectVaultRequest.parse({ connectionString: '  fdvapp2.ab\ncd \n' })).toEqual({
+      connectionString: 'fdvapp2.abcd',
     });
-    expect(PasteVaultCodeRequest.safeParse({ code: '   ', version: 1 }).success).toBe(false);
-    expect(PasteVaultCodeRequest.safeParse({ code: 'x'.repeat(4001), version: 1 }).success).toBe(false);
+    expect(
+      ConnectVaultRequest.parse({ connectionString: 'fdvapp2.x', secret: ' fdvs_y ', version: 2 }),
+    ).toEqual({
+      connectionString: 'fdvapp2.x',
+      secret: 'fdvs_y',
+      version: 2,
+    });
+    // An empty secret field is no secret.
+    expect(ConnectVaultRequest.parse({ connectionString: 'fdvapp2.x', secret: '  ' })).toEqual({
+      connectionString: 'fdvapp2.x',
+    });
+    expect(ConnectVaultRequest.safeParse({ connectionString: '   ' }).success).toBe(false);
+    expect(ConnectVaultRequest.safeParse({ connectionString: 'x'.repeat(4001) }).success).toBe(false);
+    expect(
+      ConnectVaultRequest.safeParse({ connectionString: 'fdvapp2.x', secret: 'x'.repeat(201) }).success,
+    ).toBe(false);
+    expect(ConnectVaultRequest.safeParse({ connectionString: 'fdvapp2.x', code: 'old' }).success).toBe(false);
+  });
+
+  it('knows a client ID and a secret by the vault’s shapes', () => {
+    expect(VAULT_CLIENT_ID_PATTERN.test(`fdvc_${'A'.repeat(22)}`)).toBe(true);
+    expect(VAULT_CLIENT_ID_PATTERN.test(`fdvc_${'A'.repeat(21)}`)).toBe(false);
+    expect(VAULT_SECRET_PATTERN.test(`fdvs_${'-'.repeat(43)}`)).toBe(true);
+    expect(VAULT_SECRET_PATTERN.test(`fdvc_${'A'.repeat(43)}`)).toBe(false);
   });
 
   it('changes groups one at a time, each named once, and refuses what it doesn’t know', () => {
@@ -233,10 +270,23 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     expect(UpdateVaultConnectionRequest.safeParse({ version: 3, inbox: 'Sam' }).success).toBe(false);
   });
 
-  it('replaces the key, or cancels a new key not yet confirmed', () => {
-    expect(ReplaceVaultKeyRequest.parse({ version: 2 })).toEqual({ version: 2, cancel: false });
-    expect(ReplaceVaultKeyRequest.parse({ version: 2, cancel: true })).toEqual({ version: 2, cancel: true });
-    expect(ReplaceVaultKeyRequest.safeParse({ version: 2, privateKey: 'x' }).success).toBe(false);
+  it('replaces the key with a new connection string or a client ID, and a secret, never both or neither', () => {
+    expect(ReplaceVaultKeyRequest.parse({ version: 2, connectionString: 'fdvapp2.x' })).toEqual({
+      version: 2,
+      connectionString: 'fdvapp2.x',
+    });
+    expect(ReplaceVaultKeyRequest.parse({ version: 2, clientId: ' fdvc_a ', secret: 'fdvs_b' })).toEqual({
+      version: 2,
+      clientId: 'fdvc_a',
+      secret: 'fdvs_b',
+    });
+    expect(ReplaceVaultKeyRequest.safeParse({ version: 2 }).success).toBe(false);
+    expect(
+      ReplaceVaultKeyRequest.safeParse({ version: 2, connectionString: 'fdvapp2.x', clientId: 'fdvc_a' })
+        .success,
+    ).toBe(false);
+    // The old key pair's request is gone.
+    expect(ReplaceVaultKeyRequest.safeParse({ version: 2, cancel: true }).success).toBe(false);
   });
 
   it('asks for the count shown before sending existing documents, and disconnects carefully by default', () => {

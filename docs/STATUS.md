@@ -33,8 +33,9 @@ become default permission sets, with per-person switches in Settings → Sharing
 accountant setting is what it would replace.
 
 **Being built:** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
-Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. It covers a key
-pair per workspace and signed requests. Documents go one way, Montra to the vault, one at a time. The vault is
+Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. Montra connects
+with an API key the vault generates for it, pasted by an owner and sealed (a key pair and signed requests until vault
+0.9.0-dev.63). Documents go one way, Montra to the vault, one at a time. The vault is
 additional storage, and a document filed there is the household's record. Each group (receipts, statements, bills,
 payslips, tax documents, other) has a mode, as the owner clarified on 2026-11-17: not sent, sent with a local copy kept,
 or sent with no local copy; payslips and tax documents are not sent until an owner chooses otherwise, and the vault
@@ -49,8 +50,8 @@ done** on `@fdv/client` 0.9.0-dev.62 from the vault's public GitHub release (see
 copy": removing Montra's copy, missing files and Review's "Files to provide again", quota; migration 0067) is done,
 and **PR 5b2** (the move backfill offered after saving, bringing files back, the disconnect choice as a soft disconnect,
 the archive's missing count and its one wait, restore marking, and the possible-duplicate warning; migration 0068) is
-built. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
-Ed25519 key and signatures; a separate PR replaces Montra's key code then. On the vault's side, view links,
+built, and **the API-key PR** (vault 0.9.0-dev.63–65: an owner pastes the API key the vault generates for Montra, in
+place of Montra's Ed25519 key and signatures; client dev.65) is built. On the vault's side, view links,
 deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
 and is not copied into this repo.
 
@@ -1891,6 +1892,28 @@ Phase 11 leftovers:
     `packages/schemas/test/vault.test.ts`, web `vault.test.ts` and `missing-files.test.ts`, phone `missing-files.test.ts`
     and `data-settings.test.ts`, e2e `files-to-provide.spec.ts` (the duplicate warning).
   - Next: the dev.63 PR (API keys) and PR 6 (the phone's vault status, badges and opening).
+- **Family Document Vault: API keys** (vault 0.9.0-dev.63–65; VLT-01, VLT-05, VLT-08 and VLT-09 updated, statuses
+  unchanged; ADR-0054 "API keys (vault 0.9.0-dev.63–65)" and "As built: API keys"; no migration). On `@fdv/client`
+  0.9.0-dev.65 (509,935 bytes, sha256 `5f97657d1dd676e8…`, checked).
+  - **Connecting:** an owner (recent sign-in) pastes the `fdvapp2.` connection string the vault showed with Montra's API
+    key, and the secret when the string doesn't include it (`POST …/family-vault`, `ConnectVaultRequest`). Montra checks
+    the string, the key's shape, the public-HTTPS guard, the vault's identity (pinned) and `/apps/me` before saving; the
+    secret is sealed in `secret_enc` and never in a DTO, log, table, archive or backup. The key pair, the fingerprint,
+    "Montra makes a key" and `POST …/family-vault/code` are gone.
+  - **The key's state:** each check stores the key's name, permissions and expiry; Settings warns, and owners get one
+    `vault_attention` notification, 14 days before it expires. The vault's 401s say "revoked / expired / isn't valid — an
+    owner needs to paste a new key" and stop the connection; a 403 says which permission the key lacks, per action.
+  - **Replacing the key:** owner-driven, a new connection string or client ID with its secret, checked with `/apps/me`
+    (same app, same vault) before switching. The rotation states (`key_rotation`) are left unused.
+  - **Acting as:** Settings shows whether Montra acts as itself or as a person (APP8); a 503 busy is retried with
+    backoff, never a failure.
+  - **Newer versions:** a family version stays readable, updates "In the vault as: …" and is noted; `sentFile()` still
+    reads back the exact file Montra sent.
+  - **Cutover:** connections made with Ed25519 read as needing a new key, in Settings, when checked and from the job
+    (owners told once); never sent to the vault.
+  - Tests: `family-vault.test.ts` (rewritten), the sending, feed, file-bytes, no-copy and move-back suites,
+    `vault-port.test.ts`, `packages/schemas/test/vault.test.ts`, web `vault.test.ts`, e2e `family-vault.spec.ts`.
+  - Next: PR 6 (the phone's vault status, badges and opening).
 - **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
   and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
   row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are

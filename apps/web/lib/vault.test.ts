@@ -9,8 +9,12 @@ import {
   canManageVault,
   canSeeVault,
   cleanPastedCode,
-  clockIsOff,
+  vaultActsAsLine,
+  vaultConnectInput,
   vaultHost,
+  vaultKeyLine,
+  vaultKeyPermissions,
+  vaultReplaceInput,
   vaultStatusLine,
   vaultStep,
   vaultBadge,
@@ -45,10 +49,17 @@ const connection = (over: Partial<VaultConnectionDto> = {}): VaultConnectionDto 
   status: 'active',
   address: 'https://vault.example.com',
   householdName: 'The Smiths',
-  publicKey: 'ed25519:Bm0rbJ7Q8V3d8w7c2b1aXyZ0123456789abcdefghij',
-  fingerprint: 'ce2d 6777 0439 61a5 d947 31bb 086a 4fb4',
-  newKey: null,
-  actingAs: 'Sam',
+  key: {
+    clientId: 'fdvc_AAAAAAAAAAAAAAAAAAAAAA',
+    name: 'Montra',
+    permissions: ['documents.send', 'documents.read'],
+    createdAt: '2026-11-17T09:00:00.000Z',
+    expiresAt: '2027-02-15T09:00:00.000Z',
+    expiresSoon: false,
+  },
+  keyProblem: null,
+  actsAs: 'app',
+  actingAs: 'Montra',
   groups: VAULT_GROUPS.map((group) => ({ group, mode: VAULT_GROUP_DEFAULTS[group], vaultKind: null })),
   vaultKinds: [{ key: 'utility_bill', name: 'Utility / bill' }],
   describeMore: false,
@@ -57,12 +68,10 @@ const connection = (over: Partial<VaultConnectionDto> = {}): VaultConnectionDto 
   items: { queued: 0, pending: 0, received: 0, filed: 0, notKept: 0, failed: 0, outOfReach: 0 },
   heldUntil: { sending: null, reading: null },
   dailyLimit: { files: 100, filesToday: 4 },
-  clockOffsetMs: 120,
   feedReadAt: '2026-11-17T10:05:00.000Z',
   files: { onlyInVault: 0, missing: 0 },
   bringingBack: null,
   mirrorGroups: [],
-  keyRotation: 'none',
   lastSuccessAt: '2026-11-17T10:00:00.000Z',
   lastError: null,
   lastErrorAt: null,
@@ -85,14 +94,17 @@ describe('who sees the vault card', () => {
 });
 
 describe('vaultStep and vaultStatusLine', () => {
-  it('walks the three steps of connecting', () => {
+  it('walks the steps of connecting', () => {
     expect(vaultStep(null)).toBe('start');
-    expect(vaultStep(connection({ stage: 'register', status: 'needs_vault', householdName: null }))).toBe(
-      'register',
-    );
-    expect(vaultStatusLine(connection({ stage: 'register', status: 'needs_vault' }))).toEqual({
-      key: 'vault.status_register',
+    // Only a connection begun before API keys is still at `register`: it needs a key.
+    const begun = connection({
+      stage: 'register',
+      status: 'needs_vault',
+      householdName: null,
+      keyProblem: 'signed',
     });
+    expect(vaultStep(begun)).toBe('register');
+    expect(vaultStatusLine(begun)).toEqual({ key: 'vault.status_needs_key' });
     expect(vaultStatusLine(connection({ stage: 'approval', status: 'needs_vault' }))).toEqual({
       key: 'vault.status_approval',
       values: { name: 'The Smiths' },
@@ -115,21 +127,111 @@ describe('vaultStep and vaultStatusLine', () => {
     expect(vaultTone(connection({ status: 'paused' }))).toBe('muted');
     expect(vaultTone(connection({ stage: 'approval', status: 'needs_vault' }))).toBe('muted');
   });
+
+  it('says a key that needs replacing before anything else', () => {
+    for (const problem of ['revoked', 'expired', 'invalid', 'signed'] as const) {
+      const d = connection({ status: 'needs_vault', keyProblem: problem, lastError: 'The vault key …' });
+      expect(vaultStatusLine(d).key, problem).toBe('vault.status_needs_key');
+      expect(vaultTone(d)).toBe('bad');
+    }
+  });
+});
+
+describe('the vault key (API keys, vault 0.9.0-dev.63)', () => {
+  it('says why a key needs replacing, else when it expires, warning within 14 days, in words that exist', () => {
+    for (const problem of ['revoked', 'expired', 'invalid', 'signed'] as const) {
+      const line = vaultKeyLine(connection({ keyProblem: problem }));
+      expect(line).toEqual({ key: `vault.key_problem.${problem}`, tone: 'bad' });
+      expect(en[line!.key], problem).toMatch(/needs to (paste|generate)/);
+    }
+    expect(en['vault.key_problem.revoked']).toBe(
+      'The vault key was revoked — an owner needs to paste a new key.',
+    );
+    expect(vaultKeyLine(connection())).toEqual({
+      key: 'vault.key_expires',
+      values: { date: '2027-02-15' },
+      tone: 'muted',
+    });
+    const soon = connection({
+      key: { ...connection().key!, expiresAt: '2026-11-25T09:00:00.000Z', expiresSoon: true },
+    });
+    expect(vaultKeyLine(soon)).toEqual({
+      key: 'vault.key_expires_soon',
+      values: { date: '2026-11-25' },
+      tone: 'warn',
+    });
+    expect(vaultKeyLine(connection({ key: { ...connection().key!, expiresAt: null } }))?.key).toBe(
+      'vault.key_never_expires',
+    );
+    expect(vaultKeyLine(connection({ key: null }))).toBeNull();
+    for (const k of [
+      'vault.key_expires',
+      'vault.key_expires_soon',
+      'vault.key_never_expires',
+      'vault.status_needs_key',
+    ])
+      expect(en[k], k).toBeTruthy();
+  });
+
+  it('lists what the key may do, in the vault’s order, in words that exist', () => {
+    const d = connection({
+      key: { ...connection().key!, permissions: ['documents.delete', 'documents.send', 'documents.links'] },
+    });
+    expect(vaultKeyPermissions(d)).toEqual([
+      'vault.permission.send',
+      'vault.permission.links',
+      'vault.permission.delete',
+    ]);
+    for (const k of vaultKeyPermissions(d)) expect(en[k], k).toBeTruthy();
+    expect(vaultKeyPermissions(connection({ key: null }))).toEqual([]);
+  });
+
+  it('shows whether Montra acts as itself or as a person', () => {
+    expect(vaultActsAsLine(connection())).toEqual({
+      key: 'vault.acts_as_itself',
+      values: { name: 'Montra' },
+    });
+    expect(vaultActsAsLine(connection({ actsAs: 'person', actingAs: 'Sam' }))).toEqual({
+      key: 'vault.acts_as_person',
+      values: { name: 'Sam' },
+    });
+    // Member fields may be null (APP8).
+    expect(vaultActsAsLine(connection({ actsAs: 'person', actingAs: null }))?.key).toBe(
+      'vault.acts_as_person_unnamed',
+    );
+    expect(vaultActsAsLine(connection({ actsAs: null }))).toBeNull();
+    for (const k of ['vault.acts_as_itself', 'vault.acts_as_person', 'vault.acts_as_person_unnamed'])
+      expect(en[k], k).toBeTruthy();
+  });
+
+  it('sends what was pasted as the API takes it, the secret only when there is one', () => {
+    expect(vaultConnectInput('  fdvapp2.ab\ncd ', '')).toEqual({ connectionString: 'fdvapp2.abcd' });
+    expect(vaultConnectInput('fdvapp2.x', ' fdvs_y ', 4)).toEqual({
+      connectionString: 'fdvapp2.x',
+      secret: 'fdvs_y',
+      version: 4,
+    });
+    expect(vaultConnectInput('  ', 'fdvs_y')).toBeNull();
+    expect(vaultReplaceInput('fdvapp2.x', '', 3)).toEqual({ version: 3, connectionString: 'fdvapp2.x' });
+    expect(vaultReplaceInput(' fdvc_abc ', 'fdvs_y', 3)).toEqual({
+      version: 3,
+      clientId: 'fdvc_abc',
+      secret: 'fdvs_y',
+    });
+    expect(vaultReplaceInput('', 'fdvs_y', 3)).toBeNull();
+  });
 });
 
 describe('small helpers', () => {
-  it('shows the vault’s host, warns about a clock that is off, and cleans a pasted code', () => {
+  it('shows the vault’s host and cleans a pasted connection string', () => {
     expect(vaultHost('https://vault.example.com:8443')).toBe('vault.example.com:8443');
     expect(vaultHost(null)).toBe('');
-    expect(clockIsOff(null)).toBe(false);
-    expect(clockIsOff(30_000)).toBe(false);
-    expect(clockIsOff(-180_000)).toBe(true);
-    expect(cleanPastedCode('  fdvapp1.eyJ1\ncmwi OiJ \r\n')).toBe('fdvapp1.eyJ1cmwiOiJ');
+    expect(cleanPastedCode('  fdvapp2.eyJ1\ncmwi OiJ \r\n')).toBe('fdvapp2.eyJ1cmwiOiJ');
   });
 
-  it('keeps its fixture in step with the API’s DTO, which never carries a private key', () => {
+  it('keeps its fixture in step with the API’s DTO, which never carries the key’s secret', () => {
     expect(VaultConnectionSchema.parse(connection())).toEqual(connection());
-    expect(Object.keys(connection())).not.toContain('privateKey');
+    expect(JSON.stringify(connection())).not.toMatch(/secret|privateKey|publicKey|fingerprint/i);
   });
 });
 

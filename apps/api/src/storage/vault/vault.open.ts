@@ -74,7 +74,15 @@ export class VaultOpener {
     }
     if (!config.mayOpen) throw refused(new VaultError('cannot_open'));
 
-    const conn = await this.vault.openRow(actor, row);
+    let conn: Awaited<ReturnType<VaultService['openRow']>>;
+    try {
+      conn = await this.vault.openRow(actor, row);
+    } catch (e) {
+      // A connection made before API keys, or a sealed key Montra can't read: an owner pastes a new key.
+      const err = e instanceof VaultError ? e : new VaultError('failed', { detail: 'open' });
+      if (err.stopsConnection) await this.wakeCheck(actor, row.id);
+      throw refused(err);
+    }
     let url: URL;
     let made: 'view' | 'download' = mode;
     try {
@@ -191,6 +199,8 @@ const notInVault = () => new AppError(404, 'vault.not_in_vault', 'This file isnâ
 
 /** A `VaultError` as an answer to the person who clicked: its words, never its detail. */
 function refused(e: VaultError): VaultOpenRefused {
+  // The connection itself, or a vault key the vault refuses (revoked, expired, not valid, or from before API keys).
+  if (e.stopsConnection) return new VaultOpenRefused(409, 'vault.needs_vault', e.shown);
   switch (e.code) {
     case 'links_full': {
       const s = e.opts.retryAfter
@@ -201,9 +211,6 @@ function refused(e: VaultError): VaultOpenRefused {
     case 'cannot_view':
     case 'cannot_open':
       return new VaultOpenRefused(422, `vault.${e.code}`, e.shown);
-    case 'connection':
-    case 'identity_changed':
-      return new VaultOpenRefused(409, 'vault.needs_vault', e.shown);
     case 'retry_later': {
       const s = e.opts.retryAfter
         ? Math.max(1, Math.ceil((e.opts.retryAfter.getTime() - Date.now()) / 1000))
