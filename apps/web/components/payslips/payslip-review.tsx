@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { depositChoices } from '@montra/domain';
 import type { AccountDto, PayslipDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { vaultOnlyPage } from '@/lib/vault';
 import {
   buildUpdate,
   codeLabel,
@@ -26,6 +27,7 @@ import { DepositSplitEditor } from './deposit-split-editor';
 import { Money } from '../money';
 import { ReceiptViewer } from '../receipts/receipt-viewer';
 import { StatusLine, useAction } from '../use-action';
+import { useFileStorageStates, VaultBadges } from '../vault-badges';
 
 /**
  * The payslip review screen (PAY-02, PAY-03): the payslip beside what was read from it. Nothing posts until the
@@ -51,6 +53,7 @@ export function PayslipReview({
   const [rows, setRows] = useState<PayslipRow[]>(initial.rows);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const fileStates = useFileStorageStates(workspaceId, payslip.fileIds);
   const [nextKey, setNextKey] = useState(0);
   const [splitRows, setSplitRows] = useState<DepositRow[]>(() =>
     depositRowsOf(payslip.deposits, payslip.currency),
@@ -161,9 +164,11 @@ export function PayslipReview({
 
   const viewer = payslip.fileIds.length > 0 && (
     <aside aria-label={t('payslips.image')} className="lg:sticky lg:top-20 lg:h-[calc(100dvh-9rem)]">
+      <VaultBadges workspaceId={workspaceId} fileIds={payslip.fileIds} states={fileStates} />
       <ReceiptViewer
         pages={payslip.fileIds.map((fileId, i) => ({
           src: browserApi.payslipFilePath(workspaceId, payslip.id, fileId),
+          inVault: vaultOnlyPage(fileStates, workspaceId, fileId),
           alt: t('receipts.page_n', { n: i + 1 }),
         }))}
       />

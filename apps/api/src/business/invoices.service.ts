@@ -431,7 +431,8 @@ export class InvoicesService {
       let fileId = r.pdf_file_id;
       let bytes: Uint8Array;
       if (fileId) {
-        bytes = (await this.business.fileBytes(trx, ctx, fileId)).bytes;
+        // Montra needs the invoice as it was sent, to send it again: asked of the vault when only it holds it.
+        bytes = (await this.business.fileBytes(trx, ctx, fileId, { vault: true })).bytes;
       } else {
         bytes = await this.render(trx, ctx, r);
         fileId = await this.business.storeFile(ctx, bytes, `${r.number}.pdf`, 'application/pdf', trx);

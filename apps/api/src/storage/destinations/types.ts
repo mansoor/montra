@@ -1,16 +1,23 @@
 import type { Readable } from 'node:stream';
 
 /**
- * Storage the workspace owner connects (ADR-0031). Montra only ever writes and deletes there: it never reads a copy back, because
- * its own copy stays the one everything uses. Paths are relative to the connection's root and use `/`.
+ * Storage the workspace owner connects (ADR-0031). Montra writes and deletes there, and reads a copy back in one case
+ * only: a file Montra no longer holds itself, through `FileBytes` (ADR-0054 §5). Paths are relative to the connection's
+ * root and use `/`.
  *
  * Google Drive, OneDrive and Dropbox would implement this too, with a token refresh before each run (ADR-0031 §2).
+ * The household's Family Document Vault is a destination of another shape, `VaultDestination` (ADR-0054, `vault.ts`).
  */
 export interface StorageDestination {
   /** Writes a file, making folders as needed. Replaces a file of the same name. */
   put(path: string, body: Uint8Array | Readable, opts: { contentType: string; bytes: number }): Promise<void>;
   /** Fine if it's already gone. */
   delete(path: string): Promise<void>;
+  /**
+   * ADR-0054 §5: reads a file back, for `FileBytes` only. Larger than `maxBytes` is refused, not truncated; a file that
+   * isn't there is `not_found`.
+   */
+  get(path: string, maxBytes: number): Promise<Uint8Array>;
   close(): void;
 }
 

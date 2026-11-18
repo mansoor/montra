@@ -15,13 +15,14 @@ import { sql } from 'kysely';
 import yazl from 'yazl';
 import { newId, setContext, type ExportJobTable, type Trx } from '@montra/db';
 import { addDays, calendarDate, todayIn, type CalendarDate } from '@montra/domain';
-import type {
-  BackupScheduleDto,
-  CreateBackupRequest,
-  CreateTaxPackageRequest,
-  ExportJobDto,
-  ReportType,
-  SaveBackupScheduleRequest,
+import {
+  MIRROR_DESTINATION_KINDS,
+  type BackupScheduleDto,
+  type CreateBackupRequest,
+  type CreateTaxPackageRequest,
+  type ExportJobDto,
+  type ReportType,
+  type SaveBackupScheduleRequest,
 } from '@montra/schemas';
 import { AppError, notFound } from '../common/errors.js';
 import { KMS_PORT, FieldCrypto, type KmsPort } from '../crypto/crypto.service.js';
@@ -30,6 +31,7 @@ import { JobQueue, PermanentJobError, Worker, type Job } from '../jobs/queue.js'
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { renderReport } from '../reports/report-render.js';
 import { ReportsService } from '../reports/reports.service.js';
+import { FileBytes, type HeldFile } from '../storage/file-bytes.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
 import {
   leftOutLine,
@@ -43,6 +45,7 @@ import { deriveKey, encryptFile, newKdfParams, type KdfParams } from './archive-
 import {
   ENCRYPTED,
   exportedTables,
+  FILE_HOLDERS,
   insertOrder,
   plainName,
   readCatalog,
@@ -116,6 +119,7 @@ export class BackupService {
     @Inject(ReportsService) private readonly reports: ReportsService,
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(TaxFormsService) private readonly taxForms: TaxFormsService,
+    @Inject(FileBytes) private readonly files: FileBytes,
   ) {}
 
   register(): void {
@@ -289,12 +293,16 @@ export class BackupService {
     return r;
   }
 
-  /** The workspace's own storage, if it has one and the caller can see it (owners only, by RLS). */
+  /**
+   * The workspace's own storage, if it has one and the caller can see it (owners only, by RLS). Backups go to the mirror,
+   * never to the household's vault (ADR-0054; BAK-05 unchanged).
+   */
   private async destinationIn(trx: Trx, ctx: Ctx) {
     return trx
       .selectFrom('app.storage_destination')
       .select(['id', 'status'])
       .where('workspace_id', '=', ctx.workspaceId)
+      .where('kind', 'in', MIRROR_DESTINATION_KINDS)
       .executeTakeFirst();
   }
 
@@ -619,24 +627,33 @@ export class BackupService {
     const scope = entityId ? manifest.entities.find((e) => e.id === entityId)?.name : manifest.workspace.name;
     await this.writeSummaryWorkbook(ctx, entityId, join(dir, 'summary.xlsx'));
     zip.addFile(join(dir, 'summary.xlsx'), 'summary.xlsx');
+    // ADR-0054 §5a: every file Montra can get, from wherever it is held (the vault included); any it can't is listed in
+    // the README, and the backup goes on without it.
+    const missing: MissingInArchive[] = [];
     for (const f of manifest.files) {
+      const got = await this.readForArchive(ctx, { id: f.id, storage_key: f.path || null, sha256: f.sha256 });
+      if (!got.ok) {
+        missing.push({ id: f.id, name: f.name, words: got.words });
+        f.path = '';
+        continue;
+      }
       try {
-        const stored = await this.storage.get(f.path);
         const bytes = f.sealed
-          ? await this.db.run(ctx, (trx) => this.crypto.openBytes(trx, ctx.workspaceId, f.id, stored))
-          : stored;
+          ? await this.db.run(ctx, (trx) => this.crypto.openBytes(trx, ctx.workspaceId, f.id, got.bytes))
+          : got.bytes;
         // The path in the manifest is where it sits in the archive, set once it's in there.
         const path = `attachments/${f.id}-${safeFileName(f.name)}`;
         zip.addBuffer(Buffer.from(bytes), path);
         f.path = path;
       } catch (e) {
-        this.logger.warn(`A file could not be read for a backup: ${(e as Error).message}`);
+        this.logger.warn(`File ${f.id} could not be opened for a backup: ${(e as Error).name}`);
+        missing.push({ id: f.id, name: f.name, words: UNREADABLE });
         f.path = '';
       }
     }
     manifest.files = manifest.files.filter((f) => f.path);
     zip.addBuffer(Buffer.from(JSON.stringify(manifest, null, 2)), 'manifest.json');
-    zip.addBuffer(Buffer.from(README), 'README.txt');
+    zip.addBuffer(Buffer.from(README + missingSection(missing, '\n')), 'README.txt');
     zip.end();
     await done;
     return scope ?? 'montra';
@@ -682,18 +699,11 @@ export class BackupService {
           ),
         );
         const kept = new Map<string, Set<string>>();
-        // Files carry no books or person, so RLS lets every member read their rows. A tax form's file goes only with a
-        // form the archive holds (ADR-0052 §8.4): a partner's or one set of books' archive leaves the others out.
-        const formFiles = filtering
-          ? new Set(
-              (
-                await sql<{ id: string }>`
-                  select distinct unnest(t.file_ids)::text as id from app.tax_form t
-                   where t.workspace_id = ${ctx.workspaceId}
-                     and ${entityId ? sql`t.entity_id = ${entityId}` : sql`true`}`.execute(trx)
-              ).rows.map((r) => r.id),
-            )
-          : null;
+        // Files carry no books or person, so RLS lets every member read their rows. A file goes only with a row the
+        // archive holds that holds it: a partner's archive leaves out the payslips' files of other members (PAY-09), the
+        // tax forms' (ADR-0052 §8.4), others' scans and the files of books they can't read; one set of books' leaves out
+        // the other books' files. An owner's or admin's archive of the workspace takes every file, as before.
+        const heldFiles = filtering ? await this.filesHeld(trx, ctx, catalog, tables, entityId) : null;
         const manifest: ArchiveManifest = {
           format: ARCHIVE_FORMAT,
           createdAt: new Date().toISOString(),
@@ -740,8 +750,7 @@ export class BackupService {
               let row: Record<string, unknown> | null = raw.row;
               if (filtering) row = withParents(info, row, kept);
               if (!row) continue;
-              if (table === 'file' && formFiles && row.kind === 'tax_form' && !formFiles.has(String(row.id)))
-                continue;
+              if (table === 'file' && heldFiles && !heldFiles.has(String(row.id))) continue;
               row = await this.decrypted(trx, ctx, table, row);
               const line = JSON.stringify(row) + '\n';
               hash.update(line);
@@ -773,8 +782,8 @@ export class BackupService {
                   mime: String(row.mime),
                   bytes: String(row.bytes),
                   sha256: String(row.sha256),
-                  // Where it's stored, until it's been copied in.
-                  path: String(row.storage_key),
+                  // Where it's stored, until it's been copied in: empty for a file only the vault holds (ADR-0054).
+                  path: row.storage_key ? String(row.storage_key) : '',
                   ...(row.sealed ? { sealed: true } : {}),
                 });
               }
@@ -791,6 +800,34 @@ export class BackupService {
         manifest.balances = Object.fromEntries([...balances].map(([k, v]) => [k, String(v)]));
         return manifest;
       });
+  }
+
+  /**
+   * The files that rows going into this archive hold: those the maker's RLS shows, in the archive's books. Read in the
+   * archive's snapshot, before the `file` table, which comes ahead of most of the rows that hold files.
+   */
+  private async filesHeld(
+    trx: Trx,
+    ctx: Ctx,
+    catalog: Map<string, TableInfo>,
+    tables: readonly string[],
+    entityId: string | null,
+  ): Promise<Set<string>> {
+    const held = new Set<string>();
+    for (const [table, columns] of Object.entries(FILE_HOLDERS)) {
+      const info = catalog.get(table);
+      if (!info || !tables.includes(table)) continue;
+      const scope = entityId ? scopeOf(info, entityId) : sql`true`;
+      for (const column of columns) {
+        const ref = sql.ref(`t.${column}`);
+        const { rows } = await sql<{ id: string | null }>`
+          select distinct ${column.endsWith('_ids') ? sql`unnest(${ref})` : ref}::text as id
+            from ${sql.table(`app.${table}`)} t
+           where t.workspace_id = ${ctx.workspaceId} and ${scope}`.execute(trx);
+        for (const r of rows) if (r.id) held.add(r.id);
+      }
+    }
+    return held;
   }
 
   /** Replaces an encrypted column with its text, so the archive is readable and can be re-encrypted on restore. */
@@ -930,39 +967,42 @@ export class BackupService {
         const files = ids.length
           ? await trx
               .selectFrom('app.file')
-              .select(['id', 'storage_key', 'file_name'])
+              .select(['id', 'storage_key', 'sha256', 'file_name'])
               .where('workspace_id', '=', ctx.workspaceId)
               .where('id', 'in', ids)
               .execute()
           : [];
         return { rows, files: new Map(files.map((f) => [f.id, f])) };
       });
+      // ADR-0054 §5a: each file from wherever it is held; any Montra can't get is listed, and the package goes on.
+      const missing: MissingInArchive[] = [];
       const index = ['Date,Merchant,Total,Currency,File'];
       for (const r of documents.rows) {
         const names: string[] = [];
         for (const id of r.attachment_ids) {
           const f = documents.files.get(id);
           if (!f) continue;
-          try {
-            const path = `receipts/${r.d}-${safeFileName(r.merchant ?? 'receipt')}-${id.slice(0, 8)}-${safeFileName(f.file_name)}`;
-            zip.addBuffer(Buffer.from(await this.storage.get(f.storage_key)), path);
-            names.push(path);
-          } catch (e) {
-            this.logger.warn(`A receipt could not be read: ${(e as Error).message}`);
+          const path = `receipts/${r.d}-${safeFileName(r.merchant ?? 'receipt')}-${id.slice(0, 8)}-${safeFileName(f.file_name)}`;
+          const got = await this.readForArchive(ctx, f);
+          if (!got.ok) {
+            if (!missing.some((m) => m.id === id)) missing.push({ id, name: f.file_name, words: got.words });
+            continue;
           }
+          zip.addBuffer(Buffer.from(got.bytes), path);
+          names.push(path);
         }
         index.push(
           [r.d, csvCell(r.merchant), r.total ?? '', r.currency ?? '', csvCell(names.join('; '))].join(','),
         );
       }
       zip.addBuffer(Buffer.from(index.join('\r\n') + '\r\n'), 'receipts.csv');
-      const forms = await this.taxFormsInPackage(ctx, zip, entityId, entity.name, year);
+      const forms = await this.taxFormsInPackage(ctx, zip, entityId, entity.name, year, missing);
       const formLines = forms
         ? `${README_LINE}${forms.leftOut ? ` ${leftOutLine(forms.leftOut)}` : ''}\r\n\r\n`
         : '';
       zip.addBuffer(
         Buffer.from(
-          `Tax package for ${entity.name}, ${year}.\r\n\r\nreports/ holds each report as PDF and CSV. receipts/ holds the receipts for the year, listed in receipts.csv.\r\n\r\n${formLines}Prepared by Montra for your records and your tax professional. It isn't tax advice, and the figures are on a cash basis.\r\n`,
+          `Tax package for ${entity.name}, ${year}.\r\n\r\nreports/ holds each report as PDF and CSV. receipts/ holds the receipts for the year, listed in receipts.csv.\r\n\r\n${formLines}Prepared by Montra for your records and your tax professional. It isn't tax advice, and the figures are on a cash basis.\r\n${missingSection(missing, '\r\n')}`,
         ),
         'README.txt',
       );
@@ -980,6 +1020,19 @@ export class BackupService {
     }
   }
 
+  /** A file for an archive: from wherever it is held, or why not; never an error that stops the archive. */
+  private async readForArchive(
+    ctx: Ctx,
+    f: HeldFile,
+  ): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; words: string }> {
+    try {
+      return await this.files.read(ctx, f);
+    } catch (e) {
+      this.logger.warn(`File ${f.id} could not be read for an archive: ${(e as Error).name}`);
+      return { ok: false, words: UNREADABLE };
+    }
+  }
+
   /**
    * ADR-0052 §7.3 (TAX-07): the year's tax forms in these books, as the maker's row-level security shows them (§8.4): a
    * member's forms are in an owner's or admin's package and the person's own, and in an accountant's only while the
@@ -992,6 +1045,7 @@ export class BackupService {
     entityId: string,
     booksName: string,
     year: number,
+    missing: MissingInArchive[],
   ): Promise<{ forms: number; leftOut: number } | null> {
     const base = await this.db.run(ctx, async (trx) => {
       const ws = await trx
@@ -1024,7 +1078,7 @@ export class BackupService {
       ? await this.db.run(ctx, (trx) =>
           trx
             .selectFrom('app.file')
-            .select(['id', 'storage_key', 'mime'])
+            .select(['id', 'storage_key', 'sha256', 'mime', 'file_name'])
             .where('workspace_id', '=', ctx.workspaceId)
             .where('id', 'in', fileIds)
             .where('deleted_at', 'is', null)
@@ -1042,16 +1096,16 @@ export class BackupService {
         if (!file) continue;
         let path = pathOf.get(id);
         if (!path) {
-          try {
-            const bytes = await this.storage.get(file.storage_key);
-            const person = f.personMemberId ? (base.people.get(f.personMemberId) ?? null) : null;
-            path = `tax-forms/${packageFileName(f, person, file.mime, taken)}`;
-            zip.addBuffer(Buffer.from(bytes), path);
-            pathOf.set(id, path);
-          } catch (e) {
-            this.logger.warn(`A tax form's file could not be read: ${(e as Error).message}`);
+          if (missing.some((m) => m.id === id)) continue;
+          const got = await this.readForArchive(ctx, file);
+          if (!got.ok) {
+            missing.push({ id, name: file.file_name, words: got.words });
             continue;
           }
+          const person = f.personMemberId ? (base.people.get(f.personMemberId) ?? null) : null;
+          path = `tax-forms/${packageFileName(f, person, file.mime, taken)}`;
+          zip.addBuffer(Buffer.from(got.bytes), path);
+          pathOf.set(id, path);
         }
         mine.push(path);
       }
@@ -1065,6 +1119,29 @@ export class BackupService {
     );
     return { forms: forms.length, leftOut };
   }
+}
+
+const UNREADABLE = 'Montra couldn’t read this file.';
+
+/** A file an archive couldn't include (ADR-0054 §5a), named in its README. */
+interface MissingInArchive {
+  id: string;
+  name: string;
+  words: string;
+}
+
+/** The README's list of files Montra couldn't get, or nothing when it got them all. */
+export function missingSection(missing: readonly MissingInArchive[], nl: string): string {
+  if (!missing.length) return '';
+  const lines = missing.map((m) => `- ${m.name.replace(/[\r\n]+/g, ' ')} (file ${m.id}): ${m.words}`);
+  return [
+    '',
+    `Montra couldn't include ${missing.length === 1 ? 'one file' : `${missing.length} files`} it no longer holds:`,
+    ...lines,
+    '',
+    'Upload them again in Montra to keep them with your records.',
+    '',
+  ].join(nl);
 }
 
 const README = `This is a backup of your Montra data.

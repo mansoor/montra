@@ -40,6 +40,9 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   restore_job: 'About archives, not the books',
   storage_destination: 'A secret, and a connection the owner makes again (ADR-0031)',
   storage_mirror_item: 'What was copied to a connection a restore can’t bring back (ADR-0031)',
+  vault_connection_state:
+    'About a vault connection, which a restored workspace makes again with a new key (ADR-0054 §7)',
+  vault_item: 'What was sent to a vault connection a restore doesn’t have (ADR-0054 §7)',
   notification_pref: 'Follows the person',
   security_event: 'Follows the person',
 };
@@ -75,6 +78,28 @@ export const ENCRYPTED: Readonly<Record<string, Readonly<Record<string, string>>
 };
 
 export const plainName = (column: string) => column.replace(/_enc$/, '');
+
+/**
+ * The columns that put files on a row: a `uuid[]` of ids (named `*_ids`) or one id. A file carries no books or person, so
+ * row-level security lets every member read its row; an archive of less than the whole workspace takes a file only with a
+ * row it holds that holds it (a payslip's only with the payslip, PAY-09). A test pins this list against the schema.
+ */
+export const FILE_HOLDERS: Readonly<Record<string, readonly string[]>> = {
+  bill: ['attachment_ids'],
+  business_profile: ['logo_file_id'],
+  document_intake: ['file_ids'],
+  document_scan: ['file_ids'],
+  household_bill: ['attachment_ids'],
+  import_batch: ['file_id'],
+  invoice: ['pdf_file_id'],
+  lease: ['attachment_ids'],
+  maintenance_log: ['attachment_ids'],
+  payroll_i9_document: ['file_ids'],
+  payslip: ['attachment_ids'],
+  receipt: ['attachment_ids'],
+  reimbursement: ['file_ids'],
+  tax_form: ['file_ids'],
+};
 
 export interface ForeignKey {
   columns: string[];

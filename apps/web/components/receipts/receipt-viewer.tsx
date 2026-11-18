@@ -11,7 +11,16 @@ const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
  * themed), with page turning and zoom. Images render as <img>; a file the browser can't show as an image (a
  * PDF invoice) falls back to the browser's own PDF viewer. Files come through the authenticated /api proxy.
  */
-export function ReceiptViewer({ pages }: { pages: { src: string; alt: string }[] }) {
+export function ReceiptViewer({
+  pages,
+}: {
+  pages: {
+    src: string;
+    alt: string;
+    /** ADR-0054 §5: only the household's vault holds this page's file, so it is opened there, not shown here. */
+    inVault?: { openHref: string | null; missing: boolean } | null;
+  }[];
+}) {
   const { t } = useI18n();
   const [index, setIndex] = useState(0);
   const [zoom, setZoom] = useState<number | 'fit'>('fit');
@@ -99,7 +108,22 @@ export function ReceiptViewer({ pages }: { pages: { src: string; alt: string }[]
         </a>
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-sunken p-3" data-testid="receipt-viewer">
-        {isPdf ? (
+        {page.inVault ? (
+          <div className="card space-y-2 text-sm" data-testid="viewer-in-vault">
+            <p>{t(page.inVault.missing ? 'vault.viewer_missing' : 'vault.open_in_vault_only')}</p>
+            {page.inVault.openHref && (
+              // A plain link, never Next's <Link>: the single-use link is made only on the click (§9).
+              <a
+                className="btn-secondary"
+                href={page.inVault.openHref}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t('vault.open_in_vault')}
+              </a>
+            )}
+          </div>
+        ) : isPdf ? (
           <iframe
             src={page.src}
             title={page.alt}

@@ -17,6 +17,8 @@ import {
   INTAKE_REASONS,
   TAX_FORM_READING_PROBLEMS,
   TAX_FORM_RESULT_STATES,
+  VAULT_GROUP_MODES,
+  VAULT_GROUPS,
 } from '@montra/schemas';
 import { MONEY_BOXES, READING_STAGES } from './tax-forms';
 import { ITEM_PERIODS } from './receipts';
@@ -112,8 +114,11 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'admin.suspend_kind.': ['abuse', 'fraud', 'legal_hold'],
   'admin.close_channel_': ['email', 'support_request', 'phone', 'letter'],
   'admin.interval.': ['month', 'year'],
-  'admin.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'],
-  'billing.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'],
+  'admin.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
+  'billing.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
+  // ADR-0054 §6: the Family Document Vault's groups and modes.
+  'vault.group.': VAULT_GROUPS,
+  'vault.mode.': VAULT_GROUP_MODES,
   'auth.password_strength_': ['0', '1', '2', '3', '4'],
   'sharing.mfa_': ['standard', 'everyone'],
   'account.kind.': [
@@ -414,6 +419,11 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'account_restored',
     'deletion_requested_by_support',
     'phone_changed',
+    'vault_connected',
+    'vault_changed',
+    'vault_key_replaced',
+    'vault_move_started',
+    'vault_disconnected',
   ],
   'data.kind_': ['backup', 'tax_package'],
   'storage.kind_': ['s3', 'webdav'],

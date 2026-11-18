@@ -352,6 +352,18 @@ import type {
   StorageItemDto,
   StorageTestResultDto,
   UpdateStorageRequest,
+  VaultConnectionDto,
+  PasteVaultCodeRequest,
+  ReplaceVaultKeyRequest,
+  DisconnectVaultRequest,
+  UpdateVaultConnectionRequest,
+  SendExistingToVaultRequest,
+  RetryVaultItemsRequest,
+  VaultExistingDto,
+  VaultItemDto,
+  FileStorageStateDto,
+  MissingFileDto,
+  FileProvidedAgainDto,
   BusinessProfileDto,
   BusinessRegistrationsDto,
   BusinessRevealField,
@@ -602,6 +614,12 @@ export type SaveBackupScheduleInput = z.input<typeof SaveBackupScheduleRequest>;
 export type ConnectStorageInput = z.input<typeof ConnectStorageRequest>;
 export type UpdateStorageInput = z.input<typeof UpdateStorageRequest>;
 export type StorageConnectionInput = z.input<typeof StorageConnection>;
+export type PasteVaultCodeInput = z.input<typeof PasteVaultCodeRequest>;
+export type ReplaceVaultKeyInput = z.input<typeof ReplaceVaultKeyRequest>;
+export type DisconnectVaultInput = z.input<typeof DisconnectVaultRequest>;
+export type UpdateVaultConnectionInput = z.input<typeof UpdateVaultConnectionRequest>;
+export type SendExistingToVaultInput = z.input<typeof SendExistingToVaultRequest>;
+export type RetryVaultItemsInput = z.input<typeof RetryVaultItemsRequest>;
 export type ConfirmRestoreInput = z.input<typeof ConfirmRestoreRequest>;
 export type RequestDeletionInput = z.input<typeof RequestDeletionRequest>;
 export type CreatePropertyInput = z.input<typeof CreatePropertyRequest>;
@@ -2546,6 +2564,72 @@ export class ApiClient {
       this.ws(workspaceId, `/storage-destination/items?status=${status}`),
     ).then((r) => r.data);
   }
+  /** The household's Family Document Vault (ADR-0054). Owners and admins see it; only an owner changes it. */
+  getVaultConnection(workspaceId: string) {
+    return this.request<{ connection: VaultConnectionDto | null }>(
+      'GET',
+      this.ws(workspaceId, '/family-vault'),
+    ).then((r) => r.connection);
+  }
+  startVaultConnection(workspaceId: string) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault'));
+  }
+  pasteVaultCode(workspaceId: string, input: PasteVaultCodeInput) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/code'), input);
+  }
+  checkVaultConnection(workspaceId: string) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/check'));
+  }
+  replaceVaultKey(workspaceId: string, input: ReplaceVaultKeyInput) {
+    return this.request<VaultConnectionDto>('POST', this.ws(workspaceId, '/family-vault/key'), input);
+  }
+  disconnectVault(workspaceId: string, input: DisconnectVaultInput = {}) {
+    return this.request<void>('DELETE', this.ws(workspaceId, '/family-vault'), input);
+  }
+  /** "Send these to the vault" (ADR-0054 §6): each group's mode and vault kind, more detail, deletes, pausing. */
+  updateVaultConnection(workspaceId: string, input: UpdateVaultConnectionInput) {
+    return this.request<VaultConnectionDto>('PATCH', this.ws(workspaceId, '/family-vault'), input);
+  }
+  /** §12: how many existing documents would be sent, and how many days that takes at the vault's limit. */
+  getVaultExisting(workspaceId: string) {
+    return this.request<VaultExistingDto>('GET', this.ws(workspaceId, '/family-vault/existing'));
+  }
+  sendExistingToVault(workspaceId: string, input: SendExistingToVaultInput) {
+    return this.request<VaultExistingDto>('POST', this.ws(workspaceId, '/family-vault/existing'), input);
+  }
+  /** "Try again" for failed files; "Send again" for a file the vault didn't keep, when named. */
+  retryVaultItems(workspaceId: string, input: RetryVaultItemsInput = {}) {
+    return this.request<{ retried: number }>('POST', this.ws(workspaceId, '/family-vault/retry'), input);
+  }
+  listVaultItems(workspaceId: string, status: Exclude<VaultItemDto['status'], 'delete'> = 'failed') {
+    return this.request<{ data: VaultItemDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/family-vault/items?status=${status}`),
+    ).then((r) => r.data);
+  }
+  /** The vault badges for files the caller can see (§13), at most 100 at a time. */
+  getFileStorageStates(workspaceId: string, fileIds: readonly string[]) {
+    return this.request<{ data: FileStorageStateDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/family-vault/files?ids=${fileIds.map(encodeURIComponent).join(',')}`),
+    ).then((r) => r.data);
+  }
+  /** Review → "Files to provide again" (ADR-0054 §5a): files the vault didn't give back, for whoever may provide them. */
+  listMissingFiles(workspaceId: string) {
+    return this.request<{ data: MissingFileDto[] }>('GET', this.ws(workspaceId, '/missing-files')).then(
+      (r) => r.data,
+    );
+  }
+  /** The paper again, stored under the same file id. */
+  provideMissingFile(workspaceId: string, fileId: string, file: Blob, fileName: string) {
+    const form = new FormData();
+    form.append('file', file, fileName);
+    return this.request<FileProvidedAgainDto>(
+      'POST',
+      this.ws(workspaceId, `/missing-files/${enc(fileId)}`),
+      form,
+    );
+  }
   listRestores() {
     return this.request<{ data: RestoreJobDto[] }>('GET', '/v1/me/restores').then((r) => r.data);
   }
@@ -3362,6 +3446,12 @@ export type {
   StorageDestinationDto,
   StorageItemDto,
   StorageTestResultDto,
+  VaultConnectionDto,
+  VaultExistingDto,
+  VaultItemDto,
+  FileStorageStateDto,
+  MissingFileDto,
+  FileProvidedAgainDto,
   DeletionStatusDto,
   ExportJobDto,
   NotificationDto,

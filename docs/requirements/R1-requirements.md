@@ -664,6 +664,25 @@ The recommendation is a TypeScript monorepo: Next.js on web, React Native (Expo)
 | OPS-12 | Documented disaster recovery and incident response plans; affected users notified within 72 hours of a confirmed breach. | M |
 | OPS-13 | Settings page covering profile, security, family members, entities, currencies, time zone, AI mode, notifications, backups, data export and account deletion, on web and mobile. | M |
 
+### 13.6 Family Document Vault
+
+Added on 2026-11-17 with [ADR-0054](../design/adr/0054-family-document-vault-storage.md): the household's Family Document
+Vault as a per-workspace storage provider. Documents go one way, from Montra to the vault.
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| VLT-01 | An owner connects the workspace to the household's Family Document Vault with a key pair Montra makes for that workspace, checks the vault's code and identity, and sees whether it's approved. | S |
+| VLT-02 | The owner chooses, for each group (receipts, statements, bills, payslips, tax documents, other), whether it is not sent (kept only locally), sent with a local copy kept, or sent with no local copy, and how each sent group maps to the vault's kinds. A document filed in the vault is the household's record; "local" is Montra's own storage, and the owner's own S3/WebDAV keeps its own setting. The vault decides where each document lands. | S |
+| VLT-03 | Documents are sent one at a time after Montra has finished with them, are never filed twice, and show their vault status per file and in total. | S |
+| VLT-04 | Existing documents can be sent; for a group sent with no local copy, Montra removes its copy only after the vault has filed the document. | S |
+| VLT-05 | Documents go one way, Montra to the vault; the vault's changes to documents Montra sent are read and shown, and win on the document but never change the books; a document the vault no longer shows is marked so, without a reason. | S |
+| VLT-06 | A vault-held document opens through a single-use link made when the person clicks, never stored, logged or sent. | S |
+| VLT-07 | Payslips and tax documents go to the vault only if an owner turns them on after a warning; sealed copies of identity documents, logos and exports never go. | M |
+| VLT-08 | The private key is sealed, never shown, logged or reused across workspaces, and can be replaced; connecting, changes, moves and disconnecting are in the security log; files moved and links made are audited. | M |
+| VLT-09 | The vault's daily limits and waits are respected without counting as failures; problems are shown in words, and owners are told once when the vault needs a person. | S |
+| VLT-10 | The phone shows the vault status and badges, opens vault-held documents, and uploads missing files again. | C |
+| VLT-11 | When Montra needs a file it no longer holds, it asks the vault; a file the vault doesn't return is listed in Review to be provided again, and backups and tax packages list any file still missing. | M |
+
 ## 14. Roadmap, out of scope and open questions
 
 &#91;embedded content: release roadmap · 4 phases, 3 gates (not to scale)\]

@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
 | **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 327 IDs in total: **255 done, 59 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
+| **Requirements**       | 338 IDs in total: **256 done, 65 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
 | **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
@@ -31,6 +31,27 @@ later; tax forms use an owner-only setting for accountants instead.
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
+
+**Being built:** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
+Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. It covers a key
+pair per workspace and signed requests. Documents go one way, Montra to the vault, one at a time. The vault is
+additional storage, and a document filed there is the household's record. Each group (receipts, statements, bills,
+payslips, tax documents, other) has a mode, as the owner clarified on 2026-11-17: not sent, sent with a local copy kept,
+or sent with no local copy; payslips and tax documents are not sent until an owner chooses otherwise, and the vault
+decides whose Inbox each lands in. Montra's copy is removed only for a group sent with no local copy, once the vault has
+filed the document. Montra reads back the vault's changes to what
+it sent, and opens documents through single-use view links. A file the vault doesn't return is listed in Review to be
+uploaded again, and backups and tax packages list any still missing. The owner chose to depend on the vault's client
+library as a published package: **PR 1 (contracts, migration 0063), PR 2 (connecting), PR 3 (sending, with a
+local copy kept; migration 0064) and PR 4 (keeping in step and view links; migration 0065) are done**, and **PR 5a
+(`FileBytes`: every reader of a file's bytes reads it from Montra, the owner's storage or the vault; migration 0066) is
+done** on `@fdv/client` 0.9.0-dev.62 from the vault's public GitHub release (see §7g). **PR 5b1** ("sent with no local
+copy": removing Montra's copy, missing files and Review's "Files to provide again", quota; migration 0067) is built;
+PR 5b2 (the move backfill, bringing files back, the disconnect choice, the archive's missing count and its one wait, and
+restore marking) is next. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
+Ed25519 key and signatures; a separate PR replaces Montra's key code then. On the vault's side, view links,
+deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
+and is not copied into this repo.
 
 ### Test suite at the end of Phase 11 (green locally)
 
@@ -249,6 +270,12 @@ finished:
     a migration of payee history and rules.
 12. ~~**Patch schemas that fill defaults.**~~ Done: every `Update…` schema now leaves omitted fields out, and
     `packages/schemas/test/patches.test.ts` checks them all.
+13. **Receipt line quantity and unit price** (owner, 2026-11-18). `extract_receipt` v3 already reads `qty` and
+    `unitPrice` when the receipt prints them, and leaves them null otherwise. Wanted: read them wherever possible, and
+    when the quantity isn't printed, default the line to quantity 1 with the unit price equal to the line total, so
+    every line shows quantity × unit price = total.
+14. **Phone receipts don't show tax and tip** (owner, 2026-11-18). The web receipt shows them; the phone doesn't, so
+    there the line items don't add up to the receipt total.
 
 ---
 
@@ -1586,7 +1613,8 @@ Phase 11 leftovers:
     for 30 days are purged with the files no other form holds (`app.purge_trash`, now run first). The owner's storage
     copies `tax_form` by default, as payslips; connections that copied `other` keep copying them.
   - **Backups** restore the three tables (round trip tested); a partner's or one set of books' backup leaves out the
-    files of tax forms it doesn't hold. Payslip files still go into such backups (an owner's question on the PR).
+    files of tax forms it doesn't hold. Payslip files had the same gap, closed afterwards for every kind of file (see
+    "Files in partial backups" below).
   - **The reminder** `tax_forms_missing`: from 16 February (caught up to the 22nd), once per person and year, last
     year's expected forms not received or waived as each person can see them; nothing when nothing is missing. A row in
     notification settings on the web and the phone.
@@ -1595,6 +1623,261 @@ Phase 11 leftovers:
     partner's backup, the reminder's day, recipients and dedupe, and a workspace with nothing missing),
     `packages/db/test/tax-forms.test.ts` (the migration's data update, the storage mirror with and without `tax_form`,
     staff grants), web and phone helpers. Where the build differs from the ADR is in "As built: PR 5".
+- **Files in partial backups** (PAY-09, BAK-04, ADR-0019 §7; no migration). Files carry no books or person, so row-level
+  security lets every member read their `app.file` rows, and an archive of less than the whole workspace took every file
+  but tax forms'. A partner's backup of their personal books held another member's payslips (the payslip rows were left
+  out, their files weren't), the owner's scans, the files of books the partner had no grant to, and, with a read-only
+  grant to a business, its I-9 ID copies, decrypted. An owner's backup of one set of books held the other books' files.
+  - **Now** such an archive takes a file only with a row it holds that holds it: a payslip, receipt, bill, invoice, lease,
+    maintenance log, household bill, import, scan, intake, reimbursement, I-9 document, business logo or tax form. The
+    holders are `FILE_HOLDERS` in `apps/api/src/data/catalog.ts`, read in the archive's snapshot under the maker's RLS
+    and the archive's books (replacing PR 5's tax form rule). A test pins the list against the schema (every `uuid[]`
+    column named for files or attachments, and every foreign key to `app.file`). An owner's or admin's backup of the
+    workspace is as before. A file no row holds (an upload never used) is left out of a partial archive too.
+  - **Not a backup gap**: no journal entry or transaction holds a file; a receipt matched to a restricted entry (such as a
+    payslip's) follows the receipt's own row-level security (its books), in the app as in a backup.
+  - Tests: `apps/api/test/backup-files.test.ts` (a partner's backup without Sam's payslip file but with their own, without
+    the owner's scan or the rental's receipt; an owner's full and one-book backups; restores of both),
+    `payroll-people.test.ts` (no I-9 copies for a partner with read access), `data-ownership.test.ts` (the holders list).
+- **Family Document Vault, PR 1 of 6: contracts** (VLT-02, VLT-03 and VLT-07 partial; requirements 13.6 adds
+  VLT-01..11, traced to P14; [ADR-0054](design/adr/0054-family-document-vault-storage.md), migration 0063). No vault code
+  and no dependency on the vault; nothing can connect a vault yet, and nothing anyone sees changes except the plan key
+  (below).
+  - **Storage:** `app.storage_destination.kind` gains `fdv` and `status` gains `needs_vault` (vault rows only); the one
+    connection per workspace becomes one mirror and one vault. `app.vault_connection_state` (feed position, checks,
+    daily-cap holds, clock offset, key change) and `app.vault_item` (the outbox: `queued` → `pending` → `received` →
+    `filed`, or `not_kept`, `failed`, `out_of_reach`, `delete`; the id saved once and never changed, by trigger), both
+    owners and admins only and pinned to vault connections by a foreign key on the kind. `app.file` gains `location`
+    (`montra`, `vault`), `missing_since` and `missing_reason`, and `replaced_sha256`; `storage_key` stays NOT NULL
+    until PR 5.
+  - **Triggers and functions:** a stored file is queued for the vault when its group is on (never sealed copies, logos
+    or exports); deleting a file for good withdraws an Inbox item and deletes a filed document only when asked and
+    allowed. `app.vault_due()` and `app.vault_next()` for PR 3's job. The mirror's trigger, functions, settings, job and
+    backups to storage now look at mirrors only.
+  - **Contracts:** the DTOs and the group mapping (`vaultGroupOf`, `vaultFileKinds`; receipts, statements and bills on,
+    payslips, tax documents and other papers off) in `@montra/schemas`; the `VaultDestination` port and `VaultError` in
+    `apps/api/src/storage/destinations/vault.ts`, with no adapter. Five `vault_*` security log kinds; the notification
+    types are in the database only, for the PRs that send them.
+  - **Plan key `familyVault`**, on wherever `ownStorage` is (every existing version, by the migration). The staff
+    console lists it; customers don't see it until a vault can be connected (`FEATURES_NOT_YET_SHOWN` in
+    `@montra/domain`, which PR 2 or 3 empties).
+  - Waits for the vault's first client release tarball (0.9.0-dev.60) before PR 2.
+  - Tests: `packages/db/test/vault.test.ts` (one mirror and one vault, kinds and statuses, the outbox's checks and fixed
+    id, RLS for each role and workspace, staff with no table or function, a file's place, the triggers, the job's
+    functions), `packages/schemas/test/vault.test.ts` (the group mapping, table-driven over every file kind, and the
+    DTOs, never a private key), `apps/api/test/own-storage.test.ts` (a mirror beside a vault),
+    `apps/api/test/plans.test.ts` and `packages/domain/test/operations.test.ts` (the plan key). Where the build differs
+    from the ADR is in its "As built: PR 1".
+- **Family Document Vault, PR 2 of 6: connecting** (VLT-01 and VLT-08 partial, VLT-02 updated; ADR-0054 "As built:
+  PR 2"; no migration). Nothing is sent yet.
+  - **The dependency:** `@fdv/client` (MIT), pinned by URL to the vault's public release tarball
+    `v0.9.0-dev.59/fdv-client-0.9.0-dev.59.tgz` in `apps/api` (integrity in the lockfile). ESM only; the API is ESM, so
+    it imports it directly. It has no install scripts, makes no network call on import and depends only on
+    `libphonenumber-js`. Its contract scenarios need vitest 5 or 6 and aren't used; `.pnpmfile.cjs` dropped their
+    optional vitest peer, so the API's production image didn't carry vitest (gone with dev.61, which has no peers; PR 4).
+  - **Connecting** (`apps/api/src/storage/vault/`, `/v1/workspaces/:id/family-vault`): an owner with a recent sign-in
+    starts; Montra makes a fresh Ed25519 pair and seals the private key at once (`FieldCrypto`, `secret_enc`); the card
+    shows the public key and fingerprint to register in the vault; the pasted code is checked in order (names that key,
+    public https address with no loopback exception, a vault that takes apps and which one, pinned, then a signed
+    connection test through the package). Waiting for approval is saved and checked again on request (owners and
+    admins). A different vault at the pinned address, or the app paused or removed there, stops the connection with the
+    words to show; five unreachable checks in a row turn it `failing`.
+  - **Replacing the key:** a new pair sealed beside the current one, which keeps signing until the vault's code for the
+    new key checks out; the old key is then retired. Built through the vault's Settings (someone there adds the key and
+    gets a code), because the package's fake has no route for an app to add its own key; see the ADR.
+  - **Disconnecting** deletes the connection with its key, state and outbox. Security log rows: `vault_connected`,
+    `vault_changed`, `vault_key_replaced`, `vault_disconnected`.
+  - **The owner's clarification** (2026-11-17): the connection-wide role and backup choice are replaced by a mode per
+    group (not sent; sent, keep a local copy; sent, no local copy) in the ADR, the DTOs and the helpers
+    (`VaultGroupMode`, `vaultGroupModes`, `vaultKeepsCopy`). No migration: they only lived in `config`.
+  - **Web:** a "Family Document Vault" card in Settings → Storage for owners and admins whose plan has `familyVault`
+    (only an owner changes anything): the three steps, waiting for approval, status, the clock warning, Check again,
+    Replace the key, Disconnect. The per-group choices come with sending (PR 3). The plan key stays hidden from the
+    billing page (`FEATURES_NOT_YET_SHOWN`) until then.
+  - **Test-only switch:** `FAMILY_VAULT_FAKE=on` runs the package's own fake vault inside the API process (refused in
+    production), with a dev-only route that stands in for the vault's owner registering Montra. Tests and the e2e run
+    never reach a real vault.
+  - Tests: `apps/api/test/family-vault.test.ts` (keys, the address guard incl. the socket, failures mapped to words,
+    connecting with good and bad codes, private and loopback addresses, identity pinning, waiting for approval, paused
+    and removed apps, failing, key replacement and cancel, disconnecting, owner-only and recent sign-in, secrets never
+    in answers, logs, the security log or archives), `apps/api/test/plans.test.ts` (a plan without the vault),
+    `packages/schemas/test/vault.test.ts` (the modes), `apps/web/lib/vault.test.ts`, and the Playwright spec
+    `apps/web/e2e/family-vault.spec.ts` (connect, check, replace and cancel, disconnect, against the fake).
+  - Next: PR 3 (sending with a local copy kept, the job, the per-group choices), on `@fdv/client` 0.9.0-dev.60 when it
+    is out.
+- **Family Document Vault, PR 3 of 6: sending** (VLT-07 done; VLT-01, VLT-02, VLT-03, VLT-04, VLT-08, VLT-09 partial;
+  ADR-0054 "As built: PR 3"; migration 0064). The plan key is now shown to customers (`FEATURES_NOT_YET_SHOWN` is empty).
+  - **The dependency** moves to `@fdv/client` 0.9.0-dev.60 (`v0.9.0-dev.60/fdv-client-0.9.0-dev.60.tgz`, 496,636
+    bytes, sha256 `303cac17c6a7455c…`, checked against the vault side's numbers; integrity in the lockfile). It adds
+    `content_available` on every intake state (stored on `vault_item`), routing to the Inbox of the person a paper is
+    about, and `sentFile()` (unused until PR 5).
+  - **Migration 0064:** a filed row may have no document id (a vault that lets Montra send but not read says only
+    "filed"); `vault_item.content_available`; the trigger on `app.file` wakes `storage.vault` two minutes after it
+    queues a file; `app.vault_file_busy(file)` (definer, owners and admins: is any receipt, payslip, import, scan,
+    intake or tax form still reading the file or in review) and `app.vault_file_states(files)` (definer, the badges).
+  - **The job** (`apps/api/src/storage/vault/vault.jobs.ts`, `storage.vault`, registered in the worker): per due
+    connection, under an owner's RLS: the signed check when it is due, failed or waiting (so approval is now noticed on
+    its own); `queued` → `pending` once Montra has finished with the file (or `not_kept` for a statement export or a type
+    or size the vault doesn't take); one send at a time with a pause, the id saved before the first send, a row whose
+    answer was lost asked about before it is sent again; the vault's hash checked; Inbox items asked about every 30
+    minutes, a hundred at a time; withdrawals and deletes for files deleted for good. Daily cap: a hold, not a failure.
+    A wait the vault asks for (busy, too many requests): waited out with jitter and backoff, never given up over. A
+    problem with the connection itself: `needs_vault` at once, owners and admins told once (`vault_attention`, a new
+    notification type they can't switch off, as `storage_failing`). Five failures in a row: `failing`, told once.
+  - **What Montra says** (D5): the group's vault kind, a title from the file's name (and a business's or rental's name),
+    the paper's date, the tax year, and the person a payslip, tax form or household bill belongs to (by name; the vault
+    routes it to their Inbox when they can receive it). Amounts and account last four only with "Describe documents in
+    more detail". Only hints the vault says it takes.
+  - **API** (`/v1/workspaces/:id/family-vault`): `PATCH` (groups, more detail, deletes, pause; payslips and tax
+    documents owner-only with a recent sign-in, an admin may turn them off; `sent_no_copy` refused), `GET`/`POST
+    existing` (the count and days at the daily limit; send them, owner-only, recent sign-in, the count shown must match),
+    `POST retry` (Try again; Send again for a file not kept), `GET items`, `GET files?ids=` (badges, for anyone who can
+    see the files).
+  - **Web:** the card's "Send these to the vault" table (each group's mode and vault kind, suggestions, the warning for
+    payslips and tax documents, the note that sending without a local copy comes later), the counts and the daily-limit
+    hold, Try again and Send again, Send existing documents with its estimate, Describe documents in more detail, Pause
+    sending. Badges ("Sending to the vault", "In the vault's Inbox", "In the vault", "Not taken by the vault") beside the
+    files of receipts, payslips and tax forms.
+  - **Not done here:** sent with no local copy, `FileBytes`, missing files (PR 5); the changes feed and the vault's own
+    name for a document, view links (PR 4); the phone (PR 6); badges on statements and bills (their screens don't list
+    files by id yet).
+  - **The fake vault reads a multipart body as UTF-8**, so a binary file (a real PNG or JPEG) hashes differently there
+    and Montra's hash check fails it. Tests send text-only bytes; asked of the vault's side. The real vault is
+    unaffected as far as Montra knows.
+  - Tests: `apps/api/test/family-vault-sending.test.ts` (the id saved before the first send and reused after a lost
+    answer, waiting while Montra reads a file, filed without a document id, one at a time oldest first and the backfill
+    with its count, statement exports, types and sealed copies never sent, the person hint and the vault's routing (to
+    the person, and to the acting member when that person is locked), the daily cap, busy waits, failing after five,
+    the connection stopped and owners told once, family-removed and lapsed items, a kind no longer allowed, a hash
+    mismatch and Try again, withdrawals, badges, pausing, group modes and owner-only payslips),
+    `apps/api/test/family-vault.test.ts` (updated for sending columns), `packages/db/test/vault.test.ts` (migration
+    0064), `packages/schemas/test/vault.test.ts`, `apps/web/lib/vault.test.ts`, and the Playwright spec (choosing what
+    is sent, the warning, the count of existing documents).
+  - Next: PR 4 (keeping in step: the changes feed, the vault's names, out of reach, view links).
+- **Family Document Vault, PR 4 of 6: keeping in step and view links** (VLT-05 and VLT-06 partial; VLT-03, VLT-08,
+  VLT-09 updated; ADR-0054 "As built: PR 4"; migration 0065).
+  - **The dependency** moves to `@fdv/client` 0.9.0-dev.61 (`v0.9.0-dev.61/fdv-client-0.9.0-dev.61.tgz`, 501,417
+    bytes, sha256 `535a6bff7f8520f1…`, checked against the vault side's numbers; integrity in the lockfile). It has no
+    peer dependencies, so `.pnpmfile.cjs` and its Dockerfile copies are removed (the API's production install still has
+    no vitest). A network failure's short code (`ECONNREFUSED`) goes into `VaultError.detail`; its `cause` is never
+    logged. Its new key routes aren't used: vault 0.9.0-dev.63 replaces signing with API keys, and a separate PR follows.
+  - **Migration 0065:** `vault_connection_state.feed_next_at` and `full_read_started_at`, `vault_item.feed_seen_at`;
+    `vault_due()`/`vault_next()` count the feed while a connection is active or failing; `app.vault_file_open(file)`
+    (definer, members of the workspace: the document to open, its status and the owner the connection acts as).
+  - **The feed** (`apps/api/src/storage/vault/vault.feed.ts`, in `storage.vault`): every 20 minutes while the vault lets
+    Montra read, and caught up before a document is opened. Each page is applied with its position in one transaction,
+    only if nobody moved it meanwhile. Only Montra's own documents (by document id, or Montra's id for a filed item it
+    wasn't told the document of); the rest is skipped, never stored. `vault_meta` keeps the vault's title, kind, date
+    and version, never amounts or digits; the books are never touched. Unavailable: `out_of_reach` ("No longer available
+    in Family Document Vault"), filed again when shown again. A position refused (too old, or unknown after a restore):
+    the whole feed is read again, and filed documents it didn't show are out of reach.
+  - **Opening:** "Open in the vault" beside the badges of receipts, payslips and tax forms (filed documents the feed has
+    shown). A plain link to `/w/:id/vault/:file/open` (web route: no prefetch, no other site), which calls `POST
+    /v1/workspaces/:id/family-vault/files/:file/open` and passes its 303 straight to the browser. The API checks the
+    person can see the file, mints a single-use link under the connection's owner context, and audits
+    `file.vault_link_made` without the link. A type the vault can't draw opens as a download when allowed; the hourly
+    link limit is a wait in words (429, `Retry-After`); not allowed, not filed, no longer available: words, on
+    `/w/:id/vault/:file?problem=…`.
+  - **Settings:** "Also delete it in the vault when Montra deletes a file for good" (owner, off by default, offered when
+    the vault allows deletes) and when the vault's changes were last read. DTOs: `FileVaultSummaryDto` gains `kind` and
+    `canOpen`, `VaultConnectionDto` gains `feedReadAt`, new `VaultOpenQuery` (web fixtures updated; the phone has no
+    vault types yet).
+  - **For the owner:** with no read grant, a document the family puts a newer version into stops being readable to
+    Montra, so it shows as "No longer available" rather than "the vault has a newer version" (ADR "As built: PR 4").
+  - Tests: `apps/api/test/family-vault-feed.test.ts` (the feed's terms; a full read, then changes, from the saved place;
+    the books unchanged; a newer version; never storing the family's own papers; resuming after a page; out of reach
+    and back; starting over after a restore and an unknown position; a connection problem and an unreachable vault
+    while reading; no feed without read access; links made per click, 303, never in any table, output or answer;
+    audit; who may open; the hourly limit as a wait; download instead of view; not allowed to open; catching up before
+    opening), `packages/db/test/vault.test.ts` (migration 0065), `apps/web/lib/vault.test.ts` (names, the open route and
+    its outcomes, prefetches refused, the feed line), and the Playwright spec (the delete switch, the feed line, opening
+    a file that isn't there).
+  - Next: PR 5 (sent with no local copy, `FileBytes`, missing files, bringing files back).
+- **Family Document Vault, PR 5a of 6: reading a file whoever holds it** (VLT-11 partial; VLT-05 and VLT-09 updated;
+  ADR-0054 "As built: PR 5a"; migration 0066). PR 5 is split: 5a moves every reader onto `FileBytes` and removes
+  nothing; 5b turns on "sent with no local copy".
+  - **The dependency** moves to `@fdv/client` 0.9.0-dev.62 (`v0.9.0-dev.62/fdv-client-0.9.0-dev.62.tgz`, 504,907
+    bytes, sha256 `aa97e8fbc64bbe16…`, checked against the vault side's numbers; integrity in the lockfile). Its fake
+    keeps a file's bytes exactly as sent, so the vault suites now send binary files of every byte value. Not dev.63
+    (API keys), which a separate PR takes.
+  - **Migration 0066:** `app.file.storage_key` drops NOT NULL (the 0063 check still keeps a key on every file Montra
+    holds); `app.workspace_storage_keys` skips null keys and adds sources the vault's job still has to remove;
+    `app.file_copies(file)` (definer, members: where the mirror's and the vault's copies are, and the owner the
+    connections act as).
+  - **`FileBytes`** (`apps/api/src/storage/file-bytes.ts`): Montra's copy, then the mirror's (a new `get` on S3 and
+    WebDAV), then the vault's (`sentFile`, by Montra's own id, the exact file sent), each checked against the file's
+    hash; or a typed reason in words (`in_vault`, `vault_refused`, `vault_read_cap`, `vault_unavailable`, `not_held`).
+    The vault's daily read cap is held until its reset (`read_held_until`), never a failure; a connection problem wakes
+    the connection's check. Every reader uses it: previews (a file only the vault holds is a 409 "Open it there"; one
+    the mirror holds is served), AI reading, imports, intakes and migrations (jobs: permanent in words, or retried on a
+    hold), backups and tax packages (they hold every file they can get and list the rest in the README instead of
+    failing), payroll documents, invoices, and the mirror's and the vault's own sending (which never ask the vault). A
+    receipt, payslip, scan, intake or import made from a file only the vault holds puts Montra's copy back first
+    (`ensureHeld`), since the doc-worker reads by key. A test fails if any other code reads a file by its key.
+  - **Not done here (5b):** the third mode in Settings and the API, removing sources and resuming after a crash, missing
+    files (`missing_since`, Review's "Files to provide again" with Upload, the badge, `files_missing` once a day,
+    uploading again under the same id), the count of missing files on an archive's screen, the move backfill, bringing
+    files back, the disconnect choice, the web's handling of `file.in_vault`, and whether a background archive waits for
+    the vault's daily reset.
+  - Tests: `apps/api/test/family-vault-file-bytes.test.ts` (the schema; reading back every byte of a file only the
+    vault holds, counted against the vault's reads; Montra's id, not the vault's newer version; refused, a different
+    file, the read cap held, a paused or stopped connection; Montra's copy first, a lost object read back; previews sent
+    to the vault; jobs; a new receipt putting Montra's copy back; a backup and a tax package with a file from the vault
+    and one the vault won't return; the vault's and the mirror's jobs never asking the vault; the mirror read back,
+    under the owner's context for a partner, and passed over when its copy differs; the client's refusals in Montra's
+    terms; no other reader by key), and the PR 3 and PR 4 vault suites, now with binary files.
+  - **For the dev.63 PR:** the owner chose that the app that sent a document keeps reading it, in the feed and through
+    view links, after the family adds a newer version; from dev.63 the feed reports the newer version, so PR 4's "No
+    longer available" for that case changes then. `sentFile` already returns Montra's exact bytes, so 5a and 5b don't
+    depend on it.
+  - Next: PR 5b (sent with no local copy: removal, missing files, the move backfill, bringing files back, deletes).
+- **Family Document Vault, PR 5b1 of 6: sent with no local copy** (VLT-02, VLT-04, VLT-05, VLT-08, VLT-11 and BAK-08
+  updated; VLT-10 started; ADR-0054 "As built: PR 5b1"; migration 0067). PR 5b is split again: 5b1 turns the third
+  mode on with its removal and missing files; 5b2 does the rest.
+  - **The third mode** is offered in Settings and the API (owner only, a recent sign-in, §5a's warning); Settings says
+    when the owner's own storage still keeps a copy of such a group, and counts files kept only in the vault and to
+    upload again (`VaultConnectionDto.files`, `.mirrorGroups`).
+  - **Removing Montra's copy** (`storage.vault`, `removeSources`/`moveOne`): only for a document filed while its group
+    is in that mode (or a file put back to be read again), and only when the vault has filed it, says it could give the
+    exact file back (`content_available`, asked again first), the owner's mirror has it when it copies that kind, nothing
+    reads it or has it in Review (`app.vault_file_busy`, now also while a backup or tax package is being made), and the
+    connection is active. One transaction moves it (`location = 'vault'`, the key to `source_key`, an audit row
+    `file.moved_to_vault`), then the object is deleted and `source_removed_at` set; a crash in between is finished by the
+    next run. `vault_item.remove_at` (0067) says when to look, counted by `vault_due()`/`vault_next()`.
+  - **Missing files** (§5a): a file only the vault holds that it doesn't give back, or whose document the feed says is
+    out of reach, gets `missing_since` and a reason in words (audited); never for the daily read cap, never for a file
+    Montra holds. Review → "Files to provide again" on the web and the phone (`GET/POST …/missing-files`), with what
+    uses each file and an Upload action; its count joins the Review badge on both. `files_missing` (no file names, at
+    most once a day) to owners, admins and the uploader. Uploading again keeps the file id, clears the mark, notes a
+    different hash (`replaced_sha256`), and sends it to the vault again as a new send.
+  - **The web's `file.in_vault`:** receipt and payslip viewers say the file is kept in the vault, with "Open in the
+    vault"; a link to such a file goes, through the API proxy, to the vault page with the same link.
+  - **Quota (BAK-08):** files held only in the vault don't count (`check_storage_quota`, `workspace_storage`).
+  - **Disconnecting** is refused while files are held only in the vault, until 5b2's choice.
+  - Tests: `apps/api/test/family-vault-no-copy.test.ts` (the mode offered and existing filed files kept; each removal
+    condition alone, the crash and the resume; missing on refusal and out of reach, the Review list and who sees it, one
+    notification a day; found again; never for a file Montra holds; uploading again, a different hash, who may; the
+    quota; disconnecting refused), web `vault.test.ts`, `missing-files.test.ts`, `phase3.test.ts`, phone
+    `missing-files.test.ts`, and e2e `files-to-provide.spec.ts` and `family-vault.spec.ts`.
+  - **Not done here (5b2):** the move backfill for files filed before a group was switched, bringing files back and
+    "Disconnect anyway", the missing count on an archive's screen (`ExportJobDto`, web fixtures and phone types), a
+    background archive waiting once for the vault's daily reset, and restore marking files that weren't in the archive.
+  - Next: PR 5b2, then the dev.63 PR (API keys) and PR 6 (the phone).
+- **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
+  and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
+  row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are
+  skipped by the lock, so each run brings in the next ones and the update leases more than `n`. Rows leased but not
+  processed wait out the 10-minute lease. The backup claim did this in tests with no help (its row policy has the planner
+  expect one row: 6–8 leased for a limit of 5); the file claim leased the whole queue (31 for 20) once the statistics were
+  from an almost empty table, as on a new install. Both now claim in a CTE, as `vault.jobs.ts` does (PR #133).
+  Checked and left as they are: `app.dequeue_job` (migration 0006) compares `id = (select … limit 1)`, a scalar
+  subquery run once; the `/ai/tasks` claim in `ai.controller.ts` has `in (select … limit 20)` but no row lock, so a rerun
+  sees the same rows and can't lease more. Tests: `apps/api/test/own-storage.test.ts` ("claiming a batch at a time").
+- **Local-mode AI task claim** (`GET ai/tasks`): two clients asking at once could both claim the same tasks, because the
+  unlocked `in (select … limit 20)` let the second update re-claim rows the first had just taken. It now claims through a
+  CTE with `for update skip locked`, like the mirror and vault jobs, so each task goes to one client and the batch is
+  `TASK_BATCH` (20). Tests: `apps/api/test/ai-local-tasks.test.ts` (the concurrent case failed before the fix: both
+  callers got the same 20 tasks).
 
 ---
 

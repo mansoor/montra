@@ -6,6 +6,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 import { API_URL, authHeaders, SESSION_COOKIE } from '@/lib/session';
+import { inVaultRedirect } from '@/lib/vault';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,6 +50,14 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     } as RequestInit);
   } catch {
     return problem(502, 'Bad gateway', 'api_unreachable', 'The API is unreachable');
+  }
+  // ADR-0054 §5: a person opening a file only the household's vault holds (a link to it, "Open original") is sent to
+  // the page that says so, with "Open it in the vault", instead of an error body.
+  if (upstream.status === 409 && req.method === 'GET' && req.headers.get('sec-fetch-dest') === 'document') {
+    const body = (await upstream.json().catch(() => null)) as { code?: string } | null;
+    const to = inVaultRedirect(path, upstream.status, body?.code ?? null);
+    if (to) return NextResponse.redirect(new URL(to, req.url), { status: 303 });
+    return NextResponse.json(body, { status: 409, headers: { 'content-type': 'application/problem+json' } });
   }
   const out = new Headers();
   for (const h of FORWARDED_RESPONSE_HEADERS) {

@@ -34,6 +34,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { STORAGE_PORT, sha256, storageKey, type StoragePort } from '../storage/storage.js';
 import { employerIdentity, formatEddAccount, formatEin } from '../business/registrations.js';
 import { de4Doc, i9Doc, renderFormPdf, w4Doc, w9Doc, formatTin } from './form-pdf.js';
@@ -51,6 +52,7 @@ export class FormsService {
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(PeopleService) private readonly people: PeopleService,
+    @Inject(FileBytes) private readonly files: FileBytes,
   ) {}
 
   // ----- W-4 ------------------------------------------------------------------------------------------------------
@@ -771,12 +773,13 @@ export class FormsService {
       if (!doc || !doc.file_ids.includes(fileId)) throw notFound('File');
       const f = await trx
         .selectFrom('app.file')
-        .select(['storage_key', 'mime', 'file_name', 'sealed'])
+        .select(['id', 'storage_key', 'sha256', 'mime', 'file_name', 'sealed'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', fileId)
         .executeTakeFirst();
       if (!f) throw notFound('File');
-      const stored = await this.storage.get(f.storage_key);
+      // A person viewing it: a file only the vault holds opens there (ADR-0054 §5). Sealed copies never leave Montra.
+      const stored = await this.files.bytes(ctx, f, { vault: false });
       const bytes = f.sealed ? await this.crypto.openBytes(trx, ctx.workspaceId, fileId, stored) : stored;
       await auditView(trx, ctx, 'payroll.document_viewed', 'payroll_person', personId, {
         document: documentId,
@@ -831,7 +834,7 @@ export class FormsService {
       .where('sealed', '=', true)
       .returning('storage_key')
       .execute();
-    for (const f of files) await this.storage.delete(f.storage_key);
+    for (const f of files) if (f.storage_key) await this.storage.delete(f.storage_key);
   }
 
   private async employer(trx: Trx, ctx: Ctx, entityId: string, name: string) {

@@ -29,8 +29,16 @@ export default defineConfig({
       command: 'node ../api/dist/main.js',
       url: `http://localhost:${API_PORT}/readyz`,
       reuseExistingServer: true,
-      // AI_PROVIDER=fake: deterministic keyword categorization, no network (ADR-0012).
-      env: { PORT: String(API_PORT), DATABASE_URL, AUTH_MODE: 'dev', STORAGE_DIR, AI_PROVIDER: 'fake' },
+      // AI_PROVIDER=fake: deterministic keyword categorization, no network (ADR-0012). FAMILY_VAULT_FAKE=on: the
+      // vault's own fake, in the API process, instead of any real vault (ADR-0054 §15).
+      env: {
+        PORT: String(API_PORT),
+        DATABASE_URL,
+        AUTH_MODE: 'dev',
+        STORAGE_DIR,
+        AI_PROVIDER: 'fake',
+        FAMILY_VAULT_FAKE: 'on',
+      },
     },
     {
       // Import jobs (parse, commit, undo). No HTTP port: ready once it logs that it is listening.

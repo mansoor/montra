@@ -130,12 +130,13 @@ describe('plans as data (ADR-0049 §1)', () => {
     ws = await newWorkspace(c);
   });
 
-  it('seeds Free and Pro with exactly what they allowed before', async () => {
+  it('seeds Free and Pro with exactly what they allowed before, and the vault where own storage was', async () => {
     const { rows } = await admin.query(
       `select plan_key, entitlements from app.plan_version where version = 1 and plan_key in ('free', 'pro')`,
     );
     const by = Object.fromEntries(rows.map((r) => [r.plan_key, parseEntitlements(r.entitlements)]));
-    const all = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'];
+    // `familyVault` came with migration 0063, on wherever `ownStorage` was (ADR-0054 D11).
+    const all = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'];
     expect(by.free).toEqual({
       businessBooks: 0,
       rentalPortfolios: 0,
@@ -156,6 +157,19 @@ describe('plans as data (ADR-0049 §1)', () => {
       planName: 'Free',
       entitlements: { businessBooks: 0 },
     });
+  });
+
+  it('gives the vault key to every version that had own storage, and freezes versions again (migration 0063)', async () => {
+    const { rows } = await admin.query<{ features: string[] }>(
+      `select entitlements -> 'features' as features from app.plan_version
+        where (entitlements -> 'features') @> '["ownStorage"]'::jsonb`,
+    );
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    for (const r of rows) expect(r.features).toContain('familyVault');
+    const frozen = await admin.query<{ tgenabled: string }>(
+      `select tgenabled from pg_trigger where tgname = 'plan_version_frozen'`,
+    );
+    expect(frozen.rows).toEqual([{ tgenabled: 'O' }]);
   });
 
   it('checks out by plan key and interval, at the price on the plan’s latest version', async () => {
@@ -235,6 +249,11 @@ describe('plans as data (ADR-0049 §1)', () => {
     const res = await c.post(`/v1/workspaces/${ws}/scans`, { kind: 'payslip', fileIds: [randomUUID()] });
     expect(res.status).toBe(402);
     expect(res.body.code).toBe('plan.required');
+    // ADR-0054 D11: a plan without `familyVault` refuses connecting a vault, before any key is made.
+    const vault = await c.post(`/v1/workspaces/${ws}/family-vault`);
+    expect(vault.status).toBe(402);
+    expect(vault.body.code).toBe('plan.required');
+    expect((await c.get(`/v1/workspaces/${ws}/family-vault`)).body).toEqual({ connection: null });
   });
 
   it('limits how many people can sign in, counting open invites', async () => {

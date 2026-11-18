@@ -184,12 +184,18 @@
     "partial",
     "Kratos password, passkey and OIDC, with web sign-in and sign-up. Passkey sign-up and sign-in tested in Chromium with a virtual authenticator against local Kratos; no live Kratos, real device or real OIDC provider yet; phone sign-up and email code (ADR-0046)"
   ],
-  "AUTH-02": ["done", "Kratos: 12+ chars, HIBP, Argon2id. Admin-set minimum length and zxcvbn strength score enforced by the auth gateway, with a meter on web sign-up and security settings (ADR-0043)"],
+  "AUTH-02": [
+    "done",
+    "Kratos: 12+ chars, HIBP, Argon2id. Admin-set minimum length and zxcvbn strength score enforced by the auth gateway, with a meter on web sign-up and security settings (ADR-0043)"
+  ],
   "AUTH-03": [
     "done",
     ""
   ],
-  "AUTH-04": ["done", "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes; authenticator and recovery codes on the phone, and the phone leads a required login to set them up (ADR-0046); a texted code to a verified number as a second factor where texts are on (ADR-0049 §6)"],
+  "AUTH-04": [
+    "done",
+    "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes; authenticator and recovery codes on the phone, and the phone leads a required login to set them up (ADR-0046); a texted code to a verified number as a second factor where texts are on (ADR-0049 §6)"
+  ],
   "AUTH-05": [
     "partial",
     "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
@@ -198,7 +204,10 @@
     "done",
     "recovery codes; 72-hour hold with alerts and cancel; support identity check is an ops runbook (P11); recovery code at sign-in on the phone (ADR-0046)"
   ],
-  "AUTH-07": ["done", "device list, remote sign-out; web idle sign-out per workspace (5-30 min, warning first) and a 30-minute server limit on browser sessions (ADR-0044)"],
+  "AUTH-07": [
+    "done",
+    "device list, remote sign-out; web idle sign-out per workspace (5-30 min, warning first) and a 30-minute server limit on browser sessions (ADR-0044)"
+  ],
   "AUTH-08": [
     "partial",
     "Auth gateway in front of Kratos (ADR-0042): per-account, per-address, per-session and per-flow counts, delays after 5 failures, a 15-minute pause after 10, owner alert email and security event; new-device alerts. No CAPTCHA yet; the Cloudflare challenge is in Terraform, never applied; texted codes limited per number and per address (ADR-0049 §6)"
@@ -979,7 +988,10 @@
     "done",
     "quiet hours hold email and push until they end, in the person's time zone; past the daily cap they wait in the app"
   ],
-  "AUTH-12": ["done", "sign-ins from new devices, lockouts, password and two-step changes (emailed too, and texted when the person turns that on), mobile number changes, device sign-outs, email changes, exports, restores, deletion and support access (ADR-0045)"],
+  "AUTH-12": [
+    "done",
+    "sign-ins from new devices, lockouts, password and two-step changes (emailed too, and texted when the person turns that on), mobile number changes, device sign-outs, email changes, exports, restores, deletion and support access (ADR-0045)"
+  ],
   "NFR-05": [
     "done",
     "no ads or data sale stated in Settings → Privacy with what each AI mode sends; export and delete are self-service. Legal text comes with launch"
@@ -1002,7 +1014,7 @@
   ],
   "BAK-08": [
     "partial",
-    "quota per plan, 5 or 50 GB, with a usage meter. The phone compresses receipt photos; web uploads aren’t compressed and there’s no choice to keep an original"
+    "quota per plan, 5 or 50 GB, with a usage meter. The phone compresses receipt photos; web uploads aren’t compressed and there’s no choice to keep an original. A file held only in the household's Family Document Vault (ADR-0054 §5) doesn't count against the quota or the meter; provided again, it does"
   ],
   "BAK-09": [
     "partial",
@@ -1243,5 +1255,49 @@
   "TAX-10": [
     "done",
     "tax_forms_missing (migration 0060): from 16 February (caught up within the week if the nightly sweep missed the day), once per person and tax year, the expected forms of last year not received or waived, each person’s list under their own row-level security (a member hears about their own W-2, an owner about everyone’s); nothing when nothing is missing; USD workspaces, not viewers. Names only, no amounts; in-app, email and push by default, switched in notification settings on the web and the phone"
+  ],
+  "VLT-02": [
+    "partial",
+    "Per-group modes (PR 1 contracts; PR 2 stored defaults; PR 3 chosen in Settings): an owner sets each group to not sent or sent with a local copy kept, and maps each sent group to one of the vault's kinds (Montra suggests the obvious one, vaultSuggestKind); a sent group that isn't mapped isn't sent, and Settings says so (vaultEffectiveModes derives file_kinds). The owner's S3/WebDAV mirror keeps its own setting. The vault decides the Inbox. Since PR 5b the third mode, sent with no local copy, is offered too (owner only, a recent sign-in and a warning), and Settings says when the owner's own storage still keeps a copy of such a group"
+  ],
+  "VLT-03": [
+    "partial",
+    "Sending (PR 3, storage.vault): a file goes once Montra has finished with it (app.vault_file_busy: no receipt, payslip, import, scan, intake or tax form still reading or in review), one at a time per connection with a pause between sends; its id is saved before the first send and never changes, and a row whose answer was lost is asked about before it is sent again (tested with a dropped answer at the socket). The vault's hash is checked against the file's. In someone's Inbox, filed, not kept and failed are counted in Settings and shown as badges on receipts, payslips and tax forms (app.vault_file_states, any member who can see the file). Since PR 4 the badge also says what the vault calls the document (its title, else its kind) from the changes feed"
+  ],
+  "VLT-07": [
+    "done",
+    "Payslips and tax documents start not sent; only an owner, with a recent sign-in and after the warning \"Where they go and who can see them there is set in the vault\", sends them; an admin may only turn them off (D4); each change is in the security log (vault_changed with restricted groups). A member's payslip or tax form is sent with that member as the person hint (routed by the vault to their Inbox when they can receive it, tested against the fake). Sealed copies of identity documents, logos and exports are never queued, and statement exports (CSV, spreadsheets, OFX, QFX, QIF) and types the vault doesn't take stay in Montra as \"not a type the vault keeps\" (D8)"
+  ],
+  "VLT-01": [
+    "partial",
+    "Connecting (ADR-0054 PR 2): an owner with a recent sign-in starts in Settings → Storage, Montra makes a fresh Ed25519 pair for the workspace and seals the private key at once (FieldCrypto, storage_destination.secret), shows the public key and fingerprint to register in the vault, and checks the pasted code in order: it names that key, its address is public https (no loopback, D6), the server is a vault that takes apps and which one (pinned), and a signed connection test through @fdv/client. Waiting for approval is saved and checked again on request, and by the storage.vault job on its own since PR 3 (15 minutes while waiting, daily once connected); a different vault at the pinned address, or the app paused or removed there, stops the connection with the words to show. Tested against the vault's own fake"
+  ],
+  "VLT-08": [
+    "partial",
+    "PR 2: one fresh key pair per workspace and connection, sealed in secret_enc and never in a DTO, an error, the security log, the process's output or an archive (tested); the key handed to the package is zeroed when a connection closes. Replace the key: a new pair sealed beside the current one, which keeps signing until the vault's code for the new one checks out (owner only, recent sign-in), then the old key is retired. Security log rows: vault_connected, vault_changed (key made or cancelled; groups, payslips and tax documents, detail, pausing since PR 3), vault_move_started (existing documents sent, PR 3), vault_key_replaced, vault_disconnected. Each view link made is audited (file.vault_link_made: the file, who and view or download, never the link; PR 4); since PR 5b each file moved to the vault (file.moved_to_vault), marked missing (file.marked_missing), found again (file.found_again) and provided again (file.provided_again) is audited, and choosing a group sent with no local copy needs a recent sign-in"
+  ],
+  "VLT-04": [
+    "partial",
+    "Send existing documents (PR 3): Settings shows how many documents of the groups being sent aren't in the vault, and how many days that takes at the vault's daily limit; the owner sends them with the count shown (a different count is refused), queued oldest first and sent one at a time (tested). PR 5b: for a group sent with no local copy, storage.vault removes Montra's copy only when the vault has filed the document, says it could give the exact file back (content_available, asked again before removing), the owner's own storage has its copy when it copies that kind, and nothing in Montra reads the file or has it in Review, with the connection active; in one transaction (location vault, the old key kept on the outbox row, an audit row file.moved_to_vault), then the object is deleted, and a crash in between is finished by the next run (tested, each condition and the crash). Documents filed before a group was switched keep their copy; the move backfill for them, bringing files back and the disconnect choice come with the next part of PR 5"
+  ],
+  "VLT-09": [
+    "partial",
+    "PR 3: the vault's daily sending cap holds sending until its reset, shown in Settings, without counting as a failure; a wait the vault asks for (busy, too many requests) is waited out with jitter and Montra's backoff, never giving up over it; a problem with the connection itself (paused, removed, a key it doesn't know, the clock) stops the whole connection with the vault's words and tells owners and admins once (vault_attention); five failures in a row turn it failing (storage_failing, once). All tested against the fake. PR 4: the vault's hourly limit on view links is a wait in words with how long, not a failure; a wait the vault asks for while reading the feed is waited out, and not reaching it counts as a failure. PR 5a: the vault's daily read cap holds reading back until its reset (read_held_until), answered as a 429 with how long, without counting as a failure or asking again before then"
+  ],
+  "VLT-05": [
+    "partial",
+    "Keeping in step (PR 4, migration 0065): while the vault lets Montra read, storage.vault reads its changes feed every 20 minutes (and a person opening a document catches it up first), saving its place in the same transaction as each page and only if nobody moved it meanwhile. Only documents Montra sent are used: anything else the feed names is skipped, never stored or imported (tested with a grant on the family's papers). The vault's title, kind and date are kept on the outbox row (vault_meta) and shown on the file (\"In the vault as …\", \"The vault has a newer version\"); they never change the books (transactions, postings, receipts and the file row are unchanged, tested). A document the vault no longer shows is out_of_reach, \"No longer available in Family Document Vault\", with no reason, and filed again when shown again. A position the vault refuses (too old, or one it doesn't know after a restore) starts over: the whole feed is read again, and a filed document the full read didn't show is out of reach. Since PR 5a Montra asks the vault for the exact file it sent when it no longer holds it; since PR 5b a file only the vault held whose document the feed says is out of reach is missing (Review asks for it), and no longer missing when the feed shows it again"
+  ],
+  "VLT-06": [
+    "partial",
+    "Opening (PR 4): \"Open in the vault\" on filed documents is a plain link to a web route that refuses prefetches and other sites, asks the API (POST, outside the idempotency store), which checks the person can see the file (RLS on app.file), mints a single-use link under the connection's owner context and answers 303 to it; the web route sends the browser straight on. The link is in no body, log, table, notification or page (tested by searching every table and the process's output for it). A type the vault can't draw opens as a download when allowed; the vault's hourly limit, a vault that doesn't allow opening, and a document it no longer shows are said in words. Each link is audited without the link. The phone (system browser) comes with PR 6"
+  ],
+  "VLT-11": [
+    "partial",
+    "Reading a file whoever holds it (ADR-0054 PR 5a, migration 0066): every reader of an uploaded file's bytes goes through FileBytes (OCR and AI reading, previews, statement imports and intakes, migrations, backups, tax packages, payroll documents, reimbursements, invoices, the mirror's and the vault's own sending; a test fails if any other code reads a file by its key). It tries Montra's copy, then the owner's S3/WebDAV copy read back, then asks the vault for the exact file Montra sent (sentFile, by Montra's own id, counted against the vault's daily reads), checking the hash each time; the vault's refusal, its daily read cap (held until its reset, without asking again) and a connection that needs a person are typed answers in words, never a failure of the caller. A person viewing a file only the vault holds is sent to the vault (409, Open in the vault); a re-read by the doc-worker puts Montra's copy back first. Backups and tax packages hold every file they can get and list the rest in their README instead of failing. Tested against the vault's fake with binary files of every byte value (client 0.9.0-dev.62). PR 5b (migration 0067): a file only the vault holds that the vault doesn't give back, or whose document the feed says is out of reach, is missing (missing_since and a reason in words, audited); Review lists it as Files to provide again on the web and the phone, with what uses it and an Upload action, and counts it in the Review badge; owners and admins, and whoever uploaded it, hear about it once a day at most (files_missing, no file names). Uploading it again stores it under the same file id, clears the mark, notes a different hash (replaced_sha256) and sends it to the vault again as a new send. On the web a preview of a file only the vault holds says so with Open in the vault, and a link to one lands on a page that does. Still to come: the missing count on an archive's screen, and a background archive waiting once for the vault's daily reset"
+  ],
+  "VLT-10": [
+    "partial",
+    "PR 5b: Review on the phone lists Files to provide again (what each was and what uses it) with an Upload action through the system file picker, stored under the same file, and the Review badge on the tab bar and in More counts them, read when sync runs at most once a minute (pure-module tests). The vault's status line, badges and opening vault-held documents on the phone come with PR 6"
   ]
 }

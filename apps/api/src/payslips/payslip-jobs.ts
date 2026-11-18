@@ -16,7 +16,7 @@ import { AiService } from '../ai/ai.service.js';
 import { Db } from '../db/database.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
 import { toMinor } from '../receipts/receipts.service.js';
-import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { PayslipsService } from './payslips.service.js';
 
 /** Never send more than this to a model in one request. */
@@ -42,7 +42,7 @@ export class PayslipJobs {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Worker) private readonly worker: Worker,
-    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(PayslipsService) private readonly payslips: PayslipsService,
   ) {}
@@ -87,7 +87,7 @@ export class PayslipJobs {
     const { files, allowImages } = await this.db.run(ctx, async (trx) => {
       const found = await trx
         .selectFrom('app.file')
-        .select(['id', 'storage_key', 'mime', 'bytes'])
+        .select(['id', 'storage_key', 'sha256', 'mime', 'bytes'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', 'in', fileIds.length ? [...fileIds] : ['00000000-0000-0000-0000-000000000000'])
         .execute();
@@ -104,7 +104,7 @@ export class PayslipJobs {
       if (total > MAX_IMAGE_BYTES) break;
       images.push({
         mediaType: f.mime as ImagePart['mediaType'],
-        data: Buffer.from(await this.storage.get(f.storage_key)).toString('base64'),
+        data: Buffer.from(await this.files.forJob(ctx, f)).toString('base64'),
       });
     }
     const ocrText =

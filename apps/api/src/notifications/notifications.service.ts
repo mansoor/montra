@@ -44,6 +44,8 @@ export const DEFAULT_CHANNELS: Record<NotificationType, ChannelPrefs> = {
   storage_failing: on(true, false),
   ai_allowance: on(true, false),
   tax_forms_missing: on(true, true),
+  vault_attention: on(true, false),
+  files_missing: on(true, false),
 };
 
 /** ADR-0049 §6: reminders that can also go by text, on plans that include texts. */
@@ -57,7 +59,15 @@ const TEXTED_REMINDERS: ReadonlySet<NotificationType> = new Set([
 
 /** Asked for by the person it goes to, so unsubscribing from notifications and the daily cap don't apply. */
 /** Also here: what the account needs to know, such as running out of the month's AI (ADR-0049 §2). */
-const REQUESTED: ReadonlySet<NotificationType> = new Set(['backup_ready', 'storage_failing', 'ai_allowance']);
+const REQUESTED: ReadonlySet<NotificationType> = new Set([
+  'backup_ready',
+  'storage_failing',
+  'ai_allowance',
+  // ADR-0054 §12: the connection someone made needs them.
+  'vault_attention',
+  // ADR-0054 §5a: a file Montra no longer holds has to be provided again; at most one a day.
+  'files_missing',
+]);
 
 export interface NewNotification {
   type: NotificationType;

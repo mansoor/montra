@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { receiptAccountId } from '@montra/domain';
 import type { AccountDto, CategoryDto, FamilyMemberDto, ReceiptDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { vaultOnlyPage } from '@/lib/vault';
 import {
   amountPlaceholder,
   buildUpdate,
@@ -17,6 +18,7 @@ import {
 import { DateText } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useFileStorageStates, VaultBadges } from '../vault-badges';
 import { ReceiptViewer } from './receipt-viewer';
 
 /**
@@ -58,6 +60,7 @@ export function ReceiptReview({
   }, [receipt.status, router]);
 
   const ws = workspace.id;
+  const fileStates = useFileStorageStates(ws, receipt.fileIds);
   const entityName = new Map(workspace.entities.map((e) => [e.id, e.name]));
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
   const byEntity = workspace.entities.map((e) => ({
@@ -83,10 +86,12 @@ export function ReceiptReview({
   const viewer = (
     // The receipt itself, kept in view while the lines are checked (RCP-06).
     <aside aria-label={t('receipts.image')} className="lg:sticky lg:top-20 lg:h-[calc(100dvh-9rem)]">
+      <VaultBadges workspaceId={ws} fileIds={receipt.fileIds} states={fileStates} />
       <ReceiptViewer
         pages={receipt.fileIds.map((fileId, i) => ({
           src: browserApi.receiptFilePath(ws, receipt.id, fileId),
           alt: t('receipts.page_n', { n: i + 1 }),
+          inVault: vaultOnlyPage(fileStates, ws, fileId),
         }))}
       />
     </aside>

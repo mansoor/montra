@@ -13,6 +13,9 @@ import {
   maintenanceNoticeOk,
   parseEntitlements,
   PRO_STORAGE_BYTES,
+  UNLIMITED_ENTITLEMENTS,
+  customerFeatures,
+  FEATURES_NOT_YET_SHOWN,
 } from '../src/operations.js';
 
 const now = new Date('2026-11-04T12:00:00Z');
@@ -142,6 +145,29 @@ describe('compareEntitlements (ADR-0049 §1)', () => {
     expect(compareEntitlements(base, { ...base, storageBytes: 999n })).toBe('less');
     expect(compareEntitlements({ ...base, aiMonthlyMicroUsd: null }, base)).toBe('less');
     expect(compareEntitlements(base, { ...base, features: ['payroll'], businessBooks: 9 })).toBe('less');
+  });
+
+  it('knows the Family Document Vault key (ADR-0054 D11): adding it is more, taking it away is less', () => {
+    const vault = parseEntitlements({
+      ...entitlementsJson(base),
+      features: ['payroll', 'familyVault', 'scans'],
+    });
+    expect(vault.features).toEqual(['payroll', 'scans', 'familyVault']);
+    expect(compareEntitlements(base, vault)).toBe('more');
+    expect(compareEntitlements(vault, base)).toBe('less');
+    expect(UNLIMITED_ENTITLEMENTS.features).toContain('familyVault');
+  });
+
+  it('shows customers every feature now that the vault sends documents (ADR-0054 PR 3)', () => {
+    expect([...FEATURES_NOT_YET_SHOWN]).toEqual([]);
+    expect(customerFeatures(UNLIMITED_ENTITLEMENTS.features)).toEqual([
+      'payroll',
+      'staffTime',
+      'scans',
+      'voice',
+      'ownStorage',
+      'familyVault',
+    ]);
   });
 });
 

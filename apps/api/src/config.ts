@@ -54,6 +54,15 @@ const Env = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((v) => (v === undefined ? undefined : v === 'true')),
+  /**
+   * The household's Family Document Vault (ADR-0054 §8, §15): `on` uses the vault's own fake, in this process, instead of
+   * reaching any vault, for tests and the e2e run. Refused in production. A real vault is always reached over public
+   * HTTPS, whatever STORAGE_DESTINATIONS_PRIVATE says.
+   */
+  FAMILY_VAULT_FAKE: z
+    .enum(['on', 'off'])
+    .default('off')
+    .transform((v) => v === 'on'),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce
@@ -180,6 +189,9 @@ export function loadConfig(
   const config = Env.parse(resolved.env);
   if (config.NODE_ENV === 'production' && config.AUTH_MODE === 'dev') {
     throw new Error('AUTH_MODE=dev is not allowed in production');
+  }
+  if (config.NODE_ENV === 'production' && config.FAMILY_VAULT_FAKE) {
+    throw new Error('FAMILY_VAULT_FAKE=on is not allowed in production');
   }
   if (config.AUTH_MODE === 'kratos' && !config.KRATOS_PUBLIC_URL) {
     throw new Error('KRATOS_PUBLIC_URL is required when AUTH_MODE=kratos');

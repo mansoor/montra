@@ -25,7 +25,7 @@ import type { IntakeCandidateDto, IntakeReason } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { ImportsService } from '../imports/imports.service.js';
 import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
-import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { READ_JOB, SETTLE_JOB, type StoredDetected } from './intakes.service.js';
 import { memoryState, readMemory } from './match-memory.js';
 
@@ -45,7 +45,7 @@ export class IntakeJobs {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Worker) private readonly worker: Worker,
-    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(ImportsService) private readonly imports: ImportsService,
   ) {}
 
@@ -73,7 +73,7 @@ export class IntakeJobs {
       const file = intake
         ? await trx
             .selectFrom('app.file')
-            .select(['storage_key', 'file_name'])
+            .select(['id', 'storage_key', 'sha256', 'file_name'])
             .where('workspace_id', '=', ctx.workspaceId)
             .where('id', '=', intake.file_ids[0]!)
             .executeTakeFirst()
@@ -91,7 +91,7 @@ export class IntakeJobs {
     let unreadable = docRead && !reading;
     if (!docRead) {
       try {
-        const bytes = await this.storage.get(file.storage_key);
+        const bytes = await this.files.forJob(ctx, file);
         if (type === 'xlsx') sheets = await readXlsx(bytes);
         else {
           sheets = readTextSheets(type === 'qif' || type === 'ofx' ? type : 'csv', bytes);

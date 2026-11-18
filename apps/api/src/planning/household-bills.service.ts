@@ -22,6 +22,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { BillsService } from '../business/bills.service.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { billSignal } from '@montra/importers';
 import type { ScanBillDetectedDto } from '@montra/schemas';
@@ -50,6 +51,7 @@ export class HouseholdBillsService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(BillsService) private readonly business: BillsService,
     @Inject(PlanningData) private readonly data: PlanningData,
   ) {}
@@ -317,12 +319,13 @@ export class HouseholdBillsService {
       if (!b || !b.attachment_ids.includes(fileId)) throw notFound('File');
       return trx
         .selectFrom('app.file')
-        .select(['storage_key', 'mime'])
+        .select(['id', 'storage_key', 'sha256', 'mime'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', fileId)
         .executeTakeFirstOrThrow();
     });
-    return { bytes: await this.storage.get(f.storage_key), mime: f.mime };
+    // A person viewing it: a file only the vault holds opens there (ADR-0054 §5).
+    return { bytes: await this.files.bytes(ctx, f, { vault: false }), mime: f.mime };
   }
 
   /** Open bills by biller, earliest first: they replace the billers' estimates (calendar, forecast). */

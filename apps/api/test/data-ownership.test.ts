@@ -5,7 +5,7 @@ import yauzl from 'yauzl';
 import yazl from 'yazl';
 import { createHash } from 'node:crypto';
 import { addDays, startOfMonth, todayIn } from '@montra/domain';
-import { EXPORT_ONLY, exportedTables, NOT_EXPORTED, readCatalog } from '../src/data/catalog.js';
+import { EXPORT_ONLY, exportedTables, FILE_HOLDERS, NOT_EXPORTED, readCatalog } from '../src/data/catalog.js';
 import { BackupService } from '../src/data/backup.service.js';
 import { OwnershipService } from '../src/data/ownership.service.js';
 import { RestoreService } from '../src/data/restore.service.js';
@@ -298,6 +298,30 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     // And the exclusion list doesn't name tables that are gone.
     expect(Object.keys(NOT_EXPORTED).filter((t) => !catalog.has(t))).toEqual([]);
     for (const t of EXPORT_ONLY) expect(catalog.has(t)).toBe(true);
+  });
+
+  it('knows every column that holds files, so a partial archive can leave the others’ files out', async () => {
+    const catalog = await h.app.get(Db).run({}, (trx) => readCatalog(trx));
+    const exported = new Set(exportedTables(catalog));
+    const { rows } = await admin.query<{ table_name: string; column_name: string }>(
+      `select table_name, column_name from information_schema.columns
+        where table_schema = 'app' and udt_name = '_uuid' and column_name ~ '(file|attachment)'`,
+    );
+    const found = new Map<string, Set<string>>();
+    const add = (table: string, column: string) => {
+      if (exported.has(table)) found.set(table, new Set([...(found.get(table) ?? []), column]));
+    };
+    for (const r of rows) add(r.table_name, r.column_name);
+    for (const t of catalog.values()) {
+      for (const fk of t.fks) {
+        if (fk.refTable !== 'file') continue;
+        for (const c of fk.columns.filter((c) => c !== 'workspace_id')) add(t.name, c);
+      }
+    }
+    const listed = Object.fromEntries(Object.entries(FILE_HOLDERS).map(([t, cs]) => [t, [...cs].sort()]));
+    expect(Object.fromEntries([...found].map(([t, cs]) => [t, [...cs].sort()]))).toEqual(listed);
+    // Arrays are named `*_ids` and single ids aren't, which is how the backup reads them.
+    for (const r of rows) if (exported.has(r.table_name)) expect(r.column_name).toMatch(/_ids$/);
   });
 
   it('has the data, decrypted, with what makes it usable, and leaves secrets out', async () => {

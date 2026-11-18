@@ -12,8 +12,20 @@ export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | '
  * Features a plan can switch on. Adding one is code: it goes here, and the same change's migration gives every
  * existing plan version a default, so an upgrade never takes away what someone had (ADR-0049 §1).
  */
-export const PLAN_FEATURES = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage'] as const;
+export const PLAN_FEATURES = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'] as const;
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
+
+/**
+ * Features kept out of what customers see (the billing page's "what's included") until they can be used. They are real
+ * entitlements all the same: stored in plan versions, checked by the API and shown in the staff console. Remove a key
+ * here when its feature ships. None now: `familyVault` was here until sending to a vault shipped (ADR-0054 PR 3).
+ */
+export const FEATURES_NOT_YET_SHOWN: ReadonlySet<PlanFeature> = new Set<PlanFeature>([]);
+
+/** A plan's features as a customer sees them, in the same order, without those not shown yet. */
+export function customerFeatures<F extends string>(features: readonly F[]): F[] {
+  return features.filter((f) => !FEATURES_NOT_YET_SHOWN.has(f as unknown as PlanFeature));
+}
 
 /** What one plan version allows (ADR-0049 §1). */
 export interface PlanEntitlements {

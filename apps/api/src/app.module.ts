@@ -62,7 +62,21 @@ import { MAIL_PORT, mailProvider } from './mail/mail.service.js';
 import { STORAGE_PORT, storageProvider } from './storage/storage.js';
 import { StorageController } from './storage/storage.controller.js';
 import { StorageDestinationsService } from './storage/storage-destinations.service.js';
+import { FileBytes } from './storage/file-bytes.js';
+import { MissingFilesController } from './storage/missing-files.controller.js';
+import { MissingFiles } from './storage/missing-files.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
+import { fakeVaultTransport } from './storage/vault/fake.js';
+import { guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
+import {
+  FakeVaultController,
+  VaultController,
+  VaultOpenController,
+} from './storage/vault/vault.controller.js';
+import { VaultFeed } from './storage/vault/vault.feed.js';
+import { VaultJobs } from './storage/vault/vault.jobs.js';
+import { VaultOpener } from './storage/vault/vault.open.js';
+import { VaultService } from './storage/vault/vault.service.js';
 import { JobQueue, Worker } from './jobs/queue.js';
 import { ImportsService } from './imports/imports.service.js';
 import { ImportJobs } from './imports/import-jobs.js';
@@ -210,6 +224,10 @@ export class AppModule {
       NotificationsController,
       DataController,
       StorageController,
+      VaultController,
+      VaultOpenController,
+      MissingFilesController,
+      ...(config.FAMILY_VAULT_FAKE ? [FakeVaultController] : []),
       RestoresController,
       AccountDataController,
       NotificationPrefsController,
@@ -316,7 +334,23 @@ export class AppModule {
         RentalJobs,
         BackupService,
         StorageDestinationsService,
+        FileBytes,
+        MissingFiles,
         StorageMirrorJobs,
+        VaultService,
+        VaultJobs,
+        VaultFeed,
+        VaultOpener,
+        {
+          provide: VAULT_TRANSPORT,
+          // An answer may be a file Montra sent (ADR-0054 §5), as large as an upload may be.
+          useFactory: () =>
+            config.FAMILY_VAULT_FAKE
+              ? fakeVaultTransport()
+              : guardedVaultTransport({
+                  maxBytes: Math.max(4 * 1024 * 1024, config.MAX_UPLOAD_BYTES + 1024 * 1024),
+                }),
+        },
         RestoreService,
         OwnershipService,
         NotificationsService,

@@ -40,6 +40,8 @@ const byPrefix = {
   PRL: 12,
   // Added on 2026-11-16 (requirements 3.8, ADR-0052).
   TAX: 13,
+  // Added on 2026-11-17 (requirements 13.6, ADR-0054).
+  VLT: 14,
 };
 const later = 'Later';
 const overrides = {
@@ -152,6 +154,7 @@ const phaseName = {
   11: 'P11 Hardening',
   12: 'P12 Payroll',
   13: 'P13 Tax forms',
+  14: 'P14 Family Document Vault',
   [later]: 'Later (R2+)',
 };
 

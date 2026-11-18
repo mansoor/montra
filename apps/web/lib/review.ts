@@ -126,12 +126,17 @@ export const GO_TARGETS: Record<string, string> = {
 };
 
 /**
- * The Review badge's number: transactions to review plus tax forms to check. A count that failed to load (null) adds
- * nothing; null when neither loaded, so the badge stays hidden rather than showing a wrong 0.
+ * The Review badge's number: transactions to review, tax forms to check and files to provide again (ADR-0054 §5a). A
+ * count that failed to load (null) adds nothing; null when none loaded, so the badge stays hidden rather than showing a
+ * wrong 0.
  */
-export function reviewBadgeTotal(transactions: number | null, taxForms: number | null): number | null {
-  if (transactions === null && taxForms === null) return null;
-  return (transactions ?? 0) + (taxForms ?? 0);
+export function reviewBadgeTotal(
+  transactions: number | null,
+  taxForms: number | null,
+  missingFiles: number | null = null,
+): number | null {
+  if (transactions === null && taxForms === null && missingFiles === null) return null;
+  return (transactions ?? 0) + (taxForms ?? 0) + (missingFiles ?? 0);
 }
 
 export function goSequence(

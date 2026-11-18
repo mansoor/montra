@@ -101,6 +101,9 @@ import type {
   TaxFormDto,
   TaxFormReviewDto,
   TaxFormUploadDto,
+  MissingFileDto,
+  MissingFilesResponse,
+  FileProvidedAgainDto,
   TaxYearDto,
   UpdateTaxFormRequest,
 } from '@montra/schemas';
@@ -639,6 +642,14 @@ export function createApi(opts: ApiOptions) {
         year: String(fields.year),
         source: fields.source,
       }),
+
+    // ----- Files to provide again (ADR-0054 §5a): read and uploaded online, never synced ---------------------------
+    /** Review's "Files to provide again": what the vault didn't give back, for whoever may provide it. */
+    listMissingFiles: async (w: string): Promise<MissingFileDto[]> =>
+      (await request<MissingFilesResponse>('GET', `${ws(w)}/missing-files`)).data,
+    /** The paper again, stored under the same file. FormData, as statements: the picker's copy has its own name. */
+    provideMissingFile: (w: string, fileId: string, file: UploadFile) =>
+      sendFile<FileProvidedAgainDto>(`${ws(w)}/missing-files/${encodeURIComponent(fileId)}`, file, false),
 
     registerPushDevice: (req: RegisterPushDeviceRequest) =>
       request<{ id: string }>('POST', '/v1/me/push-devices', req),

@@ -57,6 +57,7 @@ import type {
 import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { JOB_STALL_MS, JobQueue } from '../jobs/queue.js';
+import { FileBytes } from '../storage/file-bytes.js';
 import { STORAGE_PORT, sha256, storageKey, type StoragePort } from '../storage/storage.js';
 import { AiService, aiUnavailableWarning } from '../ai/ai.service.js';
 import {
@@ -143,6 +144,7 @@ export class ReceiptsService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(Categorizer) private readonly categorizer: Categorizer,
@@ -213,6 +215,9 @@ export class ReceiptsService {
 
   async create(ctx: Ctx, req: CreateReceiptRequest): Promise<ReceiptDto> {
     const id = req.id ?? newId();
+    // The doc-worker reads files by Montra's key: one only the vault holds is asked of it and kept here again first
+    // (ADR-0054 §5).
+    await this.files.ensureHeld(ctx, req.fileIds);
     await this.db.run(ctx, async (trx) => {
       if (req.id) {
         const existing = await trx
@@ -312,12 +317,13 @@ export class ReceiptsService {
       if (!r.attachment_ids.includes(fileId)) throw notFound('File');
       return trx
         .selectFrom('app.file')
-        .select(['storage_key', 'mime'])
+        .select(['id', 'storage_key', 'sha256', 'mime'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', fileId)
         .executeTakeFirstOrThrow();
     });
-    return { bytes: await this.storage.get(f.storage_key), mime: f.mime };
+    // A person viewing it: a file only the vault holds opens there (ADR-0054 §5).
+    return { bytes: await this.files.bytes(ctx, f, { vault: false }), mime: f.mime };
   }
 
   // ----- Reading ------------------------------------------------------------------------------------------

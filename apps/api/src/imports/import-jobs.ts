@@ -28,7 +28,7 @@ import {
 } from '@montra/importers';
 import { Db } from '../db/database.js';
 import { LedgerService } from '../ledger/ledger.service.js';
-import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
+import { FileBytes, type HeldFile } from '../storage/file-bytes.js';
 import { BusinessJobs } from '../business/business-jobs.service.js';
 import { RentalJobs } from '../rentals/rental-jobs.service.js';
 import { ownerOf, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
@@ -86,7 +86,7 @@ export class ImportJobs {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Worker) private readonly worker: Worker,
-    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
@@ -136,7 +136,7 @@ export class ImportJobs {
 
       const ocr =
         p.previousResult?.kind === 'ocr_text' ? await this.ocrTable(trx, ctx, batch.id, currency, p) : null;
-      const sheets = ocr ? ocr.sheets : await this.sheets(batch.file_type, file.storage_key, p);
+      const sheets = ocr ? ocr.sheets : await this.sheets(ctx, batch.file_type, file, p);
       const statement = ocr ? ocr.statement : (p.previousResult?.statement ?? null);
       const decimal = detectDecimalSeparator(
         [statement?.openingBalance ?? '', statement?.closingBalance ?? ''].filter(Boolean),
@@ -357,11 +357,11 @@ export class ImportJobs {
     return new Map(Object.entries(categories));
   }
 
-  private async sheets(fileType: string, storageKey: string, p: ParsePayload): Promise<Sheet[]> {
+  private async sheets(ctx: Ctx, fileType: string, file: HeldFile, p: ParsePayload): Promise<Sheet[]> {
     if (p.previousResult?.kind === 'grid' && p.previousResult.sheets) return p.previousResult.sheets;
     if (fileType === 'xls' || fileType === 'pdf')
       throw new PermanentJobError('import.no_grid', 'The document has not been extracted');
-    const bytes = await this.storage.get(storageKey);
+    const bytes = await this.files.forJob(ctx, file);
     if (fileType === 'xlsx') {
       try {
         return await readXlsx(bytes);
