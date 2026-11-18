@@ -535,6 +535,28 @@ describe('the person a document belongs to (ADR-0054 §3, §6; vault 0.9.0-dev.6
     expect(sent.inbox_member_id).toBe('fake-other-adult');
   });
 
+  it('names a member linked to a login by that person’s own name, not the household label such as “Me”', async () => {
+    const owner = (await db.query(`select id from app.app_user where email = $1`, [OWNER])).rows[0].id;
+    await db.query(`update app.app_user set display_name = 'Sam Owner' where id = $1`, [owner]);
+    // Every owner's own member is made as "Me" (workspaces.service): that is what the vault used to be told.
+    const me = (
+      await db.query(
+        `select id, name from app.family_member where workspace_id = $1 and linked_user_id = $2`,
+        [wsId, owner],
+      )
+    ).rows[0];
+    expect(me.name).toBe('Me');
+    const id = await file('payslip', 'November payslip.pdf', { mime: 'application/pdf' });
+    await db.query(
+      `insert into app.payslip (workspace_id, entity_id, employer_id, member_id, currency, status, pay_date,
+                                attachment_ids, net_minor)
+       values ($1, $2, $3, $4, 'USD', 'posted', '2026-11-30', array[$5::uuid], 412345)`,
+      [wsId, entity, employer, me.id, id],
+    );
+    await run();
+    expect(intake((await item(id)).vault_ref).hints.person).toEqual({ name: 'Sam Owner' });
+  });
+
   it('goes to the reviewer’s Inbox when that person can’t receive it now, and says more when asked', async () => {
     fake.vault.state.suspensions.set('fake-other-adult', {
       reason: 'locked' as never,
