@@ -19,6 +19,7 @@ import {
   type AiTaskDto,
   type TestAiProviderResponse,
 } from '@montra/schemas';
+import { sql } from 'kysely';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { Db } from '../db/database.js';
@@ -30,6 +31,9 @@ import { AI_PROBLEM_TEXT, AiService } from './ai.service.js';
 const DEFAULT_PAGE = 50;
 
 /** AI settings (UP-13), the audit log (AIA-10) and local-mode tasks (06 §2). */
+/** How many local-mode tasks one listing claims. */
+export const TASK_BATCH = 20;
+
 @Controller('v1/workspaces/:workspaceId/ai')
 @UseGuards(AuthGuard, WorkspaceGuard)
 export class AiController {
@@ -173,27 +177,21 @@ export class AiController {
   async tasks(@Ctx() ctx: RequestContext): Promise<{ data: AiTaskDto[] }> {
     const c = dbCtx(ctx);
     return this.db.run(c, async (trx) => {
-      const rows = await trx
-        .updateTable('app.ai_task')
-        .set({ status: 'claimed', claimed_at: new Date() })
-        .where('workspace_id', '=', c.workspaceId)
-        .where('id', 'in', (eb) =>
-          eb
-            .selectFrom('app.ai_task')
-            .select('id')
-            .where('workspace_id', '=', c.workspaceId)
-            .where('expires_at', '>', new Date())
-            .where((w) =>
-              w.or([
-                w('status', '=', 'pending'),
-                w.and([w('status', '=', 'claimed'), w('claimed_at', '<', new Date(Date.now() - 5 * 60_000))]),
-              ]),
-            )
-            .orderBy('created_at')
-            .limit(20),
-        )
-        .returning(['id', 'task', 'input', 'created_at'])
-        .execute();
+      // Claimed in a CTE with a row lock, so two clients asking at once never get the same task and the limit holds
+      // (an UPDATE ... WHERE id IN (SELECT ... LIMIT) without a lock lets both callers take the same rows).
+      const { rows } = await sql<{ id: string; task: string; input: unknown; created_at: Date }>`
+        with c as (
+          select workspace_id, id from app.ai_task
+           where workspace_id = ${c.workspaceId}::uuid and expires_at > now()
+             and (status = 'pending' or (status = 'claimed' and claimed_at < now() - interval '5 minutes'))
+           order by created_at
+           limit ${TASK_BATCH}
+           for update skip locked)
+        update app.ai_task t
+           set status = 'claimed', claimed_at = now()
+          from c
+         where t.workspace_id = c.workspace_id and t.id = c.id
+        returning t.id, t.task, t.input, t.created_at`.execute(trx);
       return {
         data: rows.map((r) => ({
           id: r.id,
