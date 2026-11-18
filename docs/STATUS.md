@@ -1964,6 +1964,13 @@ Phase 11 leftovers:
   and `FAMILY_VAULT_FAKE=on` takes precedence. Tests: `family-vault.test.ts` ("a vault on this machine…") and
   `operations.test.ts` (refused in production).
 
+- **PDF previews in the viewers** (receipts, payslips, bills): every response, the `/api` file proxy included, was sent
+  with `X-Frame-Options: DENY` and `frame-ancestors 'none'` (NFR-01, since 2026-11-04), so the browser refused to show a
+  PDF in the viewer's `<iframe>`. Responses under `/api` now allow framing by Montra's own pages only (`SAMEORIGIN`,
+  `frame-ancestors 'self'`; `securityHeaders` in `apps/web/lib/csp.mjs`); pages stay unframeable. The viewer also
+  catches an image that failed before hydration, which left a PDF as a broken image on a fresh page load. Tests:
+  `csp.test.ts`, e2e `operations.spec.ts`.
+
 ---
 
 ## 8. Session checklist
