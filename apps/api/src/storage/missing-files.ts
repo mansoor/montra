@@ -27,8 +27,8 @@ import { AppError, notFound } from '../common/errors.js';
 import { isAdmin } from '../common/roles.js';
 import { Db } from '../db/database.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { findDuplicate } from './duplicates.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from './storage.js';
-import { scheduleVault } from './vault/vault.service.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -36,6 +36,10 @@ type Ctx = { workspaceId: string; userId: string };
 export const MISSING_WORDS = {
   refused: 'Family Document Vault didn’t give this file back to Montra.',
   outOfReach: 'No longer available in Family Document Vault.',
+  /** §10: the owner disconnected Montra from the vault, which held the only copy. */
+  disconnected: 'Montra was disconnected from Family Document Vault, which keeps this file.',
+  /** BAK-06: restored from an archive that couldn't include it. */
+  notInBackup: 'It wasn’t in the backup this was restored from.',
 } as const;
 
 /**
@@ -53,6 +57,10 @@ export function paperType(
   if (b.includes(Buffer.from('%PDF-'))) return 'application/pdf';
   return null;
 }
+
+/** Wakes the vault's job, as `scheduleVault` does (not imported: the vault's service depends on this one). */
+const scheduleVault = (trx: Trx) =>
+  sql`select app.schedule_system_job('schedule', 'storage.vault', ${new Date()})`.execute(trx);
 
 /** At most this many files in Review's list at once. */
 const LIST_LIMIT = 500;
@@ -190,6 +198,7 @@ export class MissingFiles {
     role: string,
     fileId: string,
     bytes: Uint8Array,
+    anyway = false,
   ): Promise<FileProvidedAgainDto> {
     const file = await this.db.run(ctx, (trx) =>
       trx
@@ -220,6 +229,14 @@ export class MissingFiles {
     }
     const digest = sha256(bytes);
     const hashChanged = digest !== file.sha256;
+    // The owner's clarification (2026-11-18): the same bytes as another file the workspace holds, in Montra or the vault,
+    // is a possible duplicate. The person decides: cancel, or upload anyway (`anyway`).
+    if (!anyway) {
+      const dup = await this.db.run(ctx, (trx) =>
+        findDuplicate(trx, ctx.workspaceId, digest, { except: fileId }),
+      );
+      if (dup) throw possibleDuplicate(dup, isAdmin(role) || dup.uploadedBy === ctx.userId);
+    }
     // A key never used before: a put never overwrites, and an old object still to remove (§5) is never this one.
     const key = `${storageKey(ctx.workspaceId, file.kind, file.id)}-${randomUUID().slice(0, 8)}`;
     await this.storage.put(key, bytes, mime);
@@ -323,6 +340,23 @@ export class MissingFiles {
 }
 
 /**
+ * A 409 for an upload whose bytes are another file's (`findDuplicate`): its name and date when the person may know of
+ * it (owners and admins, or whoever uploaded it), else only that Montra already holds the same file.
+ */
+export function possibleDuplicate(
+  dup: { fileName: string; uploadedAt: Date },
+  named: boolean,
+): AppError {
+  return new AppError(
+    409,
+    'file.possible_duplicate',
+    named
+      ? `This looks like a duplicate of “${dup.fileName}”, uploaded on ${dup.uploadedAt.toISOString().slice(0, 10)}.`
+      : 'This looks like a duplicate of a file already in Montra.',
+  );
+}
+
+/**
  * Marks files missing, inside a transaction (the feed applies a page in one), with an audit row each. Only a file held
  * only in the vault, not in the trash, and not already marked. Answers the ids it marked.
  */
@@ -331,18 +365,19 @@ export async function markMissing(
   actor: Ctx,
   fileIds: readonly string[],
   reason: string,
+  opts: { includeTrash?: boolean } = {},
 ): Promise<string[]> {
   if (!fileIds.length) return [];
-  const rows = await trx
+  let q = trx
     .updateTable('app.file')
     .set({ missing_since: new Date(), missing_reason: reason })
     .where('workspace_id', '=', actor.workspaceId)
     .where('id', 'in', [...fileIds])
     .where('location', '=', 'vault')
-    .where('missing_since', 'is', null)
-    .where('deleted_at', 'is', null)
-    .returning('id')
-    .execute();
+    .where('missing_since', 'is', null);
+  // A disconnect (§10) marks files in the trash too: restored from it, they would otherwise wait on a vault Montra can't ask.
+  if (!opts.includeTrash) q = q.where('deleted_at', 'is', null);
+  const rows = await q.returning('id').execute();
   if (rows.length) {
     await trx
       .insertInto('app.audit_log')

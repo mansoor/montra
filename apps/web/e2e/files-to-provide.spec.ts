@@ -81,3 +81,81 @@ test('a file the vault didn’t give back is listed in Review, counted in its ba
   const left = await (await page.request.get(`${ws}/missing-files`)).json();
   expect(left.data).toEqual([]);
 });
+
+test('a file provided again that repeats another file’s bytes warns first, and the person decides', async ({
+  page,
+}) => {
+  const email = `missing-dup-${Date.now()}@example.com`;
+  await page.goto('/');
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByLabel('Workspace name').fill('Duplicate files household');
+  await page.getByRole('radio', { name: /Household/ }).check();
+  await page.getByLabel('Time zone').fill('UTC');
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await expect(page.getByRole('heading', { name: 'Net position' })).toBeVisible({ timeout: 20_000 });
+  const base = new URL(page.url()).pathname.split('/').slice(0, 3).join('/');
+  const workspaceId = base.split('/')[2]!;
+  const api = `http://localhost:${process.env.E2E_API_PORT ?? 4000}/v1/workspaces/${workspaceId}`;
+  const auth = { authorization: `Bearer dev:${email}` };
+  const other = Buffer.concat([PNG, Buffer.from('another paper')]);
+  const store = async (name: string, buffer: Buffer) => {
+    const r = await page.request.post(`${api}/receipts/files`, {
+      headers: auth,
+      multipart: { file: { name, mimeType: 'image/png', buffer } },
+    });
+    expect(r.ok()).toBe(true);
+    return ((await r.json()) as { fileId: string }).fileId;
+  };
+  await store('Kept here.png', other);
+  const lost = await store('Lost paper.png', PNG);
+  const me = (await (
+    await page.request.get(`http://localhost:${process.env.E2E_API_PORT ?? 4000}/v1/me`, { headers: auth })
+  ).json()) as { id?: string; user?: { id: string } };
+  const db = new pg.Client({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://montra_app:montra_app@localhost:5432/montra',
+  });
+  await db.connect();
+  try {
+    await db.query('begin');
+    await db.query(`select set_config('app.workspace_id', $1, true), set_config('app.user_id', $2, true)`, [
+      workspaceId,
+      me.user?.id ?? me.id,
+    ]);
+    await db.query(
+      `update app.file set location = 'vault', storage_key = null, missing_since = now(),
+                           missing_reason = 'Family Document Vault didn’t give this file back to Montra.'
+        where id = $1`,
+      [lost],
+    );
+    await db.query('commit');
+  } finally {
+    await db.end();
+  }
+
+  await page.goto(`${base}/review`);
+  const entry = page.getByTestId('missing-file').filter({ hasText: 'Lost paper.png' });
+  const pick = () =>
+    entry.getByLabel('Upload Lost paper.png again').setInputFiles({
+      name: 'Which one.png',
+      mimeType: 'image/png',
+      buffer: other,
+    });
+
+  // Cancel: nothing is uploaded, and the entry stays.
+  const asked: string[] = [];
+  page.once('dialog', (d) => {
+    asked.push(d.message());
+    void d.dismiss();
+  });
+  await pick();
+  await expect(page.getByText('Nothing was uploaded.')).toBeVisible();
+  expect(asked[0]).toContain('This looks like a duplicate of “Kept here.png”');
+  await expect(entry).toBeVisible();
+
+  // Upload anyway: stored, and the entry goes.
+  page.once('dialog', (d) => void d.accept());
+  await pick();
+  await expect(page.getByText(/Lost paper\.png is back in Montra/)).toBeVisible();
+  await expect(page.getByTestId('missing-file')).toHaveCount(0);
+});

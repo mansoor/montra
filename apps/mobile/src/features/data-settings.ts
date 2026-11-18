@@ -38,6 +38,19 @@ export function toggleChannel(
   return { [type]: { ...current, [channel]: on } };
 }
 
+/**
+ * ADR-0054 §5a: what a made archive couldn't include, and a background one waiting for the vault's daily reset, as
+ * words after its status. Empty when neither.
+ */
+export function exportVaultNote(
+  j: Pick<ExportJobDto, 'status' | 'missingFiles' | 'waitingUntil'>,
+): { key: string; values?: Record<string, string | number> } | null {
+  if (j.waitingUntil && j.status === 'queued') return { key: 'data.waiting_for_vault' };
+  if (j.status === 'ready' && j.missingFiles > 0)
+    return { key: 'data.missing_files', values: { count: j.missingFiles } };
+  return null;
+}
+
 /** Whether anything is still being made, so the screen knows to look again. */
 export const hasRunningExport = (jobs: readonly ExportJobDto[]): boolean =>
   jobs.some((j) => j.status === 'queued' || j.status === 'running');

@@ -32,6 +32,7 @@ import { payeeKeyOf } from '../categorization/categorizer.service.js';
 import { Db } from '../db/database.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { FileBytes, type ReadOptions } from '../storage/file-bytes.js';
+import { findDuplicate } from '../storage/duplicates.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { checkLogo } from './logo.js';
 import { otherRegistrationDto, otherRegistrations, registrationsDto } from './registrations.js';
@@ -729,8 +730,19 @@ export class BusinessService {
     const mediaType = detectReceiptMedia(bytes);
     if (!mediaType)
       throw new AppError(415, 'upload.unsupported_type', 'Upload a PDF, or a JPEG, PNG or WebP photo');
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    // The same file held already, in Montra or only in the vault (ADR-0054): the web warns, the person decides.
+    const dup = await this.db.run(ctx, (trx) =>
+      findDuplicate(trx, ctx.workspaceId, digest, { kinds: ['invoice'] }),
+    );
     const id = await this.storeFile(ctx, bytes, fileName, mediaType);
-    return { fileId: id, mediaType, bytes: bytes.length };
+    return {
+      fileId: id,
+      mediaType,
+      bytes: bytes.length,
+      sha256: digest,
+      duplicateOf: dup ? { fileId: dup.fileId, receiptId: null } : null,
+    };
   }
 
   async storeFile(ctx: Ctx, bytes: Uint8Array, fileName: string, mime: string, trx?: Trx): Promise<string> {

@@ -30,7 +30,13 @@ import {
   vaultOpenOutcome,
   vaultOpenProblemHref,
   vaultOpenProblemKey,
+  vaultDisconnectChoice,
+  vaultMoveQuestion,
+  VAULT_OPEN_PROBLEMS,
 } from './vault';
+import { catalogs } from '@montra/i18n';
+
+const en = catalogs.en!;
 
 // The Family Document Vault card in Settings → Storage (ADR-0054 §2, §13).
 const connection = (over: Partial<VaultConnectionDto> = {}): VaultConnectionDto => ({
@@ -54,6 +60,7 @@ const connection = (over: Partial<VaultConnectionDto> = {}): VaultConnectionDto 
   clockOffsetMs: 120,
   feedReadAt: '2026-11-17T10:05:00.000Z',
   files: { onlyInVault: 0, missing: 0 },
+  bringingBack: null,
   mirrorGroups: [],
   keyRotation: 'none',
   lastSuccessAt: '2026-11-17T10:00:00.000Z',
@@ -483,5 +490,61 @@ describe('a file kept only in the vault', () => {
     expect(inVaultRedirect(['v1', 'workspaces', ws, 'files', 'not-an-id'], 409, 'file.in_vault')).toBeNull();
     expect(inVaultRedirect([...path, 'extra'], 409, 'file.in_vault')).toBeNull();
     expect(inVaultRedirect(['v1', 'me', 'files', file], 409, 'file.in_vault')).toBeNull();
+  });
+});
+
+describe('the vault as the record, the rest (ADR-0054 §5, §10; PR 5b2)', () => {
+  it('asks “Move these N files too?” only when there is something to move', () => {
+    expect(vaultMoveQuestion({ count: 0, groups: [] })).toBeNull();
+    expect(vaultMoveQuestion({ count: 1, groups: [{ group: 'receipts', count: 1 }] })).toEqual({
+      key: 'vault.move_offer_one',
+      values: { count: '1' },
+    });
+    expect(vaultMoveQuestion({ count: 12, groups: [{ group: 'receipts', count: 12 }] })).toEqual({
+      key: 'vault.move_offer',
+      values: { count: '12' },
+    });
+  });
+
+  it('offers the disconnect choice only while files are kept only in the vault', () => {
+    expect(vaultDisconnectChoice(connection())).toBe('confirm');
+    expect(vaultDisconnectChoice(connection({ files: { onlyInVault: 3, missing: 0 } }))).toBe('choose');
+    // Missing ones count: the connection is how the same vault would give them back.
+    expect(vaultDisconnectChoice(connection({ files: { onlyInVault: 2, missing: 2 } }))).toBe('choose');
+    expect(
+      vaultDisconnectChoice(connection({ files: { onlyInVault: 3, missing: 0 }, bringingBack: { then: 'keep' } })),
+    ).toBe('bringing_back');
+  });
+
+  it('shows a disconnected connection as its own step, and says when files are being brought back', () => {
+    const off = connection({ status: 'disconnected' });
+    expect(vaultStep(off)).toBe('disconnected');
+    expect(vaultStatusLine(off)).toEqual({ key: 'vault.status_disconnected' });
+    expect(vaultTone(off)).toBe('bad');
+    // Connecting again starts at the code, as any connection.
+    expect(vaultStep(connection({ status: 'needs_vault', stage: 'register' }))).toBe('register');
+    expect(vaultStatusLine(connection({ bringingBack: { then: 'disconnect' } }))).toEqual({
+      key: 'vault.status_bringing_back',
+    });
+    expect(VaultConnectionSchema.parse(off)).toEqual(off);
+  });
+
+  it('says in words that nothing opens in a vault Montra is disconnected from', () => {
+    expect(
+      vaultOpenOutcome({ status: 409, location: null, retryAfter: null, code: 'vault.disconnected' }),
+    ).toEqual({ problem: 'disconnected', minutes: null });
+    expect(vaultOpenProblemKey('disconnected')).toBe('vault.open_disconnected');
+  });
+
+  it('has every message these use', () => {
+    const keys = [
+      'vault.move_offer',
+      'vault.move_offer_one',
+      'vault.status_disconnected',
+      'vault.status_bringing_back',
+      ...VAULT_OPEN_PROBLEMS.map(vaultOpenProblemKey),
+    ];
+    expect(keys.filter((k) => !(k in en))).toEqual([]);
+    expect(en['vault.move_offer']).toContain('{count}');
   });
 });

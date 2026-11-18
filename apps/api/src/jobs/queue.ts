@@ -20,6 +20,8 @@ export interface EnqueueInput {
   payload: Record<string, unknown>;
   then?: { queue: Queue; type: string; payload: Record<string, unknown> };
   maxAttempts?: number;
+  /** Not before this (a wait the job decided on, such as an archive waiting for the vault's daily reset). */
+  runAfter?: Date;
 }
 
 /**
@@ -59,6 +61,7 @@ export class JobQueue {
         then_job: input.then ? JSON.stringify(input.then) : null,
         created_by: input.userId,
         ...(input.maxAttempts ? { max_attempts: input.maxAttempts } : {}),
+        ...(input.runAfter ? { run_after: input.runAfter } : {}),
       })
       .returning('id')
       .executeTakeFirstOrThrow();

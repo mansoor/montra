@@ -6,6 +6,7 @@ import type { AccountDto, BillDto, CategoryDto, PartyDto, PaymentCandidateDto } 
 import { BILL_CHIP } from '@/lib/business';
 import { browserApi } from '@/lib/browser-api';
 import { parseAmountInput } from '@/lib/money';
+import { anyDuplicate } from '@/lib/missing-files';
 import { receiptFileProblem, RECEIPT_ACCEPT } from '@/lib/receipts';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
@@ -82,9 +83,10 @@ export function BillManager({
           })
         ).id!;
       }
-      const fileIds = file
-        ? [(await browserApi.uploadBusinessFile(workspaceId, file, file.name)).fileId]
-        : [];
+      const uploaded = file ? await browserApi.uploadBusinessFile(workspaceId, file, file.name) : null;
+      // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
+      if (uploaded && anyDuplicate([uploaded]) && !window.confirm(t('files.duplicate_confirm'))) return null;
+      const fileIds = uploaded ? [uploaded.fileId] : [];
       return browserApi.createBill(workspaceId, {
         entityId,
         partyId: vendor,
@@ -95,7 +97,7 @@ export function BillManager({
         expenseAccountId: categoryId,
         fileIds,
       });
-    }, t('bills.added')).then((r) => {
+    }, (r) => (r ? t('bills.added') : t('missing_files.duplicate_cancelled'))).then((r) => {
       if (r) {
         setAmount('');
         setReference('');

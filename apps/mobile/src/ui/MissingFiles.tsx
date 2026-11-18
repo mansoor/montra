@@ -4,7 +4,7 @@
  * again under the same file. Read online like tax forms to check; its count keeps the Review badge current.
  */
 import { useCallback, useState } from 'react';
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import type { MissingFileDto } from '@montra/schemas';
@@ -12,6 +12,7 @@ import { t } from '../i18n';
 import {
   MISSING_FILE_TYPES,
   missingFileUses,
+  possibleDuplicate,
   providedAgainMessage,
   showsMissingFiles,
 } from '../features/missing-files';
@@ -62,8 +63,21 @@ export function MissingFilesReview() {
     const type = a.mimeType ? MISSING_FILE_TYPES[a.mimeType] : undefined;
     if (!type) return toast.show(t('missing_files.pick_hint'));
     setBusy(f.fileId);
+    const picked = { uri: a.uri, name: a.name, type };
     try {
-      const done = await api.provideMissingFile(wsId, f.fileId, { uri: a.uri, name: a.name, type });
+      let done;
+      try {
+        done = await api.provideMissingFile(wsId, f.fileId, picked);
+      } catch (err) {
+        // The owner's clarification (2026-11-18): the same bytes as a file Montra holds. The person decides.
+        const detail = possibleDuplicate(err);
+        if (detail === null) throw err;
+        if (!(await askAnyway(t('files.duplicate_anyway_confirm', { detail })))) {
+          toast.show(t('missing_files.duplicate_cancelled'));
+          return;
+        }
+        done = await api.provideMissingFile(wsId, f.fileId, picked, true);
+      }
       const m = providedAgainMessage(done, f.fileName);
       toast.show(t(m.key, m.values));
       const rest = files.filter((x) => x.fileId !== f.fileId);
@@ -106,5 +120,15 @@ export function MissingFilesReview() {
         </View>
       ))}
     </View>
+  );
+}
+
+/** Cancel, or upload anyway: a native dialog, answered as a promise. */
+function askAnyway(message: string): Promise<boolean> {
+  return new Promise((resolve) =>
+    Alert.alert(t('missing_files.upload'), message, [
+      { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+      { text: t('missing_files.upload'), onPress: () => resolve(true) },
+    ]),
   );
 }

@@ -128,10 +128,15 @@ export class BackupService {
       if (!job.workspace_id || !job.created_by)
         throw new PermanentJobError('job.context', 'Job without workspace or user');
       const ctx = { workspaceId: job.workspace_id, userId: job.created_by };
-      await this.mark(ctx, payload.exportId, { status: 'running' });
+      await this.mark(ctx, payload.exportId, { status: 'running', waiting_until: null });
       try {
         await fn(ctx, job, payload.exportId);
       } catch (e) {
+        if (e instanceof WaitForVault) {
+          // ADR-0054 §5a: once, until the vault's daily reset; then it is made with whatever it can get.
+          await this.waitForVault(ctx, job, payload.exportId, e.until);
+          return { exportId: payload.exportId, waitingUntil: e.until.toISOString() };
+        }
         this.logger.warn(`Export ${payload.exportId} failed: ${(e as Error).message}`);
         await this.mark(ctx, payload.exportId, {
           status: 'failed',
@@ -148,8 +153,34 @@ export class BackupService {
     );
     this.worker.register(
       'data.tax_package',
-      run((ctx, _job, id) => this.runTaxPackage(ctx, id)),
+      run((ctx, job, id) => this.runTaxPackage(ctx, job, id)),
     );
+  }
+
+  /**
+   * ADR-0054 §5a: a background archive met the vault's daily read cap. It waits once: the archive is queued again for
+   * just after the vault's reset (saying so on its screen), and that run lists anything still unavailable rather than
+   * waiting again.
+   */
+  private async waitForVault(ctx: Ctx, job: Job, exportId: string, until: Date): Promise<void> {
+    const at = new Date(Math.max(until.getTime(), Date.now()) + VAULT_RESET_MARGIN_MS);
+    await this.db.run(ctx, async (trx) => {
+      await trx
+        .updateTable('app.export_job')
+        .set({ status: 'queued', waiting_until: at })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', exportId)
+        .execute();
+      await this.queue.enqueue(trx, {
+        workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
+        queue: 'report',
+        type: job.type,
+        payload: { ...(job.payload as Record<string, unknown>), vaultWaited: true },
+        runAfter: at,
+      });
+    });
+    this.logger.log(`Export ${exportId} waits for the vault's daily reset`);
   }
 
   private async mark(
@@ -319,6 +350,8 @@ export class BackupService {
       error: r.error,
       createdAt: r.created_at.toISOString(),
       expiresAt: r.expires_at?.toISOString() ?? null,
+      missingFiles: r.missing_files,
+      waitingUntil: r.waiting_until?.toISOString() ?? null,
       storageCopy: r.destination_status
         ? { status: r.destination_status, path: r.destination_path, error: r.destination_error }
         : r.destination_id
@@ -539,14 +572,19 @@ export class BackupService {
   // ----- Building one ------------------------------------------------------------------------------------------------
 
   private async runBackup(ctx: Ctx, job: Job, exportId: string): Promise<void> {
-    const payload = job.payload as { wrappedKey?: string; kdf?: KdfParams; scheduled?: boolean };
+    const payload = job.payload as {
+      wrappedKey?: string;
+      kdf?: KdfParams;
+      scheduled?: boolean;
+      vaultWaited?: boolean;
+    };
     const dir = await mkdtemp(join(tmpdir(), 'montra-backup-'));
     try {
       const { entityId } = await this.db.run(ctx, async (trx) => ({
         entityId: (await this.jobRow(trx, ctx, exportId)).entity_id,
       }));
       const zipPath = join(dir, 'archive.zip');
-      const name = await this.writeArchive(ctx, entityId, dir, zipPath);
+      const { name, missing } = await this.writeArchive(ctx, entityId, dir, zipPath, !payload.vaultWaited);
       let path = zipPath;
       if (payload.wrappedKey && payload.kdf) {
         path = join(dir, 'archive.bin');
@@ -559,13 +597,20 @@ export class BackupService {
       }
       const date = new Date().toISOString().slice(0, 10);
       const fileName = `${safeFileName(name)}-backup-${date}${payload.wrappedKey ? '.montra' : '.zip'}`;
-      await this.finish(ctx, exportId, path, fileName, payload.scheduled ?? false);
+      await this.finish(ctx, exportId, path, fileName, payload.scheduled ?? false, missing);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   }
 
-  private async finish(ctx: Ctx, id: string, path: string, fileName: string, notify: boolean): Promise<void> {
+  private async finish(
+    ctx: Ctx,
+    id: string,
+    path: string,
+    fileName: string,
+    notify: boolean,
+    missing: number,
+  ): Promise<void> {
     const key = `${ctx.workspaceId}/exports/${id}`;
     await this.storage.putFile(key, path, 'application/octet-stream');
     const { size } = await stat(path);
@@ -579,6 +624,8 @@ export class BackupService {
           bytes: size,
           finished_at: new Date(),
           expires_at: new Date(Date.now() + EXPIRY_DAYS * 86_400_000),
+          missing_files: missing,
+          waiting_until: null,
         })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', id)
@@ -613,13 +660,17 @@ export class BackupService {
     });
   }
 
-  /** Writes the ZIP; returns the name to file it under. */
+  /**
+   * Writes the ZIP; returns the name to file it under and how many files it couldn't include. `mayWait`: the vault's
+   * daily read cap stops it to wait for the reset (`WaitForVault`) rather than leaving files out.
+   */
   private async writeArchive(
     ctx: Ctx,
     entityId: string | null,
     dir: string,
     zipPath: string,
-  ): Promise<string> {
+    mayWait: boolean,
+  ): Promise<{ name: string; missing: number }> {
     const zip = new yazl.ZipFile();
     const output = createWriteStream(zipPath);
     const done = pipeline(zip.outputStream, output);
@@ -631,7 +682,11 @@ export class BackupService {
     // the README, and the backup goes on without it.
     const missing: MissingInArchive[] = [];
     for (const f of manifest.files) {
-      const got = await this.readForArchive(ctx, { id: f.id, storage_key: f.path || null, sha256: f.sha256 });
+      const got = await this.readForArchive(
+        ctx,
+        { id: f.id, storage_key: f.path || null, sha256: f.sha256 },
+        mayWait,
+      ).catch(abandon(zip, done));
       if (!got.ok) {
         missing.push({ id: f.id, name: f.name, words: got.words });
         f.path = '';
@@ -656,7 +711,7 @@ export class BackupService {
     zip.addBuffer(Buffer.from(README + missingSection(missing, '\n')), 'README.txt');
     zip.end();
     await done;
-    return scope ?? 'montra';
+    return { name: scope ?? 'montra', missing: missing.length };
   }
 
   /** Every table at one point in time, as JSON lines and CSV. */
@@ -918,7 +973,8 @@ export class BackupService {
 
   // ----- Tax package (RPT-04, UP-10) --------------------------------------------------------------------------------------
 
-  private async runTaxPackage(ctx: Ctx, exportId: string): Promise<void> {
+  private async runTaxPackage(ctx: Ctx, job: Job, exportId: string): Promise<void> {
+    const mayWait = !(job.payload as { vaultWaited?: boolean }).vaultWaited;
     const dir = await mkdtemp(join(tmpdir(), 'montra-tax-'));
     try {
       const { job, entity } = await this.db.run(ctx, async (trx) => {
@@ -983,7 +1039,7 @@ export class BackupService {
           const f = documents.files.get(id);
           if (!f) continue;
           const path = `receipts/${r.d}-${safeFileName(r.merchant ?? 'receipt')}-${id.slice(0, 8)}-${safeFileName(f.file_name)}`;
-          const got = await this.readForArchive(ctx, f);
+          const got = await this.readForArchive(ctx, f, mayWait).catch(abandon(zip, done));
           if (!got.ok) {
             if (!missing.some((m) => m.id === id)) missing.push({ id, name: f.file_name, words: got.words });
             continue;
@@ -996,7 +1052,9 @@ export class BackupService {
         );
       }
       zip.addBuffer(Buffer.from(index.join('\r\n') + '\r\n'), 'receipts.csv');
-      const forms = await this.taxFormsInPackage(ctx, zip, entityId, entity.name, year, missing);
+      const forms = await this.taxFormsInPackage(ctx, zip, entityId, entity.name, year, missing, mayWait).catch(
+        abandon(zip, done),
+      );
       const formLines = forms
         ? `${README_LINE}${forms.leftOut ? ` ${leftOutLine(forms.leftOut)}` : ''}\r\n\r\n`
         : '';
@@ -1014,23 +1072,33 @@ export class BackupService {
         zipPath,
         `${safeFileName(entity.name)}-tax-package-${year}.zip`,
         false,
+        missing.length,
       );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   }
 
-  /** A file for an archive: from wherever it is held, or why not; never an error that stops the archive. */
+  /**
+   * A file for an archive: from wherever it is held, or why not; never an error that stops the archive, but for the
+   * vault's daily read cap while the archive may still wait for its reset (ADR-0054 §5a, once).
+   */
   private async readForArchive(
     ctx: Ctx,
     f: HeldFile,
+    mayWait: boolean,
   ): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; words: string }> {
+    let got: Awaited<ReturnType<FileBytes['read']>>;
     try {
-      return await this.files.read(ctx, f);
+      got = await this.files.read(ctx, f);
     } catch (e) {
       this.logger.warn(`File ${f.id} could not be read for an archive: ${(e as Error).name}`);
       return { ok: false, words: UNREADABLE };
     }
+    if (!got.ok && got.reason === 'vault_read_cap' && mayWait) {
+      throw new WaitForVault(got.heldUntil ?? new Date(Date.now() + VAULT_CAP_FALLBACK_MS));
+    }
+    return got;
   }
 
   /**
@@ -1046,6 +1114,7 @@ export class BackupService {
     booksName: string,
     year: number,
     missing: MissingInArchive[],
+    mayWait: boolean,
   ): Promise<{ forms: number; leftOut: number } | null> {
     const base = await this.db.run(ctx, async (trx) => {
       const ws = await trx
@@ -1097,7 +1166,7 @@ export class BackupService {
         let path = pathOf.get(id);
         if (!path) {
           if (missing.some((m) => m.id === id)) continue;
-          const got = await this.readForArchive(ctx, file);
+          const got = await this.readForArchive(ctx, file, mayWait);
           if (!got.ok) {
             missing.push({ id, name: file.file_name, words: got.words });
             continue;
@@ -1122,6 +1191,30 @@ export class BackupService {
 }
 
 const UNREADABLE = 'Montra couldn’t read this file.';
+/** A daily read cap with no reset time said: wait an hour. */
+const VAULT_CAP_FALLBACK_MS = 60 * 60_000;
+/** Run a little after the vault's reset, not on it. */
+const VAULT_RESET_MARGIN_MS = 60_000;
+
+/**
+ * An archive given up part-way (to wait for the vault's reset): its ZIP is finished and written before the error goes
+ * on, so nothing reads the job's temporary files after they are removed.
+ */
+function abandon(zip: yazl.ZipFile, done: Promise<void>) {
+  return async (e: unknown): Promise<never> => {
+    zip.end();
+    await done.catch(() => undefined);
+    throw e;
+  };
+}
+
+/** ADR-0054 §5a: the vault's daily read cap met while the archive may still wait once for its reset. */
+class WaitForVault extends Error {
+  constructor(readonly until: Date) {
+    super('vault_read_cap');
+    this.name = 'WaitForVault';
+  }
+}
 
 /** A file an archive couldn't include (ADR-0054 §5a), named in its README. */
 interface MissingInArchive {

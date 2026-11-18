@@ -458,7 +458,12 @@ export type VaultGroupSettingDto = z.infer<typeof VaultGroupSettingDto>;
 export const VaultConnectionDto = z.object({
   id: Id,
   stage: VaultStage,
-  status: z.enum(['active', 'paused', 'failing', 'needs_vault']),
+  /**
+   * `disconnected` (§10, PR 5b2): the owner disconnected while files were held only in the vault. Nothing is sent and
+   * the key is gone; the connection and its outbox are kept so that connecting the same vault again reads those files
+   * back. Connecting again starts at `register`.
+   */
+  status: z.enum(['active', 'paused', 'failing', 'needs_vault', 'disconnected']),
   /** The vault's address, once the code was accepted. */
   address: z.string().nullable(),
   /** The household's name, as the vault last reported it. */
@@ -503,6 +508,11 @@ export const VaultConnectionDto = z.object({
    * vault didn't give back that wait in Review for a person to provide again (`missing`).
    */
   files: z.object({ onlyInVault: z.number().int(), missing: z.number().int() }),
+  /**
+   * §10 "Bring the files back" in progress: every file held only in the vault is being copied back into Montra, one at
+   * a time, and then the connection stays (`keep`) or is disconnected (`disconnect`). Null when none are.
+   */
+  bringingBack: z.object({ then: z.enum(['keep', 'disconnect']) }).nullable(),
   /**
    * §1, §13: the groups whose kinds the owner's own S3/WebDAV storage is set to copy. For a group sent with no local
    * copy, Settings says the owner's storage still holds one; Montra never changes that setting on its own.
@@ -576,9 +586,53 @@ export const SendExistingToVaultRequest = z
   .strict();
 export type SendExistingToVaultRequest = z.output<typeof SendExistingToVaultRequest>;
 
-/** §10: disconnect. With files held only in the vault, it is refused unless `anyway` (they keep their references). */
-export const DisconnectVaultRequest = z.object({ anyway: z.boolean().default(false) }).strict();
+/**
+ * §10: disconnect. With files held only in the vault the owner chooses: `bringBack` copies them back into Montra first
+ * and disconnects once they are back; `anyway` disconnects now, keeping the connection's references
+ * (`disconnected`) while those files become missing. Neither, with such files, is refused (409
+ * `vault.files_only_in_vault`) so the choice is shown. A disconnected connection with no such files left is removed.
+ */
+export const DisconnectVaultRequest = z
+  .object({ anyway: z.boolean().default(false), bringBack: z.boolean().default(false) })
+  .strict()
+  .refine((r) => !(r.anyway && r.bringBack), 'Choose one: bring the files back, or disconnect anyway');
 export type DisconnectVaultRequest = z.output<typeof DisconnectVaultRequest>;
+
+/**
+ * §5, §12 "Move existing documents": files of groups sent with no local copy that the vault filed while Montra kept a
+ * copy (filed before the group was switched), by group. Moving removes Montra's copy of each, one at a time, under §5's
+ * conditions. `groups` narrows it (the offer made right after saving a group's mode).
+ */
+export const VaultMoveDto = z.object({
+  count: z.number().int(),
+  groups: z.array(z.object({ group: VaultGroup, count: z.number().int() })),
+});
+export type VaultMoveDto = z.infer<typeof VaultMoveDto>;
+
+export const VaultMoveQuery = z.object({
+  groups: z
+    .string()
+    .transform((s) => [
+      ...new Set(
+        s
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      ),
+    ])
+    .pipe(z.array(VaultGroup).min(1).max(VAULT_GROUPS.length))
+    .optional(),
+});
+export type VaultMoveQuery = z.output<typeof VaultMoveQuery>;
+
+/** "Move these N files too?": `expected` is the count the person confirmed, so a different number is refused. */
+export const MoveToVaultRequest = z
+  .object({
+    expected: z.number().int().min(0).max(1_000_000),
+    groups: z.array(VaultGroup).min(1).max(VAULT_GROUPS.length).optional(),
+  })
+  .strict();
+export type MoveToVaultRequest = z.output<typeof MoveToVaultRequest>;
 
 /** §10: "Bring the files back": what is still to download, over days if the vault's daily cap needs it. */
 export const VaultBringBackDto = z.object({

@@ -16,6 +16,7 @@ import {
   type BillDraft,
   type BillField,
 } from '@/lib/household-bills';
+import { anyDuplicate } from '@/lib/missing-files';
 import { RECEIPT_ACCEPT, receiptFileProblem } from '@/lib/receipts';
 import { Field, FormError } from '../field';
 import { DateText, useI18n } from '../i18n';
@@ -129,9 +130,14 @@ export function AddBill({
     setReadError(null);
     setReadState('uploading');
     try {
-      const fileIds: string[] = [];
-      for (const f of files)
-        fileIds.push((await browserApi.uploadHouseholdBillFile(workspaceId, f, f.name)).fileId);
+      const uploads = [];
+      for (const f of files) uploads.push(await browserApi.uploadHouseholdBillFile(workspaceId, f, f.name));
+      // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
+      if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) {
+        setReadState('idle');
+        return;
+      }
+      const fileIds = uploads.map((u) => u.fileId);
       // Filed straight away when its provider is learned (ADR-0051); otherwise checked here, and kept in Review.
       const scan = await browserApi.createScan(workspaceId, { kind: 'bill', fileIds, autoFile: true });
       if (mine !== attempt.current) return;

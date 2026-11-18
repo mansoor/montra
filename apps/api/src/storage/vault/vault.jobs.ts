@@ -10,14 +10,16 @@
  *    row whose last attempt got no answer is asked about before it is sent again;
  * 4. asks about rows in someone's Inbox, a hundred at a time, and marks them filed or not kept;
  * 5. reads the vault's changes feed a few times an hour, when the vault lets Montra read it (§9, `VaultFeed`);
- * 6. removes Montra's copy of a filed file whose group is sent with no local copy, once all of §5 holds (`moveOne`);
- * 7. withdraws Inbox items and deletes documents for files deleted for good (§10).
+ * 6. brings files held only in the vault back into Montra's storage, one at a time, when the owner asked (§10);
+ * 7. removes Montra's copy of a filed file whose group is sent with no local copy, once all of §5 holds (`moveOne`),
+ *    including the files a "Move existing documents" confirmed;
+ * 8. withdraws Inbox items and deletes documents for files deleted for good (§10).
  *
  * The daily caps hold sending without counting as failures; a problem with the connection itself stops it and tells
  * owners once; five failures in a row turn it `failing`, as for a mirror. Nothing here logs a key, a signature, a
  * code, a file's name or its contents: only ids and codes.
  */
-import { createHash, randomInt } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql, type Selectable } from 'kysely';
 import type { StorageDestinationTable, Trx, VaultConnectionStateTable, VaultItemTable } from '@montra/db';
@@ -36,8 +38,9 @@ import {
 import { Db } from '../../db/database.js';
 import { Worker } from '../../jobs/queue.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
-import { FileBytes } from '../file-bytes.js';
-import { STORAGE_PORT, type StoragePort } from '../storage.js';
+import { FileBytes, type FileSource } from '../file-bytes.js';
+import { MISSING_WORDS, MissingFiles } from '../missing-files.js';
+import { STORAGE_PORT, storageKey, type StoragePort } from '../storage.js';
 import { backoffMs, MAX_ATTEMPTS } from '../backoff.js';
 import { VaultError, type VaultDocument, type VaultItemState } from '../destinations/vault.js';
 import type { VaultConnection } from './connection.js';
@@ -78,6 +81,8 @@ const JITTER_MS = 15_000;
 const CAP_FALLBACK_MS = 60 * MINUTE;
 /** §5: a filed file whose copy can't go yet (the mirror, a reading, the vault's say-so) is looked at again after this. */
 export const REMOVE_WAIT_MS = 30 * MINUTE;
+/** §10: bringing files back when the vault can't be asked just now: looked at again after this. */
+const BRING_BACK_WAIT_MS = 15 * MINUTE;
 
 /** In Montra's words, for Settings and the badges (§4.5, D8). Never a file name, never the vault's own words. */
 export const NOT_KEPT_WORDS = {
@@ -112,7 +117,10 @@ export interface VaultRunOptions {
   settleMs?: number;
 }
 
-type Done = Record<'sent' | 'filed' | 'notKept' | 'failed' | 'withdrawn' | 'deleted' | 'moved', number>;
+type Done = Record<
+  'sent' | 'filed' | 'notKept' | 'failed' | 'withdrawn' | 'deleted' | 'moved' | 'broughtBack',
+  number
+>;
 type Outcome = 'ok' | 'stop' | 'hold';
 
 @Injectable()
@@ -127,6 +135,7 @@ export class VaultJobs {
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(VaultFeed) private readonly feed: VaultFeed,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(MissingFiles) private readonly missing: MissingFiles,
   ) {}
 
   register(): void {
@@ -142,7 +151,16 @@ export class VaultJobs {
   /** One pass over every vault connection with work due, then the next wake-up. */
   async run(opts: VaultRunOptions = {}): Promise<Done> {
     const deadline = Date.now() + (opts.budgetMs ?? RUN_BUDGET_MS);
-    const done: Done = { sent: 0, filed: 0, notKept: 0, failed: 0, withdrawn: 0, deleted: 0, moved: 0 };
+    const done: Done = {
+      sent: 0,
+      filed: 0,
+      notKept: 0,
+      failed: 0,
+      withdrawn: 0,
+      deleted: 0,
+      moved: 0,
+      broughtBack: 0,
+    };
     const { rows } = await this.db.run({}, (trx) =>
       sql<{ workspace_id: string; destination_id: string; user_id: string | null }>`
         select * from app.vault_due()`.execute(trx),
@@ -178,7 +196,7 @@ export class VaultJobs {
     opts: VaultRunOptions,
   ) {
     let row = await this.loadRow(ctx, destinationId);
-    if (!row || row.status === 'paused') return;
+    if (!row || row.status === 'paused' || row.status === 'disconnected') return;
     let config = configOf(row);
     if (config.stage === 'register') return;
     const state = await this.loadState(ctx, destinationId);
@@ -226,6 +244,7 @@ export class VaultJobs {
       // What asking turned back into a send (a lapsed item's one resend, an id the vault doesn't know) goes now.
       if (!held && (await this.sendDue(ctx, row, config, conn, deadline, done, opts)) === 'stop') return;
       if (config.mayRead && (await this.readFeed(ctx, row, conn, deadline)) === 'stop') return;
+      await this.bringBack(ctx, row.id, deadline, done);
       if ((await this.removeSources(ctx, row, config, conn, deadline, done)) === 'stop') return;
       await this.deletes(ctx, row, conn, deadline, done);
     } finally {
@@ -719,6 +738,126 @@ export class VaultJobs {
       if (err.code !== 'retry_later') await this.failed(ctx, row, err);
       return 'hold';
     }
+  }
+
+  // ----- 6. Bringing files back (§10) -------------------------------------------------------------------------------
+
+  /**
+   * §10 "Bring the files back": each file held only in the vault, oldest first and one at a time, read back (from the
+   * owner's own storage when it has a copy, else the vault, counted against its daily read cap) and stored as Montra's
+   * copy again. The cap holds the rest until the vault's reset; a file the vault doesn't give back is missing (§5a) and
+   * the next one is asked for. When none is left to fetch, the vault service ends it (and disconnects, when asked).
+   */
+  private async bringBack(ctx: Ctx, destinationId: string, deadline: number, done: Done): Promise<void> {
+    const state = await this.loadState(ctx, destinationId);
+    if (!state?.bring_back_at || state.bring_back_at.getTime() > Date.now()) return;
+    const tried: string[] = [];
+    while (Date.now() < deadline) {
+      const f = await this.db.run(ctx, (trx) => {
+        let q = trx
+          .selectFrom('app.file')
+          .select(['id', 'kind', 'mime', 'sha256', 'storage_key'])
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('location', '=', 'vault')
+          .where('missing_since', 'is', null);
+        if (tried.length) q = q.where('id', 'not in', tried);
+        return q.orderBy('created_at').orderBy('id').limit(1).executeTakeFirst();
+      });
+      if (!f) {
+        await this.vault.finishBringBack(ctx, destinationId);
+        return;
+      }
+      tried.push(f.id);
+      const got = await this.files.read(ctx, f);
+      if (got.ok) {
+        try {
+          if (await this.keepAgain(ctx, f, got.bytes, got.from)) done.broughtBack++;
+        } catch (e) {
+          this.logger.warn(`File ${f.id} couldn't be brought back yet: ${(e as Error).name}`);
+          await this.bringBackAt(ctx, destinationId, new Date(Date.now() + REMOVE_WAIT_MS));
+          return;
+        }
+        continue;
+      }
+      if (got.reason === 'vault_read_cap') {
+        // §12: not a failure. The rest wait for the vault's next daily reset.
+        await this.bringBackAt(ctx, destinationId, got.heldUntil ?? new Date(Date.now() + CAP_FALLBACK_MS));
+        return;
+      }
+      if (got.reason === 'vault_unavailable') {
+        await this.bringBackAt(ctx, destinationId, new Date(Date.now() + BRING_BACK_WAIT_MS));
+        return;
+      }
+      // `vault_refused` is marked missing by `FileBytes`; anything else nothing holds, so it is missing too (§5a).
+      if (got.reason !== 'vault_refused') await this.missing.mark(ctx, [f.id], MISSING_WORDS.refused);
+    }
+  }
+
+  /**
+   * One file brought back: stored under a key never used before, and Montra's again. It is no longer a file that moved:
+   * only a "Move existing documents" (with its confirmation) takes its copy away again. Audited, never with its name.
+   */
+  private async keepAgain(
+    ctx: Ctx,
+    f: { id: string; kind: string; mime: string },
+    bytes: Uint8Array,
+    from: FileSource,
+  ): Promise<boolean> {
+    const key = `${storageKey(ctx.workspaceId, f.kind, f.id)}-${randomUUID().slice(0, 8)}`;
+    await this.storage.put(key, bytes, f.mime);
+    const kept = await this.db.run(ctx, async (trx) => {
+      const r = await trx
+        .updateTable('app.file')
+        .set({ storage_key: key, location: 'montra' })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', f.id)
+        .where('location', '=', 'vault')
+        .where('storage_key', 'is', null)
+        .returning('id')
+        .executeTakeFirst();
+      if (!r) return false;
+      await trx
+        .updateTable('app.vault_item')
+        .set({ source_key: null, source_removed_at: null, updated_at: new Date() })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('file_id', '=', f.id)
+        .where('source_removed_at', 'is not', null)
+        .execute();
+      await trx
+        .updateTable('app.vault_item')
+        .set({ remove_at: null })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('file_id', '=', f.id)
+        .execute();
+      await trx
+        .insertInto('app.audit_log')
+        .values({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: null,
+          actor_type: 'system',
+          action: 'file.brought_back',
+          subject_type: 'file',
+          subject_id: f.id,
+          diff: JSON.stringify({ from }),
+        })
+        .execute();
+      return true;
+    });
+    // Someone provided it again meanwhile: theirs stands, and this copy goes.
+    if (!kept) await this.storage.delete(key).catch(() => undefined);
+    return kept;
+  }
+
+  private async bringBackAt(ctx: Ctx, destinationId: string, at: Date): Promise<void> {
+    await this.db.run(ctx, (trx) =>
+      trx
+        .updateTable('app.vault_connection_state')
+        .set({ bring_back_at: at, updated_at: new Date() })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('destination_id', '=', destinationId)
+        .where('bring_back_at', 'is not', null)
+        .execute(),
+    );
   }
 
   // ----- 6. Removing Montra's copy (§5) -------------------------------------------------------------------------------

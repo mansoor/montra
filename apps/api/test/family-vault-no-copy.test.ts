@@ -680,12 +680,4 @@ describe('providing a file again (ADR-0054 §5a)', () => {
   });
 });
 
-describe('disconnecting while files are kept only in the vault (ADR-0054 §10)', () => {
-  it('is refused, in words: the connection is how Montra reads them back', async () => {
-    await onlyInVault('Keeps it connected.png');
-    const res = await c.delete(url('/family-vault'), { anyway: true });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('vault.files_only_in_vault');
-    expect(await connection()).not.toBeNull();
-  });
-});
+// Disconnecting while files are kept only in the vault is a choice from PR 5b2: family-vault-move-back.test.ts.

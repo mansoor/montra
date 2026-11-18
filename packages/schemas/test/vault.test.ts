@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DisconnectVaultRequest,
   FILE_KINDS,
+  MoveToVaultRequest,
+  VaultMoveQuery,
   FileStorageStatesQuery,
   RetryVaultItemsRequest,
   VAULT_GROUP_MODES_OFFERED,
@@ -164,6 +166,7 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     clockOffsetMs: null,
     feedReadAt: null,
     files: { onlyInVault: 2, missing: 1 },
+    bringingBack: null,
     mirrorGroups: ['receipts'],
     keyRotation: 'none',
     lastSuccessAt: null,
@@ -239,7 +242,30 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
   it('asks for the count shown before sending existing documents, and disconnects carefully by default', () => {
     expect(SendExistingToVaultRequest.safeParse({}).success).toBe(false);
     expect(SendExistingToVaultRequest.parse({ expected: 120 })).toEqual({ expected: 120 });
-    expect(DisconnectVaultRequest.parse({})).toEqual({ anyway: false });
+    expect(DisconnectVaultRequest.parse({})).toEqual({ anyway: false, bringBack: false });
+    expect(DisconnectVaultRequest.parse({ bringBack: true })).toEqual({ anyway: false, bringBack: true });
+    // One choice or the other (§10), never both.
+    expect(DisconnectVaultRequest.safeParse({ anyway: true, bringBack: true }).success).toBe(false);
+  });
+
+  it('moves existing documents only for the count confirmed, optionally for some groups (§5, PR 5b2)', () => {
+    expect(MoveToVaultRequest.safeParse({}).success).toBe(false);
+    expect(MoveToVaultRequest.parse({ expected: 3, groups: ['receipts'] })).toEqual({
+      expected: 3,
+      groups: ['receipts'],
+    });
+    expect(MoveToVaultRequest.safeParse({ expected: 3, groups: ['logos'] }).success).toBe(false);
+    expect(VaultMoveQuery.parse({ groups: 'receipts, bills,receipts' })).toEqual({
+      groups: ['receipts', 'bills'],
+    });
+    expect(VaultMoveQuery.parse({})).toEqual({});
+    expect(VaultMoveQuery.safeParse({ groups: 'nope' }).success).toBe(false);
+  });
+
+  it('knows a connection disconnected with files only in the vault (§10, PR 5b2)', () => {
+    expect(
+      VaultConnectionDto.parse({ ...dto, status: 'disconnected', bringingBack: { then: 'disconnect' } }),
+    ).toMatchObject({ status: 'disconnected', bringingBack: { then: 'disconnect' } });
   });
 
   it('lists outbox rows by status, but not the deletes', () => {

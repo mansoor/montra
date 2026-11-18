@@ -8,6 +8,7 @@ import {
   MISSING_FILE_TYPES,
   missingFilesFor,
   missingFileUses,
+  possibleDuplicate,
   providedAgainMessage,
   showsMissingFiles,
 } from '../src/features/missing-files';
@@ -100,9 +101,17 @@ describe('the API calls', () => {
       name: 'again.pdf',
       type: 'application/pdf',
     });
+    // "Upload anyway", after the possible-duplicate warning.
+    await api.provideMissingFile(
+      'w1',
+      missing().fileId,
+      { uri: 'file:///cache/again.pdf', name: 'again.pdf', type: 'application/pdf' },
+      true,
+    );
     expect(calls.map((c) => [c.init.method, c.url])).toEqual([
       ['GET', 'http://api/v1/workspaces/w1/missing-files'],
       ['POST', `http://api/v1/workspaces/w1/missing-files/${missing().fileId}`],
+      ['POST', `http://api/v1/workspaces/w1/missing-files/${missing().fileId}?anyway=true`],
     ]);
     expect(calls[1]!.init.body).toBeInstanceOf(FormData);
   });
@@ -126,5 +135,18 @@ describe('the words the list uses', () => {
       'missing_files.done_changed_sent',
     ];
     expect([...keys, ...dynamic].filter((k) => !(k in en))).toEqual([]);
+  });
+});
+
+describe('a possible duplicate (the owner’s clarification, 2026-11-18)', () => {
+  it('knows the API’s warning, with its words, and nothing else', () => {
+    expect(
+      possibleDuplicate({ status: 409, code: 'file.possible_duplicate', message: 'This looks like a duplicate.' }),
+    ).toBe('This looks like a duplicate.');
+    expect(possibleDuplicate({ status: 409, code: 'file.not_missing', message: 'x' })).toBeNull();
+    expect(possibleDuplicate(new Error('offline'))).toBeNull();
+    expect(possibleDuplicate(null)).toBeNull();
+    for (const k of ['files.duplicate_anyway_confirm', 'missing_files.duplicate_cancelled', 'common.cancel'])
+      expect(k in en, k).toBe(true);
   });
 });

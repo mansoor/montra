@@ -7,6 +7,7 @@ import {
   canManageVault,
   cleanPastedCode,
   clockIsOff,
+  vaultDisconnectChoice,
   vaultHost,
   vaultStatusLine,
   vaultStep,
@@ -46,6 +47,9 @@ export function FamilyVaultCard({
       {connection && step === 'register' && <Register workspace={workspace} d={connection} owner={owner} />}
       {connection && (step === 'approval' || step === 'connected') && (
         <Connected workspace={workspace} d={connection} owner={owner} />
+      )}
+      {connection && step === 'disconnected' && (
+        <Disconnected workspace={workspace} d={connection} owner={owner} />
       )}
     </section>
   );
@@ -218,6 +222,7 @@ function Connected({
   owner: boolean;
 }) {
   const { run, busy, message, t } = useAction();
+  const [choosing, setChoosing] = useState(false);
   return (
     <div className="space-y-4">
       <dl className="grid gap-2 text-sm sm:grid-cols-2">
@@ -283,7 +288,7 @@ function Connected({
             {t('vault.replace_key')}
           </button>
         )}
-        {owner && (
+        {owner && vaultDisconnectChoice(d) === 'confirm' && (
           <button
             type="button"
             className="btn-secondary"
@@ -299,7 +304,56 @@ function Connected({
             {t('vault.disconnect')}
           </button>
         )}
+        {owner && vaultDisconnectChoice(d) === 'choose' && !choosing && (
+          <button type="button" className="btn-secondary" disabled={busy} onClick={() => setChoosing(true)}>
+            {t('vault.disconnect')}
+          </button>
+        )}
       </div>
+      {d.bringingBack && (
+        <p className="text-sm" role="note" data-testid="vault-bringing-back">
+          {t('vault.bringing_back_note')}{' '}
+          {d.bringingBack.then === 'disconnect' && t('vault.bringing_back_then_disconnect')}
+        </p>
+      )}
+      {owner && choosing && vaultDisconnectChoice(d) === 'choose' && (
+        <div className="space-y-2 rounded-md border border-line p-3" data-testid="vault-disconnect-choice">
+          <p className="text-sm">{t('vault.disconnect_choice', { count: d.files.onlyInVault })}</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () => browserApi.disconnectVault(workspace.id, { bringBack: true }),
+                  t('vault.disconnect_bringing'),
+                ).then(() => setChoosing(false))
+              }
+            >
+              {t('vault.disconnect_bring_back')}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(t('vault.confirm_disconnect_anyway', { count: d.files.onlyInVault }))) {
+                  void run(
+                    () => browserApi.disconnectVault(workspace.id, { anyway: true }),
+                    t('vault.disconnected'),
+                  ).then(() => setChoosing(false));
+                }
+              }}
+            >
+              {t('vault.disconnect_anyway')}
+            </button>
+            <button type="button" className="text-sm underline" onClick={() => setChoosing(false)}>
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
       <StatusLine message={message} />
       {d.stage === 'connected' && <VaultSending workspace={workspace} d={d} />}
       {owner && d.newKey && (
@@ -320,6 +374,63 @@ function Connected({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * §10: disconnected while files were kept only in the vault. Nothing is sent and the key is gone; those files are in
+ * Review's "Files to provide again". Connecting the same vault again reads them back; the connection can be removed
+ * once none is left.
+ */
+function Disconnected({
+  workspace,
+  d,
+  owner,
+}: {
+  workspace: WorkspaceDto;
+  d: VaultConnectionDto;
+  owner: boolean;
+}) {
+  const { run, busy, message, t } = useAction();
+  return (
+    <div className="space-y-3" data-testid="vault-disconnected">
+      <p className="text-sm">
+        {t('vault.disconnected_note', {
+          name: d.householdName ?? t('vault.title'),
+          count: d.files.onlyInVault,
+        })}
+      </p>
+      {d.files.missing > 0 && (
+        <a className="text-sm underline" href={`/w/${workspace.id}/review#files-to-provide`}>
+          {t('data.missing_files_link')}
+        </a>
+      )}
+      {owner ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy}
+            onClick={() => run(() => browserApi.startVaultConnection(workspace.id))}
+          >
+            {t('vault.connect_again')}
+          </button>
+          {d.files.onlyInVault === 0 && (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy}
+              onClick={() => run(() => browserApi.disconnectVault(workspace.id), t('vault.disconnected'))}
+            >
+              {t('vault.remove_connection')}
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm">{t('vault.owner_connects')}</p>
+      )}
+      <StatusLine message={message} />
     </div>
   );
 }

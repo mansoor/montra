@@ -46,9 +46,10 @@ library as a published package: **PR 1 (contracts, migration 0063), PR 2 (connec
 local copy kept; migration 0064) and PR 4 (keeping in step and view links; migration 0065) are done**, and **PR 5a
 (`FileBytes`: every reader of a file's bytes reads it from Montra, the owner's storage or the vault; migration 0066) is
 done** on `@fdv/client` 0.9.0-dev.62 from the vault's public GitHub release (see §7g). **PR 5b1** ("sent with no local
-copy": removing Montra's copy, missing files and Review's "Files to provide again", quota; migration 0067) is built;
-PR 5b2 (the move backfill, bringing files back, the disconnect choice, the archive's missing count and its one wait, and
-restore marking) is next. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
+copy": removing Montra's copy, missing files and Review's "Files to provide again", quota; migration 0067) is done,
+and **PR 5b2** (the move backfill offered after saving, bringing files back, the disconnect choice as a soft disconnect,
+the archive's missing count and its one wait, restore marking, and the possible-duplicate warning; migration 0068) is
+built. From vault 0.9.0-dev.63 connected apps authenticate with API keys the vault makes instead of Montra's
 Ed25519 key and signatures; a separate PR replaces Montra's key code then. On the vault's side, view links,
 deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
 and is not copied into this repo.
@@ -1863,6 +1864,33 @@ Phase 11 leftovers:
     "Disconnect anyway", the missing count on an archive's screen (`ExportJobDto`, web fixtures and phone types), a
     background archive waiting once for the vault's daily reset, and restore marking files that weren't in the archive.
   - Next: PR 5b2, then the dev.63 PR (API keys) and PR 6 (the phone).
+- **Family Document Vault, PR 5b2 of 6: the vault as the record, the rest** (VLT-04 and VLT-11 done; VLT-08, VLT-10
+  and BAK-06 updated; ADR-0054 "As built: PR 5b2"; migration 0068). Still on `@fdv/client` 0.9.0-dev.62.
+  - **Move existing documents** (`GET/POST …/family-vault/move`, `VaultMoveDto`): right after a group is saved as "no
+    local copy", the web offers "Move these N files too?" for what the vault had already filed; nothing moves without
+    the owner's yes (the count confirmed, recent sign-in). Confirmed rows get `remove_at`, and the job's removal step
+    moves each under §5's conditions, one file per transaction. Settings keeps the action for later.
+  - **Bring the files back** (`POST …/family-vault/bring-back`, and as a disconnect choice): groups sent without a copy
+    keep one again, and `storage.vault` copies each file held only in the vault back into Montra, one at a time, through
+    `FileBytes` (audited `file.brought_back`), waiting for the vault's reset at its daily read cap
+    (`vault_connection_state.bring_back_*`).
+  - **Disconnecting** with files held only in the vault is a choice: bring them back, then disconnect; or disconnect
+    anyway, a soft disconnect (the owner's decision): the row stays `disconnected` with its outbox, `secret_enc` is wiped
+    (null allowed only then), nothing is sent or due, and those files are missing ("disconnected from the vault") in
+    Files to provide again. "Connect again" makes a new key on the same row; the same vault (by installation id) clears
+    those marks and reads them back; another vault drops the old outbox. A disconnected row is removed only once no
+    file is held only in the vault.
+  - **Archives:** `ExportJobDto.missingFiles` and `.waitingUntil` (web list and phone's Your data); an archive meeting
+    the vault's daily read cap waits once (re-queued for after the reset, `JobQueue.enqueue({ runAfter })`) and then
+    lists what is still unavailable. **Restore** marks files the archive didn't hold as missing, with the reason.
+  - **Possible duplicates:** one hash lookup (`storage/duplicates.ts`), files held in Montra or only in the vault;
+    receipts' existing `duplicateOf` now shown on the web, and payslip, household-bill and business-bill uploads answer
+    it too; Files to provide again answers 409 `file.possible_duplicate` unless `?anyway=true` (web and phone ask).
+    Statements and intakes already warned; tax forms keep refusing exact duplicates.
+  - Tests: `apps/api/test/family-vault-move-back.test.ts`, `packages/db/test/vault.test.ts`,
+    `packages/schemas/test/vault.test.ts`, web `vault.test.ts` and `missing-files.test.ts`, phone `missing-files.test.ts`
+    and `data-settings.test.ts`, e2e `files-to-provide.spec.ts` (the duplicate warning).
+  - Next: the dev.63 PR (API keys) and PR 6 (the phone's vault status, badges and opening).
 - **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
   and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
   row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState, type DragEvent } from 'react';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
+import { anyDuplicate } from '@/lib/missing-files';
 import { RECEIPT_ACCEPT, receiptFileProblem } from '@/lib/receipts';
 import { useI18n } from '../i18n';
 
@@ -49,9 +50,11 @@ export function ReceiptUpload({
     setBusy(true);
     setError(null);
     try {
-      const fileIds: string[] = [];
-      for (const f of files)
-        fileIds.push((await browserApi.uploadReceiptFile(workspaceId, f, f.name)).fileId);
+      const uploads = [];
+      for (const f of files) uploads.push(await browserApi.uploadReceiptFile(workspaceId, f, f.name));
+      // The same picture is already in Montra, or kept in the vault (ADR-0054): the person decides.
+      if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) return;
+      const fileIds = uploads.map((u) => u.fileId);
       const receipt = await browserApi.createReceipt(workspaceId, {
         fileIds,
         ...(transactionId ? { transactionId } : {}),
