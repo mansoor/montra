@@ -31,7 +31,9 @@ export const MAX_ATTEMPTS = 10;
 /** Failures in a row, with no success between, before the connection shows as failing and owners hear about it. */
 export const FAILING_AFTER = 5;
 const LEASE_MS = 10 * 60_000;
-const BATCH = 20;
+/** Rows one claim leases: files, then backups (each a whole archive, so fewer). */
+export const BATCH = 20;
+export const BACKUP_BATCH = 5;
 const RUN_BUDGET_MS = 2 * 60_000;
 /** Never wake again sooner than this, so a row that can't make progress can't spin the worker. */
 const MIN_GAP_MS = 30_000;
@@ -165,15 +167,18 @@ export class StorageMirrorJobs {
   private async claimItems(ctx: Ctx, destinationId: string): Promise<Item[]> {
     const { rows } = await this.db.run(ctx, (trx) =>
       sql<Item>`
+        -- Claimed in a CTE, so the limit holds: an IN (... limit) can be run again per row.
+        with c as (
+          select workspace_id, destination_id, file_id from app.storage_mirror_item
+           where workspace_id = ${ctx.workspaceId}::uuid and destination_id = ${destinationId}::uuid
+             and status in ('pending', 'delete') and next_attempt_at <= now()
+           order by next_attempt_at
+           limit ${BATCH}
+           for update skip locked)
         update app.storage_mirror_item i
            set next_attempt_at = now() + ${`${LEASE_MS} milliseconds`}::interval, attempts = i.attempts + 1
-         where (i.workspace_id, i.destination_id, i.file_id) in (
-                 select workspace_id, destination_id, file_id from app.storage_mirror_item
-                  where workspace_id = ${ctx.workspaceId}::uuid and destination_id = ${destinationId}::uuid
-                    and status in ('pending', 'delete') and next_attempt_at <= now()
-                  order by next_attempt_at
-                  limit ${BATCH}
-                  for update skip locked)
+          from c
+         where i.workspace_id = c.workspace_id and i.destination_id = c.destination_id and i.file_id = c.file_id
         returning i.*`.execute(trx),
     );
     return rows;
@@ -305,16 +310,19 @@ export class StorageMirrorJobs {
   private async claimBackups(ctx: Ctx, destinationId: string): Promise<ExportRow[]> {
     const { rows } = await this.db.run(ctx, (trx) =>
       sql<ExportRow>`
+        -- Claimed in a CTE, so the limit holds: an IN (... limit) can be run again per row.
+        with c as (
+          select workspace_id, id from app.export_job
+           where workspace_id = ${ctx.workspaceId}::uuid and destination_id = ${destinationId}::uuid
+             and destination_status = 'pending' and coalesce(destination_next_at, now()) <= now()
+           order by created_at
+           limit ${BACKUP_BATCH}
+           for update skip locked)
         update app.export_job e
            set destination_next_at = now() + ${`${LEASE_MS} milliseconds`}::interval,
                destination_attempts = e.destination_attempts + 1
-         where (e.workspace_id, e.id) in (
-                 select workspace_id, id from app.export_job
-                  where workspace_id = ${ctx.workspaceId}::uuid and destination_id = ${destinationId}::uuid
-                    and destination_status = 'pending' and coalesce(destination_next_at, now()) <= now()
-                  order by created_at
-                  limit 5
-                  for update skip locked)
+          from c
+         where e.workspace_id = c.workspace_id and e.id = c.id
         returning e.*`.execute(trx),
     );
     return rows;

@@ -16,7 +16,13 @@ import {
 } from '../src/storage/destinations/index.js';
 import { guardedLookup } from '../src/storage/destinations/guard.js';
 import { backupPath, defaultFolder, shortId, splitName } from '../src/storage/destinations/paths.js';
-import { FAILING_AFTER, MAX_ATTEMPTS, StorageMirrorJobs } from '../src/storage/storage-mirror.jobs.js';
+import {
+  BACKUP_BATCH,
+  BATCH,
+  FAILING_AFTER,
+  MAX_ATTEMPTS,
+  StorageMirrorJobs,
+} from '../src/storage/storage-mirror.jobs.js';
 import { ADMIN_URL } from './env.js';
 import { fakeS3, fakeWebDav, type FakeServer } from './fakes/storage-servers.js';
 import { startHarness, type Client, type Harness } from './harness.js';
@@ -107,7 +113,7 @@ beforeAll(async () => {
 afterAll(async () => {
   // Nothing of ours may wake a worker in another test file.
   await admin.query(`delete from app.storage_destination where workspace_id in (
-    select id from app.workspace where name in ('Storage test', 'Dav test', 'Beside a vault'))`);
+    select id from app.workspace where name in ('Storage test', 'Dav test', 'Beside a vault', 'Claim test'))`);
   await admin.query(`delete from app.job where type in ('storage.mirror', 'storage.vault')`);
   await admin.end();
   await s3.close();
@@ -206,6 +212,100 @@ describe('where Montra may connect (ADR-0031 §3)', () => {
     );
     await expect(checkDestination(dest, 'Montra/check')).resolves.toEqual({ canDelete: true });
     dest.close();
+  });
+});
+
+// Before anything else here queues a copy, so the statistics below are the ones this test gathers.
+describe('claiming a batch at a time (ADR-0031 §5)', () => {
+  type Claims = {
+    claimItems(ctx: { workspaceId: string; userId: string }, destinationId: string): Promise<any[]>;
+    claimBackups(ctx: { workspaceId: string; userId: string }, destinationId: string): Promise<any[]>;
+  };
+  const claims = () => mirror as unknown as Claims;
+  let cws: string;
+  let ctx: { workspaceId: string; userId: string };
+  let dest: string;
+  const count = async (where: string) =>
+    Number(
+      (
+        await admin.query(
+          `select count(*) as n from app.storage_mirror_item where destination_id = $1 and ${where}`,
+          [dest],
+        )
+      ).rows[0].n,
+    );
+
+  beforeAll(async () => {
+    cws = (await c.post('/v1/workspaces', { name: 'Claim test', baseCurrency: 'USD', template: 'household' }))
+      .body.id;
+    const owner = await admin.query(
+      `select user_id from app.workspace_member where workspace_id = $1 and role = 'owner'`,
+      [cws],
+    );
+    ctx = { workspaceId: cws, userId: owner.rows[0].user_id };
+    dest = (
+      await admin.query(
+        `insert into app.storage_destination (workspace_id, kind, label, secret_enc, folder)
+         values ($1, 's3', 'Claim test', decode('00', 'hex'), 'Montra/Claim test') returning id`,
+        [cws],
+      )
+    ).rows[0].id;
+  });
+
+  afterAll(async () => {
+    await admin.query(`delete from app.export_job where workspace_id = $1`, [cws]);
+    await admin.query(`delete from app.storage_destination where workspace_id = $1`, [cws]);
+    await admin.query(`analyze app.storage_mirror_item`);
+  });
+
+  it('leases one batch of files, oldest first, and leaves the rest to the next claim', async () => {
+    // Queued in the order they fall due, as uploads are.
+    const queue = (from: number, to: number) =>
+      admin.query(
+        `insert into app.storage_mirror_item (workspace_id, destination_id, file_id, next_attempt_at)
+         select $1, $2, gen_random_uuid(), now() - interval '1 hour' + make_interval(secs => g)
+           from generate_series($3::int, $4::int) g`,
+        [cws, dest, from, to],
+      );
+    // Statistics from when the queue was all but empty, as on a new install. The planner then expects one row, and
+    // an IN (... limit ... skip locked) on the inner side of a semi-join ran again for each row it updated, leasing
+    // the whole queue rather than one batch.
+    await queue(1, 1);
+    await admin.query(`analyze app.storage_mirror_item`);
+    await queue(2, BATCH + 11);
+
+    const due = (
+      await admin.query(
+        `select file_id from app.storage_mirror_item where destination_id = $1 order by next_attempt_at`,
+        [dest],
+      )
+    ).rows.map((r) => r.file_id);
+    const first = await claims().claimItems(ctx, dest);
+    expect(first.map((i) => i.file_id).sort()).toEqual(due.slice(0, BATCH).sort());
+    expect(await count(`attempts = 1 and next_attempt_at > now()`)).toBe(BATCH);
+    expect(await count(`attempts = 0 and next_attempt_at <= now()`)).toBe(11);
+
+    const second = await claims().claimItems(ctx, dest);
+    expect(second).toHaveLength(11);
+    expect(await claims().claimItems(ctx, dest)).toHaveLength(0);
+  });
+
+  it('leases five backups at a time', async () => {
+    // No stale statistics needed: the row policy (this workspace, this requester) already has the planner expect about
+    // one row, and the IN (... limit 5 ...) claim leased six to eight of these.
+    await admin.query(
+      `insert into app.export_job (workspace_id, requested_by, kind, status, destination_id, destination_status, created_at)
+       select $1, $2, 'backup', 'ready', $3, 'pending', now() - interval '1 hour' + make_interval(secs => g)
+         from generate_series(1, 8) g`,
+      [cws, ctx.userId, dest],
+    );
+    expect(await claims().claimBackups(ctx, dest)).toHaveLength(BACKUP_BATCH);
+    const left = await admin.query(
+      `select count(*) as n from app.export_job where destination_id = $1 and destination_attempts = 0`,
+      [dest],
+    );
+    expect(Number(left.rows[0].n)).toBe(3);
+    expect(await claims().claimBackups(ctx, dest)).toHaveLength(3);
   });
 });
 
