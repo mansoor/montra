@@ -1784,6 +1784,16 @@ Phase 11 leftovers:
     its outcomes, prefetches refused, the feed line), and the Playwright spec (the delete switch, the feed line, opening
     a file that isn't there).
   - Next: PR 5 (sent with no local copy, `FileBytes`, missing files, bringing files back).
+- **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
+  and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
+  row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are
+  skipped by the lock, so each run brings in the next ones and the update leases more than `n`. Rows leased but not
+  processed wait out the 10-minute lease. The backup claim did this in tests with no help (its row policy has the planner
+  expect one row: 6–8 leased for a limit of 5); the file claim leased the whole queue (31 for 20) once the statistics were
+  from an almost empty table, as on a new install. Both now claim in a CTE, as `vault.jobs.ts` does (PR #133).
+  Checked and left as they are: `app.dequeue_job` (migration 0006) compares `id = (select … limit 1)`, a scalar
+  subquery run once; the `/ai/tasks` claim in `ai.controller.ts` has `in (select … limit 20)` but no row lock, so a rerun
+  sees the same rows and can't lease more. Tests: `apps/api/test/own-storage.test.ts` ("claiming a batch at a time").
 
 ---
 
