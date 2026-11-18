@@ -90,7 +90,11 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
     'sent_keep_copy',
   );
 
-  // Receipts go without a local copy only after §5a's warning.
+  // Receipts go without a local copy only after §5a's warning. From what is saved, so only this change is asked about.
+  await page.goto(`${base}/settings?tab=storage`);
+  await expect(sending.getByRole('combobox', { name: 'What happens to Payslips' })).toHaveValue(
+    'sent_keep_copy',
+  );
   await sending.getByRole('combobox', { name: 'What happens to Receipts' }).selectOption('sent_no_copy');
   let noCopyWarning = '';
   page.once('dialog', (d) => {

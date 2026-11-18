@@ -16,27 +16,33 @@ const PNG = Buffer.concat([
 test('a file the vault didn’t give back is listed in Review, counted in its badge, and uploaded again', async ({
   page,
 }) => {
+  const email = `missing-${Date.now()}@example.com`;
   await page.goto('/');
-  await page.getByLabel('Email').fill(`missing-${Date.now()}@example.com`);
+  await page.getByLabel('Email').fill(email);
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Workspace name').fill('Missing files household');
   await page.getByRole('radio', { name: /Household/ }).check();
   await page.getByLabel('Time zone').fill('UTC');
   await page.getByRole('button', { name: 'Create workspace' }).click();
-  await expect(page.getByRole('heading', { name: 'Net position' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Net position' })).toBeVisible({ timeout: 20_000 });
   const base = new URL(page.url()).pathname.split('/').slice(0, 3).join('/');
   const workspaceId = base.split('/')[2]!;
   const ws = `/api/v1/workspaces/${workspaceId}`;
 
-  // A receipt's photo, uploaded as Montra stores any.
-  const uploaded = await page.request.post(`${ws}/receipts/files`, {
+  // Set up straight against the API (dev sign-in), as a person's upload of a receipt's photo stores it.
+  const api = `http://localhost:${process.env.E2E_API_PORT ?? 4000}/v1/workspaces/${workspaceId}`;
+  const auth = { authorization: `Bearer dev:${email}` };
+  const uploaded = await page.request.post(`${api}/receipts/files`, {
+    headers: auth,
     multipart: { file: { name: 'Corner shop.png', mimeType: 'image/png', buffer: PNG } },
   });
   expect(uploaded.ok()).toBe(true);
   const fileId = ((await uploaded.json()) as { fileId: string }).fileId;
 
   // As the API marks one: held only by the vault, which didn't give it back.
-  const me = (await (await page.request.get('/api/v1/me')).json()) as { id?: string; user?: { id: string } };
+  const me = (await (
+    await page.request.get(`http://localhost:${process.env.E2E_API_PORT ?? 4000}/v1/me`, { headers: auth })
+  ).json()) as { id?: string; user?: { id: string } };
   const db = new pg.Client({
     connectionString: process.env.DATABASE_URL ?? 'postgres://montra_app:montra_app@localhost:5432/montra',
   });
