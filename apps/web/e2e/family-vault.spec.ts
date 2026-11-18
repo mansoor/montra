@@ -94,6 +94,9 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   await expect(sending.getByText('Nothing has been sent yet.')).toBeVisible();
   await sending.getByRole('button', { name: 'Send existing documents…' }).click();
   await expect(sending.getByTestId('vault-existing-count')).toContainText('there are none');
+  // The saves above refresh the page's data in the background; start the key change from what is saved.
+  await page.reload();
+  await expect(card.getByTestId('vault-status')).toHaveText('Connected to The fake family');
 
   // Replace the key: a new public key to register, the current one signing until then. Cancelled here.
   page.once('dialog', (d) => d.accept());
