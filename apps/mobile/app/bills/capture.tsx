@@ -33,6 +33,8 @@ import {
 } from '../../src/ui/components';
 import { Icon } from '../../src/ui/icons';
 import { useTheme } from '../../src/ui/theme';
+import { askDuplicate } from '../../src/ui/Vault';
+import { anyDuplicate, DUPLICATE_QUESTION } from '../../src/features/vault';
 
 interface Read {
   scanId?: string;
@@ -82,10 +84,16 @@ export default function BillCapture() {
     setBusy(true);
     setError(null);
     try {
-      const fileIds: string[] = [];
+      const uploads = [];
       for (const p of pages)
-        fileIds.push((await api.uploadBillFile(ws, { uri: p.uri, name: p.name, type: p.type })).fileId);
+        uploads.push(await api.uploadBillFile(ws, { uri: p.uri, name: p.name, type: p.type }));
       await Promise.all(pages.filter((p) => p.shot).map((p) => removePage(p.uri)));
+      // ADR-0054 (2026-11-18): the bytes of a file Montra already holds. Asked, as on the web; no makes nothing.
+      if (anyDuplicate(uploads) && !(await askDuplicate())) {
+        setError(t(DUPLICATE_QUESTION.cancelled));
+        return;
+      }
+      const fileIds = uploads.map((u) => u.fileId);
       // Filed straight away when its provider is learned (ADR-0051); otherwise checked here, and kept in Review.
       const scan = await api.createScan(ws, 'bill', fileIds, { autoFile: true });
       const done = await waitForScan(() => api.getScan(ws, scan.id));

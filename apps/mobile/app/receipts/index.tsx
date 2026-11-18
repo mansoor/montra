@@ -50,7 +50,7 @@ export default function Receipts() {
   const can = useAbilities();
   const open = (list ?? []).filter((r) => r.status !== 'rejected');
   // TXN-09: the note after a capture lasts while it uploads and is read, not for as long as this screen is open.
-  const notice = captureNotice(queued, waiting.length, list);
+  const notice = captureNotice(queued, waiting.filter((w) => w.state !== 'duplicate').length, list);
   useEffect(() => {
     if (queued && notice === null) router.setParams({ queued: undefined });
   }, [queued, notice, router]);
@@ -98,16 +98,18 @@ export default function Receipts() {
           <Card key={w.id} testID="queued-receipt">
             <Body>{t('mobile.receipts.pages', { count: w.pages.length })}</Body>
             <Small color={status.kind === 'failed' || status.kind === 'retrying' ? th.danger : undefined}>
-              {status.kind === 'failed'
-                ? t('mobile.receipts.failed', { error: status.error })
-                : status.kind === 'retrying'
-                  ? t('mobile.receipts.retrying', {
-                      error: status.error,
-                      time: status.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-                    })
-                  : status.kind === 'uploading'
-                    ? t('mobile.receipts.uploading')
-                    : t('mobile.receipts.offline')}
+              {status.kind === 'duplicate'
+                ? t('files.duplicate_confirm')
+                : status.kind === 'failed'
+                  ? t('mobile.receipts.failed', { error: status.error })
+                  : status.kind === 'retrying'
+                    ? t('mobile.receipts.retrying', {
+                        error: status.error,
+                        time: status.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+                      })
+                    : status.kind === 'uploading'
+                      ? t('mobile.receipts.uploading')
+                      : t('mobile.receipts.offline')}
             </Small>
             {status.kind === 'failed' || status.kind === 'retrying' ? (
               <Button
@@ -119,6 +121,19 @@ export default function Receipts() {
                     .then(() => receipts.process())
                     .finally(touch)
                 }
+              />
+            ) : null}
+            {status.kind === 'duplicate' ? (
+              <Button
+                kind="secondary"
+                label={t('mobile.files.duplicate_use')}
+                onPress={() =>
+                  void receipts
+                    .useAnyway(w.id)
+                    .then(() => receipts.process())
+                    .finally(touch)
+                }
+                testID="queued-receipt-use-anyway"
               />
             ) : null}
             <Button

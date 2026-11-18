@@ -9,6 +9,7 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Crypto from 'expo-crypto';
 import { FetchTransport, ReceiptUploadQueue, SyncEngine, type SyncState, type SyncStore } from '@montra/sync';
 import { classifyUploadError } from '../features/receipt-capture';
+import { anyDuplicate } from '../features/vault';
 import { removePage } from '../receipts/files';
 import { config } from '../config';
 import { t } from '../i18n';
@@ -95,14 +96,15 @@ export function SyncProvider({ workspaceId, children }: { workspaceId: string; c
       const receipts = new ReceiptUploadQueue({
         store,
         uploader: {
-          uploadPage: async (page) =>
-            (
-              await session.api.uploadReceiptFile(workspaceId, {
-                uri: page.uri,
-                name: page.name,
-                type: page.type,
-              })
-            ).fileId,
+          uploadPage: async (page) => {
+            const r = await session.api.uploadReceiptFile(workspaceId, {
+              uri: page.uri,
+              name: page.name,
+              type: page.type,
+            });
+            // ADR-0054 (2026-11-18): the bytes of a file Montra already holds; the person is asked before it's used.
+            return { fileId: r.fileId, duplicate: anyDuplicate([r]) };
+          },
           createReceipt: async (input) => void (await session.api.createReceipt(workspaceId, input)),
         },
         // Whether the phone has a connection decides if "couldn't reach the server" waits or counts as a failure.

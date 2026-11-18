@@ -103,6 +103,10 @@ import type {
   TaxFormUploadDto,
   MissingFileDto,
   MissingFilesResponse,
+  FileStorageStateDto,
+  FileStorageStatesResponse,
+  VaultConnectionDto,
+  VaultOpenLinkDto,
   FileProvidedAgainDto,
   TaxYearDto,
   UpdateTaxFormRequest,
@@ -133,6 +137,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** How long the server asked to wait (`Retry-After`, in seconds), when it said. */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -203,7 +209,7 @@ export function createApi(opts: ApiOptions) {
     return headers;
   }
 
-  function parse<T>(status: number, text: string): T {
+  function parse<T>(status: number, text: string, retryAfter?: string | null): T {
     if (status === 204) return undefined as T;
     const json = text ? (JSON.parse(text) as unknown) : undefined;
     if (status < 200 || status >= 300) {
@@ -213,7 +219,13 @@ export function createApi(opts: ApiOptions) {
         opts.onTwoStepRequired?.();
       const message = p.detail ?? p.title ?? `HTTP ${status}`;
       if (status === 403 && p.code && CLOSED_CODES.has(p.code)) opts.onClosed?.(p.code, message);
-      throw new ApiError(status, p.code ?? `http_${status}`, message);
+      const wait = retryAfter ? Number(retryAfter) : NaN;
+      throw new ApiError(
+        status,
+        p.code ?? `http_${status}`,
+        message,
+        Number.isFinite(wait) && wait > 0 ? wait : undefined,
+      );
     }
     return json as T;
   }
@@ -258,7 +270,7 @@ export function createApi(opts: ApiOptions) {
       throw new ApiError(0, 'network', (err as Error).message || 'Network request failed');
     }
     if (res.status === 204) return undefined as T;
-    return parse<T>(res.status, await res.text());
+    return parse<T>(res.status, await res.text(), res.headers?.get?.('retry-after'));
   }
 
   const ws = (id: string) => `/v1/workspaces/${encodeURIComponent(id)}`;
@@ -653,6 +665,28 @@ export function createApi(opts: ApiOptions) {
         `${ws(w)}/missing-files/${encodeURIComponent(fileId)}${anyway ? '?anyway=true' : ''}`,
         file,
         false,
+      ),
+
+    // ----- Family Document Vault (ADR-0054 §9, §13; PR 6): read online, never synced or cached ------------------------
+    /** The connection, for owners and admins (anyone else gets a 403). Read only: changing it is on the web. */
+    vaultConnection: async (w: string) =>
+      (await request<{ connection: VaultConnectionDto | null }>('GET', `${ws(w)}/family-vault`)).connection,
+    /** Where some files are with the vault, for the badges: at most 100 ids, each the caller can see. */
+    fileStorageStates: async (w: string, fileIds: readonly string[]): Promise<FileStorageStateDto[]> =>
+      (
+        await request<FileStorageStatesResponse>(
+          'GET',
+          `${ws(w)}/family-vault/files?ids=${fileIds.map(encodeURIComponent).join(',')}`,
+        )
+      ).data,
+    /**
+     * §9 "Open in the vault": a single-use link made for this tap, in the body. Hand it straight to the system browser
+     * and keep it nowhere: not in state, a cache, the offline store or a log.
+     */
+    vaultOpenLink: (w: string, fileId: string, mode: 'view' | 'download' = 'view') =>
+      request<VaultOpenLinkDto>(
+        'POST',
+        `${ws(w)}/family-vault/files/${encodeURIComponent(fileId)}/link${mode === 'download' ? '?mode=download' : ''}`,
       ),
 
     registerPushDevice: (req: RegisterPushDeviceRequest) =>

@@ -73,6 +73,7 @@ import {
   VaultController,
   VaultKeyController,
   VaultOpenController,
+  VaultOpenLinkController,
 } from './storage/vault/vault.controller.js';
 import { VaultFeed } from './storage/vault/vault.feed.js';
 import { VaultJobs } from './storage/vault/vault.jobs.js';
@@ -228,6 +229,7 @@ export class AppModule {
       VaultController,
       VaultKeyController,
       VaultOpenController,
+      VaultOpenLinkController,
       MissingFilesController,
       ...(config.FAMILY_VAULT_FAKE ? [FakeVaultController] : []),
       RestoresController,

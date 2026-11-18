@@ -32,7 +32,7 @@ later; tax forms use an owner-only setting for accountants instead.
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
 
-**Being built:** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
+**Built, the chain complete (2026-11-18):** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
 Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. Montra connects
 with an API key the vault generates for it, pasted by an owner and sealed (a key pair and signed requests until vault
 0.9.0-dev.63). Documents go one way, Montra to the vault, one at a time. The vault is
@@ -50,8 +50,11 @@ done** on `@fdv/client` 0.9.0-dev.62 from the vault's public GitHub release (see
 copy": removing Montra's copy, missing files and Review's "Files to provide again", quota; migration 0067) is done,
 and **PR 5b2** (the move backfill offered after saving, bringing files back, the disconnect choice as a soft disconnect,
 the archive's missing count and its one wait, restore marking, and the possible-duplicate warning; migration 0068) is
-built, and **the API-key PR** (vault 0.9.0-dev.63–65: an owner pastes the API key the vault generates for Montra, in
-place of Montra's Ed25519 key and signatures; client dev.65) is built. On the vault's side, view links,
+built, **the API-key PR** (vault 0.9.0-dev.63–65: an owner pastes the API key the vault generates for Montra, in
+place of Montra's Ed25519 key and signatures; client dev.65) is built, and **PR 6** (the phone: the vault's status in
+Your data, badges, "Open in the vault" through a link answered in the body and handed to the system browser, and the
+duplicate question on the phone's own uploads) ends the chain. Still to do by hand: one live run against the vault's
+development build behind HTTPS (§15), and trying the phone on the LAN APK. On the vault's side, view links,
 deletes, automatic filing and routing to the person a paper is about have shipped. The vault's API contract is private
 and is not copied into this repo.
 
@@ -1914,6 +1917,31 @@ Phase 11 leftovers:
   - Tests: `family-vault.test.ts` (rewritten), the sending, feed, file-bytes, no-copy and move-back suites,
     `vault-port.test.ts`, `packages/schemas/test/vault.test.ts`, web `vault.test.ts`, e2e `family-vault.spec.ts`.
   - Next: PR 6 (the phone's vault status, badges and opening).
+- **Family Document Vault, PR 6 of 6: the phone** (VLT-06 and VLT-10 done; VLT-03 updated; ADR-0054 "As built: PR 6";
+  no migration). The last PR of the chain.
+  - **Open in the vault from the phone:** `POST …/family-vault/files/:fileId/link` makes the same single-use link as
+    PR 4's redirect, after the same checks, and answers it in a `no-store` body (`VaultOpenLinkDto`, `{ url, mode }`),
+    because a React Native client can't read a redirect's target. Outside the idempotency store and never logged; only
+    the phone's client calls it (not `@montra/api-client`). The app hands it straight to the system browser
+    (`Linking.openURL`) and keeps it nowhere. The hourly link limit (429, `Retry-After` in minutes), not allowed, no
+    longer available and a type the vault can't show as pages (a download, or words when it may not) are said in words.
+  - **Status in Your data** (owners and admins, read only): connected, waiting for approval, needs attention (with the
+    vault's words or why the key no longer works), key expiring, paused, disconnected; where, acting as, the key's
+    expiry, daily-limit holds, counts, the feed; files to upload again link to Review; changes are on the web.
+  - **Badges** on receipts, payslips, tax forms and household bills (bills have none on the web), with "In the vault as:
+    …", the newer version, "No longer available", kept only in the vault and missing, and "Open in the vault". A
+    receipt's or payslip's page kept only in the vault is shown in words with "Open in the vault" instead of asked for
+    (the API's 409 `file.in_vault`).
+  - **The duplicate question** on the phone's receipt, payslip and bill uploads (`duplicateOf`): payslips and bills ask
+    right after the upload; a receipt capture waits in the offline queue in a new `duplicate` state until the person
+    uses it anyway or discards it on the Receipts screen (`ReceiptUploadQueue.useAnyway`).
+  - The `family-vault-file-bytes` clock-skew flake is fixed: the test asks Postgres whether the check is due.
+  - Tests: `apps/api/test/family-vault-feed.test.ts` (the body link), `packages/schemas/test/vault.test.ts`,
+    `packages/sync/test/receipt-queue.test.ts`, phone `vault.test.ts`. The phone wasn't run on a device; the Android
+    bundle builds (`expo export`).
+  - Left for later: badges on statements (no screen lists their files by id), and the hand-run live test against the
+    vault's development build behind HTTPS (§15). VLT-01, -02, -05, -08 and -09 stay partial as their PRs left them,
+    for the owner to close or keep open after that run.
 - **The storage mirror claims one batch at a time** (ADR-0031 §5; no migration). `storage-mirror.jobs.ts` claimed files
   and backups with `update … where (…) in (select … limit n for update skip locked)`. When the planner expects about one
   row, it runs that subquery again on the inner side of a semi-join for every row it updates; rows it has just updated are

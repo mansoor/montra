@@ -48,10 +48,15 @@ export class VaultOpener {
   ) {}
 
   /**
-   * A single-use link for one file, made now. `view` falls back to a download link when the vault can't show the type
-   * as pages and lets Montra download. The caller redirects to it at once and keeps it nowhere.
+   * A single-use link for one file, made now, and what it opens as. `view` falls back to a download link when the vault
+   * can't show the type as pages and lets Montra download. The caller hands it on at once (a redirect for the web, the
+   * body of a `no-store` answer for the phone, PR 6) and keeps it nowhere.
    */
-  async open(ctx: Ctx, fileId: string, mode: 'view' | 'download'): Promise<URL> {
+  async open(
+    ctx: Ctx,
+    fileId: string,
+    mode: 'view' | 'download',
+  ): Promise<{ url: URL; mode: 'view' | 'download' }> {
     const target = await this.target(ctx, fileId);
     if (target.status === 'out_of_reach') throw new VaultOpenRefused(410, 'vault.out_of_reach', OUT_OF_REACH);
     if (target.status !== 'filed' || !target.userId) {
@@ -147,7 +152,7 @@ export class VaultOpener {
         })
         .execute(),
     );
-    return url;
+    return { url, mode: made };
   }
 
   /** The file as the person sees it (RLS on `app.file`), then its row in the vault's outbox, through a definer. */

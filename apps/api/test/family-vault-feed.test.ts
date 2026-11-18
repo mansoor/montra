@@ -78,6 +78,18 @@ const changesCalls = () =>
   vstate().calls.filter((x: any) => x.path === '/api/v1/apps/changes').length as number;
 const open = (fileId: string, who: Client = c, mode?: 'view' | 'download') =>
   who.post(url(`/family-vault/files/${fileId}/open${mode ? `?mode=${mode}` : ''}`));
+/** The phone's variant (PR 6): the same link, in the body of a `no-store` answer. */
+const link = (
+  fileId: string,
+  who: Client = c,
+  mode?: 'view' | 'download',
+  headers?: Record<string, string>,
+) => who.post(url(`/family-vault/files/${fileId}/link${mode ? `?mode=${mode}` : ''}`), undefined, headers);
+/** What a browser gets from the vault for a link: the fake's own answer, never Montra's. */
+const follow = async (href: string) => {
+  const res = await fake.vault.fetch(href, { method: 'GET', headers: {} });
+  return { status: res.status, location: res.headers.get('location') ?? '' };
+};
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 /** A file in Montra, as an upload stores it: binary, every byte value (the fake keeps them exactly from 0.9.0-dev.62). */
@@ -775,5 +787,163 @@ describe('opening a document in the vault (ADR-0054 §9)', () => {
     expect((await open(gone.fileId)).status).toBe(410);
     expect((await item(gone.fileId)).status).toBe('out_of_reach');
     expect(app().links.length).toBe(links);
+  });
+});
+
+describe('opening a document from the phone: the link in the body (ADR-0054 §9, PR 6)', () => {
+  let doc: { fileId: string; ref: string; doc: string };
+  beforeAll(async () => {
+    doc = await filed('To open on the phone.png');
+    await feedDue();
+    await run();
+    app().links = [];
+  });
+
+  it('answers the single-use link made on the tap in a no-store body, and the vault opens it once only', async () => {
+    const one = await link(doc.fileId, partner);
+    expect(one.status).toBe(200);
+    expect(one.body).toEqual({
+      url: expect.stringMatching(/^https:\/\/fake\.example\/api\/v1\/app-links\/[A-Za-z0-9_-]+$/),
+      mode: 'view',
+    });
+    expect(one.headers.location).toBeUndefined();
+    expect(one.headers['cache-control']).toBe('no-store');
+    expect(one.headers.pragma).toBe('no-cache');
+    expect(one.headers['referrer-policy']).toBe('no-referrer');
+    // Each tap makes its own.
+    const two = await link(doc.fileId);
+    expect(two.body.url).not.toBe(one.body.url);
+    expect(app().links.length).toBe(2);
+    // Single-use: the vault lets the first visit in and turns any other away.
+    const first = await follow(one.body.url);
+    expect(first.status).toBe(303);
+    expect(first.location).not.toMatch(/#(used|ended)$/);
+    expect((await follow(one.body.url)).location).toMatch(/#used$/);
+    // Audited as the redirect is: who and which file, never the link.
+    const audit = (
+      await db.query(
+        `select a.diff, u.email from app.audit_log a join app.app_user u on u.id = a.actor_user_id
+          where a.workspace_id = $1 and a.action = 'file.vault_link_made' and a.subject_id = $2 order by a.id`,
+        [wsId, doc.fileId],
+      )
+    ).rows;
+    expect(audit).toEqual([
+      { diff: { mode: 'view' }, email: PARTNER },
+      { diff: { mode: 'view' }, email: OWNER },
+    ]);
+  });
+
+  it('never stores, logs or replays the link: not in any table, the idempotency store included', async () => {
+    const written: string[] = [];
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: any) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const key = randomUUID();
+    let first: any;
+    let again: any;
+    try {
+      // A client that sends an idempotency key gets a new link each time, not a stored answer.
+      first = await link(doc.fileId, c, 'download', { 'idempotency-key': key });
+      again = await link(doc.fileId, c, 'download', { 'idempotency-key': key });
+    } finally {
+      out.mockRestore();
+      err.mockRestore();
+    }
+    expect(first.status).toBe(200);
+    expect(first.body.mode).toBe('download');
+    expect(again.body.url).not.toBe(first.body.url);
+    const tokens = [first.body.url, again.body.url].map((u: string) => u.split('/').at(-1)!);
+    for (const token of tokens) {
+      expect(token.length).toBeGreaterThan(20);
+      expect(written.join('')).not.toContain(token);
+    }
+    expect(
+      (await db.query(`select count(*)::int as n from app.idempotency_key where key = $1`, [key])).rows[0].n,
+    ).toBe(0);
+    const tables = (
+      await db.query(
+        `select table_name from information_schema.tables where table_schema = 'app' and table_type = 'BASE TABLE'`,
+      )
+    ).rows.map((r) => r.table_name as string);
+    for (const t of tables) {
+      for (const token of tokens) {
+        const { rows } = await db.query(`select count(*)::int as n from app."${t}" x where x::text like $1`, [
+          `%${token}%`,
+        ]);
+        expect(rows[0].n, t).toBe(0);
+      }
+    }
+    const said = JSON.stringify([
+      (await c.get(url(`/family-vault/files?ids=${doc.fileId}`))).body,
+      (await c.get(url('/family-vault'))).body,
+    ]);
+    expect(said).not.toContain('app-links');
+  });
+
+  it('says the vault’s hourly link limit in words, with how long to wait, and doesn’t count it as a failure', async () => {
+    app().links = [];
+    app().links_per_hour = 1;
+    try {
+      expect((await link(doc.fileId)).status).toBe(200);
+      const full = await link(doc.fileId);
+      expect(full.status).toBe(429);
+      expect(full.body.code).toBe('vault.links_full');
+      expect(full.body.detail).toMatch(/as many documents/);
+      expect(full.body.url).toBeUndefined();
+      expect(Number(full.headers['retry-after'])).toBeGreaterThan(0);
+      expect(full.headers['cache-control']).toBe('no-store');
+      const row = await vaultRow();
+      expect(row.status).toBe('active');
+      expect(row.consecutive_failures).toBe(0);
+    } finally {
+      app().links_per_hour = 60;
+      app().links = [];
+    }
+  });
+
+  it('says what opens as a download, what can’t open, and who may not', async () => {
+    const odd = await filed('Odd type on the phone.png', { mime: 'application/octet-stream' });
+    await feedDue();
+    await run();
+    const res = await link(odd.fileId);
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe('download');
+    const was = app().scopes;
+    app().scopes = was.filter((s: string) => s !== 'documents.download');
+    try {
+      await c.post(url('/family-vault/check'));
+      const words = await link(odd.fileId);
+      expect(words.status).toBe(422);
+      expect(words.body.code).toBe('vault.cannot_view');
+      app().scopes = was.filter((s: string) => s !== 'documents.links');
+      await c.post(url('/family-vault/check'));
+      const notAllowed = await link(doc.fileId);
+      expect(notAllowed.status).toBe(422);
+      expect(notAllowed.body.code).toBe('vault.cannot_open');
+    } finally {
+      app().scopes = was;
+      await c.post(url('/family-vault/check'));
+    }
+    expect((await stranger.post(url(`/family-vault/files/${doc.fileId}/link`))).status).toBe(403);
+    expect((await c.post(url(`/family-vault/files/${randomUUID()}/link`))).status).toBe(404);
+    expect((await c.get(url(`/family-vault/files/${doc.fileId}/link`))).status).toBe(404);
+    expect((await link(await file('lease', 'Lease on the phone.pdf'))).body.code).toBe('vault.not_in_vault');
+  });
+
+  it('says a document the vault no longer shows is no longer available', async () => {
+    const gone = await filed('Gone from the phone.png');
+    await feedDue();
+    await run();
+    await feedFresh();
+    docOf(gone.doc).visibility = 'private';
+    const res = await link(gone.fileId);
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe('vault.out_of_reach');
+    expect(res.body.detail).toBe('No longer available in Family Document Vault.');
   });
 });

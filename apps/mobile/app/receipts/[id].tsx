@@ -25,6 +25,7 @@ import { Icon } from '../../src/ui/icons';
 import { ReceiptViewer } from '../../src/ui/ReceiptViewer';
 import { SidePanel } from '../../src/ui/SidePanel';
 import { useTheme } from '../../src/ui/theme';
+import { keptOnlyInVault, useFileStorageStates, VaultBadges, VaultOnlyPage } from '../../src/ui/Vault';
 
 export default function ReceiptReview() {
   const th = useTheme();
@@ -53,6 +54,8 @@ export default function ReceiptReview() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const names = new Map(categories.map((c) => [c.id, c.name]));
+  // ADR-0054 §13: where the receipt's files are with the vault; a page kept only there isn't asked for (§5).
+  const fileStates = useFileStorageStates(receipt?.fileIds ?? []);
 
   const load = useCallback(async () => {
     try {
@@ -104,8 +107,10 @@ export default function ReceiptReview() {
   const payFrom = accounts.find((a) => a.id === payFromId);
   const missing = uncategorizedLines(receipt).length;
   const stalled = stalledMessage(receipt);
+  const shown = receipt.fileIds.filter((fileId) => !keptOnlyInVault(fileStates, fileId));
+  const inVault = receipt.fileIds.filter((fileId) => keptOnlyInVault(fileStates, fileId));
   const pages = bearer
-    ? receipt.fileIds.map((fileId) => ({
+    ? shown.map((fileId) => ({
         uri: `${config.apiUrl}${api.receiptFilePath(ws, receipt.id, fileId)}`,
         headers: { authorization: `Bearer ${bearer}` },
       }))
@@ -120,6 +125,7 @@ export default function ReceiptReview() {
           .join(' · ')}
       </Small>
       <StoreDetails receipt={receipt} />
+      <VaultBadges fileIds={receipt.fileIds} states={fileStates} />
       {stalled ? (
         <Banner tone="warning" text={t(stalled)} />
       ) : receipt.status === 'processing' ? (
@@ -195,6 +201,15 @@ export default function ReceiptReview() {
           </View>
         </Disclosure>
       ) : null}
+
+      {inVault.map((fileId) => (
+        <VaultOnlyPage
+          key={fileId}
+          fileId={fileId}
+          states={fileStates}
+          page={receipt.fileIds.indexOf(fileId) + 1}
+        />
+      ))}
 
       {receipt.lines.length ? <Title>{t('mobile.receipts.lines')}</Title> : null}
       {missing > 0 ? <Small>{t('mobile.receipts.uncategorized_count', { count: missing })}</Small> : null}

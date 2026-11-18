@@ -1055,6 +1055,66 @@ On `@fdv/client` **0.9.0-dev.65** (`v0.9.0-dev.65/fdv-client-0.9.0-dev.65.tgz`, 
   client ID). The fake generates keys as the vault does, after its owner's second step, and `expireAppKey` stands in
   for time.
 
+### As built: PR 6 (2026-11-18)
+
+The phone, the last PR of the chain. On `@fdv/client` 0.9.0-dev.65 still; no migration. Where PR 6 differs from or adds
+to the text above, and why:
+
+- **The link in a body, for the phone.** PR 4's `POST …/family-vault/files/:fileId/open` answers with a 303, and a
+  React Native client can't read a redirect's target (its `fetch` follows it, or hides it). A second route,
+  `POST …/family-vault/files/:fileId/link` (`?mode=view|download`), does the same checks through the same
+  `VaultOpener.open`, which now returns what the link opens as, and answers `{ url, mode }` (`VaultOpenLinkDto`) with
+  `cache-control: no-store`, `pragma: no-cache` and `referrer-policy: no-referrer`. It is outside the idempotency
+  interceptor, as the redirect is, so a client that sends an idempotency key gets a new link each time and nothing is
+  stored for a replay; nothing logs it. A refusal is the same problem answer as the redirect's, with `Retry-After` for the
+  vault's hourly limit. Only the phone's client calls it: `@montra/api-client`, which the web uses, has no method for it,
+  so the web keeps never holding a link. Tested in `family-vault-feed.test.ts`: the body and its headers, a new link per
+  tap, the vault letting the first visit in and turning the second away (`#used`), the audit row, every table (the
+  idempotency store included) and the process's output searched for both tokens, the 429 with its wait and no failure
+  counted, a download for a type the vault can't show, `cannot_view`, `cannot_open`, 403, 404 and 410.
+- **Opening on the phone** (`features/vault.ts` `openInVault`, `ui/Vault.tsx`): on the tap, the app asks for the link
+  and hands it at once to the system browser (`Linking.openURL`). The link lives in that one call: it is never put in
+  React state, a cache, the offline store or a log, and the result the screen sees doesn't carry it. Only an https link
+  is opened. Afterwards the phone says, in words, that it opened as a download when the vault can't show the type as
+  pages, or why it didn't open: the hourly limit with the minutes to wait (from `Retry-After`; the phone's `ApiError`
+  gains `retryAfterSeconds`), not allowed, no longer available, a type the vault can't show and won't let Montra
+  download, the vault doesn't let Montra open documents, the connection needs a person, disconnected, not filed yet,
+  not found, offline.
+- **The status, in Your data** beside the owner's own storage (§13 "Your data → Storage"; the brief's "Settings" is the
+  same place, reached from Settings), for owners and admins, as the web's card: the API refuses anyone else. It says
+  connected, waiting for approval, needs attention (a key that no longer works, in the web's words; the vault needing a
+  person, with the vault's own words; the vault out of reach), the key expiring soon, paused, or disconnected with the
+  files to provide again; and where, whom Montra acts as, the key's expiry, any hold for the vault's daily limits, the
+  counts, files being brought back and when the feed was last read. Files to upload again link to Review. Everything
+  that changes the connection is on the web, and the card says so; "not connected" is shown only when the plan has the
+  vault. Read online each time; nothing about the connection is kept on the device.
+- **Badges** on receipts, payslips, tax forms and household bills: what the web shows (sending, in the Inbox, filed,
+  kept only in the vault, not taken with the vault's reason, failed, "No longer available", missing with its reason),
+  "In the vault as: …", the newer version, and "Open in the vault" for each file the vault can open. Household bills
+  have no badges on the web (its bills screens don't list files); the phone's bill list does, since its rows have the
+  files' ids. Statements still have none on either: their screens don't show their files by id. The badges are read
+  online for the files on screen (at most the API's 100) and never stand in the way: a failed read shows none.
+- **A page kept only in the vault** (the API's 409 `file.in_vault`): a receipt's or payslip's page whose file only the
+  vault holds isn't asked for; it is shown in words ("kept in Family Document Vault, not in Montra") with "Open in the
+  vault", or as missing, to upload again in Review. Tax forms and bills show no pages on the phone.
+- **The duplicate question on the phone's own uploads** (5b2 left it for PR 6), in the web's words, using the uploads'
+  `duplicateOf`. Payslips and bills upload online, so the phone asks right after the upload, before the payslip or the
+  bill's scan is made; no makes nothing and leaves the upload unused, as on the web. Receipts go through the offline
+  capture queue (`@montra/sync`'s `ReceiptUploadQueue`), which runs in the background, so nobody is there to ask at
+  upload time: a capture whose page is a possible duplicate stops after its pages upload, in a new `duplicate` state,
+  and the Receipts screen's waiting card asks "Use it anyway?" (the receipt is then made, without uploading again) or
+  Discard. The queue's uploader may now answer `{ fileId, duplicate }`; a plain id still works, and queues saved before
+  read as they did.
+- **A test made exact:** `family-vault-file-bytes.test.ts` "can't ask a vault whose connection needs a person" compared
+  `next_check_at`, set by Postgres's `now()`, with Node's clock, and failed now and then by a couple of milliseconds; it
+  now asks Postgres whether the check is due (`next_check_at <= now()`).
+- **Tests:** `family-vault-feed.test.ts` (the body link, above), `packages/schemas/test/vault.test.ts`
+  (`VaultOpenLinkDto`), `packages/sync/test/receipt-queue.test.ts` (a duplicate waits, is used anyway once, or is
+  discarded, and a clean capture goes at once), and the phone's `vault.test.ts` (the status in each state and its words,
+  roles and the plan, the badges and names, a page kept only in the vault, the open flow and each problem's words, the
+  link never in the result, the client's calls and `Retry-After`, the duplicate question and the queued state, and every
+  key used in the catalog). The phone isn't run on a device here; the bundle builds (`expo export`).
+
 ## Consequences
 
 - Montra can hand a household's papers to the place the household already keeps them, without being the only copy.

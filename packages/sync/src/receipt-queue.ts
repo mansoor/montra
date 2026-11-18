@@ -3,6 +3,10 @@
  * device is back online. Each capture has a client-generated receipt id, so creating it is idempotent; pages
  * upload one by one and their file ids are kept, so an interrupted upload resumes where it stopped. Pure over
  * an injected uploader and the store's meta table, so it is testable without a device.
+ *
+ * A possible duplicate (ADR-0054, the owner's clarification of 2026-11-18): when the API says an uploaded page is the
+ * bytes of a file Montra already holds, the receipt isn't made until the person says to use it anyway
+ * (`useAnyway`); discarding it leaves the upload unused, as on the web.
  */
 import type { SyncStore } from './types.js';
 
@@ -15,6 +19,8 @@ export interface ReceiptPage {
   type: ReceiptPageType;
   /** Set once the page is uploaded. */
   fileId?: string | null;
+  /** The API said it is the bytes of a file Montra already holds (`duplicateOf`). */
+  duplicate?: boolean;
 }
 
 export interface QueuedReceipt {
@@ -25,15 +31,21 @@ export interface QueuedReceipt {
   transactionId: string | null;
   createdAt: string;
   attempts: number;
-  state: 'queued' | 'failed';
+  /** `duplicate`: uploaded, and waiting for the person to use it anyway or discard it. */
+  state: 'queued' | 'failed' | 'duplicate';
+  /** The person said to use a possible duplicate anyway. */
+  duplicateOk?: boolean;
   error: string | null;
   /** Retry backoff after a server error; null = try now. */
   nextAttemptAt: string | null;
 }
 
 export interface ReceiptUploader {
-  /** Uploads one page and returns its file id. */
-  uploadPage(page: ReceiptPage): Promise<string>;
+  /**
+   * Uploads one page and returns its file id, or the id and whether the API said it is the bytes of a file Montra
+   * already holds.
+   */
+  uploadPage(page: ReceiptPage): Promise<string | { fileId: string; duplicate: boolean }>;
   /** Creates the receipt; must succeed when it already exists (same id). */
   createReceipt(input: { id: string; fileIds: string[]; transactionId: string | null }): Promise<void>;
 }
@@ -107,6 +119,11 @@ export class ReceiptUploadQueue {
     return item;
   }
 
+  /** A possible duplicate the person chose to use anyway: the receipt is made at the next run. */
+  async useAnyway(id: string): Promise<void> {
+    await this.patch(id, { state: 'queued', duplicateOk: true, error: null, nextAttemptAt: null });
+  }
+
   /** Puts a failed capture back in line. */
   async retry(id: string): Promise<void> {
     await this.patch(id, { state: 'queued', error: null, nextAttemptAt: null });
@@ -141,10 +158,17 @@ export class ReceiptUploadQueue {
         const pages = [...item.pages];
         for (let n = 0; n < pages.length; n++) {
           if (pages[n]!.fileId) continue;
-          const fileId = await this.opts.uploader.uploadPage(pages[n]!);
-          pages[n] = { ...pages[n]!, fileId };
+          const answer = await this.opts.uploader.uploadPage(pages[n]!);
+          const fileId = typeof answer === 'string' ? answer : answer.fileId;
+          const duplicate = typeof answer !== 'string' && answer.duplicate;
+          pages[n] = { ...pages[n]!, fileId, ...(duplicate ? { duplicate: true } : {}) };
           // Keep progress: a later run won't upload this page again.
           await this.patch(item.id, { pages });
+        }
+        if (!item.duplicateOk && pages.some((p) => p.duplicate)) {
+          // Nothing is made from it until the person says so; the pages stay uploaded.
+          await this.patch(item.id, { state: 'duplicate', error: null, nextAttemptAt: null });
+          continue;
         }
         await this.opts.uploader.createReceipt({
           id: item.id,

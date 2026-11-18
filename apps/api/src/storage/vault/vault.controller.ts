@@ -27,6 +27,7 @@ import {
   VaultItemsQuery,
   VaultMoveQuery,
   VaultOpenQuery,
+  type VaultOpenLinkDto,
 } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -193,18 +194,53 @@ export class VaultOpenController {
     @Query() query: unknown,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    void reply.header('cache-control', 'no-store');
-    void reply.header('referrer-policy', 'no-referrer');
-    let url: URL;
-    try {
-      url = await this.opener.open(dbCtx(ctx), parse(Id, fileId), parse(VaultOpenQuery, query).mode);
-    } catch (e) {
-      if (e instanceof VaultOpenRefused && e.retryAfterSeconds) {
-        void reply.header('retry-after', String(e.retryAfterSeconds));
-      }
-      throw e;
+    const opened = await openOrSayWhy(this.opener, ctx, fileId, query, reply);
+    void reply.header('location', opened.url.href);
+  }
+}
+
+/**
+ * §9 on the phone (PR 6): the same single-use link, made on the tap, in the body of the answer rather than a redirect,
+ * which a React Native client can't read the target of. The app hands it straight to the system browser and keeps it
+ * nowhere. As the redirect: POST, so nothing prefetches it; `no-store`, so no cache keeps it; and outside the
+ * idempotency interceptor, which would store this answer, link and all, for a replay. Nothing logs it.
+ */
+@Controller('v1/workspaces/:workspaceId/family-vault/files/:fileId/link')
+@UseGuards(AuthGuard, WorkspaceGuard)
+export class VaultOpenLinkController {
+  constructor(@Inject(VaultOpener) private readonly opener: VaultOpener) {}
+
+  @Post()
+  @HttpCode(200)
+  async link(
+    @Ctx() ctx: RequestContext,
+    @Param('fileId') fileId: string,
+    @Query() query: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<VaultOpenLinkDto> {
+    const opened = await openOrSayWhy(this.opener, ctx, fileId, query, reply);
+    return { url: opened.url.href, mode: opened.mode };
+  }
+}
+
+/** Makes the link for one click, with the headers both answers carry; a refusal says how long to wait, when it can. */
+async function openOrSayWhy(
+  opener: VaultOpener,
+  ctx: RequestContext,
+  fileId: string,
+  query: unknown,
+  reply: FastifyReply,
+): Promise<{ url: URL; mode: 'view' | 'download' }> {
+  void reply.header('cache-control', 'no-store');
+  void reply.header('pragma', 'no-cache');
+  void reply.header('referrer-policy', 'no-referrer');
+  try {
+    return await opener.open(dbCtx(ctx), parse(Id, fileId), parse(VaultOpenQuery, query).mode);
+  } catch (e) {
+    if (e instanceof VaultOpenRefused && e.retryAfterSeconds) {
+      void reply.header('retry-after', String(e.retryAfterSeconds));
     }
-    void reply.header('location', url.href);
+    throw e;
   }
 }
 
