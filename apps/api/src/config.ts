@@ -63,6 +63,14 @@ const Env = z.object({
     .enum(['on', 'off'])
     .default('off')
     .transform((v) => v === 'on'),
+  /**
+   * Development only: `on` lets a vault on this machine (`http://localhost:…`, 127.0.0.1, [::1]) be connected, for a live
+   * run against a local vault. Refused in production; private network addresses stay refused either way.
+   */
+  FAMILY_VAULT_ALLOW_LOCAL_HTTP: z
+    .enum(['on', 'off'])
+    .default('off')
+    .transform((v) => v === 'on'),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce
@@ -192,6 +200,9 @@ export function loadConfig(
   }
   if (config.NODE_ENV === 'production' && config.FAMILY_VAULT_FAKE) {
     throw new Error('FAMILY_VAULT_FAKE=on is not allowed in production');
+  }
+  if (config.NODE_ENV === 'production' && config.FAMILY_VAULT_ALLOW_LOCAL_HTTP) {
+    throw new Error('FAMILY_VAULT_ALLOW_LOCAL_HTTP=on is not allowed in production');
   }
   if (config.AUTH_MODE === 'kratos' && !config.KRATOS_PUBLIC_URL) {
     throw new Error('KRATOS_PUBLIC_URL is required when AUTH_MODE=kratos');

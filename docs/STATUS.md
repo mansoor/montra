@@ -1930,6 +1930,12 @@ Phase 11 leftovers:
   `TASK_BATCH` (20). Tests: `apps/api/test/ai-local-tasks.test.ts` (the concurrent case failed before the fix: both
   callers got the same 20 tasks).
 
+- **A local vault in development** (ADR-0054 D6, amended): `FAMILY_VAULT_ALLOW_LOCAL_HTTP=on` in the API's environment
+  lets an owner connect Montra to a vault running on the same machine at `http://localhost:…` (or `127.0.0.1`, `[::1]`),
+  for a live run against a local vault preview. Only loopback, only as an origin; production refuses to start with it,
+  and `FAMILY_VAULT_FAKE=on` takes precedence. Tests: `family-vault.test.ts` ("a vault on this machine…") and
+  `operations.test.ts` (refused in production).
+
 ---
 
 ## 8. Session checklist
