@@ -22,7 +22,7 @@ import {
   type VaultDocument,
   type VaultItemState,
 } from '../destinations/vault.js';
-import { assertVaultAddress, type VaultTransport } from './transport.js';
+import { assertVaultAddress, isAllowedLocalVault, type VaultTransport } from './transport.js';
 
 /**
  * What a pasted connection string says, once read: where the vault is, which key, which vault (when it says), and the
@@ -470,7 +470,7 @@ export class VaultConnection implements Pick<
     } catch {
       throw new VaultError('failed', { detail: 'link' });
     }
-    if (url.protocol !== 'https:' || url.origin !== this.origin)
+    if ((url.protocol !== 'https:' && !isAllowedLocalVault(url)) || url.origin !== this.origin)
       throw new VaultError('failed', { detail: 'link' });
     return url;
   }

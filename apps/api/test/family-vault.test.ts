@@ -10,6 +10,7 @@ import { asVaultError, readConnectionString, VaultConnection } from '../src/stor
 import type { FakeVaultHandle, FakeVaultKey } from '../src/storage/vault/fake.js';
 import { VaultSecret } from '../src/storage/vault/keys.js';
 import {
+  allowLocalVaultHttp,
   assertVaultAddress,
   guardedVaultTransport,
   VAULT_TRANSPORT,
@@ -157,6 +158,64 @@ describe('the address guard (ADR-0054 §8, D6)', () => {
     ]) {
       expect(() => assertVaultAddress(bad), bad).toThrow(VaultError);
     }
+  });
+
+  describe('a vault on this machine, in development (FAMILY_VAULT_ALLOW_LOCAL_HTTP=on)', () => {
+    afterEach(() => allowLocalVaultHttp(false));
+
+    it('takes only localhost, 127.0.0.1 and [::1], over http or https, as an origin', () => {
+      allowLocalVaultHttp(true);
+      for (const ok of [
+        'http://localhost:8091',
+        'http://127.0.0.1:8091',
+        'http://[::1]:8091',
+        'https://localhost:8443',
+      ]) {
+        expect(assertVaultAddress(ok).origin, ok).toBe(new URL(ok).origin);
+      }
+      for (const bad of [
+        'http://vault.example.com',
+        'http://10.0.0.5:8091',
+        'http://192.168.1.20:8091',
+        'http://host.docker.internal:8091',
+        'http://vault.localhost:8091',
+        'http://nas.local:8091',
+        'http://localhost:8091/some/path',
+        'http://user:pass@localhost:8091',
+        'ftp://localhost:8091',
+      ]) {
+        expect(() => assertVaultAddress(bad), bad).toThrow(VaultError);
+      }
+    });
+
+    it('is off unless switched on', () => {
+      expect(() => assertVaultAddress('http://localhost:8091')).toThrow(VaultError);
+      allowLocalVaultHttp(true);
+      allowLocalVaultHttp(false);
+      expect(() => assertVaultAddress('http://127.0.0.1:8091')).toThrow(VaultError);
+    });
+
+    it('reaches a vault on this machine over plain http when switched on, and not when off', async () => {
+      const server = createServer((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        const t = guardedVaultTransport();
+        await expect(t.fetch(`${base}/api/v1/capabilities`, { method: 'GET', headers: {} })).rejects.toThrow(
+          VaultError,
+        );
+        expect(t.refused()?.code).toBe('not_allowed_host');
+        allowLocalVaultHttp(true);
+        const res = await t.fetch(`${base}/api/v1/capabilities`, { method: 'GET', headers: {} });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ ok: true });
+      } finally {
+        server.close();
+      }
+    });
   });
 
   it('refuses a private address before any socket, and says so in words, not as "offline"', async () => {

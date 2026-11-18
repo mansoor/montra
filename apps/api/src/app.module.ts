@@ -67,7 +67,7 @@ import { MissingFilesController } from './storage/missing-files.controller.js';
 import { MissingFiles } from './storage/missing-files.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { fakeVaultTransport } from './storage/vault/fake.js';
-import { guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
+import { allowLocalVaultHttp, guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
 import {
   FakeVaultController,
   VaultController,
@@ -348,12 +348,14 @@ export class AppModule {
         {
           provide: VAULT_TRANSPORT,
           // An answer may be a file Montra sent (ADR-0054 §5), as large as an upload may be.
-          useFactory: () =>
-            config.FAMILY_VAULT_FAKE
+          useFactory: () => {
+            allowLocalVaultHttp(!config.FAMILY_VAULT_FAKE && config.FAMILY_VAULT_ALLOW_LOCAL_HTTP);
+            return config.FAMILY_VAULT_FAKE
               ? fakeVaultTransport()
               : guardedVaultTransport({
                   maxBytes: Math.max(4 * 1024 * 1024, config.MAX_UPLOAD_BYTES + 1024 * 1024),
-                }),
+                });
+          },
         },
         RestoreService,
         OwnershipService,
