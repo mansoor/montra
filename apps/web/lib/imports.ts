@@ -11,7 +11,10 @@ import {
   isCurrencyCode,
   minorUnits,
   parseDecimal,
+  parts,
   rescale,
+  toEpochDay,
+  type CalendarDate,
 } from '@montra/domain';
 import type { ColumnMapping, ImportBatchDto, ImportRowDto } from '@montra/api-client';
 
@@ -60,8 +63,16 @@ export const DATE_FORMATS = [
   'MMM D YYYY',
   'DD-MMM-YY',
   'DD-MMM-YYYY',
+  'MM/DD',
+  'DD/MM',
 ] as const satisfies readonly ColumnMapping['dateFormat'][];
 export type DateFormatId = ColumnMapping['dateFormat'];
+
+/** Formats printed without a year: the year comes from the statement (the editor labels them so). */
+export const isYearless = (f: DateFormatId) => f === 'MM/DD' || f === 'DD/MM';
+
+/** Where a statement's dates fall (the batch's `analysis.dates`): what dates printed without a year are read against. */
+export type StatementDates = NonNullable<NonNullable<ImportBatchDto['analysis']>['dates']>;
 
 /** What the mapping form edits: one role per column plus the parsing options. */
 export interface MappingDraft {
@@ -219,10 +230,47 @@ const PATTERNS: Record<DateFormatId, [RegExp, Part[]]> = {
   'MMM D YYYY': [/^([a-zäéû]{3,5})\.?\s+(\d{1,2}),?\s+(\d{4})$/i, ['mon', 'd', 'y']],
   'DD-MMM-YY': [/^(\d{1,2})[- ]([a-zäéû]{3,5})[- ](\d{2})$/i, ['d', 'mon', 'yy']],
   'DD-MMM-YYYY': [/^(\d{1,2})[- ]([a-zäéû]{3,5})[- ](\d{4})$/i, ['d', 'mon', 'y']],
+  'MM/DD': [/^(\d{1,2})\/(\d{1,2})$/, ['m', 'd']],
+  'DD/MM': [/^(\d{1,2})\/(\d{1,2})$/, ['d', 'm']],
 };
 
-/** Parses a statement date cell (a trailing time is ignored); null when it doesn't match the format. */
-export function parseStatementDate(input: string, format: DateFormatId): string | null {
+const validDate = (y: number, mo: number, d: number): CalendarDate | null => {
+  const iso = `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  return isCalendarDate(iso) && y >= 1990 && y <= 2100 ? fromParts(y, mo, d) : null;
+};
+
+/**
+ * The year for a month and day printed without one, as @montra/importers `withYear` picks it: the year that puts
+ * the date nearest the statement's dates (ties: the end's year), or null when that is more than half a year away.
+ */
+function withYear(mo: number, d: number, dates: StatementDates): CalendarDate | null {
+  const end = toEpochDay(dates.end);
+  const start = dates.start && dates.start <= dates.end ? toEpochDay(dates.start) : end - 365;
+  const year = parts(dates.end).year;
+  let best: CalendarDate | null = null;
+  let bestDistance = Infinity;
+  for (const y of [year, year - 1, year + 1]) {
+    const date = validDate(y, mo, d);
+    if (!date) continue;
+    const e = toEpochDay(date);
+    const distance = e < start ? start - e : e > end ? e - end : 0;
+    if (distance < bestDistance) {
+      best = date;
+      bestDistance = distance;
+    }
+  }
+  return bestDistance <= 183 ? best : null;
+}
+
+/**
+ * Parses a statement date cell (a trailing time is ignored); null when it doesn't match the format. A format without
+ * a year needs the statement's `dates`.
+ */
+export function parseStatementDate(
+  input: string,
+  format: DateFormatId,
+  dates?: StatementDates | null,
+): string | null {
   const text = input
     .trim()
     .replace(/^["']|["']$/g, '')
@@ -241,8 +289,8 @@ export function parseStatementDate(input: string, format: DateFormatId): string 
     else if (part === 'd') d = Number(v);
     else mo = MONTHS[v.toLowerCase().replace('.', '')] ?? 0;
   }
-  const iso = `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  return isCalendarDate(iso) && y >= 1990 && y <= 2100 ? fromParts(y, mo, d) : null;
+  if (!order.includes('y') && !order.includes('yy')) return dates ? withYear(mo, d, dates) : null;
+  return validDate(y, mo, d);
 }
 
 const CURRENCY_NOISE = /(?:[A-Z]{3}|[$€£¥₹₩₪₫₺₴₦₱฿]|R\$|CHF|kr\.?|zł|Fr\.)/gi;
@@ -271,6 +319,29 @@ export function parseStatementAmount(raw: string, currency: string, decimal: '.'
   }
 }
 
+const TRAILING_AMOUNT = /^(.*\S)\s+(\(?[-−+]?[$€£¥]?\d[\d,.']*[.,]\d{2}\)?(?:-|\s?(?:CR|DR))?)$/i;
+
+/**
+ * An amount cell that caught the end of the description beside it ("ID: Examplecap -130.00"), as @montra/importers
+ * `splitSpilledAmount` reads it: the trailing amount and the text before it. Null for a cell that parses as it is.
+ */
+export function splitSpilledAmount(
+  cell: string,
+  currency: string,
+  decimal: '.' | ',',
+): { amount: bigint; text: string } | null {
+  if (parseStatementAmount(cell, currency, decimal) !== null) return null;
+  const m = TRAILING_AMOUNT.exec(cell.trim());
+  if (!m) return null;
+  const amount = parseStatementAmount(m[2]!, currency, decimal);
+  return amount === null ? null : { amount, text: m[1]!.trim() };
+}
+
+const amountCell = (cell: string, currency: string, decimal: '.' | ',') =>
+  parseStatementAmount(cell, currency, decimal) ??
+  splitSpilledAmount(cell, currency, decimal)?.amount ??
+  null;
+
 const FOOTER =
   /^(total|totals|summe|subtotal|opening balance|closing balance|beginning balance|ending balance|balance forward|previous balance|anfangssaldo|endsaldo|schlusssaldo)\b/i;
 
@@ -286,21 +357,23 @@ export interface PreviewRow {
 
 /**
  * The first `limit` data rows of `sample` under `m`, as the importer would read them: rows before `dataStart`,
- * blank rows, footers and rows of other accounts are skipped; bad dates and amounts are reported per row.
+ * blank rows, footers and rows of other accounts are skipped; bad dates and amounts are reported per row. `dates`
+ * gives dates printed without a year (`MM/DD`) theirs.
  */
 export function previewMapping(
   sample: string[][],
   m: ColumnMapping,
   currency: string,
   limit = 5,
+  dates?: StatementDates | null,
 ): PreviewRow[] {
   const out: PreviewRow[] = [];
   const filterValues = m.filter ? new Set(m.filter.values.map((v) => v.toLowerCase())) : null;
   const debitWords = m.direction ? new Set(m.direction.debitValues.map((v) => v.toLowerCase())) : null;
   const amountOf = (r: string[]): bigint | null => {
-    if (m.amount !== undefined) return parseStatementAmount(r[m.amount] ?? '', currency, m.decimal);
-    const d = m.debit !== undefined ? parseStatementAmount(r[m.debit] ?? '', currency, m.decimal) : null;
-    const c = m.credit !== undefined ? parseStatementAmount(r[m.credit] ?? '', currency, m.decimal) : null;
+    if (m.amount !== undefined) return amountCell(r[m.amount] ?? '', currency, m.decimal);
+    const d = m.debit !== undefined ? amountCell(r[m.debit] ?? '', currency, m.decimal) : null;
+    const c = m.credit !== undefined ? amountCell(r[m.credit] ?? '', currency, m.decimal) : null;
     if (d === null && c === null) return null;
     const abs = (x: bigint) => (x < 0n ? -x : x);
     return (c !== null ? abs(c) : 0n) - (d !== null ? abs(d) : 0n);
@@ -311,14 +384,23 @@ export function previewMapping(
     const first = (r.find((c) => c.trim()) ?? '').trim();
     const footer =
       FOOTER.test(first) || m.skipPatterns?.some((p) => first.toLowerCase().startsWith(p.toLowerCase()));
-    const date = parseStatementDate(r[m.date] ?? '', m.dateFormat);
+    const date = parseStatementDate(r[m.date] ?? '', m.dateFormat, dates);
     if (footer && !date) continue;
     if (filterValues && m.filter && !filterValues.has((r[m.filter.column] ?? '').trim().toLowerCase()))
       continue;
-    const description = m.description
-      .map((c) => (r[c] ?? '').trim())
+    const spilled = [m.amount, m.debit, m.credit, m.balance]
+      .filter((c): c is number => c !== undefined)
+      .map((c) => splitSpilledAmount(r[c] ?? '', currency, m.decimal)?.text)
+      .filter(Boolean);
+    const description = [
+      m.description
+        .map((c) => (r[c] ?? '').trim())
+        .filter(Boolean)
+        .join(' · '),
+      ...spilled,
+    ]
       .filter(Boolean)
-      .join(' · ');
+      .join(' ');
     const row: PreviewRow = { rowNo: i + 1, date, amount: null, description, error: null };
     if (!date) {
       out.push({ ...row, error: 'invalid_date' });

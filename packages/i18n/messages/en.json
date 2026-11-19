@@ -1746,6 +1746,7 @@
   "imports.mapping.data_before_header": "Transactions must start after the header row.",
   "imports.mapping.data_start": "Transactions start at",
   "imports.mapping.date_format": "Date format",
+  "imports.mapping.date_format_no_year": "{format} (year from the statement)",
   "imports.mapping.decimal": "Decimal separator",
   "imports.mapping.decimal_comma": "Comma (1.234,56)",
   "imports.mapping.decimal_dot": "Dot (1,234.56)",

@@ -63,6 +63,28 @@ export function parseAmount(raw: string, currency: CurrencyCode, decimal: Decima
   }
 }
 
+const TRAILING_AMOUNT = /^(.*\S)\s+(\(?[-−+]?[$€£¥]?\d[\d,.']*[.,]\d{2}\)?(?:-|\s?(?:CR|DR))?)$/i;
+
+/**
+ * An amount cell that caught the end of the description beside it ("ID: Examplecap -130.00"), as a PDF table cut at
+ * fixed positions leaves it: the trailing amount and the text before it. Null for a cell that parses as it is.
+ */
+export function splitSpilledAmount(
+  cell: string,
+  currency: CurrencyCode,
+  decimal: DecimalSeparator,
+): { amount: bigint; value: string; text: string } | null {
+  if (parseAmount(cell, currency, decimal) !== null) return null;
+  const m = TRAILING_AMOUNT.exec(cell.trim());
+  if (!m) return null;
+  const amount = parseAmount(m[2]!, currency, decimal);
+  return amount === null ? null : { amount, value: m[2]!, text: m[1]!.trim() };
+}
+
+/** An amount cell's value, reading past description text that spilled into it (`splitSpilledAmount`). */
+export const parseAmountCell = (cell: string, currency: CurrencyCode, decimal: DecimalSeparator) =>
+  parseAmount(cell, currency, decimal) ?? splitSpilledAmount(cell, currency, decimal)?.amount ?? null;
+
 /** Share of non-empty values in a column that parse as amounts. */
 export function amountRate(values: string[], decimal: DecimalSeparator): number {
   const nonEmpty = values.filter((v) => v.trim());

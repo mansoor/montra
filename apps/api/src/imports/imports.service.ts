@@ -2,7 +2,7 @@ import { sql } from 'kysely';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Selectable } from 'kysely';
 import { newId, type ImportBatchTable, type ImportRowTable, type Trx } from '@montra/db';
-import { asCurrencyCode, isBalanceSheet } from '@montra/domain';
+import { asCurrencyCode, isBalanceSheet, type CalendarDate } from '@montra/domain';
 import { statementSignal } from '@montra/importers';
 import { TAX_FORM_JOB_TYPES } from '../tax-forms/job-types.js';
 import type {
@@ -498,6 +498,7 @@ function toBatchDto(b: Batch, counts: Record<string, number>, job: ImportBatchDt
     sample?: string[][];
     accounts?: string[];
     templateId?: string | null;
+    dates?: { start?: CalendarDate | null; end: CalendarDate } | null;
   } | null;
   return {
     id: b.id,
@@ -517,6 +518,7 @@ function toBatchDto(b: Batch, counts: Record<string, number>, job: ImportBatchDt
           accounts: analysis.accounts ?? [],
           accountColumn: analysis.accountColumn ?? null,
           templateId: analysis.templateId ?? null,
+          dates: analysis.dates ? { start: analysis.dates.start ?? null, end: analysis.dates.end } : null,
         }
       : null,
     counts: {
