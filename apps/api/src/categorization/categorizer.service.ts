@@ -15,6 +15,7 @@ import {
   type PipelineItem,
   type RuleRecord,
   type TransferCandidate,
+  type TransferMemory,
 } from '@montra/categorize';
 import type { CategoryOption, MemberOption } from '@montra/ai-gateway';
 import type { CategorizationDto, RuleSuggestionDto } from '@montra/schemas';
@@ -198,6 +199,47 @@ export class Categorizer {
     return out;
   }
 
+  /** Transfers made by hand for many payee keys at once, to open accounts only (step 3, AI-05). */
+  async transferMemory(trx: Trx, ctx: Ctx, keys: readonly string[]): Promise<Map<string, TransferMemory[]>> {
+    const out = new Map<string, TransferMemory[]>();
+    const unique = [...new Set(keys)];
+    for (let i = 0; i < unique.length; i += 1000) {
+      const rows = await trx
+        .selectFrom('app.payee_transfer as pt')
+        .innerJoin('app.ledger_account as la', (j) =>
+          j.onRef('la.workspace_id', '=', 'pt.workspace_id').onRef('la.id', '=', 'pt.account_id'),
+        )
+        .leftJoin('app.bank_account as ba', (j) => j.onRef('ba.ledger_account_id', '=', 'la.id'))
+        .select(['pt.payee_key', 'pt.account_id', 'pt.count', 'la.name', 'ba.last4'])
+        .where('pt.workspace_id', '=', ctx.workspaceId)
+        .where('pt.payee_key', 'in', unique.slice(i, i + 1000))
+        .where('pt.count', '>', 0)
+        .where('la.archived_at', 'is', null)
+        .where('la.is_category', '=', false)
+        .orderBy('pt.last_used_at', 'desc')
+        .execute();
+      for (const r of rows) {
+        const list = out.get(r.payee_key) ?? [];
+        list.push({ accountId: r.account_id, accountName: r.name, accountLast4: r.last4, count: r.count });
+        out.set(r.payee_key, list);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Remembers that the person made this payee's line a transfer to or from `accountId` (AI-05), so the next one is
+   * suggested there. Choosing a category for the payee later counts against it (see `learn`).
+   */
+  async rememberTransfer(trx: Trx, ctx: Ctx, payeeKey: string | null, accountId: string): Promise<void> {
+    if (!payeeKey) return;
+    await sql`
+      insert into app.payee_transfer (workspace_id, payee_key, account_id, count)
+      values (${ctx.workspaceId}, ${payeeKey}, ${accountId}, 1)
+      on conflict (workspace_id, payee_key, account_id)
+      do update set count = app.payee_transfer.count + 1, last_used_at = now()`.execute(trx);
+  }
+
   /**
    * Opposite-side postings on the workspace's other bank and card accounts around the items' dates
    * (step 3). Account-view amounts: the posting amount on an asset or liability account.
@@ -266,11 +308,9 @@ export class Categorizer {
     if (items.length === 0) return { decisions: [], threshold: 0.8, aiUsed: false };
     const prepared = opts.prepared ?? (await this.prepare(trx, ctx));
     const runtime = await this.ai.runtime(trx, ctx, opts.subject);
-    const history = await this.history(
-      trx,
-      ctx,
-      items.map((i) => i.payeeKey).filter((k): k is string => Boolean(k)),
-    );
+    const keys = items.map((i) => i.payeeKey).filter((k): k is string => Boolean(k));
+    const history = await this.history(trx, ctx, keys);
+    const memory = await this.transferMemory(trx, ctx, keys);
     const dates = items.map((i) => i.date).sort();
     const candidates = await this.transferCandidates(trx, ctx, account.id, {
       from: addDays(dates[0]!, -3),
@@ -332,6 +372,7 @@ export class Categorizer {
           date: item.date,
         })),
       ],
+      transferMemory: (key) => memory.get(key) ?? [],
       ai,
       threshold: runtime.threshold,
       entityOfCategory: (id) => prepared.categoryById.get(id)?.entityId ?? null,
@@ -437,6 +478,10 @@ export class Categorizer {
     const old = t.previous?.learned;
     if (old) await this.bumpHistory(trx, ctx, t.payeeKey, old.band, old.categoryId, old.memberId, -1);
     await this.bumpHistory(trx, ctx, t.payeeKey, band, t.categoryId, t.memberId, 1);
+    // A category for the payee counts against any transfer made by hand for it before.
+    await sql`
+      update app.payee_transfer set count = greatest(count - 1, 0)
+       where workspace_id = ${ctx.workspaceId} and payee_key = ${t.payeeKey} and count > 0`.execute(trx);
     const learned = { categoryId: t.categoryId, memberId: t.memberId, band };
 
     let suggestion: RuleSuggestionDto | null = null;

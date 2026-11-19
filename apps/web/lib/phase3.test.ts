@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { catalogs, createTranslator } from '@montra/i18n';
-import type { AiTaskDto, InsightDto, QuickAddDraftDto, ReviewItemDto, RuleDto } from '@montra/schemas';
+import type {
+  AccountDto,
+  AiTaskDto,
+  InsightDto,
+  QuickAddDraftDto,
+  ReviewItemDto,
+  RuleDto,
+} from '@montra/schemas';
 import {
   budgetPercent,
   draftToTransaction,
@@ -18,11 +25,14 @@ import {
   confidenceTone,
   countAtOrAbove,
   goSequence,
+  madeTransferMessage,
   reviewBadgeTotal,
   percent,
   removeItems,
   reviewCommand,
   suggestedCategoryId,
+  transferOptions,
+  transferTargets,
 } from './review';
 import {
   describeConditions,
@@ -199,6 +209,82 @@ const item = (id: string, confidence: number | null, categoryId: string | null =
         },
   merchant: null,
   version: '1',
+});
+
+const account = (id: string, kind: AccountDto['kind'], over: Partial<AccountDto> = {}): AccountDto => ({
+  id,
+  entityId: 'e1',
+  name: id,
+  kind,
+  type: ['credit_card', 'line_of_credit', 'loan', 'mortgage', 'liability'].includes(kind)
+    ? 'liability'
+    : 'asset',
+  currency: 'USD',
+  institution: null,
+  last4: null,
+  balance: { amount: '0', currency: 'USD' },
+  archived: false,
+  hidden: false,
+  defaultMemberId: null,
+  loanId: null,
+  planType: null,
+  employerId: null,
+  employerContributions: false,
+  reconciledThrough: null,
+  purchasePrice: null,
+  purchaseDate: null,
+  loanAccountId: null,
+  dueDate: null,
+  cycle: { statementDay: null, dueDay: null, payFromAccountId: null, payRule: null, payFixed: null },
+  planning: { creditLimit: null, interestRateBps: null, minPayment: null, lowBalance: '0' },
+  ...over,
+});
+
+describe('make transfer… (TXN-04)', () => {
+  const accounts = [
+    account('a1', 'checking'),
+    account('Savings', 'savings'),
+    account('Sapphire', 'credit_card'),
+    account('Mortgage', 'mortgage', { loanId: 'l1' }),
+    account('Old card', 'credit_card', { archived: true }),
+    account('Euro', 'checking', { currency: 'EUR' }),
+    account('Brokerage', 'investment'),
+  ];
+
+  it('offers the other open accounts in the same currency, cards first, in words', () => {
+    const out = transferTargets(accounts, item('x', null));
+    expect(out.map((o) => [o.name, o.group, o.direction])).toEqual([
+      ['Sapphire', 'cards', 'to'],
+      ['Mortgage', 'loans', 'to'],
+      ['Savings', 'bank', 'to'],
+      ['Brokerage', 'other', 'to'],
+    ]);
+    expect(out.find((o) => o.name === 'Mortgage')?.trackedLoan).toBe(true);
+    const money = { ...item('y', null), amount: { amount: '2000', currency: 'USD' as const } };
+    expect(transferOptions(transferTargets(accounts, money), t)[0]).toEqual({
+      id: 'Sapphire',
+      label: 'Transfer from Sapphire',
+      group: 'Cards',
+    });
+    expect(transferTargets(accounts, { accountId: null, amount: null })).toEqual([]);
+  });
+
+  it('says what it did: a transfer, a loan payment, or a transfer because no payment matched', () => {
+    expect(madeTransferMessage({ absorbedId: null, loan: null }, 'Sapphire', t)).toContain(
+      'Made a transfer with Sapphire.',
+    );
+    expect(madeTransferMessage({ absorbedId: 'x', loan: null }, 'Sapphire', t)).toContain('matched');
+    expect(
+      madeTransferMessage({ absorbedId: null, loan: { loanId: 'l1', name: 'Mortgage', number: 4 } }, '', t),
+    ).toBe('Recorded as Mortgage payment 4, with its interest, principal and any escrow split out.');
+    expect(
+      madeTransferMessage(
+        { absorbedId: null, loan: { loanId: 'l1', name: 'Mortgage', number: null } },
+        '',
+        t,
+      ),
+    ).toContain('plain transfer to the loan account');
+  });
 });
 
 describe('review queue (AI-03/04, PLT-10)', () => {

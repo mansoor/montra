@@ -133,6 +133,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'asset',
     'liability',
   ],
+  'review.transfer_group.': ['cards', 'loans', 'bank', 'other'],
   'account.add_kind.': ACCOUNT_KINDS,
   'account.kind_help.': ACCOUNT_KINDS,
   'account.kind_example.': ACCOUNT_KINDS,

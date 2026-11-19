@@ -11,6 +11,7 @@ import {
   confidenceOf,
   countAtOrAbove,
   isEditableTarget,
+  madeTransferMessage,
   percent,
   proposedCategoryId,
   proposedTransfer,
@@ -19,6 +20,8 @@ import {
   SHORTCUTS,
   suggestedCategoryId,
   suggestedMemberId,
+  transferOptions,
+  transferTargets,
 } from '@/lib/review';
 import { groupCategories } from '@/lib/view-models';
 import { ConfidenceChip, Explanation, MerchantMark } from '../ai/shared';
@@ -54,13 +57,14 @@ export function ReviewQueue({
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [picker, setPicker] = useState<'category' | 'member' | null>(null);
+  const [picker, setPicker] = useState<'category' | 'member' | 'transfer' | null>(null);
   const [aboveOpen, setAboveOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [above, setAbove] = useState(percent(threshold));
   const [offer, setOffer] = useState<RuleSuggestionDto | null>(null);
   const [announce, setAnnounce] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const base = `/w/${workspace.id}`;
 
@@ -182,6 +186,34 @@ export function ReviewQueue({
     [items, cursor, total, drop, workspace.id, t, categoryById],
   );
 
+  // "Make transfer…" for a line nothing was suggested for: a card or loan payment that carries the payee's ID.
+  const transferPick = useMemo(
+    () => (current ? transferOptions(transferTargets(accounts, current), t) : []),
+    [current, accounts, t],
+  );
+  const makeTransfer = useCallback(
+    async (item: ReviewItemDto, accountId: string) => {
+      const before = { items, cursor, total };
+      setError(null);
+      setNotice(null);
+      drop(new Set([item.transactionId]));
+      try {
+        const r = await browserApi.makeTransfer(workspace.id, item.transactionId, { accountId });
+        const message = madeTransferMessage(r, accountById.get(accountId)?.name ?? '', t);
+        setAnnounce(message);
+        setNotice(message);
+        // The other side it absorbed may be further down the list.
+        if (r.absorbedId) await load(null);
+      } catch (err) {
+        setItems(before.items);
+        setCursor(before.cursor);
+        setTotal(before.total);
+        setError(friendlyMessage(err, t));
+      }
+    },
+    [items, cursor, total, drop, workspace.id, t, accountById, load],
+  );
+
   async function acceptAbove() {
     setAboveOpen(false);
     setError(null);
@@ -287,6 +319,11 @@ export function ReviewQueue({
       {error && (
         <p role="alert" className="text-sm text-bad">
           {error}
+        </p>
+      )}
+      {notice && (
+        <p className="text-sm text-muted" data-testid="review-notice">
+          {notice}
         </p>
       )}
       {offer && (
@@ -443,6 +480,23 @@ export function ReviewQueue({
                     >
                       {sugTransfer ? t('review.make_transfer') : t('review.accept')}
                     </button>
+                    {!sugTransfer && transferTargets(accounts, item).length > 0 && (
+                      <button
+                        type="button"
+                        className="btn-secondary px-2 py-1"
+                        data-testid="make-transfer-pick"
+                        aria-label={t('review.make_transfer_pick_row', {
+                          payee: item.payee || item.description,
+                        })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCursor(i);
+                          setPicker('transfer');
+                        }}
+                      >
+                        {t('review.make_transfer_pick')}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn-secondary px-2 py-1"
@@ -501,6 +555,16 @@ export function ReviewQueue({
           const cat = suggestedCategoryId(current);
           if (!cat) return setError(t('review.member_needs_category'));
           void resolve(current, cat, id || null);
+        }}
+      />
+      <PickerDialog
+        open={picker === 'transfer'}
+        title={t('review.pick_transfer_account')}
+        options={transferPick}
+        onClose={() => setPicker(null)}
+        onPick={(id) => {
+          setPicker(null);
+          if (current) void makeTransfer(current, id);
         }}
       />
       <AcceptAboveDialog

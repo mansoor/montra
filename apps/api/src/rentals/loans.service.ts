@@ -12,6 +12,7 @@ import {
   asCurrencyCode,
   calendarDate,
   compareDates,
+  diffDays,
   monthlyPayment,
   paymentsOnOrBefore,
   projectLoan,
@@ -551,6 +552,38 @@ export class LoansService {
       });
     }
     return splits;
+  }
+
+  /**
+   * "Make transfer" to a loan account (ADR-0028): the tracked loan on that account, and its scheduled payment a bank line
+   * pays, if one does. Null when the account's payments aren't tracked. `number` is null when no unrecorded payment
+   * matches: money out, in the loan's books and currency, the scheduled amount with escrow, within 5 days (ADR-0024 §8).
+   */
+  async paymentForLine(
+    trx: Trx,
+    ctx: Ctx,
+    line: { loanAccountId: string; entityId: string; currency: string; amount: bigint; date: CalendarDate },
+  ): Promise<{ loanId: string; name: string; number: number | null } | null> {
+    const r = await trx
+      .selectFrom('app.loan_schedule')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('loan_account_id', '=', line.loanAccountId)
+      .where('archived_at', 'is', null)
+      .executeTakeFirst();
+    if (!r) return null;
+    const found = { loanId: r.id, name: r.name, number: null };
+    if (line.amount >= 0n || r.entity_id !== line.entityId) return found;
+    const e = await this.entityOf(trx, ctx, r.entity_id);
+    if (e.functional_currency !== line.currency) return found;
+    const { rows } = await this.state(trx, ctx, r);
+    const total = -line.amount;
+    const escrow = escrowOf(r);
+    const gap = (d: CalendarDate) => Math.abs(diffDays(d, line.date));
+    const hit = rows
+      .filter((x) => x.payment + escrow === total && gap(x.date) <= 5)
+      .sort((a, b) => gap(a.date) - gap(b.date) || a.number - b.number)[0];
+    return { ...found, number: hit?.number ?? null };
   }
 
   async recordPayment(ctx: Ctx, id: string, req: LoanPaymentRequest): Promise<LoanDto> {

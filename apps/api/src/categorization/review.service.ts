@@ -151,7 +151,8 @@ export class ReviewService {
       // A suggested transfer becomes one, with whichever other side is there now (it may have arrived since).
       if (!categoryId && c?.step === 'transfer' && c.transfer && spec?.type === 'standard') {
         try {
-          const other = await this.transactions.makeTransferInTrx(trx, ctx, r.id, {
+          // A tracked loan takes it as its scheduled payment when one matches (ADR-0024).
+          const { absorbedId: other } = await this.transactions.transferToInTrx(trx, ctx, r.id, {
             accountId: c.transfer.accountId,
           });
           if (other) absorbed.add(other);

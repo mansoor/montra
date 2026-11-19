@@ -16,10 +16,12 @@ import { buildPatch, isEmptyPatch, toEditState, type EditState } from '@/lib/tra
 import { parseAmountInput } from '@/lib/money';
 import { signedTotal } from '@/lib/splits';
 import { groupCategories } from '@/lib/view-models';
+import { madeTransferMessage, transferOptions, transferTargets } from '@/lib/review';
 import { Field, FormError } from './field';
 import { SplitEditor } from './split-editor';
 import { CategorySuggestion } from './category-suggestion';
 import { Explanation } from './ai/shared';
+import { PickerDialog } from './review/picker-dialog';
 import { useI18n } from './i18n';
 
 /**
@@ -50,6 +52,7 @@ export function TransactionEditor({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [splitOpen, setSplitOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const deleted = transaction.status === 'void';
   const groups = useMemo(
     () => groupCategories(workspace, categories, state.direction),
@@ -76,6 +79,34 @@ export function TransactionEditor({
       router.refresh();
     } catch (err) {
       setErrors(toFormErrors(err, { 'amount.amount': 'amount', splits: 'amount' }, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // "Make transfer…": a plain income or expense line that was really a card or loan payment, or a move between accounts.
+  const canMakeTransfer =
+    transaction.status === 'posted' &&
+    initial.ledgerEditable &&
+    !transaction.managedBy &&
+    !transaction.reconciled &&
+    transaction.entries.every((e) => e.kind !== 'transfer') &&
+    (transaction.splits?.length ?? 1) <= 1;
+  const transferPick = useMemo(
+    () => (canMakeTransfer ? transferOptions(transferTargets(accounts, transaction), t) : []),
+    [canMakeTransfer, accounts, transaction, t],
+  );
+
+  async function onMakeTransfer(accountId: string) {
+    setTransferOpen(false);
+    setBusy(true);
+    setErrors({ fields: {} });
+    try {
+      const r = await browserApi.makeTransfer(workspace.id, transaction.id, { accountId });
+      setNotice(madeTransferMessage(r, accounts.find((a) => a.id === accountId)?.name ?? '', t));
+      router.refresh();
+    } catch (err) {
+      setErrors({ form: friendlyMessage(err, t), fields: {}, action: errorAction(err, t) });
     } finally {
       setBusy(false);
     }
@@ -369,6 +400,18 @@ export function TransactionEditor({
           <button type="submit" className="btn-primary" disabled={busy}>
             {busy ? t('common.saving') : t('editor.save')}
           </button>
+          {transferPick.length > 0 && (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy}
+              title={t('editor.make_transfer_hint')}
+              data-testid="editor-make-transfer"
+              onClick={() => setTransferOpen(true)}
+            >
+              {t('editor.make_transfer')}
+            </button>
+          )}
           {transaction.status === 'scheduled' && (
             <button type="button" className="btn-secondary" disabled={busy} onClick={onConfirm}>
               {t('editor.confirm_occurrence')}
@@ -382,6 +425,13 @@ export function TransactionEditor({
           </span>
         </div>
       </form>
+      <PickerDialog
+        open={transferOpen}
+        title={t('review.pick_transfer_account')}
+        options={transferPick}
+        onClose={() => setTransferOpen(false)}
+        onPick={(id) => void onMakeTransfer(id)}
+      />
       <SplitEditor
         open={splitOpen}
         total={state.amount}

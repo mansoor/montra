@@ -73,6 +73,60 @@ describe('runPipeline', () => {
     expect(again).toMatchObject({ transfer: real, confidence: 0.95 });
   });
 
+  it('suggests a transfer made by hand for the payee before, without applying it', async () => {
+    const memory = [
+      { accountId: 'acct-loan', accountName: 'Car loan', accountLast4: null, count: 1 },
+      { accountId: 'acct-card', accountName: 'Sapphire', accountLast4: '9876', count: 3 },
+    ];
+    const autopay = item({
+      id: 'a',
+      payee: null,
+      payeeKey: 'CHASE CREDIT CRD AUTOPAY',
+      description: 'CHASE CREDIT CRD AUTOPAY PPD ID: 4760039224',
+    });
+    const other = item({ id: 'b', payeeKey: 'SOMEONE ELSE' });
+    const aiFn = ai({});
+    const [a, b] = await runPipeline(
+      [autopay, other],
+      deps({
+        transferMemory: (k) => (k === 'CHASE CREDIT CRD AUTOPAY' ? memory : []),
+        ai: aiFn,
+      }),
+    );
+    expect(a).toMatchObject({
+      step: 'transfer',
+      confidence: 0.9,
+      autoApply: false,
+      categoryId: null,
+      explanation: 'Made a transfer to Sapphire ••9876 before',
+      transfer: { accountId: 'acct-card', transactionId: null, amountMinor: 4200n },
+    });
+    expect(b?.step).not.toBe('transfer');
+
+    // The other side already on that card is used; a sure pair elsewhere still wins.
+    const onCard = {
+      transactionId: 't7',
+      accountId: 'acct-card',
+      accountName: 'Sapphire',
+      accountLast4: '9876',
+      amountMinor: 4200n,
+      date: d('2026-10-15'),
+    };
+    const loanLine = item({ id: 'l', payee: null, payeeKey: 'USBANK LOAN', description: 'USBANK LOAN' });
+    const [c] = await runPipeline(
+      [loanLine],
+      deps({ transferMemory: () => memory, transferCandidates: () => [onCard] }),
+    );
+    expect(c).toMatchObject({ transfer: onCard, confidence: 0.9, autoApply: false });
+    const sure = item({ id: 'c', payeeKey: 'ONLINE TRANSFER', description: 'ONLINE TRANSFER TO SAV' });
+    const savings = { ...onCard, transactionId: 't8', accountId: 'acct-sav', accountName: 'Savings' };
+    const [e] = await runPipeline(
+      [sure],
+      deps({ transferMemory: () => memory, transferCandidates: () => [savings] }),
+    );
+    expect(e).toMatchObject({ transfer: savings, confidence: 0.95 });
+  });
+
   it('history closes at the threshold, otherwise the AI gets a chance', async () => {
     const strong = item({ id: 'strong', payeeKey: 'SHELL OIL' });
     const weak = item({ id: 'weak', payeeKey: 'WEAK' });
