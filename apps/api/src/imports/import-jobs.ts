@@ -126,6 +126,8 @@ export class ImportJobs {
         .forUpdate()
         .executeTakeFirst();
       if (!batch) throw new PermanentJobError('import.not_found', 'Import batch not found');
+      // Discarded while the file was being read (a job already running isn't cancelled): nothing more to do.
+      if (batch.status === 'discarded') return { skipped: 'discarded' };
       const file = await trx
         .selectFrom('app.file')
         .selectAll()

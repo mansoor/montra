@@ -6,12 +6,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CategoryDto, ImportBatchDto, UndoResultDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
-import { canUndo, importErrorKey, isBusy, warningKey, warningParams } from '@/lib/imports';
+import { canDiscard, canUndo, importErrorKey, isBusy, warningKey, warningParams } from '@/lib/imports';
 import { onChanges } from '@/lib/sync';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { MappingEditor } from './mapping-editor';
 import { PreviewTable } from './preview-table';
+import { DiscardButton } from './discard-button';
 import { UndoButton } from './undo-button';
 import { CategoryProposals } from './category-proposals';
 
@@ -97,6 +98,26 @@ export function ImportWizard({
     </p>
   );
 
+  const discard = canDiscard(batch) && (
+    <DiscardButton workspaceId={workspaceId} batchId={batch.id} onDiscarded={(b) => setBatch(b)} />
+  );
+
+  if (batch.status === 'discarded')
+    return (
+      <section className="card space-y-3" data-testid="import-discarded">
+        <h2 className="font-semibold">{t('imports.discard.done_title')}</h2>
+        <p className="text-sm text-muted">{t('imports.discard.done_body')}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href={`${base}/statements`} className="btn-primary">
+            {t('nav.statements')}
+          </Link>
+          <Link href={`${base}/import?account=${batch.accountId}`} className="btn-secondary">
+            {t('imports.failed.another')}
+          </Link>
+        </div>
+      </section>
+    );
+
   if (batch.status === 'uploaded' || batch.status === 'parsing')
     return (
       <section className="card space-y-2" aria-live="polite">
@@ -105,6 +126,8 @@ export function ImportWizard({
           {t('imports.processing.reading', { file: batch.fileName })}
         </p>
         <progress className="w-full" aria-label={t('imports.processing.title')} />
+        {/* A read that never finishes can be put aside. */}
+        <div>{discard}</div>
       </section>
     );
 
@@ -115,9 +138,13 @@ export function ImportWizard({
         <p role="alert" className="text-sm">
           {failure(batch.error)}
         </p>
-        <Link href={`${base}/import?account=${batch.accountId}`} className="btn-secondary">
-          {t('imports.failed.another')}
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href={`${base}/import?account=${batch.accountId}`} className="btn-secondary">
+            {t('imports.failed.another')}
+          </Link>
+          {discard}
+        </div>
+        {errorLine}
       </section>
     );
 
@@ -235,6 +262,7 @@ export function ImportWizard({
         ) : (
           <p className="card text-sm text-muted">{t('imports.mapping.no_sample')}</p>
         )}
+        {batch.status === 'needs_mapping' && <div>{discard}</div>}
         {errorLine}
       </section>
     );
@@ -276,6 +304,7 @@ export function ImportWizard({
           {t('imports.commit.button')}
         </button>
         <span className="text-sm text-muted">{t('imports.commit.hint')}</span>
+        <span className="ms-auto">{discard}</span>
       </div>
       {errorLine}
     </section>

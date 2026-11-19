@@ -550,7 +550,15 @@ export interface ImportProfileTable {
 }
 
 export type ImportBatchStatus =
-  'uploaded' | 'parsing' | 'needs_mapping' | 'preview' | 'committing' | 'committed' | 'failed' | 'undone';
+  | 'uploaded'
+  | 'parsing'
+  | 'needs_mapping'
+  | 'preview'
+  | 'committing'
+  | 'committed'
+  | 'failed'
+  | 'undone'
+  | 'discarded';
 
 /** Switching from another app (IMP-13): the batches made from one export, and the user's plan for it. */
 export interface ImportMigrationTable {

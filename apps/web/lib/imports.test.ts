@@ -4,11 +4,13 @@ import { catalogs } from '@montra/i18n';
 import type { ColumnMapping, ImportRowDto } from '@montra/api-client';
 import {
   applyRole,
+  canDiscard,
   canUndo,
   columnRoles,
   draftFromMapping,
   draftToMapping,
   fileProblem,
+  historyBatches,
   IMPORT_ERROR_KEYS,
   importErrorKey,
   mappingErrors,
@@ -316,5 +318,34 @@ describe('warnings and failures', () => {
     expect(canUndo(batch, now)).toBe(true);
     expect(canUndo({ ...batch, undoUntil: '2026-10-01T00:00:00Z' }, now)).toBe(false);
     expect(canUndo({ ...batch, status: 'undone' }, now)).toBe(false);
+  });
+
+  it('offers discard only for an import that was never committed, and hides discarded ones from the history', () => {
+    type B = Parameters<typeof canDiscard>[0];
+    const job = (type: string) => ({
+      id: 'j',
+      type,
+      status: 'failed',
+      progress: null,
+      result: null,
+      error: 'x',
+    });
+    for (const status of ['uploaded', 'parsing', 'needs_mapping', 'preview'] as const)
+      expect(canDiscard({ status, job: null })).toBe(true);
+    // A failed read can be discarded; a failed commit or undo is the server's to settle.
+    expect(canDiscard({ status: 'failed', job: job('import.parse') } as B)).toBe(true);
+    expect(canDiscard({ status: 'failed', job: job('import.commit') } as B)).toBe(false);
+    expect(canDiscard({ status: 'failed', job: job('import.undo') } as B)).toBe(false);
+    for (const status of ['committing', 'committed', 'undone', 'discarded'] as const)
+      expect(canDiscard({ status, job: null })).toBe(false);
+    expect(en['imports.discard.button']).toBe('Discard this import');
+    expect(en['imports.status.discarded']).toBe('Discarded');
+
+    const batches = [
+      { id: 'a', status: 'committed' },
+      { id: 'b', status: 'discarded' },
+      { id: 'c', status: 'needs_mapping' },
+    ] as const;
+    expect(historyBatches(batches).map((b) => b.id)).toEqual(['a', 'c']);
   });
 });

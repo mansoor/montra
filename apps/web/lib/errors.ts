@@ -35,6 +35,7 @@ const CODE_KEYS: Record<string, string> = {
   'import.not_ready': 'errors.import_not_ready',
   'import.not_editable': 'errors.import_not_editable',
   'import.not_committed': 'errors.import_not_committed',
+  'import.not_discardable': 'errors.import_not_discardable',
   'import.undo_expired': 'errors.import_undo_expired',
   'upload.too_large': 'imports.error.doc_too_large',
   'upload.unsupported_type': 'imports.error.unsupported_type',

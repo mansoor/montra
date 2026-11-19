@@ -138,3 +138,36 @@ export async function intakeImportUndone(trx: Trx, ctx: Ctx, batchId: string): P
     .where('id', '=', intake.id)
     .execute();
 }
+
+/**
+ * An import that was never committed was discarded: a statement that led to it goes back to Review to pick the account
+ * again (or be put aside there), with its reading kept so it isn't read twice. A statement imported automatically
+ * forgets its signal, as after an undo. Returns the statement's id, if there was one.
+ */
+export async function intakeImportDiscarded(trx: Trx, ctx: Ctx, batchId: string): Promise<string | null> {
+  const intake = await trx
+    .selectFrom('app.document_intake')
+    .select(['id', 'signal', 'automatic'])
+    .where('workspace_id', '=', ctx.workspaceId)
+    .where('import_batch_id', '=', batchId)
+    .where('status', 'in', ['review', 'importing', 'done'])
+    .forUpdate()
+    .executeTakeFirst();
+  if (!intake) return null;
+  if (intake.automatic) await forgetSignal(trx, ctx, 'statement', intake.signal);
+  await trx
+    .updateTable('app.document_intake')
+    .set({
+      status: 'review',
+      reason: 'discarded',
+      import_batch_id: null,
+      commit_if_clean: false,
+      resolved_by: null,
+      resolved_at: null,
+      updated_at: new Date(),
+    })
+    .where('workspace_id', '=', ctx.workspaceId)
+    .where('id', '=', intake.id)
+    .execute();
+  return intake.id;
+}

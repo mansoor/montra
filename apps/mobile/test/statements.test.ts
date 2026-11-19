@@ -107,6 +107,7 @@ describe('statement status', () => {
       committed: 'good',
       failed: 'bad',
       undone: 'muted',
+      discarded: 'muted',
     });
     expect(['uploaded', 'parsing', 'committing'].every((s) => isBusy(s as ImportBatchDto['status']))).toBe(
       true,

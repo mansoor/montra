@@ -160,6 +160,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'committed',
     'failed',
     'undone',
+    'discarded',
   ],
   'imports.role.': [
     'ignore',
