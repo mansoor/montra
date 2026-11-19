@@ -28,14 +28,19 @@ export function StatementsInbox({
   workspaceId,
   role,
   accounts,
+  pending = [],
 }: {
   workspaceId: string;
   role: string | undefined;
   accounts: AccountDto[];
+  /** Statements uploaded earlier that are still being read or waiting for an account (`pendingStatements`). */
+  pending?: IntakeDto[];
 }) {
   const { t, locale } = useI18n();
   const router = useRouter();
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<Item[]>(() =>
+    pending.map((intake) => ({ key: intake.id, name: intake.fileName, state: 'intake' as const, intake })),
+  );
   const [dragging, setDragging] = useState(false);
   const alive = useRef(true);
   const base = `/w/${workspaceId}`;
@@ -66,6 +71,12 @@ export function StatementsInbox({
     },
     [workspaceId, put, router],
   );
+
+  // Statements still being read when the screen opens are followed as if just uploaded.
+  useEffect(() => {
+    for (const intake of pending) if (isWorking(intake)) void follow(intake.id, intake.fileName, intake);
+    // Only on opening: later uploads are followed by `add`.
+  }, []);
 
   async function add(files: FileList | File[]) {
     const added = [...files].map((file, n) => ({ key: `${Date.now()}-${n}-${file.name}`, file }));
@@ -159,11 +170,6 @@ export function StatementsInbox({
                 </li>
               );
             const i = item.intake;
-            const duplicate = i.duplicateOf ? (
-              <p className="text-xs text-warn">
-                {t('statements.duplicate', { date: uploadedOn(i.duplicateOf.uploadedAt) })}
-              </p>
-            ) : null;
             if (i.status === 'suggested' || i.status === 'review')
               return (
                 <IntakeCard
@@ -173,7 +179,6 @@ export function StatementsInbox({
                   intake={i}
                   accounts={bankAccounts}
                   billers={[]}
-                  note={duplicate}
                   onDone={(done) => {
                     put(item.key, { ...item, intake: done });
                     // Confirmed: the import continues in the existing preview, mapping and commit screens.
@@ -185,7 +190,11 @@ export function StatementsInbox({
             return (
               <li key={item.key} className="card space-y-1 text-sm" data-testid="statement-item">
                 <p className="font-medium">{item.name}</p>
-                {duplicate}
+                {i.duplicateOf && (
+                  <p className="text-xs text-warn">
+                    {t('intakes.possible_duplicate', { date: uploadedOn(i.duplicateOf.uploadedAt) })}
+                  </p>
+                )}
                 {i.status === 'reading' && (
                   <p role="status" className="text-muted">
                     {t('statements.reading')}

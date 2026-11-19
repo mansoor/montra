@@ -111,6 +111,21 @@ export function IntakeCard({
             ))}
           </p>
           {note}
+          {intake.duplicateOf && (
+            // The same file was uploaded before: most likely a second copy, so putting it aside is offered first.
+            <div role="alert" className="mt-2 space-y-1 text-sm text-warn" data-testid="intake-duplicate">
+              <p>
+                {t('intakes.possible_duplicate', {
+                  date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
+                    new Date(intake.duplicateOf.uploadedAt),
+                  ),
+                })}
+              </p>
+              <button type="button" className="btn-secondary" disabled={busy} onClick={dismiss}>
+                {t('intakes.discard_duplicate')}
+              </button>
+            </div>
+          )}
         </div>
         {intake.bill?.amount && intake.bill.currency && (
           <p className="text-right text-sm">

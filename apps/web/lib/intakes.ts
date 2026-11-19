@@ -94,3 +94,15 @@ export const isSettled = (i: Pick<IntakeDto, 'status'>) => i.status === 'done' |
 
 /** Still being read or imported: the screen polls it. */
 export const isWorking = (i: Pick<IntakeDto, 'status'>) => i.status === 'reading' || i.status === 'importing';
+
+/**
+ * The statements still being read, imported or waiting for an account, newest first, without repeats: what the
+ * Statements screen lists when it opens, so one uploaded earlier (or before navigating away) is still there.
+ */
+export function pendingStatements(...lists: IntakeDto[][]): IntakeDto[] {
+  const seen = new Map<string, IntakeDto>();
+  for (const i of lists.flat()) {
+    if (i.kind === 'statement' && !isSettled(i) && !seen.has(i.id)) seen.set(i.id, i);
+  }
+  return [...seen.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
