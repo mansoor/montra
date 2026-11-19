@@ -170,11 +170,6 @@ export function StatementsInbox({
                 </li>
               );
             const i = item.intake;
-            const duplicate = i.duplicateOf ? (
-              <p className="text-xs text-warn">
-                {t('statements.duplicate', { date: uploadedOn(i.duplicateOf.uploadedAt) })}
-              </p>
-            ) : null;
             if (i.status === 'suggested' || i.status === 'review')
               return (
                 <IntakeCard
@@ -184,7 +179,6 @@ export function StatementsInbox({
                   intake={i}
                   accounts={bankAccounts}
                   billers={[]}
-                  note={duplicate}
                   onDone={(done) => {
                     put(item.key, { ...item, intake: done });
                     // Confirmed: the import continues in the existing preview, mapping and commit screens.
@@ -196,7 +190,11 @@ export function StatementsInbox({
             return (
               <li key={item.key} className="card space-y-1 text-sm" data-testid="statement-item">
                 <p className="font-medium">{item.name}</p>
-                {duplicate}
+                {i.duplicateOf && (
+                  <p className="text-xs text-warn">
+                    {t('intakes.possible_duplicate', { date: uploadedOn(i.duplicateOf.uploadedAt) })}
+                  </p>
+                )}
                 {i.status === 'reading' && (
                   <p role="status" className="text-muted">
                     {t('statements.reading')}
