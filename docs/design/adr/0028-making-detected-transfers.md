@@ -54,3 +54,20 @@ treated anything an import had touched as "dedupe only" on every account.
   need special cases on both accounts instead of one.
 - **Convert automatically at import for 0.95 pairs.** This is the fastest path, but a wrong pair rewrites the user's
   data with no prompt. It's left for later, once the review path has been used for a while.
+
+## Amendment (2026-11-19): making a transfer by hand
+
+Card and loan payments often carry the payee's ID rather than the account's last 4 ("CHASE CREDIT CRD AUTOPAY PPD ID: …",
+"USBANK LOAN"), so step 3 doesn't suggest them and they stayed as uncategorized spending.
+
+- **"Make transfer…"** in Review (rows without a transfer suggestion) and the transaction editor picks any of the
+  person's other open accounts in the same currency. It's the same `make-transfer` with the same rules: the other side
+  on that account is absorbed if it's there, statement lines stay cleared, and the refusals above apply, plus archived
+  accounts and anything that isn't a bank, card, loan or other balance-sheet account.
+- **A tracked loan (ADR-0024)** takes the line as its scheduled payment, split into interest, principal and escrow, when one
+  matches by ADR-0024 §8 (exact amount, within 5 days) and the loan account has no line of its own for it. Otherwise it's a
+  plain transfer to the loan account, and the response says so (`loan.number` null).
+- **Remembered per payee** in `payee_transfer`, beside `payee_history` (whose entries are applied as categories). The next
+  line from that payee is suggested as a transfer to the same account at 0.90: above the weak pairs (0.60, 0.80) and below
+  a sure pair (0.95). Like every detected transfer it waits in Review. Choosing a category for the payee counts against it.
+

@@ -73,6 +73,10 @@ export type CreateTransferRequest = z.output<typeof CreateTransferRequest>;
  * payment, a move between accounts). The other side, when it was recorded separately, is absorbed: its statement line
  * moves to the transfer and it goes to the trash. `counterpartId`: that other side; omitted, the closest one with the
  * opposite amount within 3 days on that account is used; null, none.
+ *
+ * `accountId` may be any of the person's other open bank, card or loan accounts, suggested or not ("Make transfer…").
+ * The payee is remembered with it, so its next line is suggested as a transfer there. A loan whose payments are
+ * tracked (ADR-0024) gets the line as its scheduled payment instead, split into interest, principal and escrow.
  */
 export const MakeTransferRequest = z.object({
   accountId: Id,
@@ -180,5 +184,13 @@ export const MakeTransferDto = z.object({
   transaction: TransactionDto,
   /** The other side that was absorbed into the transfer (now in the trash), if any. */
   absorbedId: Id.nullable(),
+  /**
+   * The chosen account is a loan whose payments are tracked: `number` is the scheduled payment the line became, or null
+   * when none matched (same amount, escrow included, within 5 days) and a plain transfer was made instead.
+   */
+  loan: z
+    .object({ loanId: Id, name: z.string(), number: z.number().int().nullable() })
+    .nullable()
+    .default(null),
 });
 export type MakeTransferDto = z.infer<typeof MakeTransferDto>;

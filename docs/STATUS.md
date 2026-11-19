@@ -2000,6 +2000,21 @@ Phase 11 leftovers:
   confirm step on the import page and in history rows. The phone lists imports without actions, so it has no button.
   Tests: API `import-discard.test.ts`, web `imports.test.ts`, mobile `statements.test.ts`.
 
+- **"Make transfer…" by hand** (TXN-04, AI-05; ADR-0028 amendment; migration 0070). Card and loan payments whose line carries
+  the payee's ID ("CHASE CREDIT CRD AUTOPAY PPD ID: …", "USBANK LOAN") aren't detected, so Review rows with no transfer
+  suggestion and the transaction editor offer "Make transfer…": a picker of the other open accounts in the same currency
+  (cards, loans, bank, other), in words ("Transfer to Chase Sapphire"). `POST transactions/:id/make-transfer` already took
+  any `accountId`; it now also refuses archived accounts (`transfer.archived`) and categories or system accounts
+  (`transfer.not_an_account`), and returns `loan`. A loan with tracked payments takes the line as its scheduled payment
+  (`LoansService.paymentForLine`: same amount with escrow, within 5 days, same books and currency, and no line of its own
+  on the loan account) through the existing `recordPaymentIn`; otherwise it's a plain transfer and `loan.number` is null,
+  which the screens say. Learning: `app.payee_transfer` (payee key → account, count) is bumped on every make-transfer
+  and decremented when a category is chosen for the payee; the pipeline's step 3 suggests the most-used account at 0.90
+  (`rememberedTransfer`), below the 0.95 that a sure pair keeps, so it's never applied without Review's "Make transfer"
+  (which, like accept-all, goes through `transferToInTrx` and so reaches the loan too). The phone has no make-transfer
+  action, so it has none of this; remembered suggestions show there as before. Tests: API `manual-transfers.test.ts`,
+  categorize `pipeline.test.ts`, web `phase3.test.ts`.
+
 ---
 
 ## 8. Session checklist

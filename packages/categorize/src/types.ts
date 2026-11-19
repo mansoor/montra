@@ -89,6 +89,17 @@ export interface TransferCandidate {
   date: CalendarDate;
 }
 
+/**
+ * A transfer the person made by hand for a payee (AI-05): its other account, and how many times. Statement lines that
+ * pay a card or a loan often carry the payee's ID rather than the account's last 4, so this is how they're found again.
+ */
+export interface TransferMemory {
+  accountId: string;
+  accountName: string;
+  accountLast4: string | null;
+  count: number;
+}
+
 export interface AiSuggestion {
   categoryId: string | null;
   memberId: string | null;
@@ -103,6 +114,8 @@ export interface PipelineDeps {
   history: (payeeKey: string) => readonly HistoryEntry[];
   /** Transfer candidates near an item (caller pre-filters by date ±3 days and opposite sign). */
   transferCandidates: (item: PipelineItem) => readonly TransferCandidate[];
+  /** Transfers made by hand for a payee key, to suggest the same account again (open accounts only). */
+  transferMemory?: (payeeKey: string) => readonly TransferMemory[];
   /** Step 5. Called once with every item still open after step 4; returns suggestions by item id. */
   ai?: (open: readonly PipelineItem[]) => Promise<ReadonlyMap<string, AiSuggestion>>;
   /** Review threshold on calibrated confidence (default 0.80). */

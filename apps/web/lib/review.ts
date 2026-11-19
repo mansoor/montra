@@ -2,7 +2,7 @@
  * Review queue model (AI-03/04, PLT-10): keyboard commands, confidence display and list updates. Kept free of
  * React so the shortcut map and the "accept all above X%" count can be unit-tested.
  */
-import type { ReviewItemDto } from '@montra/schemas';
+import type { AccountDto, MakeTransferDto, MoneyDto, ReviewItemDto } from '@montra/schemas';
 
 export type ReviewCommand =
   'next' | 'prev' | 'accept' | 'category' | 'member' | 'select' | 'acceptAbove' | 'help' | 'close';
@@ -157,4 +157,73 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement;
   const tag = el.tagName.toLowerCase();
   return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable === true;
+}
+
+type T = (key: string, values?: Record<string, string | number>) => string;
+
+/** How "Make transfer…" groups the other accounts: cards first, then loans, bank accounts, everything else. */
+export type TransferGroup = 'cards' | 'loans' | 'bank' | 'other';
+const GROUP_ORDER: TransferGroup[] = ['cards', 'loans', 'bank', 'other'];
+
+export interface TransferTarget {
+  accountId: string;
+  name: string;
+  group: TransferGroup;
+  /** Money out goes to the other account; money in comes from it. */
+  direction: 'to' | 'from';
+  /** A loan whose payments are tracked: the line becomes its scheduled payment when one matches. */
+  trackedLoan: boolean;
+}
+
+const groupOf = (a: Pick<AccountDto, 'kind' | 'loanId'>): TransferGroup =>
+  a.loanId || a.kind === 'loan' || a.kind === 'mortgage'
+    ? 'loans'
+    : a.kind === 'credit_card' || a.kind === 'line_of_credit'
+      ? 'cards'
+      : a.kind === 'checking' || a.kind === 'savings' || a.kind === 'cash'
+        ? 'bank'
+        : 'other';
+
+/**
+ * The accounts a plain transaction can be made a transfer to or from ("Make transfer…"): the person's other open
+ * accounts in the same currency (between currencies the amount that arrived is needed, which this doesn't ask).
+ */
+export function transferTargets(
+  accounts: readonly AccountDto[],
+  line: { accountId: string | null; amount: MoneyDto | null },
+): TransferTarget[] {
+  if (!line.accountId || !line.amount) return [];
+  const direction = line.amount.amount.startsWith('-') ? 'to' : 'from';
+  return accounts
+    .filter((a) => !a.archived && a.id !== line.accountId && a.currency === line.amount!.currency)
+    .map((a): TransferTarget => ({
+      accountId: a.id,
+      name: a.name,
+      group: groupOf(a),
+      direction,
+      trackedLoan: a.loanId !== null,
+    }))
+    .sort(
+      (a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || a.name.localeCompare(b.name),
+    );
+}
+
+/** Picker options for `transferTargets`, in words: "Transfer to Chase Sapphire", grouped as Cards, Loans… */
+export const transferOptions = (targets: readonly TransferTarget[], t: T) =>
+  targets.map((x) => ({
+    id: x.accountId,
+    label: t(x.direction === 'to' ? 'review.transfer_to' : 'review.transfer_from', { account: x.name }),
+    group: t(`review.transfer_group.${x.group}`),
+  }));
+
+/** What "Make transfer…" did, in words: a transfer, a loan's scheduled payment, or a transfer because none matched. */
+export function madeTransferMessage(
+  result: Pick<MakeTransferDto, 'absorbedId' | 'loan'>,
+  account: string,
+  t: T,
+): string {
+  if (result.loan?.number != null)
+    return t('review.made_loan_payment', { loan: result.loan.name, number: result.loan.number });
+  if (result.loan) return t('review.made_transfer_no_loan_payment', { loan: result.loan.name });
+  return t(result.absorbedId ? 'review.made_transfer_matched' : 'review.made_transfer', { account });
 }

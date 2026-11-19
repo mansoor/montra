@@ -740,6 +740,16 @@ export interface PayeeHistoryTable {
   last_used_at: Generated<Date>;
 }
 
+/** A transfer the person made by hand, remembered for the payee (0070). */
+export interface PayeeTransferTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payee_key: string;
+  account_id: string;
+  count: Generated<number>;
+  last_used_at: Generated<Date>;
+}
+
 export interface CorrectionTable {
   workspace_id: string;
   id: Generated<string>;
@@ -1866,6 +1876,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'ref.merchant': RefMerchantTable;
   'app.rule': RuleTable;
   'app.payee_history': PayeeHistoryTable;
+  'app.payee_transfer': PayeeTransferTable;
   'app.correction': CorrectionTable;
   'app.rule_suggestion': RuleSuggestionTable;
   'app.ai_cache': AiCacheTable;
