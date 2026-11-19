@@ -1,6 +1,6 @@
 # ADR-0055: Bank feeds per workspace, starting with SimpleFIN Bridge
 
-- Status: proposed (draft for the owner; nothing built)
+- Status: accepted (the owner, 2026-11-19; see "Owner's answers" and "Defaults taken" at the end; nothing built)
 - Date: 2026-11-19
 - Builds on: ADR-0051 (intakes, signals and match memory), ADR-0028 (transfers), ADR-0024 (loan payments), ADR-0031
   and ADR-0050 (sealed per-workspace secrets, the address guard, the outbox job shape), ADR-0054 (an owner-connected
@@ -75,13 +75,13 @@ with a SimpleFIN adapter as its only implementation:
 ```ts
 interface BankFeedProvider {
   readonly kind: 'simplefin';
-  readonly limits: { maxWindowDays: number; requestsPerDay: number; includesPending: boolean };
+  readonly limits: { maxWindowDays: number; requestsPerDay: number };
   /** Turn what the person pasted into a sealed secret. Called once; never retried on its own. */
   connect(input: { setupToken: string }): Promise<{ secret: string; host: string }>;
   /** Institutions and accounts, with balances; no transactions. */
   listAccounts(secret: string): Promise<FeedSnapshot>;
   /** Transactions for one window (≤ maxWindowDays), for all linked accounts in one request. */
-  fetchTransactions(secret: string, q: { from: CalendarDate; to: CalendarDate; pending: boolean }): Promise<FeedSnapshot>;
+  fetchTransactions(secret: string, q: { from: CalendarDate; to: CalendarDate }): Promise<FeedSnapshot>;
   /** A cheap check for Settings: reachable, credentials accepted, problems per institution. */
   health(secret: string): Promise<FeedHealth>;
 }
@@ -89,7 +89,7 @@ interface BankFeedProvider {
 
 - `FeedSnapshot` is provider-neutral: institutions (`id`, `name`, `url`, problem), accounts (`id`, `institutionId`,
   `name`, `currency`, `balance`, `available`, `balanceDate`, problem) and transactions (`id`, `date`, `amount` as
-  bigint minor units, `description`, `payee`, `memo`, `pending`). Problems are typed (`reauth_needed`,
+  bigint minor units, `description`, `payee`, `memo`). Problems are typed (`reauth_needed`,
   `account_failed`, `missing_data`, `quota_warning`, `revoked`, `payment_required`, `unknown`) with the provider's
   message sanitized (plain text, length-capped).
 - The **cursor** is a date per account (§5), not a provider token: SimpleFIN has none, and a date works for every
@@ -120,10 +120,10 @@ One migration (number assigned when written), append-only:
 - **`app.import_batch`**: `source text not null default 'file'` (`file`, `feed`), `bank_feed_account_id`; `file_id`
   loses `not null` with a check that a `file` batch has one; `file_type` gains `feed`. Rows keep their shape; the
   provider's id goes into the existing `externalId`/dedupe key as `sfin:<account id>:<transaction id>`.
-- **RLS** enabled and forced on the three new tables. `bank_feed` and `bank_feed_run`: owners and admins read, owners
-  write; the secret column is read only by the connect and sync code paths. `bank_feed_account`: members who may import
-  statements read (AUTH-18), owners change links. No grants to `montra_admin` or `montra_support`.
-- **Security log kinds**: `bank_feed_connected`, `bank_feed_changed` (links, pending, auto-import), `bank_feed_disconnected`.
+- **RLS** enabled and forced on the three new tables. `bank_feed` and `bank_feed_run`: owners, admins and partners
+  read, owners write; the secret column is read only by the connect and sync code paths. `bank_feed_account`: members
+  who may import statements read (AUTH-18), owners change links. No grants to `montra_admin` or `montra_support`.
+- **Security log kinds**: `bank_feed_connected`, `bank_feed_changed` (links and start dates), `bank_feed_disconnected`.
   **Audit**: one row per account linked, unlinked or ignored.
 - **Notification type** `bank_feed_attention` (daily dedupe, no amounts or transaction text), and **job** `bankfeed.sync`
   with a definer function `app.bank_feed_due()` as `app.storage_mirror_due()`.
@@ -135,8 +135,8 @@ and web fixtures change with them (CLAUDE.md).
 
 ### 3. Connecting
 
-- **Owner only, with a recent sign-in** (AUTH-09), in Settings → Bank feeds (default; open question 5). Admins see the
-  status.
+- **Owner only, with a recent sign-in** (AUTH-09), in Settings → Bank feeds (default taken, D5). Admins and partners
+  see the status.
 - The owner pastes the setup token. Montra decodes it and checks the claim URL against the **address guard** before
   sending anything (§9), then claims it **once**. The token itself is never stored.
 - On success the access URL is sealed at once, `listAccounts` runs (`balances-only=1`, one request), and the owner moves
@@ -163,18 +163,19 @@ and web fixtures change with them (CLAUDE.md).
 ### 5. Syncing
 
 - **When.** One scheduled sync a day per feed, at a random minute in the early morning of the workspace's time zone
-  (the Bridge asks for a random minute), plus **Sync now** (owners and admins; open question 5), at most once an hour.
+  (the Bridge asks for a random minute), plus **Sync now** (owners, admins and partners; D5), at most once an hour.
 - **One request per sync.** A sync asks `/accounts` once for all linked accounts, from the earliest
-  `synced_through` less 5 days (the overlap the Bridge advises) to tomorrow, split into ≤ 90-day windows only for a
-  first sync or a long gap. Single-account requests aren't used.
+  `synced_through` less 5 days (the overlap the Bridge advises) to tomorrow, never more than 90 days. Single-account
+  requests aren't used.
 - **The budget.** Montra stops at **12 requests per feed per UTC day**, half the Bridge's figure, so setup, retries and
   Sync now never reach the point where the Bridge disables the token. A quota warning in `errors[]` stops requests until
   the next day and is shown, not counted as a failure.
-- **First sync and start date.** By default the feed starts the day after the last date already imported into that
-  account from a statement (`max(import_batch.max_date)` of committed batches); an account with no imports starts **90
-  days back**, which is one request. The owner can choose an earlier date, fetched in 90-day windows over the following
-  days within the budget; how far back the institution goes is the Bridge's. Rows dated before `start_date` are dropped
-  before the pipeline, so a feed never re-imports a period a statement already covered.
+- **First sync and start date, chosen when linking** (owner's answer 2). The default is the day after the latest
+  transaction already in that Montra account, but never more than **90 days back** (SimpleFIN's window), so the first
+  sync is one request; an account with no transactions starts 90 days back. The owner can pick another date within
+  those 90 days when linking. History older than that comes from uploaded statements (§6). Rows dated before
+  `start_date` are dropped before the pipeline, so a feed never re-imports a period already in the account. A gap of
+  more than 90 days (a feed paused that long) is shown on the account, to be filled by an upload.
 - **Through the existing pipeline.** Each sync makes **one import batch per linked account with new rows** (`source`
   `feed`), which goes straight to preview (no mapping) and through dedupe, manual and scheduled entry matching,
   transfers, loan payment linking, payee normalization and categorization exactly as a file does. Undo (30 days) and
@@ -182,13 +183,14 @@ and web fixtures change with them (CLAUDE.md).
 - **Dedupe key.** The provider's transaction id is the batch row's `externalId`, as an OFX `FITID` is: the 5-day
   overlap and any re-sent row become exact duplicates and are skipped, even if the bank renames the payee.
 - **Clean batches commit by themselves** (ADR-0051 §4's "import if clean": no probable duplicates, no row errors, the
-  balance check didn't fail). Anything else waits in Review as "Bank feed: 3 transactions need a look", with the batch
-  in preview. Open question 4.
+  balance check didn't fail), with Undo (owner's answer 4). Anything else waits in Review as "Bank feed: 3
+  transactions need a look", with the batch in preview.
 - **Balance check.** After a commit, the account's ledger balance on `balance-date` is compared with the feed's
   `balance`; the batch records `ok` or `mismatch` with the gap (IMP-08). A mismatch blocks the next clean auto-commit
   for that account until someone looks, as a statement's does.
-- **Pending.** Posted only (`pending` not sent) by default: a pending card charge often changes amount (tips) and may
-  change id when it posts, and either would leave a duplicate. Open question 3.
+- **Posted only** (owner's answer 3). `pending=1` is never sent, and a row marked pending or with `posted` of `0` is
+  dropped if it arrives anyway. A pending card charge often changes amount (tips) and may change id when it posts, so
+  importing it would leave a duplicate.
 - **Cursor.** `synced_through` moves to the latest `posted` date committed or waiting in preview, never past today.
   Undoing a feed batch moves it back to the batch's first date, so the next sync brings the rows again.
 - **Retries.** A failed sync backs off at ADR-0031 §5's steps (1 minute up to daily); five failures in a row make the
@@ -196,7 +198,8 @@ and web fixtures change with them (CLAUDE.md).
 
 ### 6. Feeds and uploaded statements for the same account
 
-- Default: **side by side** (open question 1). A statement uploaded for a feed-linked account goes through the same
+- **Side by side** (owner's answer 1): uploads to a feed-linked account keep working, and remain the way to bring in
+  history older than SimpleFIN's 90 days. A statement uploaded for a feed-linked account goes through the same
   pipeline; its rows have no feed id, so rows the feed already brought show as **probable duplicates** (same amount
   within ±3 days, similar text) and are never added twice without a person deciding. Its opening and closing balances
   still check the account.
@@ -256,16 +259,16 @@ and web fixtures change with them (CLAUDE.md).
 
 ### 11. Plans
 
-A feature key `bankFeeds` (ADR-0049 §1), added with a default for every existing plan in the same migration (on, as
-`ownStorage`, since the person pays SimpleFIN; open question 6), and kept in `FEATURES_NOT_YET_SHOWN` until syncing
-works. A plan without it can't connect; an existing feed on a plan that loses it pauses, keeping its links.
-`BILLING_MODE=off` has it, so self-hosted installs do.
+A feature key `bankFeeds` (ADR-0049 §1), added with a default for every existing plan in the same migration (on in
+every plan that has `ownStorage`, since the person pays SimpleFIN; default taken, D6), and kept in
+`FEATURES_NOT_YET_SHOWN` until syncing works end to end. A plan without it can't connect; an existing feed on a plan
+that loses it pauses, keeping its links. `BILLING_MODE=off` has it, so self-hosted installs do.
 
 ### 12. Testing
 
 - **A fake SimpleFIN server** in the API's integration tests (real Postgres): claim (ok, `403`, used twice), `/accounts`
   in v2 and v1 shapes, the date parameters and the 90-day rule, `402`, `403`, `errlist` codes per institution and
-  account, quota warnings, pending then posted (same and different id), a custom currency, malformed amounts, a huge
+  account, quota warnings, pending rows (dropped) then posted, a custom currency, malformed amounts, a huge
   response, slow and dropped connections. Its responses are **synthetic**, written for the tests, never recorded from a
   real account. **No test, CI job or e2e calls the real service.**
 - **Pure tests** for the parser, amounts, dates, window splitting, the request budget and the start date.
@@ -282,16 +285,16 @@ works. A plan without it can't connect; an existing feed on a plan that loses it
 
 A new subsection, **13.7 Bank feeds**, added by the first PR:
 
-| ID      | Requirement                                                                                                                                                 | Priority |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| ID      | Requirement                                                                                                                                                  | Priority |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
 | FEED-01 | An owner connects the workspace to SimpleFIN Bridge with a setup token, claimed once; the access is sealed, never shown, logged, archived or sent elsewhere. | S        |
 | FEED-02 | Each institution account is linked to a Montra account by suggestion (learned), created, or ignored; ignored and unlinked accounts are never imported.       | S        |
-| FEED-03 | Linked accounts sync daily and on request, within the provider's limits, through the import pipeline, one batch per account, with Undo.                     | S        |
+| FEED-03 | Linked accounts sync daily and on request, within the provider's limits, through the import pipeline, one batch per account, with Undo.                      | S        |
 | FEED-04 | The provider's transaction id is the dedupe key; overlapping syncs and statements for the same account never add a transaction twice without a decision.     | M        |
-| FEED-05 | A feed starts after the last imported statement by default, or from a date the owner picks, within the provider's history.                                   | S        |
-| FEED-06 | Clean feed batches commit automatically; others wait in Review. Pending transactions follow the owner's setting.                                              | S        |
+| FEED-05 | A feed starts the day after the account's latest transaction, at most 90 days back, or from a date within that the owner picks when linking.                 | S        |
+| FEED-06 | Clean feed batches commit automatically; others wait in Review. Pending transactions are never imported.                                                     | S        |
 | FEED-07 | The feed's balance checks each account after a sync.                                                                                                         | S        |
-| FEED-08 | Problems are shown per feed and account in words; owners are told once when a person must act.                                                              | S        |
+| FEED-08 | Problems are shown per feed and account in words; owners are told once when a person must act.                                                               | S        |
 | FEED-09 | Connecting, link changes and disconnecting are in the security log; disconnecting wipes the secret; staff can't read it.                                     | M        |
 | FEED-10 | The phone shows each feed's status and offers Sync now.                                                                                                      | C        |
 
@@ -345,13 +348,20 @@ The port takes these without changing §2–§8; each would be its own short ADR
   SimpleFIN doesn't promise the id stays the same.
 - **Sync several times a day.** The Bridge is daily and a disabled token costs the person a reconnect.
 
-## Open questions for the owner
+## Owner's answers (2026-11-19)
 
-1. **Feeds and statements:** does a feed replace statement uploads for its account, or sit alongside them (the default
-   here)?
-2. **First sync:** how far back by default: from the last statement (else 90 days, the default), always 90 days, or as
-   far as the institution allows?
-3. **Pending:** posted only (the default), or include pending transactions?
-4. **Auto-import:** commit clean feed batches automatically (the default, as ADR-0051), or review every sync?
-5. **Roles:** only owners connect (the default); may admins also connect or press Sync now? Members?
-6. **Plans:** is `bankFeeds` on every plan (the default, since the person pays SimpleFIN), or a paid-plan feature?
+1. **Feeds and statements sit alongside.** Uploads to a feed-connected account keep working. Duplicates are caught by
+   SimpleFIN's transaction id plus the existing dedupe, and uploads remain the way to bring in history older than
+   SimpleFIN's 90 days (§6).
+2. **The first sync is chosen at connect.** By default it starts the day after the latest transaction already in that
+   Montra account, capped at SimpleFIN's 90 days; the owner can pick a different start date when linking (§5).
+3. **Posted only.** Pending transactions are never imported (§5).
+4. **Auto if clean**, as statements (ADR-0051 §4). A sync with nothing to decide (no probable duplicates, no errors,
+   the balance checks out) imports itself, with Undo; otherwise it waits for review (§5).
+
+## Defaults taken (owner may revisit)
+
+- **D5. Roles:** only an owner connects or disconnects, with a recent sign-in. Owners, admins and partners may press
+  Sync now (§3, §5, §10).
+- **D6. Plans:** a `bankFeeds` plan key, in every plan that has `ownStorage`, and hidden from customers through
+  `FEATURES_NOT_YET_SHOWN` until syncing works end to end (§11).
