@@ -32,6 +32,16 @@ later; tax forms use an owner-only setting for accountants instead.
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
 
+**Accepted, ready to build:** [ADR-0055](design/adr/0055-bank-feeds-simplefin.md), bank feeds per workspace, with
+SimpleFIN Bridge as the first provider behind a provider port, accepted by the owner on 2026-11-19. An owner (recent
+sign-in) pastes a SimpleFIN setup token, Montra claims it once and seals the access URL, each institution account is
+linked to a Montra account, and a daily sync (plus Sync now for owners, admins and partners, within SimpleFIN's daily
+limit) brings posted transactions only through the existing import pipeline, one batch per account, with the provider's
+id as the dedupe key. Clean syncs import themselves with Undo; others wait in Review. Feeds sit alongside uploaded
+statements, and the first sync starts the day after the account's latest transaction, at most 90 days back, or from a
+date picked when linking. A hidden `bankFeeds` plan key, in every plan with `ownStorage`. Nothing built yet; four PRs
+planned (ADR's Delivery).
+
 **Built, the chain complete (2026-11-18):** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
 Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. Montra connects
 with an API key the vault generates for it, pasted by an owner and sealed (a key pair and signed requests until vault
