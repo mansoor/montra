@@ -366,6 +366,72 @@ describe('other file types and mapping', () => {
     });
   });
 
+  it('reads PDF dates printed without a year against the statement period, December before January', async () => {
+    const w = await setup();
+    const acct = (await c.post(w.url('/accounts'), { name: 'Checking', kind: 'checking' })).body.id;
+    const up = await upload(w.ws.id, 'yearless.pdf', Buffer.from('%PDF-1.4\n% fake statement\n'));
+    const batch = (await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId: acct })).body;
+    const db = h.app.get(Db).kysely;
+    const { rows: jobs } = await sql<any>`select * from app.dequeue_job('doc', 'test-doc-worker')`.execute(
+      db,
+    );
+    // What the doc worker reads from its synthetic DATE | DESCRIPTION | AMOUNT | BALANCE fixture.
+    const grid = {
+      kind: 'grid',
+      textLayer: true,
+      pages: 1,
+      sheets: [
+        {
+          name: 'Statement',
+          rows: [
+            ['DATE', 'DESCRIPTION', 'AMOUNT', 'BALANCE'],
+            ['12/28', 'So Cal Power CO Directpay PPD ID: 0012345678', '-207.92', '8,461.51'],
+            [
+              '12/29',
+              'ATM Withdrawal 12/28 12345 Sample Canyon Rd 4321 R Springfield CA Card',
+              '-260.00',
+              '8,201.51',
+            ],
+            ['01/03', 'Zelle Payment From Another Person', '3,300.00', '11,501.51'],
+          ],
+        },
+      ],
+      statement: {
+        openingBalance: '$8,669.43',
+        closingBalance: '$11,501.51',
+        periodStart: '2026-12-15',
+        periodEnd: '2027-01-14',
+        accountLast4: null,
+        currency: 'USD',
+      },
+    };
+    await sql`select app.complete_job(${jobs[0].id}, ${JSON.stringify(grid)}::jsonb)`.execute(db);
+    await worker.drain();
+    const preview = (await c.get(w.url(`/imports/${batch.id}`))).body;
+    expect(preview).toMatchObject({
+      status: 'preview',
+      balanceCheck: 'ok',
+      mapping: {
+        headerRow: 0,
+        dataStart: 1,
+        date: 0,
+        dateFormat: 'MM/DD',
+        description: [1],
+        amount: 2,
+        balance: 3,
+      },
+      analysis: { dates: { start: '2026-12-15', end: '2027-01-14' } },
+      minDate: '2026-12-28',
+      maxDate: '2027-01-03',
+    });
+    const rows = (await c.get(w.url(`/imports/${batch.id}/rows`))).body.data;
+    expect(rows.map((r: any) => [r.date, r.amount.amount])).toEqual([
+      ['2026-12-28', '-20792'],
+      ['2026-12-29', '-26000'],
+      ['2027-01-03', '330000'],
+    ]);
+  });
+
   it('rejects unsupported uploads and other workspaces', async () => {
     const w = await setup();
     const bad = await upload(w.ws.id, 'virus.exe', Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]));

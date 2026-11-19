@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { calendarDate } from '@montra/domain';
 import { catalogs } from '@montra/i18n';
 import type { ColumnMapping, ImportRowDto } from '@montra/api-client';
 import {
@@ -191,6 +192,43 @@ describe('live mapping preview', () => {
     expect(parseStatementAmount('-3,50 €', 'EUR', ',')).toBe(-350n);
     expect(parseStatementAmount('1.234', 'JPY', ',')).toBe(1234n);
     expect(parseStatementAmount('pending', 'USD', '.')).toBeNull();
+  });
+
+  it('reads dates without a year against the statement, and amounts the description spilled into', () => {
+    const dates = { start: calendarDate('2026-12-15'), end: calendarDate('2027-01-14') };
+    expect(parseStatementDate('12/28', 'MM/DD', dates)).toBe('2026-12-28');
+    expect(parseStatementDate('01/03', 'MM/DD', dates)).toBe('2027-01-03');
+    expect(parseStatementDate('03/01', 'DD/MM', { start: null, end: calendarDate('2027-01-14') })).toBe(
+      '2027-01-03',
+    );
+    expect(parseStatementDate('12/28', 'MM/DD')).toBeNull();
+    // Synthetic rows in the DATE | DESCRIPTION | AMOUNT | BALANCE layout, the second as a fixed-position cut left it.
+    const sample = [
+      ['DATE', 'DESCRIPTION', 'AMOUNT', 'BALANCE'],
+      ['12/28', 'So Cal Power CO Directpay PPD ID: 0012345678', '-207.92', '8,461.51'],
+      ['12/28', 'Example Card Autopay Payment 271234567', 'ID: Examplecap -130.00', '8,331.51'],
+      ['01/03', 'Zelle Payment From Another Person', '3,300.00', '8,173.47'],
+    ];
+    const m: ColumnMapping = {
+      headerRow: 0,
+      dataStart: 1,
+      date: 0,
+      dateFormat: 'MM/DD',
+      description: [1],
+      amount: 2,
+      balance: 3,
+      sign: 'normal',
+      decimal: '.',
+    };
+    expect(previewMapping(sample, m, 'USD', 5, dates).map((r) => [r.date, r.amount, r.description])).toEqual([
+      ['2026-12-28', -20792n, 'So Cal Power CO Directpay PPD ID: 0012345678'],
+      ['2026-12-28', -13000n, 'Example Card Autopay Payment 271234567 ID: Examplecap'],
+      ['2027-01-03', 330000n, 'Zelle Payment From Another Person'],
+    ]);
+  });
+
+  it('labels the formats without a year', () => {
+    expect(en['imports.mapping.date_format_no_year']).toContain('{format}');
   });
 });
 

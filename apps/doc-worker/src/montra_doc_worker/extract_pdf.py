@@ -20,6 +20,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from itertools import pairwise
 from typing import Any
 
 import pdfplumber
@@ -45,7 +46,10 @@ DATE_RES = [
     re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$"),
     re.compile(r"^\d{1,2}-\d{1,2}-\d{2,4}$"),
 ]
-AMOUNT_HEADERS = {"amount", "debit", "debits", "credit", "credits", "withdrawals", "deposits", "balance"}
+AMOUNT_HEADERS = {
+    "amount", "debit", "debits", "credit", "credits", "withdrawal", "withdrawals", "deposit", "deposits",
+    "balance",
+}  # fmt: skip
 MONTHS = {m: i + 1 for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 )}  # fmt: skip
@@ -233,24 +237,86 @@ def _header_columns(line: Line) -> list[Column]:
     return cols
 
 
-def _assign(words: list[dict[str, Any]], cols: list[Column]) -> list[str]:
-    cells: list[list[str]] = [[] for _ in cols]
+def _is_money_column(col: Column) -> bool:
+    return any(w.lower().strip(":") in AMOUNT_HEADERS for w in col.label.split())
+
+
+_SUFFIX_MARKERS = {"CR", "DR", "-"}
+_CURRENCY_PREFIXES = {"$", "€", "£", "¥"}
+_MARKER_GAP = 6.0
+
+
+def _merge_markers(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Joins a currency symbol or CR/DR/minus marker printed apart from its number ("$ 12.00", "4.00 CR")."""
+    out: list[dict[str, Any]] = []
     for w in words:
-        best, best_d = 0, float("inf")
-        for i, c in enumerate(cols):
-            if w["x1"] < c.x0:
-                d = c.x0 - w["x1"]
-            elif w["x0"] > c.x1:
-                d = w["x0"] - c.x1
-            else:
-                d = 0.0
-            # Numbers are right-aligned under their headers: prefer the column whose right edge is closest.
-            if is_amount(w["text"]):
-                d = min(d, abs(w["x1"] - c.x1)) - 0.01
-            if d < best_d:
-                best, best_d = i, d
-        cells[best].append(w["text"])
-    return [" ".join(c) for c in cells]
+        prev = out[-1] if out else None
+        close = prev is not None and w["x0"] - prev["x1"] < _MARKER_GAP
+        if prev and close and w["text"].upper() in _SUFFIX_MARKERS and is_amount(prev["text"]):
+            sep = "" if w["text"] == "-" else " "
+            out[-1] = {**prev, "text": f"{prev['text']}{sep}{w['text']}", "x1": w["x1"]}
+        elif prev and close and prev["text"] in _CURRENCY_PREFIXES and is_amount(w["text"]):
+            out[-1] = {**prev, "text": prev["text"] + w["text"], "x1": w["x1"]}
+        else:
+            out.append(w)
+    return out
+
+
+def _money_column(w: dict[str, Any], cols: list[Column], money: list[int]) -> int | None:
+    """The amount column a number sits under: it reaches into the column, and its right edge is the closest.
+
+    Amounts are right-aligned, so a number that ends before a column's header starts is not that column's: it
+    is part of a description that runs up to the column ("PPD ID: 0012345678", "Card 12.50").
+    """
+    best: int | None = None
+    best_d = float("inf")
+    for i in money:
+        c = cols[i]
+        if w["x1"] < c.x0 - 2:
+            continue
+        d = 0.0 if w["x0"] <= c.x1 and w["x1"] >= c.x0 else abs(w["x1"] - c.x1)
+        if d < best_d:
+            best, best_d = i, d
+    return best
+
+
+def _text_column(w: dict[str, Any], cols: list[Column], text: list[int]) -> int:
+    """Text is left-aligned: a word goes to the last text column that starts before it (midway between)."""
+    chosen = text[0]
+    for prev, i in pairwise(text):
+        if w["x0"] >= (cols[prev].x1 + cols[i].x0) / 2:
+            chosen = i
+    return chosen
+
+
+def _assign(words: list[dict[str, Any]], cols: list[Column]) -> list[str]:
+    """Splits a line into cells by the header's positions.
+
+    Amount columns (Amount, Debit, Credit, Balance …) take only money values aligned under them, at most one
+    each (the rightmost; any other is text). Every other word goes to the text column it starts in, so a long
+    description never spills into the Amount column.
+    """
+    money = [i for i, c in enumerate(cols) if _is_money_column(c)]
+    text = [i for i in range(len(cols)) if i not in money] or list(range(len(cols)))
+    cells: list[list[dict[str, Any]]] = [[] for _ in cols]
+    loose: list[dict[str, Any]] = []
+    for w in _merge_markers(words):
+        col = _money_column(w, cols, money) if is_amount(w["text"]) else None
+        if col is None and not re.search(r"[^\W\d_]", w["text"]):
+            # A placeholder such as "-" or "0" printed under an amount header stays in that column.
+            col = next((i for i in money if w["x0"] <= cols[i].x1 and w["x1"] >= cols[i].x0), None)
+        if col is None:
+            loose.append(w)
+        else:
+            cells[col].append(w)
+    for i in money:
+        if len(cells[i]) > 1:
+            cells[i].sort(key=lambda w: w["x1"])
+            loose.extend(cells[i][:-1])
+            cells[i] = cells[i][-1:]
+    for w in loose:
+        cells[_text_column(w, cols, text)].append(w)
+    return [" ".join(w["text"] for w in sorted(c, key=lambda w: w["x0"])) for c in cells]
 
 
 def _positional_table(pages: list[Any]) -> list[list[str]]:
@@ -363,6 +429,9 @@ _WORD_DATE = rf"{_MON}\s+\d{{1,2}},?\s+\d{{4}}|\d{{1,2}}\s+{_MON}\s+\d{{4}}"
 PERIOD_RE = re.compile(
     rf"({_NUM_DATE}|{_WORD_DATE})\s*(?:-|–|—|to|through|thru|until)\s*({_NUM_DATE}|{_WORD_DATE})", re.I
 )
+CLOSING_DATE_RE = re.compile(
+    rf"\b(?:closing|statement|ending|cycle end(?:ing)?)\s+date\b\s*:?\s*({_NUM_DATE}|{_WORD_DATE})", re.I
+)
 
 
 def _period(text: str) -> tuple[str | None, str | None]:
@@ -375,6 +444,9 @@ def _period(text: str) -> tuple[str | None, str | None]:
             return _iso(m.group(1)), _iso(m.group(2))
     if candidates:
         return _iso(candidates[0].group(1)), _iso(candidates[0].group(2))
+    # No range: a card statement's closing date still ends the period (dates printed as MM/DD take its year).
+    if closing := CLOSING_DATE_RE.search(text):
+        return None, _iso(closing.group(1))
     return None, None
 
 

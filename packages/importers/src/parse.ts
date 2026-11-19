@@ -3,8 +3,8 @@
  * skipped (blank, footer, filtered) or error — so the import summary always adds up (UP-01).
  */
 import { compareDates, type CalendarDate, type CurrencyCode } from '@montra/domain';
-import { parseAmount } from './amounts.js';
-import { parseDate } from './dates.js';
+import { parseAmount, parseAmountCell, splitSpilledAmount } from './amounts.js';
+import { parseDate, type StatementDates } from './dates.js';
 import { signedAmount } from './infer.js';
 import type { ColumnMapping } from './mapping.js';
 import type { Sheet } from './grid.js';
@@ -52,7 +52,13 @@ const OPENING =
   /^(opening balance|beginning balance|balance forward|previous balance|anfangssaldo|starting balance)/i;
 const CLOSING = /^(closing balance|ending balance|new balance|endsaldo|schlusssaldo)/i;
 
-export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyCode): ParseResult {
+/** `dates`: where the statement's dates fall, which dates printed without a year (`10/02`) need. */
+export function applyMapping(
+  sheet: Sheet,
+  m: ColumnMapping,
+  currency: CurrencyCode,
+  dates?: StatementDates | null,
+): ParseResult {
   const result: ParseResult = {
     rows: [],
     errors: [],
@@ -78,7 +84,7 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
     // A row with a valid date is data even if it reads "Total Wine & More"; footers carry no transaction date.
     const isFooter =
       FOOTER.test(first) || m.skipPatterns?.some((p) => first.toLowerCase().startsWith(p.toLowerCase()));
-    if (isFooter && !parseDate(r[m.date] ?? '', m.dateFormat)) {
+    if (isFooter && !parseDate(r[m.date] ?? '', m.dateFormat, dates)) {
       // Summary rows carry statement balances (IMP-05/08).
       const value =
         [...r]
@@ -94,7 +100,7 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
       result.skipped.push({ rowNo, reason: 'filtered' });
       continue;
     }
-    const date = parseDate(r[m.date] ?? '', m.dateFormat);
+    const date = parseDate(r[m.date] ?? '', m.dateFormat, dates);
     if (!date) {
       result.errors.push({ rowNo, raw: r, error: 'invalid_date' });
       continue;
@@ -103,7 +109,7 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
     // Inline balance rows ("Beginning balance as of 10/01") carry a date and a balance but no amount.
     const balanceText = r.find((c) => OPENING.test(c.trim()) || CLOSING.test(c.trim()));
     if (amount === null && balanceText) {
-      const value = m.balance !== undefined ? parseAmount(r[m.balance] ?? '', currency, m.decimal) : null;
+      const value = m.balance !== undefined ? parseAmountCell(r[m.balance] ?? '', currency, m.decimal) : null;
       if (value !== null && OPENING.test(balanceText.trim())) result.opening = value;
       if (value !== null && CLOSING.test(balanceText.trim())) result.closing = value;
       result.skipped.push({ rowNo, reason: 'footer' });
@@ -123,10 +129,20 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
     } else if (m.sign === 'inverted') {
       amount = -amount;
     }
-    const description = m.description
-      .map((c) => (r[c] ?? '').trim())
+    // Description text that a PDF table cut into the amount columns belongs back at the end of the description.
+    const spilled = [m.amount, m.debit, m.credit, m.balance]
+      .filter((c): c is number => c !== undefined)
+      .map((c) => splitSpilledAmount(r[c] ?? '', currency, m.decimal)?.text)
+      .filter(Boolean);
+    const description = [
+      m.description
+        .map((c) => (r[c] ?? '').trim())
+        .filter(Boolean)
+        .join(' · '),
+      ...spilled,
+    ]
       .filter(Boolean)
-      .join(' · ');
+      .join(' ');
     const payee = m.payee !== undefined ? (r[m.payee] ?? '').trim() || null : null;
     if (payee && m.openingPayees?.some((p) => p.toLowerCase() === payee.toLowerCase())) {
       result.opening = (result.opening ?? 0n) + amount;
@@ -138,7 +154,7 @@ export function applyMapping(sheet: Sheet, m: ColumnMapping, currency: CurrencyC
       result.skipped.push({ rowNo, reason: 'filtered' });
       continue;
     }
-    const balance = m.balance !== undefined ? parseAmount(r[m.balance] ?? '', currency, m.decimal) : null;
+    const balance = m.balance !== undefined ? parseAmountCell(r[m.balance] ?? '', currency, m.decimal) : null;
     result.rows.push({
       rowNo,
       date,

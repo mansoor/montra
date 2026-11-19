@@ -40,6 +40,9 @@ export const DATE_FORMAT_IDS = [
   'MMM D YYYY',
   'DD-MMM-YY',
   'DD-MMM-YYYY',
+  // Without a year (PDF statements print `10/02`): the year comes from the statement period or the upload day.
+  'MM/DD',
+  'DD/MM',
 ] as const;
 
 export const ColumnMappingDto = z
@@ -142,6 +145,11 @@ export const ImportBatchDto = z.object({
       /** Column holding account names in multi-account app exports (for the account-filter picker). */
       accountColumn: z.number().nullable(),
       templateId: z.string().nullable(),
+      /**
+       * Where the statement's dates fall (its period, or just its end: the closing date or the upload day). Dates
+       * printed without a year (`MM/DD`) take the year nearest this range. Null for batches parsed before it.
+       */
+      dates: z.object({ start: CalendarDateDto.nullable(), end: CalendarDateDto }).nullable(),
     })
     .nullable(),
   /** The batch's latest job: tells parse, commit and undo apart and carries their results (e.g. undo's kept rows). */

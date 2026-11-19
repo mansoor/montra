@@ -173,6 +173,61 @@ def make_scanned_like_pdf() -> bytes:
     return buf.getvalue()
 
 
+# Layout 4 (synthetic; every name and number is invented): DATE | DESCRIPTION | AMOUNT | BALANCE, dates
+# printed without a year, amounts right-aligned under their headers, and descriptions long enough to end just
+# left of the Amount column. The period runs from December into January.
+YEARLESS_ROWS = [
+    ("12/28", "So Cal Power CO Directpay PPD ID: 0012345678", "-207.92", "8,461.51"),
+    ("12/28", "Example Card Autopay Payment 271234567 ID: Examplecap", "-130.00", "8,331.51"),
+    (
+        "12/29",
+        "ATM Withdrawal 12/28 12345 Sample Canyon Rd 4321 R Springfield CA Card",
+        "-260.00",
+        "8,071.51",
+    ),
+    ("01/02", "Zelle Payment To Sample Person Jpm99abc123", "-3,198.04", "4,873.47"),
+    ("01/03", "Zelle Payment From Another Person", "3,300.00", "8,173.47"),
+]
+
+
+def make_yearless_pdf() -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setFont("Helvetica", 9)
+    y = _header_block(
+        c,
+        [
+            "Example National Bank",
+            "December 15, 2026 through January 14, 2027",
+            "Primary Account: 000000005678",
+            "Beginning Balance $8,669.43",
+            "Ending Balance $8,173.47",
+        ],
+    )
+    y -= 10
+    c.drawString(50, y, "TRANSACTION DETAIL")
+    y -= 16
+    c.drawString(50, y, "DATE")
+    c.drawString(90, y, "DESCRIPTION")
+    c.drawRightString(470, y, "AMOUNT")
+    c.drawRightString(560, y, "BALANCE")
+    y -= 14
+    c.drawString(90, y, "Beginning Balance")
+    c.drawRightString(560, y, "$8,669.43")
+    for d, desc, amt, bal in YEARLESS_ROWS:
+        y -= 12
+        c.drawString(50, y, d)
+        c.drawString(90, y, desc)
+        c.drawRightString(470, y, amt)
+        c.drawRightString(560, y, bal)
+    y -= 12
+    c.drawString(90, y, "Ending Balance")
+    c.drawRightString(560, y, "$8,173.47")
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
 SCANNED_STATEMENT_LINES = [
     "First Example Bank",
     "JANE Q DOE",

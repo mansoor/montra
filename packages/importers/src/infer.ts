@@ -3,8 +3,15 @@
  * keyword hints, debit/credit pair detection, running-balance verification and sign inference.
  */
 import type { CalendarDate, CurrencyCode } from '@montra/domain';
-import { amountRate, detectDecimalSeparator, parseAmount, type DecimalSeparator } from './amounts.js';
-import { detectDateFormat, parseDate, type DateFormatId } from './dates.js';
+import {
+  amountRate,
+  detectDecimalSeparator,
+  parseAmount,
+  parseAmountCell,
+  splitSpilledAmount,
+  type DecimalSeparator,
+} from './amounts.js';
+import { detectDateFormat, parseDate, type DateFormatId, type StatementDates } from './dates.js';
 import type { ColumnMapping, MappingProposal } from './mapping.js';
 import type { Sheet } from './grid.js';
 
@@ -59,6 +66,8 @@ export interface InferOptions {
   preferDayFirst?: boolean;
   /** Statement period from the document; decides an ambiguous day/month order when known. */
   period?: { start: CalendarDate; end: CalendarDate } | null;
+  /** Where the statement's dates fall: gives dates printed without a year (`10/02`) theirs. */
+  dates?: StatementDates | null;
 }
 
 const nonEmptyCells = (row: string[]) => row.filter((c) => c.trim()).length;
@@ -93,25 +102,35 @@ export function findHeaderRow(rows: string[][]): { headerRow: number | null; dat
   return { headerRow: null, dataStart: 0 };
 }
 
+const moneyHeader = (h: string) =>
+  [KEYWORDS.amount, KEYWORDS.debit, KEYWORDS.credit, KEYWORDS.balance].some((k) => k.test(stripAccents(h)));
+
 function profileColumns(
   rows: string[][],
   header: string[] | null,
   width: number,
   preferDayFirst: boolean,
+  dates: StatementDates | null,
 ): Profile[] {
   const profiles: Profile[] = [];
   for (let c = 0; c < width; c++) {
     const values = rows.map((r) => (r[c] ?? '').trim());
-    const filled = values.filter(Boolean);
+    const name = header?.[c]?.trim() ?? '';
+    const raw = values.filter(Boolean);
+    // Under a money header, description text that spilled into a cell (PDF tables) doesn't hide its amount.
+    const rawDecimal = detectDecimalSeparator(raw);
+    const filled = moneyHeader(name)
+      ? raw.map((v) => splitSpilledAmount(v, 'USD', rawDecimal)?.value ?? v)
+      : raw;
     const decimal = detectDecimalSeparator(filled);
     const amounts = filled.map((v) => parseAmount(v, 'USD', decimal));
     const parsed = amounts.filter((a): a is bigint => a !== null);
     profiles.push({
       index: c,
-      header: header?.[c]?.trim() ?? '',
+      header: name,
       values,
       nonEmpty: filled.length,
-      date: detectDateFormat(filled, preferDayFirst),
+      date: detectDateFormat(filled, preferDayFirst, dates),
       amount: amountRate(filled, decimal),
       decimals: filled.length ? filled.filter((v) => /[.,]\d{1,3}\b/.test(v)).length / filled.length : 0,
       negatives: parsed.length ? parsed.filter((a) => a < 0n).length / parsed.length : 0,
@@ -132,7 +151,8 @@ export function inferMapping(sheet: Sheet, opts: InferOptions): MappingProposal 
     .slice(dataStart)
     .filter((r) => nonEmptyCells(r) >= 2 && !FOOTER.test((r.find((c) => c.trim()) ?? '').trim()));
   const width = Math.max(header?.length ?? 0, ...data.slice(0, 200).map((r) => r.length));
-  const cols = profileColumns(data.slice(0, 500), header, width, opts.preferDayFirst ?? false);
+  const dates = opts.dates ?? (opts.period ? { start: opts.period.start, end: opts.period.end } : null);
+  const cols = profileColumns(data.slice(0, 500), header, width, opts.preferDayFirst ?? false, dates);
   const hint = (p: Profile, role: Role) => (p.header && KEYWORDS[role].test(stripAccents(p.header)) ? 1 : 0);
   let confidence = 1;
 
@@ -153,7 +173,7 @@ export function inferMapping(sheet: Sheet, opts: InferOptions): MappingProposal 
     const values = date.values.filter(Boolean);
     const fits = (f: DateFormatId) =>
       values.every((v) => {
-        const d = parseDate(v, f);
+        const d = parseDate(v, f, dates);
         return d !== null && d >= opts.period!.start && d <= opts.period!.end;
       });
     const current = date.date!.format;
@@ -315,6 +335,8 @@ const SWAPS: Partial<Record<DateFormatId, DateFormatId>> = {
   'DD-MM-YYYY': 'MM-DD-YYYY',
   'MM/DD/YY': 'DD/MM/YY',
   'DD/MM/YY': 'MM/DD/YY',
+  'MM/DD': 'DD/MM',
+  'DD/MM': 'MM/DD',
 };
 
 const sheetName = (s: Sheet) => (s.name && s.name !== 'CSV' ? s.name : undefined);
@@ -327,9 +349,9 @@ export function signedAmount(
   decimal: DecimalSeparator,
   currency: CurrencyCode,
 ): bigint | null {
-  if (m.amount !== undefined) return parseAmount(r[m.amount] ?? '', currency, decimal);
-  const d = m.debit !== undefined ? parseAmount(r[m.debit] ?? '', currency, decimal) : null;
-  const c = m.credit !== undefined ? parseAmount(r[m.credit] ?? '', currency, decimal) : null;
+  if (m.amount !== undefined) return parseAmountCell(r[m.amount] ?? '', currency, decimal);
+  const d = m.debit !== undefined ? parseAmountCell(r[m.debit] ?? '', currency, decimal) : null;
+  const c = m.credit !== undefined ? parseAmountCell(r[m.credit] ?? '', currency, decimal) : null;
   if (d === null && c === null) return null;
   const abs = (x: bigint) => (x < 0n ? -x : x);
   return (c !== null ? abs(c) : 0n) - (d !== null ? abs(d) : 0n);
@@ -344,7 +366,7 @@ export function runningBalanceFit(
   currency: CurrencyCode,
 ): number {
   const pairs = rows
-    .map((r) => ({ bal: parseAmount(r[balanceCol] ?? '', currency, decimal), amt: amountOf(r) }))
+    .map((r) => ({ bal: parseAmountCell(r[balanceCol] ?? '', currency, decimal), amt: amountOf(r) }))
     .filter((x): x is { bal: bigint; amt: bigint } => x.bal !== null && x.amt !== null);
   if (pairs.length < 3) return Number.NaN;
   let forward = 0;

@@ -10,6 +10,7 @@ import {
   asCurrencyCode,
   calendarDate,
   isCalendarDate,
+  todayIn,
   type CalendarDate,
   type CurrencyCode,
 } from '@montra/domain';
@@ -188,6 +189,8 @@ export class ImportJobs {
         })),
         accountFilter: p.accountFilter ?? undefined,
         statement: statementBalances,
+        // Dates printed without a year fall back to the upload day when the statement states no period.
+        referenceDate: todayIn('UTC', batch.created_at),
       };
       let analysis = analyze(sheets, analyzeOpts, p.override);
       // Switching from another app: the user said this file shows spending as positive (IMP-13).
@@ -300,6 +303,7 @@ export class ImportJobs {
             accounts: proposal.accounts ?? [],
             templateId: proposal.templateId ?? null,
             accountColumn: proposal.accountColumn ?? null,
+            dates: analysis.dates,
             accountFilter: p.accountFilter ?? null,
             saveProfile: p.saveProfile ?? true,
             // Spreadsheet/PDF grids are kept so a mapping change doesn't need another extraction.

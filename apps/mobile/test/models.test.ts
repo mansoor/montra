@@ -202,6 +202,7 @@ describe('guided mapping', () => {
     accounts: [],
     accountColumn: null,
     templateId: null,
+    dates: null,
   };
 
   it('walks the steps and builds a valid mapping', () => {

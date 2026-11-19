@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from montra_doc_worker.errors import PermanentJobError
-from montra_doc_worker.extract_pdf import extract_pdf, is_amount, is_date
+from montra_doc_worker.extract_pdf import extract_pdf, is_amount, is_date, statement_facts
 from montra_doc_worker.extract_xls import extract_xls, format_number
 from montra_doc_worker.result import check_magic
 
@@ -90,6 +90,23 @@ def test_debit_credit_pdf_with_balance_lines() -> None:
     assert st is not None
     assert (st["openingBalance"], st["closingBalance"]) == ("2,000.00", "1,850.25")
     assert (st["periodStart"], st["periodEnd"], st["accountLast4"]) == ("2026-09-01", "2026-09-30", "4321")
+
+
+def test_yearless_dates_and_long_descriptions_keep_to_their_columns() -> None:
+    result = extract_pdf(fixtures.make_yearless_pdf())
+    rows = result["sheets"][0]["rows"]
+    assert rows[0] == ["DATE", "DESCRIPTION", "AMOUNT", "BALANCE"]
+    # The descriptions end just left of the Amount column; none of their words may land in it.
+    assert rows[1:] == [list(r) for r in fixtures.YEARLESS_ROWS]
+    st = result["statement"]
+    assert st is not None
+    assert (st["periodStart"], st["periodEnd"]) == ("2026-12-15", "2027-01-14")
+    assert (st["openingBalance"], st["closingBalance"]) == ("$8,669.43", "$8,173.47")
+
+
+def test_closing_date_ends_the_period_when_no_range_is_printed() -> None:
+    st = statement_facts("Example Card Services\nClosing Date 01/14/27\nNew Balance $1,234.56")
+    assert (st["periodStart"], st["periodEnd"]) == (None, "2027-01-14")
 
 
 def test_corrupt_inputs_fail_permanently() -> None:

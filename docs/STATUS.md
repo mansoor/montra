@@ -1971,6 +1971,23 @@ Phase 11 leftovers:
   catches an image that failed before hydration, which left a PDF as a broken image on a fresh page load. Tests:
   `csp.test.ts`, e2e `operations.spec.ts`.
 
+- **PDF statements with `MM/DD` dates and long descriptions** (IMP-03, IMP-05; no migration). A common US layout
+  (`DATE | DESCRIPTION | AMOUNT | BALANCE`, dates without a year) came up with no mapping guessed and every date
+  unreadable, and long descriptions spilled into Amount (`ID: Citicardap -130.00`).
+  - **Doc-worker**: unruled tables are split by the header's positions: an amount column takes only a money value that
+    reaches under its header (one per column, the rightmost); every other word goes to the text column it starts in.
+    Without a period range, a closing or statement date gives `periodEnd`.
+  - **Importers**: new date formats `MM/DD` and `DD/MM`. Their year comes from the statement period, else its end, else
+    the upload day (`statementDates`, `withYear`): the year nearest the range, so December dates on a December–January
+    statement get the earlier year. Without any of these they read nothing rather than guess. With a year-less format
+    detected, the header row, start row and columns are inferred as for any statement. An amount cell holding spilled
+    text (`text -130.00`) reads its trailing amount and gives the text back to the description (defensive; old grids).
+  - **API, web, phone**: `ImportBatchDto.analysis.dates` carries the range, so the mapping editor's preview reads the
+    same years; the editor labels the two formats "(year from the statement)". Statements uploaded before this keep
+    their old grid when the mapping is changed: upload them again to have the columns split anew.
+  - Tests: doc-worker `test_extract.py` (synthetic fixture `make_yearless_pdf`), `importers/test/yearless-pdf.test.ts`,
+    web `imports.test.ts`, API `imports.test.ts` ("reads PDF dates printed without a year…").
+
 ---
 
 ## 8. Session checklist

@@ -60,6 +60,9 @@ const NUMERIC: Array<[DateFormat, RegExp, 'ymd' | 'mdy' | 'dmy']> = [
   ['DD-MM-YYYY', /^(\d{1,2})-(\d{1,2})-(\d{4})$/, 'dmy'],
   ['MM/DD/YY', /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/, 'mdy'],
   ['DD/MM/YY', /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/, 'dmy'],
+  // PDF statements without a year (`10/02`): the server reads the year from the statement.
+  ['MM/DD', /^(\d{1,2})\/(\d{1,2})$/, 'mdy'],
+  ['DD/MM', /^(\d{1,2})\/(\d{1,2})$/, 'dmy'],
 ];
 
 const valid = (m: number, d: number) => m >= 1 && m <= 12 && d >= 1 && d <= 31;
