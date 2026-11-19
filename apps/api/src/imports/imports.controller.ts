@@ -28,6 +28,7 @@ import {
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import { earlierLiveUpload } from './earlier-upload.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
@@ -80,35 +81,7 @@ export class UploadsController {
     const key = storageKey(ctx.workspaceId!, 'statement', id);
     await this.storage.put(key, bytes, MIME_BY_TYPE[fileType]);
     return this.db.run(dbCtx(ctx), async (trx) => {
-      const earlier = await trx
-        .selectFrom('app.file as f')
-        .leftJoin('app.import_batch as b', (j) =>
-          j
-            .onRef('b.workspace_id', '=', 'f.workspace_id')
-            .onRef('b.file_id', '=', 'f.id')
-            .on('b.status', '<>', 'discarded'),
-        )
-        .select(['f.id', 'f.created_at', 'b.id as batch_id'])
-        .where('f.workspace_id', '=', ctx.workspaceId!)
-        .where('f.sha256', '=', digest)
-        .where('f.deleted_at', 'is', null)
-        // An upload whose only imports were discarded isn't an earlier import of the file: nothing came of it.
-        .where((eb) =>
-          eb.or([
-            eb('b.id', 'is not', null),
-            eb.not(
-              eb.exists(
-                eb
-                  .selectFrom('app.import_batch as d')
-                  .select('d.id')
-                  .whereRef('d.workspace_id', '=', 'f.workspace_id')
-                  .whereRef('d.file_id', '=', 'f.id'),
-              ),
-            ),
-          ]),
-        )
-        .orderBy('f.created_at')
-        .executeTakeFirst();
+      const earlier = await earlierLiveUpload(trx, ctx.workspaceId!, digest);
       await trx
         .insertInto('app.file')
         .values({

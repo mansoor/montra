@@ -29,6 +29,7 @@ import { HouseholdBillsService } from '../planning/household-bills.service.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
 import { FileBytes } from '../storage/file-bytes.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
+import { earlierLiveUpload } from '../imports/earlier-upload.js';
 import { confirmMatch, readMemory } from './match-memory.js';
 
 type Ctx = { workspaceId: string; userId: string };
@@ -99,17 +100,7 @@ export class IntakesService {
       const key = storageKey(ctx.workspaceId, 'statement', fileId);
       await this.storage.put(key, bytes, mime);
       const digest = sha256(bytes);
-      const earlier = await trx
-        .selectFrom('app.file as f')
-        .leftJoin('app.import_batch as b', (j) =>
-          j.onRef('b.workspace_id', '=', 'f.workspace_id').onRef('b.file_id', '=', 'f.id'),
-        )
-        .select(['f.id', 'f.created_at', 'b.id as batch_id'])
-        .where('f.workspace_id', '=', ctx.workspaceId)
-        .where('f.sha256', '=', digest)
-        .where('f.deleted_at', 'is', null)
-        .orderBy('f.created_at')
-        .executeTakeFirst();
+      const earlier = await earlierLiveUpload(trx, ctx.workspaceId, digest);
       await trx
         .insertInto('app.file')
         .values({

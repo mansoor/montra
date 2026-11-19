@@ -46,12 +46,14 @@ export function StatementsInbox({
   const base = `/w/${workspaceId}`;
   const bankAccounts = accounts.filter((a) => a.type === 'asset' || a.type === 'liability');
 
-  useEffect(
-    () => () => {
+  // Set on every mount, not only at first: React (strict mode in development) mounts, unmounts and mounts again, and a
+  // flag left false by that first unmount stopped every upload's progress from updating.
+  useEffect(() => {
+    alive.current = true;
+    return () => {
       alive.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const put = useCallback(
     (key: string, next: Item) => setItems((list) => list.map((i) => (i.key === key ? next : i))),
