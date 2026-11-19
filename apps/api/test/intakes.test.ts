@@ -387,3 +387,24 @@ describe('bills filed automatically (ADR-0051 §4)', () => {
     expect(done.body).toMatchObject({ status: 'done', filed: { kind: 'household' } });
   });
 });
+
+describe('possible duplicates only while the earlier copy is still live', () => {
+  it('flags the same statement while the first is waiting, and not once every copy was put aside', async () => {
+    const w = await setup('Duplicates');
+    await c.post(w.url('/accounts'), { name: 'Checking', kind: 'checking', last4: '1234' });
+    const up = async () => {
+      const r = await multipart(w.url('/intakes/files'), 'Chase1234_Activity.csv', CHASE);
+      expect(r.status).toBe(202);
+      await worker.drain(['import']);
+      return r.body;
+    };
+    const first = await up();
+    expect(first.duplicateOf).toBeNull();
+    // The first is still waiting for its account: the second is a possible duplicate of it.
+    const second = await up();
+    expect(second.duplicateOf).toMatchObject({ fileId: first.fileIds[0] });
+    // Both put aside, nothing came of either: uploading it again starts over, with no warning.
+    for (const i of [first, second]) await c.post(w.url(`/intakes/${i.id}/dismiss`));
+    expect((await up()).duplicateOf).toBeNull();
+  });
+});
