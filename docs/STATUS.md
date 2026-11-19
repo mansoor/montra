@@ -1988,6 +1988,18 @@ Phase 11 leftovers:
   - Tests: doc-worker `test_extract.py` (synthetic fixture `make_yearless_pdf`), `importers/test/yearless-pdf.test.ts`,
     web `imports.test.ts`, API `imports.test.ts` ("reads PDF dates printed without a year…").
 
+- **Discard an import that was never committed** (IMP-09; migration 0069). `POST imports/:id/discard` (owner, admin,
+  partner, accountant) takes an import in `uploaded`, `parsing`, `needs_mapping`, `preview` or `failed`; `committing`,
+  `committed` and `undone` get 409 `import.not_discardable`. It deletes the preview rows, cancels the batch's queued jobs
+  (`app.cancel_import_jobs`, security definer: `montra_app` can't update jobs; a parse already running skips a discarded
+  batch), sets the new terminal status `discarded` (kept rather than deleted: intakes and the audit log point at it) and
+  writes an `import_batch.discarded` audit row. The uploaded file is kept, and a re-upload of it isn't flagged as a
+  duplicate. A statement (ADR-0051) that led to it goes back to Review with reason `discarded`, its import link cleared
+  and its reading kept, to pick the account again or put it aside; an automatic one forgets its signal, as after undo.
+  `GET imports` leaves discarded imports out (web history and phone list); the web shows "Discard this import" with a
+  confirm step on the import page and in history rows. The phone lists imports without actions, so it has no button.
+  Tests: API `import-discard.test.ts`, web `imports.test.ts`, mobile `statements.test.ts`.
+
 ---
 
 ## 8. Session checklist

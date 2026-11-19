@@ -49,6 +49,8 @@ export const INTAKE_REASONS = [
   'import_failed',
   /** An automatic import was undone: pick the account again. */
   'undone',
+  /** Its import was discarded before it was committed: pick the account again. */
+  'discarded',
   /** A bill's amount or due date wasn't read. */
   'bill_incomplete',
 ] as const;

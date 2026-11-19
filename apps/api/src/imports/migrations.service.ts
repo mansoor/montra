@@ -348,7 +348,9 @@ export class MigrationsService {
         .where('b.migration_id', '=', id)
         .orderBy('a.name')
         .execute();
-      const live = rows.filter((r) => r.status !== 'undone' && r.status !== 'failed');
+      const live = rows.filter(
+        (r) => r.status !== 'undone' && r.status !== 'failed' && r.status !== 'discarded',
+      );
       return {
         id: m.id,
         source: m.source as MigrationSource,

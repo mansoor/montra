@@ -123,6 +123,8 @@ export const ImportStatus = z.enum([
   'committed',
   'failed',
   'undone',
+  /** Never committed, and put aside: its preview rows are gone, its file is kept. */
+  'discarded',
 ]);
 
 export const ImportBatchDto = z.object({

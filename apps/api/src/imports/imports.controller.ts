@@ -32,7 +32,7 @@ import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
-import { requireRole } from '../common/roles.js';
+import { requireRole, RULE_EDITORS } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { ImportsService } from './imports.service.js';
@@ -83,12 +83,30 @@ export class UploadsController {
       const earlier = await trx
         .selectFrom('app.file as f')
         .leftJoin('app.import_batch as b', (j) =>
-          j.onRef('b.workspace_id', '=', 'f.workspace_id').onRef('b.file_id', '=', 'f.id'),
+          j
+            .onRef('b.workspace_id', '=', 'f.workspace_id')
+            .onRef('b.file_id', '=', 'f.id')
+            .on('b.status', '<>', 'discarded'),
         )
         .select(['f.id', 'f.created_at', 'b.id as batch_id'])
         .where('f.workspace_id', '=', ctx.workspaceId!)
         .where('f.sha256', '=', digest)
         .where('f.deleted_at', 'is', null)
+        // An upload whose only imports were discarded isn't an earlier import of the file: nothing came of it.
+        .where((eb) =>
+          eb.or([
+            eb('b.id', 'is not', null),
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom('app.import_batch as d')
+                  .select('d.id')
+                  .whereRef('d.workspace_id', '=', 'f.workspace_id')
+                  .whereRef('d.file_id', '=', 'f.id'),
+              ),
+            ),
+          ]),
+        )
         .orderBy('f.created_at')
         .executeTakeFirst();
       await trx
@@ -212,6 +230,14 @@ export class ImportsController {
   @HttpCode(202)
   undo(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<ImportBatchDto> {
     return this.imports.undo(dbCtx(ctx), parse(z.uuid(), id));
+  }
+
+  /** Discards an import that was never committed (200); 409 once it's committing, committed or undone. */
+  @Post('imports/:id/discard')
+  @HttpCode(200)
+  discard(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<ImportBatchDto> {
+    requireRole(ctx, ...RULE_EDITORS);
+    return this.imports.discard(dbCtx(ctx), parse(z.uuid(), id));
   }
 
   @Get('jobs/:id')

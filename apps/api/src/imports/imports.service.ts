@@ -18,7 +18,12 @@ import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { JobQueue } from '../jobs/queue.js';
 import { LedgerService } from '../ledger/ledger.service.js';
-import { confirmMatch, intakeImportCommitted, intakeImportUndone } from '../intakes/match-memory.js';
+import {
+  confirmMatch,
+  intakeImportCommitted,
+  intakeImportDiscarded,
+  intakeImportUndone,
+} from '../intakes/match-memory.js';
 import { FileBytes, heldKey } from '../storage/file-bytes.js';
 
 type Ctx = { workspaceId: string; userId: string };
@@ -40,6 +45,15 @@ export function effectiveDecision(
       return 'import'; // new and probable duplicates are imported unless the user skips them
   }
 }
+
+/** The statuses of an import that was never committed: it can be discarded. `committing` is a commit or an undo. */
+export const DISCARDABLE_STATUSES: readonly Batch['status'][] = [
+  'uploaded',
+  'parsing',
+  'needs_mapping',
+  'preview',
+  'failed',
+];
 
 const money = (amount: bigint | null, currency: string) =>
   amount === null ? null : { amount: amount.toString(), currency: asCurrencyCode(currency) };
@@ -247,6 +261,8 @@ export class ImportsService {
         .select('id')
         .where('workspace_id', '=', ctx.workspaceId)
         .$if(Boolean(accountId), (q) => q.where('ledger_account_id', '=', accountId!))
+        // Discarded imports leave the history: nothing came of them.
+        .where('status', '<>', 'discarded')
         .orderBy('created_at', 'desc')
         .limit(100)
         .execute(),
@@ -439,6 +455,71 @@ export class ImportsService {
         .execute();
       // An automatic import that's undone may have gone to the wrong account (ADR-0051 §6).
       await intakeImportUndone(trx, ctx, id);
+    });
+    return this.get(ctx, id);
+  }
+
+  /**
+   * Discards an import that was never committed (IMP-09): its preview rows and queued jobs go, and the batch stays as
+   * `discarded`, since a statement (ADR-0051) and the audit log may point at it. The uploaded file is kept: the
+   * statement, the vault and backups may still use it. A statement that led to the import goes back to Review.
+   */
+  async discard(ctx: Ctx, id: string): Promise<ImportBatchDto> {
+    await this.db.run(ctx, async (trx) => {
+      const batch = await this.load(trx, ctx, id, true);
+      if (!DISCARDABLE_STATUSES.includes(batch.status)) {
+        throw new AppError(
+          409,
+          'import.not_discardable',
+          batch.status === 'committing'
+            ? 'The import is being committed or undone'
+            : `Only an import that was never committed can be discarded; this one is ${batch.status}`,
+        );
+      }
+      // Never committed, so nothing was posted from it; a batch that did post something is never discarded.
+      const posted = await trx
+        .selectFrom('app.transaction_source')
+        .select('transaction_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('import_batch_id', '=', id)
+        .limit(1)
+        .executeTakeFirst();
+      if (posted)
+        throw new AppError(409, 'import.not_discardable', 'This import added transactions: undo it instead');
+      const rows = await trx
+        .deleteFrom('app.import_row')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('import_batch_id', '=', id)
+        .executeTakeFirst();
+      await trx
+        .updateTable('app.import_batch')
+        .set({ status: 'discarded', error: null })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', id)
+        .execute();
+      const { rows: cancelled } = await sql<{
+        n: number;
+      }>`select app.cancel_import_jobs(${id}::uuid) as n`.execute(trx);
+      const intakeId = await intakeImportDiscarded(trx, ctx, id);
+      await trx
+        .insertInto('app.audit_log')
+        .values({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: ctx.userId,
+          actor_type: 'user',
+          action: 'import_batch.discarded',
+          subject_type: 'import_batch',
+          subject_id: id,
+          diff: JSON.stringify({
+            fileId: batch.file_id,
+            fileName: batch.file_name,
+            from: batch.status,
+            rowsDeleted: Number(rows.numDeletedRows),
+            jobsCancelled: cancelled[0]?.n ?? 0,
+            intakeId,
+          }),
+        })
+        .execute();
     });
     return this.get(ctx, id);
   }

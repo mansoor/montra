@@ -536,6 +536,7 @@ export const BATCH_TONE: Record<ImportBatchDto['status'], Tone> = {
   committed: 'good',
   failed: 'bad',
   undone: 'muted',
+  discarded: 'muted',
 };
 
 /** Statuses during which the worker is busy and the page polls. */
@@ -544,6 +545,18 @@ export const isBusy = (status: ImportBatchDto['status']) =>
 
 export const canUndo = (batch: ImportBatchDto, now: Date = new Date()) =>
   batch.status === 'committed' && batch.undoUntil !== null && new Date(batch.undoUntil) > now;
+
+/**
+ * An import that was never committed can be discarded. A `failed` one whose latest job was a commit or an undo is
+ * left alone: the server refuses it while it is still `committing`.
+ */
+export const canDiscard = (batch: Pick<ImportBatchDto, 'status' | 'job'>) =>
+  (['uploaded', 'parsing', 'needs_mapping', 'preview', 'failed'] as const).some((s) => s === batch.status) &&
+  !(batch.status === 'failed' && (batch.job?.type === 'import.commit' || batch.job?.type === 'import.undo'));
+
+/** The import history leaves discarded imports out: nothing came of them. */
+export const historyBatches = <T extends Pick<ImportBatchDto, 'status'>>(batches: readonly T[]): T[] =>
+  batches.filter((b) => b.status !== 'discarded');
 
 /** Accepted upload types (IMP-01) and the size limit. */
 export const ACCEPTED_EXTENSIONS = ['csv', 'tsv', 'txt', 'xls', 'xlsx', 'pdf', 'qif', 'ofx', 'qfx'];

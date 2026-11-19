@@ -1580,6 +1580,10 @@ export class ApiClient {
   undoImport(workspaceId: string, id: string) {
     return this.request<ImportBatchDto>('POST', this.ws(workspaceId, `/imports/${enc(id)}/undo`));
   }
+  /** Discards an import that was never committed: its preview goes, its file is kept (409 once committing). */
+  discardImport(workspaceId: string, id: string) {
+    return this.request<ImportBatchDto>('POST', this.ws(workspaceId, `/imports/${enc(id)}/discard`));
+  }
   /** A statement with no account (ADR-0051): any statement file or a photo; it's read and matched (202). */
   uploadStatement(workspaceId: string, file: Blob, fileName: string) {
     const form = new FormData();

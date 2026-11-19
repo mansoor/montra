@@ -17,6 +17,7 @@ export const STATEMENT_TONE: Record<ImportBatchDto['status'], StatementTone> = {
   committed: 'good',
   failed: 'bad',
   undone: 'muted',
+  discarded: 'muted',
 };
 
 /** Statuses during which the server is still working on the statement, so the list looks again. */
