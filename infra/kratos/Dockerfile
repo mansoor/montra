@@ -6,7 +6,7 @@
 # Built from Ory's release tag, not `FROM oryd/kratos`: the newest release's image still has critical findings
 # (pgx, the Go runtime), and its fixes are only on untagged master. See ADR-0021. When Ory ships a release that scans
 # clean, go back to their image and delete the build stage.
-FROM golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS build
+FROM golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS build
 ARG KRATOS_VERSION=v26.2.0
 ARG KRATOS_COMMIT=9d7085948039ffb8960160d4979f71527b5cf4d5
 RUN apk add --no-cache git
