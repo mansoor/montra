@@ -46,6 +46,8 @@ DATE_RES = [
     re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$"),
     re.compile(r"^\d{1,2}-\d{1,2}-\d{2,4}$"),
 ]
+# A transaction header names when (Date, Posted …): a section title such as "Deposits and Credits" doesn't.
+DATE_HEADER_WORDS = {"date", "posted", "posting"}
 AMOUNT_HEADERS = {
     "amount", "debit", "debits", "credit", "credits", "withdrawal", "withdrawals", "deposit", "deposits",
     "balance",
@@ -57,6 +59,11 @@ MONTH_WORD_RE = re.compile(r"^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|
 FOOTER_RE = re.compile(r"^(page\s+\d+(\s+of\s+\d+)?|\d+\s*/\s*\d+|continued.*)$", re.I)
 OPENING_RE = re.compile(r"\b(beginning|opening|previous|starting)\s+balance\b", re.I)
 CLOSING_RE = re.compile(r"\b(ending|closing|new)\s+balance\b", re.I)
+# Section titles that say which way money went, for statements that print every amount unsigned under them
+# ("Deposits and Credits", "Electronic Withdrawals", "Service Charges, Fees, and Other Withdrawals").
+OUTFLOW_SECTION_RE = re.compile(r"\b(withdrawals?|debits?|checks\s+paid|fees|service\s+charges)\b", re.I)
+INFLOW_SECTION_RE = re.compile(r"\b(deposits?|credits?|additions)\b", re.I)
+_SECTION_MAX_WORDS = 8
 MONEY_IN_TEXT_RE = re.compile(r"\(?[-−]?[$€£]?\s?\d{1,3}(?:,\d{3})*\.\d{2}\)?|\(?[-−]?[$€£]?\s?\d+\.\d{2}\)?")
 LAST4_RE = re.compile(
     r"\b(?:account|acct|card)\b[^\n]{0,40}?(?:ending(?:\s+in)?|number|no\.?|#|[x*•]{2,})\s*[x*•\-\s]*(\d{4})\b",
@@ -138,7 +145,30 @@ def _is_header(cells: list[str]) -> bool:
         return False
     hits = sum(1 for w in words if w in HEADER_WORDS)
     has_amountish = any(w in AMOUNT_HEADERS for w in words)
-    return hits >= 2 and has_amountish and hits >= len(words) * 0.6
+    has_date = any(w in DATE_HEADER_WORDS for w in words)
+    return hits >= 2 and has_amountish and has_date and hits >= len(words) * 0.6
+
+
+def _section_sign(text: str) -> int | None:
+    """-1 under a title such as "Electronic Withdrawals", 1 under "Deposits and Credits".
+
+    None for a line that isn't a title, or one that says both ("Other Debits and Credits").
+    """
+    if len(text.split()) > _SECTION_MAX_WORDS or MONEY_IN_TEXT_RE.search(text):
+        return None
+    out = bool(OUTFLOW_SECTION_RE.search(text))
+    inn = bool(INFLOW_SECTION_RE.search(text))
+    if out == inn:
+        return None
+    return -1 if out else 1
+
+
+def _signed(amount: str) -> str:
+    """An unsigned amount as money out. One signed or marked (-, (), CR/DR) stays as printed."""
+    t = amount.strip()
+    if not t or t[0] in "-−(+" or t[-1] in "-)" or re.search(r"(CR|DR)$", t, re.I):
+        return amount
+    return f"-{t}"
 
 
 def _is_balance_line(text: str) -> bool:
@@ -301,6 +331,8 @@ def _assign(words: list[dict[str, Any]], cols: list[Column]) -> list[str]:
     cells: list[list[dict[str, Any]]] = [[] for _ in cols]
     loose: list[dict[str, Any]] = []
     for w in _merge_markers(words):
+        if w["text"] in _CURRENCY_PREFIXES:
+            continue  # "$" printed in a column of its own, apart from the amount: not part of the description
         col = _money_column(w, cols, money) if is_amount(w["text"]) else None
         if col is None and not re.search(r"[^\W\d_]", w["text"]):
             # A placeholder such as "-" or "0" printed under an amount header stays in that column.
@@ -329,17 +361,27 @@ def _positional_table(pages: list[Any]) -> list[list[str]]:
     header_labels: list[str] | None = None
     rows: list[list[str]] = []
     last: Line | None = None
+    sign: int | None = None
     for line in all_lines:
         cells_text = [w["text"] for w in line.words]
+        text = line.text
         if _is_header(cells_text):
-            if cols is None:
-                cols = _header_columns(line)
+            found = _header_columns(line)
+            if cols is None or header_labels is None:
+                cols = found
                 header_labels = [c.label for c in cols]
+            elif [c.label.lower() for c in found] == [h.lower() for h in header_labels]:
+                # The same header again (a new section or page), perhaps placed elsewhere: its positions rule.
+                cols = found
             last = None
             continue
+        if not _starts_with_date([text]):
+            title = _section_sign(text)
+            if title is not None:
+                sign, last = title, None
+                continue
         if cols is None or header_labels is None:
             continue
-        text = line.text
         if FOOTER_RE.match(text.strip()) or (_norm(text) in repeated and not _starts_with_date([text])):
             last = None
             continue
@@ -348,6 +390,10 @@ def _positional_table(pages: list[Any]) -> list[list[str]]:
             last = None
             continue
         if _starts_with_date(cells) or _starts_with_date([text]):
+            money = [i for i, c in enumerate(cols) if _is_money_column(c)]
+            # A lone Amount column under a withdrawals title: money out, though printed unsigned.
+            if sign == -1 and len(money) == 1 and "amount" in cols[money[0]].label.lower():
+                cells[money[0]] = _signed(cells[money[0]])
             rows.append(cells)
             last = line
             continue
