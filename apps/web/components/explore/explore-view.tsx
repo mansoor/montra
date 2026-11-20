@@ -71,6 +71,7 @@ export function ExploreView({
   const result = whatIf({
     income: d.income.map(big),
     spending: d.spending.map(big),
+    ...(d.uncategorized ? { uncategorized: d.uncategorized.monthly.map(big) } : {}),
     categories: d.categories.map((c) => ({ categoryId: c.categoryId, monthly: c.monthly.map(big) })),
     changes,
     goals: goals.map((g) => ({ ...g, remaining: big(g.remaining) })),
@@ -160,6 +161,14 @@ export function ExploreView({
             ))}
           </nav>
         </div>
+        {d.uncategorized && (
+          <p className="text-sm text-warn" data-testid="explore-uncategorized">
+            {t('explore.uncategorized', { amount: money(big(d.uncategorized.total), ccy) })}{' '}
+            <Link href={drillHref(base, d.uncategorized.drill)} className="font-medium underline">
+              {t('explore.uncategorized_link')}
+            </Link>
+          </p>
+        )}
         {d.categories.length === 0 ? (
           <p className="text-sm text-muted">{t('explore.nothing')}</p>
         ) : (

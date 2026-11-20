@@ -2032,6 +2032,13 @@ Phase 11 leftovers:
   tokens (the owner's answer; the package's own fallback stays). The tests follow view links in dev.68's two steps (a
   GET page that spends nothing, then Open as a same-origin POST). Tests: API `family-vault*.test.ts`, with a new one
   that two runs share one token, every app call is Bearer, and an ended token is replaced without a failure.
+- **Explore spending leaves Uncategorized out** (FLOW-01; no migration). "Uncategorized expense" (the books'
+  `uncategorized_expense` system account) was offered as a category to explore and cut, and counted in all spending.
+  It is now never a choice, a default pick or a what-if, and `spending` and the shares count categorized spending only
+  ("All categorized spending"). `SpendingExploreDto.uncategorized` (total, per month and a drill, or null with none)
+  drives a warning with the amount: the web links to those transactions, the phone to Review. The what-if's share of
+  income kept still counts it (`whatIf({ uncategorized })`): the money left all the same. Tests: API
+  `spending-explore.test.ts`, domain `spending-explore.test.ts`.
 
 ---
 

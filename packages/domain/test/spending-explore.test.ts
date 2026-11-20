@@ -66,6 +66,18 @@ describe('Explore spending: what if (FLOW-01)', () => {
     expect(r).toMatchObject({ monthly: 8000n, yearly: 96000n, keptBefore: 20, keptAfter: 22 });
   });
 
+  it('counts uncategorized spending in the share of income kept, though it is no category to cut', () => {
+    const r = whatIf({
+      income,
+      spending,
+      uncategorized: b(50000, 50000, 50000, 9000),
+      categories,
+      changes: [{ categoryId: 'dining', cutPercent: 20 }],
+    });
+    // Spent 450,000 a month of 500,000: 10% kept, 11% with the 6,000 cut.
+    expect(r).toMatchObject({ monthly: 6000n, keptBefore: 10, keptAfter: 11 });
+  });
+
   it('saves nothing from a cap above the average, and clamps a cut to 0–100%', () => {
     const r = whatIf({
       income,
