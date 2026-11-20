@@ -7,6 +7,9 @@ import { BankAccountKind } from './accounts.js';
 /** Statement file types. `qif` is Quicken's QIF; `ofx` is OFX 1.x/2.x and QFX (ADR-0030). */
 export const IMPORT_FILE_TYPES = ['csv', 'xlsx', 'xls', 'pdf', 'qif', 'ofx'] as const;
 export type ImportFileType = (typeof IMPORT_FILE_TYPES)[number];
+/** Where a batch's rows came from (ADR-0055 §2): an uploaded file, or a bank feed's sync (`feed`, with no file). */
+export const IMPORT_SOURCES = ['file', 'feed'] as const;
+export type ImportSource = (typeof IMPORT_SOURCES)[number];
 
 export const UploadDto = z.object({
   fileId: z.string(),
@@ -130,9 +133,14 @@ export const ImportStatus = z.enum([
 export const ImportBatchDto = z.object({
   id: z.string(),
   accountId: z.string(),
-  fileId: z.string(),
+  source: z.enum(IMPORT_SOURCES),
+  /** Null for a bank feed's batch. */
+  fileId: z.string().nullable(),
+  /** The file's name, or for a feed's batch what it was ("SimpleFIN, Nov 20"). */
   fileName: z.string(),
-  fileType: z.enum(IMPORT_FILE_TYPES),
+  fileType: z.enum([...IMPORT_FILE_TYPES, 'feed']),
+  /** The feed account a `feed` batch came from. */
+  bankFeedAccountId: z.string().nullable(),
   status: ImportStatus,
   currency: z.string(),
   mapping: ColumnMappingDto.nullable(),

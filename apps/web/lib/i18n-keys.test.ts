@@ -114,7 +114,16 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'admin.suspend_kind.': ['abuse', 'fraud', 'legal_hold'],
   'admin.close_channel_': ['email', 'support_request', 'phone', 'letter'],
   'admin.interval.': ['month', 'year'],
-  'admin.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
+  'admin.feature.': [
+    'payroll',
+    'staffTime',
+    'scans',
+    'voice',
+    'ownStorage',
+    'familyVault',
+    'bankFeeds',
+    'bankFeeds',
+  ],
   'billing.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
   // ADR-0054 §6: the Family Document Vault's groups and modes.
   'vault.group.': VAULT_GROUPS,

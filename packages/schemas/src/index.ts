@@ -25,3 +25,4 @@ export * from './operations.js';
 export * from './payroll.js';
 export * from './assets.js';
 export * from './tax-forms.js';
+export * from './bank-feeds.js';

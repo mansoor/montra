@@ -2051,6 +2051,25 @@ Phase 11 leftovers:
   drives a warning with the amount: the web links to those transactions, the phone to Review. The what-if's share of
   income kept still counts it (`whatIf({ uncategorized })`): the money left all the same. Tests: API
   `spending-explore.test.ts`, domain `spending-explore.test.ts`.
+- **Bank feeds, PR 1 of 5: contracts** (FEED-01..10 added as requirements 13.7, phase P15; ADR-0055 "SimpleFIN's
+  limits are settings" and "Delivery"; migration 0071). Nothing is visible yet: `bankFeeds` is a plan key on wherever
+  `ownStorage` is, kept in `FEATURES_NOT_YET_SHOWN`.
+  - Migration 0071: `bank_feed` (one live per workspace and provider, the access URL sealed in `secret_enc` until
+    disconnected), `bank_feed_account` (new, linked or ignored; one feed per Montra account; start date and cursor),
+    `bank_feed_run`; `import_batch.source` (`file`, `feed`) with `bank_feed_account_id`, and `file_id` null for a
+    feed batch; `app.bank_feed_due()` and `bank_feed_next()`; the security log kinds and `bank_feed_attention`. RLS:
+    owners, admins and partners read the feed and runs, whoever imports reads the accounts, owners write; nothing for
+    staff. Archives leave all three out (catalog).
+  - SimpleFIN's limits are settings (`SIMPLEFIN_*` in `config.ts`: allowed hosts, 12 requests a day, the 90-day
+    window, the 5-day overlap, syncs a day, Sync now spacing, timeout, response cap, the local-http switch refused in
+    production), read by the pure rules in `bank-feeds/limits.ts` (start date, window, budget, Sync now).
+  - `bank-feeds/provider.ts` (the port and its provider-neutral snapshot) and `bank-feeds/simplefin.ts` (the setup
+    token and access URL checked against the allowed hosts, `/accounts` in v2 and v1, exact amounts, UTC dates,
+    pending dropped, sanitized messages). DTOs in `@montra/schemas` `bank-feeds.ts`; `ImportBatchDto` gains `source`
+    and `bankFeedAccountId`, and `fileId` may be null. The parse job refuses a batch with no file.
+  - Tests: API `bank-feeds-simplefin.test.ts` (settings, URLs, the protocol, limits, and a synthetic SimpleFIN in
+    `test/fakes/simplefin.ts`), db `bank-feeds.test.ts` (constraints, RLS, staff, the due functions, the plan key).
+  - Next: PR 2, connecting and linking.
 
 ---
 

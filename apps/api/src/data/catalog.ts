@@ -43,6 +43,10 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   vault_connection_state:
     'About a vault connection, which a restored workspace makes again with a new key (ADR-0054 §7)',
   vault_item: 'What was sent to a vault connection a restore doesn’t have (ADR-0054 §7)',
+  bank_feed: 'A secret, and a connection the owner makes again with a new setup token (ADR-0055 §8)',
+  bank_feed_account:
+    'Useless without the feed’s secret; reconnecting relinks from learned matches (ADR-0055 §8)',
+  bank_feed_run: 'A log of a connection a restore doesn’t have (ADR-0055 §8)',
   notification_pref: 'Follows the person',
   security_event: 'Follows the person',
 };

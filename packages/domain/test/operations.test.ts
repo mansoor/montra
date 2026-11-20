@@ -158,8 +158,8 @@ describe('compareEntitlements (ADR-0049 §1)', () => {
     expect(UNLIMITED_ENTITLEMENTS.features).toContain('familyVault');
   });
 
-  it('shows customers every feature now that the vault sends documents (ADR-0054 PR 3)', () => {
-    expect([...FEATURES_NOT_YET_SHOWN]).toEqual([]);
+  it('shows customers every feature but bank feeds, until they sync (ADR-0055 §11)', () => {
+    expect([...FEATURES_NOT_YET_SHOWN]).toEqual(['bankFeeds']);
     expect(customerFeatures(UNLIMITED_ENTITLEMENTS.features)).toEqual([
       'payroll',
       'staffTime',

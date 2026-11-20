@@ -55,6 +55,7 @@ const FEATURE_NAMES: Record<PlanFeature, string> = {
   voice: 'Voice entry',
   ownStorage: 'Your own storage',
   familyVault: 'Family Document Vault',
+  bankFeeds: 'Bank feeds',
 };
 
 export function entitlementsDto(e: PlanEntitlements): PlanEntitlementsDto {

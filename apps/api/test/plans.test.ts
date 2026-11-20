@@ -135,8 +135,9 @@ describe('plans as data (ADR-0049 §1)', () => {
       `select plan_key, entitlements from app.plan_version where version = 1 and plan_key in ('free', 'pro')`,
     );
     const by = Object.fromEntries(rows.map((r) => [r.plan_key, parseEntitlements(r.entitlements)]));
-    // `familyVault` came with migration 0063, on wherever `ownStorage` was (ADR-0054 D11).
-    const all = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'];
+    // `familyVault` came with migration 0063 and `bankFeeds` with 0071, on wherever `ownStorage` was (ADR-0054 D11,
+    // ADR-0055 D6).
+    const all = ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault', 'bankFeeds'];
     expect(by.free).toEqual({
       businessBooks: 0,
       rentalPortfolios: 0,
@@ -165,7 +166,7 @@ describe('plans as data (ADR-0049 §1)', () => {
         where (entitlements -> 'features') @> '["ownStorage"]'::jsonb`,
     );
     expect(rows.length).toBeGreaterThanOrEqual(2);
-    for (const r of rows) expect(r.features).toContain('familyVault');
+    for (const r of rows) expect(r.features).toEqual(expect.arrayContaining(['familyVault', 'bankFeeds']));
     const frozen = await admin.query<{ tgenabled: string }>(
       `select tgenabled from pg_trigger where tgname = 'plan_version_frozen'`,
     );

@@ -562,7 +562,10 @@ export class ImportsService {
   }
 }
 
-export function fileTypeOf(mime: string, fileName: string): ImportBatchTable['file_type'] | null {
+export function fileTypeOf(
+  mime: string,
+  fileName: string,
+): Exclude<ImportBatchTable['file_type'], 'feed'> | null {
   if (/pdf/.test(mime) || /\.pdf$/i.test(fileName)) return 'pdf';
   if (/qif/.test(mime) || /\.qif$/i.test(fileName)) return 'qif';
   if (/ofx|qfx/.test(mime) || /\.(ofx|qfx)$/i.test(fileName)) return 'ofx';
@@ -584,9 +587,11 @@ function toBatchDto(b: Batch, counts: Record<string, number>, job: ImportBatchDt
   return {
     id: b.id,
     accountId: b.ledger_account_id,
+    source: b.source,
     fileId: b.file_id,
     fileName: b.file_name,
     fileType: b.file_type,
+    bankFeedAccountId: b.bank_feed_account_id,
     status: b.status,
     currency: b.currency,
     mapping: (b.mapping as ColumnMappingDto | null) ?? null,

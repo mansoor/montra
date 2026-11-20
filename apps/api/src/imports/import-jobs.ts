@@ -128,6 +128,10 @@ export class ImportJobs {
       if (!batch) throw new PermanentJobError('import.not_found', 'Import batch not found');
       // Discarded while the file was being read (a job already running isn't cancelled): nothing more to do.
       if (batch.status === 'discarded') return { skipped: 'discarded' };
+      // A bank feed's batch has no file to read: its rows arrive already parsed (ADR-0055 §5).
+      const fileType = batch.file_type;
+      if (batch.file_id === null || fileType === 'feed')
+        throw new PermanentJobError('import.no_file', 'A bank feed batch has no file to read');
       const file = await trx
         .selectFrom('app.file')
         .selectAll()
@@ -139,7 +143,7 @@ export class ImportJobs {
 
       const ocr =
         p.previousResult?.kind === 'ocr_text' ? await this.ocrTable(trx, ctx, batch.id, currency, p) : null;
-      const sheets = ocr ? ocr.sheets : await this.sheets(ctx, batch.file_type, file, p);
+      const sheets = ocr ? ocr.sheets : await this.sheets(ctx, fileType, file, p);
       const statement = ocr ? ocr.statement : (p.previousResult?.statement ?? null);
       const decimal = detectDecimalSeparator(
         [statement?.openingBalance ?? '', statement?.closingBalance ?? ''].filter(Boolean),
@@ -179,7 +183,7 @@ export class ImportJobs {
       // without guessing from the account type (IMP-13).
       const migration = await this.migrationSign(trx, ctx, batch.id);
       const analyzeOpts: Parameters<typeof analyze>[1] = {
-        fileType: batch.file_type,
+        fileType,
         currency,
         accountType: migration || account.type !== 'liability' ? 'asset' : 'liability',
         preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
@@ -208,7 +212,7 @@ export class ImportJobs {
           trx,
           ctx,
           batch.id,
-          batch.file_type,
+          fileType,
           sheets,
           analysis,
           analyzeOpts,
@@ -340,7 +344,7 @@ export class ImportJobs {
       .executeTakeFirst();
     if (!row) return null;
     const inverted = (row.plan as { inverted?: string[] }).inverted ?? [];
-    return inverted.includes(row.file_id) ? 'inverted' : 'as_written';
+    return row.file_id !== null && inverted.includes(row.file_id) ? 'inverted' : 'as_written';
   }
 
   /** The plan's category mapping for a migration batch: file name (lower case) → category id, or null to skip. */
