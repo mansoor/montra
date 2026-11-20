@@ -262,9 +262,17 @@ export const SpendingExploreDto = z.object({
   months: z.number().int(),
   /** Oldest first; the last is the current month so far. */
   periods: z.array(z.object({ start: CalendarDateDto, end: CalendarDateDto })),
-  /** All spending and all income per period, for shares and the share of income kept. */
+  /**
+   * All categorized spending and all income per period, for shares and the share of income kept. Spending not yet
+   * in a category isn't here (see `uncategorized`).
+   */
   spending: z.array(MinorDto),
   income: z.array(MinorDto),
+  /**
+   * Spending still in "Uncategorized expense": never a category to explore or cut, and not in `spending`, but said
+   * so it can be categorized (and counted in the share of income kept). Null when there is none in the period.
+   */
+  uncategorized: z.object({ total: MinorDto, monthly: z.array(MinorDto), drill: DrillDto }).nullable(),
   categories: z.array(
     z.object({
       categoryId: Id,
@@ -286,7 +294,7 @@ export const SpendingExploreDto = z.object({
   budget: z
     .object({ budgetId: Id, period: z.object({ start: CalendarDateDto, end: CalendarDateDto }) })
     .nullable(),
-  /** Every spending category with spending in the period, biggest first: the ones to pick from. */
+  /** Every spending category with spending in the period, biggest first: the ones to pick from (never Uncategorized). */
   choices: z.array(
     z.object({ categoryId: Id, name: z.string(), group: z.string().nullable(), total: MinorDto }),
   ),

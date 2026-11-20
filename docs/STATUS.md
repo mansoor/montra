@@ -2044,6 +2044,13 @@ Phase 11 leftovers:
   - a lone "$" is dropped rather than joining the description.
 
   Tests: doc-worker `test_extract.py` (`make_sectioned_pdf`).
+- **Explore spending leaves Uncategorized out** (FLOW-01; no migration). "Uncategorized expense" (the books'
+  `uncategorized_expense` system account) was offered as a category to explore and cut, and counted in all spending.
+  It is now never a choice, a default pick or a what-if, and `spending` and the shares count categorized spending only
+  ("All categorized spending"). `SpendingExploreDto.uncategorized` (total, per month and a drill, or null with none)
+  drives a warning with the amount: the web links to those transactions, the phone to Review. The what-if's share of
+  income kept still counts it (`whatIf({ uncategorized })`): the money left all the same. Tests: API
+  `spending-explore.test.ts`, domain `spending-explore.test.ts`.
 
 ---
 

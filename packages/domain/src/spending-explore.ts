@@ -96,6 +96,8 @@ const months = (remaining: bigint, perMonth: bigint): number | null =>
 export function whatIf(input: {
   income: readonly bigint[];
   spending: readonly bigint[];
+  /** Spending not yet in a category, per month: no category to cut, but money that left all the same. */
+  uncategorized?: readonly bigint[];
   categories: ReadonlyArray<{ categoryId: string; monthly: readonly bigint[] }>;
   changes: readonly WhatIfChange[];
   goals?: ReadonlyArray<{ id: string; name: string; remaining: bigint }>;
@@ -114,7 +116,7 @@ export function whatIf(input: {
   });
   const monthly = sum(perCategory.map((x) => x.monthly));
   const inc = avg(full(input.income));
-  const out = avg(full(input.spending));
+  const out = avg(full(input.spending)) + (input.uncategorized?.length ? avg(full(input.uncategorized)) : 0n);
   const kept = (spent: bigint) => (inc > 0n ? Number(divRound((inc - spent) * 100n, inc)) : null);
   const net = inc - out;
   return {
