@@ -1,7 +1,7 @@
 # ADR-0055: Bank feeds per workspace, starting with SimpleFIN Bridge
 
-- Status: accepted (the owner, 2026-11-19; see "Owner's answers" and "Defaults taken" at the end); being built (PR 1,
-  contracts, 2026-11-20)
+- Status: accepted (the owner, 2026-11-19; see "Owner's answers" and "Defaults taken" at the end); built (PR 1–5,
+  2026-11-20), live run passed, shown in plans
 - Date: 2026-11-19; amended 2026-11-20 ("SimpleFIN's limits are settings", owner's request; "Delivery" in five PRs)
 - Builds on: ADR-0051 (intakes, signals and match memory), ADR-0028 (transfers), ADR-0024 (loan payments), ADR-0031
   and ADR-0050 (sealed per-workspace secrets, the address guard, the outbox job shape), ADR-0054 (an owner-connected
@@ -407,6 +407,34 @@ Where PR 3b differs from or adds to §5–§7:
   with dates relative to today, so a first sync always finds rows.
 - **Split from the delivery list:** the live run and taking `bankFeeds` out of `FEATURES_NOT_YET_SHOWN` need the
   owner's own Bridge account, so they are PR 5.
+
+## Live run (2026-11-20) and PR 5
+
+The owner connected SimpleFIN's demo (a setup token for `beta-bridge.simplefin.org`) to a workspace on their local
+Montra and linked two of its three accounts by Create account; the third ("SimpleFIN Empty Account") stayed unlinked.
+What it settled from "Not confirmed" (§ Context):
+
+- **The host** is `beta-bridge.simplefin.org` for the demo; both hosts are in SIMPLEFIN_ALLOWED_HOSTS.
+- **The answer is v2:** `connections` named the institution ("SimpleFIN Demo"); no `errlist` entries.
+- **`payee` and `memo` are sent**: every row had a payee, and a memo that the description now carries after a dot.
+- **Balances** are positive for money held, `available-balance` equal to `balance` there.
+- **Dates are UTC**, including `balance-date`, which was already the next day in the workspace's time zone. That found
+  the one fault: a sync dropped rows dated "after today" in the workspace's zone, so rows the bank had posted that
+  UTC day waited for the next sync, while Create account's opening balance had counted them. Both accounts' first
+  balance checks missed by exactly those rows. **Fixed in PR 5:** a sync takes rows up to the later of the
+  workspace's day and UTC's (`lastSyncDay`); a posted row is never in the future.
+- **A first token answered 402**, shown as "Your SimpleFIN Bridge subscription needs attention" on the card, and the
+  feed was kept, as §3 says; the owner disconnected it and connected a new token.
+- **Each sync was one request**, 39 rows per account, imported by themselves (nothing to decide), well inside the
+  daily limit (8 of 12 requests that day, connecting and setup included).
+- **The first sync was labelled `schedule`:** connecting sets `last_success_at`, so the trigger now looks at
+  `last_sync_at`, which only a sync sets. Fixed in PR 5.
+
+Still not confirmed, as no demo shows them: how far back each real institution's history goes, how often the Bridge
+refreshes from a real bank, and whether a pending transaction keeps its id once posted (Montra never imports pending
+rows, so this only matters to the overlap, which skips ids it already has).
+
+PR 5 also takes `bankFeeds` out of `FEATURES_NOT_YET_SHOWN`: plans that have it now show it.
 
 ## Later providers
 

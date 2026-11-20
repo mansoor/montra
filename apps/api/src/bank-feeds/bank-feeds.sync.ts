@@ -15,7 +15,7 @@
  */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
-import { todayIn, type CalendarDate } from '@montra/domain';
+import type { CalendarDate } from '@montra/domain';
 import { newId, type Trx } from '@montra/db';
 import { CONFIG, type AppConfig } from '../config.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
@@ -27,6 +27,7 @@ import { Worker } from '../jobs/queue.js';
 import { backoffMs } from '../storage/backoff.js';
 import { BANK_FEED_PROVIDER, BankFeedsService, FEED_SECRET_COLUMN, feedError } from './bank-feeds.service.js';
 import {
+  lastSyncDay,
   nextSyncAt,
   nextUtcDay,
   requestsLeft,
@@ -159,11 +160,13 @@ export class BankFeedSync {
           .where('id', '=', ctx.workspaceId)
           .executeTakeFirstOrThrow()
       ).time_zone;
-      const today = todayIn(tz, now);
+      // The later of the workspace's day and UTC's: SimpleFIN dates rows in UTC (live run, 2026-11-20).
+      const today = lastSyncDay(now, tz);
       const manual =
         feed.last_manual_sync_at !== null &&
         (feed.last_sync_at === null || feed.last_manual_sync_at > feed.last_sync_at);
-      const trigger = manual ? 'manual' : feed.last_success_at === null ? 'first' : 'schedule';
+      // Connecting lists the accounts (and sets last_success_at), but only a sync sets last_sync_at.
+      const trigger = manual ? 'manual' : feed.last_sync_at === null ? 'first' : 'schedule';
       const accounts = await this.linked(trx, ctx, feedId);
       const window = syncWindow(
         accounts.map((a) => ({ startDate: a.start_date, syncedThrough: a.synced_through })),

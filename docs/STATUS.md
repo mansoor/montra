@@ -2133,6 +2133,12 @@ Phase 11 leftovers:
     SIMPLEFIN_ALLOW_LOCAL_HTTP=on there.
   - Left for PR 5 (needs the owner): the live run against their own SimpleFIN Bridge, then `bankFeeds` leaves
     `FEATURES_NOT_YET_SHOWN` and the FEED items turn done.
+- **Bank feeds, PR 5 of 5: live run, fixes, shown in plans** (FEED-01..10 done; ADR-0055 "Live run (2026-11-20) and
+  PR 5"). The owner connected SimpleFIN's demo locally and linked two accounts: one request per sync, payee and memo
+  present, UTC dates. Fixed: a sync now takes rows up to the later of the workspace's day and UTC's (`lastSyncDay`),
+  so rows posted that UTC day aren't left for the next sync (both first balance checks had missed by exactly those);
+  the first sync is labelled `first`. `bankFeeds` leaves `FEATURES_NOT_YET_SHOWN`. Tests: API
+  `bank-feeds-sync.test.ts` (`lastSyncDay`), domain `operations.test.ts`, web `billing.test.ts`.
 
 ---
 
