@@ -339,6 +339,26 @@ pipeline work lands before anything commits on its own:
 5. **Phone and showing it**: the phone status and Sync now; the Playwright spec; the live run; the key leaves
    `FEATURES_NOT_YET_SHOWN`.
 
+## As built: PR 2 (connecting and linking), 2026-11-20
+
+Where PR 2 differs from or adds to §3–§4:
+
+- **The access URL is the secret**, sealed whole; each request splits it into the URL and an HTTP Basic header
+  (`simplefin.adapter.ts`), so the credentials never travel in a URL. The transport (`transport.ts`) reuses the
+  storage guard's lookup, so a host resolving to a private address is refused like any other.
+- **The claim counts as a request**, as does each listing, Create account's one fetch and Refresh: all against
+  SIMPLEFIN_REQUESTS_PER_DAY per UTC day, refused with 429 before SimpleFIN is asked.
+- **A listing that fails after a successful claim** leaves the feed connected with the problem shown: the claimed
+  access is never lost to a failed second request.
+- **Suggestions** use the statement kind of match memory with the signal `feed:simplefin:<sha256 of the account id,
+  24 hex>`. A name with last-four digits that match no Montra account suggests nothing, rather than another account
+  at the same institution.
+- **Create account** asks for the feed's transactions from the start date (one request) and opens the account the day
+  before at the feed's balance less what was posted from the start to the balance's date, in natural terms (owed for
+  cards and loans), so a first sync won't count those rows twice.
+- **Reconnecting within 30 days** moves the previous feed's account rows to the new feed, links and start dates
+  included.
+
 ## Later providers
 
 The port takes these without changing §2–§8; each would be its own short ADR.

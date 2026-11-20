@@ -355,6 +355,12 @@ import type {
   VaultConnectionDto,
   VaultKeyDto,
   VaultKeyProblem,
+  BankFeedDto,
+  BankFeedAccountDto,
+  BankFeedStateDto,
+  ConnectBankFeedRequest,
+  UpdateBankFeedRequest,
+  UpdateBankFeedAccountRequest,
   ConnectVaultRequest,
   ReplaceVaultKeyRequest,
   DisconnectVaultRequest,
@@ -620,6 +626,9 @@ export type ConnectStorageInput = z.input<typeof ConnectStorageRequest>;
 export type UpdateStorageInput = z.input<typeof UpdateStorageRequest>;
 export type StorageConnectionInput = z.input<typeof StorageConnection>;
 export type ConnectVaultInput = z.input<typeof ConnectVaultRequest>;
+export type ConnectBankFeedInput = z.input<typeof ConnectBankFeedRequest>;
+export type UpdateBankFeedInput = z.input<typeof UpdateBankFeedRequest>;
+export type UpdateBankFeedAccountInput = z.input<typeof UpdateBankFeedAccountRequest>;
 export type ReplaceVaultKeyInput = z.input<typeof ReplaceVaultKeyRequest>;
 export type DisconnectVaultInput = z.input<typeof DisconnectVaultRequest>;
 export type UpdateVaultConnectionInput = z.input<typeof UpdateVaultConnectionRequest>;
@@ -2602,6 +2611,49 @@ export class ApiClient {
   disconnectVault(workspaceId: string, input: DisconnectVaultInput = {}) {
     return this.request<void>('DELETE', this.ws(workspaceId, '/family-vault'), input);
   }
+  // ----- Bank feeds (ADR-0055) -----------------------------------------------------------------------------------
+  /** The workspace's live bank feed and its accounts, or null (none, or not one the person may see). */
+  bankFeed(workspaceId: string) {
+    return this.request<BankFeedStateDto>('GET', this.ws(workspaceId, '/bank-feeds')).then((r) => r.feed);
+  }
+  /** §3: an owner with a recent sign-in pastes SimpleFIN Bridge's setup token; it is claimed once. */
+  connectBankFeed(workspaceId: string, input: ConnectBankFeedInput) {
+    return this.request<BankFeedStateDto>('POST', this.ws(workspaceId, '/bank-feeds'), input).then(
+      (r) => r.feed,
+    );
+  }
+  updateBankFeed(workspaceId: string, feedId: string, input: UpdateBankFeedInput) {
+    return this.request<BankFeedStateDto>('PATCH', this.ws(workspaceId, `/bank-feeds/${feedId}`), input).then(
+      (r) => r.feed,
+    );
+  }
+  /** Lists the feed's accounts again (one request against the day's limit). */
+  refreshBankFeed(workspaceId: string, feedId: string) {
+    return this.request<BankFeedStateDto>(
+      'POST',
+      this.ws(workspaceId, `/bank-feeds/${feedId}/refresh`),
+      {},
+    ).then((r) => r.feed);
+  }
+  /** §4: link a feed account to a Montra account, create one, ignore it or unlink it. */
+  updateBankFeedAccount(
+    workspaceId: string,
+    feedId: string,
+    accountId: string,
+    input: UpdateBankFeedAccountInput,
+  ) {
+    return this.request<BankFeedStateDto>(
+      'PATCH',
+      this.ws(workspaceId, `/bank-feeds/${feedId}/accounts/${accountId}`),
+      input,
+    ).then((r) => r.feed);
+  }
+  /** §3: an owner with a recent sign-in; the access is wiped at once. */
+  disconnectBankFeed(workspaceId: string, feedId: string, version: string) {
+    return this.request<BankFeedStateDto>('POST', this.ws(workspaceId, `/bank-feeds/${feedId}/disconnect`), {
+      version,
+    }).then((r) => r.feed);
+  }
   /** §10 "Bring the files back", staying connected: copies every file held only in the vault back into Montra. */
   bringBackFromVault(workspaceId: string) {
     return this.request<VaultBringBackDto>('POST', this.ws(workspaceId, '/family-vault/bring-back'), {});
@@ -3473,6 +3525,8 @@ function toApiError(status: number, body: unknown): ApiError {
 export type {
   AskAnswerDto,
   BackupScheduleDto,
+  BankFeedDto,
+  BankFeedAccountDto,
   StorageDestinationDto,
   StorageItemDto,
   StorageTestResultDto,

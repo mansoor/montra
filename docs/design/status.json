@@ -1299,5 +1299,21 @@
   "VLT-10": [
     "done",
     "PR 5b: Review on the phone lists Files to provide again (what each was and what uses it) with an Upload action through the system file picker, stored under the same file, and the Review badge on the tab bar and in More counts them, read when sync runs at most once a minute (pure-module tests). PR 5b2: Your data on the phone says how many files an archive couldn't include and when one waits for the vault's daily reset, and providing a file again asks first when it repeats another file (cancel or upload anyway; pure-module tests). PR 6: Your data shows the vault's status for owners and admins, read only (connected, waiting for approval, needs attention with the vault's own words or why the key no longer works, key expiring, paused, disconnected with files to provide again; where, whom Montra acts as, the key's expiry, holds for the daily limits, the counts and when the feed was last read), and sends changes to the web; receipts, payslips, tax forms and bills show the vault badges (\"In the vault as: …\", a newer version, \"No longer available\", kept only in the vault, missing) with Open in the vault; a page kept only in the vault is shown in words with Open in the vault instead of being asked for (the API's 409 file.in_vault); the phone's own receipt, payslip and bill uploads ask before using a possible duplicate (a receipt capture waits in its queue until the person says to use it anyway or discards it). Pure-module tests, and the receipt queue's tests in @montra/sync"
+  ],
+  "FEED-01": [
+    "partial",
+    "Connecting (ADR-0055 PR 2): an owner with a recent sign-in, on a plan with bankFeeds, pastes SimpleFIN Bridge's setup token in Settings → Bank feeds. It is decoded and checked against SIMPLEFIN_ALLOWED_HOSTS (https, the usual port, no credentials) before anything is sent, claimed once (a 403 says it was used or never existed, and that it may be compromised), and the access URL is sealed at once (FieldCrypto, bank_feed.secret) before the accounts are listed (balances only, one request). The access is never in a DTO, the security log, the process's output or any table but sealed (tested); the connect route skips the idempotency store. Requests go through a guarded transport: https to an allowed host, every resolved address public, no redirects, SIMPLEFIN_TIMEOUT_SECONDS and SIMPLEFIN_MAX_RESPONSE_BYTES. Syncing comes with PR 3"
+  ],
+  "FEED-02": [
+    "partial",
+    "PR 2: each account the feed reports is new, linked, ignored, or marked no longer in the Bridge. A new one is suggested a Montra account by ADR-0051's tiers (learned from match memory under feed:simplefin:<hash>, then the last four digits narrowed by institution, then the institution for a name with no digits; in its currency, open, not linked to another feed account). An owner links it, creates an account (prefilled; the opening balance is the feed's balance less what it reports from the start date, so a first sync won't count twice), ignores or unlinks it; each change is audited and in the security log, and linking is learned. Nothing is imported until PR 3"
+  ],
+  "FEED-05": [
+    "partial",
+    "PR 2: linking sets the start date: the day after the Montra account's latest transaction by default, at most SIMPLEFIN_MAX_WINDOW_DAYS back, never in the future, or a date within that the owner picks. The window and cursor rules are pure and tested (PR 1); syncing uses them in PR 3"
+  ],
+  "FEED-09": [
+    "partial",
+    "PR 2: bank_feed_connected (provider, host), bank_feed_changed (account links, label, pausing) and bank_feed_disconnected in the security log, never the access; each account linked, ignored or unlinked in the audit log. Disconnecting (owner, recent sign-in) wipes the sealed access at once; links stay 30 days so a new token relinks. RLS gives staff nothing, and archives leave feeds out (migration 0071)"
   ]
 }

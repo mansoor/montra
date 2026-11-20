@@ -2070,6 +2070,26 @@ Phase 11 leftovers:
   - Tests: API `bank-feeds-simplefin.test.ts` (settings, URLs, the protocol, limits, and a synthetic SimpleFIN in
     `test/fakes/simplefin.ts`), db `bank-feeds.test.ts` (constraints, RLS, staff, the due functions, the plan key).
   - Next: PR 2, connecting and linking.
+- **Bank feeds, PR 2 of 5: connecting and linking** (FEED-01, FEED-02, FEED-05, FEED-09 partial; ADR-0055 "As built:
+  PR 2"; no migration). Settings → Bank feeds (owners, admins and partners whose plan has `bankFeeds`; owners change
+  it): paste SimpleFIN Bridge's setup token, then link, create, ignore or unlink each account it reports. Nothing is
+  imported yet, and the card says so.
+  - API: `bank-feeds/transport.ts` (https to SIMPLEFIN_ALLOWED_HOSTS, the storage guard's lookup, no redirects, the
+    timeout and size cap), `simplefin.adapter.ts` (claim once; `/accounts` with HTTP Basic, never credentials in a
+    URL; 403 revoked, 402 payment required), `bank-feeds.service.ts` and `bank-feeds.controller.ts`
+    (`GET/POST /bank-feeds`, `PATCH /bank-feeds/:id`, `POST /bank-feeds/:id/refresh`, `PATCH
+    /bank-feeds/:id/accounts/:accountId`, `POST /bank-feeds/:id/disconnect`). Connecting and disconnecting need an
+    owner with a recent sign-in; connect skips the idempotency store. Every request counts against
+    SIMPLEFIN_REQUESTS_PER_DAY per UTC day (429 `bank_feed.daily_limit` before asking).
+  - Suggestions use ADR-0051's tiers with match memory (`feed:simplefin:<hash>`); Create account works out the
+    opening balance the day before the start date from one request. A reconnect within 30 days takes over the old
+    feed's links.
+  - Web: `components/settings/bank-feeds.tsx`, `lib/bank-feeds.ts`; api-client `bankFeed`, `connectBankFeed`,
+    `updateBankFeed`, `refreshBankFeed`, `updateBankFeedAccount`, `disconnectBankFeed`.
+  - Tests: API `bank-feeds.test.ts` (against the synthetic SimpleFIN: roles, recent sign-in, refused tokens, the
+    claim, the sealed access nowhere else, suggestions, links, Create account's opening balance, refresh, problems,
+    the daily limit, pausing, disconnecting and relinking, the transport), web `bank-feeds.test.ts`.
+  - Next: PR 3a, syncing into Review.
 
 ---
 

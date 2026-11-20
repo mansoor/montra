@@ -19,6 +19,8 @@ import { PrivacyPanel, SecurityActivity } from '@/components/settings/privacy-se
 import { StorageSettings } from '@/components/settings/storage-settings';
 import { FamilyVaultCard } from '@/components/settings/family-vault';
 import { canSeeVault } from '@/lib/vault';
+import { BankFeedsCard } from '@/components/settings/bank-feeds';
+import { canSeeBankFeeds } from '@/lib/bank-feeds';
 import { CategorySettings } from '@/components/settings/category-settings';
 import { SETTINGS_TABS, settingsGroupOf, settingsTabOf } from '@/lib/settings-sections';
 import { isAdminRole } from '@/lib/settings';
@@ -187,6 +189,25 @@ export default async function SettingsPage({
         {vault && <FamilyVaultCard workspace={workspace} connection={vault.connection} />}
       </div>
     );
+  } else if (tab === 'bank-feeds') {
+    // ADR-0055: owners, admins and partners whose plan has bank feeds; owners change them.
+    const billing = await load((api) => api.getBilling(workspaceId));
+    if (canSeeBankFeeds(workspace.role, billing.entitlements.features)) {
+      const [feed, accounts] = await load((api) =>
+        Promise.all([api.bankFeed(workspaceId), api.listAccounts(workspaceId)]),
+      );
+      body = <BankFeedsCard workspace={workspace} feed={feed} accounts={accounts} />;
+    } else {
+      body = (
+        <section className="card">
+          <p className="text-sm text-muted">
+            {billing.entitlements.features.includes('bankFeeds')
+              ? t('bank_feeds.not_for_role')
+              : t('bank_feeds.not_on_plan')}
+          </p>
+        </section>
+      );
+    }
   } else if (tab === 'billing') {
     const [billing, offers] = await load((api) => Promise.all([api.getBilling(workspaceId), api.getPlans()]));
     body = <BillingPanel workspaceId={workspaceId} billing={billing} offers={offers} />;
