@@ -18,4 +18,10 @@ describe('includedFeatureKeys', () => {
     ]);
     expect(includedFeatureKeys({ features: ['familyVault'] })).toEqual(['billing.feature.familyVault']);
   });
+
+  it('leaves bank feeds out until they sync (ADR-0055 §11)', () => {
+    expect(includedFeatureKeys({ features: ['ownStorage', 'bankFeeds'] })).toEqual([
+      'billing.feature.ownStorage',
+    ]);
+  });
 });

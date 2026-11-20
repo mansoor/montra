@@ -71,6 +71,52 @@ const Env = z.object({
     .enum(['on', 'off'])
     .default('off')
     .transform((v) => v === 'on'),
+  /**
+   * Bank feeds through SimpleFIN Bridge (ADR-0055 §5, §9). Its limits are settings, so when SimpleFIN changes them
+   * only these change: no code, no migration. The defaults follow simplefin.org as checked on 2026-11-19.
+   *
+   * The hosts Montra may claim a setup token at and fetch from (comma-separated). A pasted token pointing anywhere
+   * else is refused before anything is sent.
+   */
+  SIMPLEFIN_ALLOWED_HOSTS: z
+    .string()
+    .default('bridge.simplefin.org,beta-bridge.simplefin.org')
+    .transform((v) =>
+      v
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().regex(/^[a-z0-9.-]+$/, 'a host name')).min(1)),
+  /**
+   * The most requests Montra makes per feed per UTC day. SimpleFIN allows "24 or fewer" and disables the token past
+   * its limit, so Montra stays at half by default: setup, retries and Sync now never reach it.
+   */
+  SIMPLEFIN_REQUESTS_PER_DAY: z.coerce.number().int().min(1).max(1000).default(12),
+  /** The longest date range one request may ask for (SimpleFIN: 90 days); also how far back a first sync reaches. */
+  SIMPLEFIN_MAX_WINDOW_DAYS: z.coerce.number().int().min(1).max(366).default(90),
+  /** Days each sync goes back over the last one (SimpleFIN suggests about 5); repeated rows are skipped by their id. */
+  SIMPLEFIN_OVERLAP_DAYS: z.coerce.number().int().min(0).max(30).default(5),
+  /** Scheduled syncs per feed per day, spread from a random minute (SimpleFIN's data updates daily). */
+  SIMPLEFIN_SYNCS_PER_DAY: z.coerce.number().int().min(1).max(24).default(1),
+  /** The least time between two Sync now presses for one feed, in minutes. */
+  SIMPLEFIN_SYNC_NOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
+  /** Each request's time limit, in seconds, and the largest answer read, in bytes. */
+  SIMPLEFIN_TIMEOUT_SECONDS: z.coerce.number().int().min(5).max(300).default(60),
+  SIMPLEFIN_MAX_RESPONSE_BYTES: z.coerce
+    .number()
+    .int()
+    .min(64 * 1024)
+    .max(256 * 1024 * 1024)
+    .default(32 * 1024 * 1024),
+  /**
+   * Development and tests only: `on` lets Montra reach a SimpleFIN stand-in on this machine over plain http
+   * (localhost, 127.0.0.1, [::1]), whatever SIMPLEFIN_ALLOWED_HOSTS says. Refused in production.
+   */
+  SIMPLEFIN_ALLOW_LOCAL_HTTP: z
+    .enum(['on', 'off'])
+    .default('off')
+    .transform((v) => v === 'on'),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce
@@ -203,6 +249,17 @@ export function loadConfig(
   }
   if (config.NODE_ENV === 'production' && config.FAMILY_VAULT_ALLOW_LOCAL_HTTP) {
     throw new Error('FAMILY_VAULT_ALLOW_LOCAL_HTTP=on is not allowed in production');
+  }
+  if (config.NODE_ENV === 'production' && config.SIMPLEFIN_ALLOW_LOCAL_HTTP) {
+    throw new Error('SIMPLEFIN_ALLOW_LOCAL_HTTP=on is not allowed in production');
+  }
+  if (config.SIMPLEFIN_OVERLAP_DAYS >= config.SIMPLEFIN_MAX_WINDOW_DAYS) {
+    throw new Error('SIMPLEFIN_OVERLAP_DAYS must be less than SIMPLEFIN_MAX_WINDOW_DAYS');
+  }
+  if (config.SIMPLEFIN_SYNCS_PER_DAY >= config.SIMPLEFIN_REQUESTS_PER_DAY) {
+    throw new Error(
+      'SIMPLEFIN_SYNCS_PER_DAY must leave room in SIMPLEFIN_REQUESTS_PER_DAY for Sync now and retries',
+    );
   }
   if (config.AUTH_MODE === 'kratos' && !config.KRATOS_PUBLIC_URL) {
     throw new Error('KRATOS_PUBLIC_URL is required when AUTH_MODE=kratos');

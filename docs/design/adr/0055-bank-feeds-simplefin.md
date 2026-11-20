@@ -1,7 +1,8 @@
 # ADR-0055: Bank feeds per workspace, starting with SimpleFIN Bridge
 
-- Status: accepted (the owner, 2026-11-19; see "Owner's answers" and "Defaults taken" at the end; nothing built)
-- Date: 2026-11-19
+- Status: accepted (the owner, 2026-11-19; see "Owner's answers" and "Defaults taken" at the end); being built (PR 1,
+  contracts, 2026-11-20)
+- Date: 2026-11-19; amended 2026-11-20 ("SimpleFIN's limits are settings", owner's request; "Delivery" in five PRs)
 - Builds on: ADR-0051 (intakes, signals and match memory), ADR-0028 (transfers), ADR-0024 (loan payments), ADR-0031
   and ADR-0050 (sealed per-workspace secrets, the address guard, the outbox job shape), ADR-0054 (an owner-connected
   outside service: recent sign-in, audit, an attention notification, backoff), ADR-0049 (plan feature keys)
@@ -298,18 +299,45 @@ A new subsection, **13.7 Bank feeds**, added by the first PR:
 | FEED-09 | Connecting, link changes and disconnecting are in the security log; disconnecting wipes the secret; staff can't read it.                                     | M        |
 | FEED-10 | The phone shows each feed's status and offers Sync now.                                                                                                      | C        |
 
+### 14. SimpleFIN's limits are settings (owner's request, 2026-11-20)
+
+SimpleFIN's numbers may change, so none is written into the code: each is an API setting (`apps/api/src/config.ts`,
+read once at start, `SIMPLEFIN_*` in the environment or `NAME_FILE`), and the rules in `bank-feeds/limits.ts` take
+them as arguments. Changing one is a restart, never a code change or a migration.
+
+| Setting                        | Default                                          | What it is                                                         |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------ |
+| `SIMPLEFIN_ALLOWED_HOSTS`      | `bridge.simplefin.org,beta-bridge.simplefin.org` | Hosts a setup token and the access URL may point to (§9)           |
+| `SIMPLEFIN_REQUESTS_PER_DAY`   | `12`                                             | Montra's own cap per feed per UTC day, half SimpleFIN's 24 (§5)    |
+| `SIMPLEFIN_MAX_WINDOW_DAYS`    | `90`                                             | One request's longest range, and how far back a first sync reaches |
+| `SIMPLEFIN_OVERLAP_DAYS`       | `5`                                              | Days each sync goes back over the last                             |
+| `SIMPLEFIN_SYNCS_PER_DAY`      | `1`                                              | Scheduled syncs per feed per day                                   |
+| `SIMPLEFIN_SYNC_NOW_MINUTES`   | `60`                                             | The least time between two Sync now presses                        |
+| `SIMPLEFIN_TIMEOUT_SECONDS`    | `60`                                             | Each request's time limit                                          |
+| `SIMPLEFIN_MAX_RESPONSE_BYTES` | `33554432` (32 MiB)                              | The largest answer read                                            |
+| `SIMPLEFIN_ALLOW_LOCAL_HTTP`   | `off`                                            | Development and tests: a stand-in on this machine over http        |
+
+The API refuses to start with `SIMPLEFIN_ALLOW_LOCAL_HTTP=on` in production, an overlap as long as the window, or
+scheduled syncs that leave no room in the daily cap for Sync now and retries. The FEED-05 "90 days" is
+`SIMPLEFIN_MAX_WINDOW_DAYS`.
+
 ## Delivery
 
-A small chain into `develop`, each PR with its dev bump:
+A small chain into `develop`, each PR with its dev bump. The syncing step is split in two (2026-11-20), so the
+pipeline work lands before anything commits on its own:
 
-1. **Contracts**: the migration, Kysely types, DTOs, the port, the `bankFeeds` key (hidden), FEED-01..10 in the
-   requirements and `status.json`; the SimpleFIN parser, amounts, dates, windows and budget as tested pure functions;
-   the fake server.
+1. **Contracts** (built 2026-11-20): migration 0071, Kysely types, DTOs, the port, the `bankFeeds` key (hidden), the
+   settings (§14), FEED-01..10 in the requirements (status entries come with the PRs that build them); the SimpleFIN
+   protocol (setup token, access URL, `/accounts` in v2 and v1, amounts, dates, sanitizing) and the start date,
+   window and budget as tested pure functions; the fake server; code reading a batch's file handles feed batches.
 2. **Connecting and linking**: claim, guard, sealing, security log, the Settings page, suggestions and learning, Create
    account, Ignore, disconnect. Nothing is imported yet.
-3. **Syncing**: the job, Sync now, budget and backoff, feed batches through the pipeline, start date, auto-commit if
-   clean, the balance check, problems and the notification, the Statements screen note.
-4. **Phone and showing it**: the phone status and Sync now; the live run; the key leaves `FEATURES_NOT_YET_SHOWN`.
+3. **Syncing into Review** (3a): the job, Sync now, budget and backoff, feed batches through the pipeline with the
+   provider id as the dedupe key, start date, posted only, Undo moving the cursor back. Every batch waits in Review.
+4. **Hands-off syncing** (3b): auto-commit if clean, the balance check, problems in words and the one notification,
+   the Statements screen note.
+5. **Phone and showing it**: the phone status and Sync now; the Playwright spec; the live run; the key leaves
+   `FEATURES_NOT_YET_SHOWN`.
 
 ## Later providers
 
