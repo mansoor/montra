@@ -5,7 +5,7 @@
  * scan is read once and finds its account by the last four digits printed on it, for the person to confirm. Then a
  * simplified preview, the guided column mapping when needed, commit and the summary.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Switch, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -45,7 +45,8 @@ export default function ImportScreen() {
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const accounts = (useLocal((s) => s.getReference('accounts')) ?? []).filter((a) => !a.archived);
   const [accountId, setAccountId] = useState('');
-  const { scan } = useLocalSearchParams<{ scan?: string }>();
+  // `batch`: an import waiting in Review, such as a bank feed's (ADR-0055 §10), opened straight in its preview.
+  const { scan, batch: waiting } = useLocalSearchParams<{ scan?: string; batch?: string }>();
   const [phase, setPhase] = useState<Phase>(scan ? 'scan' : 'pick');
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +95,19 @@ export default function ImportScreen() {
     },
     [api, ws, refresh],
   );
+
+  // Once, for the import it was opened with.
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!waiting || !ws || opened.current === waiting) return;
+    opened.current = waiting;
+    setPhase('working');
+    setMessage(t('mobile.import.reading'));
+    settle(waiting).then(show, (e: unknown) => {
+      setError((e as Error).message);
+      setPhase('pick');
+    });
+  }, [waiting, ws, settle, show]);
 
   const start = useCallback(
     async (file: UploadFile) => {

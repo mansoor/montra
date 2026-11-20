@@ -1335,5 +1335,9 @@
   "FEED-08": [
     "partial",
     "PR 2–3b: problems in words on the Settings card, per feed (revoked, payment required, failing, waiting for the daily limit) and per account (sign in again at SimpleFIN for an institution, an account that failed or is missing data, no longer in the Bridge), the provider's messages sanitized. PR 3b: each owner gets one bank_feed_attention notification (no amounts or transaction text) when the feed is revoked, needs payment, turns failing, or a linked account's bank needs signing in again; nothing more until it's fixed and breaks again; a different problem is told of too. The phone (PR 4) shows the same"
+  ],
+  "FEED-10": [
+    "partial",
+    "PR 4: the phone shows the bank feed in Your data for owners, admins and partners (status, last sync, how far each linked account has synced, problems in the provider's words, accounts not linked yet) with Sync now when the feed syncs and the spacing allows; \"Bank feed, synced through …\" on an account's screen; and Review's Bank feed section, counted in the Review badge, opening the phone's own import preview (`/import?batch=`). Connecting and linking stay on the web. Pure-module tests. Done after the live run"
   ]
 }

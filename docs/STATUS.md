@@ -2123,6 +2123,16 @@ Phase 11 leftovers:
   - A feed import no longer offers "Change mapping".
   - Tests: API `bank-feeds-sync.test.ts` (auto-commit, the balance check ok and mismatch, the hold and its release,
     the attention notifications, the links).
+- **Bank feeds, PR 4 of 5: the phone and the e2e spec** (FEED-10 partial; ADR-0055 "As built: PR 4").
+  - Phone: `src/features/bank-feeds.ts` (pure: the Your data card, Sync now, the account line, what waits in Review),
+    `src/ui/BankFeed.tsx` (Your data card with Sync now; Review's Bank feed section), `use-feed-imports.ts` (the
+    Review badge's fourth count), `/import?batch=` opening a waiting import in the phone's preview, and "Bank feed,
+    synced through …" on an account's screen. Connecting and linking stay on the web.
+  - e2e: `e2e/bank-feeds.spec.ts` against the synthetic SimpleFIN, which `playwright.config.ts` now starts
+    (`apps/api/test/fakes/simplefin-server.ts`, port 4655, `GET /__token`); the API and the worker run with
+    SIMPLEFIN_ALLOW_LOCAL_HTTP=on there.
+  - Left for PR 5 (needs the owner): the live run against their own SimpleFIN Bridge, then `bankFeeds` leaves
+    `FEATURES_NOT_YET_SHOWN` and the FEED items turn done.
 
 ---
 

@@ -46,6 +46,7 @@ import {
   Title,
 } from '../src/ui/components';
 import { VaultStatusCard } from '../src/ui/Vault';
+import { BankFeedStatusCard } from '../src/ui/BankFeed';
 
 const POLL_MS = 3000;
 
@@ -217,6 +218,8 @@ export default function YourData() {
       ) : null}
       {/* ADR-0054 §13: the household's Family Document Vault, read only; changing it is on the web. */}
       <VaultStatusCard />
+      {/* ADR-0055 §10: the bank feed, read only with Sync now; connecting and linking are on the web. */}
+      <BankFeedStatusCard />
 
       {/* A whole-workspace backup is for the owner and admins (AUTH-14). */}
       {can.backUp ? (

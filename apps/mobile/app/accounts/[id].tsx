@@ -8,6 +8,7 @@ import { FlatList, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { accountProfile } from '@montra/domain';
 import { accountSections } from '../../src/features/accounts';
+import { accountFeedLine } from '../../src/features/bank-feeds';
 import { todayLocal } from '../../src/features/home';
 import { useCached } from '../../src/features/use-cached';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
@@ -38,6 +39,9 @@ export default function Register() {
     Boolean(ws && account && remote),
   );
   const rows = useLocal((s) => s.listTransactions({ accountId: id, limit: 500 }), [id]) ?? [];
+  // ADR-0055 §10: "Bank feed, synced through …" for an account a feed imports into (read online; nothing offline).
+  const links = useCached(ws, 'bank-feed-links', () => api.bankFeedLinks(ws), Boolean(ws)).data ?? [];
+  const feedLine = id ? accountFeedLine(links, id) : null;
   // Walk back from the current balance (natural sign: owed for cards) so each line shows the balance after it.
   const lines = useMemo(() => {
     if (!account) return [];
@@ -57,6 +61,14 @@ export default function Register() {
       <View style={{ padding: th.pad, gap: th.space(1) }}>
         <Title>{account?.name ?? ''}</Title>
         {account ? <Small>{t(`account.kind.${account.kind}`)}</Small> : null}
+        {feedLine ? (
+          <Small>
+            {t(
+              feedLine.key,
+              feedLine.values?.date ? { date: fmtDate(String(feedLine.values.date)) } : undefined,
+            )}
+          </Small>
+        ) : null}
         {account ? (
           <Body>
             {`${t(`register.${accountProfile(account.kind).balanceWord}`)}: ${fmtMoney(account.balance.amount, account.balance.currency)}`}

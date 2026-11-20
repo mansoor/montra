@@ -397,6 +397,17 @@ Where PR 3b differs from or adds to §5–§7:
 - **The Statements note** comes from `GET /bank-feeds/links`; those who can't see the feed (RLS) get no links, so
   accountants don't see it.
 
+## As built: PR 4 (the phone and the e2e spec), 2026-11-20
+
+- **The phone** (§10): Your data's Bank feed card for owners, admins and partners, read online (status, last sync,
+  each linked account's progress, problems in the provider's words, accounts not linked yet) with Sync now; "Bank
+  feed, synced through …" on an account's screen; Review's Bank feed section, counted in the Review badge, opening
+  the phone's own import preview for a waiting import (`/import?batch=`). Dates are the API's days as given.
+- **The e2e spec** runs against the synthetic SimpleFIN started by `playwright.config.ts` from the API's test fakes,
+  with dates relative to today, so a first sync always finds rows.
+- **Split from the delivery list:** the live run and taking `bankFeeds` out of `FEATURES_NOT_YET_SHOWN` need the
+  owner's own Bridge account, so they are PR 5.
+
 ## Later providers
 
 The port takes these without changing §2–§8; each would be its own short ADR.
