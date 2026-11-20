@@ -858,8 +858,8 @@ export class FlowService {
         }
         // Billers' estimated next bills (ADR-0048 §4), paid from the books' main account.
         for (const x of billerBills) {
-          // An overdue bill is still to pay, from tomorrow; a past estimate isn't.
-          if (x.biller.entity_id !== e || x.coveredByRecurring || (x.estimated && x.next.date < from))
+          // An overdue bill is still to pay, from tomorrow; a past estimate isn't, but one due today is (from tomorrow).
+          if (x.biller.entity_id !== e || x.coveredByRecurring || (x.estimated && x.next.date < today))
             continue;
           add({
             date: x.next.date < from ? from : x.next.date,
