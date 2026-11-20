@@ -173,6 +173,61 @@ def make_scanned_like_pdf() -> bytes:
     return buf.getvalue()
 
 
+# Layout 4 (synthetic; every name and number is invented): DATE | DESCRIPTION | AMOUNT | BALANCE, dates
+# printed without a year, amounts right-aligned under their headers, and descriptions long enough to end just
+# left of the Amount column. The period runs from December into January.
+YEARLESS_ROWS = [
+    ("12/28", "So Cal Power CO Directpay PPD ID: 0012345678", "-207.92", "8,461.51"),
+    ("12/28", "Example Card Autopay Payment 271234567 ID: Examplecap", "-130.00", "8,331.51"),
+    (
+        "12/29",
+        "ATM Withdrawal 12/28 12345 Sample Canyon Rd 4321 R Springfield CA Card",
+        "-260.00",
+        "8,071.51",
+    ),
+    ("01/02", "Zelle Payment To Sample Person Jpm99abc123", "-3,198.04", "4,873.47"),
+    ("01/03", "Zelle Payment From Another Person", "3,300.00", "8,173.47"),
+]
+
+
+def make_yearless_pdf() -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setFont("Helvetica", 9)
+    y = _header_block(
+        c,
+        [
+            "Example National Bank",
+            "December 15, 2026 through January 14, 2027",
+            "Primary Account: 000000005678",
+            "Beginning Balance $8,669.43",
+            "Ending Balance $8,173.47",
+        ],
+    )
+    y -= 10
+    c.drawString(50, y, "TRANSACTION DETAIL")
+    y -= 16
+    c.drawString(50, y, "DATE")
+    c.drawString(90, y, "DESCRIPTION")
+    c.drawRightString(470, y, "AMOUNT")
+    c.drawRightString(560, y, "BALANCE")
+    y -= 14
+    c.drawString(90, y, "Beginning Balance")
+    c.drawRightString(560, y, "$8,669.43")
+    for d, desc, amt, bal in YEARLESS_ROWS:
+        y -= 12
+        c.drawString(50, y, d)
+        c.drawString(90, y, desc)
+        c.drawRightString(470, y, amt)
+        c.drawRightString(560, y, bal)
+    y -= 12
+    c.drawString(90, y, "Ending Balance")
+    c.drawRightString(560, y, "$8,173.47")
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
 SCANNED_STATEMENT_LINES = [
     "First Example Bank",
     "JANE Q DOE",
@@ -209,3 +264,70 @@ def make_scanned_statement_pdf(dpi: int = 200) -> bytes:
     out = io.BytesIO()
     image.save(out, "PDF", resolution=float(dpi))
     return out.getvalue()
+
+
+def _section(
+    c: canvas.Canvas, y: float, x: float, title: str, rows: list[tuple[str, str, str, str]], total: str
+) -> float:
+    """A titled section of a credit-union statement: its own header, unsigned amounts, "$" apart."""
+    c.drawString(x - 70, y, title)
+    y -= 18
+    c.drawRightString(x + 30, y, "Eff. Date")
+    c.drawRightString(x + 90, y, "Syst. Date")
+    c.drawString(x + 110, y, "Description")
+    c.drawRightString(x + 490, y, "Amount")
+    for i, (eff, syst, desc, amt) in enumerate(rows):
+        y -= 14
+        c.drawRightString(x + 22, y, eff)
+        c.drawRightString(x + 82, y, syst)
+        c.drawString(x + 110, y, desc)
+        if i == 0:
+            c.drawString(x + 400, y, "$")
+        c.drawRightString(x + 492, y, amt)
+    y -= 16
+    c.drawString(x + 110, y, f"TOTAL {title.upper()}")
+    c.drawString(x + 400, y, "$")
+    c.drawRightString(x + 492, y, total)
+    return y - 30
+
+
+SECTIONED_ROWS = [
+    ("Oct 02", "Oct 01", "Zelle Payment From JANE DOE 1AB23CD4E", "50.00"),
+    ("Oct 27", "Oct 27", "O/D Protection Tnsfr From ONLINE SAVINGS Acct 0000", "6.28"),
+    ("Oct 02", "Oct 01", "Zelle Payment To SAM EXAMPLE 9ZY87XW6V", "-40.00"),
+    ("Oct 26", "Oct 26", "ACH Withdrawal EXAMPLE CARD AUTOPAYBUS", "-29.28"),
+]
+
+
+def make_sectioned_pdf() -> bytes:
+    """A credit union's layout: a summary naming the sections, "Deposits and Credits", then on page 2, its
+    header placed further left, "Electronic Withdrawals". Amounts are unsigned: the section says which way.
+    """
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setFont("Helvetica", 9)
+    y = _header_block(
+        c,
+        [
+            "Example Federal Credit Union",
+            "Statement Period: Oct 01, 2026 - Oct 31, 2026",
+            "Account Number: 0000001234",
+            "Beginning Balance ........ $13.00",
+            "Deposits and Credits ........ +$56.28",
+            "Electronic Withdrawals ........ -$69.28",
+            "Ending Balance ........ $0.00",
+        ],
+    )
+    y -= 20
+    _section(
+        c, y, 120, "Deposits and Credits", [r for r in SECTIONED_ROWS if not r[3].startswith("-")], "56.28"
+    )
+    c.drawString(50, 30, "Page 1 of 2")
+    c.showPage()
+    c.setFont("Helvetica", 9)
+    out = [(e, s, d, a.lstrip("-")) for e, s, d, a in SECTIONED_ROWS if a.startswith("-")]
+    _section(c, 700, 100, "Electronic Withdrawals", out, "69.28")
+    c.drawString(50, 30, "Page 2 of 2")
+    c.showPage()
+    c.save()
+    return buf.getvalue()

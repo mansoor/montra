@@ -28,11 +28,12 @@ import {
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import { earlierLiveUpload } from './earlier-upload.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
-import { requireRole } from '../common/roles.js';
+import { requireRole, RULE_EDITORS } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { ImportsService } from './imports.service.js';
@@ -80,17 +81,7 @@ export class UploadsController {
     const key = storageKey(ctx.workspaceId!, 'statement', id);
     await this.storage.put(key, bytes, MIME_BY_TYPE[fileType]);
     return this.db.run(dbCtx(ctx), async (trx) => {
-      const earlier = await trx
-        .selectFrom('app.file as f')
-        .leftJoin('app.import_batch as b', (j) =>
-          j.onRef('b.workspace_id', '=', 'f.workspace_id').onRef('b.file_id', '=', 'f.id'),
-        )
-        .select(['f.id', 'f.created_at', 'b.id as batch_id'])
-        .where('f.workspace_id', '=', ctx.workspaceId!)
-        .where('f.sha256', '=', digest)
-        .where('f.deleted_at', 'is', null)
-        .orderBy('f.created_at')
-        .executeTakeFirst();
+      const earlier = await earlierLiveUpload(trx, ctx.workspaceId!, digest);
       await trx
         .insertInto('app.file')
         .values({
@@ -145,8 +136,14 @@ export class ImportsController {
   async list(
     @Ctx() ctx: RequestContext,
     @Query('accountId') accountId?: string,
+    @Query('waiting') waiting?: string,
   ): Promise<{ data: ImportBatchDto[] }> {
-    return { data: await this.imports.list(dbCtx(ctx), accountId ? parse(z.uuid(), accountId) : undefined) };
+    return {
+      data: await this.imports.list(dbCtx(ctx), accountId ? parse(z.uuid(), accountId) : undefined, {
+        // Bank feed batches waiting in preview, for Review (ADR-0055 §5).
+        waitingFeed: parse(z.enum(['feed']).optional(), waiting) === 'feed',
+      }),
+    };
   }
 
   @Get('imports/:id')
@@ -212,6 +209,14 @@ export class ImportsController {
   @HttpCode(202)
   undo(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<ImportBatchDto> {
     return this.imports.undo(dbCtx(ctx), parse(z.uuid(), id));
+  }
+
+  /** Discards an import that was never committed (200); 409 once it's committing, committed or undone. */
+  @Post('imports/:id/discard')
+  @HttpCode(200)
+  discard(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<ImportBatchDto> {
+    requireRole(ctx, ...RULE_EDITORS);
+    return this.imports.discard(dbCtx(ctx), parse(z.uuid(), id));
   }
 
   @Get('jobs/:id')

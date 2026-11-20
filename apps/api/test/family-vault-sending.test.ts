@@ -535,6 +535,28 @@ describe('the person a document belongs to (ADR-0054 §3, §6; vault 0.9.0-dev.6
     expect(sent.inbox_member_id).toBe('fake-other-adult');
   });
 
+  it('names a member linked to a login by that person’s own name, not the household label such as “Me”', async () => {
+    const owner = (await db.query(`select id from app.app_user where email = $1`, [OWNER])).rows[0].id;
+    await db.query(`update app.app_user set display_name = 'Sam Owner' where id = $1`, [owner]);
+    // Every owner's own member is made as "Me" (workspaces.service): that is what the vault used to be told.
+    const me = (
+      await db.query(
+        `select id, name from app.family_member where workspace_id = $1 and linked_user_id = $2`,
+        [wsId, owner],
+      )
+    ).rows[0];
+    expect(me.name).toBe('Me');
+    const id = await file('payslip', 'November payslip.pdf', { mime: 'application/pdf' });
+    await db.query(
+      `insert into app.payslip (workspace_id, entity_id, employer_id, member_id, currency, status, pay_date,
+                                attachment_ids, net_minor)
+       values ($1, $2, $3, $4, 'USD', 'posted', '2026-11-30', array[$5::uuid], 412345)`,
+      [wsId, entity, employer, me.id, id],
+    );
+    await run();
+    expect(intake((await item(id)).vault_ref).hints.person).toEqual({ name: 'Sam Owner' });
+  });
+
   it('goes to the reviewer’s Inbox when that person can’t receive it now, and says more when asked', async () => {
     fake.vault.state.suspensions.set('fake-other-adult', {
       reason: 'locked' as never,
@@ -702,6 +724,40 @@ describe('the vault API key (vault 0.9.0-dev.63)', () => {
     ).rows;
   const checkNow = () =>
     db.query(`update app.vault_connection_state set next_check_at = now() where workspace_id = $1`, [wsId]);
+
+  it('trades the key for one access token that runs share, and asks again only when it ends (vault 0.9.0-dev.72)', async () => {
+    fake.vault.expireAppTokens();
+    const calls: Array<{ path: string; scheme: string }> = [];
+    (transport as any).fetch = async (u: string, init: any) => {
+      const headers: Record<string, string> = init?.headers ?? {};
+      const auth = Object.entries(headers).find(([k]) => k.toLowerCase() === 'authorization')?.[1] ?? '';
+      calls.push({ path: new URL(u).pathname, scheme: auth.split(' ')[0]! });
+      return realFetch(u, init);
+    };
+    const tokens = () => calls.filter((x) => x.path === '/api/v1/apps/token');
+    try {
+      for (const name of ['Token one.png', 'Token two.png']) {
+        const id = await file('receipt', name);
+        await run();
+        expect((await item(id)).status).toBe('received');
+      }
+      // One token for both runs, asked for with the key; everything else carries the token, never the key.
+      expect(tokens()).toEqual([{ path: '/api/v1/apps/token', scheme: 'Basic' }]);
+      const rest = calls.filter((x) => x.path.startsWith('/api/v1/apps/') && x.path !== '/api/v1/apps/token');
+      expect(rest.length).toBeGreaterThan(0);
+      expect(rest.every((x) => x.scheme === 'Bearer')).toBe(true);
+
+      // Once it ends, the next request is refused and the client asks for another: nothing fails over it.
+      expect(fake.vault.expireAppTokens()).toBeGreaterThan(0);
+      const id = await file('receipt', 'Token three.png');
+      await run();
+      expect((await item(id)).status).toBe('received');
+      expect(tokens().length).toBe(2);
+      expect(await vaultRow()).toMatchObject({ status: 'active', consecutive_failures: 0 });
+    } finally {
+      (transport as any).fetch = realFetch;
+    }
+  });
 
   it('stops on a key revoked in the vault, with words, marked as needing a new key, until an owner pastes one', async () => {
     await fake.revokeKey(appId, keyId);

@@ -20,6 +20,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from itertools import pairwise
 from typing import Any
 
 import pdfplumber
@@ -45,7 +46,12 @@ DATE_RES = [
     re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$"),
     re.compile(r"^\d{1,2}-\d{1,2}-\d{2,4}$"),
 ]
-AMOUNT_HEADERS = {"amount", "debit", "debits", "credit", "credits", "withdrawals", "deposits", "balance"}
+# A transaction header names when (Date, Posted …): a section title such as "Deposits and Credits" doesn't.
+DATE_HEADER_WORDS = {"date", "posted", "posting"}
+AMOUNT_HEADERS = {
+    "amount", "debit", "debits", "credit", "credits", "withdrawal", "withdrawals", "deposit", "deposits",
+    "balance",
+}  # fmt: skip
 MONTHS = {m: i + 1 for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 )}  # fmt: skip
@@ -53,6 +59,11 @@ MONTH_WORD_RE = re.compile(r"^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|
 FOOTER_RE = re.compile(r"^(page\s+\d+(\s+of\s+\d+)?|\d+\s*/\s*\d+|continued.*)$", re.I)
 OPENING_RE = re.compile(r"\b(beginning|opening|previous|starting)\s+balance\b", re.I)
 CLOSING_RE = re.compile(r"\b(ending|closing|new)\s+balance\b", re.I)
+# Section titles that say which way money went, for statements that print every amount unsigned under them
+# ("Deposits and Credits", "Electronic Withdrawals", "Service Charges, Fees, and Other Withdrawals").
+OUTFLOW_SECTION_RE = re.compile(r"\b(withdrawals?|debits?|checks\s+paid|fees|service\s+charges)\b", re.I)
+INFLOW_SECTION_RE = re.compile(r"\b(deposits?|credits?|additions)\b", re.I)
+_SECTION_MAX_WORDS = 8
 MONEY_IN_TEXT_RE = re.compile(r"\(?[-−]?[$€£]?\s?\d{1,3}(?:,\d{3})*\.\d{2}\)?|\(?[-−]?[$€£]?\s?\d+\.\d{2}\)?")
 LAST4_RE = re.compile(
     r"\b(?:account|acct|card)\b[^\n]{0,40}?(?:ending(?:\s+in)?|number|no\.?|#|[x*•]{2,})\s*[x*•\-\s]*(\d{4})\b",
@@ -134,7 +145,30 @@ def _is_header(cells: list[str]) -> bool:
         return False
     hits = sum(1 for w in words if w in HEADER_WORDS)
     has_amountish = any(w in AMOUNT_HEADERS for w in words)
-    return hits >= 2 and has_amountish and hits >= len(words) * 0.6
+    has_date = any(w in DATE_HEADER_WORDS for w in words)
+    return hits >= 2 and has_amountish and has_date and hits >= len(words) * 0.6
+
+
+def _section_sign(text: str) -> int | None:
+    """-1 under a title such as "Electronic Withdrawals", 1 under "Deposits and Credits".
+
+    None for a line that isn't a title, or one that says both ("Other Debits and Credits").
+    """
+    if len(text.split()) > _SECTION_MAX_WORDS or MONEY_IN_TEXT_RE.search(text):
+        return None
+    out = bool(OUTFLOW_SECTION_RE.search(text))
+    inn = bool(INFLOW_SECTION_RE.search(text))
+    if out == inn:
+        return None
+    return -1 if out else 1
+
+
+def _signed(amount: str) -> str:
+    """An unsigned amount as money out. One signed or marked (-, (), CR/DR) stays as printed."""
+    t = amount.strip()
+    if not t or t[0] in "-−(+" or t[-1] in "-)" or re.search(r"(CR|DR)$", t, re.I):
+        return amount
+    return f"-{t}"
 
 
 def _is_balance_line(text: str) -> bool:
@@ -233,24 +267,88 @@ def _header_columns(line: Line) -> list[Column]:
     return cols
 
 
-def _assign(words: list[dict[str, Any]], cols: list[Column]) -> list[str]:
-    cells: list[list[str]] = [[] for _ in cols]
+def _is_money_column(col: Column) -> bool:
+    return any(w.lower().strip(":") in AMOUNT_HEADERS for w in col.label.split())
+
+
+_SUFFIX_MARKERS = {"CR", "DR", "-"}
+_CURRENCY_PREFIXES = {"$", "€", "£", "¥"}
+_MARKER_GAP = 6.0
+
+
+def _merge_markers(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Joins a currency symbol or CR/DR/minus marker printed apart from its number ("$ 12.00", "4.00 CR")."""
+    out: list[dict[str, Any]] = []
     for w in words:
-        best, best_d = 0, float("inf")
-        for i, c in enumerate(cols):
-            if w["x1"] < c.x0:
-                d = c.x0 - w["x1"]
-            elif w["x0"] > c.x1:
-                d = w["x0"] - c.x1
-            else:
-                d = 0.0
-            # Numbers are right-aligned under their headers: prefer the column whose right edge is closest.
-            if is_amount(w["text"]):
-                d = min(d, abs(w["x1"] - c.x1)) - 0.01
-            if d < best_d:
-                best, best_d = i, d
-        cells[best].append(w["text"])
-    return [" ".join(c) for c in cells]
+        prev = out[-1] if out else None
+        close = prev is not None and w["x0"] - prev["x1"] < _MARKER_GAP
+        if prev and close and w["text"].upper() in _SUFFIX_MARKERS and is_amount(prev["text"]):
+            sep = "" if w["text"] == "-" else " "
+            out[-1] = {**prev, "text": f"{prev['text']}{sep}{w['text']}", "x1": w["x1"]}
+        elif prev and close and prev["text"] in _CURRENCY_PREFIXES and is_amount(w["text"]):
+            out[-1] = {**prev, "text": prev["text"] + w["text"], "x1": w["x1"]}
+        else:
+            out.append(w)
+    return out
+
+
+def _money_column(w: dict[str, Any], cols: list[Column], money: list[int]) -> int | None:
+    """The amount column a number sits under: it reaches into the column, and its right edge is the closest.
+
+    Amounts are right-aligned, so a number that ends before a column's header starts is not that column's: it
+    is part of a description that runs up to the column ("PPD ID: 0012345678", "Card 12.50").
+    """
+    best: int | None = None
+    best_d = float("inf")
+    for i in money:
+        c = cols[i]
+        if w["x1"] < c.x0 - 2:
+            continue
+        d = 0.0 if w["x0"] <= c.x1 and w["x1"] >= c.x0 else abs(w["x1"] - c.x1)
+        if d < best_d:
+            best, best_d = i, d
+    return best
+
+
+def _text_column(w: dict[str, Any], cols: list[Column], text: list[int]) -> int:
+    """Text is left-aligned: a word goes to the last text column that starts before it (midway between)."""
+    chosen = text[0]
+    for prev, i in pairwise(text):
+        if w["x0"] >= (cols[prev].x1 + cols[i].x0) / 2:
+            chosen = i
+    return chosen
+
+
+def _assign(words: list[dict[str, Any]], cols: list[Column]) -> list[str]:
+    """Splits a line into cells by the header's positions.
+
+    Amount columns (Amount, Debit, Credit, Balance …) take only money values aligned under them, at most one
+    each (the rightmost; any other is text). Every other word goes to the text column it starts in, so a long
+    description never spills into the Amount column.
+    """
+    money = [i for i, c in enumerate(cols) if _is_money_column(c)]
+    text = [i for i in range(len(cols)) if i not in money] or list(range(len(cols)))
+    cells: list[list[dict[str, Any]]] = [[] for _ in cols]
+    loose: list[dict[str, Any]] = []
+    for w in _merge_markers(words):
+        if w["text"] in _CURRENCY_PREFIXES:
+            continue  # "$" printed in a column of its own, apart from the amount: not part of the description
+        col = _money_column(w, cols, money) if is_amount(w["text"]) else None
+        if col is None and not re.search(r"[^\W\d_]", w["text"]):
+            # A placeholder such as "-" or "0" printed under an amount header stays in that column.
+            col = next((i for i in money if w["x0"] <= cols[i].x1 and w["x1"] >= cols[i].x0), None)
+        if col is None:
+            loose.append(w)
+        else:
+            cells[col].append(w)
+    for i in money:
+        if len(cells[i]) > 1:
+            cells[i].sort(key=lambda w: w["x1"])
+            loose.extend(cells[i][:-1])
+            cells[i] = cells[i][-1:]
+    for w in loose:
+        cells[_text_column(w, cols, text)].append(w)
+    return [" ".join(w["text"] for w in sorted(c, key=lambda w: w["x0"])) for c in cells]
 
 
 def _positional_table(pages: list[Any]) -> list[list[str]]:
@@ -263,17 +361,27 @@ def _positional_table(pages: list[Any]) -> list[list[str]]:
     header_labels: list[str] | None = None
     rows: list[list[str]] = []
     last: Line | None = None
+    sign: int | None = None
     for line in all_lines:
         cells_text = [w["text"] for w in line.words]
+        text = line.text
         if _is_header(cells_text):
-            if cols is None:
-                cols = _header_columns(line)
+            found = _header_columns(line)
+            if cols is None or header_labels is None:
+                cols = found
                 header_labels = [c.label for c in cols]
+            elif [c.label.lower() for c in found] == [h.lower() for h in header_labels]:
+                # The same header again (a new section or page), perhaps placed elsewhere: its positions rule.
+                cols = found
             last = None
             continue
+        if not _starts_with_date([text]):
+            title = _section_sign(text)
+            if title is not None:
+                sign, last = title, None
+                continue
         if cols is None or header_labels is None:
             continue
-        text = line.text
         if FOOTER_RE.match(text.strip()) or (_norm(text) in repeated and not _starts_with_date([text])):
             last = None
             continue
@@ -282,6 +390,10 @@ def _positional_table(pages: list[Any]) -> list[list[str]]:
             last = None
             continue
         if _starts_with_date(cells) or _starts_with_date([text]):
+            money = [i for i, c in enumerate(cols) if _is_money_column(c)]
+            # A lone Amount column under a withdrawals title: money out, though printed unsigned.
+            if sign == -1 and len(money) == 1 and "amount" in cols[money[0]].label.lower():
+                cells[money[0]] = _signed(cells[money[0]])
             rows.append(cells)
             last = line
             continue
@@ -363,6 +475,9 @@ _WORD_DATE = rf"{_MON}\s+\d{{1,2}},?\s+\d{{4}}|\d{{1,2}}\s+{_MON}\s+\d{{4}}"
 PERIOD_RE = re.compile(
     rf"({_NUM_DATE}|{_WORD_DATE})\s*(?:-|–|—|to|through|thru|until)\s*({_NUM_DATE}|{_WORD_DATE})", re.I
 )
+CLOSING_DATE_RE = re.compile(
+    rf"\b(?:closing|statement|ending|cycle end(?:ing)?)\s+date\b\s*:?\s*({_NUM_DATE}|{_WORD_DATE})", re.I
+)
 
 
 def _period(text: str) -> tuple[str | None, str | None]:
@@ -375,6 +490,9 @@ def _period(text: str) -> tuple[str | None, str | None]:
             return _iso(m.group(1)), _iso(m.group(2))
     if candidates:
         return _iso(candidates[0].group(1)), _iso(candidates[0].group(2))
+    # No range: a card statement's closing date still ends the period (dates printed as MM/DD take its year).
+    if closing := CLOSING_DATE_RE.search(text):
+        return None, _iso(closing.group(1))
     return None, None
 
 

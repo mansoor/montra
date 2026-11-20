@@ -381,14 +381,16 @@ export function uploadOutcome(results: ReadonlyArray<TaxFormUploadDto['files'][n
 // ----- The Review badge ---------------------------------------------------------------------------------------------
 
 /**
- * The badge's number: transactions to review (the sync feed's `reviewCount`), tax forms to check and files to provide
- * again (ADR-0054 §5a), as the web's `reviewBadgeTotal`. A count not loaded adds nothing.
+ * The badge's number: transactions to review (the sync feed's `reviewCount`), tax forms to check, files to provide
+ * again (ADR-0054 §5a) and bank feed imports waiting (ADR-0055 §10), as the web's `reviewBadgeTotal`. A count not
+ * loaded adds nothing.
  */
 export const reviewBadge = (
   transactions: number,
   taxForms: number | null,
   missingFiles: number | null = null,
-): number => transactions + (taxForms ?? 0) + (missingFiles ?? 0);
+  feedImports: number | null = null,
+): number => transactions + (taxForms ?? 0) + (missingFiles ?? 0) + (feedImports ?? 0);
 
 /**
  * The count of tax forms to check behind the Review badge (the web's `reviewBadgeTotal` adds the same). Read from

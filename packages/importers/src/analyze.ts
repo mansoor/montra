@@ -8,7 +8,7 @@ import { fingerprint } from './fingerprint.js';
 import { FIXED, fixedDefaults, fixedProposal, isFixedLayout } from './fixed-layout.js';
 import type { Sheet } from './grid.js';
 import { parseAmount } from './amounts.js';
-import { parseDate } from './dates.js';
+import { parseDate, type StatementDates } from './dates.js';
 import { findHeaderRow, inferMapping } from './infer.js';
 import type { ColumnMapping, MappingProposal } from './mapping.js';
 import { applyMapping, checkBalance, type BalanceCheck, type ParseResult } from './parse.js';
@@ -78,6 +78,24 @@ export interface AnalyzeOptions {
     periodStart?: CalendarDate | null;
     periodEnd?: CalendarDate | null;
   };
+  /**
+   * The day the file was uploaded: when the document states no period, dates printed without a year (`10/02`) take
+   * the most recent year that doesn't put them after it.
+   */
+  referenceDate?: CalendarDate | null;
+}
+
+/**
+ * Where a statement's dates fall, for dates printed without a year: the statement period, else its end alone (a
+ * closing date), else the upload day. Null when none is known.
+ */
+export function statementDates(
+  opts: Pick<AnalyzeOptions, 'statement' | 'referenceDate'>,
+): StatementDates | null {
+  const start = opts.statement?.periodStart ?? null;
+  const end = opts.statement?.periodEnd ?? opts.referenceDate ?? null;
+  if (!end) return null;
+  return start && start <= end ? { start, end } : { end };
 }
 
 export interface Analysis {
@@ -91,6 +109,8 @@ export interface Analysis {
   };
   parsed: ParseResult;
   balance: BalanceCheck;
+  /** What dates printed without a year were read against (`statementDates`). */
+  dates: StatementDates | null;
 }
 
 /** Picks the sheet with the most date-like rows (multi-sheet workbooks put the transactions on one sheet). */
@@ -127,6 +147,7 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
     : pickSheet(sheets);
   const { header, fingerprint: fp } = shape(sheet, opts.fileType);
 
+  const within = statementDates(opts);
   let proposal: Analysis['proposal'];
   if (override) {
     // A QIF/OFX grid keeps its columns whatever the user maps: the bank's ids still dedupe, and Quicken's Opening
@@ -167,6 +188,7 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
         ? template
         : inferMapping(sheet, {
             ...opts,
+            dates: within,
             period:
               opts.statement?.periodStart && opts.statement.periodEnd
                 ? { start: opts.statement.periodStart, end: opts.statement.periodEnd }
@@ -185,7 +207,7 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
   }
   const parsed: ParseResult =
     proposal.confidence > 0
-      ? applyMapping(sheet, proposal.mapping, opts.currency)
+      ? applyMapping(sheet, proposal.mapping, opts.currency, within)
       : {
           rows: [],
           errors: [],
@@ -210,5 +232,12 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
   }
   const opening = opts.statement?.opening ?? parsed.opening;
   const closing = opts.statement?.closing ?? parsed.closing;
-  return { sheet, fingerprint: fp, proposal, parsed, balance: checkBalance(parsed.rows, opening, closing) };
+  return {
+    sheet,
+    fingerprint: fp,
+    proposal,
+    parsed,
+    balance: checkBalance(parsed.rows, opening, closing),
+    dates: within,
+  };
 }

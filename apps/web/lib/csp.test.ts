@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contentSecurityPolicy } from './csp.mjs';
+import { contentSecurityPolicy, securityHeaders } from './csp.mjs';
 
 const directive = (csp: string, name: string) =>
   csp
@@ -48,5 +48,33 @@ describe('contentSecurityPolicy', () => {
     expect(directive(csp, 'frame-ancestors')).toEqual(["'none'"]);
     expect(directive(csp, 'object-src')).toEqual(["'none'"]);
     expect(directive(csp, 'base-uri')).toEqual(["'self'"]);
+  });
+});
+
+describe('securityHeaders', () => {
+  const header = (h: { key: string; value: string }[], key: string) => h.find((x) => x.key === key)?.value;
+
+  it('never lets a page be framed', () => {
+    const h = securityHeaders();
+    expect(header(h, 'X-Frame-Options')).toBe('DENY');
+    expect(directive(header(h, 'Content-Security-Policy') ?? '', 'frame-ancestors')).toEqual(["'none'"]);
+  });
+
+  it('lets only Montra’s own pages frame the files under /api, so the PDF viewer can show them', () => {
+    const h = securityHeaders({ frameable: true });
+    expect(header(h, 'X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(directive(header(h, 'Content-Security-Policy') ?? '', 'frame-ancestors')).toEqual(["'self'"]);
+    expect(directive(header(h, 'Content-Security-Policy') ?? '', 'object-src')).toEqual(["'none'"]);
+  });
+
+  it('keeps the other headers the same either way', () => {
+    for (const key of [
+      'Strict-Transport-Security',
+      'X-Content-Type-Options',
+      'Referrer-Policy',
+      'Permissions-Policy',
+    ]) {
+      expect(header(securityHeaders({ frameable: true }), key), key).toBe(header(securityHeaders(), key));
+    }
   });
 });

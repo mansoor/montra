@@ -10,6 +10,7 @@ import {
   asCurrencyCode,
   calendarDate,
   isCalendarDate,
+  todayIn,
   type CalendarDate,
   type CurrencyCode,
 } from '@montra/domain';
@@ -125,6 +126,12 @@ export class ImportJobs {
         .forUpdate()
         .executeTakeFirst();
       if (!batch) throw new PermanentJobError('import.not_found', 'Import batch not found');
+      // Discarded while the file was being read (a job already running isn't cancelled): nothing more to do.
+      if (batch.status === 'discarded') return { skipped: 'discarded' };
+      // A bank feed's batch has no file to read: its rows arrive already parsed (ADR-0055 §5).
+      const fileType = batch.file_type;
+      if (batch.file_id === null || fileType === 'feed')
+        throw new PermanentJobError('import.no_file', 'A bank feed batch has no file to read');
       const file = await trx
         .selectFrom('app.file')
         .selectAll()
@@ -136,7 +143,7 @@ export class ImportJobs {
 
       const ocr =
         p.previousResult?.kind === 'ocr_text' ? await this.ocrTable(trx, ctx, batch.id, currency, p) : null;
-      const sheets = ocr ? ocr.sheets : await this.sheets(ctx, batch.file_type, file, p);
+      const sheets = ocr ? ocr.sheets : await this.sheets(ctx, fileType, file, p);
       const statement = ocr ? ocr.statement : (p.previousResult?.statement ?? null);
       const decimal = detectDecimalSeparator(
         [statement?.openingBalance ?? '', statement?.closingBalance ?? ''].filter(Boolean),
@@ -176,7 +183,7 @@ export class ImportJobs {
       // without guessing from the account type (IMP-13).
       const migration = await this.migrationSign(trx, ctx, batch.id);
       const analyzeOpts: Parameters<typeof analyze>[1] = {
-        fileType: batch.file_type,
+        fileType,
         currency,
         accountType: migration || account.type !== 'liability' ? 'asset' : 'liability',
         preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
@@ -188,6 +195,8 @@ export class ImportJobs {
         })),
         accountFilter: p.accountFilter ?? undefined,
         statement: statementBalances,
+        // Dates printed without a year fall back to the upload day when the statement states no period.
+        referenceDate: todayIn('UTC', batch.created_at),
       };
       let analysis = analyze(sheets, analyzeOpts, p.override);
       // Switching from another app: the user said this file shows spending as positive (IMP-13).
@@ -203,7 +212,7 @@ export class ImportJobs {
           trx,
           ctx,
           batch.id,
-          batch.file_type,
+          fileType,
           sheets,
           analysis,
           analyzeOpts,
@@ -300,6 +309,7 @@ export class ImportJobs {
             accounts: proposal.accounts ?? [],
             templateId: proposal.templateId ?? null,
             accountColumn: proposal.accountColumn ?? null,
+            dates: analysis.dates,
             accountFilter: p.accountFilter ?? null,
             saveProfile: p.saveProfile ?? true,
             // Spreadsheet/PDF grids are kept so a mapping change doesn't need another extraction.
@@ -334,7 +344,7 @@ export class ImportJobs {
       .executeTakeFirst();
     if (!row) return null;
     const inverted = (row.plan as { inverted?: string[] }).inverted ?? [];
-    return inverted.includes(row.file_id) ? 'inverted' : 'as_written';
+    return row.file_id !== null && inverted.includes(row.file_id) ? 'inverted' : 'as_written';
   }
 
   /** The plan's category mapping for a migration batch: file name (lower case) → category id, or null to skip. */
@@ -754,7 +764,8 @@ export class ImportJobs {
               categoryId: apply ? chosen! : undefined,
               memberId,
               tags: apply && !userSet ? (suggestion?.tags ?? []) : [],
-              source: 'import',
+              // A bank feed's rows are the feed's transactions (ADR-0055 §5).
+              source: batch.source === 'feed' ? 'feed' : 'import',
               reviewState: userSet ? 'reviewed' : 'auto_applied',
               payeeKey: rowPayeeKey,
               categorization,
@@ -824,6 +835,7 @@ export class ImportJobs {
           .where('workspace_id', '=', ctx.workspaceId)
           .where('id', '=', batch.id)
           .execute();
+        if (batch.source === 'feed') await this.feedBalanceCheck(trx, ctx, batch.id);
         await this.saveProfile(trx, ctx, batch);
         // AI-08/09: refresh recurring proposals and anomaly flags with the new rows.
         if (added > 0)
@@ -1107,6 +1119,17 @@ export class ImportJobs {
           .execute();
         restored++;
       }
+      // ADR-0055 §5: an undone bank feed batch's days are asked for again on the next sync, so its rows come back.
+      const fed = await trx
+        .selectFrom('app.import_batch')
+        .select(['source', 'bank_feed_account_id', 'min_date'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', batchId)
+        .executeTakeFirst();
+      if (fed?.source === 'feed' && fed.bank_feed_account_id && fed.min_date)
+        await sql`select app.bank_feed_rewind(${fed.bank_feed_account_id}::uuid, ${fed.min_date}::date)`.execute(
+          trx,
+        );
       await trx
         .updateTable('app.import_batch')
         .set({
@@ -1119,5 +1142,139 @@ export class ImportJobs {
         .execute();
       return { voided, restored, kept };
     });
+  }
+
+  // ------------------------------------------------------------------------------------------------------
+  /**
+   * The balance check for a bank feed's batch (ADR-0055 §5, IMP-08; FEED-07): once it's committed, the account's ledger
+   * balance at the end of the feed's balance date against the balance the institution reported for it. Both are in
+   * the account's terms the feed uses (positive is money held; a card's or loan's debt is negative), so they compare
+   * as they are. The batch records `ok` or `mismatch` with the gap, which the import shows as a statement's does; a
+   * mismatch holds the account's next clean auto-commit until someone commits by hand.
+   */
+  private async feedBalanceCheck(trx: Trx, ctx: Ctx, batchId: string): Promise<void> {
+    const row = await trx
+      .selectFrom('app.import_batch as b')
+      .innerJoin('app.bank_feed_account as a', (j) =>
+        j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.bank_feed_account_id'),
+      )
+      .select(['b.ledger_account_id', 'a.last_balance_minor', 'a.balance_date'])
+      .where('b.workspace_id', '=', ctx.workspaceId)
+      .where('b.id', '=', batchId)
+      .executeTakeFirst();
+    if (!row || row.last_balance_minor === null || !row.balance_date) return;
+    const { rows } = await sql<{ total: string | null }>`
+      select sum(amount_minor)::text as total from app.posting
+       where workspace_id = ${ctx.workspaceId} and ledger_account_id = ${row.ledger_account_id}
+         and entry_date <= ${row.balance_date}::date`.execute(trx);
+    const ledger = BigInt(rows[0]?.total ?? '0');
+    const gap = ledger - BigInt(row.last_balance_minor);
+    await trx
+      .updateTable('app.import_batch')
+      .set({
+        statement_closing_minor: row.last_balance_minor,
+        balance_check: gap === 0n ? 'ok' : 'mismatch',
+        balance_gap_minor: gap === 0n ? null : gap,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', batchId)
+      .execute();
+  }
+
+  // ------------------------------------------------------------------------------------------------------
+  /**
+   * A bank feed's rows, already read (ADR-0055 §5): staged into preview as a parsed file's are, with no mapping. The
+   * provider's id is each row's identity for dedupe (as an OFX FITID) and is kept on the row, so a later sync skips it.
+   * Exact and probable duplicates, matches to manual and scheduled entries, transfers, loans and categories all come
+   * from the same steps as a file's.
+   */
+  async stageFeedRows(
+    trx: Trx,
+    ctx: Ctx,
+    batchId: string,
+    accountId: string,
+    rows: ReadonlyArray<{
+      id: string;
+      date: CalendarDate;
+      amount: bigint;
+      description: string;
+      payee: string | null;
+    }>,
+  ): Promise<void> {
+    const parsed = rows.map((r, i) => {
+      const description = r.description || r.payee || '';
+      return {
+        rowNo: i + 1,
+        date: r.date,
+        amount: r.amount,
+        description,
+        normalizedDescription: normalizeDescription(description),
+        payee: r.payee,
+        balance: null,
+        category: null,
+        reference: null,
+        externalId: r.id,
+        raw: [r.id, r.date, r.amount.toString(), description, r.payee ?? ''],
+      };
+    });
+    const dates = parsed.map((r) => r.date).sort();
+    const minDate = dates[0] ?? null;
+    const maxDate = dates[dates.length - 1] ?? null;
+    const { imported, manual, covered } =
+      minDate && maxDate
+        ? await this.candidates(trx, ctx, accountId, batchId, {
+            from: addDays(minDate, -3),
+            to: addDays(maxDate, 3),
+          })
+        : { imported: [], manual: [], covered: [] };
+    const classes = classifyRows(accountId, parsed, imported, manual, covered);
+    const decisions = await this.categorizeRows(trx, ctx, batchId, accountId, parsed, classes);
+    const values = parsed.map((r, i) => {
+      const c = classes[i]!;
+      const s = decisions.get(i) ?? null;
+      return {
+        workspace_id: ctx.workspaceId,
+        id: newId(),
+        import_batch_id: batchId,
+        row_no: r.rowNo,
+        raw: JSON.stringify(r.raw),
+        txn_date: r.date,
+        amount_minor: r.amount,
+        description: r.description,
+        payee_raw: r.payee,
+        normalized_desc: r.normalizedDescription,
+        ordinal: c.ordinal,
+        dedupe_key: c.dedupeKey,
+        external_id: r.externalId,
+        status: c.status,
+        match_transaction_id: c.status === 'match' ? c.transactionId : null,
+        duplicate_of_transaction_id:
+          c.status === 'duplicate' || c.status === 'probable_duplicate' ? c.transactionId : null,
+        score: c.score === null ? null : String(c.score),
+        suggestion: s ? JSON.stringify(s) : null,
+        category_id: s?.autoApply ? s.categoryId : null,
+        member_id: s?.autoApply ? s.memberId : null,
+      };
+    });
+    for (let i = 0; i < values.length; i += 500) {
+      await trx
+        .insertInto('app.import_row')
+        .values(values.slice(i, i + 500))
+        .execute();
+    }
+    await trx
+      .updateTable('app.import_batch')
+      .set({
+        status: 'preview',
+        rows_read: parsed.length,
+        min_date: minDate,
+        max_date: maxDate,
+        balance_check: 'n_a',
+        warnings: JSON.stringify([]),
+        error: null,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', batchId)
+      .execute();
   }
 }

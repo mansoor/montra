@@ -683,6 +683,26 @@ Vault as a per-workspace storage provider. Documents go one way, from Montra to 
 | VLT-10 | The phone shows the vault status and badges, opens vault-held documents, and uploads missing files again. | C |
 | VLT-11 | When Montra needs a file it no longer holds, it asks the vault; a file the vault doesn't return is listed in Review to be provided again, and backups and tax packages list any file still missing. | M |
 
+### 13.7 Bank feeds
+
+Added on 2026-11-20 with [ADR-0055](../design/adr/0055-bank-feeds-simplefin.md): bank transactions brought in daily,
+set up per workspace, starting with SimpleFIN Bridge. Uploaded statements keep working alongside a feed. SimpleFIN's
+limits (requests a day, the 90-day window, the overlap, the hosts Montra may reach) are the API's settings, so they
+change without a code change. This brings forward the bank connections §14.1 planned for R2.
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FEED-01 | An owner connects the workspace to SimpleFIN Bridge with a setup token, claimed once; the access is sealed, never shown, logged, archived or sent elsewhere. | S |
+| FEED-02 | Each institution account is linked to a Montra account by suggestion (learned), created, or ignored; ignored and unlinked accounts are never imported. | S |
+| FEED-03 | Linked accounts sync daily and on request, within the provider's limits, through the import pipeline, one batch per account, with Undo. | S |
+| FEED-04 | The provider's transaction id is the dedupe key; overlapping syncs and statements for the same account never add a transaction twice without a decision. | M |
+| FEED-05 | A feed starts the day after the account's latest transaction, at most 90 days back, or from a date within that the owner picks when linking. | S |
+| FEED-06 | Clean feed batches commit automatically; others wait in Review. Pending transactions are never imported. | S |
+| FEED-07 | The feed's balance checks each account after a sync. | S |
+| FEED-08 | Problems are shown per feed and account in words; owners are told once when a person must act. | S |
+| FEED-09 | Connecting, link changes and disconnecting are in the security log; disconnecting wipes the secret; staff can't read it. | M |
+| FEED-10 | The phone shows each feed's status and offers Sync now. | C |
+
 ## 14. Roadmap, out of scope and open questions
 
 &#91;embedded content: release roadmap · 4 phases, 3 gates (not to scale)\]

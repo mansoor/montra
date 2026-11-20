@@ -550,7 +550,15 @@ export interface ImportProfileTable {
 }
 
 export type ImportBatchStatus =
-  'uploaded' | 'parsing' | 'needs_mapping' | 'preview' | 'committing' | 'committed' | 'failed' | 'undone';
+  | 'uploaded'
+  | 'parsing'
+  | 'needs_mapping'
+  | 'preview'
+  | 'committing'
+  | 'committed'
+  | 'failed'
+  | 'undone'
+  | 'discarded';
 
 /** Switching from another app (IMP-13): the batches made from one export, and the user's plan for it. */
 export interface ImportMigrationTable {
@@ -567,9 +575,14 @@ export interface ImportBatchTable {
   id: string;
   entity_id: string;
   ledger_account_id: string;
-  file_id: string;
+  /** Null for a bank feed's batch (0071), which has no file. */
+  file_id: string | null;
   file_name: string;
-  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx';
+  file_type: 'csv' | 'xlsx' | 'xls' | 'pdf' | 'qif' | 'ofx' | 'feed';
+  /** Where the rows came from (0071, ADR-0055 §2): an uploaded file or a bank feed's sync. */
+  source: Generated<'file' | 'feed'>;
+  /** The feed account a `feed` batch came from; no foreign key, as archives leave feeds out. */
+  bank_feed_account_id: string | null;
   profile_id: string | null;
   fingerprint: string | null;
   mapping: Json<Record<string, unknown>> | null;
@@ -611,6 +624,8 @@ export interface ImportRowTable {
   import_batch_id: string;
   row_no: number;
   raw: Json<string[]>;
+  /** A bank feed's transaction id (0072, ADR-0055 §5): a sync skips ids already brought into the account. */
+  external_id?: string | null;
   txn_date: CalendarDateCol | null;
   amount_minor: Int8 | null;
   description: string | null;
@@ -728,6 +743,16 @@ export interface PayeeHistoryTable {
   amount_band: number;
   category_id: string;
   member_id: string | null;
+  count: Generated<number>;
+  last_used_at: Generated<Date>;
+}
+
+/** A transfer the person made by hand, remembered for the payee (0070). */
+export interface PayeeTransferTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payee_key: string;
+  account_id: string;
   count: Generated<number>;
   last_used_at: Generated<Date>;
 }
@@ -1799,6 +1824,85 @@ export interface VaultItemTable {
   updated_at: Generated<Date>;
 }
 
+export type BankFeedProvider = 'simplefin';
+export type BankFeedStatus =
+  'active' | 'needs_attention' | 'revoked' | 'payment_required' | 'paused' | 'failing' | 'disconnected';
+
+/** A workspace's bank feed (0071, ADR-0055 §2): one live per provider; the access URL sealed in `secret_enc`. */
+export interface BankFeedTable {
+  workspace_id: string;
+  id: Generated<string>;
+  provider: BankFeedProvider;
+  status: Generated<BankFeedStatus>;
+  /** Null once disconnected. Read only by connecting and syncing; never returned. */
+  secret_enc: Buffer | null;
+  host: string | null;
+  label: string | null;
+  connected_by: string | null;
+  connected_at: Generated<Date>;
+  disconnected_at: Date | null;
+  /** The minute of the workspace's local day the daily sync runs at (0–1439). */
+  sync_minute: number;
+  last_sync_at: Date | null;
+  last_success_at: Date | null;
+  next_sync_at: Date | null;
+  last_manual_sync_at: Date | null;
+  attempts: Generated<number>;
+  last_error: string | null;
+  attention_notified_at: Date | null;
+  requests_day: CalendarDateCol | null;
+  requests_today: Generated<number>;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export type BankFeedAccountState = 'new' | 'linked' | 'ignored';
+export type BankFeedProblem = 'reauth_needed' | 'account_failed' | 'missing_data' | 'unknown';
+
+/** An account a feed reports (0071, ADR-0055 §4): linked to a Montra account, ignored, or not decided yet. */
+export interface BankFeedAccountTable {
+  workspace_id: string;
+  id: Generated<string>;
+  bank_feed_id: string;
+  provider_account_id: string;
+  provider_institution_id: string | null;
+  name: string;
+  institution_name: string | null;
+  /** Null for a custom currency, which can't be linked. */
+  currency: string | null;
+  ledger_account_id: string | null;
+  state: Generated<BankFeedAccountState>;
+  start_date: CalendarDateCol | null;
+  synced_through: CalendarDateCol | null;
+  last_balance_minor: Int8 | null;
+  last_available_minor: Int8 | null;
+  balance_date: CalendarDateCol | null;
+  problem: BankFeedProblem | null;
+  last_error: string | null;
+  missing_since: Date | null;
+  last_seen_at: Date | null;
+  version: Int8Default;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** One sync of a feed (0071, ADR-0055 §2), kept 90 days: what it used and made, never a provider response. */
+export interface BankFeedRunTable {
+  workspace_id: string;
+  id: Generated<string>;
+  bank_feed_id: string;
+  trigger: 'connect' | 'first' | 'schedule' | 'manual';
+  started_at: Generated<Date>;
+  finished_at: Date | null;
+  outcome: Generated<'running' | 'ok' | 'partial' | 'held' | 'failed'>;
+  requests: Generated<number>;
+  accounts: Generated<number>;
+  batches: Generated<number>;
+  rows_read: Generated<number>;
+  error: string | null;
+}
+
 export interface RestoreJobTable {
   id: string;
   user_id: string;
@@ -1858,6 +1962,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'ref.merchant': RefMerchantTable;
   'app.rule': RuleTable;
   'app.payee_history': PayeeHistoryTable;
+  'app.payee_transfer': PayeeTransferTable;
   'app.correction': CorrectionTable;
   'app.rule_suggestion': RuleSuggestionTable;
   'app.ai_cache': AiCacheTable;
@@ -1936,6 +2041,9 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.storage_mirror_item': StorageMirrorItemTable;
   'app.vault_connection_state': VaultConnectionStateTable;
   'app.vault_item': VaultItemTable;
+  'app.bank_feed': BankFeedTable;
+  'app.bank_feed_account': BankFeedAccountTable;
+  'app.bank_feed_run': BankFeedRunTable;
   'app.restore_job': RestoreJobTable;
   'app.subscription': SubscriptionTable;
   'app.plan': PlanTable;

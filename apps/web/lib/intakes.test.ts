@@ -8,6 +8,7 @@ import {
   initialTarget,
   isSettled,
   isWorking,
+  pendingStatements,
   STATEMENT_ACCEPT,
   targetOptions,
   waitingImport,
@@ -126,5 +127,25 @@ describe('statements and bills to file (ADR-0051)', () => {
     for (const ext of ['.csv', '.xlsx', '.xls', '.pdf', '.qif', '.ofx', '.qfx', '.jpg', '.png', '.webp'])
       expect(STATEMENT_ACCEPT.split(',')).toContain(ext);
     expect(STATEMENT_ACCEPT).toContain('image/jpeg');
+  });
+});
+
+describe('statements still waiting when the Statements screen opens', () => {
+  it('keeps statements being read, imported or waiting for an account, newest first, once each', () => {
+    const reading = intake({ id: 'a', status: 'reading', createdAt: '2026-11-18T23:00:00.000Z' });
+    const review = intake({
+      id: 'b',
+      status: 'review',
+      reason: 'several',
+      createdAt: '2026-11-18T22:00:00.000Z',
+    });
+    const importing = intake({ id: 'c', status: 'importing', createdAt: '2026-11-17T09:00:00.000Z' });
+    const done = intake({ id: 'd', status: 'done' });
+    const dismissed = intake({ id: 'e', status: 'dismissed' });
+    const bill = intake({ id: 'f', kind: 'bill', status: 'review' });
+    expect(
+      pendingStatements([review], [reading, review, importing, done, dismissed, bill]).map((i) => i.id),
+    ).toEqual(['a', 'b', 'c']);
+    expect(pendingStatements([], [])).toEqual([]);
   });
 });

@@ -1,16 +1,18 @@
 import Link from 'next/link';
 import type { AccountDto, ImportBatchDto } from '@montra/api-client';
 import { getI18n } from '@/lib/i18n-server';
-import { BATCH_TONE, canUndo } from '@/lib/imports';
+import { BATCH_TONE, canDiscard, canUndo, historyBatches } from '@/lib/imports';
+import { DiscardButton } from './discard-button';
 import { UndoButton } from './undo-button';
 
 /**
- * Import history (IMP-09): every batch with its outcome, and undo while it's allowed. Shown on the Statements screen
+ * Import history (IMP-09): every batch with its outcome, undo while it's allowed, and discard for one never committed
+ * (discarded ones leave the list). Shown on the Statements screen
  * and on `/imports` (one account's, from its page), so there's one list.
  */
 export async function ImportHistory({
   workspaceId,
-  batches,
+  batches: all,
   accounts,
   title,
 }: {
@@ -24,6 +26,7 @@ export async function ImportHistory({
   const names = new Map(accounts.map((a) => [a.id, a.name]));
   const uploaded = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
   const base = `/w/${workspaceId}`;
+  const batches = historyBatches(all);
   if (batches.length === 0) return <p className="card text-sm text-muted">{t('imports.history.empty')}</p>;
   return (
     <div className="card overflow-x-auto p-0">
@@ -72,6 +75,7 @@ export async function ImportHistory({
               <td className="num px-4 py-2 text-right">{b.counts.added}</td>
               <td className="px-4 py-2 text-right">
                 {canUndo(b) && <UndoButton workspaceId={workspaceId} batchId={b.id} navigate />}
+                {canDiscard(b) && <DiscardButton workspaceId={workspaceId} batchId={b.id} />}
               </td>
             </tr>
           ))}

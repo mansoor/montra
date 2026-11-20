@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { contentSecurityPolicy } from './lib/csp.mjs';
+import { securityHeaders } from './lib/csp.mjs';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -10,23 +10,16 @@ const nextConfig = {
   // Lint runs as its own Turbo task with the repo's flat config.
   eslint: { ignoreDuringBuilds: true },
   // NFR-01. Evaluated when the app is built.
+  // Responses under /api (the files the viewers show in an <iframe>) may be framed by Montra's own pages; the later rule
+  // overrides the same header keys for those paths. Pages are never framed.
   async headers() {
-    const csp = contentSecurityPolicy({
+    const options = {
       kratosUrl: process.env.NEXT_PUBLIC_KRATOS_URL,
       dev: process.env.NODE_ENV !== 'production',
-    });
+    };
     return [
-      {
-        source: '/:path*',
-        headers: [
-          { key: 'Content-Security-Policy', value: csp },
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-        ],
-      },
+      { source: '/:path*', headers: securityHeaders(options) },
+      { source: '/api/:path*', headers: securityHeaders({ ...options, frameable: true }) },
     ];
   },
   // Workspace packages ship ESM in dist/ (built first by Turbo's ^build).

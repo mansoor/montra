@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { load } from '@/lib/server-api';
+import { load, serverApi } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { ImportHistory } from '@/components/imports/import-history';
 import { StatementsInbox } from '@/components/imports/statements-inbox';
+import { pendingStatements } from '@/lib/intakes';
 
 export const metadata: Metadata = { title: 'Statements' };
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,20 @@ export default async function StatementsPage({ params }: { params: Promise<{ wor
   const open = accounts.filter((a) => !a.archived);
   const base = `/w/${workspaceId}`;
   const importer = ['owner', 'admin', 'partner', 'accountant'].includes(workspace.role);
+  // Statements uploaded earlier that are still being read or waiting for an account: in review (`open`, any age) and
+  // still being read or imported (`recent`).
+  const pending = importer
+    ? pendingStatements(
+        ...(await load((api) =>
+          Promise.all([
+            api.listIntakes(workspaceId, { status: 'open', kind: 'statement' }),
+            api.listIntakes(workspaceId, { status: 'recent', kind: 'statement' }),
+          ]),
+        )),
+      )
+    : [];
+  // ADR-0055 §6: accounts a bank feed imports into, so a statement for one says it will meet the feed's rows.
+  const feedLinks = importer ? await (await serverApi()).bankFeedLinks(workspaceId).catch(() => []) : [];
 
   return (
     <div className="space-y-6">
@@ -43,7 +58,13 @@ export default async function StatementsPage({ params }: { params: Promise<{ wor
             </Link>
           </p>
         ) : (
-          <StatementsInbox workspaceId={workspaceId} role={workspace.role} accounts={open} />
+          <StatementsInbox
+            workspaceId={workspaceId}
+            role={workspace.role}
+            accounts={open}
+            pending={pending}
+            feedLinks={feedLinks}
+          />
         ))}
       <section className="space-y-3" aria-labelledby="statement-history">
         <div className="flex flex-wrap items-center justify-between gap-2">

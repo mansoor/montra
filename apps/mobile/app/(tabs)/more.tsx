@@ -4,6 +4,7 @@ import { t } from '../../src/i18n';
 import { config } from '../../src/config';
 import { reviewBadge, showsTaxForms } from '../../src/features/tax-forms';
 import { useMissingFiles } from '../../src/features/use-missing-files';
+import { useFeedImports } from '../../src/features/use-feed-imports';
 import { useTaxFormsToCheck } from '../../src/features/use-tax-forms';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
@@ -26,7 +27,8 @@ export default function More() {
   const queued = sync ? sync.pending + sync.drafts : 0;
   const taxForms = useTaxFormsToCheck().count;
   const missingFiles = useMissingFiles().count;
-  const toReview = reviewBadge(sync?.reviewCount ?? 0, taxForms, missingFiles);
+  const feedImports = useFeedImports().count;
+  const toReview = reviewBadge(sync?.reviewCount ?? 0, taxForms, missingFiles, feedImports);
   // ADR-0052 §7.2: US forms, for books kept in US dollars; not for viewers.
   const taxFormsShown = state.status === 'signed_in' && showsTaxForms(state.workspace);
   const sections: Array<{ label: string; items: Item[] }> = [

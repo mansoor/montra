@@ -858,8 +858,8 @@ export class FlowService {
         }
         // Billers' estimated next bills (ADR-0048 §4), paid from the books' main account.
         for (const x of billerBills) {
-          // An overdue bill is still to pay, from tomorrow; a past estimate isn't.
-          if (x.biller.entity_id !== e || x.coveredByRecurring || (x.estimated && x.next.date < from))
+          // An overdue bill is still to pay, from tomorrow; a past estimate isn't, but one due today is (from tomorrow).
+          if (x.biller.entity_id !== e || x.coveredByRecurring || (x.estimated && x.next.date < today))
             continue;
           add({
             date: x.next.date < from ? from : x.next.date,
@@ -1495,7 +1495,8 @@ export class FlowService {
 
   /**
    * Explore spending (SpendingExploreDto): the picked categories month by month, with purchase counts and the top
-   * places, plus all spending and income per month for context. Counts the way the dashboard does.
+   * places, plus all spending and income per month for context. Counts the way the dashboard does. "Uncategorized
+   * expense" is no category to explore: it is left out of the categories and `spending`, and said on its own.
    */
   async spendingExplore(
     ctx: Ctx,
@@ -1513,8 +1514,10 @@ export class FlowService {
       });
       const cats = await this.data.categories(trx, ctx, entityId);
       const incomeIds = new Set(cats.filter((c) => c.type === 'income').map((c) => c.id));
-      const spend = cats.filter((c) => c.type === 'expense' && c.kind !== 'system');
+      const isUncategorized = (c: (typeof cats)[number]) => c.systemRole === 'uncategorized_expense';
+      const spend = cats.filter((c) => c.type === 'expense' && c.kind !== 'system' && !isUncategorized(c));
       const spendIds = new Set(spend.map((c) => c.id));
+      const uncategorizedIds = cats.filter(isUncategorized).map((c) => c.id);
       const filter = memberId ? { memberId } : {};
       const act = await this.data.activity(trx, ctx, entityId, periods, filter);
       const withheld = await this.data.payslipWithheld(trx, ctx, entityId, periods, filter);
@@ -1523,6 +1526,8 @@ export class FlowService {
       const income = periods.map(
         (p) => -[...incomeIds].reduce((t, id) => t + of(p, id), 0n) - (withheld.get(p.start) ?? 0n),
       );
+      const uncategorizedMonthly = periods.map((p) => uncategorizedIds.reduce((t, id) => t + of(p, id), 0n));
+      const uncategorizedTotal = uncategorizedMonthly.reduce((t, v) => t + v, 0n);
 
       const totals = spend
         .map((c) => ({ c, total: periods.reduce((t, p) => t + of(p, c.id), 0n) }))
@@ -1603,6 +1608,20 @@ export class FlowService {
         periods: periods.map((p) => ({ start: p.start, end: p.end })),
         spending: spending.map(s),
         income: income.map(s),
+        uncategorized:
+          uncategorizedTotal > 0n
+            ? {
+                total: s(uncategorizedTotal),
+                monthly: uncategorizedMonthly.map(s),
+                drill: {
+                  entityId,
+                  ...memberDrill,
+                  categoryIds: uncategorizedIds,
+                  from: periods[0]!.start,
+                  to: periods[periods.length - 1]!.end,
+                },
+              }
+            : null,
         categories,
         budget:
           budgetRow && computed

@@ -111,14 +111,16 @@ The result follows these rules:
 ### PDF extraction rules
 
 1. Ruled tables come from `extract_tables`. Unruled statements are rebuilt from word positions, using the header
-   line (Date / Description / Amount / Debit / Credit / Balance …) as column anchors. Right-aligned numbers snap
-   to the nearest column edge.
+   line (Date / Description / Amount / Debit / Credit / Balance …) as column anchors. An amount column takes only
+   a money value that reaches under its header (right-aligned, the closest right edge wins; one per column). Every
+   other word goes to the text column it starts in, so a long description never spills into Amount.
 2. A row starts with a date (`10/02`, `10/02/2026`, `2026-10-02`, `02.10.2026`, `Oct 02`, `02 Oct 2026`).
 3. A line with no date and no amount, directly below a row, continues that row's description.
 4. These are dropped: repeated headers, page footers (`Page 1 of 2`), lines repeated on several pages (the bank
    name and address), and balance lines. Balance lines populate `statement` instead.
 5. The statement period is a date range on a line mentioning the period or statement. Numeric dates are read
-   US-style unless the first part exceeds 12.
+   US-style unless the first part exceeds 12. Without a range, a closing or statement date gives `periodEnd`
+   alone. The importer takes the year of dates printed without one (`10/02`) from the period.
 
 ## Security
 

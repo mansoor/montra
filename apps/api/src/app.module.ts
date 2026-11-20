@@ -68,6 +68,12 @@ import { MissingFiles } from './storage/missing-files.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { fakeVaultTransport } from './storage/vault/fake.js';
 import { allowLocalVaultHttp, guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
+import { BankFeedConnectController, BankFeedsController } from './bank-feeds/bank-feeds.controller.js';
+import { BANK_FEED_PROVIDER, BankFeedsService } from './bank-feeds/bank-feeds.service.js';
+import { BankFeedSync } from './bank-feeds/bank-feeds.sync.js';
+import { simpleFinLimits } from './bank-feeds/limits.js';
+import { SimpleFinProvider } from './bank-feeds/simplefin.adapter.js';
+import { FEED_TRANSPORT, guardedFeedTransport, type FeedTransport } from './bank-feeds/transport.js';
 import {
   FakeVaultController,
   VaultController,
@@ -228,6 +234,8 @@ export class AppModule {
       StorageController,
       VaultController,
       VaultKeyController,
+      BankFeedsController,
+      BankFeedConnectController,
       VaultOpenController,
       VaultOpenLinkController,
       MissingFilesController,
@@ -356,6 +364,15 @@ export class AppModule {
                   maxBytes: Math.max(4 * 1024 * 1024, config.MAX_UPLOAD_BYTES + 1024 * 1024),
                 });
           },
+        },
+        // Bank feeds (ADR-0055): SimpleFIN behind the guarded transport, its limits from the settings.
+        BankFeedsService,
+        BankFeedSync,
+        { provide: FEED_TRANSPORT, useFactory: () => guardedFeedTransport(simpleFinLimits(config)) },
+        {
+          provide: BANK_FEED_PROVIDER,
+          inject: [FEED_TRANSPORT],
+          useFactory: (transport: FeedTransport) => new SimpleFinProvider(transport, simpleFinLimits(config)),
         },
         RestoreService,
         OwnershipService,

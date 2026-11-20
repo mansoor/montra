@@ -8,7 +8,8 @@ import { onChanges } from '@/lib/sync';
 import { useI18n } from '../i18n';
 
 /**
- * Count of what waits in Review for the nav: transactions to review, tax forms to check and files to provide again
+ * Count of what waits in Review for the nav: transactions to review, tax forms to check, files to provide again and
+ * bank feed imports waiting (ADR-0055)
  * (refreshes on navigation and on realtime transaction changes; tax forms and missing files change through their own
  * pages, so navigation covers them).
  */
@@ -33,8 +34,12 @@ export function ReviewCountBadge({ workspaceId }: { workspaceId: string }) {
           (r) => r.length,
           () => null,
         ),
-      ]).then(([transactions, taxForms, missingFiles]) => {
-        const next = reviewBadgeTotal(transactions, taxForms, missingFiles);
+        browserApi.listFeedImportsWaiting(workspaceId).then(
+          (r) => r.length,
+          () => null,
+        ),
+      ]).then(([transactions, taxForms, missingFiles, feedImports]) => {
+        const next = reviewBadgeTotal(transactions, taxForms, missingFiles, feedImports);
         if (alive && next !== null) setTotal(next);
       });
     void refresh();

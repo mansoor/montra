@@ -609,6 +609,8 @@ describe('a key the vault refuses (vault 0.9.0-dev.63)', () => {
   it('says a key that isn’t valid any more needs a new one', async () => {
     const kept = key().secret_sha256;
     key().secret_sha256 = '0'.repeat(64);
+    // A key stops working only as the vault ends it, and its access tokens end with it (0.9.0-dev.72).
+    fake.vault.expireAppTokens();
     try {
       const res = await c.post(url('/family-vault/check'));
       expect(res.body).toMatchObject({

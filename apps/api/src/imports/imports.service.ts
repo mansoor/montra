@@ -2,7 +2,7 @@ import { sql } from 'kysely';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Selectable } from 'kysely';
 import { newId, type ImportBatchTable, type ImportRowTable, type Trx } from '@montra/db';
-import { asCurrencyCode, isBalanceSheet } from '@montra/domain';
+import { asCurrencyCode, isBalanceSheet, type CalendarDate } from '@montra/domain';
 import { statementSignal } from '@montra/importers';
 import { TAX_FORM_JOB_TYPES } from '../tax-forms/job-types.js';
 import type {
@@ -18,7 +18,12 @@ import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { JobQueue } from '../jobs/queue.js';
 import { LedgerService } from '../ledger/ledger.service.js';
-import { confirmMatch, intakeImportCommitted, intakeImportUndone } from '../intakes/match-memory.js';
+import {
+  confirmMatch,
+  intakeImportCommitted,
+  intakeImportDiscarded,
+  intakeImportUndone,
+} from '../intakes/match-memory.js';
 import { FileBytes, heldKey } from '../storage/file-bytes.js';
 
 type Ctx = { workspaceId: string; userId: string };
@@ -40,6 +45,15 @@ export function effectiveDecision(
       return 'import'; // new and probable duplicates are imported unless the user skips them
   }
 }
+
+/** The statuses of an import that was never committed: it can be discarded. `committing` is a commit or an undo. */
+export const DISCARDABLE_STATUSES: readonly Batch['status'][] = [
+  'uploaded',
+  'parsing',
+  'needs_mapping',
+  'preview',
+  'failed',
+];
 
 const money = (amount: bigint | null, currency: string) =>
   amount === null ? null : { amount: amount.toString(), currency: asCurrencyCode(currency) };
@@ -240,13 +254,17 @@ export class ImportsService {
     });
   }
 
-  async list(ctx: Ctx, accountId?: string): Promise<ImportBatchDto[]> {
+  /** `waitingFeed`: only bank feed batches waiting in preview, for Review (ADR-0055 §5). */
+  async list(ctx: Ctx, accountId?: string, opts: { waitingFeed?: boolean } = {}): Promise<ImportBatchDto[]> {
     const ids = await this.db.run(ctx, (trx) =>
       trx
         .selectFrom('app.import_batch')
         .select('id')
         .where('workspace_id', '=', ctx.workspaceId)
         .$if(Boolean(accountId), (q) => q.where('ledger_account_id', '=', accountId!))
+        .$if(Boolean(opts.waitingFeed), (q) => q.where('source', '=', 'feed').where('status', '=', 'preview'))
+        // Discarded imports leave the history: nothing came of them.
+        .where('status', '<>', 'discarded')
         .orderBy('created_at', 'desc')
         .limit(100)
         .execute(),
@@ -443,6 +461,75 @@ export class ImportsService {
     return this.get(ctx, id);
   }
 
+  /**
+   * Discards an import that was never committed (IMP-09): its preview rows and queued jobs go, and the batch stays as
+   * `discarded`, since a statement (ADR-0051) and the audit log may point at it. The uploaded file is kept: the
+   * statement, the vault and backups may still use it. A statement that led to the import goes back to Review.
+   */
+  async discard(ctx: Ctx, id: string): Promise<ImportBatchDto> {
+    await this.db.run(ctx, async (trx) => {
+      const batch = await this.load(trx, ctx, id, true);
+      if (!DISCARDABLE_STATUSES.includes(batch.status)) {
+        throw new AppError(
+          409,
+          'import.not_discardable',
+          batch.status === 'committing'
+            ? 'The import is being committed or undone'
+            : `Only an import that was never committed can be discarded; this one is ${batch.status}`,
+        );
+      }
+      // Never committed, so nothing was posted from it; a batch that did post something is never discarded.
+      const posted = await trx
+        .selectFrom('app.transaction_source')
+        .select('transaction_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('import_batch_id', '=', id)
+        .limit(1)
+        .executeTakeFirst();
+      if (posted)
+        throw new AppError(409, 'import.not_discardable', 'This import added transactions: undo it instead');
+      // A bank feed's discarded rows stay: their ids keep the next syncs from offering them again (ADR-0055 §5).
+      const rows =
+        batch.source === 'feed'
+          ? { numDeletedRows: 0n }
+          : await trx
+              .deleteFrom('app.import_row')
+              .where('workspace_id', '=', ctx.workspaceId)
+              .where('import_batch_id', '=', id)
+              .executeTakeFirst();
+      await trx
+        .updateTable('app.import_batch')
+        .set({ status: 'discarded', error: null })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', id)
+        .execute();
+      const { rows: cancelled } = await sql<{
+        n: number;
+      }>`select app.cancel_import_jobs(${id}::uuid) as n`.execute(trx);
+      const intakeId = await intakeImportDiscarded(trx, ctx, id);
+      await trx
+        .insertInto('app.audit_log')
+        .values({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: ctx.userId,
+          actor_type: 'user',
+          action: 'import_batch.discarded',
+          subject_type: 'import_batch',
+          subject_id: id,
+          diff: JSON.stringify({
+            fileId: batch.file_id,
+            fileName: batch.file_name,
+            from: batch.status,
+            rowsDeleted: Number(rows.numDeletedRows),
+            jobsCancelled: cancelled[0]?.n ?? 0,
+            intakeId,
+          }),
+        })
+        .execute();
+    });
+    return this.get(ctx, id);
+  }
+
   async job(ctx: Ctx, jobId: string) {
     const job = await this.db.run(ctx, (trx) =>
       trx
@@ -481,7 +568,10 @@ export class ImportsService {
   }
 }
 
-export function fileTypeOf(mime: string, fileName: string): ImportBatchTable['file_type'] | null {
+export function fileTypeOf(
+  mime: string,
+  fileName: string,
+): Exclude<ImportBatchTable['file_type'], 'feed'> | null {
   if (/pdf/.test(mime) || /\.pdf$/i.test(fileName)) return 'pdf';
   if (/qif/.test(mime) || /\.qif$/i.test(fileName)) return 'qif';
   if (/ofx|qfx/.test(mime) || /\.(ofx|qfx)$/i.test(fileName)) return 'ofx';
@@ -498,13 +588,16 @@ function toBatchDto(b: Batch, counts: Record<string, number>, job: ImportBatchDt
     sample?: string[][];
     accounts?: string[];
     templateId?: string | null;
+    dates?: { start?: CalendarDate | null; end: CalendarDate } | null;
   } | null;
   return {
     id: b.id,
     accountId: b.ledger_account_id,
+    source: b.source,
     fileId: b.file_id,
     fileName: b.file_name,
     fileType: b.file_type,
+    bankFeedAccountId: b.bank_feed_account_id,
     status: b.status,
     currency: b.currency,
     mapping: (b.mapping as ColumnMappingDto | null) ?? null,
@@ -517,6 +610,7 @@ function toBatchDto(b: Batch, counts: Record<string, number>, job: ImportBatchDt
           accounts: analysis.accounts ?? [],
           accountColumn: analysis.accountColumn ?? null,
           templateId: analysis.templateId ?? null,
+          dates: analysis.dates ? { start: analysis.dates.start ?? null, end: analysis.dates.end } : null,
         }
       : null,
     counts: {

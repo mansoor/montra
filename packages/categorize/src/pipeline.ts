@@ -1,7 +1,8 @@
 /**
  * The categorization pipeline (AI-01..06, FAM-05; 04 §5). Cheapest and most certain first:
  *
- *   1 receipt lines (the caller, before this) → 2 rules → 3 transfer/match → 4 personal history
+ *   1 receipt lines (the caller, before this) → 2 rules → 3 transfer/match (or a transfer made by hand before)
+ *   → 4 personal history
  *   → file category → reference merchant → 5 AI → 6 review queue.
  *
  * Rules and transfers always close an item. History, file-category and merchant hints close it when they reach
@@ -11,7 +12,7 @@
  */
 import { applyRules, type RulesResult } from './rules.js';
 import { amountBand, historySuggestion, type HistorySuggestion } from './history.js';
-import { transferSuggestion } from './transfers.js';
+import { rememberedTransfer, transferSuggestion } from './transfers.js';
 import type { AiSuggestion, Decision, PipelineDeps, PipelineItem, Step, TransferCandidate } from './types.js';
 
 interface Candidate {
@@ -54,7 +55,15 @@ export async function runPipeline(items: readonly PipelineItem[], deps: Pipeline
       };
       return w;
     }
-    const transfer = transferSuggestion(item, deps.transferCandidates(item));
+    const candidates = deps.transferCandidates(item);
+    const paired = transferSuggestion(item, candidates);
+    // A transfer the person made by hand for this payee wins over a weaker pair (amount only, or an account named by
+    // its last 4 digits), but not over a sure one.
+    const remembered =
+      item.payeeKey && deps.transferMemory && !(paired && paired.confidence >= 0.95)
+        ? rememberedTransfer(item, deps.transferMemory(item.payeeKey), candidates)
+        : null;
+    const transfer = remembered ?? paired;
     if (transfer) {
       w.closed = {
         step: 'transfer',

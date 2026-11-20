@@ -35,6 +35,7 @@ import {
   type StoredCategorization,
 } from '../categorization/categorizer.service.js';
 import { MerchantDirectory } from '../categorization/merchants.js';
+import { LoansService } from '../rentals/loans.service.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -68,6 +69,7 @@ export class TransactionsService {
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
     @Inject(Categorizer) private readonly categorizer: Categorizer,
     @Inject(MerchantDirectory) private readonly merchants: MerchantDirectory,
+    @Inject(LoansService) private readonly loans: LoansService,
   ) {}
 
   /** Income, expense or split transaction (TXN-01..03, DE-05). Uncategorized items go to the review queue. */
@@ -187,7 +189,7 @@ export class TransactionsService {
       unitId?: string | null;
       memo?: string;
       tags?: string[];
-      source: 'manual' | 'import';
+      source: 'manual' | 'import' | 'feed';
       reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
       payeeId?: string | null;
       dedupeKey?: string | null;
@@ -319,17 +321,53 @@ export class TransactionsService {
    * accounts that was recorded as spending or income. The other side, when it was recorded separately, is absorbed.
    */
   async makeTransfer(ctx: Ctx, id: string, req: MakeTransferRequest): Promise<MakeTransferDto> {
-    const absorbedId = await this.db.run(ctx, (trx) => this.makeTransferInTrx(trx, ctx, id, req));
-    return { transaction: await this.getOrThrow(ctx, id), absorbedId };
+    const done = await this.db.run(ctx, (trx) => this.transferToInTrx(trx, ctx, id, req));
+    return { transaction: await this.getOrThrow(ctx, id), ...done };
   }
 
   /**
-   * The same, inside the caller's transaction. Returns the absorbed other side, if any. That side's statement line
-   * moves to the transfer: the line stays cleared, and its import's source row moves too (as a second leg), so
-   * re-importing that statement still recognises it and undoing that import only unclears the line. The other side
-   * goes to the trash. A reconciled line can't be rewritten this way, so either side being reconciled is refused.
+   * "Make transfer" to the account the person chose or accepted. A loan whose payments are tracked (ADR-0024) takes the
+   * line as its scheduled payment, split into interest, principal and escrow, when one matches it (the same amount,
+   * escrow included, within 5 days) and the loan has no line of its own for it; otherwise it's a plain transfer to the
+   * loan account, and `loan.number` is null to say so. Either way the payee is remembered with the account.
    */
-  async makeTransferInTrx(trx: Trx, ctx: Ctx, id: string, req: MakeTransferRequest): Promise<string | null> {
+  async transferToInTrx(
+    trx: Trx,
+    ctx: Ctx,
+    id: string,
+    req: MakeTransferRequest,
+  ): Promise<Omit<MakeTransferDto, 'transaction'>> {
+    const { row, spec } = await this.transferable(trx, ctx, id, req.accountId);
+    const amount = BigInt(spec.amount);
+    const date = calendarDate(row.txn_date);
+    const loan = await this.loans.paymentForLine(trx, ctx, {
+      loanAccountId: req.accountId,
+      entityId: row.primary_entity_id,
+      currency: spec.currency,
+      amount,
+      date,
+    });
+    if (
+      loan?.number != null &&
+      req.counterpartId === undefined &&
+      !(await this.findCounterpart(trx, ctx, id, req.accountId, amount, spec.currency, date))
+    ) {
+      await this.loans.recordPaymentIn(
+        trx,
+        ctx,
+        loan.loanId,
+        { number: loan.number, transactionId: id },
+        'manual',
+      );
+      await this.categorizer.rememberTransfer(trx, ctx, row.payee_key, req.accountId);
+      return { absorbedId: null, loan };
+    }
+    const absorbedId = await this.makeTransferInTrx(trx, ctx, id, req);
+    return { absorbedId, loan: loan ? { ...loan, number: null } : null };
+  }
+
+  /** The checks every "make transfer" passes before anything is written. */
+  private async transferable(trx: Trx, ctx: Ctx, id: string, accountId: string) {
     const row = await this.lockRow(trx, ctx, id);
     const spec = row.spec as TransactionSpec | null;
     if (row.status !== 'posted' || row.deleted_at)
@@ -342,12 +380,41 @@ export class TransactionsService {
         'transfer.split',
         'A split transaction can’t become a transfer; undo the split first',
       );
-    if (req.accountId === spec.accountId)
+    if (accountId === spec.accountId)
       throw unprocessable('transfer.same_account', 'Pick the other account of the transfer');
-    const amount = BigInt(spec.amount);
-    const date = calendarDate(row.txn_date);
+    const target = await trx
+      .selectFrom('app.ledger_account')
+      .select(['type', 'is_category', 'system_role', 'archived_at'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', accountId)
+      .executeTakeFirst();
+    if (
+      !target ||
+      target.is_category ||
+      target.system_role !== null ||
+      (target.type !== 'asset' && target.type !== 'liability')
+    )
+      throw unprocessable(
+        'transfer.not_an_account',
+        'A transfer goes to one of your bank, card, loan or other accounts, not a category',
+      );
+    if (target.archived_at)
+      throw unprocessable('transfer.archived', 'That account is archived; unarchive it first');
     if ((await this.poster.protection(trx, ctx, id)) === 'reconciled')
       throw unprocessable('transfer.reconciled', 'This transaction is reconciled; unreconcile it first');
+    return { row, spec };
+  }
+
+  /**
+   * The same, inside the caller's transaction. Returns the absorbed other side, if any. That side's statement line
+   * moves to the transfer: the line stays cleared, and its import's source row moves too (as a second leg), so
+   * re-importing that statement still recognises it and undoing that import only unclears the line. The other side
+   * goes to the trash. A reconciled line can't be rewritten this way, so either side being reconciled is refused.
+   */
+  async makeTransferInTrx(trx: Trx, ctx: Ctx, id: string, req: MakeTransferRequest): Promise<string | null> {
+    const { row, spec } = await this.transferable(trx, ctx, id, req.accountId);
+    const amount = BigInt(spec.amount);
+    const date = calendarDate(row.txn_date);
 
     const otherId =
       req.counterpartId === undefined
@@ -467,6 +534,8 @@ export class TransactionsService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('id', '=', id)
       .execute();
+    // AI-05: the payee's next line is suggested as a transfer to the same account.
+    await this.categorizer.rememberTransfer(trx, ctx, row.payee_key, req.accountId);
     return other?.row.id ?? null;
   }
 

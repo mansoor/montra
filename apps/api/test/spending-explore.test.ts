@@ -59,7 +59,26 @@ beforeAll(async () => {
   await post(addDays(month(1), 1), '-150000', 'Rent', 'Oak Street Apartments');
   await post(thisMonth, '-3000', 'Dining out', 'Cafe');
   voidMe = await post(thisMonth, '-9900', 'Dining out', 'Steakhouse');
+  // Bigger than any category, but not yet in one: never a category here, only said so.
+  const uncategorized = await c.post(url('/transactions'), {
+    date: addDays(month(1), 3),
+    accountId: checking,
+    amount: usd('-200000'),
+    payee: 'Mystery Shop',
+  });
+  expect(uncategorized.status).toBe(201);
 });
+
+/** The transactions list for a drill, as the web's link opens it. */
+const drillQuery = (d: any) => {
+  const q = new URLSearchParams({
+    from: d.from,
+    to: d.to,
+    entityId: d.entityId,
+    categoryIds: d.categoryIds.join(','),
+  });
+  return url(`/transactions?${q}`);
+};
 
 afterAll(async () => {
   await h?.close();
@@ -73,8 +92,20 @@ describe('Explore spending (FLOW-01)', () => {
     expect(d.periods).toEqual([2, 1, 0].map((b) => ({ start: month(b), end: endOfMonth(month(b)) })));
     expect(d.categories.map((x: any) => x.name)).toEqual(['Groceries', 'Dining out', 'Fuel']);
     expect(d.income).toEqual(['500000', '500000', '0']);
-    // Rent is the biggest, but a bill: it's a choice, not a default pick.
+    // Rent is the biggest, but a bill: it's a choice, not a default pick. Uncategorized is neither, nor counted.
     expect(d.spending).toEqual(['47000', '197000', '12900']);
+    expect(d.uncategorized).toEqual({
+      total: '200000',
+      monthly: ['0', '200000', '0'],
+      drill: {
+        entityId: personal,
+        categoryIds: [expect.any(String)],
+        from: month(2),
+        to: endOfMonth(thisMonth),
+      },
+    });
+    const listed = (await c.get(drillQuery(d.uncategorized.drill))).body.data;
+    expect(listed.map((x: any) => x.payee)).toEqual(['Mystery Shop']);
     expect(d.choices.map((x: any) => [x.name, x.total])).toEqual([
       ['Rent', '150000'],
       ['Groceries', '60000'],
@@ -118,6 +149,10 @@ describe('Explore spending (FLOW-01)', () => {
   it('ignores categories that aren’t spending, and refuses more than eight or an unknown period', async () => {
     const d = (await c.get(url(`/spending/explore?categoryIds=${cat('Salary')},${cat('Groceries')}`))).body;
     expect(d.categories.map((x: any) => x.name)).toEqual(['Groceries']);
+    // Asking for Uncategorized expense by id gets nothing either.
+    const unc = (await c.get(url('/spending/explore?months=3'))).body.uncategorized.drill.categoryIds[0];
+    const asked = (await c.get(url(`/spending/explore?categoryIds=${unc},${cat('Fuel')}`))).body;
+    expect(asked.categories.map((x: any) => x.name)).toEqual(['Fuel']);
     const nine = Array.from({ length: 9 }, () => cat('Groceries')).join(',');
     expect((await c.get(url(`/spending/explore?categoryIds=${nine}`))).status).toBe(400);
     expect((await c.get(url('/spending/explore?months=5'))).status).toBe(400);

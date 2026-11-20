@@ -12,6 +12,9 @@ const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://montra_app:montra_app@localhost:5432/montra';
 // Uploads are written by the API and read by the worker: both use the same folder.
 const STORAGE_DIR = process.env.E2E_STORAGE_DIR ?? join(tmpdir(), 'montra-e2e-storage');
+// ADR-0055: a synthetic SimpleFIN on this machine for the bank feed spec; the API and the worker reach it only with
+// SIMPLEFIN_ALLOW_LOCAL_HTTP=on, which production refuses.
+const SIMPLEFIN_PORT = Number(process.env.E2E_SIMPLEFIN_PORT ?? 4655);
 
 export default defineConfig({
   testDir: './e2e',
@@ -38,6 +41,7 @@ export default defineConfig({
         STORAGE_DIR,
         AI_PROVIDER: 'fake',
         FAMILY_VAULT_FAKE: 'on',
+        SIMPLEFIN_ALLOW_LOCAL_HTTP: 'on',
       },
     },
     {
@@ -46,7 +50,20 @@ export default defineConfig({
       wait: { stdout: /listening on import/ },
       stdout: 'pipe',
       // FX_DAILY=false: no rate refresh against ECB during e2e.
-      env: { DATABASE_URL, STORAGE_DIR, AI_PROVIDER: 'fake', FX_DAILY: 'false' },
+      env: {
+        DATABASE_URL,
+        STORAGE_DIR,
+        AI_PROVIDER: 'fake',
+        FX_DAILY: 'false',
+        SIMPLEFIN_ALLOW_LOCAL_HTTP: 'on',
+      },
+    },
+    {
+      // The synthetic SimpleFIN (apps/api/test/fakes): setup tokens from GET /__token, dates relative to today.
+      command: 'pnpm --filter @montra/api exec tsx test/fakes/simplefin-server.ts',
+      url: `http://127.0.0.1:${SIMPLEFIN_PORT}/__ready`,
+      reuseExistingServer: true,
+      env: { E2E_SIMPLEFIN_PORT: String(SIMPLEFIN_PORT) },
     },
     {
       command: `pnpm exec next start --port ${WEB_PORT}`,

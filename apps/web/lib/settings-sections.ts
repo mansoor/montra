@@ -17,6 +17,7 @@ export const SETTINGS_TABS = {
   security: 'settings.tab.security',
   data: 'settings.tab.data',
   storage: 'settings.tab.storage',
+  'bank-feeds': 'settings.tab.bank_feeds',
   privacy: 'settings.tab.privacy',
   billing: 'settings.tab.billing',
   support: 'settings.tab.support',
@@ -38,7 +39,11 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     tabs: ['entities', 'family', 'accounts', 'categories', 'sharing', 'planning'],
   },
   { key: 'ai', label: 'settings.group.ai', tabs: ['ai', 'ai-activity'] },
-  { key: 'data', label: 'settings.group.data', tabs: ['data', 'storage', 'privacy', 'support', 'billing'] },
+  {
+    key: 'data',
+    label: 'settings.group.data',
+    tabs: ['data', 'storage', 'bank-feeds', 'privacy', 'support', 'billing'],
+  },
 ];
 
 /** Members (AUTH-17) see only their own settings: the workspace's setup isn't theirs to change. */

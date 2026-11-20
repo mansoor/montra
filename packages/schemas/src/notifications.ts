@@ -24,6 +24,8 @@ export const NOTIFICATION_TYPES = [
   'vault_attention',
   /** ADR-0054 §5a: files Montra no longer holds that the vault didn't give back; at most one a day, no file names. */
   'files_missing',
+  /** ADR-0055 §7: a bank feed needs a person (access revoked, payment, failing, a bank to sign in to); once, no amounts. */
+  'bank_feed_attention',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;

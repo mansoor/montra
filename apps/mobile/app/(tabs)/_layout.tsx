@@ -12,6 +12,7 @@ import { useSync } from '../../src/sync/SyncProvider';
 import { wheelChoices, wheelRoute } from '../../src/features/add-wheel';
 import { reviewBadge } from '../../src/features/tax-forms';
 import { useMissingFiles } from '../../src/features/use-missing-files';
+import { useFeedImports } from '../../src/features/use-feed-imports';
 import { useTaxFormsToCheck } from '../../src/features/use-tax-forms';
 import { AddWheel } from '../../src/ui/AddWheel';
 import { haptic } from '../../src/ui/haptics';
@@ -56,7 +57,8 @@ export default function TabsLayout() {
   const { record } = can;
   const taxForms = useTaxFormsToCheck().count;
   const missingFiles = useMissingFiles().count;
-  const review = record ? reviewBadge(state?.reviewCount ?? 0, taxForms, missingFiles) : 0;
+  const feedImports = useFeedImports().count;
+  const review = record ? reviewBadge(state?.reviewCount ?? 0, taxForms, missingFiles, feedImports) : 0;
   const router = useRouter();
   const [wheel, setWheel] = useState(false);
   const choices = wheelChoices(can);

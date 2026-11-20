@@ -32,6 +32,16 @@ later; tax forms use an owner-only setting for accountants instead.
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
 
+**Accepted, ready to build:** [ADR-0055](design/adr/0055-bank-feeds-simplefin.md), bank feeds per workspace, with
+SimpleFIN Bridge as the first provider behind a provider port, accepted by the owner on 2026-11-19. An owner (recent
+sign-in) pastes a SimpleFIN setup token, Montra claims it once and seals the access URL, each institution account is
+linked to a Montra account, and a daily sync (plus Sync now for owners, admins and partners, within SimpleFIN's daily
+limit) brings posted transactions only through the existing import pipeline, one batch per account, with the provider's
+id as the dedupe key. Clean syncs import themselves with Undo; others wait in Review. Feeds sit alongside uploaded
+statements, and the first sync starts the day after the account's latest transaction, at most 90 days back, or from a
+date picked when linking. A hidden `bankFeeds` plan key, in every plan with `ownStorage`. Nothing built yet; four PRs
+planned (ADR's Delivery).
+
 **Built, the chain complete (2026-11-18):** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
 Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. Montra connects
 with an API key the vault generates for it, pasted by an owner and sealed (a key pair and signed requests until vault
@@ -1963,6 +1973,166 @@ Phase 11 leftovers:
   for a live run against a local vault preview. Only loopback, only as an origin; production refuses to start with it,
   and `FAMILY_VAULT_FAKE=on` takes precedence. Tests: `family-vault.test.ts` ("a vault on this machine…") and
   `operations.test.ts` (refused in production).
+
+- **PDF previews in the viewers** (receipts, payslips, bills): every response, the `/api` file proxy included, was sent
+  with `X-Frame-Options: DENY` and `frame-ancestors 'none'` (NFR-01, since 2026-11-04), so the browser refused to show a
+  PDF in the viewer's `<iframe>`. Responses under `/api` now allow framing by Montra's own pages only (`SAMEORIGIN`,
+  `frame-ancestors 'self'`; `securityHeaders` in `apps/web/lib/csp.mjs`); pages stay unframeable. The viewer also
+  catches an image that failed before hydration, which left a PDF as a broken image on a fresh page load. Tests:
+  `csp.test.ts`, e2e `operations.spec.ts`.
+
+- **PDF statements with `MM/DD` dates and long descriptions** (IMP-03, IMP-05; no migration). A common US layout
+  (`DATE | DESCRIPTION | AMOUNT | BALANCE`, dates without a year) came up with no mapping guessed and every date
+  unreadable, and long descriptions spilled into Amount (`ID: Citicardap -130.00`).
+  - **Doc-worker**: unruled tables are split by the header's positions: an amount column takes only a money value that
+    reaches under its header (one per column, the rightmost); every other word goes to the text column it starts in.
+    Without a period range, a closing or statement date gives `periodEnd`.
+  - **Importers**: new date formats `MM/DD` and `DD/MM`. Their year comes from the statement period, else its end, else
+    the upload day (`statementDates`, `withYear`): the year nearest the range, so December dates on a December–January
+    statement get the earlier year. Without any of these they read nothing rather than guess. With a year-less format
+    detected, the header row, start row and columns are inferred as for any statement. An amount cell holding spilled
+    text (`text -130.00`) reads its trailing amount and gives the text back to the description (defensive; old grids).
+  - **API, web, phone**: `ImportBatchDto.analysis.dates` carries the range, so the mapping editor's preview reads the
+    same years; the editor labels the two formats "(year from the statement)". Statements uploaded before this keep
+    their old grid when the mapping is changed: upload them again to have the columns split anew.
+  - Tests: doc-worker `test_extract.py` (synthetic fixture `make_yearless_pdf`), `importers/test/yearless-pdf.test.ts`,
+    web `imports.test.ts`, API `imports.test.ts` ("reads PDF dates printed without a year…").
+
+- **Discard an import that was never committed** (IMP-09; migration 0069). `POST imports/:id/discard` (owner, admin,
+  partner, accountant) takes an import in `uploaded`, `parsing`, `needs_mapping`, `preview` or `failed`; `committing`,
+  `committed` and `undone` get 409 `import.not_discardable`. It deletes the preview rows, cancels the batch's queued jobs
+  (`app.cancel_import_jobs`, security definer: `montra_app` can't update jobs; a parse already running skips a discarded
+  batch), sets the new terminal status `discarded` (kept rather than deleted: intakes and the audit log point at it) and
+  writes an `import_batch.discarded` audit row. The uploaded file is kept, and a re-upload of it isn't flagged as a
+  duplicate. A statement (ADR-0051) that led to it goes back to Review with reason `discarded`, its import link cleared
+  and its reading kept, to pick the account again or put it aside; an automatic one forgets its signal, as after undo.
+  `GET imports` leaves discarded imports out (web history and phone list); the web shows "Discard this import" with a
+  confirm step on the import page and in history rows. The phone lists imports without actions, so it has no button.
+  Tests: API `import-discard.test.ts`, web `imports.test.ts`, mobile `statements.test.ts`.
+
+- **"Make transfer…" by hand** (TXN-04, AI-05; ADR-0028 amendment; migration 0070). Card and loan payments whose line carries
+  the payee's ID ("CHASE CREDIT CRD AUTOPAY PPD ID: …", "USBANK LOAN") aren't detected, so Review rows with no transfer
+  suggestion and the transaction editor offer "Make transfer…": a picker of the other open accounts in the same currency
+  (cards, loans, bank, other), in words ("Transfer to Chase Sapphire"). `POST transactions/:id/make-transfer` already took
+  any `accountId`; it now also refuses archived accounts (`transfer.archived`) and categories or system accounts
+  (`transfer.not_an_account`), and returns `loan`. A loan with tracked payments takes the line as its scheduled payment
+  (`LoansService.paymentForLine`: same amount with escrow, within 5 days, same books and currency, and no line of its own
+  on the loan account) through the existing `recordPaymentIn`; otherwise it's a plain transfer and `loan.number` is null,
+  which the screens say. Learning: `app.payee_transfer` (payee key → account, count) is bumped on every make-transfer
+  and decremented when a category is chosen for the payee; the pipeline's step 3 suggests the most-used account at 0.90
+  (`rememberedTransfer`), below the 0.95 that a sure pair keeps, so it's never applied without Review's "Make transfer"
+  (which, like accept-all, goes through `transferToInTrx` and so reaches the loan too). The phone has no make-transfer
+  action, so it has none of this; remembered suggestions show there as before. Tests: API `manual-transfers.test.ts`,
+  categorize `pipeline.test.ts`, web `phase3.test.ts`.
+- **Family Document Vault: access tokens** (vault 0.9.0-dev.72; ADR-0054 "Access tokens (vault 0.9.0-dev.72)"; no
+  migration). On `@fdv/client` 0.9.0-dev.72, which trades the API key for a fifteen-minute Bearer token and asks again
+  when it ends or on a 401 (Basic on every request is deprecated in the vault). The vault gives a key ten tokens a
+  minute, so connections now share the package's client per vault and key for fifteen minutes (`appClientFor` in
+  `storage/vault/connection.ts`) instead of making one per request or job run. Montra builds nothing for vaults without
+  tokens (the owner's answer; the package's own fallback stays). The tests follow view links in dev.68's two steps (a
+  GET page that spends nothing, then Open as a same-origin POST). Tests: API `family-vault*.test.ts`, with a new one
+  that two runs share one token, every app call is Bearer, and an ended token is replaced without a failure.
+- **PDF statements in titled sections** (IMP-03, IMP-05; no migration). Some credit unions print a summary, then
+  sections such as "Deposits and Credits" and "Electronic Withdrawals", each with its own header ("Eff. Date, Syst.
+  Date, Description, Amount"), every amount unsigned and "$" in a column of its own. The doc worker took "Deposits and
+  Credits" for the header (two of its words are header words), so each line became one cell. Now:
+  - a header must name a date (`date`, `posted`, `posting`);
+  - a short line that is a section title sets which way money went until the next one, and under a withdrawals title
+    an unsigned amount in a lone Amount column is read as money out (a title naming both ways changes nothing);
+  - the same header seen again (a new section or page) gives its own positions, so a header placed further left on
+    page 2 still lines up;
+  - a lone "$" is dropped rather than joining the description.
+
+  Tests: doc-worker `test_extract.py` (`make_sectioned_pdf`).
+- **Explore spending leaves Uncategorized out** (FLOW-01; no migration). "Uncategorized expense" (the books'
+  `uncategorized_expense` system account) was offered as a category to explore and cut, and counted in all spending.
+  It is now never a choice, a default pick or a what-if, and `spending` and the shares count categorized spending only
+  ("All categorized spending"). `SpendingExploreDto.uncategorized` (total, per month and a drill, or null with none)
+  drives a warning with the amount: the web links to those transactions, the phone to Review. The what-if's share of
+  income kept still counts it (`whatIf({ uncategorized })`): the money left all the same. Tests: API
+  `spending-explore.test.ts`, domain `spending-explore.test.ts`.
+- **Bank feeds, PR 1 of 5: contracts** (FEED-01..10 added as requirements 13.7, phase P15; ADR-0055 "SimpleFIN's
+  limits are settings" and "Delivery"; migration 0071). Nothing is visible yet: `bankFeeds` is a plan key on wherever
+  `ownStorage` is, kept in `FEATURES_NOT_YET_SHOWN`.
+  - Migration 0071: `bank_feed` (one live per workspace and provider, the access URL sealed in `secret_enc` until
+    disconnected), `bank_feed_account` (new, linked or ignored; one feed per Montra account; start date and cursor),
+    `bank_feed_run`; `import_batch.source` (`file`, `feed`) with `bank_feed_account_id`, and `file_id` null for a
+    feed batch; `app.bank_feed_due()` and `bank_feed_next()`; the security log kinds and `bank_feed_attention`. RLS:
+    owners, admins and partners read the feed and runs, whoever imports reads the accounts, owners write; nothing for
+    staff. Archives leave all three out (catalog).
+  - SimpleFIN's limits are settings (`SIMPLEFIN_*` in `config.ts`: allowed hosts, 12 requests a day, the 90-day
+    window, the 5-day overlap, syncs a day, Sync now spacing, timeout, response cap, the local-http switch refused in
+    production), read by the pure rules in `bank-feeds/limits.ts` (start date, window, budget, Sync now).
+  - `bank-feeds/provider.ts` (the port and its provider-neutral snapshot) and `bank-feeds/simplefin.ts` (the setup
+    token and access URL checked against the allowed hosts, `/accounts` in v2 and v1, exact amounts, UTC dates,
+    pending dropped, sanitized messages). DTOs in `@montra/schemas` `bank-feeds.ts`; `ImportBatchDto` gains `source`
+    and `bankFeedAccountId`, and `fileId` may be null. The parse job refuses a batch with no file.
+  - Tests: API `bank-feeds-simplefin.test.ts` (settings, URLs, the protocol, limits, and a synthetic SimpleFIN in
+    `test/fakes/simplefin.ts`), db `bank-feeds.test.ts` (constraints, RLS, staff, the due functions, the plan key).
+  - Next: PR 2, connecting and linking.
+- **Bank feeds, PR 2 of 5: connecting and linking** (FEED-01, FEED-02, FEED-05, FEED-09 partial; ADR-0055 "As built:
+  PR 2"; no migration). Settings → Bank feeds (owners, admins and partners whose plan has `bankFeeds`; owners change
+  it): paste SimpleFIN Bridge's setup token, then link, create, ignore or unlink each account it reports. Nothing is
+  imported yet, and the card says so.
+  - API: `bank-feeds/transport.ts` (https to SIMPLEFIN_ALLOWED_HOSTS, the storage guard's lookup, no redirects, the
+    timeout and size cap), `simplefin.adapter.ts` (claim once; `/accounts` with HTTP Basic, never credentials in a
+    URL; 403 revoked, 402 payment required), `bank-feeds.service.ts` and `bank-feeds.controller.ts`
+    (`GET/POST /bank-feeds`, `PATCH /bank-feeds/:id`, `POST /bank-feeds/:id/refresh`, `PATCH
+    /bank-feeds/:id/accounts/:accountId`, `POST /bank-feeds/:id/disconnect`). Connecting and disconnecting need an
+    owner with a recent sign-in; connect skips the idempotency store. Every request counts against
+    SIMPLEFIN_REQUESTS_PER_DAY per UTC day (429 `bank_feed.daily_limit` before asking).
+  - Suggestions use ADR-0051's tiers with match memory (`feed:simplefin:<hash>`); Create account works out the
+    opening balance the day before the start date from one request. A reconnect within 30 days takes over the old
+    feed's links.
+  - Web: `components/settings/bank-feeds.tsx`, `lib/bank-feeds.ts`; api-client `bankFeed`, `connectBankFeed`,
+    `updateBankFeed`, `refreshBankFeed`, `updateBankFeedAccount`, `disconnectBankFeed`.
+  - Tests: API `bank-feeds.test.ts` (against the synthetic SimpleFIN: roles, recent sign-in, refused tokens, the
+    claim, the sealed access nowhere else, suggestions, links, Create account's opening balance, refresh, problems,
+    the daily limit, pausing, disconnecting and relinking, the transport), web `bank-feeds.test.ts`.
+  - Next: PR 3a, syncing into Review.
+- **Bank feeds, PR 3a of 5: syncing into Review** (FEED-03, FEED-04, FEED-06 partial, FEED-05 updated; ADR-0055 "As
+  built: PR 3a"; migration 0072).
+  - `bank-feeds/bank-feeds.sync.ts`: the `bankfeed.sync` job (registered in `worker-main.ts`), one sync per due feed
+    as its owner: one request for every linked account (`syncWindow`), counted against the day's limit (a feed at it
+    waits for the next UTC day, as for a quota warning), each account's new rows staged as one import batch
+    (`ImportJobs.stageFeedRows`: dedupe, matching, transfers, loans and categories as for a file) waiting in Review,
+    the cursor moved, the feed rescheduled at its minute of the workspace's day (`nextSyncAt`, `zonedInstant`). A
+    failed sync backs off and turns `failing` after five; 403 and 402 stop it.
+  - Migration 0072: `import_row.external_id` (the provider's id; a sync skips ids already brought in, waiting,
+    committed or discarded), `app.bank_feed_sync_now` (Sync now for owners, admins and partners, spaced by
+    SIMPLEFIN_SYNC_NOW_MINUTES) and `app.bank_feed_rewind` (Undo of a feed batch moves the cursor back).
+  - Committed feed rows are `source = 'feed'` transactions. A discarded feed batch keeps its rows, so its ids stay
+    out. Linking an account makes the feed due at once; connecting schedules the first daily sync.
+  - API: `POST /bank-feeds/:id/sync`; `GET /imports?waiting=feed`. Web: Review's "Bank feed" card and its count in
+    the Review badge; Sync now, last and next sync on the Settings card; a feed import's discarded page.
+  - Tests: API `bank-feeds-sync.test.ts` (scheduling and daylight saving, one request and the window, start dates,
+    pending, staging, overlap, commit as feed transactions, Undo and Discard, Sync now roles and spacing, the daily
+    limit, backoff, failing, revoked), web `bank-feeds.test.ts`, `phase3.test.ts`.
+  - Next: PR 3b, hands-off syncing (auto-commit if clean, the balance check, problems and the notification).
+- **Bank feeds, PR 3b of 5: hands-off syncing** (FEED-04, FEED-06, FEED-07, FEED-08 partial; ADR-0055 "As built: PR
+  3b"; no migration).
+  - A staged feed batch with no probable duplicates and no unreadable rows commits itself (`warnings`
+    `auto_commit`, Undo 30 days); anything else waits in Review.
+  - The balance check (`ImportJobs.feedBalanceCheck`, after a feed batch commits): the account's ledger balance at
+    the end of the feed's balance date against the institution's; `ok` or `mismatch` with the gap on the batch, shown
+    as a statement's. A mismatch on an automatic import holds the account's next clean batch in Review until someone
+    imports one by hand.
+  - `bank_feed_attention` notifications (owners, once per problem; no amounts): revoked, payment required, failing, or
+    a linked account's bank to sign in to again (`attentionWords`); cleared when fixed.
+  - `GET /bank-feeds/links` and the Statements screen's note on an intake whose account has a feed.
+  - A feed import no longer offers "Change mapping".
+  - Tests: API `bank-feeds-sync.test.ts` (auto-commit, the balance check ok and mismatch, the hold and its release,
+    the attention notifications, the links).
+- **Bank feeds, PR 4 of 5: the phone and the e2e spec** (FEED-10 partial; ADR-0055 "As built: PR 4").
+  - Phone: `src/features/bank-feeds.ts` (pure: the Your data card, Sync now, the account line, what waits in Review),
+    `src/ui/BankFeed.tsx` (Your data card with Sync now; Review's Bank feed section), `use-feed-imports.ts` (the
+    Review badge's fourth count), `/import?batch=` opening a waiting import in the phone's preview, and "Bank feed,
+    synced through …" on an account's screen. Connecting and linking stay on the web.
+  - e2e: `e2e/bank-feeds.spec.ts` against the synthetic SimpleFIN, which `playwright.config.ts` now starts
+    (`apps/api/test/fakes/simplefin-server.ts`, port 4655, `GET /__token`); the API and the worker run with
+    SIMPLEFIN_ALLOW_LOCAL_HTTP=on there.
+  - Left for PR 5 (needs the owner): the live run against their own SimpleFIN Bridge, then `bankFeeds` leaves
+    `FEATURES_NOT_YET_SHOWN` and the FEED items turn done.
 
 ---
 

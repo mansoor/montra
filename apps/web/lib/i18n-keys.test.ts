@@ -17,6 +17,7 @@ import {
   INTAKE_REASONS,
   TAX_FORM_READING_PROBLEMS,
   TAX_FORM_RESULT_STATES,
+  BANK_FEED_STATUSES,
   VAULT_GROUP_MODES,
   VAULT_GROUPS,
 } from '@montra/schemas';
@@ -114,8 +115,10 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'admin.suspend_kind.': ['abuse', 'fraud', 'legal_hold'],
   'admin.close_channel_': ['email', 'support_request', 'phone', 'letter'],
   'admin.interval.': ['month', 'year'],
-  'admin.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
-  'billing.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault'],
+  'admin.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault', 'bankFeeds'],
+  'billing.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault', 'bankFeeds'],
+  // ADR-0055: a bank feed's status.
+  'bank_feeds.status.': BANK_FEED_STATUSES,
   // ADR-0054 §6: the Family Document Vault's groups and modes.
   'vault.group.': VAULT_GROUPS,
   'vault.mode.': VAULT_GROUP_MODES,
@@ -133,6 +136,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'asset',
     'liability',
   ],
+  'review.transfer_group.': ['cards', 'loans', 'bank', 'other'],
   'account.add_kind.': ACCOUNT_KINDS,
   'account.kind_help.': ACCOUNT_KINDS,
   'account.kind_example.': ACCOUNT_KINDS,
@@ -160,6 +164,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'committed',
     'failed',
     'undone',
+    'discarded',
   ],
   'imports.role.': [
     'ignore',

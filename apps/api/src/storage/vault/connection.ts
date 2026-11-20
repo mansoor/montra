@@ -1,13 +1,17 @@
 /**
  * Montra's adapter over the vault's own client package (ADR-0054 §2, §12.1; owner's answer 1). Since vault
- * 0.9.0-dev.63 the package sends the vault API key an owner pasted (a client ID and a secret, as HTTP Basic) on every
- * request, and reads the connection string; Montra adds what is Montra's: the address guard (§8), pinning the vault's
+ * 0.9.0-dev.63 the package holds the vault API key an owner pasted (a client ID and a secret), and reads the connection string; Montra adds what is Montra's: the address guard (§8), pinning the vault's
  * identity, and turning the vault's answers into a `VaultCheck` or a `VaultError` in Montra's words.
  *
  * PR 2 built connecting: reading what was pasted, identifying the vault, and the connection test. PR 3 adds sending,
  * asking what became of what was sent, withdrawing and deleting. PR 4 adds the changes feed and view links. PR 5 adds
  * reading back the exact file Montra sent (`sentFile`). The API-key PR replaces signing with the key.
+ *
+ * Since vault 0.9.0-dev.72 the package trades the key for a fifteen-minute access token and sends that instead
+ * (`Bearer`), asking again when it ends or on a 401. The vault gives a key ten tokens a minute at most, so connections
+ * share one client per vault and key (`appClientFor`) rather than asking for a token each run.
  */
+import { createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { ApiRequestError, createApi, createHttp, NetworkError } from '@fdv/client';
 import { createAppClient, parseConnectionString, type AppClient } from '@fdv/client/apps';
@@ -156,7 +160,7 @@ export async function identifyVault(address: string, transport: VaultTransport):
 
 export interface VaultConnectionOptions {
   address: string;
-  /** The API key: its client ID and secret, unsealed for this request or run only. */
+  /** The API key: its client ID and secret, unsealed for this request or run (and kept with its client, `appClientFor`). */
   clientId: string;
   secret: string;
   /** The identity pinned at connect time, or null while connecting. */
@@ -166,6 +170,52 @@ export interface VaultConnectionOptions {
 }
 
 type IntakeState = Awaited<ReturnType<AppClient['status']>>;
+
+/** How long a client, with its key and its token, is kept for the next connection: one token's life (dev.72). */
+export const APP_CLIENT_TTL_MS = 15 * 60_000;
+/** The most clients kept at once; the oldest goes first. */
+const APP_CLIENTS_MAX = 500;
+
+/** Clients by transport, then by vault, key and secret, each with when it was made. */
+const appClients = new WeakMap<VaultTransport, Map<string, { client: AppClient; at: number }>>();
+
+/**
+ * The package's client for a vault and key, shared by connections for {@link APP_CLIENT_TTL_MS} so its access token is
+ * reused: a run or a request asking for its own would soon pass the vault's ten a minute. A replaced key (a new
+ * secret) gets its own. Keyed by a hash of the secret, never the secret. A test that sets the clock gets its own.
+ */
+function appClientFor(
+  origin: string,
+  clientId: string,
+  secret: string,
+  transport: VaultTransport,
+  now?: () => number,
+): AppClient {
+  const make = () =>
+    createAppClient({
+      url: origin,
+      clientId,
+      secret,
+      // The transport's fetch as it is at each call, not when this client was made.
+      fetch: (url, init) => transport.fetch(url, init),
+      ...(now ? { now } : {}),
+    });
+  if (now) return make();
+  let byKey = appClients.get(transport);
+  if (!byKey) appClients.set(transport, (byKey = new Map()));
+  const key = `${origin} ${clientId} ${createHash('sha256').update(secret).digest('hex')}`;
+  const at = Date.now();
+  const kept = byKey.get(key);
+  if (kept && at - kept.at < APP_CLIENT_TTL_MS) return kept.client;
+  byKey.delete(key);
+  for (const [k, v] of byKey) {
+    if (byKey.size < APP_CLIENTS_MAX && at - v.at < APP_CLIENT_TTL_MS) break;
+    byKey.delete(k);
+  }
+  const client = make();
+  byKey.set(key, { client, at });
+  return client;
+}
 
 /** The vault's refusals of a document itself (§4.5), as Montra's three reasons. */
 const DOCUMENT_REFUSALS: Record<string, 'kind' | 'type' | 'size'> = {
@@ -272,13 +322,7 @@ export class VaultConnection implements Pick<
     // Montra's guard first (public https only, D6): the package itself would also take plain http to this machine.
     this.origin = assertVaultAddress(opts.address).origin;
     assertKeyShape(opts.clientId, opts.secret);
-    this.client = createAppClient({
-      url: this.origin,
-      clientId: opts.clientId,
-      secret: opts.secret,
-      fetch: opts.transport.fetch,
-      ...(opts.now ? { now: opts.now } : {}),
-    });
+    this.client = appClientFor(this.origin, opts.clientId, opts.secret, opts.transport, opts.now);
   }
 
   private get app(): AppClient {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
-import type { IntakeDto } from '@montra/schemas';
+import type { BankFeedLinkDto, IntakeDto } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import {
@@ -35,6 +35,7 @@ export function IntakeCard({
   accounts,
   billers,
   note,
+  feedLinks = [],
   onDone,
 }: {
   workspaceId: string;
@@ -44,16 +45,19 @@ export function IntakeCard({
   billers: readonly Pickable[];
   /** A line under the file name, e.g. that the file was uploaded before. */
   note?: ReactNode;
+  /** Accounts a bank feed imports into (ADR-0055 §6): a statement for one says it will meet the feed's rows. */
+  feedLinks?: readonly BankFeedLinkDto[];
   /** The intake as it is after resolving or putting it aside. */
   onDone: (intake: IntakeDto) => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t, locale, date } = useI18n();
   const statement = intake.kind === 'statement';
   const options = useMemo(
     () => targetOptions(intake, statement ? accounts : billers),
     [intake, statement, accounts, billers],
   );
   const [target, setTarget] = useState(initialTarget(intake));
+  const feed = feedLinks.find((l) => l.accountId === target);
   const needs = billNeedsInput(intake);
   const [amount, setAmount] = useState('');
   const [due, setDue] = useState(intake.bill?.dueDate ?? '');
@@ -111,6 +115,21 @@ export function IntakeCard({
             ))}
           </p>
           {note}
+          {intake.duplicateOf && (
+            // The same file was uploaded before: most likely a second copy, so putting it aside is offered first.
+            <div role="alert" className="mt-2 space-y-1 text-sm text-warn" data-testid="intake-duplicate">
+              <p>
+                {t('intakes.possible_duplicate', {
+                  date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
+                    new Date(intake.duplicateOf.uploadedAt),
+                  ),
+                })}
+              </p>
+              <button type="button" className="btn-secondary" disabled={busy} onClick={dismiss}>
+                {t('intakes.discard_duplicate')}
+              </button>
+            </div>
+          )}
         </div>
         {intake.bill?.amount && intake.bill.currency && (
           <p className="text-right text-sm">
@@ -161,6 +180,14 @@ export function IntakeCard({
                   </option>
                 ))}
               </select>
+            )}
+            {statement && feed && (
+              // ADR-0055 §6: a statement for an account with a feed meets the feed's rows as likely duplicates.
+              <p className="mt-1 text-xs text-muted" data-testid="intake-feed-note">
+                {feed.syncedThrough
+                  ? t('intakes.feed_note', { date: date(feed.syncedThrough) })
+                  : t('intakes.feed_note_new')}
+              </p>
             )}
           </div>
           {needs.amount && (

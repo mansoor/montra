@@ -2,6 +2,7 @@
  * Explore spending on the phone (FLOW-01): the same as the web. Pick categories and a period; see them month by month
  * in a chart and a table, what each says, and what-ifs worked out on the phone (nothing is saved).
  */
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { categoryStats, parseMoney, whatIf, whatIfTarget, type WhatIfChange } from '@montra/domain';
@@ -10,7 +11,18 @@ import { useCached } from '../src/features/use-cached';
 import { currentLocale, fmtMoney, t } from '../src/i18n';
 import { useAbilities, useSession } from '../src/session/SessionProvider';
 import { MiniLineChart } from '../src/ui/charts';
-import { Body, Button, Card, Field, Row, Screen, Segmented, Small, useToast } from '../src/ui/components';
+import {
+  Banner,
+  Body,
+  Button,
+  Card,
+  Field,
+  Row,
+  Screen,
+  Segmented,
+  Small,
+  useToast,
+} from '../src/ui/components';
 import { haptic } from '../src/ui/haptics';
 import { Icon } from '../src/ui/icons';
 import { SidePanel } from '../src/ui/SidePanel';
@@ -28,6 +40,7 @@ type Plan = { kind: 'none' } | { kind: 'cut'; percent: number } | { kind: 'cap';
 
 export default function Explore() {
   const th = useTheme();
+  const router = useRouter();
   const { state: session, api } = useSession();
   const canBudget = useAbilities().setUp; // AUTH-18
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
@@ -70,6 +83,7 @@ export default function Explore() {
   const result = whatIf({
     income: d.income.map(big),
     spending: d.spending.map(big),
+    ...(d.uncategorized ? { uncategorized: d.uncategorized.monthly.map(big) } : {}),
     categories: d.categories.map((c) => ({ categoryId: c.categoryId, monthly: c.monthly.map(big) })),
     changes,
     goals: goals
@@ -168,6 +182,14 @@ export default function Explore() {
         options={CHART_MONTHS.map((n) => ({ value: String(n), label: t(RANGE_LABELS[n]) }))}
       />
 
+      {d.uncategorized ? (
+        // Spending still uncategorized is left out of the categories and totals: Review is where it gets one.
+        <Banner
+          tone="warning"
+          text={`${t('explore.uncategorized', { amount: fmtMoney(d.uncategorized.total, ccy) })} ${t('explore.uncategorized_link')}`}
+          onPress={() => router.push('/review')}
+        />
+      ) : null}
       {d.categories.length === 0 ? (
         <Small>{t('explore.nothing')}</Small>
       ) : (

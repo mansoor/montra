@@ -17,6 +17,7 @@ import { confidenceLabel, effectiveOutcome, reviewQueue, swipeOutcome } from '..
 import { CategoryPicker } from '../src/ui/CategoryPicker';
 import { IntakeReview } from '../src/ui/IntakeReview';
 import { MissingFilesReview } from '../src/ui/MissingFiles';
+import { FeedImportsReview } from '../src/ui/BankFeed';
 import { TaxFormReview } from '../src/ui/TaxForms';
 import { Body, Button, Card, Screen, Small, Title, useToast } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
@@ -87,6 +88,8 @@ export default function Review() {
         <IntakeReview />
         <TaxFormReview />
         <MissingFilesReview />
+        <FeedImportsReview />
+        <FeedImportsReview />
         <Body muted>{t('mobile.review.empty')}</Body>
       </Screen>
     );
@@ -102,6 +105,7 @@ export default function Review() {
       <IntakeReview />
       <TaxFormReview />
       <MissingFilesReview />
+      <FeedImportsReview />
       <Small>
         {t('mobile.review.hint')} {t('mobile.review.remaining', { count: queue.length })}
       </Small>

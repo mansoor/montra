@@ -8,6 +8,7 @@ import {
   DATE_FORMATS,
   draftFromMapping,
   draftToMapping,
+  isYearless,
   mappingErrors,
   previewMapping,
   type MappingDraft,
@@ -52,7 +53,7 @@ export function MappingEditor({
   };
   const mapping = errors.length === 0 ? draftToMapping(withFilter(draft)) : null;
   // At most 25 sample rows: cheap enough to recompute on every render.
-  const preview = mapping ? previewMapping(sample, mapping, batch.currency) : [];
+  const preview = mapping ? previewMapping(sample, mapping, batch.currency, 5, analysis.dates) : [];
   const header = (col: number) =>
     draft.headerRow !== null
       ? sample[draft.headerRow]?.[col] || t('imports.mapping.column', { n: col + 1 })
@@ -183,7 +184,7 @@ export function MappingEditor({
           >
             {DATE_FORMATS.map((f) => (
               <option key={f} value={f}>
-                {f}
+                {isYearless(f) ? t('imports.mapping.date_format_no_year', { format: f }) : f}
               </option>
             ))}
           </select>

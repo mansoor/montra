@@ -1527,20 +1527,22 @@ async function aboutFile(trx: Trx, workspaceId: string, fileId: string, group: V
       break;
     case 'payslips':
       q = sql<R>`
-        select p.pay_date::text as date, m.name as person, e.name as entity, e.type as entity_type,
+        select p.pay_date::text as date, coalesce(nullif(btrim(u.display_name), ''), m.name) as person, e.name as entity, e.type as entity_type,
                null::int as tax_year, p.net_minor::text as amount, p.currency, null::text as last4
           from app.payslip p
           join app.entity e on e.workspace_id = p.workspace_id and e.id = p.entity_id
           left join app.family_member m on m.workspace_id = p.workspace_id and m.id = p.member_id
+          left join app.app_user u on u.id = m.linked_user_id
          where p.workspace_id = ${workspaceId}::uuid and ${fileId}::uuid = any (p.attachment_ids)
          order by p.created_at desc limit 1`;
       break;
     case 'tax_documents':
       q = sql<R>`
-        select null::text as date, m.name as person, null::text as entity, null::text as entity_type,
+        select null::text as date, coalesce(nullif(btrim(u.display_name), ''), m.name) as person, null::text as entity, null::text as entity_type,
                t.tax_year, null::text as amount, null::text as currency, t.account_last4 as last4
           from app.tax_form t
           left join app.family_member m on m.workspace_id = t.workspace_id and m.id = t.person_member_id
+          left join app.app_user u on u.id = m.linked_user_id
          where t.workspace_id = ${workspaceId}::uuid and ${fileId}::uuid = any (t.file_ids) and t.deleted_at is null
          order by t.created_at desc limit 1`;
       break;
@@ -1554,12 +1556,13 @@ async function aboutFile(trx: Trx, workspaceId: string, fileId: string, group: V
       break;
     case 'bills':
       q = sql<R>`
-        select coalesce(h.bill_date, h.due_date)::text as date, m.name as person, e.name as entity,
+        select coalesce(h.bill_date, h.due_date)::text as date, coalesce(nullif(btrim(u.display_name), ''), m.name) as person, e.name as entity,
                e.type as entity_type, null::int as tax_year, h.amount_minor::text as amount, h.currency,
                null::text as last4
           from app.household_bill h
           join app.entity e on e.workspace_id = h.workspace_id and e.id = h.entity_id
           left join app.family_member m on m.workspace_id = h.workspace_id and m.id = h.member_id
+          left join app.app_user u on u.id = m.linked_user_id
          where h.workspace_id = ${workspaceId}::uuid and ${fileId}::uuid = any (h.attachment_ids)
         union all
         select b.bill_date::text, null, e.name, e.type, null, b.amount_minor::text, b.currency, null

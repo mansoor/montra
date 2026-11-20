@@ -7,6 +7,9 @@ import { BankAccountKind } from './accounts.js';
 /** Statement file types. `qif` is Quicken's QIF; `ofx` is OFX 1.x/2.x and QFX (ADR-0030). */
 export const IMPORT_FILE_TYPES = ['csv', 'xlsx', 'xls', 'pdf', 'qif', 'ofx'] as const;
 export type ImportFileType = (typeof IMPORT_FILE_TYPES)[number];
+/** Where a batch's rows came from (ADR-0055 §2): an uploaded file, or a bank feed's sync (`feed`, with no file). */
+export const IMPORT_SOURCES = ['file', 'feed'] as const;
+export type ImportSource = (typeof IMPORT_SOURCES)[number];
 
 export const UploadDto = z.object({
   fileId: z.string(),
@@ -40,6 +43,9 @@ export const DATE_FORMAT_IDS = [
   'MMM D YYYY',
   'DD-MMM-YY',
   'DD-MMM-YYYY',
+  // Without a year (PDF statements print `10/02`): the year comes from the statement period or the upload day.
+  'MM/DD',
+  'DD/MM',
 ] as const;
 
 export const ColumnMappingDto = z
@@ -120,14 +126,21 @@ export const ImportStatus = z.enum([
   'committed',
   'failed',
   'undone',
+  /** Never committed, and put aside: its preview rows are gone, its file is kept. */
+  'discarded',
 ]);
 
 export const ImportBatchDto = z.object({
   id: z.string(),
   accountId: z.string(),
-  fileId: z.string(),
+  source: z.enum(IMPORT_SOURCES),
+  /** Null for a bank feed's batch. */
+  fileId: z.string().nullable(),
+  /** The file's name, or for a feed's batch what it was ("SimpleFIN, Nov 20"). */
   fileName: z.string(),
-  fileType: z.enum(IMPORT_FILE_TYPES),
+  fileType: z.enum([...IMPORT_FILE_TYPES, 'feed']),
+  /** The feed account a `feed` batch came from. */
+  bankFeedAccountId: z.string().nullable(),
   status: ImportStatus,
   currency: z.string(),
   mapping: ColumnMappingDto.nullable(),
@@ -142,6 +155,11 @@ export const ImportBatchDto = z.object({
       /** Column holding account names in multi-account app exports (for the account-filter picker). */
       accountColumn: z.number().nullable(),
       templateId: z.string().nullable(),
+      /**
+       * Where the statement's dates fall (its period, or just its end: the closing date or the upload day). Dates
+       * printed without a year (`MM/DD`) take the year nearest this range. Null for batches parsed before it.
+       */
+      dates: z.object({ start: CalendarDateDto.nullable(), end: CalendarDateDto }).nullable(),
     })
     .nullable(),
   /** The batch's latest job: tells parse, commit and undo apart and carries their results (e.g. undo's kept rows). */
