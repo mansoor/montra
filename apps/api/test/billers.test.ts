@@ -101,9 +101,16 @@ describe('billers (ADR-0048 §4)', () => {
       }),
     );
     const f = (await c.get(url('/flow/forecast?days=60'))).body;
-    // Paid from the books' main account.
+    // Paid from the books' main account. The forecast starts tomorrow: on the due day itself, the bill is still to pay
+    // and counts from tomorrow.
+    const tomorrow = addDays(today, 1);
     expect(f.accounts.find((a: any) => a.accountId === checking).items).toContainEqual(
-      expect.objectContaining({ kind: 'bill', name: 'SDG&E', amount: '-8500', date: nextDue }),
+      expect.objectContaining({
+        kind: 'bill',
+        name: 'SDG&E',
+        amount: '-8500',
+        date: nextDue < tomorrow ? tomorrow : nextDue,
+      }),
     );
   });
 
