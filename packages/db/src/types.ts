@@ -624,6 +624,8 @@ export interface ImportRowTable {
   import_batch_id: string;
   row_no: number;
   raw: Json<string[]>;
+  /** A bank feed's transaction id (0072, ADR-0055 §5): a sync skips ids already brought into the account. */
+  external_id?: string | null;
   txn_date: CalendarDateCol | null;
   amount_minor: Int8 | null;
   description: string | null;

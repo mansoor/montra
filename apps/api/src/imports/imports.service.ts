@@ -254,13 +254,15 @@ export class ImportsService {
     });
   }
 
-  async list(ctx: Ctx, accountId?: string): Promise<ImportBatchDto[]> {
+  /** `waitingFeed`: only bank feed batches waiting in preview, for Review (ADR-0055 §5). */
+  async list(ctx: Ctx, accountId?: string, opts: { waitingFeed?: boolean } = {}): Promise<ImportBatchDto[]> {
     const ids = await this.db.run(ctx, (trx) =>
       trx
         .selectFrom('app.import_batch')
         .select('id')
         .where('workspace_id', '=', ctx.workspaceId)
         .$if(Boolean(accountId), (q) => q.where('ledger_account_id', '=', accountId!))
+        .$if(Boolean(opts.waitingFeed), (q) => q.where('source', '=', 'feed').where('status', '=', 'preview'))
         // Discarded imports leave the history: nothing came of them.
         .where('status', '<>', 'discarded')
         .orderBy('created_at', 'desc')
@@ -486,11 +488,15 @@ export class ImportsService {
         .executeTakeFirst();
       if (posted)
         throw new AppError(409, 'import.not_discardable', 'This import added transactions: undo it instead');
-      const rows = await trx
-        .deleteFrom('app.import_row')
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('import_batch_id', '=', id)
-        .executeTakeFirst();
+      // A bank feed's discarded rows stay: their ids keep the next syncs from offering them again (ADR-0055 §5).
+      const rows =
+        batch.source === 'feed'
+          ? { numDeletedRows: 0n }
+          : await trx
+              .deleteFrom('app.import_row')
+              .where('workspace_id', '=', ctx.workspaceId)
+              .where('import_batch_id', '=', id)
+              .executeTakeFirst();
       await trx
         .updateTable('app.import_batch')
         .set({ status: 'discarded', error: null })

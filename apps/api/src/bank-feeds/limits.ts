@@ -2,7 +2,7 @@
  * SimpleFIN's limits as Montra keeps them (ADR-0055 §5), and the rules that follow from them, as pure functions. The
  * numbers are the API's settings (SIMPLEFIN_*), so when SimpleFIN changes a limit only the setting changes.
  */
-import { addDays, type CalendarDate } from '@montra/domain';
+import { addDays, todayIn, type CalendarDate } from '@montra/domain';
 import type { AppConfig } from '../config.js';
 
 export interface SimpleFinLimits {
@@ -141,4 +141,58 @@ export function syncNowAfter(
   if (!lastManual) return null;
   const next = new Date(lastManual.getTime() + limits.syncNowMinutes * 60_000);
   return next > now ? next : null;
+}
+
+/** Local wall time minus UTC, in milliseconds, at instant `t` in `timeZone`. */
+function offsetAt(t: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(t));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - t;
+}
+
+/**
+ * The instant `minute` minutes after local midnight of `date` in `timeZone`. A time a daylight-saving change skips
+ * lands just after it; one it repeats takes the first.
+ */
+export function zonedInstant(date: CalendarDate, minute: number, timeZone: string): Date {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const wall = Date.UTC(y, m - 1, d, 0, minute);
+  const first = wall - offsetAt(wall, timeZone);
+  return new Date(wall - offsetAt(first, timeZone));
+}
+
+/**
+ * §5: the next scheduled sync after `now`: `syncMinute` minutes after the workspace's local midnight (a random minute
+ * of the early morning, chosen at connect), then every 24 hours / SIMPLEFIN_SYNCS_PER_DAY.
+ */
+export function nextSyncAt(
+  now: Date,
+  timeZone: string,
+  syncMinute: number,
+  limits: Pick<SimpleFinLimits, 'syncsPerDay'>,
+): Date {
+  const step = Math.floor(1440 / limits.syncsPerDay);
+  const today = todayIn(timeZone, now);
+  let best: Date | null = null;
+  for (const day of [addDays(today, -1), today, addDays(today, 1)]) {
+    for (let k = 0; k < limits.syncsPerDay; k++) {
+      const at = zonedInstant(day, syncMinute + k * step, timeZone);
+      if (at > now && (!best || at < best)) best = at;
+    }
+  }
+  return best ?? new Date(now.getTime() + 86_400_000);
+}
+
+/** The start of the next UTC day: when a feed held at its daily limit may ask again (§5). */
+export function nextUtcDay(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
 }

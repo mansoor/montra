@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import pg from 'pg';
 import { withContext, type Database, type Trx } from '../src/index.js';
 import { ADMIN_URL, APP_URL } from './env.js';
@@ -259,6 +259,12 @@ describe('who may see and change it (ADR-0055 §2, D5)', () => {
         }
         await expect(c.query(`select * from app.bank_feed_due()`)).rejects.toThrow(/permission denied/);
         await expect(c.query(`select app.bank_feed_next()`)).rejects.toThrow(/permission denied/);
+        await expect(c.query(`select * from app.bank_feed_sync_now(gen_random_uuid(), 60)`)).rejects.toThrow(
+          /permission denied/,
+        );
+        await expect(c.query(`select app.bank_feed_rewind(gen_random_uuid(), current_date)`)).rejects.toThrow(
+          /permission denied/,
+        );
       });
     }
   });
@@ -295,6 +301,73 @@ describe('the sync job’s functions (ADR-0055 §5)', () => {
     }
     await admin.query(`update app.bank_feed set status = 'failing' where id = $1`, [id]);
     expect(await due()).toHaveLength(1);
+  });
+});
+
+describe('Sync now and the cursor (migration 0072, ADR-0055 §5)', () => {
+  let id: string;
+  let account: string;
+  beforeAll(async () => {
+    id = await feed(a, { nextSyncAt: new Date(Date.now() + 86_400_000).toISOString() });
+    account = await feedAccount(a, id, 'ACT-9', {
+      ledgerAccountId: a.accounts.card,
+      startDate: '2026-10-01',
+    });
+    await admin.query(`update app.bank_feed_account set synced_through = '2026-11-15' where id = $1`, [
+      account,
+    ]);
+  });
+  afterAll(() => dropFeeds(a));
+
+  const syncNow = (userId: string, minutes = 60) =>
+    as(a, userId, async (trx) => {
+      const { rows } = await sql<{ outcome: string; after: Date | null }>`
+        select * from app.bank_feed_sync_now(${id}::uuid, ${minutes}::int)`.execute(trx);
+      return rows[0]!.outcome;
+    });
+
+  it('lets owners, admins and partners mark the feed due, at most once per interval, and nobody else', async () => {
+    await expect(syncNow(viewerId)).rejects.toThrow(/not allowed/);
+    await expect(syncNow(accountantId)).rejects.toThrow(/not allowed/);
+    expect(await syncNow(partnerId)).toBe('ok');
+    const row = (
+      await admin.query(`select next_sync_at <= now() as due from app.bank_feed where id = $1`, [id])
+    ).rows[0];
+    expect(row.due).toBe(true);
+    expect(await syncNow(adminId)).toBe('too_soon');
+    expect(await syncNow(a.ownerId, 0)).toBe('ok');
+    await admin.query(`update app.bank_feed set status = 'paused' where id = $1`, [id]);
+    expect(await syncNow(a.ownerId, 0)).toBe('not_syncing');
+    expect(
+      await as(b, b.ownerId, async (trx) => {
+        const { rows } = await sql<{
+          outcome: string;
+        }>`select * from app.bank_feed_sync_now(${id}::uuid, 0)`.execute(trx);
+        return rows[0]!.outcome;
+      }),
+    ).toBe('not_found');
+  });
+
+  it('moves a cursor back only, for whoever may undo an import', async () => {
+    const rewind = (userId: string, before: string) =>
+      as(a, userId, (trx) =>
+        sql`select app.bank_feed_rewind(${account}::uuid, ${before}::date)`.execute(trx),
+      );
+    const cursor = async () =>
+      (
+        await admin.query(`select synced_through::text as t from app.bank_feed_account where id = $1`, [
+          account,
+        ])
+      ).rows[0].t;
+    await rewind(memberId, '2026-11-20');
+    expect(await cursor()).toBe('2026-11-15');
+    await rewind(memberId, '2026-11-10');
+    expect(await cursor()).toBe('2026-11-09');
+    // Another workspace's members reach nothing.
+    await as(b, b.ownerId, (trx) =>
+      sql`select app.bank_feed_rewind(${account}::uuid, '2026-11-01'::date)`.execute(trx),
+    );
+    expect(await cursor()).toBe('2026-11-09');
   });
 });
 

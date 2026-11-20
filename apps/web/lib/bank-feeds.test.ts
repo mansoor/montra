@@ -3,6 +3,7 @@ import {
   bankFeedStatus,
   canManageBankFeeds,
   canSeeBankFeeds,
+  canSyncNow,
   dayIn,
   guessKind,
   linkTargets,
@@ -19,6 +20,16 @@ describe('bank feeds in Settings', () => {
       expect(canSeeBankFeeds(role, ['bankFeeds']), role).toBe(false);
     expect(canManageBankFeeds('owner')).toBe(true);
     expect(canManageBankFeeds('admin')).toBe(false);
+  });
+
+  it('offers Sync now to owners, admins and partners while it syncs, spaced', () => {
+    const now = new Date('2026-11-20T12:00:00Z');
+    const ok = { status: 'active' as const, syncNowAfter: null };
+    expect(canSyncNow('partner', ok, now)).toBe(true);
+    expect(canSyncNow('viewer', ok, now)).toBe(false);
+    expect(canSyncNow('owner', { status: 'paused', syncNowAfter: null }, now)).toBe(false);
+    expect(canSyncNow('owner', { status: 'active', syncNowAfter: '2026-11-20T12:30:00Z' }, now)).toBe(false);
+    expect(canSyncNow('owner', { status: 'failing', syncNowAfter: '2026-11-20T11:30:00Z' }, now)).toBe(true);
   });
 
   it('says the status in words, with a tone', () => {

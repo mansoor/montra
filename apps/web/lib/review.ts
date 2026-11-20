@@ -134,9 +134,11 @@ export function reviewBadgeTotal(
   transactions: number | null,
   taxForms: number | null,
   missingFiles: number | null = null,
+  feedImports: number | null = null,
 ): number | null {
-  if (transactions === null && taxForms === null && missingFiles === null) return null;
-  return (transactions ?? 0) + (taxForms ?? 0) + (missingFiles ?? 0);
+  const parts = [transactions, taxForms, missingFiles, feedImports];
+  if (parts.every((n) => n === null)) return null;
+  return parts.reduce<number>((t, n) => t + (n ?? 0), 0);
 }
 
 export function goSequence(

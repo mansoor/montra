@@ -82,6 +82,13 @@ export class BankFeedsController {
     );
   }
 
+  /** §5: Sync now (owners, admins and partners), spaced by SIMPLEFIN_SYNC_NOW_MINUTES. */
+  @Post(':id/sync')
+  @HttpCode(200)
+  syncNow(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<BankFeedStateDto> {
+    return this.feeds.syncNow(dbCtx(ctx), ctx.role!, parse(z.uuid(), id));
+  }
+
   /** §3: an owner with a recent sign-in. The access is wiped at once. */
   @Post(':id/disconnect')
   @HttpCode(200)

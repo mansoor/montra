@@ -359,6 +359,26 @@ Where PR 2 differs from or adds to §3–§4:
 - **Reconnecting within 30 days** moves the previous feed's account rows to the new feed, links and start dates
   included.
 
+## As built: PR 3a (syncing into Review), 2026-11-20
+
+Where PR 3a differs from or adds to §5:
+
+- **The provider's id is kept on the staged row** (`import_row.external_id`, migration 0072), besides being the dedupe
+  key's identity. A sync skips ids the account already has in a batch waiting, committed or discarded, before staging,
+  so the overlap never makes a batch of rows already seen, and two syncs before a commit never stage the same row
+  twice (the dedupe candidates only see committed transactions). A discarded feed batch keeps its rows for this; an
+  undone batch's ids don't count, so its rows come back.
+- **Sync now** goes through `app.bank_feed_sync_now` (SECURITY DEFINER): admins and partners may press it, but only
+  owners write the feed under RLS. It marks the feed due and wakes the job; the sync runs as the owner who connected.
+- **Undo** moves the account's cursor back through `app.bank_feed_rewind`, for whoever may undo an import. A discard
+  doesn't: its ids are skipped anyway.
+- **Linking an account makes the feed due at once**, so the first sync doesn't wait for the next morning; connecting
+  schedules the first daily sync at the feed's minute.
+- **Scheduling** is `nextSyncAt`: the feed's minute after the workspace's local midnight (`zonedInstant`, which takes
+  the first of a repeated hour and lands within an hour of a skipped one), then every 24 hours /
+  SIMPLEFIN_SYNCS_PER_DAY.
+- **Each batch waits in Review** in this PR ("Bank feed", one entry per account, counted in the Review badge).
+
 ## Later providers
 
 The port takes these without changing §2–§8; each would be its own short ADR.

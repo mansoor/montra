@@ -2090,6 +2090,25 @@ Phase 11 leftovers:
     claim, the sealed access nowhere else, suggestions, links, Create account's opening balance, refresh, problems,
     the daily limit, pausing, disconnecting and relinking, the transport), web `bank-feeds.test.ts`.
   - Next: PR 3a, syncing into Review.
+- **Bank feeds, PR 3a of 5: syncing into Review** (FEED-03, FEED-04, FEED-06 partial, FEED-05 updated; ADR-0055 "As
+  built: PR 3a"; migration 0072).
+  - `bank-feeds/bank-feeds.sync.ts`: the `bankfeed.sync` job (registered in `worker-main.ts`), one sync per due feed
+    as its owner: one request for every linked account (`syncWindow`), counted against the day's limit (a feed at it
+    waits for the next UTC day, as for a quota warning), each account's new rows staged as one import batch
+    (`ImportJobs.stageFeedRows`: dedupe, matching, transfers, loans and categories as for a file) waiting in Review,
+    the cursor moved, the feed rescheduled at its minute of the workspace's day (`nextSyncAt`, `zonedInstant`). A
+    failed sync backs off and turns `failing` after five; 403 and 402 stop it.
+  - Migration 0072: `import_row.external_id` (the provider's id; a sync skips ids already brought in, waiting,
+    committed or discarded), `app.bank_feed_sync_now` (Sync now for owners, admins and partners, spaced by
+    SIMPLEFIN_SYNC_NOW_MINUTES) and `app.bank_feed_rewind` (Undo of a feed batch moves the cursor back).
+  - Committed feed rows are `source = 'feed'` transactions. A discarded feed batch keeps its rows, so its ids stay
+    out. Linking an account makes the feed due at once; connecting schedules the first daily sync.
+  - API: `POST /bank-feeds/:id/sync`; `GET /imports?waiting=feed`. Web: Review's "Bank feed" card and its count in
+    the Review badge; Sync now, last and next sync on the Settings card; a feed import's discarded page.
+  - Tests: API `bank-feeds-sync.test.ts` (scheduling and daylight saving, one request and the window, start dates,
+    pending, staging, overlap, commit as feed transactions, Undo and Discard, Sync now roles and spacing, the daily
+    limit, backoff, failing, revoked), web `bank-feeds.test.ts`, `phase3.test.ts`.
+  - Next: PR 3b, hands-off syncing (auto-commit if clean, the balance check, problems and the notification).
 
 ---
 

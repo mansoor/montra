@@ -1310,10 +1310,22 @@
   ],
   "FEED-05": [
     "partial",
-    "PR 2: linking sets the start date: the day after the Montra account's latest transaction by default, at most SIMPLEFIN_MAX_WINDOW_DAYS back, never in the future, or a date within that the owner picks. The window and cursor rules are pure and tested (PR 1); syncing uses them in PR 3"
+    "PR 2: linking sets the start date: the day after the Montra account's latest transaction by default, at most SIMPLEFIN_MAX_WINDOW_DAYS back, never in the future, or a date within that the owner picks. The window and cursor rules are pure and tested (PR 1); syncing uses them in PR 3. PR 3a: syncing uses them: rows before an account's start date never import, and nothing after today"
   ],
   "FEED-09": [
     "partial",
     "PR 2: bank_feed_connected (provider, host), bank_feed_changed (account links, label, pausing) and bank_feed_disconnected in the security log, never the access; each account linked, ignored or unlinked in the audit log. Disconnecting (owner, recent sign-in) wipes the sealed access at once; links stay 30 days so a new token relinks. RLS gives staff nothing, and archives leave feeds out (migration 0071)"
+  ],
+  "FEED-03": [
+    "partial",
+    "PR 3a: the bankfeed.sync job (app.bank_feed_due, acting as the owner who connected the feed) syncs each feed once a day at a random minute of the workspace's early morning (SIMPLEFIN_SYNCS_PER_DAY spreads more), and on Sync now (owners, admins and partners, at most once per SIMPLEFIN_SYNC_NOW_MINUTES, through app.bank_feed_sync_now). One request for every linked account, from the earliest cursor less SIMPLEFIN_OVERLAP_DAYS to tomorrow; never more than SIMPLEFIN_REQUESTS_PER_DAY a UTC day (a feed at its limit waits for the next day, as for a quota warning). Each account's new rows become one import batch (source feed, no file) staged through the pipeline as a file's are, waiting in Review; committed rows are the feed's transactions, and Undo (30 days) moves the account's cursor back so they come back. A failed sync backs off (1 minute up to a day) and turns the feed failing after five; a revoked access or a payment problem stops it. Clean batches committing themselves is PR 3b"
+  ],
+  "FEED-04": [
+    "partial",
+    "PR 3a: the provider's transaction id is each staged row's identity (import_row.external_id, migration 0072) and the dedupe key's, as an OFX FITID is; a sync skips ids already brought into the account (waiting, committed or discarded; a discarded feed batch keeps its rows for this), so the overlap never adds a row twice, and an undone batch's rows come back. Rows are also checked against the account's transactions (exact and probable duplicates within ±3 days, matches to manual and scheduled entries), so a statement for the same account meets the feed's rows as likely duplicates"
+  ],
+  "FEED-06": [
+    "partial",
+    "PR 3a: posted only: pending rows (pending true, or no posted date) are dropped by the parser and never staged, and pending=1 is never asked for. Every batch waits in Review (\"Bank feed\", counted in the Review badge); clean ones committing themselves is PR 3b"
   ]
 }
