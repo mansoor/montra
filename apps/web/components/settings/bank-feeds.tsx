@@ -6,6 +6,7 @@ import { browserApi } from '@/lib/browser-api';
 import {
   bankFeedStatus,
   canManageBankFeeds,
+  dayIn,
   guessKind,
   linkTargets,
   setupTokenInput,
@@ -139,7 +140,8 @@ function Connected({
     <div className="space-y-4">
       <div className="space-y-1 text-sm">
         <p>
-          {t('bank_feeds.connected_line', { host: feed.host ?? '' })} <DateText date={feed.connectedAt} />
+          {t('bank_feeds.connected_line', { host: feed.host ?? '' })}{' '}
+          <DateText date={dayIn(feed.connectedAt, workspace.timeZone)} />
           {feed.label ? ` · ${feed.label}` : ''}
         </p>
         <p className="text-xs text-muted">

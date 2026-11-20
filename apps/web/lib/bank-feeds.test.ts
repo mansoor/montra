@@ -3,6 +3,7 @@ import {
   bankFeedStatus,
   canManageBankFeeds,
   canSeeBankFeeds,
+  dayIn,
   guessKind,
   linkTargets,
   setupTokenInput,
@@ -70,6 +71,9 @@ describe('bank feeds in Settings', () => {
       'aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmluLm9yZy9jbGFpbS9hYmM=',
     );
     expect(setupTokenInput('short')).toBeNull();
+    // An instant shown as the workspace's day: 02:30 UTC is still the day before in Los Angeles.
+    expect(dayIn('2026-11-21T02:30:00Z', 'America/Los_Angeles')).toBe('2026-11-20');
+    expect(dayIn('2026-11-21T02:30:00Z', 'UTC')).toBe('2026-11-21');
     expect(setupTokenInput('https://bridge.simplefin.org/claim/abc')).toBeNull();
   });
 });
