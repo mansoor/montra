@@ -16,6 +16,7 @@ import { institutionKey } from '@montra/importers';
 import type {
   BankFeedAccountDto,
   BankFeedDto,
+  BankFeedLinkDto,
   BankFeedStateDto,
   ConnectBankFeedRequest,
   UpdateBankFeedAccountRequest,
@@ -187,6 +188,31 @@ export class BankFeedsService {
     return this.db.run(ctx, async (trx) => {
       const feed = await this.live(trx, ctx);
       return { feed: feed ? await this.dto(trx, ctx, feed) : null };
+    });
+  }
+
+  /**
+   * GET /bank-feeds/links (§6): the accounts a live feed imports into. Those who can't see the feed (RLS) get none, so
+   * the Statements screen's note is for owners, admins and partners.
+   */
+  links(ctx: Ctx): Promise<BankFeedLinkDto[]> {
+    return this.db.run(ctx, async (trx) => {
+      const rows = await trx
+        .selectFrom('app.bank_feed_account as a')
+        .innerJoin('app.bank_feed as f', (j) =>
+          j.onRef('f.workspace_id', '=', 'a.workspace_id').onRef('f.id', '=', 'a.bank_feed_id'),
+        )
+        .select(['a.ledger_account_id', 'a.synced_through'])
+        .where('a.workspace_id', '=', ctx.workspaceId)
+        .where('a.state', '=', 'linked')
+        .where('f.status', '<>', 'disconnected')
+        .execute();
+      return rows
+        .filter((r) => r.ledger_account_id)
+        .map((r) => ({
+          accountId: r.ledger_account_id!,
+          syncedThrough: (r.synced_through as CalendarDate | null) ?? null,
+        }));
     });
   }
 

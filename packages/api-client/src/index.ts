@@ -358,6 +358,7 @@ import type {
   BankFeedDto,
   BankFeedAccountDto,
   BankFeedStateDto,
+  BankFeedLinkDto,
   ConnectBankFeedRequest,
   UpdateBankFeedRequest,
   UpdateBankFeedAccountRequest,
@@ -2622,6 +2623,12 @@ export class ApiClient {
   /** The workspace's live bank feed and its accounts, or null (none, or not one the person may see). */
   bankFeed(workspaceId: string) {
     return this.request<BankFeedStateDto>('GET', this.ws(workspaceId, '/bank-feeds')).then((r) => r.feed);
+  }
+  /** §6: the accounts a live bank feed imports into, and through when (owners, admins and partners). */
+  bankFeedLinks(workspaceId: string) {
+    return this.request<{ data: BankFeedLinkDto[] }>('GET', this.ws(workspaceId, '/bank-feeds/links')).then(
+      (r) => r.data,
+    );
   }
   /** §3: an owner with a recent sign-in pastes SimpleFIN Bridge's setup token; it is claimed once. */
   connectBankFeed(workspaceId: string, input: ConnectBankFeedInput) {

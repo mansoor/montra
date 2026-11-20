@@ -85,6 +85,13 @@ export const BankFeedDto = z.object({
 });
 export type BankFeedDto = z.infer<typeof BankFeedDto>;
 
+/**
+ * GET /bank-feeds/links: the Montra accounts a live feed imports into, and through when (§6), so the Statements screen
+ * can say a statement for one will meet the feed's rows as likely duplicates.
+ */
+export const BankFeedLinkDto = z.object({ accountId: Id, syncedThrough: CalendarDateDto.nullable() });
+export type BankFeedLinkDto = z.infer<typeof BankFeedLinkDto>;
+
 /** GET /bank-feeds: the workspace's live feed, or null when none is connected. */
 export const BankFeedStateDto = z.object({ feed: BankFeedDto.nullable() });
 export type BankFeedStateDto = z.infer<typeof BankFeedStateDto>;

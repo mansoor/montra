@@ -2109,6 +2109,20 @@ Phase 11 leftovers:
     pending, staging, overlap, commit as feed transactions, Undo and Discard, Sync now roles and spacing, the daily
     limit, backoff, failing, revoked), web `bank-feeds.test.ts`, `phase3.test.ts`.
   - Next: PR 3b, hands-off syncing (auto-commit if clean, the balance check, problems and the notification).
+- **Bank feeds, PR 3b of 5: hands-off syncing** (FEED-04, FEED-06, FEED-07, FEED-08 partial; ADR-0055 "As built: PR
+  3b"; no migration).
+  - A staged feed batch with no probable duplicates and no unreadable rows commits itself (`warnings`
+    `auto_commit`, Undo 30 days); anything else waits in Review.
+  - The balance check (`ImportJobs.feedBalanceCheck`, after a feed batch commits): the account's ledger balance at
+    the end of the feed's balance date against the institution's; `ok` or `mismatch` with the gap on the batch, shown
+    as a statement's. A mismatch on an automatic import holds the account's next clean batch in Review until someone
+    imports one by hand.
+  - `bank_feed_attention` notifications (owners, once per problem; no amounts): revoked, payment required, failing, or
+    a linked account's bank to sign in to again (`attentionWords`); cleared when fixed.
+  - `GET /bank-feeds/links` and the Statements screen's note on an intake whose account has a feed.
+  - A feed import no longer offers "Change mapping".
+  - Tests: API `bank-feeds-sync.test.ts` (auto-commit, the balance check ok and mismatch, the hold and its release,
+    the attention notifications, the links).
 
 ---
 

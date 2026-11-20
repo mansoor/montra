@@ -379,6 +379,24 @@ Where PR 3a differs from or adds to §5:
   SIMPLEFIN_SYNCS_PER_DAY.
 - **Each batch waits in Review** in this PR ("Bank feed", one entry per account, counted in the Review badge).
 
+## As built: PR 3b (hands-off syncing), 2026-11-20
+
+Where PR 3b differs from or adds to §5–§7:
+
+- **"Clean"** is a batch with no probable duplicates and no unreadable rows. A row matched to a manual or scheduled
+  entry is clean (the commit confirms the match). The commit is the import's own job, enqueued by the sync as the
+  owner; the batch notes `auto_commit` in its warnings.
+- **The balance check** runs when a feed batch commits (`ImportJobs.feedBalanceCheck`): the sum of the account's
+  postings through the feed's `balance-date` against the institution's balance, both in the feed's terms (a card's
+  debt is negative in both), so no sign flips. Batches that wait in Review for an earlier date leave the ledger short
+  until they're imported, which shows as a mismatch: the hold is what makes someone look.
+- **The hold** is on the account, not the feed: the next clean batch for an account whose last checked feed import
+  was automatic and missed waits in Review. Importing one by hand releases it, whatever its own check says.
+- **The attention notification** goes to owners only, once per problem (its dedupe key names the problem and the day),
+  and `attention_notified_at` is cleared once nothing needs a person, so the next problem is told of again.
+- **The Statements note** comes from `GET /bank-feeds/links`; those who can't see the feed (RLS) get no links, so
+  accountants don't see it.
+
 ## Later providers
 
 The port takes these without changing §2–§8; each would be its own short ADR.
