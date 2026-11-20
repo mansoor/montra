@@ -77,6 +77,8 @@ export const BankFeedDto = z.object({
   accounts: z.array(BankFeedAccountDto),
   /** Requests made today (UTC) against the daily limit Montra keeps (SIMPLEFIN_REQUESTS_PER_DAY). */
   requests: z.object({ today: z.number().int(), perDay: z.number().int() }),
+  /** The earliest start date a link may choose today (SIMPLEFIN_MAX_WINDOW_DAYS back). */
+  earliestStartDate: CalendarDateDto,
   /** When Sync now may be pressed again; null when it may now (or the feed can't sync). */
   syncNowAfter: z.string().nullable(),
   version: z.string(),
@@ -97,15 +99,23 @@ export const ConnectBankFeedRequest = z.object({
 });
 export type ConnectBankFeedRequest = z.infer<typeof ConnectBankFeedRequest>;
 
-/** PATCH /bank-feeds/:id/accounts/:accountId: link to an account, create one to link, or ignore (§4). */
+/**
+ * PATCH /bank-feeds/:id/accounts/:accountId: link to an account, create one to link, or ignore (§4). Without a start
+ * date, the feed starts the day after the account's latest transaction, at most SIMPLEFIN_MAX_WINDOW_DAYS back (§5).
+ */
 export const UpdateBankFeedAccountRequest = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('link'), accountId: Id, startDate: CalendarDateDto, version: z.string() }),
+  z.object({
+    action: z.literal('link'),
+    accountId: Id,
+    startDate: CalendarDateDto.optional(),
+    version: z.string(),
+  }),
   z.object({
     action: z.literal('create'),
     name: z.string().trim().min(1).max(100),
     kind: BankAccountKind,
     institution: z.string().trim().max(100).optional(),
-    startDate: CalendarDateDto,
+    startDate: CalendarDateDto.optional(),
     version: z.string(),
   }),
   z.object({ action: z.literal('ignore'), version: z.string() }),
