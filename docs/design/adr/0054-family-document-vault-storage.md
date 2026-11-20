@@ -2,7 +2,8 @@
 
 - Status: accepted (the owner, 2026-11-17; see "Owner's answers", "Owner's clarification" and "Defaults taken" at the
   end)
-- Date: 2026-11-17; amended 2026-11-18 for the vault's API keys ("API keys (vault 0.9.0-dev.63–65)")
+- Date: 2026-11-17; amended 2026-11-18 for the vault's API keys ("API keys (vault 0.9.0-dev.63–65)"); amended 2026-11-19 for
+  the vault's access tokens ("Access tokens (vault 0.9.0-dev.72)")
 - Builds on: ADR-0031 (your own storage: the destination port, the outbox, retries, sealed secrets), ADR-0050 (hosting
   anywhere), ADR-0019 (backups, archives, retention, purge), ADR-0016 and ADR-0041 (restricted payslips), ADR-0034 §3
   (sealed copies of identity documents), ADR-0052 (tax forms, a restricted kind)
@@ -1206,6 +1207,33 @@ signing, and what §9 says about a newer version. Everything else stands.
   key" (the same app at the same vault); one begun but never given its code connects with a connection string. No
   migration: the stored shape is jsonb `config` and the sealed `secret_enc`, and a config saved before has no `auth`, so
   it reads as `signed`.
+
+## Access tokens (vault 0.9.0-dev.72), 2026-11-19
+
+Vault 0.9.0-dev.72 has an app trade its API key for a short-lived access token: `POST /api/v1/apps/token` with the key as
+HTTP Basic and `grant_type=client_credentials`, answered with an opaque `fdvt_…` token that lasts 900 seconds. Every
+other request carries `Authorization: Bearer` with it. Basic on every request still works there, with a `Deprecation`
+header. Montra moves to `@fdv/client` 0.9.0-dev.72 in one PR (the owner's request, 2026-11-19). This section adds to
+"API keys (vault 0.9.0-dev.63–65)" above; everything else stands.
+
+- **The package does the token** (replaces "Requests carry the key" above). `createAppClient` asks for a token, keeps
+  it until it ends, and asks again when it does or on a 401. Montra writes no token code of its own. The package also
+  falls back to Basic for a vault that gives no tokens; that is the package's, and Montra builds nothing for older
+  vaults (the owner's answer).
+- **One client per vault and key, for fifteen minutes** (replaces "unsealed only for one request or one job run"). The
+  vault gives a key ten tokens a minute at most (`APP_TOKENS_PER_KEY_PER_MINUTE`), and Montra opens a connection for
+  each request and job run, so a client per connection would soon be refused (`429`). Connections share the package's
+  client for one token's life (`appClientFor` in `connection.ts`): keyed by the address, the client ID and a SHA-256 of
+  the secret, never the secret; at most 500 kept; a replaced key gets its own. So the unsealed secret, and the token,
+  stay in the process's memory for up to fifteen minutes, never in the database, a log or a DTO. Each process (the API
+  and the job worker) asks for about one token per key every fifteen minutes.
+- **A key that stops working ends its tokens** (the vault's rule): revoked, expired or removed. The next request is a
+  401 about the key, which Montra says in its words as before. Montra's checks need nothing new.
+- **Keys default to 90 days** when an owner generates one (they can still choose longer). Montra's 14-day warning before
+  a key expires (above) covers it.
+- **View links open in two steps** (vault 0.9.0-dev.68): the link's GET is a vault page that spends nothing, so a link
+  scanner or a preview can't use it up, and its Open button posts back to the vault. Montra only hands the link to the
+  browser (§9, PR 6), so nothing changes in Montra; the tests follow a link as a person does.
 
 ## Alternatives considered
 
