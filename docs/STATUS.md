@@ -2024,6 +2024,14 @@ Phase 11 leftovers:
   (which, like accept-all, goes through `transferToInTrx` and so reaches the loan too). The phone has no make-transfer
   action, so it has none of this; remembered suggestions show there as before. Tests: API `manual-transfers.test.ts`,
   categorize `pipeline.test.ts`, web `phase3.test.ts`.
+- **Family Document Vault: access tokens** (vault 0.9.0-dev.72; ADR-0054 "Access tokens (vault 0.9.0-dev.72)"; no
+  migration). On `@fdv/client` 0.9.0-dev.72, which trades the API key for a fifteen-minute Bearer token and asks again
+  when it ends or on a 401 (Basic on every request is deprecated in the vault). The vault gives a key ten tokens a
+  minute, so connections now share the package's client per vault and key for fifteen minutes (`appClientFor` in
+  `storage/vault/connection.ts`) instead of making one per request or job run. Montra builds nothing for vaults without
+  tokens (the owner's answer; the package's own fallback stays). The tests follow view links in dev.68's two steps (a
+  GET page that spends nothing, then Open as a same-origin POST). Tests: API `family-vault*.test.ts`, with a new one
+  that two runs share one token, every app call is Bearer, and an ended token is replaced without a failure.
 
 ---
 

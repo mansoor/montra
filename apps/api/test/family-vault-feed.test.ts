@@ -86,8 +86,17 @@ const link = (
   headers?: Record<string, string>,
 ) => who.post(url(`/family-vault/files/${fileId}/link${mode ? `?mode=${mode}` : ''}`), undefined, headers);
 /** What a browser gets from the vault for a link: the fake's own answer, never Montra's. */
+/**
+ * A person following a view link, as vault 0.9.0-dev.68 has it: the GET is a page that spends nothing (a link scanner
+ * stops there), and its Open button posts back to the vault from the vault's own page.
+ */
 const follow = async (href: string) => {
-  const res = await fake.vault.fetch(href, { method: 'GET', headers: {} });
+  const page = await fake.vault.fetch(href, { method: 'GET', headers: {} });
+  if (page.status !== 200) return { status: page.status, location: page.headers.get('location') ?? '' };
+  const res = await fake.vault.fetch(href, {
+    method: 'POST',
+    headers: { 'sec-fetch-site': 'same-origin', origin: 'https://fake.example' },
+  });
   return { status: res.status, location: res.headers.get('location') ?? '' };
 };
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -814,6 +823,8 @@ describe('opening a document from the phone: the link in the body (ADR-0054 §9,
     const two = await link(doc.fileId);
     expect(two.body.url).not.toBe(one.body.url);
     expect(app().links.length).toBe(2);
+    // A GET alone (a link scanner, a preview) shows the vault's page and spends nothing.
+    expect((await fake.vault.fetch(one.body.url, { method: 'GET', headers: {} })).status).toBe(200);
     // Single-use: the vault lets the first visit in and turns any other away.
     const first = await follow(one.body.url);
     expect(first.status).toBe(303);

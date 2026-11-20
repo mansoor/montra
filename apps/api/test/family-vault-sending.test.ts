@@ -725,6 +725,40 @@ describe('the vault API key (vault 0.9.0-dev.63)', () => {
   const checkNow = () =>
     db.query(`update app.vault_connection_state set next_check_at = now() where workspace_id = $1`, [wsId]);
 
+  it('trades the key for one access token that runs share, and asks again only when it ends (vault 0.9.0-dev.72)', async () => {
+    fake.vault.expireAppTokens();
+    const calls: Array<{ path: string; scheme: string }> = [];
+    (transport as any).fetch = async (u: string, init: any) => {
+      const headers: Record<string, string> = init?.headers ?? {};
+      const auth = Object.entries(headers).find(([k]) => k.toLowerCase() === 'authorization')?.[1] ?? '';
+      calls.push({ path: new URL(u).pathname, scheme: auth.split(' ')[0]! });
+      return realFetch(u, init);
+    };
+    const tokens = () => calls.filter((x) => x.path === '/api/v1/apps/token');
+    try {
+      for (const name of ['Token one.png', 'Token two.png']) {
+        const id = await file('receipt', name);
+        await run();
+        expect((await item(id)).status).toBe('received');
+      }
+      // One token for both runs, asked for with the key; everything else carries the token, never the key.
+      expect(tokens()).toEqual([{ path: '/api/v1/apps/token', scheme: 'Basic' }]);
+      const rest = calls.filter((x) => x.path.startsWith('/api/v1/apps/') && x.path !== '/api/v1/apps/token');
+      expect(rest.length).toBeGreaterThan(0);
+      expect(rest.every((x) => x.scheme === 'Bearer')).toBe(true);
+
+      // Once it ends, the next request is refused and the client asks for another: nothing fails over it.
+      expect(fake.vault.expireAppTokens()).toBeGreaterThan(0);
+      const id = await file('receipt', 'Token three.png');
+      await run();
+      expect((await item(id)).status).toBe('received');
+      expect(tokens().length).toBe(2);
+      expect(await vaultRow()).toMatchObject({ status: 'active', consecutive_failures: 0 });
+    } finally {
+      (transport as any).fetch = realFetch;
+    }
+  });
+
   it('stops on a key revoked in the vault, with words, marked as needing a new key, until an owner pastes one', async () => {
     await fake.revokeKey(appId, keyId);
     const id = await file('receipt', 'After revoking.png');
