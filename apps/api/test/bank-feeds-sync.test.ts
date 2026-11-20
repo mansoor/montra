@@ -184,7 +184,7 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     const before = (await feedRow()).requests_today;
     fake.log = [];
     const result = await sync.sync(ctx(), feedId);
-    expect(result).toMatchObject({ outcome: 'ok', batches: 2, rows: 3 });
+    expect(result).toMatchObject({ outcome: 'ok', batches: 2, rows: 3, committed: 2 });
     // One request, from the earliest start date (90 days back for an account with no history) to tomorrow.
     expect(accountsRequests()).toHaveLength(1);
     const q = accountsRequests()[0]!.query;
@@ -193,38 +193,63 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     expect(q.pending).toBeUndefined();
     expect((await feedRow()).requests_today).toBe(before + 1);
 
-    const staged = await batches();
-    // The pending row and the card's row before its start date never arrive.
+    // Nothing to decide in either: both import themselves (owner's answer 4), with Undo.
+    let staged = await batches();
     expect(staged.map((b) => [b.status, b.file_id, b.ids])).toEqual(
       expect.arrayContaining([
-        ['preview', null, ['T-1', 'T-2']],
-        ['preview', null, ['C-1']],
+        ['committing', null, ['T-1', 'T-2']],
+        ['committing', null, ['C-1']],
       ]),
     );
+    await worker.drain();
+    staged = await batches();
+    expect(staged.map((b) => b.status)).toEqual(['committed', 'committed']);
     const chkBatch = staged.find((b) => b.ledger_account_id === checking)!;
     expect(chkBatch.file_name).toBe(
       feedBatchName('Checking …1234', dateOf(20) as CalendarDate, dateOf(5) as CalendarDate),
     );
-    // Rows as a file's are staged: the provider's words, the memo after the description, new, with suggestions.
-    const rows = (await c.get(url(`/imports/${staged.find((b) => b.ids[0] === 'C-1').id}/rows`))).body.data;
-    expect(rows.map((r: any) => [r.description, r.amount.amount, r.status])).toEqual([
-      ['GROCERY MART · Store 12', '-31020', 'new'],
+    const cardBatch = staged.find((b) => b.ids[0] === 'C-1')!;
+    // Rows as a file's are staged: the provider's words, the memo after the description.
+    const rows = (await c.get(url(`/imports/${cardBatch.id}/rows`))).body.data;
+    expect(rows.map((r: any) => [r.description, r.amount.amount])).toEqual([
+      ['GROCERY MART · Store 12', '-31020'],
     ]);
+    const tx = (
+      await db.query(
+        `select t.source from app.transaction t join app.transaction_source s on s.transaction_id = t.id
+          where s.import_batch_id = any($1::uuid[])`,
+        [staged.map((b) => b.id)],
+      )
+    ).rows;
+    expect(tx.map((r) => r.source)).toEqual(['feed', 'feed', 'feed']);
+
+    // FEED-07: the card was opened from the feed's balance, so it matches; the checking account started at zero months
+    // ago, so the institution's 1,520.75 doesn't match the 2,460.00 Montra holds.
+    const card = (await c.get(url(`/imports/${cardBatch.id}`))).body;
+    expect(card).toMatchObject({ balanceCheck: 'ok', balanceGap: null });
+    const chk = (await c.get(url(`/imports/${chkBatch.id}`))).body;
+    expect(chk).toMatchObject({ balanceCheck: 'mismatch', balanceGap: { amount: '93925', currency: 'USD' } });
+
     // Each account's cursor is where its rows reach; the feed is rescheduled for its daily minute.
     const f = await feed();
     expect(account(f, 'Checking …1234').syncedThrough).toBe(dateOf(5));
     expect(account(f, 'Rewards Card …9876').syncedThrough).toBe(dateOf(10));
     expect(new Date(f.nextSyncAt).getTime()).toBeGreaterThan(Date.now());
     expect(f).toMatchObject({ status: 'active', lastError: null });
-    // Review lists what waits.
-    const waiting = (await c.get(url('/imports?waiting=feed'))).body.data;
-    expect(waiting.map((b: any) => [b.source, b.status, b.fileType, b.fileId])).toEqual([
-      ['feed', 'preview', 'feed', null],
-      ['feed', 'preview', 'feed', null],
-    ]);
+    // Nothing waits in Review.
+    expect((await c.get(url('/imports?waiting=feed'))).body.data).toEqual([]);
+    // §6: the Statements screen knows which accounts have a feed, and through when (not for those who can't see it).
+    const links = (await c.get(url('/bank-feeds/links'))).body.data;
+    expect(links).toEqual(
+      expect.arrayContaining([
+        { accountId: checking, syncedThrough: dateOf(5) },
+        { accountId: account(f, 'Rewards Card …9876').accountId, syncedThrough: dateOf(10) },
+      ]),
+    );
+    expect((await viewer.get(url('/bank-feeds/links'))).body.data).toEqual([]);
   });
 
-  it('never stages a row twice: the overlap brings the same ids, and only new ones make a batch', async () => {
+  it('never stages a row twice, and holds an account whose balance didn’t match for a person', async () => {
     expect((await sync.sync(ctx(), feedId)).batches).toBe(0);
     fake.accounts[0]!.transactions.push({
       id: 'T-3',
@@ -232,8 +257,15 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
       amount: '-8.75',
       description: 'BAKERY',
     });
-    expect(await sync.sync(ctx(), feedId)).toMatchObject({ outcome: 'ok', batches: 1, rows: 1 });
-    expect((await batches()).map((b) => b.ids)).toEqual(expect.arrayContaining([['T-3']]));
+    // Clean, but the checking account's last automatic import missed the balance: it waits in Review.
+    expect(await sync.sync(ctx(), feedId)).toMatchObject({
+      outcome: 'ok',
+      batches: 1,
+      rows: 1,
+      committed: 0,
+    });
+    const waiting = (await c.get(url('/imports?waiting=feed'))).body.data;
+    expect(waiting.map((b: any) => [b.status, b.accountId])).toEqual([['preview', checking]]);
     // It went back over the last five days of each cursor (never before a start date), from the earliest need.
     const card = [addDays(dateOf(10) as CalendarDate, -5), addDays(today, -15)].sort().at(-1)!;
     const from = [card, addDays(dateOf(5) as CalendarDate, -5)].sort()[0]!;
@@ -241,21 +273,20 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     expect(q['start-date']).toBe(String(Date.parse(`${from}T00:00:00Z`) / 1000));
   });
 
-  it('commits a feed batch as the feed’s transactions; Undo brings its rows back on the next sync', async () => {
+  it('lets an import by hand release the hold; Undo brings its rows back on the next sync', async () => {
     const t3 = (await batches()).find((b) => b.ids[0] === 'T-3')!;
     expect((await c.post(url(`/imports/${t3.id}/commit`))).status).toBe(202);
     await worker.drain();
     expect((await c.get(url(`/imports/${t3.id}`))).body.status).toBe('committed');
-    const tx = (
-      await db.query(
-        `select t.source from app.transaction t join app.transaction_source s on s.transaction_id = t.id
-          where s.import_batch_id = $1`,
-        [t3.id],
-      )
-    ).rows;
-    expect(tx).toEqual([{ source: 'feed' }]);
-    // Committed: the next sync skips it.
-    expect((await sync.sync(ctx(), feedId)).batches).toBe(0);
+    // Someone looked: the next clean batch imports itself again.
+    fake.accounts[0]!.transactions.push({
+      id: 'T-4',
+      posted: posted(1),
+      amount: '-3.00',
+      description: 'PARKING',
+    });
+    expect(await sync.sync(ctx(), feedId)).toMatchObject({ batches: 1, committed: 1 });
+    await worker.drain();
 
     expect((await c.post(url(`/imports/${t3.id}/undo`))).status).toBe(202);
     await worker.drain();
@@ -263,19 +294,19 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     expect(account(await feed(), 'Checking …1234').syncedThrough).toBe(
       addDays(dateOf(1) as CalendarDate, -1),
     );
-    const again = await sync.sync(ctx(), feedId);
-    expect(again).toMatchObject({ batches: 1, rows: 1 });
+    // The undone row comes back; T-4, imported, doesn't. The hold is back (the last automatic import missed).
+    expect(await sync.sync(ctx(), feedId)).toMatchObject({ batches: 1, rows: 1, committed: 0 });
+    const back = (await batches()).filter((b) => b.status === 'preview');
+    expect(back.map((b) => b.ids)).toEqual([['T-3']]);
   });
 
   it('keeps a discarded batch’s rows out', async () => {
-    const card = (await batches()).find((b) => b.ids[0] === 'C-1')!;
-    expect((await c.post(url(`/imports/${card.id}/discard`))).status).toBe(200);
+    const waiting = (await batches()).find((b) => b.status === 'preview')!;
+    expect((await c.post(url(`/imports/${waiting.id}/discard`))).status).toBe(200);
     await db.query(`update app.bank_feed_account set synced_through = null where bank_feed_id = $1`, [
       feedId,
     ]);
-    const r = await sync.sync(ctx(), feedId);
-    expect((await batches()).filter((b) => b.ids.includes('C-1'))).toHaveLength(1);
-    expect(r.batches).toBe(0);
+    expect((await sync.sync(ctx(), feedId)).batches).toBe(0);
   });
 
   it('Sync now: owners, admins and partners, spaced; viewers can’t', async () => {
@@ -292,6 +323,7 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     expect([soon.status, soon.body.code]).toEqual([429, 'bank_feed.sync_soon']);
     // The job's pass picks it up, as a manual sync.
     expect(await sync.run()).toMatchObject({ synced: 1 });
+    await worker.drain();
     const run = (
       await db.query(
         `select trigger, outcome from app.bank_feed_run where bank_feed_id = $1 order by started_at desc limit 1`,
@@ -315,6 +347,36 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     await db.query(`update app.bank_feed set requests_today = 0 where id = $1`, [feedId]);
   });
 
+  const told = async () =>
+    (
+      await db.query(
+        `select u.email, n.body from app.notification n join app.app_user u on u.id = n.user_id
+          where n.workspace_id = $1 and n.type = 'bank_feed_attention' order by n.created_at`,
+        [wsId],
+      )
+    ).rows;
+
+  it('tells owners once when a bank needs them to sign in again, and others keep syncing', async () => {
+    fake.errlist = [{ code: 'con.auth', msg: 'Sign in again', conn_id: 'CONN-1' }];
+    expect((await sync.sync(ctx(), feedId)).outcome).toBe('partial');
+    expect(account(await feed(), 'Rewards Card …9876').problem).toEqual({
+      code: 'reauth_needed',
+      message: 'Sign in again',
+    });
+    await sync.sync(ctx(), feedId);
+    expect(await told()).toEqual([
+      {
+        email: OWNER,
+        body: 'Example Credit Union needs you to sign in again at SimpleFIN Bridge. Other banks keep syncing.',
+      },
+    ]);
+    // Fixed at the Bridge: the next problem is told of again.
+    fake.errlist = [];
+    await sync.sync(ctx(), feedId);
+    expect((await feedRow()).attention_notified_at).toBeNull();
+    await db.query(`delete from app.notification where workspace_id = $1`, [wsId]);
+  });
+
   it('backs off on failures, turns failing after five, and stops for a revoked access', async () => {
     fake.failWith = 500;
     for (let i = 1; i <= 5; i++) {
@@ -327,6 +389,9 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     expect((await feed()).lastError).toBe(
       'Montra couldn’t reach SimpleFIN Bridge. Try again in a few minutes.',
     );
+    // Failing needs a person: owners are told once, and only owners.
+    await sync.sync(ctx(), feedId);
+    expect((await told()).map((r) => r.email)).toEqual([OWNER]);
     // A sync that works again clears it.
     fake.failWith = null;
     expect((await sync.sync(ctx(), feedId)).outcome).toBe('ok');
@@ -340,6 +405,11 @@ describe('syncing (ADR-0055 §5; FEED-03, FEED-04, FEED-05)', () => {
     );
     const due = (await db.query(`select 1 from app.bank_feed_due() where workspace_id = $1`, [wsId])).rows;
     expect(due).toEqual([]);
+    // A new problem is told of, the same day.
+    expect((await told()).map((r) => r.body)).toEqual([
+      'Montra hasn’t been able to sync your bank feed for a while. See Settings → Bank feeds for what went wrong.',
+      'SimpleFIN no longer accepts Montra’s access. Connect again with a new setup token in Settings → Bank feeds.',
+    ]);
     fake.failWith = null;
   });
 });

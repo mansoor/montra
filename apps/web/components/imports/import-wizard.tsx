@@ -304,7 +304,8 @@ export function ImportWizard({
         batch={batch}
         categories={categories}
         onBulkDone={() => setRowsVersion((v) => v + 1)}
-        onEditMapping={batch.analysis ? () => setEditing(true) : undefined}
+        // A bank feed's rows come already read: there are no columns to map (ADR-0055 §5).
+        onEditMapping={batch.analysis && batch.source !== 'feed' ? () => setEditing(true) : undefined}
       />
       <div className="flex flex-wrap items-center gap-3">
         <button

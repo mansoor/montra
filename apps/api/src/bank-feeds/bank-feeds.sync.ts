@@ -21,6 +21,8 @@ import { CONFIG, type AppConfig } from '../config.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
 import { ImportJobs } from '../imports/import-jobs.js';
+import { ImportsService } from '../imports/imports.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { Worker } from '../jobs/queue.js';
 import { backoffMs } from '../storage/backoff.js';
 import { BANK_FEED_PROVIDER, BankFeedsService, FEED_SECRET_COLUMN, feedError } from './bank-feeds.service.js';
@@ -48,6 +50,22 @@ export interface SyncResult {
   outcome: 'ok' | 'partial' | 'held' | 'failed' | 'idle';
   batches: number;
   rows: number;
+  /** Batches clean enough to import themselves (§5). */
+  committed?: number;
+}
+
+/** §7: why a feed needs a person, in words for its owners, or null when it doesn't. Never amounts or transactions. */
+export function attentionWords(status: string, reauth: readonly string[]): string | null {
+  if (status === 'revoked')
+    return 'SimpleFIN no longer accepts Montra’s access. Connect again with a new setup token in Settings → Bank feeds.';
+  if (status === 'payment_required')
+    return 'Your SimpleFIN Bridge subscription needs attention. Montra stopped syncing until it’s sorted out.';
+  if (status === 'failing')
+    return 'Montra hasn’t been able to sync your bank feed for a while. See Settings → Bank feeds for what went wrong.';
+  const banks = [...new Set(reauth)];
+  if (banks.length)
+    return `${banks.join(', ')} ${banks.length === 1 ? 'needs' : 'need'} you to sign in again at SimpleFIN Bridge. Other banks keep syncing.`;
+  return null;
 }
 
 /** "SimpleFIN · Checking …1234 · 2026-11-01 to 2026-11-20": a feed batch's name where a file's would be. */
@@ -66,6 +84,8 @@ export class BankFeedSync {
     @Inject(BANK_FEED_PROVIDER) private readonly provider: BankFeedProvider,
     @Inject(BankFeedsService) private readonly feeds: BankFeedsService,
     @Inject(ImportJobs) private readonly imports: ImportJobs,
+    @Inject(ImportsService) private readonly importsService: ImportsService,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(Worker) private readonly worker: Worker,
     @Inject(CONFIG) config: AppConfig,
   ) {
@@ -111,8 +131,16 @@ export class BankFeedSync {
     return { synced };
   }
 
-  /** §5: one feed's sync, acting as `ctx`'s owner. */
+  /** §5: one feed's sync, acting as `ctx`'s owner; then owners are told if it now needs a person (§7). */
   async sync(ctx: Ctx, feedId: string, now: Date = new Date()): Promise<SyncResult> {
+    try {
+      return await this.syncOnce(ctx, feedId, now);
+    } finally {
+      await this.attention(ctx, feedId);
+    }
+  }
+
+  private async syncOnce(ctx: Ctx, feedId: string, now: Date): Promise<SyncResult> {
     const worker = { ...ctx, actorType: 'worker' as const };
     const prep = await this.db.run(worker, async (trx) => {
       const feed = await trx
@@ -191,6 +219,7 @@ export class BankFeedSync {
       await this.feeds.store(trx, ctx, feedId, snap);
       let batches = 0;
       let rows = 0;
+      let committed = 0;
       for (const a of prep.accounts) {
         const reported = snap.accounts.find((x) => x.id === a.provider_account_id);
         if (!reported) continue;
@@ -240,6 +269,17 @@ export class BankFeedSync {
           );
           batches++;
           rows += fresh.length;
+          // §5, owner's answer 4: a clean batch imports itself, with Undo; anything else waits in Review.
+          if (await this.clean(trx, ctx, batchId, a.id)) {
+            await trx
+              .updateTable('app.import_batch')
+              .set({ warnings: JSON.stringify(['auto_commit']) })
+              .where('workspace_id', '=', ctx.workspaceId)
+              .where('id', '=', batchId)
+              .execute();
+            await this.importsService.enqueueCommit(trx, ctx, batchId);
+            committed++;
+          }
         }
         // The cursor: imported or waiting through the latest date seen (§5), never past today.
         const latest = inRange.map((t) => t.date).sort()[inRange.length - 1]!;
@@ -281,8 +321,116 @@ export class BankFeedSync {
         .where('bank_feed_id', '=', feedId)
         .where('started_at', '<', new Date(now.getTime() - RUN_DAYS * 86_400_000))
         .execute();
-      return { outcome, batches, rows };
+      return { outcome, batches, rows, committed };
     });
+  }
+
+  /**
+   * §5: a batch with nothing to decide: no probable duplicates and no rows that couldn't be read, on an account whose
+   * last checked feed batch that imported itself didn't miss the institution's balance (a mismatch holds the next
+   * automatic import until someone imports one by hand).
+   */
+  private async clean(trx: Trx, ctx: Ctx, batchId: string, feedAccountId: string): Promise<boolean> {
+    const doubtful = await trx
+      .selectFrom('app.import_row')
+      .select('id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('import_batch_id', '=', batchId)
+      .where('status', 'in', ['probable_duplicate', 'error'])
+      .limit(1)
+      .executeTakeFirst();
+    if (doubtful) return false;
+    const last = await trx
+      .selectFrom('app.import_batch')
+      .select(['balance_check', 'warnings'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('bank_feed_account_id', '=', feedAccountId)
+      .where('status', '=', 'committed')
+      .where('balance_check', '<>', 'n_a')
+      .orderBy('committed_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    const held = last?.balance_check === 'mismatch' && (last.warnings as string[]).includes('auto_commit');
+    return !held;
+  }
+
+  /**
+   * §7: a feed whose access was revoked, whose subscription needs attention, that keeps failing, or with a bank to sign
+   * in to again needs a person. Each owner is told once (no amounts, no transaction text), then nothing more until it's
+   * fixed and breaks again.
+   */
+  private async attention(ctx: Ctx, feedId: string): Promise<void> {
+    const worker = { ...ctx, actorType: 'worker' as const };
+    const found = await this.db.run(worker, async (trx) => {
+      const feed = await trx
+        .selectFrom('app.bank_feed')
+        .select(['status', 'attention_notified_at'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', feedId)
+        .executeTakeFirst();
+      if (!feed) return null;
+      const reauth = await trx
+        .selectFrom('app.bank_feed_account')
+        .select(['institution_name'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('bank_feed_id', '=', feedId)
+        .where('state', '=', 'linked')
+        .where('problem', '=', 'reauth_needed')
+        .execute();
+      const why = attentionWords(
+        feed.status,
+        reauth.map((r) => r.institution_name ?? 'A bank'),
+      );
+      if (!why && feed.attention_notified_at)
+        await trx
+          .updateTable('app.bank_feed')
+          .set({ attention_notified_at: null })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', feedId)
+          .execute();
+      if (!why || feed.attention_notified_at) return null;
+      await trx
+        .updateTable('app.bank_feed')
+        .set({ attention_notified_at: new Date() })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', feedId)
+        .execute();
+      const owners = await trx
+        .selectFrom('app.workspace_member')
+        .select('user_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('role', '=', 'owner')
+        .where('status', '=', 'active')
+        .execute();
+      // One notification per problem: a different problem the same day is told of too.
+      const reason = ['revoked', 'payment_required', 'failing'].includes(feed.status)
+        ? feed.status
+        : 'reauth';
+      return { why, reason, owners: owners.map((o) => o.user_id).filter((u): u is string => Boolean(u)) };
+    });
+    if (!found) return;
+    for (const userId of found.owners) {
+      const who = { workspaceId: ctx.workspaceId, userId };
+      try {
+        await this.db.run(who, async (trx) => {
+          const prefs = await this.notifications.prefsIn(trx, userId);
+          await this.notifications.create(
+            trx,
+            who,
+            {
+              type: 'bank_feed_attention',
+              dedupeKey: `bank_feed_attention:${feedId}:${found.reason}:${new Date().toISOString().slice(0, 10)}`,
+              title: 'Your bank feed needs someone to look at it',
+              body: found.why,
+              link: `/w/${ctx.workspaceId}/settings?tab=bank-feeds`,
+            },
+            prefs,
+          );
+        });
+      } catch (e) {
+        this.logger.warn(`Couldn't tell ${userId} about bank feed ${feedId}: ${(e as Error).name}`);
+      }
+    }
   }
 
   /** §5, §7: a sync that didn't get its answer. */

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { load } from '@/lib/server-api';
+import { load, serverApi } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { ImportHistory } from '@/components/imports/import-history';
 import { StatementsInbox } from '@/components/imports/statements-inbox';
@@ -40,6 +40,8 @@ export default async function StatementsPage({ params }: { params: Promise<{ wor
         )),
       )
     : [];
+  // ADR-0055 §6: accounts a bank feed imports into, so a statement for one says it will meet the feed's rows.
+  const feedLinks = importer ? await (await serverApi()).bankFeedLinks(workspaceId).catch(() => []) : [];
 
   return (
     <div className="space-y-6">
@@ -61,6 +63,7 @@ export default async function StatementsPage({ params }: { params: Promise<{ wor
             role={workspace.role}
             accounts={open}
             pending={pending}
+            feedLinks={feedLinks}
           />
         ))}
       <section className="space-y-3" aria-labelledby="statement-history">

@@ -46,6 +46,7 @@ export const DEFAULT_CHANNELS: Record<NotificationType, ChannelPrefs> = {
   tax_forms_missing: on(true, true),
   vault_attention: on(true, false),
   files_missing: on(true, false),
+  bank_feed_attention: on(true, false),
 };
 
 /** ADR-0049 §6: reminders that can also go by text, on plans that include texts. */
@@ -67,6 +68,8 @@ const REQUESTED: ReadonlySet<NotificationType> = new Set([
   'vault_attention',
   // ADR-0054 §5a: a file Montra no longer holds has to be provided again; at most one a day.
   'files_missing',
+  // ADR-0055 §7: the bank feed someone connected needs them; once per problem.
+  'bank_feed_attention',
 ]);
 
 export interface NewNotification {

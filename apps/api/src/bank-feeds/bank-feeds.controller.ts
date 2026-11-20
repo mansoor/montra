@@ -14,6 +14,7 @@ import {
   ConnectBankFeedRequest,
   UpdateBankFeedAccountRequest,
   UpdateBankFeedRequest,
+  type BankFeedLinkDto,
   type BankFeedStateDto,
 } from '@montra/schemas';
 import { z } from 'zod';
@@ -43,6 +44,12 @@ export class BankFeedsController {
   @Get()
   state(@Ctx() ctx: RequestContext): Promise<BankFeedStateDto> {
     return this.feeds.state(dbCtx(ctx));
+  }
+
+  /** §6: the accounts a live feed imports into, for the Statements screen's note. */
+  @Get('links')
+  async links(@Ctx() ctx: RequestContext): Promise<{ data: BankFeedLinkDto[] }> {
+    return { data: await this.feeds.links(dbCtx(ctx)) };
   }
 
   @Patch(':id')

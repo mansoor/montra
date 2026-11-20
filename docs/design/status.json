@@ -1322,10 +1322,18 @@
   ],
   "FEED-04": [
     "partial",
-    "PR 3a: the provider's transaction id is each staged row's identity (import_row.external_id, migration 0072) and the dedupe key's, as an OFX FITID is; a sync skips ids already brought into the account (waiting, committed or discarded; a discarded feed batch keeps its rows for this), so the overlap never adds a row twice, and an undone batch's rows come back. Rows are also checked against the account's transactions (exact and probable duplicates within ±3 days, matches to manual and scheduled entries), so a statement for the same account meets the feed's rows as likely duplicates"
+    "PR 3a: the provider's transaction id is each staged row's identity (import_row.external_id, migration 0072) and the dedupe key's, as an OFX FITID is; a sync skips ids already brought into the account (waiting, committed or discarded; a discarded feed batch keeps its rows for this), so the overlap never adds a row twice, and an undone batch's rows come back. Rows are also checked against the account's transactions (exact and probable duplicates within ±3 days, matches to manual and scheduled entries), so a statement for the same account meets the feed's rows as likely duplicates. PR 3b: the Statements screen says, for an account with a feed, that rows the feed already brought will show as likely duplicates"
   ],
   "FEED-06": [
     "partial",
-    "PR 3a: posted only: pending rows (pending true, or no posted date) are dropped by the parser and never staged, and pending=1 is never asked for. Every batch waits in Review (\"Bank feed\", counted in the Review badge); clean ones committing themselves is PR 3b"
+    "PR 3a: posted only: pending rows (pending true, or no posted date) are dropped by the parser and never staged, and pending=1 is never asked for. PR 3b: a staged batch with no probable duplicates and no unreadable rows imports itself at once (with Undo, 30 days) unless the account's last automatic import missed the institution's balance; anything else waits in Review (\"Bank feed\", counted in the Review badge). Importing one by hand releases the hold. Done once the live run (PR 4) confirms SimpleFIN's behaviour"
+  ],
+  "FEED-07": [
+    "partial",
+    "PR 3b: once a feed batch is committed, the account's ledger balance at the end of the feed's balance date is compared with the balance the institution reported (positive money held, a debt negative, as the feed gives it); the batch records ok or mismatch with the gap, shown on the import as a statement's is, and a mismatch on an automatic import holds the account's next clean batch in Review. Done once the live run (PR 4) confirms the balance's meaning"
+  ],
+  "FEED-08": [
+    "partial",
+    "PR 2–3b: problems in words on the Settings card, per feed (revoked, payment required, failing, waiting for the daily limit) and per account (sign in again at SimpleFIN for an institution, an account that failed or is missing data, no longer in the Bridge), the provider's messages sanitized. PR 3b: each owner gets one bank_feed_attention notification (no amounts or transaction text) when the feed is revoked, needs payment, turns failing, or a linked account's bank needs signing in again; nothing more until it's fixed and breaks again; a different problem is told of too. The phone (PR 4) shows the same"
   ]
 }

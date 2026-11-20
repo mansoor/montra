@@ -835,6 +835,7 @@ export class ImportJobs {
           .where('workspace_id', '=', ctx.workspaceId)
           .where('id', '=', batch.id)
           .execute();
+        if (batch.source === 'feed') await this.feedBalanceCheck(trx, ctx, batch.id);
         await this.saveProfile(trx, ctx, batch);
         // AI-08/09: refresh recurring proposals and anomaly flags with the new rows.
         if (added > 0)
@@ -1141,6 +1142,43 @@ export class ImportJobs {
         .execute();
       return { voided, restored, kept };
     });
+  }
+
+  // ------------------------------------------------------------------------------------------------------
+  /**
+   * The balance check for a bank feed's batch (ADR-0055 §5, IMP-08; FEED-07): once it's committed, the account's ledger
+   * balance at the end of the feed's balance date against the balance the institution reported for it. Both are in
+   * the account's terms the feed uses (positive is money held; a card's or loan's debt is negative), so they compare
+   * as they are. The batch records `ok` or `mismatch` with the gap, which the import shows as a statement's does; a
+   * mismatch holds the account's next clean auto-commit until someone commits by hand.
+   */
+  private async feedBalanceCheck(trx: Trx, ctx: Ctx, batchId: string): Promise<void> {
+    const row = await trx
+      .selectFrom('app.import_batch as b')
+      .innerJoin('app.bank_feed_account as a', (j) =>
+        j.onRef('a.workspace_id', '=', 'b.workspace_id').onRef('a.id', '=', 'b.bank_feed_account_id'),
+      )
+      .select(['b.ledger_account_id', 'a.last_balance_minor', 'a.balance_date'])
+      .where('b.workspace_id', '=', ctx.workspaceId)
+      .where('b.id', '=', batchId)
+      .executeTakeFirst();
+    if (!row || row.last_balance_minor === null || !row.balance_date) return;
+    const { rows } = await sql<{ total: string | null }>`
+      select sum(amount_minor)::text as total from app.posting
+       where workspace_id = ${ctx.workspaceId} and ledger_account_id = ${row.ledger_account_id}
+         and entry_date <= ${row.balance_date}::date`.execute(trx);
+    const ledger = BigInt(rows[0]?.total ?? '0');
+    const gap = ledger - BigInt(row.last_balance_minor);
+    await trx
+      .updateTable('app.import_batch')
+      .set({
+        statement_closing_minor: row.last_balance_minor,
+        balance_check: gap === 0n ? 'ok' : 'mismatch',
+        balance_gap_minor: gap === 0n ? null : gap,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', batchId)
+      .execute();
   }
 
   // ------------------------------------------------------------------------------------------------------

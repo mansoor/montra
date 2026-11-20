@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import type { AccountDto } from '@montra/api-client';
+import type { BankFeedLinkDto } from '@montra/schemas';
 import type { IntakeDto } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
@@ -29,12 +30,15 @@ export function StatementsInbox({
   role,
   accounts,
   pending = [],
+  feedLinks = [],
 }: {
   workspaceId: string;
   role: string | undefined;
   accounts: AccountDto[];
   /** Statements uploaded earlier that are still being read or waiting for an account (`pendingStatements`). */
   pending?: IntakeDto[];
+  /** Accounts a bank feed imports into, and through when (ADR-0055 §6). */
+  feedLinks?: BankFeedLinkDto[];
 }) {
   const { t, locale } = useI18n();
   const router = useRouter();
@@ -181,6 +185,7 @@ export function StatementsInbox({
                   intake={i}
                   accounts={bankAccounts}
                   billers={[]}
+                  feedLinks={feedLinks}
                   onDone={(done) => {
                     put(item.key, { ...item, intake: done });
                     // Confirmed: the import continues in the existing preview, mapping and commit screens.

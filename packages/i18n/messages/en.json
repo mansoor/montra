@@ -2036,6 +2036,8 @@
   "intakes.review_intro": "Montra couldn't tell where these go, or wants you to confirm. Your choice teaches it: after {count} confirmations it files them itself.",
   "intakes.suggested": "Looks like {name}. Confirm it, or pick another.",
   "intakes.title_review": "Statements and bills to file",
+  "intakes.feed_note": "This account has a bank feed through {date}: rows it already brought will show as likely duplicates.",
+  "intakes.feed_note_new": "This account has a bank feed: rows it brings will show as likely duplicates.",
   "invoices.add_line": "Add line",
   "invoices.amount": "Amount",
   "invoices.candidates_hint": "These deposits could be this payment:",
