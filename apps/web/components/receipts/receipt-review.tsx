@@ -10,12 +10,13 @@ import { vaultOnlyPage } from '@/lib/vault';
 import {
   amountPlaceholder,
   buildUpdate,
+  recalcLine,
   rowsOf,
   STATUS_CHIP,
   type HeaderFields,
   type LineRow,
 } from '@/lib/receipts';
-import { DateText } from '../i18n';
+import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { useFileStorageStates, VaultBadges } from '../vault-badges';
@@ -41,6 +42,7 @@ export function ReceiptReview({
 }) {
   const router = useRouter();
   const { run, busy, message, setMessage, t } = useAction();
+  const { locale } = useI18n();
   const initial = useMemo(() => rowsOf(receipt), [receipt]);
   const [header, setHeader] = useState<HeaderFields>(initial.header);
   const [lines, setLines] = useState<LineRow[]>(initial.lines);
@@ -71,6 +73,11 @@ export function ReceiptReview({
   const open = receipt.status === 'inbox' || receipt.status === 'needs_review';
   const setLine = (i: number, patch: Partial<LineRow>) =>
     setLines((list) => list.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  // Quantity × unit price = total stays true as any of the three is edited (owner, 2026-11-18).
+  const editAmount = (i: number, patch: Partial<LineRow>, changed: 'qty' | 'unitPrice' | 'lineTotal') =>
+    setLines((list) =>
+      list.map((l, j) => (j === i ? recalcLine({ ...l, ...patch }, changed, currency, locale) : l)),
+    );
 
   async function save() {
     const res = buildUpdate(receipt.version, header, lines, undefined, t);
@@ -231,6 +238,8 @@ export function ReceiptReview({
           <thead className="text-left text-muted">
             <tr>
               <th className="py-1">{t('receipts.item')}</th>
+              <th className="py-1">{t('receipts.qty')}</th>
+              <th className="py-1">{t('receipts.unit_price')}</th>
               <th className="py-1">{t('receipts.amount')}</th>
               <th className="py-1">{t('receipts.taxable')}</th>
               <th className="py-1">{t('receipts.category')}</th>
@@ -264,12 +273,34 @@ export function ReceiptReview({
                   </td>
                   <td className="py-1 pr-2">
                     <input
+                      className="input num w-16"
+                      inputMode="decimal"
+                      aria-label={t('receipts.qty_for', { item: l.rawText })}
+                      aria-invalid={errors[`qty.${i}`] ? 'true' : undefined}
+                      value={l.qty}
+                      onChange={(e) => editAmount(i, { qty: e.target.value }, 'qty')}
+                      data-testid="receipt-line-qty"
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
+                      className="input num w-24"
+                      inputMode="decimal"
+                      aria-label={t('receipts.unit_price_for', { item: l.rawText })}
+                      aria-invalid={errors[`unitPrice.${i}`] ? 'true' : undefined}
+                      value={l.unitPrice}
+                      onChange={(e) => editAmount(i, { unitPrice: e.target.value }, 'unitPrice')}
+                      data-testid="receipt-line-unit-price"
+                    />
+                  </td>
+                  <td className="py-1 pr-2">
+                    <input
                       className="input num w-24"
                       inputMode="decimal"
                       aria-label={t('receipts.amount')}
                       aria-invalid={errors[`lineTotal.${i}`] ? 'true' : undefined}
                       value={l.lineTotal}
-                      onChange={(e) => setLine(i, { lineTotal: e.target.value })}
+                      onChange={(e) => editAmount(i, { lineTotal: e.target.value }, 'lineTotal')}
                     />
                   </td>
                   <td className="py-1 pr-2">
@@ -349,6 +380,8 @@ export function ReceiptReview({
                 {
                   rawText: '',
                   expandedName: '',
+                  qty: '1',
+                  unitPrice: '',
                   lineTotal: '',
                   discount: '',
                   taxable: true,

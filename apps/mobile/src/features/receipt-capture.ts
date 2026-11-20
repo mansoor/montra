@@ -82,6 +82,34 @@ export function reviewEdits(
   };
 }
 
+/**
+ * The receipt's totals under its lines, as the web shows them (owner, 2026-11-18), so the lines visibly add up to
+ * the total: the subtotal (Σ line totals less line discounts, unless the receipt printed one), then the order discount,
+ * tax ("included" on a VAT-style receipt, where it isn't added), fees and tip when there are any, and the total.
+ */
+export function receiptTotals(
+  r: Pick<ReceiptDto, 'subtotal' | 'discount' | 'tax' | 'taxIncluded' | 'fees' | 'tip' | 'total' | 'lines'>,
+): Array<{ key: string; amount: string }> {
+  const subtotal =
+    r.subtotal ?? String(r.lines.reduce((t, l) => t + BigInt(l.lineTotal) - BigInt(l.discount), 0n));
+  const out = [{ key: 'mobile.receipts.subtotal', amount: subtotal }];
+  if (BigInt(r.discount) !== 0n) out.push({ key: 'receipts.discount', amount: String(-BigInt(r.discount)) });
+  if (BigInt(r.tax) !== 0n || r.taxIncluded)
+    out.push({ key: r.taxIncluded ? 'mobile.receipts.tax_included' : 'receipts.tax', amount: r.tax });
+  if (BigInt(r.fees) !== 0n) out.push({ key: 'receipts.fees', amount: r.fees });
+  if (BigInt(r.tip) !== 0n) out.push({ key: 'receipts.tip', amount: r.tip });
+  if (r.total !== null) out.push({ key: 'receipts.total', amount: r.total });
+  return out;
+}
+
+/** "2 × $0.81": a line's quantity and unit price, or null when either isn't known (owner, 2026-11-18). */
+export function lineQuantityText(
+  l: Pick<ReceiptDto['lines'][number], 'qty' | 'unitPrice'>,
+  money: (minor: string) => string,
+): string | null {
+  return l.qty !== null && l.unitPrice !== null ? `${l.qty} × ${money(l.unitPrice)}` : null;
+}
+
 /** The lines still without a category (the phone's review stack walks through these). */
 export const uncategorizedLines = (r: ReceiptDto) => r.lines.filter((l) => !l.categoryId);
 

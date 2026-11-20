@@ -13,7 +13,9 @@ import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import {
+  lineQuantityText,
   receiptStatusKey,
+  receiptTotals,
   reviewEdits,
   stalledMessage,
   uncategorizedLines,
@@ -215,12 +217,14 @@ export default function ReceiptReview() {
       {missing > 0 ? <Small>{t('mobile.receipts.uncategorized_count', { count: missing })}</Small> : null}
       {receipt.lines.map((l) => {
         const categoryId = picked.has(l.id) ? picked.get(l.id) : l.categoryId;
+        const category = categoryId ? (names.get(categoryId) ?? '') : t('mobile.receipts.uncategorized');
+        const each = lineQuantityText(l, (minor) => fmtMoney(minor, receipt.currency));
         return (
           <Row
             key={l.id}
             testID="receipt-line"
             title={l.expandedName ?? l.rawText}
-            subtitle={categoryId ? (names.get(categoryId) ?? '') : t('mobile.receipts.uncategorized')}
+            subtitle={each ? `${each} · ${category}` : category}
             right={<Small>{fmtMoney(l.lineTotal, receipt.currency)}</Small>}
             onPress={can.record ? () => setPicking(l.id) : undefined}
           />
@@ -233,6 +237,18 @@ export default function ReceiptReview() {
           onPress={() => void act(() => api.updateReceipt(ws, receipt.id, reviewEdits(receipt, picked)))}
           testID="receipt-save"
         />
+      ) : null}
+
+      {receipt.lines.length ? (
+        // The tax, tip and the rest, so the lines visibly add up to the total (owner, 2026-11-18).
+        <Card testID="receipt-totals">
+          {receiptTotals(receipt).map((x) => (
+            <View key={x.key} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Small>{t(x.key)}</Small>
+              <Small>{fmtMoney(x.amount, receipt.currency)}</Small>
+            </View>
+          ))}
+        </Card>
       ) : null}
 
       {receipt.groups.length ? (

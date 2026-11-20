@@ -6,7 +6,10 @@ import {
   addMonths,
   asCurrencyCode,
   isCurrencyCode,
+  lineQuantity,
   minorUnits,
+  mulRound,
+  parseDecimal,
   toDecimalString,
   type CalendarDate,
 } from '@montra/domain';
@@ -43,6 +46,10 @@ export interface LineRow {
   id?: string;
   rawText: string;
   expandedName: string;
+  /** Quantity as typed ("2", "0.452"); empty when not known. */
+  qty: string;
+  /** Unit price as an amount input; empty when not known (a weighed item that doesn't divide evenly). */
+  unitPrice: string;
   lineTotal: string;
   discount: string;
   taxable: boolean;
@@ -82,6 +89,8 @@ export function rowsOf(r: ReceiptDto): { header: HeaderFields; lines: LineRow[] 
       id: l.id,
       rawText: l.rawText,
       expandedName: l.expandedName ?? '',
+      qty: l.qty ?? '',
+      unitPrice: amountToInput(l.unitPrice, currency),
       lineTotal: amountToInput(l.lineTotal, currency),
       discount: amountToInput(l.discount, currency),
       taxable: l.taxable,
@@ -123,6 +132,15 @@ export function buildUpdate(
     }
     return p.minor.toString();
   };
+  const lineQty = (value: string, i: number): string | null => {
+    const q = value.trim().replace(',', '.');
+    if (!q) return null;
+    if (!QTY_RE.test(q)) {
+      errors[`qty.${i}`] = t('receipts.qty_invalid');
+      return null;
+    }
+    return q;
+  };
   const out: UpdateReceiptInput = {
     version,
     merchant: header.merchant.trim() || null,
@@ -141,6 +159,8 @@ export function buildUpdate(
         ...(l.id ? { id: l.id } : {}),
         rawText: l.rawText.trim() || '?',
         expandedName: l.expandedName.trim() || null,
+        qty: lineQty(l.qty, i),
+        unitPrice: l.unitPrice.trim() ? (amount(`unitPrice.${i}`, l.unitPrice, true) ?? null) : null,
         lineTotal: amount(`lineTotal.${i}`, l.lineTotal, true) ?? '0',
         discount: amount(`discount.${i}`, l.discount, false) ?? '0',
         taxable: l.taxable,
@@ -150,6 +170,38 @@ export function buildUpdate(
     }),
   };
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, input: out };
+}
+
+/** A quantity the API takes: up to three decimals. */
+const QTY_RE = /^\d{1,9}(\.\d{1,3})?$/;
+
+/**
+ * Keeps a line's quantity × unit price = total as one of them is edited (owner, 2026-11-18). A new quantity or unit
+ * price sets the total (rounded half up, as prices on receipts are); a new total sets the unit price when the quantity
+ * divides it exactly, else leaves it empty rather than guess. What can't be read yet is left as typed.
+ */
+export function recalcLine(
+  row: LineRow,
+  changed: 'qty' | 'unitPrice' | 'lineTotal',
+  currency: string,
+  locale = 'en-US',
+): LineRow {
+  const qtyText = row.qty.trim().replace(',', '.');
+  const qty = QTY_RE.test(qtyText) ? parseDecimal(qtyText) : null;
+  const read = (v: string) => {
+    if (!v.trim()) return null;
+    const p = parseAmountInput(v, currency, locale);
+    return p.ok ? p.minor : null;
+  };
+  if (changed === 'lineTotal') {
+    const total = read(row.lineTotal);
+    if (total === null || qty === null) return row;
+    const unit = lineQuantity(qtyText, null, total).unitPrice;
+    return { ...row, unitPrice: unit === null ? '' : amountToInput(unit.toString(), currency) };
+  }
+  const unit = read(row.unitPrice);
+  if (unit === null || qty === null) return row;
+  return { ...row, lineTotal: amountToInput(mulRound(unit, qty).toString(), currency) };
 }
 
 /** Chip class per status (globals.css chips). */
