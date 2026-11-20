@@ -104,6 +104,15 @@ def test_yearless_dates_and_long_descriptions_keep_to_their_columns() -> None:
     assert (st["openingBalance"], st["closingBalance"]) == ("$8,669.43", "$8,173.47")
 
 
+def test_section_titles_are_not_headers_and_say_which_way_money_went() -> None:
+    result = extract_pdf(fixtures.make_sectioned_pdf())
+    rows = result["sheets"][0]["rows"]
+    # "Deposits and Credits" is a title, not the header. The header further left on page 2 still lines up,
+    # "$" printed apart stays out of the description, and "Electronic Withdrawals" amounts are money out.
+    assert rows[0] == ["Eff. Date", "Syst. Date", "Description", "Amount"]
+    assert rows[1:] == [list(r) for r in fixtures.SECTIONED_ROWS]
+
+
 def test_closing_date_ends_the_period_when_no_range_is_printed() -> None:
     st = statement_facts("Example Card Services\nClosing Date 01/14/27\nNew Balance $1,234.56")
     assert (st["periodStart"], st["periodEnd"]) == (None, "2027-01-14")
