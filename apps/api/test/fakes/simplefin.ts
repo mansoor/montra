@@ -71,8 +71,13 @@ export interface FakeSimpleFin {
 
 const day = (date: string) => Date.parse(`${date}T12:00:00Z`) / 1000;
 
-/** A fake with one connection and two accounts, a few posted rows each, and one pending row. */
-export async function startFakeSimpleFin(): Promise<FakeSimpleFin> {
+/**
+ * A fake with one connection and two accounts, a few posted rows each, and one pending row. `port` fixes the port (the
+ * web's e2e run); `tokenRoute` adds `GET /__token`, a new setup token, and `GET /__ready` for whoever starts it there.
+ */
+export async function startFakeSimpleFin(
+  opts: { port?: number; tokenRoute?: boolean } = {},
+): Promise<FakeSimpleFin> {
   const claims = new Map<string, boolean>();
   const username = `user${randomBytes(4).toString('hex')}`;
   const password = randomBytes(12).toString('hex');
@@ -202,6 +207,16 @@ export async function startFakeSimpleFin(): Promise<FakeSimpleFin> {
         req.socket.destroy();
         return;
       }
+      if (
+        opts.tokenRoute &&
+        req.method === 'GET' &&
+        (u.pathname === '/__token' || u.pathname === '/__ready')
+      ) {
+        res
+          .writeHead(200, { 'content-type': 'text/plain' })
+          .end(u.pathname === '/__token' ? fake.newSetupToken() : 'ready');
+        return;
+      }
       const claim = /^\/simplefin\/claim\/([0-9a-f]+)$/.exec(u.pathname);
       if (claim && req.method === 'POST') {
         const token = claim[1]!;
@@ -231,7 +246,7 @@ export async function startFakeSimpleFin(): Promise<FakeSimpleFin> {
       res.writeHead(404).end('');
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(opts.port ?? 0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   fake.url = base;
   fake.close = () =>

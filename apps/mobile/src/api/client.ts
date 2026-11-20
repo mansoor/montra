@@ -16,6 +16,8 @@ import type {
   PayrollFileDto,
   ReimbursementDto,
   TransactionDto,
+  BankFeedDto,
+  BankFeedLinkDto,
   BudgetPeriodDto,
   CalendarBooksDto,
   CalendarDto,
@@ -666,6 +668,25 @@ export function createApi(opts: ApiOptions) {
         file,
         false,
       ),
+
+    // ----- Bank feeds (ADR-0055 §10): read online, never synced or cached; changing a feed is on the web --------------
+    /** The live feed and its accounts, for owners, admins and partners; null for anyone else, or with none. */
+    bankFeed: async (w: string) =>
+      (await request<{ feed: BankFeedDto | null }>('GET', `${ws(w)}/bank-feeds`)).feed,
+    /** Sync now (owners, admins and partners), at most once per SIMPLEFIN_SYNC_NOW_MINUTES. */
+    syncBankFeed: async (w: string, feedId: string) =>
+      (
+        await request<{ feed: BankFeedDto | null }>(
+          'POST',
+          `${ws(w)}/bank-feeds/${encodeURIComponent(feedId)}/sync`,
+        )
+      ).feed,
+    /** The accounts a live feed imports into, and through when. */
+    bankFeedLinks: async (w: string): Promise<BankFeedLinkDto[]> =>
+      (await request<{ data: BankFeedLinkDto[] }>('GET', `${ws(w)}/bank-feeds/links`)).data,
+    /** Bank feed imports waiting in Review (preview), one per account. */
+    feedImportsWaiting: async (w: string): Promise<ImportBatchDto[]> =>
+      (await request<{ data: ImportBatchDto[] }>('GET', `${ws(w)}/imports?waiting=feed`)).data,
 
     // ----- Family Document Vault (ADR-0054 §9, §13; PR 6): read online, never synced or cached ------------------------
     /** The connection, for owners and admins (anyone else gets a 403). Read only: changing it is on the web. */
