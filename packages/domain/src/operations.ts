@@ -26,10 +26,10 @@ export type PlanFeature = (typeof PLAN_FEATURES)[number];
 /**
  * Features kept out of what customers see (the billing page's "what's included") until they can be used. They are real
  * entitlements all the same: stored in plan versions, checked by the API and shown in the staff console. Remove a key
- * here when its feature ships. `familyVault` was here until sending to a vault shipped (ADR-0054 PR 3); `bankFeeds` is
- * here until syncing works end to end (ADR-0055 §11).
+ * here when its feature ships. None now: `familyVault` was here until sending to a vault shipped (ADR-0054 PR 3), and
+ * `bankFeeds` until syncing worked end to end and the live run passed (ADR-0055 PR 5).
  */
-export const FEATURES_NOT_YET_SHOWN: ReadonlySet<PlanFeature> = new Set<PlanFeature>(['bankFeeds']);
+export const FEATURES_NOT_YET_SHOWN: ReadonlySet<PlanFeature> = new Set<PlanFeature>([]);
 
 /** A plan's features as a customer sees them, in the same order, without those not shown yet. */
 export function customerFeatures<F extends string>(features: readonly F[]): F[] {
