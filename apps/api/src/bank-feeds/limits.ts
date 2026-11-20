@@ -117,6 +117,16 @@ export function syncWindow(
   return { from: wanted < earliest ? earliest : wanted, to: addDays(today, 1), gap };
 }
 
+/**
+ * The last day a sync takes rows for (live run, 2026-11-20): SimpleFIN dates rows in UTC, which can already be
+ * tomorrow in the workspace's time zone; a posted row is never in the future, so the later of the two days counts.
+ */
+export function lastSyncDay(now: Date, timeZone: string): CalendarDate {
+  const local = todayIn(timeZone, now);
+  const utc = now.toISOString().slice(0, 10) as CalendarDate;
+  return utc > local ? utc : local;
+}
+
 /** The UTC day a request counts against. */
 export function utcDay(now: Date): CalendarDate {
   return now.toISOString().slice(0, 10) as CalendarDate;

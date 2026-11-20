@@ -12,6 +12,8 @@ import {
   receiptStatusKey,
   reminderChoices,
   reviewEdits,
+  lineQuantityText,
+  receiptTotals,
   stalledMessage,
   uncategorizedLines,
 } from '../src/features/receipt-capture';
@@ -211,5 +213,55 @@ describe('a receipt nothing is reading', () => {
       for (const reason of ['waiting', 'failed'] as const)
         expect(en[stalledMessage(r({ worker, reason, since }))!]).toBeTruthy();
     expect(en['mobile.receipts.status.stalled']).toBeTruthy();
+  });
+});
+
+describe('a receipt’s totals and quantities on the phone (owner, 2026-11-18)', () => {
+  const lines = [
+    { lineTotal: '348', discount: '0' },
+    { lineTotal: '162', discount: '12' },
+  ] as never;
+  it('adds tax, tip and the rest under the lines, so they add up to the total', () => {
+    expect(
+      receiptTotals({
+        subtotal: null,
+        discount: '50',
+        tax: '40',
+        taxIncluded: false,
+        fees: '0',
+        tip: '100',
+        total: '588',
+        lines,
+      }),
+    ).toEqual([
+      { key: 'mobile.receipts.subtotal', amount: '498' },
+      { key: 'receipts.discount', amount: '-50' },
+      { key: 'receipts.tax', amount: '40' },
+      { key: 'receipts.tip', amount: '100' },
+      { key: 'receipts.total', amount: '588' },
+    ]);
+    // VAT-style: the tax is in the prices, shown as such; a printed subtotal wins; nothing else when there's none.
+    expect(
+      receiptTotals({
+        subtotal: '510',
+        discount: '0',
+        tax: '85',
+        taxIncluded: true,
+        fees: '25',
+        tip: '0',
+        total: null,
+        lines,
+      }),
+    ).toEqual([
+      { key: 'mobile.receipts.subtotal', amount: '510' },
+      { key: 'mobile.receipts.tax_included', amount: '85' },
+      { key: 'receipts.fees', amount: '25' },
+    ]);
+  });
+
+  it('says a line’s quantity and unit price when both are known', () => {
+    const money = (m: string) => 'USD ' + (Number(m) / 100).toFixed(2);
+    expect(lineQuantityText({ qty: '2', unitPrice: '81' }, money)).toBe('2 × USD 0.81');
+    expect(lineQuantityText({ qty: '0.452', unitPrice: null }, money)).toBeNull();
   });
 });

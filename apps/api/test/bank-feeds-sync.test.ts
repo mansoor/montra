@@ -3,7 +3,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { addDays, todayIn, type CalendarDate } from '@montra/domain';
 import { BankFeedSync, feedBatchName } from '../src/bank-feeds/bank-feeds.sync.js';
-import { nextSyncAt, nextUtcDay, zonedInstant } from '../src/bank-feeds/limits.js';
+import { lastSyncDay, nextSyncAt, nextUtcDay, zonedInstant } from '../src/bank-feeds/limits.js';
 import { ImportJobs } from '../src/imports/import-jobs.js';
 import { Worker } from '../src/jobs/queue.js';
 import { ADMIN_URL } from './env.js';
@@ -41,6 +41,10 @@ describe('when a feed syncs (ADR-0055 §5)', () => {
       '2026-11-20T23:00:00.000Z',
     );
     expect(nextUtcDay(now).toISOString()).toBe('2026-11-21T00:00:00.000Z');
+    // Live run: SimpleFIN dates rows in UTC, already tomorrow in Los Angeles at 06:00 UTC; a sync takes them too.
+    expect(lastSyncDay(new Date('2026-11-21T06:00:00Z'), 'America/Los_Angeles')).toBe('2026-11-21');
+    expect(lastSyncDay(new Date('2026-11-21T06:00:00Z'), 'Asia/Tokyo')).toBe('2026-11-21');
+    expect(lastSyncDay(new Date('2026-11-21T20:00:00Z'), 'Asia/Tokyo')).toBe('2026-11-22');
     expect(feedBatchName('Checking …1234', d('2026-11-01'), d('2026-11-20'))).toBe(
       'SimpleFIN · Checking …1234 · 2026-11-01 to 2026-11-20',
     );

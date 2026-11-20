@@ -247,6 +247,51 @@ describe('the Walmart receipt (Phase 5 exit criterion 1, requirements §3.5)', (
   });
 });
 
+describe('a line’s quantity and unit price (owner, 2026-11-18)', () => {
+  it('shows 1 × the total when nothing is printed, and keeps quantity × unit price = total through edits', async () => {
+    const r = await capture([
+      'CORNER SHOP',
+      '11/05/2026 09:15',
+      'APPLES   4.00',
+      'BREAD   3.50',
+      'TOTAL 7.50',
+    ]);
+    expect(r.lines.map((l: any) => [l.rawText, l.qty, l.unitPrice, l.lineTotal])).toEqual([
+      ['APPLES', '1', '400', '400'],
+      ['BREAD', '1', '350', '350'],
+    ]);
+    const body = (lines: Array<Record<string, unknown>>, version: string) => ({
+      version,
+      lines: r.lines.map((l: any, i: number) => ({
+        id: l.id,
+        rawText: l.rawText,
+        lineTotal: l.lineTotal,
+        discount: l.discount,
+        taxable: l.taxable,
+        ...lines[i],
+      })),
+      total: '800',
+    });
+    // A new total with no quantity or unit price: worked out again, not left saying 1 × the old total. A quantity
+    // that divides the total gives the unit price.
+    const edited = await c.patch(
+      url(`/receipts/${r.id}`),
+      body([{ lineTotal: '450' }, { qty: '2', lineTotal: '350' }], r.version),
+    );
+    expect(edited.status).toBe(200);
+    expect(edited.body.lines.map((l: any) => [l.qty, l.unitPrice, l.lineTotal])).toEqual([
+      ['1', '450', '450'],
+      ['2', '175', '350'],
+    ]);
+    // A weighed item that doesn't divide evenly keeps no unit price, rather than a rounded guess.
+    const weighed = await c.patch(
+      url(`/receipts/${r.id}`),
+      body([{ lineTotal: '450' }, { qty: '0.452', unitPrice: null, lineTotal: '135' }], edited.body.version),
+    );
+    expect(weighed.body.lines[1]).toMatchObject({ qty: '0.452', unitPrice: null, lineTotal: '135' });
+  });
+});
+
 describe('a receipt in another currency (Phase 5 exit criterion 2, CUR-04)', () => {
   it('matches €40.00 to a $43.60 card line within ±3% and stores the actual rate', async () => {
     const txn = await spend('2026-10-31', '-4360', 'GALERIES LAFAYETTE PARIS FR');
