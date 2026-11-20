@@ -19,6 +19,7 @@ import {
   groupReceipt,
   impliedRate,
   isCurrencyCode,
+  lineQuantity,
   minorUnits,
   parseMoney,
   receiptHabit,
@@ -668,26 +669,30 @@ export class ReceiptsService {
     await trx
       .insertInto('app.receipt_line')
       .values(
-        lines.map((l, i) => ({
-          workspace_id: ctx.workspaceId,
-          id: l.id ?? newId(),
-          receipt_id: receiptId,
-          line_no: i + 1,
-          raw_text: l.rawText.slice(0, 500),
-          expanded_name: l.expandedName,
-          qty: l.qty,
-          unit_price_minor: l.unitPriceMinor,
-          line_total_minor: l.lineTotalMinor,
-          discount_minor: l.discountMinor,
-          taxable: l.taxable,
-          is_return: l.lineTotalMinor < 0n,
-          category_id: l.categoryId,
-          entity_id: l.entityId,
-          member_id: l.memberId,
-          confidence: l.confidence === null ? null : l.confidence.toFixed(3),
-          categorization: l.categorization ? JSON.stringify(l.categorization) : null,
-          item_key: itemKeyOf(l.rawText) || null,
-        })),
+        lines.map((l, i) => {
+          // Owner, 2026-11-18: quantity × unit price = total on every line, filled in where it is exact.
+          const q = lineQuantity(l.qty, l.unitPriceMinor, l.lineTotalMinor);
+          return {
+            workspace_id: ctx.workspaceId,
+            id: l.id ?? newId(),
+            receipt_id: receiptId,
+            line_no: i + 1,
+            raw_text: l.rawText.slice(0, 500),
+            expanded_name: l.expandedName,
+            qty: q.qty,
+            unit_price_minor: q.unitPrice,
+            line_total_minor: l.lineTotalMinor,
+            discount_minor: l.discountMinor,
+            taxable: l.taxable,
+            is_return: l.lineTotalMinor < 0n,
+            category_id: l.categoryId,
+            entity_id: l.entityId,
+            member_id: l.memberId,
+            confidence: l.confidence === null ? null : l.confidence.toFixed(3),
+            categorization: l.categorization ? JSON.stringify(l.categorization) : null,
+            item_key: itemKeyOf(l.rawText) || null,
+          };
+        }),
       )
       .execute();
   }
@@ -903,19 +908,26 @@ export class ReceiptsService {
       const lines: LineInput[] = req.lines
         ? req.lines.map((l) => {
             const prev = l.id ? before.find((b) => b.id === l.id) : undefined;
+            // Quantity × unit price = total (owner, 2026-11-18): what an edit leaves out is kept only while it still
+            // adds up; a changed total, quantity or unit price lets the one not sent be worked out again.
+            const prevQty = prev?.qty === undefined || prev.qty === null ? null : trimRate(prev.qty);
+            const prevUnit = prev?.unit_price_minor ?? null;
+            const totalChanged = prev !== undefined && BigInt(l.lineTotal) !== prev.line_total_minor;
+            const sentUnit =
+              l.unitPrice === undefined ? undefined : l.unitPrice === null ? null : BigInt(l.unitPrice);
+            const qtyChanged = l.qty !== undefined && l.qty !== prevQty;
+            const unitChanged = sentUnit !== undefined && sentUnit !== prevUnit;
+            const qty = l.qty !== undefined ? l.qty : totalChanged || unitChanged ? null : prevQty;
+            const unitPriceMinor =
+              sentUnit !== undefined ? sentUnit : totalChanged || qtyChanged ? null : prevUnit;
             const categoryId = l.categoryId === undefined ? (prev?.category_id ?? null) : l.categoryId;
             const userChose = l.categoryId !== undefined && l.categoryId !== (prev?.category_id ?? null);
             return {
               ...(prev ? { id: prev.id } : {}),
               rawText: l.rawText,
               expandedName: l.expandedName === undefined ? (prev?.expanded_name ?? null) : l.expandedName,
-              qty: l.qty === undefined ? (prev?.qty ?? null) : l.qty,
-              unitPriceMinor:
-                l.unitPrice === undefined
-                  ? (prev?.unit_price_minor ?? null)
-                  : l.unitPrice === null
-                    ? null
-                    : BigInt(l.unitPrice),
+              qty,
+              unitPriceMinor,
               lineTotalMinor: BigInt(l.lineTotal),
               discountMinor: BigInt(l.discount),
               taxable: l.taxable,
@@ -1758,13 +1770,15 @@ function groupsOf(r: ReceiptRow, rows: ReceiptLineRow[]): ReceiptGroupDto[] {
 }
 
 function lineDto(l: ReceiptLineRow): ReceiptLineDto {
+  // Lines read before quantities were filled in show them too (owner, 2026-11-18).
+  const q = lineQuantity(l.qty === null ? null : trimRate(l.qty), l.unit_price_minor, l.line_total_minor);
   return {
     id: l.id,
     lineNo: l.line_no,
     rawText: l.raw_text,
     expandedName: l.expanded_name,
-    qty: l.qty === null ? null : trimRate(l.qty),
-    unitPrice: l.unit_price_minor?.toString() ?? null,
+    qty: q.qty,
+    unitPrice: q.unitPrice?.toString() ?? null,
     lineTotal: l.line_total_minor.toString(),
     discount: l.discount_minor.toString(),
     taxable: l.taxable,

@@ -5,7 +5,7 @@
  */
 import { allocate } from './allocate.js';
 import { divRound, abs, pow10 } from './rounding.js';
-import type { Decimal } from './decimal.js';
+import { parseDecimal, type Decimal } from './decimal.js';
 
 /** RCP-05: a receipt validates when its parts are within ±2 minor units of the printed total. */
 export const RECEIPT_TOLERANCE_MINOR = 2n;
@@ -230,4 +230,40 @@ function indexOfLargestMagnitude(values: readonly bigint[]): number {
   let best = 0;
   for (let i = 1; i < values.length; i++) if (abs(values[i]!) > abs(values[best]!)) best = i;
   return best;
+}
+
+/**
+ * A receipt line's quantity and unit price as shown (owner, 2026-11-18): what the receipt printed, with what's missing
+ * filled in only where it is exact, so a line reads quantity × unit price = total.
+ *
+ * - Neither printed: 1 × the line total.
+ * - Only the quantity: the unit price, when the quantity divides the total exactly.
+ * - Only the unit price: the quantity, when the total is a whole multiple of it.
+ * - Both printed: as printed.
+ *
+ * A weighed item that doesn't divide evenly keeps a null unit price: never a rounded guess.
+ */
+export function lineQuantity(
+  qty: string | null,
+  unitPrice: bigint | null,
+  lineTotal: bigint,
+): { qty: string | null; unitPrice: bigint | null } {
+  if (qty !== null && unitPrice !== null) return { qty, unitPrice };
+  if (qty === null && unitPrice === null) return { qty: '1', unitPrice: lineTotal };
+  if (qty !== null) {
+    let d: Decimal;
+    try {
+      d = parseDecimal(qty);
+    } catch {
+      return { qty, unitPrice: null };
+    }
+    if (d.coefficient <= 0n) return { qty, unitPrice: null };
+    const scaled = lineTotal * pow10(d.scale);
+    return scaled % d.coefficient === 0n
+      ? { qty, unitPrice: scaled / d.coefficient }
+      : { qty, unitPrice: null };
+  }
+  const unit = unitPrice!;
+  if (unit === 0n || lineTotal % unit !== 0n || lineTotal / unit <= 0n) return { qty: null, unitPrice: unit };
+  return { qty: String(lineTotal / unit), unitPrice: unit };
 }

@@ -9,6 +9,7 @@ import {
   FX_MATCH_TOLERANCE_BPS,
   groupReceipt,
   impliedRate,
+  lineQuantity,
   mulRound,
   validateReceipt,
   type ReceiptLineAmounts,
@@ -218,5 +219,26 @@ describe('VAT-inclusive receipts', () => {
     expect(validateReceipt(lines, t)).toEqual({ computed: 2650n, gap: 0n, ok: true });
     const [dining] = groupReceipt(lines, t);
     expect(dining).toMatchObject({ subtotal: 2350n, tax: 214n, tip: 300n, total: 2650n });
+  });
+});
+
+describe('a receipt line’s quantity and unit price (owner, 2026-11-18)', () => {
+  it('fills what the receipt didn’t print, only where it is exact', () => {
+    // Neither printed: one of it, at the line's total.
+    expect(lineQuantity(null, null, 499n)).toEqual({ qty: '1', unitPrice: 499n });
+    expect(lineQuantity(null, null, -1499n)).toEqual({ qty: '1', unitPrice: -1499n });
+    // Only the quantity: the unit price when it divides exactly.
+    expect(lineQuantity('3', null, 897n)).toEqual({ qty: '3', unitPrice: 299n });
+    expect(lineQuantity('0.5', null, 300n)).toEqual({ qty: '0.5', unitPrice: 600n });
+    expect(lineQuantity('0.452', null, 135n)).toEqual({ qty: '0.452', unitPrice: null });
+    expect(lineQuantity('3', null, 1000n)).toEqual({ qty: '3', unitPrice: null });
+    expect(lineQuantity('0', null, 100n)).toEqual({ qty: '0', unitPrice: null });
+    // Only the unit price: the quantity when the total is a whole multiple of it.
+    expect(lineQuantity(null, 250n, 750n)).toEqual({ qty: '3', unitPrice: 250n });
+    expect(lineQuantity(null, -250n, -500n)).toEqual({ qty: '2', unitPrice: -250n });
+    expect(lineQuantity(null, 299n, 135n)).toEqual({ qty: null, unitPrice: 299n });
+    expect(lineQuantity(null, 250n, -500n)).toEqual({ qty: null, unitPrice: 250n });
+    // Both printed: as printed, weighed items included.
+    expect(lineQuantity('0.452', 299n, 135n)).toEqual({ qty: '0.452', unitPrice: 299n });
   });
 });

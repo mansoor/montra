@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ReceiptDto } from '@montra/api-client';
-import { amountToInput, buildUpdate, receiptFileProblem, rowsOf, stalledReasons } from './receipts';
+import {
+  amountToInput,
+  buildUpdate,
+  recalcLine,
+  receiptFileProblem,
+  rowsOf,
+  stalledReasons,
+} from './receipts';
 import { delayedWorkers } from './status';
 
 const receipt: ReceiptDto = {
@@ -81,6 +88,8 @@ describe('receipt helpers (RCP-06)', () => {
     lines.push({
       rawText: 'BANANAS',
       expandedName: '',
+      qty: '2',
+      unitPrice: '0.81',
       lineTotal: '1.62',
       discount: '',
       taxable: false,
@@ -107,6 +116,8 @@ describe('receipt helpers (RCP-06)', () => {
             id: 'l1',
             rawText: 'GV 2% MLK GAL',
             expandedName: 'Great Value 2% milk',
+            qty: null,
+            unitPrice: null,
             lineTotal: '348',
             discount: '0',
             taxable: false,
@@ -116,6 +127,8 @@ describe('receipt helpers (RCP-06)', () => {
           {
             rawText: 'BANANAS',
             expandedName: null,
+            qty: '2',
+            unitPrice: '81',
             lineTotal: '162',
             discount: '0',
             taxable: false,
@@ -125,6 +138,31 @@ describe('receipt helpers (RCP-06)', () => {
         ],
       },
     });
+  });
+
+  it('keeps quantity × unit price = total as one is edited (owner, 2026-11-18)', () => {
+    const row = {
+      rawText: 'APPLES',
+      expandedName: '',
+      qty: '3',
+      unitPrice: '0.99',
+      lineTotal: '',
+      discount: '',
+      taxable: true,
+      categoryId: '',
+      memberId: '',
+    };
+    // A quantity or unit price sets the total.
+    expect(recalcLine(row, 'unitPrice', 'USD').lineTotal).toBe('2.97');
+    expect(recalcLine({ ...row, qty: '0.452', unitPrice: '2.99' }, 'qty', 'USD').lineTotal).toBe('1.35');
+    // A total sets the unit price when the quantity divides it exactly, else leaves it empty rather than guess.
+    expect(recalcLine({ ...row, lineTotal: '4.50' }, 'lineTotal', 'USD').unitPrice).toBe('1.50');
+    expect(recalcLine({ ...row, lineTotal: '10.00' }, 'lineTotal', 'USD').unitPrice).toBe('');
+    // What can't be read yet stays as typed.
+    expect(recalcLine({ ...row, qty: 'x' }, 'qty', 'USD')).toEqual({ ...row, qty: 'x' });
+    // A quantity the API can't take is a field error.
+    const res = buildUpdate('1', { ...rowsOf(receipt).header }, [{ ...row, qty: 'two', lineTotal: '1.00' }]);
+    expect(res.ok ? null : res.errors).toEqual({ 'qty.0': 'Enter a quantity, such as 2 or 0.452.' });
   });
 
   it('reports bad fields by line', () => {

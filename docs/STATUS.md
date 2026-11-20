@@ -285,12 +285,10 @@ finished:
     a migration of payee history and rules.
 12. ~~**Patch schemas that fill defaults.**~~ Done: every `Update…` schema now leaves omitted fields out, and
     `packages/schemas/test/patches.test.ts` checks them all.
-13. **Receipt line quantity and unit price** (owner, 2026-11-18). `extract_receipt` v3 already reads `qty` and
-    `unitPrice` when the receipt prints them, and leaves them null otherwise. Wanted: read them wherever possible, and
-    when the quantity isn't printed, default the line to quantity 1 with the unit price equal to the line total, so
-    every line shows quantity × unit price = total.
-14. **Phone receipts don't show tax and tip** (owner, 2026-11-18). The web receipt shows them; the phone doesn't, so
-    there the line items don't add up to the receipt total.
+13. ~~**Receipt line quantity and unit price**~~ Done: every line shows quantity × unit price = total; quantity 1 at
+    the line's total when neither is printed (see §7g).
+14. ~~**Phone receipts don't show tax and tip**~~ Done: the phone shows subtotal, discount, tax, fees, tip and total
+    under the lines (see §7g).
 
 ---
 
@@ -2139,6 +2137,18 @@ Phase 11 leftovers:
   so rows posted that UTC day aren't left for the next sync (both first balance checks had missed by exactly those);
   the first sync is labelled `first`. `bankFeeds` leaves `FEATURES_NOT_YET_SHOWN`. Tests: API
   `bank-feeds-sync.test.ts` (`lastSyncDay`), domain `operations.test.ts`, web `billing.test.ts`.
+- **Receipt line quantity and unit price; the phone's receipt totals** (owner, 2026-11-18; backlog 13 and 14; RCP-01,
+  no migration).
+  - `lineQuantity` (`@montra/domain`): what the receipt printed is kept as printed. Neither printed: quantity 1 at the
+    line's total. Only the quantity: the unit price when it divides the total exactly. Only the unit price: the
+    quantity when the total is a whole multiple of it. Otherwise the missing one stays empty (a weighed 0.452 lb at
+    1.35 gets no rounded guess). The API applies it on capture and on every line it returns.
+  - Editing: a PATCH that changes a line's total, quantity or unit price without sending the other works that one out
+    again rather than keeping a stale value. The web review has Qty and Unit price columns; a new quantity or unit
+    price sets the total (half up), and a new total sets the unit price when it divides exactly.
+  - Phone: each line says "2 × $0.81"; a totals card under the lines shows subtotal, discount, tax (or "tax
+    included"), fees, tip and total, so the lines add up to the receipt.
+  - Tests: domain `receipt.test.ts`, API `receipts.test.ts`, web `lib/receipts.test.ts`, mobile `receipts.test.ts`.
 
 ---
 
