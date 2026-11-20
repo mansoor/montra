@@ -2032,6 +2032,18 @@ Phase 11 leftovers:
   tokens (the owner's answer; the package's own fallback stays). The tests follow view links in dev.68's two steps (a
   GET page that spends nothing, then Open as a same-origin POST). Tests: API `family-vault*.test.ts`, with a new one
   that two runs share one token, every app call is Bearer, and an ended token is replaced without a failure.
+- **PDF statements in titled sections** (IMP-03, IMP-05; no migration). Some credit unions print a summary, then
+  sections such as "Deposits and Credits" and "Electronic Withdrawals", each with its own header ("Eff. Date, Syst.
+  Date, Description, Amount"), every amount unsigned and "$" in a column of its own. The doc worker took "Deposits and
+  Credits" for the header (two of its words are header words), so each line became one cell. Now:
+  - a header must name a date (`date`, `posted`, `posting`);
+  - a short line that is a section title sets which way money went until the next one, and under a withdrawals title
+    an unsigned amount in a lone Amount column is read as money out (a title naming both ways changes nothing);
+  - the same header seen again (a new section or page) gives its own positions, so a header placed further left on
+    page 2 still lines up;
+  - a lone "$" is dropped rather than joining the description.
+
+  Tests: doc-worker `test_extract.py` (`make_sectioned_pdf`).
 - **Explore spending leaves Uncategorized out** (FLOW-01; no migration). "Uncategorized expense" (the books'
   `uncategorized_expense` system account) was offered as a category to explore and cut, and counted in all spending.
   It is now never a choice, a default pick or a what-if, and `spending` and the shares count categorized spending only
