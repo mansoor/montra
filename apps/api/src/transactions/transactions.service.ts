@@ -189,7 +189,7 @@ export class TransactionsService {
       unitId?: string | null;
       memo?: string;
       tags?: string[];
-      source: 'manual' | 'import';
+      source: 'manual' | 'import' | 'feed';
       reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
       payeeId?: string | null;
       dedupeKey?: string | null;

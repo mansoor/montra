@@ -70,6 +70,7 @@ import { fakeVaultTransport } from './storage/vault/fake.js';
 import { allowLocalVaultHttp, guardedVaultTransport, VAULT_TRANSPORT } from './storage/vault/transport.js';
 import { BankFeedConnectController, BankFeedsController } from './bank-feeds/bank-feeds.controller.js';
 import { BANK_FEED_PROVIDER, BankFeedsService } from './bank-feeds/bank-feeds.service.js';
+import { BankFeedSync } from './bank-feeds/bank-feeds.sync.js';
 import { simpleFinLimits } from './bank-feeds/limits.js';
 import { SimpleFinProvider } from './bank-feeds/simplefin.adapter.js';
 import { FEED_TRANSPORT, guardedFeedTransport, type FeedTransport } from './bank-feeds/transport.js';
@@ -366,6 +367,7 @@ export class AppModule {
         },
         // Bank feeds (ADR-0055): SimpleFIN behind the guarded transport, its limits from the settings.
         BankFeedsService,
+        BankFeedSync,
         { provide: FEED_TRANSPORT, useFactory: () => guardedFeedTransport(simpleFinLimits(config)) },
         {
           provide: BANK_FEED_PROVIDER,

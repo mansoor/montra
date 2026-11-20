@@ -6,6 +6,7 @@ import { browserApi } from '@/lib/browser-api';
 import {
   bankFeedStatus,
   canManageBankFeeds,
+  canSyncNow,
   dayIn,
   guessKind,
   linkTargets,
@@ -152,7 +153,22 @@ function Connected({
             {feed.lastError}
           </p>
         )}
-        <p className="text-xs text-muted">{t('bank_feeds.not_syncing_yet')}</p>
+        <p className="text-xs text-muted">
+          {feed.lastSuccessAt ? (
+            <>
+              {t('bank_feeds.last_sync')} <DateText date={dayIn(feed.lastSuccessAt, workspace.timeZone)} />
+            </>
+          ) : (
+            t('bank_feeds.never_synced')
+          )}
+          {feed.nextSyncAt && (
+            <>
+              {' · '}
+              {t('bank_feeds.next_sync')} <DateText date={dayIn(feed.nextSyncAt, workspace.timeZone)} />
+            </>
+          )}
+        </p>
+        <p className="text-xs text-muted">{t('bank_feeds.review_hint')}</p>
       </div>
 
       {feed.accounts.length === 0 ? (
@@ -172,8 +188,31 @@ function Connected({
         </ul>
       )}
 
+      {!owner && canSyncNow(workspace.role, feed) && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={busy}
+          onClick={() =>
+            void run(() => browserApi.syncBankFeed(workspace.id, feed.id), t('bank_feeds.syncing'))
+          }
+        >
+          {t('bank_feeds.sync_now')}
+        </button>
+      )}
       {owner && (
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || !canSyncNow(workspace.role, feed)}
+            onClick={() =>
+              void run(() => browserApi.syncBankFeed(workspace.id, feed.id), t('bank_feeds.syncing'))
+            }
+            data-testid="bank-feeds-sync"
+          >
+            {t('bank_feeds.sync_now')}
+          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -304,6 +343,12 @@ function AccountRow({
               <>
                 {' · '}
                 {t('bank_feeds.from')} <DateText date={a.startDate} />
+              </>
+            )}
+            {a.syncedThrough && (
+              <>
+                {' · '}
+                {t('bank_feeds.through')} <DateText date={a.syncedThrough} />
               </>
             )}
           </span>

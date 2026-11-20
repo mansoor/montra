@@ -1562,6 +1562,13 @@ export class ApiClient {
       this.ws(workspaceId, `/imports${query({ accountId })}`),
     ).then((r) => r.data);
   }
+  /** Bank feed batches waiting in preview, for Review (ADR-0055 §5). */
+  listFeedImportsWaiting(workspaceId: string) {
+    return this.request<{ data: ImportBatchDto[] }>(
+      'GET',
+      this.ws(workspaceId, `/imports${query({ waiting: 'feed' })}`),
+    ).then((r) => r.data);
+  }
   getImport(workspaceId: string, id: string) {
     return this.request<ImportBatchDto>('GET', this.ws(workspaceId, `/imports/${enc(id)}`));
   }
@@ -2646,6 +2653,14 @@ export class ApiClient {
       'PATCH',
       this.ws(workspaceId, `/bank-feeds/${feedId}/accounts/${accountId}`),
       input,
+    ).then((r) => r.feed);
+  }
+  /** §5: Sync now (owners, admins and partners), at most once per SIMPLEFIN_SYNC_NOW_MINUTES. */
+  syncBankFeed(workspaceId: string, feedId: string) {
+    return this.request<BankFeedStateDto>(
+      'POST',
+      this.ws(workspaceId, `/bank-feeds/${feedId}/sync`),
+      {},
     ).then((r) => r.feed);
   }
   /** §3: an owner with a recent sign-in; the access is wiped at once. */

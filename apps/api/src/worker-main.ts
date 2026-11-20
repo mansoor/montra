@@ -20,6 +20,7 @@ import { TaxFormReading } from './tax-forms/tax-form-reading.js';
 import { IntakeJobs } from './intakes/intake-jobs.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { VaultJobs } from './storage/vault/vault.jobs.js';
+import { BankFeedSync } from './bank-feeds/bank-feeds.sync.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
 const config = loadConfig();
@@ -61,6 +62,10 @@ await mirror.schedule();
 const vault = app.get(VaultJobs);
 vault.register();
 await vault.schedule();
+// Bank feeds (ADR-0055 §5): daily syncs at each feed's minute, and Sync now.
+const bankFeeds = app.get(BankFeedSync);
+bankFeeds.register();
+await bankFeeds.schedule();
 // Nightly reconciliation of every workspace's books, and the hourly check for lapsed plans.
 const ops = app.get(OpsJobs);
 ops.register();

@@ -124,6 +124,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.query(`delete from app.bank_feed where workspace_id = $1`, [wsId]);
+  // Linking wakes the sync job: nothing of ours may wake a worker in another test file.
+  await db?.query(`delete from app.job where type = 'bankfeed.sync'`);
   await db?.end();
   await h?.close();
   await fake?.close();

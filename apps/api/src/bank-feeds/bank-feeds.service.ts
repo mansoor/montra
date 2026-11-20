@@ -9,7 +9,7 @@
  */
 import { createHash, randomInt } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import type { Selectable } from 'kysely';
+import { sql, type Selectable } from 'kysely';
 import { accountProfile, addDays, todayIn, type CalendarDate, type CurrencyCode } from '@montra/domain';
 import type { BankFeedAccountTable, BankFeedTable, Trx } from '@montra/db';
 import { institutionKey } from '@montra/importers';
@@ -33,6 +33,7 @@ import {
   requestsLeft,
   simpleFinLimits,
   startDateProblem,
+  nextSyncAt,
   syncNowAfter,
   utcDay,
   type SimpleFinLimits,
@@ -208,6 +209,7 @@ export class BankFeedsService {
     }
     const now = new Date();
     const feedId = await this.db.run(ctx, async (trx) => {
+      const syncMinute = 120 + randomInt(0, 240);
       const row = await trx
         .insertInto('app.bank_feed')
         .values({
@@ -218,9 +220,11 @@ export class BankFeedsService {
           label: req.label?.trim() || null,
           connected_by: ctx.userId,
           // §5: a random minute of the early morning, workspace time (the Bridge asks for random times).
-          sync_minute: 120 + randomInt(0, 240),
+          sync_minute: syncMinute,
           requests_day: utcDay(now),
           requests_today: 1,
+          // §5: the first daily sync; linking an account brings it forward to now.
+          next_sync_at: nextSyncAt(now, await this.timeZone(trx, ctx), syncMinute, this.limits),
         })
         .returning('id')
         .executeTakeFirstOrThrow();
@@ -295,7 +299,7 @@ export class BankFeedsService {
    * The accounts a listing reported: new ones added, known ones refreshed, gone ones marked (§7). A reconnect within
    * RELINK_DAYS takes over the links of the feed it replaces (§3).
    */
-  private async store(trx: Trx, ctx: Ctx, feedId: string, snap: FeedSnapshot): Promise<void> {
+  async store(trx: Trx, ctx: Ctx, feedId: string, snap: FeedSnapshot): Promise<void> {
     const now = new Date();
     const institutions = new Map(snap.institutions.map((i) => [i.id, i.name]));
     const mine = await trx
@@ -478,6 +482,8 @@ export class BankFeedsService {
           throw e;
         }
         await confirmMatch(trx, ctx, 'statement', signal, ledgerId);
+        // §5: the first sync for a newly linked account runs now, not at tomorrow's minute.
+        await this.dueNow(trx, ctx, feedId);
         detail = { action: req.action, accountId: ledgerId, startDate };
       }
       await trx
@@ -587,11 +593,22 @@ export class BankFeedsService {
             : feed.status === 'paused'
               ? 'active'
               : feed.status;
+      const resumed = feed.status === 'paused' && status === 'active';
       await trx
         .updateTable('app.bank_feed')
         .set({
           ...(req.label !== undefined ? { label: req.label?.trim() || null } : {}),
           status,
+          ...(resumed
+            ? {
+                next_sync_at: nextSyncAt(
+                  new Date(),
+                  await this.timeZone(trx, ctx),
+                  feed.sync_minute,
+                  this.limits,
+                ),
+              }
+            : {}),
           version: feed.version + 1n,
           updated_at: new Date(),
         })
@@ -695,12 +712,64 @@ export class BankFeedsService {
   }
 
   private async today(trx: Trx, ctx: Ctx): Promise<CalendarDate> {
+    return todayIn(await this.timeZone(trx, ctx));
+  }
+
+  private async timeZone(trx: Trx, ctx: Ctx): Promise<string> {
     const ws = await trx
       .selectFrom('app.workspace')
       .select('time_zone')
       .where('id', '=', ctx.workspaceId)
       .executeTakeFirstOrThrow();
-    return todayIn(ws.time_zone);
+    return ws.time_zone;
+  }
+
+  /** The feed is due now, and the sync job is woken for it. */
+  private async dueNow(trx: Trx, ctx: Ctx, feedId: string): Promise<void> {
+    await trx
+      .updateTable('app.bank_feed')
+      .set({ next_sync_at: new Date() })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', feedId)
+      .where('status', 'in', ['active', 'failing'])
+      .execute();
+    await sql`select app.schedule_system_job('schedule', 'bankfeed.sync', now())`.execute(trx);
+  }
+
+  /**
+   * POST /bank-feeds/:id/sync (§5, D5): owners, admins and partners, at most once per SIMPLEFIN_SYNC_NOW_MINUTES. It
+   * marks the feed due (through `app.bank_feed_sync_now`, as only owners write the feed) and wakes the job.
+   */
+  async syncNow(ctx: Ctx, role: string, feedId: string): Promise<BankFeedStateDto> {
+    if (!['owner', 'admin', 'partner'].includes(role))
+      throw new AppError(
+        403,
+        'bank_feed.not_allowed',
+        'Only owners, admins and partners can sync the bank feed.',
+      );
+    const r = await this.db.run(ctx, async (trx) => {
+      const { rows } = await sql<{ outcome: string; after: Date | null }>`
+        select * from app.bank_feed_sync_now(${feedId}::uuid, ${this.limits.syncNowMinutes}::int)`.execute(
+        trx,
+      );
+      if (rows[0]?.outcome === 'ok')
+        await sql`select app.schedule_system_job('schedule', 'bankfeed.sync', now())`.execute(trx);
+      return rows[0];
+    });
+    if (r?.outcome === 'not_found') throw notFound();
+    if (r?.outcome === 'not_syncing')
+      throw new AppError(
+        409,
+        'bank_feed.not_syncing',
+        'The bank feed isn’t syncing now. Resume it or fix its problem first.',
+      );
+    if (r?.outcome === 'too_soon')
+      throw new AppError(
+        429,
+        'bank_feed.sync_soon',
+        `The bank feed was synced moments ago. You can sync again after ${new Date(r.after!).toISOString()}.`,
+      );
+    return this.state(ctx);
   }
 
   private async security(trx: Trx, ctx: Ctx, kind: string, detail: Record<string, unknown>): Promise<void> {

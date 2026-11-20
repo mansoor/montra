@@ -106,15 +106,27 @@ export function ImportWizard({
     return (
       <section className="card space-y-3" data-testid="import-discarded">
         <h2 className="font-semibold">{t('imports.discard.done_title')}</h2>
-        <p className="text-sm text-muted">{t('imports.discard.done_body')}</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Link href={`${base}/statements`} className="btn-primary">
-            {t('nav.statements')}
-          </Link>
-          <Link href={`${base}/import?account=${batch.accountId}`} className="btn-secondary">
-            {t('imports.failed.another')}
-          </Link>
-        </div>
+        {batch.source === 'feed' ? (
+          // ADR-0055 §5: a bank feed's discarded rows are never offered again.
+          <>
+            <p className="text-sm text-muted">{t('imports.discard.done_body_feed')}</p>
+            <Link href={`${base}/review`} className="btn-primary">
+              {t('review.title')}
+            </Link>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted">{t('imports.discard.done_body')}</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link href={`${base}/statements`} className="btn-primary">
+                {t('nav.statements')}
+              </Link>
+              <Link href={`${base}/import?account=${batch.accountId}`} className="btn-secondary">
+                {t('imports.failed.another')}
+              </Link>
+            </div>
+          </>
+        )}
       </section>
     );
 

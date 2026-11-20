@@ -345,6 +345,10 @@ describe('review queue (AI-03/04, PLT-10)', () => {
     expect(reviewBadgeTotal(null, null, 3)).toBe(3);
     expect(reviewBadgeTotal(6, 2, null)).toBe(8);
     expect(reviewBadgeTotal(null, null, null)).toBeNull();
+    // ADR-0055 §5: bank feed imports waiting join it too, one each.
+    expect(reviewBadgeTotal(6, 2, 3, 2)).toBe(13);
+    expect(reviewBadgeTotal(null, null, null, 1)).toBe(1);
+    expect(reviewBadgeTotal(null, null, null, null)).toBeNull();
     expect(t('review.badge', { count: 1 })).toBe('1 item to review');
     expect(t('review.badge', { count: 8 })).toBe('8 items to review');
   });

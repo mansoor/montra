@@ -12,6 +12,17 @@ export function canSeeBankFeeds(role: string, features: readonly string[]): bool
 /** Only an owner connects, links and disconnects (D5). */
 export const canManageBankFeeds = (role: string) => role === 'owner';
 
+/** Owners, admins and partners may press Sync now (D5), when the feed syncs and the spacing allows. */
+export function canSyncNow(
+  role: string,
+  feed: Pick<BankFeedDto, 'status' | 'syncNowAfter'>,
+  now = new Date(),
+): boolean {
+  if (!['owner', 'admin', 'partner'].includes(role)) return false;
+  if (feed.status !== 'active' && feed.status !== 'failing') return false;
+  return !feed.syncNowAfter || new Date(feed.syncNowAfter) <= now;
+}
+
 export type Tone = 'good' | 'bad' | 'muted';
 
 /** The status chip: a key in `bank_feeds.status.*` and its tone. */

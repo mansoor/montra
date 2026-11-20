@@ -136,8 +136,14 @@ export class ImportsController {
   async list(
     @Ctx() ctx: RequestContext,
     @Query('accountId') accountId?: string,
+    @Query('waiting') waiting?: string,
   ): Promise<{ data: ImportBatchDto[] }> {
-    return { data: await this.imports.list(dbCtx(ctx), accountId ? parse(z.uuid(), accountId) : undefined) };
+    return {
+      data: await this.imports.list(dbCtx(ctx), accountId ? parse(z.uuid(), accountId) : undefined, {
+        // Bank feed batches waiting in preview, for Review (ADR-0055 §5).
+        waitingFeed: parse(z.enum(['feed']).optional(), waiting) === 'feed',
+      }),
+    };
   }
 
   @Get('imports/:id')
