@@ -14,13 +14,14 @@ import {
 } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import type { MeDto, WorkspaceDto } from '@montra/schemas';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { config } from '../config';
 import { createApi, type Api } from '../api/client';
 import { nativeUpload } from '../api/file-upload';
 import { KratosClient, devToken, type LoginResult } from '../auth/kratos';
 import { abilitiesOf, NO_ABILITIES, type Abilities } from '../features/roles';
 import { closedFrom, closedOf, strongerClosed, type Closed } from '../features/account-state';
+import { checksVersion, refused, updateNeeded, type UpdateNeeded } from '../features/app-update';
 
 const TOKEN_KEY = 'montra.session.v1';
 const WORKSPACE_KEY = 'montra.workspace.v1';
@@ -51,6 +52,8 @@ interface SessionApi {
   signOut(): Promise<void>;
   /** The server says this version is too old (OPS-04). */
   updateRequired: boolean;
+  /** Then: the oldest version it serves (when known) and where to get a newer app. */
+  update: UpdateNeeded | null;
   /** The open workspace needs two-step verification this session hasn't used (ADR-0044). */
   twoStepRequired: boolean;
   /** After the second factor: reload the workspace with the stronger session. */
@@ -92,7 +95,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionState>({ status: 'loading' });
   const [hook, setHook] = useState<{ fn: (() => Promise<void>) | null }>({ fn: null });
   const token = useCallback(() => SecureStore.getItemAsync(TOKEN_KEY), []);
-  const [updateRequired, setUpdateRequired] = useState(false);
+  const [update, setUpdate] = useState<UpdateNeeded | null>(null);
   const [twoStepRequired, setTwoStepRequired] = useState(false);
   const [closed, setClosed] = useState<Closed | null>(null);
   // Signing out after asking for deletion: the last calls on the way out are refused, and that's expected.
@@ -109,13 +112,36 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         token,
         app: { version: config.version, platform: Platform.OS },
         uploadFile: nativeUpload,
-        onUpdateRequired: () => setUpdateRequired(true),
+        onUpdateRequired: () => {
+          setUpdate(refused);
+          setRecheck((n) => n + 1);
+        },
         onTwoStepRequired: () => setTwoStepRequired(true),
         onClosed: reportClosed,
       }),
     [token, reportClosed],
   );
   const kratos = useMemo(() => (config.kratosUrl ? new KratosClient(config.kratosUrl) : null), []);
+
+  // OPS-04: is this app new enough for the server? Asked before anyone signs in, again on coming back to the app (the
+  // server may have been upgraded meanwhile), and after a 426. A failed check changes nothing.
+  const [recheck, setRecheck] = useState(0);
+  useEffect(() => {
+    const os = Platform.OS;
+    if (!checksVersion(os)) return;
+    const check = () =>
+      api
+        .appRequirements(os)
+        .then((req) =>
+          setUpdate((current) => updateNeeded(config.version, req) ?? (current?.minVersion ? null : current)),
+        )
+        .catch(() => undefined);
+    void check();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void check();
+    });
+    return () => sub.remove();
+  }, [api, recheck]);
 
   const load = useCallback(async () => {
     try {
@@ -169,7 +195,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionApi>(
     () => ({
       state,
-      updateRequired,
+      updateRequired: update !== null,
+      update,
       twoStepRequired,
       clearTwoStepRequired: () => {
         setTwoStepRequired(false);
@@ -236,7 +263,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [updateRequired, twoStepRequired, closed, reportClosed, state, api, token, kratos, finish, hook, load],
+    [update, twoStepRequired, closed, reportClosed, state, api, token, kratos, finish, hook, load],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

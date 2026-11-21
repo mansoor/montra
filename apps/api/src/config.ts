@@ -210,6 +210,8 @@ const Env = z.object({
    * Local mode: true when this server can reach the user's endpoint (self-hosted edition). False on the
    * hosted service: async AI work is parked for a client on the user's network.
    */
+  /** OPS-04: where a phone app too old for this server is sent for a newer one (the store pages, later). */
+  MOBILE_UPDATE_URL: z.string().url().default('https://github.com/mansoor/montra/releases/latest'),
   AI_LOCAL_DIRECT: z
     .enum(['true', 'false'])
     .default('true')

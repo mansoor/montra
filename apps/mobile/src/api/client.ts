@@ -6,6 +6,7 @@ import type {
   IntakeDto,
   PasswordPolicyDto,
   AiTaskDto,
+  AppRequirementsDto,
   FiledBillDto,
   HouseholdBillDto,
   BillerDto,
@@ -283,6 +284,9 @@ export function createApi(opts: ApiOptions) {
     me: () => request<MeDto>('GET', '/v1/me'),
     /** AUTH-02 (ADR-0043): the service's password policy, for the strength meter. Needs no sign-in. */
     passwordPolicy: () => request<PasswordPolicyDto>('GET', '/v1/password-policy'),
+    /** OPS-04: the oldest app version this server serves, and where to get a newer one. Needs no sign-in. */
+    appRequirements: (platform: 'ios' | 'android') =>
+      request<AppRequirementsDto>('GET', `/v1/app/requirements?platform=${platform}`),
     workspaces: async () => (await request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces')).data,
     aiSettings: (w: string) =>
       request<Pick<AiSettingsDto, 'mode' | 'usage' | 'endpoint'>>('GET', `${ws(w)}/ai/settings`),
