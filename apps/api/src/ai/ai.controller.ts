@@ -26,6 +26,7 @@ import { Db } from '../db/database.js';
 import { notFound } from '../common/errors.js';
 import { parse } from '../common/zod.js';
 import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
+import { JobQueue } from '../jobs/queue.js';
 import { AI_PROBLEM_TEXT, AiService } from './ai.service.js';
 
 const DEFAULT_PAGE = 50;
@@ -34,12 +35,25 @@ const DEFAULT_PAGE = 50;
 /** How many local-mode tasks one listing claims. */
 export const TASK_BATCH = 20;
 
+/**
+ * The job that applies a posted local answer to the work it was for, by the parked task's subject (06 §2). Other
+ * subjects need none: their answer is used the next time the same work runs.
+ */
+/** How long the follow-up waits for more answers to the same work. */
+export const LOCAL_RESULT_DELAY_MS = 10_000;
+
+export const LOCAL_RESULT_JOBS: Readonly<Record<string, string>> = {
+  import_batch: 'ai.local_result.import_batch',
+  receipt: 'ai.local_result.receipt',
+};
+
 @Controller('v1/workspaces/:workspaceId/ai')
 @UseGuards(AuthGuard, WorkspaceGuard)
 export class AiController {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(AiService) private readonly ai: AiService,
+    @Inject(JobQueue) private readonly queue: JobQueue,
   ) {}
 
   @Get('settings')
@@ -212,15 +226,38 @@ export class AiController {
   ): Promise<void> {
     const req = parse(AiTaskResultRequest, body);
     const c = dbCtx(ctx);
-    const res = await this.db.run(c, (trx) =>
-      trx
+    await this.db.run(c, async (trx) => {
+      const task = await trx
         .updateTable('app.ai_task')
         .set({ status: 'done', result: JSON.stringify(req.output ?? null) })
         .where('workspace_id', '=', c.workspaceId)
         .where('id', '=', parse(z.uuid(), id))
         .where('status', 'in', ['pending', 'claimed'])
-        .executeTakeFirst(),
-    );
-    if (!res.numUpdatedRows) throw notFound('AI task');
+        .returning(['subject_type', 'subject_id', 'created_by'])
+        .executeTakeFirst();
+      if (!task) throw notFound('AI task');
+      // Apply the answer to what it was for, as the person it was for. One waiting follow-up per subject covers the
+      // answers that arrive before it runs.
+      const type = LOCAL_RESULT_JOBS[task.subject_type];
+      if (!type) return;
+      const waiting = await trx
+        .selectFrom('app.job')
+        .select('id')
+        .where('workspace_id', '=', c.workspaceId)
+        .where('type', '=', type)
+        .where('status', '=', 'queued')
+        .where(sql<boolean>`payload->>'subjectId' = ${task.subject_id}`)
+        .executeTakeFirst();
+      if (waiting) return;
+      await this.queue.enqueue(trx, {
+        workspaceId: c.workspaceId,
+        userId: task.created_by ?? c.userId,
+        queue: 'ai',
+        type,
+        payload: { subjectId: task.subject_id },
+        // A moment for the rest of a batch's answers, which the client posts one after another.
+        runAfter: new Date(Date.now() + LOCAL_RESULT_DELAY_MS),
+      });
+    });
   }
 }

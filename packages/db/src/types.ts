@@ -848,6 +848,12 @@ export interface AiTaskTable {
   result: Json<unknown> | null;
   created_at: Generated<Date>;
   expires_at: Generated<Date>;
+  /** 0073: the parked request's hash, so it is parked once and its answer is found again. */
+  input_hash: string | null;
+  /** 0073: row tasks' cache key per wire item (i0, i1, ...). */
+  item_keys: string[] | null;
+  /** 0073: who the work was for; the follow-up applying the answer runs as them. */
+  created_by: string | null;
 }
 
 export type InsightKind =

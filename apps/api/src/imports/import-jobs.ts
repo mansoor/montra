@@ -103,6 +103,107 @@ export class ImportJobs {
     this.worker.register('import.parse', (job) => this.parse(job));
     this.worker.register('import.commit', (job, c) => this.commit(job, c));
     this.worker.register('import.undo', (job) => this.undo(job));
+    this.worker.register('ai.local_result.import_batch', (job) => this.localResult(job));
+  }
+
+  /**
+   * Local mode on the hosted service (06 §2, backlog item 2): a client on the user's network answered AI work parked
+   * for this import. Running the pipeline again over the rows nothing placed uses those answers (the gateway reads
+   * them by each row's cache key). A preview's rows get the new suggestions, auto-applied as parse would; a committed
+   * import's transactions still waiting in Review get them as suggestions. A row someone chose a category for, and a
+   * transaction already suggested or reviewed, are left alone.
+   */
+  async localResult(job: Job): Promise<Record<string, unknown>> {
+    const ctx = this.ctxOf(job);
+    const batchId = (job.payload as { subjectId?: string }).subjectId;
+    if (!batchId) throw new PermanentJobError('job.invalid', 'No import batch');
+    return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      const batch = await trx
+        .selectFrom('app.import_batch')
+        .select(['id', 'status', 'ledger_account_id'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', batchId)
+        .executeTakeFirst();
+      if (!batch || (batch.status !== 'preview' && batch.status !== 'committed'))
+        return { skipped: batch?.status ?? 'gone' };
+      const committed = batch.status === 'committed';
+      let q = trx
+        .selectFrom('app.import_row as r')
+        .select([
+          'r.id',
+          'r.txn_date',
+          'r.amount_minor',
+          'r.description',
+          'r.payee_raw',
+          'r.normalized_desc',
+          'r.suggestion',
+          'r.transaction_id',
+        ])
+        .where('r.workspace_id', '=', ctx.workspaceId)
+        .where('r.import_batch_id', '=', batchId)
+        .where('r.txn_date', 'is not', null)
+        .where('r.amount_minor', 'is not', null)
+        .orderBy('r.row_no');
+      q = committed
+        ? q
+            .innerJoin('app.transaction as t', (j) =>
+              j.onRef('t.workspace_id', '=', 'r.workspace_id').onRef('t.id', '=', 'r.transaction_id'),
+            )
+            .where('t.review_state', '=', 'needs_review')
+            .where('t.status', '=', 'posted')
+            .where('t.deleted_at', 'is', null)
+            .where(sql<boolean>`jsonb_typeof(t.categorization->'suggested') is distinct from 'object'`)
+        : q.where('r.status', 'in', ['new', 'probable_duplicate']).where('r.category_id', 'is', null);
+      const rows = (await q.execute()).filter((r) => {
+        const s = r.suggestion as RowSuggestion | null;
+        return !s?.categoryId && !s?.userSet;
+      });
+      if (rows.length === 0) return { updated: 0 };
+      const decisions = await this.categorizeRows(
+        trx,
+        ctx,
+        batchId,
+        batch.ledger_account_id,
+        rows.map((r) => ({
+          date: calendarDate(r.txn_date!),
+          amount: r.amount_minor!,
+          description: r.description ?? '',
+          payee: r.payee_raw,
+          category: null,
+          normalizedDescription: r.normalized_desc ?? '',
+        })),
+        rows.map(() => ({ status: 'new' })),
+      );
+      let updated = 0;
+      for (const [i, s] of decisions) {
+        const row = rows[i]!;
+        if (!s.categoryId) continue;
+        if (committed) {
+          await this.transactions.setCategorization(trx, ctx, row.transaction_id!, {
+            step: s.step,
+            confidence: s.confidence,
+            explanation: s.explanation,
+            ruleId: s.ruleId,
+            suggested: s.suggested,
+            transfer: s.transfer ?? null,
+          });
+        } else {
+          await trx
+            .updateTable('app.import_row')
+            .set({
+              suggestion: JSON.stringify(s),
+              category_id: s.autoApply ? s.categoryId : null,
+              member_id: s.autoApply ? s.memberId : null,
+            })
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', '=', row.id)
+            .where('category_id', 'is', null)
+            .execute();
+        }
+        updated++;
+      }
+      return { updated, committed };
+    });
   }
 
   private ctxOf(job: Job): Ctx {

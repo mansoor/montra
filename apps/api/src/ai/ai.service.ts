@@ -8,6 +8,8 @@ import {
   type AiGateway,
   type AiMode,
   type GatewayStore,
+  type LocalAnswer,
+  type LocalRequest,
   type ProviderConfig,
   type TaskName,
 } from '@montra/ai-gateway';
@@ -211,7 +213,7 @@ export class AiService {
         planMicroUsd: ceilingReached ? 0n : planMicroUsd,
         spentMicroUsd: usage?.cost_micro_usd ?? 0n,
       },
-      store: this.store(ctx, mode, aiLimitMicroUsd(planMicroUsd, customerUsd)),
+      store: this.store(ctx, mode, aiLimitMicroUsd(planMicroUsd, customerUsd), subject),
       pseudonyms: members.map((m, i) => ({ name: m.name, token: `MEMBER_${i + 1}` })),
       parkLocal: mode === 'local' && !this.config.AI_LOCAL_DIRECT,
       subject,
@@ -391,7 +393,12 @@ export class AiService {
    * The gateway's persistence. Each write is its own short transaction so audit entries and spend survive
    * a rollback of the caller's work (a failed import still spent the tokens).
    */
-  private store(ctx: Ctx, mode: AiMode, limit: bigint | null): GatewayStore {
+  private store(
+    ctx: Ctx,
+    mode: AiMode,
+    limit: bigint | null,
+    subject?: { type: string; id: string },
+  ): GatewayStore {
     const run = <T>(fn: (trx: Trx) => Promise<T>) => this.db.run(ctx, fn);
     return {
       cacheGet: async (task: TaskName, keyHash: string) => {
@@ -481,19 +488,51 @@ export class AiService {
           }
         }
       },
-      parkLocal: async (task: TaskName, input: unknown) => {
+      // Local mode on the hosted service (06 §2). A request is parked once while it waits or its answer lasts; the
+      // subject and the person it was for let a posted answer be applied as them (`LocalResults`).
+      parkLocal: async (task: TaskName, request: LocalRequest) => {
         await run((trx) =>
+          sql`
+            insert into app.ai_task
+              (workspace_id, task, input, input_hash, item_keys, subject_type, subject_id, created_by)
+            select ${ctx.workspaceId}::uuid, ${task}, ${JSON.stringify(request.body)}::jsonb, ${request.inputHash},
+                   ${request.itemKeys ? [...request.itemKeys] : null}::text[], ${subject?.type ?? 'workspace'},
+                   ${subject?.id ?? ctx.workspaceId}::uuid, ${ctx.userId ?? null}::uuid
+             where not exists (
+               select 1 from app.ai_task
+                where workspace_id = ${ctx.workspaceId}::uuid and task = ${task} and input_hash = ${request.inputHash}
+                  and status in ('pending', 'claimed', 'done') and expires_at > now())`.execute(trx),
+        );
+      },
+      localAnswer: async (task: TaskName, inputHash: string) => {
+        const row = await run((trx) =>
           trx
-            .insertInto('app.ai_task')
-            .values({
-              workspace_id: ctx.workspaceId,
-              task,
-              input: JSON.stringify(input),
-              subject_type: 'workspace',
-              subject_id: ctx.workspaceId,
-            })
+            .selectFrom('app.ai_task')
+            .select(['result', 'input', 'item_keys'])
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('task', '=', task)
+            .where('input_hash', '=', inputHash)
+            .where('status', '=', 'done')
+            .where('expires_at', '>', new Date())
+            .orderBy('created_at', 'desc')
+            .executeTakeFirst(),
+        );
+        return row ? localAnswerOf(row) : null;
+      },
+      localAnswersFor: async (task: TaskName, itemKeys: readonly string[]) => {
+        const rows = await run((trx) =>
+          trx
+            .selectFrom('app.ai_task')
+            .select(['result', 'input', 'item_keys'])
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('task', '=', task)
+            .where('status', '=', 'done')
+            .where('expires_at', '>', new Date())
+            .where(sql<boolean>`item_keys && ${[...itemKeys]}::text[]`)
+            .orderBy('created_at', 'desc')
             .execute(),
         );
+        return rows.map(localAnswerOf);
       },
     };
   }
@@ -617,4 +656,10 @@ export class AiService {
       .where('id', '=', ctx.workspaceId)
       .execute();
   }
+}
+
+/** A done task row → the gateway's view of its answer; the model is the one the parked body asked for. */
+function localAnswerOf(row: { result: unknown; input: unknown; item_keys: string[] | null }): LocalAnswer {
+  const model = (row.input as { model?: unknown } | null)?.model;
+  return { output: row.result, model: typeof model === 'string' ? model : '', itemKeys: row.item_keys };
 }

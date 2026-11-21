@@ -15,7 +15,7 @@ import type { ImagePart, ReceiptExtraction } from '@montra/ai-gateway';
 import type { ReceiptDto } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
-import { PermanentJobError, Worker, type Job } from '../jobs/queue.js';
+import { JobQueue, PermanentJobError, Worker, type Job } from '../jobs/queue.js';
 import { FileBytes } from '../storage/file-bytes.js';
 import { AiService } from '../ai/ai.service.js';
 import { ReceiptsService, toMinor, type LineInput } from './receipts.service.js';
@@ -43,11 +43,54 @@ export class ReceiptJobs {
     @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(ReceiptsService) private readonly receipts: ReceiptsService,
+    @Inject(JobQueue) private readonly queue: JobQueue,
   ) {}
 
   register(): void {
     this.worker.register('receipt.extract', (job) => this.extract(job));
     this.worker.register('receipt.match', (job) => this.match(job));
+    this.worker.register('ai.local_result.receipt', (job) => this.localResult(job));
+  }
+
+  /**
+   * Local mode on the hosted service (06 §2, backlog item 2): a client on the user's network answered the reading of
+   * a receipt that waits in review for it. Read it again from the same text, which now uses that answer. A receipt
+   * someone has since typed lines into, or moved on, is left alone.
+   */
+  async localResult(job: Job): Promise<Record<string, unknown>> {
+    const ctx = this.ctxOf(job);
+    const receiptId = (job.payload as { subjectId?: string }).subjectId;
+    if (!receiptId) throw new PermanentJobError('job.invalid', 'No receipt');
+    return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      const r = await trx
+        .selectFrom('app.receipt')
+        .select(['id', 'status', 'extraction', 'ocr_text'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', receiptId)
+        .executeTakeFirst();
+      const warnings = ((r?.extraction as { warnings?: unknown } | null)?.warnings ?? []) as unknown[];
+      const waiting =
+        r?.status === 'needs_review' && warnings.some((w) => String(w).includes('(pending_local)'));
+      if (!r || !waiting) return { skipped: r?.status ?? 'gone' };
+      const lines = await trx
+        .selectFrom('app.receipt_line')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('receipt_id', '=', r.id)
+        .executeTakeFirst();
+      if (lines) return { skipped: 'has_lines' };
+      await this.receipts.setStatus(trx, ctx, r.id, 'processing');
+      await this.queue.enqueue(trx, {
+        ...ctx,
+        queue: 'ai',
+        type: 'receipt.extract',
+        payload: {
+          receiptId: r.id,
+          ...(r.ocr_text ? { previousResult: { kind: 'receipt_text', pages: [r.ocr_text] } } : {}),
+        },
+      });
+      return { reread: r.id };
+    });
   }
 
   private ctxOf(job: Job): Ctx {

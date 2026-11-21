@@ -20,6 +20,48 @@ interface ChatResponse {
   model?: string;
 }
 
+/**
+ * The `chat/completions` body for a request. Also what a request parked for a local client holds (06 §2), so the
+ * client sends it to the user's endpoint as it is.
+ */
+export function chatCompletionBody(
+  req: Omit<CompletionRequest, 'effort' | 'signal'>,
+  mode: 'json_schema' | 'json_object',
+): Record<string, unknown> {
+  const system =
+    (req.context ? `${req.system}\n\n${req.context}` : req.system) +
+    (mode === 'json_object'
+      ? `\n\nReply with one JSON object matching this JSON schema:\n${JSON.stringify(req.schema)}`
+      : '');
+  return {
+    model: req.model,
+    max_tokens: req.maxTokens,
+    messages: [
+      { role: 'system', content: system },
+      {
+        role: 'user',
+        // Vision models on OpenAI-compatible servers take images as data URLs; PDFs aren't supported there.
+        content: req.images?.length
+          ? [
+              ...req.images
+                .filter((i) => i.mediaType !== 'application/pdf')
+                .map((i) => ({
+                  type: 'image_url',
+                  image_url: { url: `data:${i.mediaType};base64,${i.data}` },
+                })),
+              { type: 'text', text: req.input },
+            ]
+          : req.input,
+      },
+    ],
+    response_format:
+      mode === 'json_schema'
+        ? { type: 'json_schema', json_schema: { name: req.task, schema: req.schema, strict: true } }
+        : { type: 'json_object' },
+    stream: false,
+  };
+}
+
 export class OpenAiCompatibleAdapter implements ProviderAdapter {
   readonly id = 'openai_compatible' as const;
   private readonly baseUrl: string;
@@ -44,38 +86,7 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
     req: CompletionRequest,
     mode: 'json_schema' | 'json_object',
   ): Promise<CompletionResponse> {
-    const system =
-      (req.context ? `${req.system}\n\n${req.context}` : req.system) +
-      (mode === 'json_object'
-        ? `\n\nReply with one JSON object matching this JSON schema:\n${JSON.stringify(req.schema)}`
-        : '');
-    const body = {
-      model: req.model,
-      max_tokens: req.maxTokens,
-      messages: [
-        { role: 'system', content: system },
-        {
-          role: 'user',
-          // Vision models on OpenAI-compatible servers take images as data URLs; PDFs aren't supported there.
-          content: req.images?.length
-            ? [
-                ...req.images
-                  .filter((i) => i.mediaType !== 'application/pdf')
-                  .map((i) => ({
-                    type: 'image_url',
-                    image_url: { url: `data:${i.mediaType};base64,${i.data}` },
-                  })),
-                { type: 'text', text: req.input },
-              ]
-            : req.input,
-        },
-      ],
-      response_format:
-        mode === 'json_schema'
-          ? { type: 'json_schema', json_schema: { name: req.task, schema: req.schema, strict: true } }
-          : { type: 'json_object' },
-      stream: false,
-    };
+    const body = chatCompletionBody(req, mode);
     const signals = [AbortSignal.timeout(this.timeoutMs), ...(req.signal ? [req.signal] : [])];
     let res: Response;
     try {

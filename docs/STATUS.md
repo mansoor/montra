@@ -263,8 +263,8 @@ finished:
 1. ~~**Transfers.**~~ Done: accepting a suggested transfer in review (web or phone, one at a time or "accept all
    above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import doesn't
    convert pairs on its own yet, even at 0.95: they wait in review.
-2. **Local-mode AI tasks.** Results the client posts to `POST /ai/tasks/:id/result` are stored but not
-   yet applied to rows or review suggestions.
+2. ~~**Local-mode AI tasks.**~~ Done: a posted answer is used where a provider's would be, and applied to the import
+   or receipt it was for (see §7g).
 3. **More bring-your-own-key adapters:** OpenAI, Gemini and Azure. Only Anthropic and OpenAI-compatible
    endpoints exist.
 4. **S3 storage** is only stub-tested; there is no MinIO run in CI.
@@ -2149,6 +2149,23 @@ Phase 11 leftovers:
   - Phone: each line says "2 × $0.81"; a totals card under the lines shows subtotal, discount, tax (or "tax
     included"), fees, tip and total, so the lines add up to the receipt.
   - Tests: domain `receipt.test.ts`, API `receipts.test.ts`, web `lib/receipts.test.ts`, mobile `receipts.test.ts`.
+- **Local-mode AI answers are used** (backlog 2; 06 §2; migration 0073). On the hosted service with local AI, the
+  server parks AI work for a browser on the user's network. Before this, the answers it posted were stored and never
+  used, and the parked input wasn't a request the browser could send.
+  - Parking: the parked input is now the ready `chat/completions` body (`chatCompletionBody`, shared with the
+    OpenAI-compatible adapter), with the request's hash, each row item's cache key (`item_keys`), the subject and who
+    it was for (`created_by`). The same request is parked once while it waits or its answer lasts.
+  - Using an answer: when the same work runs again, the gateway finds the answer by the request's hash, or for row
+    tasks (categorize) by each item's cache key, whatever batches the run makes, and puts it through the task's schema
+    and checks like a provider's; answered items go to the cache.
+  - Applying it: a posted answer queues `ai.local_result.<subject>` (after 10 s, one per subject) as the person the
+    work was for. An import in preview gets suggestions for the rows nothing placed, auto-applied as parse would; a
+    committed import's transactions still waiting in Review get them as suggestions; a receipt waiting for its reading
+    (`pending_local`, no lines typed) is read again from its text. Other work uses its answer the next time it runs.
+  - Not done: an answer that fails the task's checks isn't asked for again until it expires (7 days); the phone has no
+    local runner.
+  - Tests: gateway `gateway.test.ts` (parked once, used item by item across different batching, a single-call task
+    through its checks), API `ai-local-results.test.ts` (preview, committed import, receipt).
 
 ---
 
