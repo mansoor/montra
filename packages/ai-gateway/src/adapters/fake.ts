@@ -186,7 +186,8 @@ export function fakeMatch(text: string, categories: readonly FakeCategory[], amo
     if (!keywords.some((k) => t.includes(k))) continue;
     for (const n of names) {
       const hit = ordered.find((c) => c.name.toLowerCase().includes(n));
-      if (hit) return { category: hit, confidence: 0.9, keyword: keywords.find((k) => t.includes(k))! };
+      // A keyword match is sure, as a calibrated provider's best answers are (they clear the 95% AI threshold).
+      if (hit) return { category: hit, confidence: 0.97, keyword: keywords.find((k) => t.includes(k))! };
     }
   }
   const words = new Set(t.split(/[^a-z]+/).filter((w) => w.length >= 4));

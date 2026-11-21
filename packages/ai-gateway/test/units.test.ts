@@ -94,7 +94,10 @@ describe('amount bands and rounding', () => {
 
 describe('calibration', () => {
   it('is identity by default and monotone for configured curves', () => {
-    expect(calibrate('anthropic', 'claude-haiku-5-5', 'categorize', 0.83)).toBeCloseTo(0.83);
+    expect(calibrate('anthropic', 'claude-sonnet-5-5', 'categorize', 0.83)).toBeCloseTo(0.83);
+    // Haiku's fitted curve (2026-11-21): it under-states, so 0.83 is raised; low scores stay low.
+    expect(calibrate('anthropic', 'claude-haiku-5-5', 'categorize', 0.83)).toBeCloseTo(0.988);
+    expect(calibrate('anthropic', 'claude-haiku-5-5', 'categorize', 0.3)).toBeCloseTo(0.091);
     let prev = -1;
     for (let x = 0; x <= 1.0001; x += 0.05) {
       const y = calibrate('openai_compatible', 'llama3.1', 'categorize', x);
@@ -126,6 +129,22 @@ describe('calibration', () => {
       expect(curve[i]![1]).toBeGreaterThanOrEqual(curve[i - 1]![1]);
     }
     expect(applyCurve(curve, 0.9)).toBeCloseTo(0.9, 1);
+  });
+
+  it('keeps a wide block of right answers flat, and never claims 0% or 100%', () => {
+    // Under-confident: right 19 times in 20 from 0.5 up, wrong at 0.2.
+    const samples = [
+      ...Array.from({ length: 10 }, () => ({ raw: 0.2, correct: false })),
+      ...Array.from({ length: 100 }, (_, i) => ({ raw: 0.5 + (i % 50) / 100, correct: i % 20 !== 0 })),
+    ];
+    const curve = fitIsotonic(samples);
+    expect(applyCurve(curve, 0.2)).toBeGreaterThan(0);
+    expect(applyCurve(curve, 0.2)).toBeLessThan(0.2);
+    // The block's level holds across its whole range rather than sloping from its middle.
+    expect(applyCurve(curve, 0.55)).toBeCloseTo(applyCurve(curve, 0.95), 1);
+    expect(applyCurve(curve, 0.55)).toBeGreaterThan(0.9);
+    expect(applyCurve(curve, 1)).toBeLessThan(1);
+    expect(curve.length).toBeLessThanOrEqual(14);
   });
 });
 

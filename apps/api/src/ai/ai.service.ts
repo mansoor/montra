@@ -41,6 +41,7 @@ interface StoredSettings {
   endpoint?: string | null;
   models?: { small?: string | null; vision?: string | null; large?: string | null };
   threshold?: number;
+  aiThreshold?: number;
   monthlyBudgetUsd?: number | null;
   allowDocumentsToLlm?: boolean;
   allowReceiptImagesToLlm?: boolean;
@@ -51,6 +52,8 @@ export interface AiRuntime {
   ctx: AiContext;
   mode: AiMode;
   threshold: number;
+  /** The threshold an AI suggestion must meet to be applied (its own; DEFAULT_AI_THRESHOLD). */
+  aiThreshold: number;
   allowDocumentsToLlm: boolean;
   /** Receipt images may go to the provider (builtin/BYOK only); otherwise receipts are OCR'd first. */
   allowReceiptImages: boolean;
@@ -61,6 +64,12 @@ export interface AiRuntime {
 }
 
 export const DEFAULT_THRESHOLD = 0.8;
+/**
+ * AI suggestions have their own threshold (owner, 2026-11-21). Calibrated on the benchmark, Claude Haiku's
+ * categorizing is right about 97% of the time, so its scores are high: at 95% about nine in ten rows apply at about
+ * 99% precision (2026-11-21 refit), close to what 80% gave before the refit.
+ */
+export const DEFAULT_AI_THRESHOLD = 0.95;
 const CACHE_TTL_DAYS = 90;
 
 /** Per-mode privacy disclosure shown next to each choice (UP-06). Plain language, no marketing. */
@@ -231,6 +240,7 @@ export class AiService {
       ctx: aiCtx,
       mode,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
+      aiThreshold: s.aiThreshold ?? DEFAULT_AI_THRESHOLD,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImages: (mode === 'builtin' || mode === 'byok') && (s.allowReceiptImagesToLlm ?? false),
       available: provider.id !== 'null',
@@ -591,6 +601,7 @@ export class AiService {
       hasKey: Boolean(cred),
       keyLast4: cred?.last4 ?? null,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
+      aiThreshold: s.aiThreshold ?? DEFAULT_AI_THRESHOLD,
       monthlyBudgetUsd: budget,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImagesToLlm: s.allowReceiptImagesToLlm ?? false,
@@ -620,6 +631,7 @@ export class AiService {
     if (req.endpoint !== undefined) s.endpoint = req.endpoint;
     if (req.models !== undefined) s.models = req.models;
     if (req.threshold !== undefined) s.threshold = req.threshold;
+    if (req.aiThreshold !== undefined) s.aiThreshold = req.aiThreshold;
     if (req.monthlyBudgetUsd !== undefined) s.monthlyBudgetUsd = req.monthlyBudgetUsd;
     if (req.allowDocumentsToLlm !== undefined) s.allowDocumentsToLlm = req.allowDocumentsToLlm;
     if (req.allowReceiptImagesToLlm !== undefined) s.allowReceiptImagesToLlm = req.allowReceiptImagesToLlm;

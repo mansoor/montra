@@ -93,8 +93,10 @@ export const AiSettingsDto = z.object({
   }),
   hasKey: z.boolean(),
   keyLast4: z.string().nullable(),
-  /** Review-queue threshold on calibrated confidence (default 0.80). */
+  /** Review-queue threshold on calibrated confidence (default 0.80): rules, history, file categories, merchants. */
   threshold: z.number(),
+  /** The threshold an AI suggestion must meet to be applied automatically (default 0.95). */
+  aiThreshold: z.number(),
   monthlyBudgetUsd: z.number().nullable(),
   /** PAY-09/UP-06: allow statement scans and payslip images to be sent to an LLM. */
   allowDocumentsToLlm: z.boolean(),
@@ -135,6 +137,7 @@ export const UpdateAiSettingsRequest = z
     apiKey: z.string().min(8).max(500),
     clearKey: z.boolean(),
     threshold: z.number().min(0.5).max(0.99),
+    aiThreshold: z.number().min(0.5).max(0.99),
     monthlyBudgetUsd: z.number().min(0).max(10000).nullable(),
     allowDocumentsToLlm: z.boolean(),
     allowReceiptImagesToLlm: z.boolean(),

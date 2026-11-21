@@ -99,7 +99,7 @@ describe('categorize', () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value.map((v) => v.id)).toEqual(['t1', 't2', 't3']);
-    expect(res.value[0]).toMatchObject({ categoryId: 'cat-dining', confidence: 0.9 });
+    expect(res.value[0]).toMatchObject({ categoryId: 'cat-dining', confidence: 0.97 });
     expect(res.value[0]!.explanation).toMatch(/^AI: .* → Dining out$/);
     expect(res.value[1]!.categoryId).toBe('cat-fuel');
     expect(res.value[2]!.categoryId).toBeNull();
