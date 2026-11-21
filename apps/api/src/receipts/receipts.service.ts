@@ -800,7 +800,7 @@ export class ReceiptsService {
             const i = Number(o.id);
             const l = out[i]!;
             if (!o.categoryId) continue;
-            const apply = o.confidence >= runtime.threshold;
+            const apply = o.confidence >= runtime.aiThreshold;
             out[i] = {
               ...l,
               ...(apply ? { categoryId: o.categoryId, entityId: entityOf(o.categoryId) } : {}),

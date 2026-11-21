@@ -29,6 +29,7 @@ import {
   SavePlanRequest,
   SetStaffRequest,
   AppVersionsDto,
+  type AppRequirementsDto,
   PasswordPolicyDto,
   CheckoutRequest,
   ClientErrorRequest,
@@ -60,7 +61,7 @@ import { AdminService } from './admin.service.js';
 import { Plans } from './plans.js';
 import { ProvidersService } from './providers.service.js';
 import { BillingService } from './billing.service.js';
-import { METRICS_CONTENT_TYPE, MetricsService } from './metrics.js';
+import { AppVersionInterceptor, METRICS_CONTENT_TYPE, MetricsService } from './metrics.js';
 import { requireAdmin, requireOwner, StaffGuard, type StaffRequest } from './staff.js';
 import { StatusService, SupportService } from './support.service.js';
 
@@ -153,7 +154,18 @@ export class SupportController {
 /** Open to anyone: whether the service is up, and what's been announced (OPS-03). */
 @Controller('v1')
 export class StatusController {
-  constructor(@Inject(StatusService) private readonly status: StatusService) {}
+  constructor(
+    @Inject(StatusService) private readonly status: StatusService,
+    @Inject(AppVersionInterceptor) private readonly versions: AppVersionInterceptor,
+  ) {}
+
+  /** OPS-04: public, so a phone app can check it's new enough for this server before anyone signs in. */
+  @Get('app/requirements')
+  appRequirements(@Query('platform') platform: string): Promise<AppRequirementsDto> {
+    if (platform !== 'ios' && platform !== 'android')
+      throw new AppError(400, 'app.platform_invalid', 'platform must be ios or android');
+    return this.versions.requirements(platform);
+  }
 
   @Get('status')
   getStatus() {

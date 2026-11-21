@@ -6,7 +6,12 @@
 import type { ColumnMapping } from '@montra/importers';
 
 export type AiMode = 'builtin' | 'byok' | 'local' | 'off';
-export type ProviderId = 'anthropic' | 'openai_compatible' | 'null' | 'fake';
+/**
+ * Providers. `openai`, `gemini` and `azure_openai` are bring-your-own-key providers spoken to through their
+ * OpenAI-compatible chat completions APIs; `openai_compatible` is any other such server (local models).
+ */
+export type ProviderId =
+  'anthropic' | 'openai' | 'gemini' | 'azure_openai' | 'openai_compatible' | 'null' | 'fake';
 export type TaskName =
   | 'categorize'
   | 'normalize_payees'
@@ -55,7 +60,10 @@ export interface ProviderConfig {
   id: ProviderId;
   /** BYOK key or Montra's key (builtin). Never logged. */
   apiKey?: string;
-  /** OpenAI-compatible base URL (…/v1) for local mode; optional base URL override for Anthropic. */
+  /**
+   * OpenAI-compatible base URL (…/v1) for local mode; the Azure OpenAI resource URL; optional base URL override for
+   * Anthropic. OpenAI and Gemini use their own APIs.
+   */
   baseUrl?: string;
   /** Model override per group; defaults come from the routing table. */
   models?: Partial<Record<ModelGroup, string>>;
@@ -121,8 +129,32 @@ export interface GatewayStore {
   recordEvent(e: AiEventRecord): Promise<void>;
   /** Adds to this month's spend (kept apart from the deletable audit log). */
   addUsage(costMicroUsd: bigint, calls: number): Promise<void>;
-  /** Local mode on the hosted service: park the minimized request for a client on the user's network. */
-  parkLocal?(task: TaskName, input: unknown): Promise<void>;
+  /**
+   * Local mode on the hosted service: park the minimized request for a client on the user's network. The same
+   * `inputHash` is parked once while it is waiting or answered.
+   */
+  parkLocal?(task: TaskName, request: LocalRequest): Promise<void>;
+  /** The client's answer to a parked request with this hash, if one came back (06 §2). */
+  localAnswer?(task: TaskName, inputHash: string): Promise<LocalAnswer | null>;
+  /** Answers to parked row-task requests that hold any of these item cache keys. */
+  localAnswersFor?(task: TaskName, itemKeys: readonly string[]): Promise<LocalAnswer[]>;
+}
+
+/** A request parked for a local client: ready to send to its OpenAI-compatible `chat/completions`. */
+export interface LocalRequest {
+  inputHash: string;
+  /** The chat-completions body ({ model, messages, response_format, ... }); never holds images. */
+  body: Record<string, unknown>;
+  /** Row tasks: the cache key of each wire item, in wire order (i0, i1, ...). */
+  itemKeys?: readonly string[];
+}
+
+/** A local client's answer to a parked request. */
+export interface LocalAnswer {
+  output: unknown;
+  model: string;
+  /** Row tasks: the cache key of each wire item the request held, in wire order. */
+  itemKeys: readonly string[] | null;
 }
 
 export interface AiContext {

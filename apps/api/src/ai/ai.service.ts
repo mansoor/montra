@@ -8,11 +8,20 @@ import {
   type AiGateway,
   type AiMode,
   type GatewayStore,
+  type LocalAnswer,
+  type LocalRequest,
   type ProviderConfig,
   type TaskName,
 } from '@montra/ai-gateway';
 import { aiAlertPct, aiLimitMicroUsd, aiUsedShare } from '@montra/domain';
-import type { AiDisclosureDto, AiProblem, AiSettingsDto, UpdateAiSettingsRequest } from '@montra/schemas';
+import {
+  providerNeedsEndpoint,
+  providerNeedsKey,
+  type AiDisclosureDto,
+  type AiProblem,
+  type AiSettingsDto,
+  type UpdateAiSettingsRequest,
+} from '@montra/schemas';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
@@ -28,10 +37,11 @@ type AiProvider = NonNullable<StoredSettings['provider']>;
 
 /** Stored in `workspace.ai_settings` (03 §1). The BYOK key lives encrypted in `ai_credential`. */
 interface StoredSettings {
-  provider?: 'anthropic' | 'openai_compatible';
+  provider?: AiSettingsDto['provider'];
   endpoint?: string | null;
   models?: { small?: string | null; vision?: string | null; large?: string | null };
   threshold?: number;
+  aiThreshold?: number;
   monthlyBudgetUsd?: number | null;
   allowDocumentsToLlm?: boolean;
   allowReceiptImagesToLlm?: boolean;
@@ -42,6 +52,8 @@ export interface AiRuntime {
   ctx: AiContext;
   mode: AiMode;
   threshold: number;
+  /** The threshold an AI suggestion must meet to be applied (its own; DEFAULT_AI_THRESHOLD). */
+  aiThreshold: number;
   allowDocumentsToLlm: boolean;
   /** Receipt images may go to the provider (builtin/BYOK only); otherwise receipts are OCR'd first. */
   allowReceiptImages: boolean;
@@ -52,6 +64,12 @@ export interface AiRuntime {
 }
 
 export const DEFAULT_THRESHOLD = 0.8;
+/**
+ * AI suggestions have their own threshold (owner, 2026-11-21). Calibrated on the benchmark, Claude Haiku's
+ * categorizing is right about 97% of the time, so its scores are high: at 95% about nine in ten rows apply at about
+ * 99% precision (2026-11-21 refit), close to what 80% gave before the refit.
+ */
+export const DEFAULT_AI_THRESHOLD = 0.95;
 const CACHE_TTL_DAYS = 90;
 
 /** Per-mode privacy disclosure shown next to each choice (UP-06). Plain language, no marketing. */
@@ -101,6 +119,8 @@ export const AI_DISCLOSURES: AiDisclosureDto[] = [
 export const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
   no_key: 'AI is set to use your own API key, but no key is saved. Add one in Settings → AI.',
   no_endpoint: 'AI is set to a local model, but no model URL is saved. Add one in Settings → AI.',
+  azure_incomplete:
+    'AI is set to Azure OpenAI, but its resource URL or a deployment name is missing. Add them in Settings → AI.',
   not_configured: "Built-in AI isn't set up on this server. Choose another mode in Settings → AI.",
 };
 
@@ -211,7 +231,7 @@ export class AiService {
         planMicroUsd: ceilingReached ? 0n : planMicroUsd,
         spentMicroUsd: usage?.cost_micro_usd ?? 0n,
       },
-      store: this.store(ctx, mode, aiLimitMicroUsd(planMicroUsd, customerUsd)),
+      store: this.store(ctx, mode, aiLimitMicroUsd(planMicroUsd, customerUsd), subject),
       pseudonyms: members.map((m, i) => ({ name: m.name, token: `MEMBER_${i + 1}` })),
       parkLocal: mode === 'local' && !this.config.AI_LOCAL_DIRECT,
       subject,
@@ -220,6 +240,7 @@ export class AiService {
       ctx: aiCtx,
       mode,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
+      aiThreshold: s.aiThreshold ?? DEFAULT_AI_THRESHOLD,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImages: (mode === 'builtin' || mode === 'byok') && (s.allowReceiptImagesToLlm ?? false),
       available: provider.id !== 'null',
@@ -236,8 +257,9 @@ export class AiService {
     if (mode === 'local') return s.endpoint ? null : 'no_endpoint';
     if (mode === 'byok') {
       const provider = s.provider ?? 'anthropic';
-      if (provider !== 'anthropic') return null;
-      return (await this.hasKey(trx, ctx, provider)) ? null : 'no_key';
+      if (providerNeedsKey(provider) && !(await this.hasKey(trx, ctx, provider))) return 'no_key';
+      if (provider === 'azure_openai' && (!s.endpoint || !hasModel(s))) return 'azure_incomplete';
+      return null;
     }
     const id = this.config.AI_PROVIDER;
     if (id === 'null') return 'not_configured';
@@ -285,8 +307,11 @@ export class AiService {
     const apiKey = cred
       ? await this.crypto.decrypt(trx, ctx.workspaceId, `ai_credential.${provider}`, cred.key_enc)
       : null;
-    if (!apiKey && provider === 'anthropic') return { id: 'null' };
-    return { id: provider, apiKey: apiKey ?? undefined, baseUrl: s.endpoint ?? undefined, models };
+    if (!apiKey && providerNeedsKey(provider)) return { id: 'null' };
+    if (provider === 'azure_openai' && (!s.endpoint || !hasModel(s))) return { id: 'null' };
+    // OpenAI and Gemini are reached at their own APIs; a URL saved for another provider isn't theirs.
+    const baseUrl = providerNeedsEndpoint(provider) || provider === 'anthropic' ? s.endpoint : null;
+    return { id: provider, apiKey: apiKey ?? undefined, baseUrl: baseUrl ?? undefined, models };
   }
 
   /**
@@ -391,7 +416,12 @@ export class AiService {
    * The gateway's persistence. Each write is its own short transaction so audit entries and spend survive
    * a rollback of the caller's work (a failed import still spent the tokens).
    */
-  private store(ctx: Ctx, mode: AiMode, limit: bigint | null): GatewayStore {
+  private store(
+    ctx: Ctx,
+    mode: AiMode,
+    limit: bigint | null,
+    subject?: { type: string; id: string },
+  ): GatewayStore {
     const run = <T>(fn: (trx: Trx) => Promise<T>) => this.db.run(ctx, fn);
     return {
       cacheGet: async (task: TaskName, keyHash: string) => {
@@ -481,19 +511,51 @@ export class AiService {
           }
         }
       },
-      parkLocal: async (task: TaskName, input: unknown) => {
+      // Local mode on the hosted service (06 §2). A request is parked once while it waits or its answer lasts; the
+      // subject and the person it was for let a posted answer be applied as them (`LocalResults`).
+      parkLocal: async (task: TaskName, request: LocalRequest) => {
         await run((trx) =>
+          sql`
+            insert into app.ai_task
+              (workspace_id, task, input, input_hash, item_keys, subject_type, subject_id, created_by)
+            select ${ctx.workspaceId}::uuid, ${task}, ${JSON.stringify(request.body)}::jsonb, ${request.inputHash},
+                   ${request.itemKeys ? [...request.itemKeys] : null}::text[], ${subject?.type ?? 'workspace'},
+                   ${subject?.id ?? ctx.workspaceId}::uuid, ${ctx.userId ?? null}::uuid
+             where not exists (
+               select 1 from app.ai_task
+                where workspace_id = ${ctx.workspaceId}::uuid and task = ${task} and input_hash = ${request.inputHash}
+                  and status in ('pending', 'claimed', 'done') and expires_at > now())`.execute(trx),
+        );
+      },
+      localAnswer: async (task: TaskName, inputHash: string) => {
+        const row = await run((trx) =>
           trx
-            .insertInto('app.ai_task')
-            .values({
-              workspace_id: ctx.workspaceId,
-              task,
-              input: JSON.stringify(input),
-              subject_type: 'workspace',
-              subject_id: ctx.workspaceId,
-            })
+            .selectFrom('app.ai_task')
+            .select(['result', 'input', 'item_keys'])
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('task', '=', task)
+            .where('input_hash', '=', inputHash)
+            .where('status', '=', 'done')
+            .where('expires_at', '>', new Date())
+            .orderBy('created_at', 'desc')
+            .executeTakeFirst(),
+        );
+        return row ? localAnswerOf(row) : null;
+      },
+      localAnswersFor: async (task: TaskName, itemKeys: readonly string[]) => {
+        const rows = await run((trx) =>
+          trx
+            .selectFrom('app.ai_task')
+            .select(['result', 'input', 'item_keys'])
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('task', '=', task)
+            .where('status', '=', 'done')
+            .where('expires_at', '>', new Date())
+            .where(sql<boolean>`item_keys && ${[...itemKeys]}::text[]`)
+            .orderBy('created_at', 'desc')
             .execute(),
         );
+        return rows.map(localAnswerOf);
       },
     };
   }
@@ -539,6 +601,7 @@ export class AiService {
       hasKey: Boolean(cred),
       keyLast4: cred?.last4 ?? null,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
+      aiThreshold: s.aiThreshold ?? DEFAULT_AI_THRESHOLD,
       monthlyBudgetUsd: budget,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImagesToLlm: s.allowReceiptImagesToLlm ?? false,
@@ -568,6 +631,7 @@ export class AiService {
     if (req.endpoint !== undefined) s.endpoint = req.endpoint;
     if (req.models !== undefined) s.models = req.models;
     if (req.threshold !== undefined) s.threshold = req.threshold;
+    if (req.aiThreshold !== undefined) s.aiThreshold = req.aiThreshold;
     if (req.monthlyBudgetUsd !== undefined) s.monthlyBudgetUsd = req.monthlyBudgetUsd;
     if (req.allowDocumentsToLlm !== undefined) s.allowDocumentsToLlm = req.allowDocumentsToLlm;
     if (req.allowReceiptImagesToLlm !== undefined) s.allowReceiptImagesToLlm = req.allowReceiptImagesToLlm;
@@ -585,7 +649,18 @@ export class AiService {
     }
     // Saving "your own key" without one would quietly turn every AI feature off. Removing the key (clearKey on
     // its own) is still allowed; the settings page then says what's missing.
-    if (req.mode === 'byok' && provider === 'anthropic' && !req.apiKey) {
+    // Azure OpenAI is reached at the customer's resource, by their deployment names: without them it can't run.
+    if (req.mode === 'byok' && provider === 'azure_openai') {
+      if (!s.endpoint)
+        throw new AppError(422, 'ai.endpoint_required', 'Enter your Azure OpenAI resource URL', [
+          { path: 'endpoint', message: 'Enter your Azure OpenAI resource URL' },
+        ]);
+      if (!hasModel(s))
+        throw new AppError(422, 'ai.model_required', 'Enter the name of at least one deployment', [
+          { path: 'models.small', message: 'Enter the name of at least one deployment' },
+        ]);
+    }
+    if (req.mode === 'byok' && providerNeedsKey(provider) && !req.apiKey) {
       if (!(await this.hasKey(trx, ctx, provider))) {
         const message = 'Enter your API key to use your own key';
         throw new AppError(422, 'ai.key_required', message, [{ path: 'apiKey', message }]);
@@ -617,4 +692,15 @@ export class AiService {
       .where('id', '=', ctx.workspaceId)
       .execute();
   }
+}
+
+/** A done task row → the gateway's view of its answer; the model is the one the parked body asked for. */
+function localAnswerOf(row: { result: unknown; input: unknown; item_keys: string[] | null }): LocalAnswer {
+  const model = (row.input as { model?: unknown } | null)?.model;
+  return { output: row.result, model: typeof model === 'string' ? model : '', itemKeys: row.item_keys };
+}
+
+/** Whether a model (for Azure OpenAI, a deployment name) is saved for any group. */
+function hasModel(s: StoredSettings): boolean {
+  return Boolean(s.models?.small || s.models?.vision || s.models?.large);
 }

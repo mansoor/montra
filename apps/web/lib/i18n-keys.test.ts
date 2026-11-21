@@ -65,7 +65,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'access.': ['none', 'read', 'write'],
   'status.': ['operational', 'maintenance', 'incident', 'down'],
   'status.worker.': ['documents', 'jobs'],
-  'ai.problem.': ['no_key', 'no_endpoint', 'not_configured'],
+  'ai.problem.': ['no_key', 'no_endpoint', 'azure_incomplete', 'not_configured'],
+  'ai.provider.': ['anthropic', 'openai', 'gemini', 'azure_openai', 'openai_compatible'],
   'receipts.stalled.': ['documents_waiting', 'documents_failed', 'jobs_waiting', 'jobs_failed'],
   'help.status_': ['open', 'closed'],
   'admin.tab.': [

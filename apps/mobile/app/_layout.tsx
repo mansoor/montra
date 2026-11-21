@@ -1,6 +1,6 @@
 /** Root: providers (session, app lock, toasts, share intent, sync) and the auth gate. */
 import { useEffect } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Linking, ScrollView, View } from 'react-native';
 import { Stack, useRouter, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -13,10 +13,12 @@ import { Body, Button, Title, ToastHost } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 import { TwoStep } from '../src/ui/TwoStep';
 import { AccountClosed } from '../src/ui/AccountClosed';
+import { LocalAiRunner } from '../src/ai/LocalAiRunner';
 import { t } from '../src/i18n';
+import { config } from '../src/config';
 
 function Gate() {
-  const { state, updateRequired, twoStepRequired, clearTwoStepRequired, closed } = useSession();
+  const { state, updateRequired, update, twoStepRequired, clearTwoStepRequired, closed } = useSession();
   const router = useRouter();
   const th = useTheme();
   const insets = useSafeAreaInsets();
@@ -43,6 +45,17 @@ function Gate() {
       >
         <Title>{t('mobile.update.title')}</Title>
         <Body>{t('mobile.update.body')}</Body>
+        {update?.minVersion ? (
+          <Body>{t('mobile.update.versions', { current: config.version, min: update.minVersion })}</Body>
+        ) : null}
+        {update ? (
+          <Button
+            label={t('mobile.update.get')}
+            icon="import"
+            onPress={() => void Linking.openURL(update.url).catch(() => undefined)}
+            testID="update-get"
+          />
+        ) : null}
       </View>
     );
   }
@@ -134,7 +147,14 @@ function Gate() {
       </Stack.Protected>
     </Stack>
   );
-  return signedIn ? <SyncProvider workspaceId={state.workspace.id}>{stack}</SyncProvider> : stack;
+  return signedIn ? (
+    <SyncProvider workspaceId={state.workspace.id}>
+      {stack}
+      <LocalAiRunner workspaceId={state.workspace.id} />
+    </SyncProvider>
+  ) : (
+    stack
+  );
 }
 
 /**

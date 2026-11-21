@@ -5,6 +5,8 @@
 import type {
   IntakeDto,
   PasswordPolicyDto,
+  AiTaskDto,
+  AppRequirementsDto,
   FiledBillDto,
   HouseholdBillDto,
   BillerDto,
@@ -282,8 +284,16 @@ export function createApi(opts: ApiOptions) {
     me: () => request<MeDto>('GET', '/v1/me'),
     /** AUTH-02 (ADR-0043): the service's password policy, for the strength meter. Needs no sign-in. */
     passwordPolicy: () => request<PasswordPolicyDto>('GET', '/v1/password-policy'),
+    /** OPS-04: the oldest app version this server serves, and where to get a newer one. Needs no sign-in. */
+    appRequirements: (platform: 'ios' | 'android') =>
+      request<AppRequirementsDto>('GET', `/v1/app/requirements?platform=${platform}`),
     workspaces: async () => (await request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces')).data,
-    aiSettings: (w: string) => request<Pick<AiSettingsDto, 'mode' | 'usage'>>('GET', `${ws(w)}/ai/settings`),
+    aiSettings: (w: string) =>
+      request<Pick<AiSettingsDto, 'mode' | 'usage' | 'endpoint'>>('GET', `${ws(w)}/ai/settings`),
+    /** Local AI mode (06 §2): claims parked work for this phone to run against the person's own model. */
+    aiTasks: async (w: string) => (await request<{ data: AiTaskDto[] }>('GET', `${ws(w)}/ai/tasks`)).data,
+    postAiTaskResult: (w: string, id: string, output: unknown) =>
+      request<void>('POST', `${ws(w)}/ai/tasks/${encodeURIComponent(id)}/result`, { output }),
     /** The plan picker's list (ADR-0049 §1). The phone shows it; buying happens on the web. */
     plans: async () => (await request<{ data: PlanOfferDto[] }>('GET', '/v1/plans')).data,
 

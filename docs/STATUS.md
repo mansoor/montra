@@ -233,13 +233,14 @@ finished:
   - PLT-02, PLT-04, PLT-07, IMP-02, BAK-10: mobile behaviour on iOS and Android devices, plus the
     Maestro flows.
   - AUTH-01, NFR-02: run against a live Kratos (`docker compose --profile auth`).
-  - AIA-09, AI-11: **measured on 2026-11-03** with `claude-haiku-5-5` on the 1,056-row test split. Accuracy
-    was 86.7% (target ≥ 85%), macro-F1 0.873, 26.4 s for the whole split, and $0.04. Calibration is off
-    (ECE 0.111): refit the Anthropic curve on the train split. Rerun with:
+  - AIA-09, AI-11: **measured on 2026-11-21** with `claude-haiku-5-5`. Accuracy was 97.3% on the 1,056-row test
+    split (86.7% on 2026-11-03; target ≥ 85%), macro-F1 0.972, about 44 s for the split in 10 calls, and $0.05.
+    Calibration is refit on the train split (ECE 0.011 on the test split, from 0.140; see §7g). Rerun with:
     ```bash
     pnpm --filter @montra/ai-gateway eval -- --provider anthropic --split test
     ```
-    The `--` is now handled; before that fix, the options were silently ignored.
+    Reports (in `eval/reports/`, not committed) now keep each row's raw score and outcome, so a curve can be fitted
+    and checked offline.
 
 - **Finished by a later phase, as planned:**
   - AIA-01: a monthly summary and a budget recommendation by AI.
@@ -263,26 +264,26 @@ finished:
 1. ~~**Transfers.**~~ Done: accepting a suggested transfer in review (web or phone, one at a time or "accept all
    above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import doesn't
    convert pairs on its own yet, even at 0.95: they wait in review.
-2. **Local-mode AI tasks.** Results the client posts to `POST /ai/tasks/:id/result` are stored but not
-   yet applied to rows or review suggestions.
-3. **More bring-your-own-key adapters:** OpenAI, Gemini and Azure. Only Anthropic and OpenAI-compatible
-   endpoints exist.
-4. **S3 storage** is only stub-tested; there is no MinIO run in CI.
-5. **Undoing an import** doesn't take back payee history learned from categories picked during that
-   import's preview.
+2. ~~**Local-mode AI tasks.**~~ Done: a posted answer is used where a provider's would be, and applied to the import
+   or receipt it was for (see §7g).
+3. ~~**More bring-your-own-key adapters.**~~ Done: OpenAI, Google Gemini and Azure OpenAI (see §7g).
+4. ~~**S3 storage** is only stub-tested.~~ Done: CI runs it against a real MinIO (see §7g).
+5. ~~**Undoing an import** doesn't take back payee history.~~ Done: an undo forgets what the import's transactions
+   taught (see §7g).
 6. **Mobile has no React Native Testing Library screen tests.** Pure modules have unit tests; screens rely
    on the export builds and on the Maestro flows, which haven't been run.
 7. ~~**Mobile Home**~~ now shows left to spend and left to assign, like the web.
 8. **Camera library:** the camera spike uses `expo-camera`. Moving to `react-native-vision-camera`
    (frame processors, ML Kit / VisionKit edge detection) is the Phase 5 option, decided by the spike. ADR-0009
    stays _proposed_ until the spike runs on devices.
-9. **Commit speed:** an import commit takes about 11 ms per row, so 5,000 rows take about a minute
-   (with a progress bar). Bulk posting would speed it up later.
+9. **Commit speed:** an import commit takes about 11–16 ms per row (on the owner's busy dev PC), so 5,000 rows take
+   a minute or more (with a progress bar). The case where it grew with the square of the rows is fixed (migration
+   0075, see §7g). Bulk posting (fewer statements per row) would speed it up further; judge it on CI or a quiet
+   machine.
 10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
     suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
-11. **Payment lines share a payee key.** The key for "ONLINE PAYMENT TO CARD XXXX4321" is just `TO`, whatever the card,
-    so all such lines share one `app.payee` row and its name is the first one imported. Changing the key would need
-    a migration of payee history and rules.
+11. ~~**Payment lines share a payee key.**~~ Done: a payment or transfer to an account is keyed by its last four
+    digits ("TO ••4321"), and migration 0076 moved what was stored under the shared key (see §7g).
 12. ~~**Patch schemas that fill defaults.**~~ Done: every `Update…` schema now leaves omitted fields out, and
     `packages/schemas/test/patches.test.ts` checks them all.
 13. ~~**Receipt line quantity and unit price**~~ Done: every line shows quantity × unit price = total; quantity 1 at
@@ -337,7 +338,7 @@ finished:
 | Verified (automated)                                                                                  | Not yet verified                                                                            |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Ledger invariants, RLS isolation, the DE-10 edit rules                                                | A live Kratos server (sign-up, MFA, recovery emails)                                        |
-| Import corpus (22 layouts), dedupe, undo, reconciliation                                              | S3/MinIO storage                                                                            |
+| Import corpus (22 layouts), dedupe, undo, reconciliation; S3 storage against MinIO                   | A real cloud bucket (AWS S3, Backblaze B2, R2) for files and backups                        |
 | AI pipeline with the fake provider, rules, learning, review, insights                                 | **Real-provider accuracy (≥ 85%) and latency**                                              |
 | Scanned-PDF OCR with real Tesseract                                                                   | Real scanned statements end to end through both workers _(the parts are tested separately)_ |
 | Offline sync: server, engine, and two simulated devices against the real API                          | **Mobile on devices**: SQLCipher, biometrics, camera, share sheet, push, gestures, Maestro  |
@@ -2149,7 +2150,143 @@ Phase 11 leftovers:
   - Phone: each line says "2 × $0.81"; a totals card under the lines shows subtotal, discount, tax (or "tax
     included"), fees, tip and total, so the lines add up to the receipt.
   - Tests: domain `receipt.test.ts`, API `receipts.test.ts`, web `lib/receipts.test.ts`, mobile `receipts.test.ts`.
+- **Local-mode AI answers are used** (backlog 2; 06 §2; migration 0073). On the hosted service with local AI, the
+  server parks AI work for a browser on the user's network. Before this, the answers it posted were stored and never
+  used, and the parked input wasn't a request the browser could send.
+  - Parking: the parked input is now the ready `chat/completions` body (`chatCompletionBody`, shared with the
+    OpenAI-compatible adapter), with the request's hash, each row item's cache key (`item_keys`), the subject and who
+    it was for (`created_by`). The same request is parked once while it waits or its answer lasts.
+  - Using an answer: when the same work runs again, the gateway finds the answer by the request's hash, or for row
+    tasks (categorize) by each item's cache key, whatever batches the run makes, and puts it through the task's schema
+    and checks like a provider's; answered items go to the cache.
+  - Applying it: a posted answer queues `ai.local_result.<subject>` (after 10 s, one per subject) as the person the
+    work was for. An import in preview gets suggestions for the rows nothing placed, auto-applied as parse would; a
+    committed import's transactions still waiting in Review get them as suggestions; a receipt waiting for its reading
+    (`pending_local`, no lines typed) is read again from its text. Other work uses its answer the next time it runs.
+  - Not done: an answer that fails the task's checks isn't asked for again until it expires (7 days); the phone has no
+    local runner.
+  - Tests: gateway `gateway.test.ts` (parked once, used item by item across different batching, a single-call task
+    through its checks), API `ai-local-results.test.ts` (preview, committed import, receipt).
+- **Your own key with OpenAI, Google Gemini and Azure OpenAI** (backlog 3; UP-13; migration 0074 widens
+  `ai_credential.provider`). Settings → AI → Your own API key lists them beside Anthropic and "Other OpenAI-compatible
+  server".
+  - All three go through `OpenAiCompatibleAdapter`, which now speaks per provider:
+    - OpenAI: api.openai.com/v1, a bearer key, and `max_completion_tokens`, which its reasoning models need.
+    - Gemini: Google's OpenAI-compatible endpoint, a bearer key.
+    - Azure OpenAI: the resource URL + `/openai/v1`, the key in `api-key`, and deployment names as the models.
 
+    Cached prompt tokens now count at the cached rate.
+  - Models: defaults as of 2026-11-20. OpenAI uses gpt-6-luna, gpt-6.1-terra and gpt-6.2-sol; Gemini uses
+    gemini-3.5-flash-lite, gemini-3.8-flash and gemini-4-hydrogen. A workspace can name others. Azure needs at least
+    one deployment, which is used for any group left blank, and its resource URL. Without them, saving is refused, and
+    AI turns off with the `azure_incomplete` problem.
+  - Prices: OpenAI and Gemini rates come from their pricing pages on 2026-11-20. Announced changes are dated steps:
+    gemini-4-argon and gemini-4-carbon double on 1 December, gemini-3.8-flash on 1 January. `AI_MODEL_PRICES` (JSON)
+    sets any model's rate without a release, and a bad value stops the server at start. An unpriced model, such as an
+    Azure deployment name, costs nothing, so a budget can't hold it back until it is priced there.
+  - Not tried against the real services: no keys here. The adapters are tested against stubs of each API.
+  - Tests: gateway `adapters.test.ts` (each provider's URL, auth, token field and cached usage), `units.test.ts`
+    (defaults, dated prices, snapshots, overrides), API `categorization.test.ts` (keys and Azure's URL and
+    deployment), web `phase3.test.ts`.
+- **AI confidence refit, and an AI threshold of its own** (AIA-09; owner, 2026-11-21; no migration).
+  - Measured: Claude Haiku categorizing the benchmark is right 97.3% of the time on both splits but under-states its
+    confidence. ECE was 0.140 on the test split as reported. Total cost $0.39 across four runs.
+  - The fit kept too little: `fitIsotonic` drew lines between block midpoints, so a wide block of right answers
+    became a slope. Now each block keeps its range of raw scores as a flat level, adjacent blocks with the closest
+    levels merge down to 6, and levels are smoothed so none is 0% or 100%. The curve fitted on the train split has
+    ECE 0.011 on the test split.
+  - Honest scores are high, so the owner chose a separate **AI threshold**, default 95%, beside the review
+    threshold, which stays at 80% for rules, transfers, past transactions, file categories and merchants. At 95%,
+    89.6% of test rows apply at 99.2% precision; before, at 80%, 78.8% applied at 100%. It applies to categorized
+    rows and to receipt lines. It's a second slider in Settings → AI (`aiThreshold`; a workspace's saved value
+    wins).
+  - The fake provider's keyword matches now score 0.97 rather than 0.9, as a calibrated provider's sure answers do,
+    so tests and e2e behave as before. e2e that send everything to Review set both thresholds to 99%.
+  - Tests: gateway `units.test.ts` (the curve, the fit's flat blocks and smoothing), API categorization, imports,
+    receipts and bank-feed suites.
+- **Undoing an import takes back what it taught** (backlog 5; no migration). A category chosen in an import's preview
+  (or later in Review) counts in the payee's history and may record a correction, which feeds rule suggestions.
+  Undoing the import voided its transactions but kept both, so the same payee was still suggested the undone choice.
+  - Now each transaction the undo voids gives back what it counted (`Categorizer.unlearn`): its place in the payee's
+    history, read from `categorization.learned`, and its corrections. The undo reports how many (`unlearned`).
+  - Left as they are: a rule already made or a rule suggestion already shown; transfers made by hand for the payee
+    (their count can't be restored exactly); transactions the undo keeps (reconciled, carrying a payslip, invoice or
+    bill, or a transfer with another statement's line).
+  - Not changed: deleting a single transaction by hand still keeps what it taught.
+  - Tests: API `categorization.test.ts` (choose in preview, commit, undo: history and corrections gone, and the next
+    import of the payee isn't suggested the undone category).
+- **Import commits no longer slow down with their size** (backlog 9; migration 0075).
+  - The posting guard (`app.guard_posting`) looked up its journal entry by `coalesce(new.…, old.…)`. PL/pgSQL plans
+    that once per session. When the journal had been analyzed while small (a new install, a test database), the
+    planner chose a sequential scan and kept it while the import added entries. Each posting then scanned every
+    earlier entry of the batch, with the row-level-security check on each.
+  - Measured on such a database for 1,000 rows: 1.07 million `entity_access` calls and 31 s, now 47,000 calls and
+    15 s. 2,000 rows went from 97 s to 34 s, and 5,000 rows take 82 s (16 ms a row), on the owner's busy dev PC. The
+    guard now looks the entry up by its key in plain variables; its checks are unchanged.
+  - Not reproduced on a fresh or well-used database, where the planner picks the index anyway. So there is no test
+    for the slowdown itself; a ratio test didn't fail against the old guard and was dropped.
+  - Left: about 12 ms of each row is Node-side work (spec, ledger build, four statements). Bulk posting would cut
+    that, but this PC is too loaded to measure it reliably.
+  - Tests: DB `ledger.test.ts` (locks and reconciled lines), API `reconciliation.test.ts`, `imports.test.ts`.
+- **Payments to different accounts are different payees** (backlog 11; migration 0076).
+  - Before: the payee normalizer drops masked numbers, which is right for merchants. But it left "ONLINE PAYMENT TO
+    CARD XXXX4321" and "… XXXX8765" with the one key `TO`, sharing a payee, its history, corrections and transfer
+    memory.
+  - New lines: `payeeKeyFor` (@montra/importers) adds the account's last four digits to the payee key: "TO ••4321",
+    "AUTOPAY TO AMEX ••1002". It applies to a line with payment or transfer wording, or one whose key is only
+    "TO"/"FROM", that names a masked number (XXXX, ****, ..., ••) or "ENDING IN dddd". Imports and typed
+    transactions use it; each account gets its own payee row, named as before ("Payment to Card ••4321").
+  - Unchanged: a card purchase that prints the card's own masked number has no payment wording and keeps its merchant
+    key. Duplicate detection still uses `normalizeDescription`, so lines already imported are still recognised.
+  - Migration 0076 re-keys existing transactions the same way, in SQL with the same patterns, and moves along with
+    them: payee history (what each counted, `categorization.learned`), corrections, transfer memory (one count per
+    transfer to the account it went to), and the payee row. Keys already ending in "••dddd" are left, so it can run
+    twice.
+  - Left as they are: rules (they match "payee contains", which still matches), rule suggestions and insights already
+    made, and keys on names (business parties, payslips, expected income, tenants).
+  - Tests: importers `units.test.ts` (keys and names; merchants and an ID-only autopay unchanged), API
+    `payee-keys.test.ts` (an import, a typed payment, the migration and its re-run), `imports.test.ts`.
+- **S3 storage is tested against a real MinIO** (backlog 4; no migration). The in-process fakes check what Montra
+  sends; `apps/api/test/s3-minio.test.ts` checks that a real S3 server takes it, in a bucket of its own that it removes
+  afterwards. It covers:
+  - Montra's own file store (`S3Storage`, STORAGE_MODE=s3): put, get, a 256 KB file streamed from disk and back (as
+    archives are), delete twice, and an unsafe key refused;
+  - your own storage (`S3Destination`): put, a get within and over the size limit, delete, and a wrong key or missing
+    bucket reported as `refused` or `not_found`;
+  - the API with STORAGE_MODE=s3: an upload lands in the bucket and reads back.
+
+  MinIO itself was archived in April 2026 and its images and binaries are gone, so CI and the dev compose file use
+  `pgsty/minio`, a community-maintained build, pinned to RELEASE.2026-08-04T00-00-00Z (the owner's choice).
+  CI's verify job starts it (a step, since a service container can't be given its `server` command) and sets
+  S3_TEST_REQUIRED, so there a missing server fails the run rather than skipping. Locally the tests run when
+  S3_TEST_ENDPOINT is set (the compose MinIO, port 19000 here) and skip otherwise.
+
+- **`AI_MODEL_PRICES` on the hosted service** (no migration). The setting was only in the self-host compose file; the
+  Terraform `ai_model_prices` variable (envs → stack → compute) now sets it on the API and worker, empty by default,
+  checked to be JSON at plan time. The example tfvars show its shape. Not applied anywhere: no `terraform apply`.
+- **The phone checks it's new enough for its server, and sends the person to update** (OPS-04; owner, 2026-11-21; no
+  migration).
+  - Before: a too-old app was refused with 426 only by the staff-set minimums, which default to 0.0.0, so nothing
+    was refused, and a self-hosted server has no staff. The update screen had no way to get a newer app.
+  - Each server version now has its own minimum: `MIN_PHONE_APP_VERSION` in `apps/api/src/ops/metrics.ts`, now
+    0.5.0, the current app. Raise it in the change that drops something older apps rely on. Staff can ask for newer
+    per platform, never older.
+  - `GET /v1/app/requirements?platform=` is public and never refused for the app's version. It gives the minimum and
+    `MOBILE_UPDATE_URL`, a setting that defaults to the project's GitHub releases page (the owner's choice for now,
+    until the stores).
+  - The phone asks on start (before sign-in), on coming back to the app, and after a 426. The update screen says both
+    versions and has "Get the update", which opens the link (https only, else the GitHub releases).
+  - Tests: API `operations.test.ts` (the server's minimum under staff's, the public endpoint, a too-old app still
+    asking), mobile `app-update.test.ts` and `clients.test.ts`.
+- **The phone answers local AI work too** (06 §2; the follow-up to backlog 2; no migration). With local AI on the
+  hosted service, only an open web page answered the work the server parks for the person's own model.
+  - Now the phone does too, while the app is open and in front (`src/ai/LocalAiRunner.tsx`, `src/features/local-ai.ts`):
+    every 15 s and on coming back to the app, it claims the parked tasks, sends each one's `chat/completions` body to
+    the model, and posts the answer, which the server applies as it does the web's.
+  - Silent: an unreachable model ends the round and is tried again; a 403 stops it.
+  - Android reaches a plain-http model only in builds that allow cleartext traffic (the LAN build, whose API is http
+    too). A production build needs the model over https. The cleartext policy is unchanged.
+  - Tests: mobile `local-ai.test.ts`.
 ---
 
 ## 8. Session checklist

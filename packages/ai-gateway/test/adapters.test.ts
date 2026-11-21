@@ -1,6 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
-import { AnthropicAdapter, OpenAiCompatibleAdapter, type CompletionRequest } from '../src/index.js';
+import {
+  AnthropicAdapter,
+  chatCompletionsUrl,
+  OpenAiCompatibleAdapter,
+  type CompletionRequest,
+} from '../src/index.js';
 
 const req = (over: Partial<CompletionRequest> = {}): CompletionRequest => ({
   task: 'categorize',
@@ -223,5 +228,79 @@ describe('OpenAiCompatibleAdapter', () => {
     expect(
       await new OpenAiCompatibleAdapter({ id: 'openai_compatible' }, junk.fetchImpl).complete(req()),
     ).toMatchObject({ ok: false, reason: 'invalid_output' });
+  });
+});
+
+describe('your own key with OpenAI, Gemini and Azure OpenAI (backlog item 3)', () => {
+  function stub() {
+    const calls: { url: string; body: Record<string, unknown>; headers: Record<string, string> }[] = [];
+    const fetchImpl = async (url: string, init: RequestInit) => {
+      calls.push({
+        url,
+        body: JSON.parse(String(init.body)) as Record<string, unknown>,
+        headers: init.headers as Record<string, string>,
+      });
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-6-luna-2026-09-30',
+          choices: [{ message: { content: '{"results":[]}' }, finish_reason: 'stop' }],
+          usage: {
+            prompt_tokens: 1000,
+            completion_tokens: 20,
+            prompt_tokens_details: { cached_tokens: 800 },
+          },
+        }),
+        { status: 200 },
+      );
+    };
+    return { fetchImpl, calls };
+  }
+
+  it("OpenAI: its own API, the key as a bearer token, max_completion_tokens, and the cache's share", async () => {
+    const { fetchImpl, calls } = stub();
+    const res = await new OpenAiCompatibleAdapter({ id: 'openai', apiKey: 'sk-own' }, fetchImpl).complete(
+      req({ model: 'gpt-6-luna' }),
+    );
+    expect(res).toMatchObject({
+      ok: true,
+      model: 'gpt-6-luna-2026-09-30',
+      usage: { inputTokens: 200, cacheReadTokens: 800, outputTokens: 20 },
+    });
+    expect(calls[0]!.url).toBe('https://api.openai.com/v1/chat/completions');
+    expect(calls[0]!.headers.authorization).toBe('Bearer sk-own');
+    expect(calls[0]!.body).toMatchObject({ model: 'gpt-6-luna', max_completion_tokens: 16000 });
+    expect(calls[0]!.body).not.toHaveProperty('max_tokens');
+  });
+
+  it("Gemini: Google's OpenAI-compatible endpoint, whatever base URL is saved", async () => {
+    const { fetchImpl, calls } = stub();
+    await new OpenAiCompatibleAdapter(
+      { id: 'gemini', apiKey: 'AIza-own', baseUrl: 'http://elsewhere' },
+      fetchImpl,
+    ).complete(req({ model: 'gemini-3.5-flash-lite' }));
+    expect(calls[0]!.url).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+    expect(calls[0]!.headers.authorization).toBe('Bearer AIza-own');
+    expect(calls[0]!.body).toMatchObject({ max_tokens: 16000 });
+  });
+
+  it('Azure OpenAI: the resource URL + /openai/v1, the key in api-key, the deployment as the model', async () => {
+    for (const baseUrl of [
+      'https://my-res.openai.azure.com',
+      'https://my-res.openai.azure.com/',
+      'https://my-res.openai.azure.com/openai',
+      'https://my-res.openai.azure.com/openai/v1/',
+    ]) {
+      expect(chatCompletionsUrl({ id: 'azure_openai', baseUrl })).toBe(
+        'https://my-res.openai.azure.com/openai/v1/chat/completions',
+      );
+    }
+    const { fetchImpl, calls } = stub();
+    await new OpenAiCompatibleAdapter(
+      { id: 'azure_openai', apiKey: 'az-key', baseUrl: 'https://my-res.openai.azure.com' },
+      fetchImpl,
+    ).complete(req({ model: 'montra-mini' }));
+    expect(calls[0]!.headers['api-key']).toBe('az-key');
+    expect(calls[0]!.headers.authorization).toBeUndefined();
+    expect(calls[0]!.body).toMatchObject({ model: 'montra-mini', max_completion_tokens: 16000 });
   });
 });

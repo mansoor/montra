@@ -13,6 +13,9 @@ import {
   draftToTransaction,
   formatUsd,
   groupInsights,
+  BYOK_PROVIDERS,
+  byokNeedsEndpoint,
+  deploymentMissing,
   keyMissing,
   highlightSpans,
   parseBudget,
@@ -406,6 +409,24 @@ describe('AI settings helpers (UP-13, AIA-08)', () => {
     expect(keyMissing('byok', 'openai_compatible', '', none)).toBe(false);
     expect(keyMissing('builtin', 'anthropic', '', none)).toBe(false);
     expect(keyMissing('off', 'anthropic', '', none)).toBe(false);
+    // OpenAI, Gemini and Azure OpenAI need a key like Anthropic (backlog item 3).
+    for (const p of ['openai', 'gemini', 'azure_openai'] as const) {
+      expect(keyMissing('byok', p, '', none)).toBe(true);
+      expect(keyMissing('byok', p, '', { provider: p, hasKey: true })).toBe(false);
+    }
+  });
+
+  it('asks Azure OpenAI for its resource URL and a deployment; OpenAI and Gemini for neither', () => {
+    const blank = { small: '', vision: '', large: '' };
+    expect(byokNeedsEndpoint('byok', 'azure_openai')).toBe(true);
+    expect(byokNeedsEndpoint('byok', 'openai_compatible')).toBe(true);
+    expect(byokNeedsEndpoint('byok', 'openai')).toBe(false);
+    expect(byokNeedsEndpoint('byok', 'gemini')).toBe(false);
+    expect(byokNeedsEndpoint('local', 'azure_openai')).toBe(false);
+    expect(deploymentMissing('byok', 'azure_openai', blank)).toBe(true);
+    expect(deploymentMissing('byok', 'azure_openai', { ...blank, large: 'montra-mini' })).toBe(false);
+    expect(deploymentMissing('byok', 'openai', blank)).toBe(false);
+    expect(BYOK_PROVIDERS).toEqual(['anthropic', 'openai', 'gemini', 'azure_openai', 'openai_compatible']);
   });
 });
 

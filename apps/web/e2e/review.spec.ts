@@ -18,8 +18,8 @@ const CSV = [
 test('reviews an import with the keyboard and turns repeated corrections into a rule', async ({ page }) => {
   test.setTimeout(150_000);
   await onboardHousehold(page, `review-${Date.now()}@example.com`, 'Everyday checking');
-  // A 99% threshold sends every AI suggestion to the queue, so the test doesn't depend on fake confidences.
-  await setAi(page, { threshold: 99 });
+  // 99% thresholds send every suggestion to the queue, so the test doesn't depend on fake confidences.
+  await setAi(page, { threshold: 99, aiThreshold: 99 });
   await importCsv(page, 'Everyday checking', 'october.csv', CSV, 6);
 
   // g r opens the review queue from anywhere.

@@ -22,6 +22,7 @@ import {
   normalizeDescription,
   parseAmount,
   payeeDisplayName,
+  payeeKeyFor,
   readTextSheets,
   readXlsx,
   type ColumnMapping,
@@ -103,6 +104,107 @@ export class ImportJobs {
     this.worker.register('import.parse', (job) => this.parse(job));
     this.worker.register('import.commit', (job, c) => this.commit(job, c));
     this.worker.register('import.undo', (job) => this.undo(job));
+    this.worker.register('ai.local_result.import_batch', (job) => this.localResult(job));
+  }
+
+  /**
+   * Local mode on the hosted service (06 §2, backlog item 2): a client on the user's network answered AI work parked
+   * for this import. Running the pipeline again over the rows nothing placed uses those answers (the gateway reads
+   * them by each row's cache key). A preview's rows get the new suggestions, auto-applied as parse would; a committed
+   * import's transactions still waiting in Review get them as suggestions. A row someone chose a category for, and a
+   * transaction already suggested or reviewed, are left alone.
+   */
+  async localResult(job: Job): Promise<Record<string, unknown>> {
+    const ctx = this.ctxOf(job);
+    const batchId = (job.payload as { subjectId?: string }).subjectId;
+    if (!batchId) throw new PermanentJobError('job.invalid', 'No import batch');
+    return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      const batch = await trx
+        .selectFrom('app.import_batch')
+        .select(['id', 'status', 'ledger_account_id'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', batchId)
+        .executeTakeFirst();
+      if (!batch || (batch.status !== 'preview' && batch.status !== 'committed'))
+        return { skipped: batch?.status ?? 'gone' };
+      const committed = batch.status === 'committed';
+      let q = trx
+        .selectFrom('app.import_row as r')
+        .select([
+          'r.id',
+          'r.txn_date',
+          'r.amount_minor',
+          'r.description',
+          'r.payee_raw',
+          'r.normalized_desc',
+          'r.suggestion',
+          'r.transaction_id',
+        ])
+        .where('r.workspace_id', '=', ctx.workspaceId)
+        .where('r.import_batch_id', '=', batchId)
+        .where('r.txn_date', 'is not', null)
+        .where('r.amount_minor', 'is not', null)
+        .orderBy('r.row_no');
+      q = committed
+        ? q
+            .innerJoin('app.transaction as t', (j) =>
+              j.onRef('t.workspace_id', '=', 'r.workspace_id').onRef('t.id', '=', 'r.transaction_id'),
+            )
+            .where('t.review_state', '=', 'needs_review')
+            .where('t.status', '=', 'posted')
+            .where('t.deleted_at', 'is', null)
+            .where(sql<boolean>`jsonb_typeof(t.categorization->'suggested') is distinct from 'object'`)
+        : q.where('r.status', 'in', ['new', 'probable_duplicate']).where('r.category_id', 'is', null);
+      const rows = (await q.execute()).filter((r) => {
+        const s = r.suggestion as RowSuggestion | null;
+        return !s?.categoryId && !s?.userSet;
+      });
+      if (rows.length === 0) return { updated: 0 };
+      const decisions = await this.categorizeRows(
+        trx,
+        ctx,
+        batchId,
+        batch.ledger_account_id,
+        rows.map((r) => ({
+          date: calendarDate(r.txn_date!),
+          amount: r.amount_minor!,
+          description: r.description ?? '',
+          payee: r.payee_raw,
+          category: null,
+          normalizedDescription: r.normalized_desc ?? '',
+        })),
+        rows.map(() => ({ status: 'new' })),
+      );
+      let updated = 0;
+      for (const [i, s] of decisions) {
+        const row = rows[i]!;
+        if (!s.categoryId) continue;
+        if (committed) {
+          await this.transactions.setCategorization(trx, ctx, row.transaction_id!, {
+            step: s.step,
+            confidence: s.confidence,
+            explanation: s.explanation,
+            ruleId: s.ruleId,
+            suggested: s.suggested,
+            transfer: s.transfer ?? null,
+          });
+        } else {
+          await trx
+            .updateTable('app.import_row')
+            .set({
+              suggestion: JSON.stringify(s),
+              category_id: s.autoApply ? s.categoryId : null,
+              member_id: s.autoApply ? s.memberId : null,
+            })
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('id', '=', row.id)
+            .where('category_id', 'is', null)
+            .execute();
+        }
+        updated++;
+      }
+      return { updated, committed };
+    });
   }
 
   private ctxOf(job: Job): Ctx {
@@ -531,7 +633,11 @@ export class ImportJobs {
         this.categorizer.item(account, {
           id: String(i),
           payee: r.payee ?? (m ? m.displayName : null),
-          payeeKey: (r.payee ? normalizeDescription(r.payee) : r.normalizedDescription) || null,
+          payeeKey:
+            payeeKeyFor(
+              r.payee ? normalizeDescription(r.payee) : r.normalizedDescription,
+              `${r.payee ?? ''} ${r.description}`,
+            ) || null,
           description: r.description,
           rawDescription: r.description,
           amountMinor: r.amount,
@@ -718,7 +824,9 @@ export class ImportJobs {
             matched++;
           } else {
             const suggestion = row.suggestion as RowSuggestion | null;
-            const key = row.normalized_desc ?? '';
+            // The payee: payments to different accounts are different payees (backlog item 11).
+            const lineText = `${row.payee_raw ?? ''} ${row.description ?? ''}`;
+            const key = payeeKeyFor(row.normalized_desc ?? '', lineText);
             const name =
               suggestion?.renamePayee ||
               (suggestion?.merchantId && merchants.get(suggestion.merchantId)) ||
@@ -748,7 +856,8 @@ export class ImportJobs {
                   }
                 : null;
             const memberId = row.member_id ?? (apply && !userSet ? (suggestion?.memberId ?? null) : null);
-            const rowPayeeKey = (row.payee_raw ? normalizeDescription(row.payee_raw) : key) || null;
+            const rowPayeeKey =
+              (row.payee_raw ? payeeKeyFor(normalizeDescription(row.payee_raw), lineText) : key) || null;
             let payeeId = key ? (payees.get(key) ?? null) : null;
             if (key && !payeeId) {
               payeeId = await this.payeeId(trx, ctx, key, name);
@@ -1019,6 +1128,7 @@ export class ImportJobs {
         .execute();
       let voided = 0;
       let restored = 0;
+      let unlearned = 0;
       const kept: { transactionId: string; reason: string }[] = [];
       for (const s of sources) {
         const protection = await this.poster.protection(trx, ctx, s.transaction_id);
@@ -1030,7 +1140,7 @@ export class ImportJobs {
         // with it.
         const current = await trx
           .selectFrom('app.transaction')
-          .select('spec')
+          .select(['spec', 'payee_key', 'categorization'])
           .where('workspace_id', '=', ctx.workspaceId)
           .where('id', '=', s.transaction_id)
           .executeTakeFirst();
@@ -1062,6 +1172,13 @@ export class ImportJobs {
             .where('workspace_id', '=', ctx.workspaceId)
             .where('id', '=', s.transaction_id)
             .execute();
+          // What choosing its category taught the payee goes with it (backlog item 5).
+          const u = await this.categorizer.unlearn(trx, ctx, {
+            transactionId: s.transaction_id,
+            payeeKey: current?.payee_key ?? null,
+            categorization: (current?.categorization ?? null) as StoredCategorization | null,
+          });
+          if (u.history) unlearned++;
           voided++;
           if (protection === 'closed')
             kept.push({ transactionId: s.transaction_id, reason: 'reversed_in_open_period' });
@@ -1140,7 +1257,7 @@ export class ImportJobs {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', batchId)
         .execute();
-      return { voided, restored, kept };
+      return { voided, restored, unlearned, kept };
     });
   }
 

@@ -132,6 +132,7 @@ module "compute" {
   support_email       = var.support_email
 
   billing_mode      = var.billing_mode
+  ai_model_prices   = var.ai_model_prices
   extra_environment = var.extra_environment
 
   services               = var.services

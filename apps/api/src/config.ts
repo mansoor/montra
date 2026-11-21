@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parsePriceOverrides } from '@montra/ai-gateway';
 import {
   assertPrivateKeyFile,
   realFiles,
@@ -209,10 +210,27 @@ const Env = z.object({
    * Local mode: true when this server can reach the user's endpoint (self-hosted edition). False on the
    * hosted service: async AI work is parked for a client on the user's network.
    */
+  /** OPS-04: where a phone app too old for this server is sent for a newer one (the store pages, later). */
+  MOBILE_UPDATE_URL: z.string().url().default('https://github.com/mansoor/montra/releases/latest'),
   AI_LOCAL_DIRECT: z
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /**
+   * Model rates over the built-in table (06 §5), for a provider's price change or a model the table doesn't know: a
+   * JSON object of model id → { "input", "cachedInput", "output" } in USD per million tokens. The gateway reads it
+   * from the environment; checked here so a bad value stops the server at start.
+   */
+  AI_MODEL_PRICES: z
+    .string()
+    .optional()
+    .superRefine((v, c) => {
+      try {
+        parsePriceOverrides(v);
+      } catch (e) {
+        c.addIssue({ code: 'custom', message: (e as Error).message });
+      }
+    }),
 });
 
 export type AppConfig = z.infer<typeof Env>;

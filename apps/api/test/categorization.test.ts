@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
+import pg from 'pg';
 import { Db } from '../src/db/database.js';
 import { Worker } from '../src/jobs/queue.js';
 import { ImportJobs } from '../src/imports/import-jobs.js';
 import { RulesService } from '../src/categorization/rules.service.js';
 import { InsightsService } from '../src/categorization/insights.service.js';
+import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
 const usd = (amount: string) => ({ amount, currency: 'USD' });
@@ -245,6 +247,60 @@ describe('categorization pipeline, review and learning (AI-01..06, UP-02)', () =
   });
 });
 
+describe('undoing an import takes back what it taught (backlog item 5)', () => {
+  it("forgets the payee history and corrections from categories chosen in the import's preview", async () => {
+    const w = await setup('Undo learning');
+    // Read as the database owner: these tables are behind row-level security.
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    const count = async (q: string, key: string) =>
+      (await admin.query(q, [w.ws.id, key])).rows[0].n as number;
+    const learnedFor = (key: string) =>
+      count(
+        'select coalesce(sum(count), 0)::int as n from app.payee_history where workspace_id = $1 and payee_key = $2',
+        key,
+      );
+    const corrections = (key: string) =>
+      count('select count(*)::int as n from app.correction where workspace_id = $1 and payee_key = $2', key);
+    const csv = [
+      'Date,Description,Amount',
+      '2026-10-02,GLORPWAY OUTFITTERS,-42.00',
+      '2026-10-09,GLORPWAY OUTFITTERS,-18.00',
+    ].join('\n');
+    const file = await upload(w.ws.id, 'undo-learning.csv', csv);
+    const batch = (await c.post(w.url('/imports'), { fileId: file.fileId, accountId: w.checking })).body;
+    await drain();
+    const rows = (await c.get(w.url(`/imports/${batch.id}/rows`))).body.data as any[];
+    for (const r of rows)
+      expect(
+        (await c.patch(w.url(`/imports/${batch.id}/rows/${r.id}`), { categoryId: w.cat('Clothing') })).status,
+      ).toBe(200);
+    await c.post(w.url(`/imports/${batch.id}/commit`));
+    await drain();
+    expect((await c.get(w.url(`/imports/${batch.id}`))).body.status).toBe('committed');
+    expect(await learnedFor('GLORPWAY OUTFITTERS')).toBe(2);
+    expect(await corrections('GLORPWAY OUTFITTERS')).toBe(2);
+
+    expect((await c.post(w.url(`/imports/${batch.id}/undo`))).status).toBe(202);
+    await drain();
+    expect((await c.get(w.url(`/imports/${batch.id}`))).body.status).toBe('undone');
+    expect(await learnedFor('GLORPWAY OUTFITTERS')).toBe(0);
+    expect(await corrections('GLORPWAY OUTFITTERS')).toBe(0);
+
+    // The same payee imported again isn't suggested the undone import's category.
+    const again = await upload(
+      w.ws.id,
+      'undo-learning-2.csv',
+      csv.replace('-42.00', '-43.00').replace('-18.00', '-19.00'),
+    );
+    const next = (await c.post(w.url('/imports'), { fileId: again.fileId, accountId: w.checking })).body;
+    await drain();
+    const fresh = (await c.get(w.url(`/imports/${next.id}/rows`))).body.data as any[];
+    expect(fresh.map((r) => r.suggestion?.categoryId ?? null)).not.toContain(w.cat('Clothing'));
+    await admin.end();
+  });
+});
+
 describe('AI settings and audit log (UP-13, AIA-08, AIA-10)', () => {
   let w: Awaited<ReturnType<typeof setup>>;
   beforeAll(async () => {
@@ -276,6 +332,34 @@ describe('AI settings and audit log (UP-13, AIA-08, AIA-10)', () => {
     const test = await c.post(w.url('/ai/settings/test'));
     expect(test.status).toBe(200);
     expect(test.body.ok).toBe(true);
+  });
+
+  it('takes your own key for OpenAI, Gemini and Azure OpenAI; Azure also needs its URL and a deployment', async () => {
+    const v = await setup('BYOK providers');
+    const save = (body: object) => c.patch(v.url('/ai/settings'), body);
+    const problem = async () => (await c.get(v.url('/ai/settings'))).body.problem;
+    for (const provider of ['openai', 'gemini']) {
+      expect((await save({ mode: 'byok', provider })).body.code).toBe('ai.key_required');
+      expect((await save({ mode: 'byok', provider, apiKey: `key-${provider}-5678` })).status).toBe(200);
+      expect(await c.get(v.url('/ai/settings'))).toMatchObject({
+        body: { provider, hasKey: true, keyLast4: '5678', problem: null },
+      });
+    }
+    // Keys are kept per provider: Gemini's key doesn't count for Azure.
+    expect((await save({ mode: 'byok', provider: 'azure_openai', endpoint: null })).body.code).toBe(
+      'ai.endpoint_required',
+    );
+    const azure = { mode: 'byok', provider: 'azure_openai', endpoint: 'https://my-res.openai.azure.com' };
+    expect((await save(azure)).body.code).toBe('ai.model_required');
+    const deployments = { small: 'montra-mini', vision: null, large: null };
+    expect((await save({ ...azure, models: deployments })).body.code).toBe('ai.key_required');
+    expect((await save({ ...azure, models: deployments, apiKey: 'azure-key-9012' })).status).toBe(200);
+    expect(await problem()).toBe(null);
+    // Removing the deployment afterwards leaves AI off with a reason, as removing a key does.
+    expect((await save({ models: { small: null, vision: null, large: null } })).status).toBe(200);
+    expect(await problem()).toBe('azure_incomplete');
+    expect((await save({ clearKey: true })).status).toBe(200);
+    expect(await problem()).toBe('no_key');
   });
 
   it('records AI calls without inputs and lets the user delete them', async () => {

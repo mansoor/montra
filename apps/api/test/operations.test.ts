@@ -9,7 +9,7 @@ import { MAIL_PORT, type MemoryMail } from '../src/mail/mail.service.js';
 import { verifyStripeSignature } from '../src/ops/billing.port.js';
 import { BillingService } from '../src/ops/billing.service.js';
 import { scrubEvent } from '../src/ops/errors.js';
-import { AppVersionInterceptor } from '../src/ops/metrics.js';
+import { AppVersionInterceptor, MIN_PHONE_APP_VERSION } from '../src/ops/metrics.js';
 import { OpsJobs } from '../src/ops/ops-jobs.js';
 import { StatusService, workerStates } from '../src/ops/support.service.js';
 import { OwnershipService } from '../src/data/ownership.service.js';
@@ -684,6 +684,47 @@ describe('notices, status and the app version (OPS-03, OPS-04)', () => {
     expect((await asPhone('android', '1.4.0')).statusCode).toBe(426);
     expect((await staff.get('/v1/me')).status).toBe(200);
     expect((await staff.put('/v1/admin/app-versions', { ios: 'soon', android: '1.0.0' })).status).toBe(400);
+  });
+
+  it("keeps this server's own minimum, and tells a phone before it signs in what it needs (OPS-04)", async () => {
+    // Staff ask for nothing: the server's own minimum still holds.
+    expect((await staff.put('/v1/admin/app-versions', { ios: '0.0.0', android: '0.0.0' })).status).toBe(204);
+    h.app.get(AppVersionInterceptor).forget();
+    const requirements = async (platform: string) => {
+      const res = await h.app.inject({ method: 'GET', url: `/v1/app/requirements?platform=${platform}` });
+      return { status: res.statusCode, body: JSON.parse(res.body) };
+    };
+    expect(await requirements('android')).toEqual({
+      status: 200,
+      body: {
+        platform: 'android',
+        minVersion: MIN_PHONE_APP_VERSION,
+        updateUrl: 'https://github.com/mansoor/montra/releases/latest',
+      },
+    });
+    expect((await requirements('windows')).status).toBe(400);
+    // A phone too old for everything else may still ask where to get a newer app.
+    const oldAsks = await h.app.inject({
+      method: 'GET',
+      url: '/v1/app/requirements?platform=android',
+      headers: { 'x-app-platform': 'android', 'x-app-version': '0.1.0' },
+    });
+    expect(oldAsks.statusCode).toBe(200);
+    const asPhone = (version: string) =>
+      h.app.inject({
+        method: 'GET',
+        url: '/v1/password-policy',
+        headers: { 'x-app-platform': 'android', 'x-app-version': version },
+      });
+    expect((await asPhone('0.4.9')).statusCode).toBe(426);
+    expect((await asPhone(MIN_PHONE_APP_VERSION)).statusCode).toBe(200);
+    // Staff can ask for newer, never older.
+    expect((await staff.put('/v1/admin/app-versions', { ios: '0.0.0', android: '9.1.0' })).status).toBe(204);
+    h.app.get(AppVersionInterceptor).forget();
+    expect((await requirements('android')).body.minVersion).toBe('9.1.0');
+    expect((await requirements('ios')).body.minVersion).toBe(MIN_PHONE_APP_VERSION);
+    expect((await staff.put('/v1/admin/app-versions', { ios: '0.0.0', android: '0.0.0' })).status).toBe(204);
+    h.app.get(AppVersionInterceptor).forget();
   });
 
   it('sets the password policy the gateway enforces, and shows it to anyone (AUTH-02, ADR-0043)', async () => {

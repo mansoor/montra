@@ -54,6 +54,8 @@ export interface EvalReport {
   perCategory: Array<{ label: string; support: number; precision: number; recall: number; f1: number }>;
   /** Isotonic curve fitted on raw confidence, to paste into reference/calibration.ts. */
   suggestedCalibration: CalibrationCurve;
+  /** Each row's raw confidence and whether the answer was right ([raw, 1 | 0]), to fit and check curves offline. */
+  samples: Array<[number, number]>;
 }
 
 const r4 = (n: number) => Number(n.toFixed(4));
@@ -182,5 +184,6 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
     costUsd: Number(store.spentMicroUsd) / 1_000_000,
     perCategory,
     suggestedCalibration: fitIsotonic(samples),
+    samples: samples.map((s) => [s.raw, s.correct ? 1 : 0]),
   };
 }

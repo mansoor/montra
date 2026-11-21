@@ -33,14 +33,15 @@ template text for summaries (graceful degradation, §8).
 | Mode | Adapter | Notes |
 | --- | --- | --- |
 | `builtin` (default) | `AnthropicAdapter` (official `@anthropic-ai/sdk`) using Montra's account, in the workspace's region | Data processing agreement in place. Inputs are not used for training. A second-provider failover route can be configured (OPS-07). |
-| `byok` | `AnthropicAdapter`, `OpenAiAdapter`, `GeminiAdapter`, `AzureOpenAiAdapter` with the **user's key** (KMS-encrypted, never logged) | A disclosure is shown per provider (UP-06). |
-| `local` | `OpenAiCompatibleAdapter` → Ollama / LM Studio / vLLM URL; on-device (mobile) later | The URL is reached from the user's own network. Self-hosted edition: the worker calls it directly. Hosted service: the gateway can't reach the endpoint, so AI work for **async jobs** (import categorization, receipt extraction) is parked as `pending_local` tasks. The next open web or desktop client on the user's network claims them, runs them against the local endpoint and posts the validated results back. Until then, rows go through rules and history, and the rest to the review queue. See [10](10-assumptions.md). |
+| `byok` | `AnthropicAdapter`, or `OpenAiCompatibleAdapter` speaking each provider's chat completions API (OpenAI at api.openai.com with `max_completion_tokens`; Google Gemini at its OpenAI-compatible endpoint; Azure OpenAI at the resource's `/openai/v1` with the key in `api-key` and deployment names as models; any other OpenAI-compatible server), with the **user's key** (KMS-encrypted, never logged) | A disclosure is shown per provider (UP-06). OpenAI and Gemini have default models (`reference/routing.ts`); Azure has only the deployments the user names. |
+| `local` | `OpenAiCompatibleAdapter` → Ollama / LM Studio / vLLM URL; on-device (mobile) later | The URL is reached from the user's own network. Self-hosted edition: the worker calls it directly. Hosted service: the gateway can't reach the endpoint, so AI work for **async jobs** (import categorization, receipt extraction) is parked as `pending_local` tasks. The next open web or desktop client on the user's network claims them, sends each one's ready `chat/completions` body to the local endpoint and posts the answer back. The answer is then used where a provider's would be: the same work run again finds it (by the request's hash, or for row tasks by each item's cache key, whatever the batching) and puts it through the task's schema and checks. A follow-up job runs that work again for the person it was for: an import in preview gets the new suggestions, a committed import's transactions waiting in Review get them as suggestions, and a receipt waiting for its reading is read again. Until then, rows go through rules and history, and the rest to the review queue. A request is parked once while it waits or its answer lasts (7 days). See [10](10-assumptions.md). |
 | `off` | `NullAdapter` | Every task returns `{ ok:false, reason:'off' }`. |
 
-A mode that is on but can't run (BYOK with no key saved, local with no URL, builtin with no provider on this
-server) also gets the `NullAdapter`. `AiRuntime.problem` and `AiSettingsDto.problem` say which, so the settings
-page warns and features that degrade say the reason and the fix rather than "AI is off". Saving BYOK
-(Anthropic) without a key is refused with `ai.key_required`.
+A mode that is on but can't run (BYOK with no key saved, Azure OpenAI without its resource URL or a deployment,
+local with no URL, builtin with no provider on this server) also gets the `NullAdapter`. `AiRuntime.problem` and `AiSettingsDto.problem` say which, so the settings
+page warns and features that degrade say the reason and the fix rather than "AI is off". Saving BYOK with a
+provider that needs a key (all but an OpenAI-compatible server) and none is refused with `ai.key_required`; Azure
+OpenAI without its URL or a deployment with `ai.endpoint_required` or `ai.model_required`.
 
 ## 3. Per-task routing (AIA-02)
 
@@ -105,7 +106,10 @@ A `Minimizer` runs before every provider call:
   account_type, entity_type, category_list_hash)`. Scope is the workspace. A hit skips
   the provider. TTL 90 days, invalidated when the category list changes.
 - Per-workspace monthly AI budget (`ai_settings.monthly_budget_usd`). Costs are
-  computed from token usage × the price table in reference data. At 80%, the gateway
+  computed from token usage × the price table in reference data (`reference/prices.ts`: Anthropic, OpenAI and
+  Gemini rates, dated steps for announced changes, a dated snapshot name priced as its model). The operator sets any
+  model's rate with `AI_MODEL_PRICES` (JSON, USD per million tokens) without a release; a model nobody priced (an
+  Azure deployment name) costs nothing, so a budget can't hold it back. At 80%, the gateway
   routes to cheaper models; at 100%, `reason:'budget'`, and categorization falls back to
   rules and history only. The user sees a banner.
 - Batching and concurrency: up to 8 parallel calls per import, which meets AI-11 (1,000
@@ -115,9 +119,15 @@ A `Minimizer` runs before every provider call:
 ## 6. Confidence calibration
 
 Model-reported confidence is calibrated per provider and model with isotonic regression
-fitted on the benchmark set (§7) and stored in reference data. The review-queue
-threshold (default 0.80) applies to the *calibrated* score, so "accept all above 90%"
-means the same thing whichever provider is used.
+fitted on the benchmark set (§7) and stored in reference data (`reference/calibration.ts`). Each fitted block keeps
+its range of raw scores as a flat level and is smoothed ((right + 1) / (n + 2)), so no score claims 0% or 100%.
+Thresholds apply to the *calibrated* score, so "accept all above 90%" means the same thing whichever provider is used.
+
+There are two (owner, 2026-11-21): the review threshold (default 0.80) for rules, transfers, past transactions,
+the file's own categories and known merchants, and the **AI threshold** (default 0.95) an AI suggestion must meet
+to be applied, on categorized rows and receipt lines. Both are sliders in Settings → AI. Claude Haiku's
+categorizing curve was fitted on the train split on 2026-11-21: it under-states its confidence (ECE 0.140 on the
+test split as reported, 0.011 calibrated), and at 0.95 about nine in ten test rows apply at 99.2% precision.
 
 ## 7. Evaluation (AIA-09)
 

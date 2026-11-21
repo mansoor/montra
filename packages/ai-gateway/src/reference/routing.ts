@@ -2,7 +2,7 @@
  * Per-task routing (AIA-02, 06 §3). Configuration, not code paths: versioned here and overridable per
  * environment (AI_MODEL_SMALL / AI_MODEL_VISION / AI_MODEL_LARGE) and per workspace (ProviderConfig.models).
  */
-import type { Effort, ModelGroup, ProviderConfig, TaskName } from '../types.js';
+import type { Effort, ModelGroup, ProviderConfig, ProviderId, TaskName } from '../types.js';
 
 export interface TaskRoute {
   group: ModelGroup;
@@ -41,12 +41,15 @@ export const DEFAULT_ROUTING: Record<TaskName | 'ping', TaskRoute> = {
   ping: { group: 'small', effort: 'low', batchSize: 1, maxTokens: 200, cacheTtlDays: 0 },
 };
 
-/** Default models per provider and group. */
-const DEFAULT_MODELS: Record<
-  'anthropic' | 'openai_compatible' | 'fake' | 'null',
-  Record<ModelGroup, string>
-> = {
+/**
+ * Default models per provider and group; a workspace can name its own (ProviderConfig.models). OpenAI and Gemini
+ * defaults as of 2026-11-20 (their pricing pages): the low-cost model for row work, a mid-priced one for documents,
+ * a stronger one for summaries. Azure OpenAI has none: its models are the customer's deployment names.
+ */
+const DEFAULT_MODELS: Record<Exclude<ProviderId, 'azure_openai'>, Record<ModelGroup, string>> = {
   anthropic: { small: 'claude-haiku-5-5', vision: 'claude-sonnet-5-5', large: 'claude-opus-5-5' },
+  openai: { small: 'gpt-6-luna', vision: 'gpt-6.1-terra', large: 'gpt-6.2-sol' },
+  gemini: { small: 'gemini-3.5-flash-lite', vision: 'gemini-3.8-flash', large: 'gemini-4-hydrogen' },
   openai_compatible: { small: 'llama3.1', vision: 'llama3.1', large: 'llama3.1' },
   fake: { small: 'fake-small', vision: 'fake-vision', large: 'fake-large' },
   null: { small: 'none', vision: 'none', large: 'none' },
@@ -73,11 +76,13 @@ export function modelFor(
     const fromEnv = env[ENV_KEYS[group]];
     if (fromEnv) return fromEnv;
   }
-  if (cfg.id === 'openai_compatible') {
-    // Local servers usually run one model; fall back to whichever group is configured.
+  if (cfg.id === 'openai_compatible' || cfg.id === 'azure_openai') {
+    // Local servers usually run one model, and an Azure resource may have one deployment; fall back to whichever
+    // group is configured.
     const any = cfg.models?.small ?? cfg.models?.large ?? cfg.models?.vision;
     if (any) return any;
   }
+  if (cfg.id === 'azure_openai') return '';
   return DEFAULT_MODELS[cfg.id][group];
 }
 

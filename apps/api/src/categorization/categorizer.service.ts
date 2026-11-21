@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import { addDays, asCurrencyCode, calendarDate, minorUnits, type CalendarDate } from '@montra/domain';
-import { normalizeDescription } from '@montra/importers';
+import { normalizeDescription, payeeKeyFor } from '@montra/importers';
 import {
   amountBand,
   compileRules,
@@ -65,7 +65,8 @@ export const withoutArchived = (rules: CompiledRule[], archived: ReadonlySet<str
 
 export const payeeKeyOf = (payee: string | null | undefined, description?: string | null): string | null => {
   const key = normalizeDescription(payee || description || '');
-  return key || null;
+  // A payment to an account keeps the account's last four digits (backlog item 11).
+  return payeeKeyFor(key, `${payee ?? ''} ${description ?? ''}`) || null;
 };
 
 export const toDto = (c: StoredCategorization | null | undefined): CategorizationDto | null =>
@@ -375,6 +376,7 @@ export class Categorizer {
       transferMemory: (key) => memory.get(key) ?? [],
       ai,
       threshold: runtime.threshold,
+      aiThreshold: runtime.aiThreshold,
       entityOfCategory: (id) => prepared.categoryById.get(id)?.entityId ?? null,
     });
     await this.bumpRuleHits(trx, ctx, decisions);
@@ -510,6 +512,27 @@ export class Categorizer {
       suggestion = (await this.maybeSuggestRule(trx, ctx, t.payeeKey, t.payee, c.field)) ?? suggestion;
     }
     return { learned, suggestion };
+  }
+
+  /**
+   * Takes back what `learn` counted for a transaction that is gone (an undone import, backlog item 5): its place in
+   * the payee's history (`categorization.learned`) and the corrections it recorded, so they no longer suggest a
+   * category or a rule. A rule already made, or a suggestion already shown, stays.
+   */
+  async unlearn(
+    trx: Trx,
+    ctx: Ctx,
+    t: { transactionId: string; payeeKey: string | null; categorization: StoredCategorization | null },
+  ): Promise<{ history: boolean; corrections: number }> {
+    const l = t.categorization?.learned;
+    const history = Boolean(t.payeeKey && l);
+    if (t.payeeKey && l) await this.bumpHistory(trx, ctx, t.payeeKey, l.band, l.categoryId, l.memberId, -1);
+    const gone = await trx
+      .deleteFrom('app.correction')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('transaction_id', '=', t.transactionId)
+      .executeTakeFirst();
+    return { history, corrections: Number(gone.numDeletedRows) };
   }
 
   private async bumpHistory(

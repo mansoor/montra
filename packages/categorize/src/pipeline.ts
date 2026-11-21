@@ -153,7 +153,8 @@ function decide(w: Work, deps: PipelineDeps): Decision {
   const tags = new Set<string>(a.tags ?? []);
   if (chosen.step === 'ai') for (const t of w.ai?.tags ?? []) tags.add(t);
 
-  const meetsThreshold = chosen.confidence >= deps.threshold;
+  const meetsThreshold =
+    chosen.confidence >= (chosen.step === 'ai' ? (deps.aiThreshold ?? deps.threshold) : deps.threshold);
   const autoApply =
     a.markReviewed === true ||
     (chosen.step === 'transfer'
