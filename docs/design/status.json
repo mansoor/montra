@@ -450,7 +450,7 @@
   ],
   "UP-13": [
     "done",
-    "built-in, BYOK, local (OpenAI-compatible) and off"
+    "built-in, BYOK (Anthropic, OpenAI, Google Gemini, Azure OpenAI, any OpenAI-compatible server), local (OpenAI-compatible) and off"
   ],
   "PLT-10": [
     "done",

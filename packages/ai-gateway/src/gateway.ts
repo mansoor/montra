@@ -22,7 +22,7 @@ import {
   type Pseudonym,
 } from './minimize.js';
 import { calibrate } from './reference/calibration.js';
-import { costMicroUsd } from './reference/prices.js';
+import { costMicroUsd, parsePriceOverrides, type ModelPrice } from './reference/prices.js';
 import { DEFAULT_ROUTING, DOWNGRADE_AT, modelFor } from './reference/routing.js';
 import { jsonSchemaOf } from './schema.js';
 import * as categorizeV1 from './tasks/categorize/v1.js';
@@ -104,6 +104,9 @@ export function defaultAdapterFactory(cfg: ProviderConfig): ProviderAdapter {
   switch (cfg.id) {
     case 'anthropic':
       return new AnthropicAdapter(cfg);
+    case 'openai':
+    case 'gemini':
+    case 'azure_openai':
     case 'openai_compatible':
       return new OpenAiCompatibleAdapter(cfg);
     case 'fake':
@@ -212,12 +215,15 @@ export class Gateway implements AiGateway {
   private readonly env: Record<string, string | undefined>;
   private readonly concurrency: number;
   private readonly adapters = new Map<string, ProviderAdapter>();
+  /** AI_MODEL_PRICES: rates set by the operator, over the table's. */
+  private readonly prices: Readonly<Record<string, ModelPrice>>;
 
   constructor(private readonly opts: GatewayOptions = {}) {
     this.factory = opts.adapterFactory ?? defaultAdapterFactory;
     this.now = opts.now ?? (() => new Date());
     this.env = opts.env ?? process.env;
     this.concurrency = opts.concurrency ?? 8;
+    this.prices = parsePriceOverrides(this.env.AI_MODEL_PRICES);
   }
 
   private adapter(cfg: ProviderConfig): ProviderAdapter {
@@ -336,7 +342,10 @@ export class Gateway implements AiGateway {
         ...(ctx.signal ? { signal: ctx.signal } : {}),
       });
       if (res.usage) {
-        const cost = costMicroUsd(res.ok ? res.model : model, res.usage);
+        const cost = costMicroUsd(res.ok ? res.model : model, res.usage, {
+          day: this.now().toISOString().slice(0, 10),
+          overrides: this.prices,
+        });
         meta.tokensIn += res.usage.inputTokens + res.usage.cacheReadTokens + res.usage.cacheWriteTokens;
         meta.tokensOut += res.usage.outputTokens;
         meta.costMicroUsd += cost;

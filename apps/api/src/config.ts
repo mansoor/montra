@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parsePriceOverrides } from '@montra/ai-gateway';
 import {
   assertPrivateKeyFile,
   realFiles,
@@ -213,6 +214,21 @@ const Env = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /**
+   * Model rates over the built-in table (06 §5), for a provider's price change or a model the table doesn't know: a
+   * JSON object of model id → { "input", "cachedInput", "output" } in USD per million tokens. The gateway reads it
+   * from the environment; checked here so a bad value stops the server at start.
+   */
+  AI_MODEL_PRICES: z
+    .string()
+    .optional()
+    .superRefine((v, c) => {
+      try {
+        parsePriceOverrides(v);
+      } catch (e) {
+        c.addIssue({ code: 'custom', message: (e as Error).message });
+      }
+    }),
 });
 
 export type AppConfig = z.infer<typeof Env>;

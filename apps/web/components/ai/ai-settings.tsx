@@ -9,6 +9,9 @@ import {
   AI_MODES,
   budgetPercent,
   formatUsd,
+  BYOK_PROVIDERS,
+  byokNeedsEndpoint,
+  deploymentMissing,
   keyMissing,
   needsEndpoint,
   needsKey,
@@ -39,6 +42,7 @@ export function AiSettings({
   const [settings, setSettings] = useState(initial);
   const [mode, setMode] = useState<AiMode>(initial.mode);
   const [provider, setProvider] = useState(initial.provider);
+  const azure = needsKey(mode) && provider === 'azure_openai';
   const [endpoint, setEndpoint] = useState(initial.endpoint ?? '');
   const [apiKey, setApiKey] = useState('');
   const [models, setModels] = useState({
@@ -84,6 +88,10 @@ export function AiSettings({
     if (!b.ok) return setErrors({ fields: { monthlyBudgetUsd: t('ai.budget_invalid') } });
     if (needsEndpoint(mode) && !endpoint.trim())
       return setErrors({ fields: { endpoint: t('ai.endpoint_required') } });
+    if (azure && !endpoint.trim())
+      return setErrors({ fields: { endpoint: t('ai.azure_endpoint_required') } });
+    if (deploymentMissing(mode, provider, models))
+      return setErrors({ fields: { 'models.small': t('ai.deployment_required') } });
     if (keyMissing(mode, provider, apiKey, settings))
       return setErrors({ fields: { apiKey: t('ai.key_required') } });
     const input: UpdateAiSettingsInput = {
@@ -182,8 +190,11 @@ export function AiSettings({
                     value={provider}
                     onChange={(e) => setProvider(e.target.value as AiSettingsDto['provider'])}
                   >
-                    <option value="anthropic">{t('ai.provider.anthropic')}</option>
-                    <option value="openai_compatible">{t('ai.provider.openai_compatible')}</option>
+                    {BYOK_PROVIDERS.map((p) => (
+                      <option key={p} value={p}>
+                        {t(`ai.provider.${p}`)}
+                      </option>
+                    ))}
                   </select>
                 )}
               </Field>
@@ -221,12 +232,12 @@ export function AiSettings({
               )}
             </>
           )}
-          {(needsEndpoint(mode) || provider === 'openai_compatible') && (
+          {(needsEndpoint(mode) || byokNeedsEndpoint(mode, provider)) && (
             <Field
               id="ai-endpoint"
-              label={t('ai.endpoint')}
+              label={t(azure ? 'ai.azure_endpoint' : 'ai.endpoint')}
               error={errors.fields.endpoint}
-              hint={t('ai.endpoint_hint')}
+              hint={t(azure ? 'ai.azure_endpoint_hint' : 'ai.endpoint_hint')}
               className="sm:col-span-2"
             >
               {(p) => (
@@ -234,7 +245,7 @@ export function AiSettings({
                   {...p}
                   type="url"
                   className="input"
-                  placeholder="http://localhost:11434/v1"
+                  placeholder={azure ? 'https://my-resource.openai.azure.com' : 'http://localhost:11434/v1'}
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
                 />
@@ -250,11 +261,18 @@ export function AiSettings({
       )}
 
       {mode !== 'off' && (
-        <details className="card">
+        // Azure OpenAI needs its deployment names, so they're shown open with it.
+        <details className="card" open={azure || undefined}>
           <summary className="cursor-pointer text-sm font-medium">{t('ai.advanced')}</summary>
           <fieldset className="mt-3 grid gap-3 sm:grid-cols-3" disabled={!isOwner}>
             {(['small', 'vision', 'large'] as const).map((g) => (
-              <Field key={g} id={`ai-model-${g}`} label={t(`ai.model.${g}`)} hint={t('ai.model_hint')}>
+              <Field
+                key={g}
+                id={`ai-model-${g}`}
+                label={t(`ai.model.${g}`)}
+                hint={t(azure ? 'ai.model_hint_azure' : 'ai.model_hint')}
+                error={g === 'small' ? errors.fields['models.small'] : undefined}
+              >
                 {(p) => (
                   <input
                     {...p}
