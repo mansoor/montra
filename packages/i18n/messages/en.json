@@ -486,6 +486,7 @@
   "admin.version_android": "Android",
   "admin.version_ios": "iOS",
   "admin.versions": "Oldest phone app still served",
+  "admin.versions_in_effect": "This server needs at least {server}, so a lower setting has no effect. In effect now (as saved): iOS {ios}, Android {android}.",
   "admin.workspaces": "{count, plural, one {# workspace} other {# workspaces}}",
   "ai.activity.actions": "Actions",
   "ai.activity.confidence": "Confidence",

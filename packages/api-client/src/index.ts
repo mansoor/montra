@@ -201,6 +201,7 @@ import type {
   AdminWorkspaceDto,
   AiAccuracyRowDto,
   AppVersionsDto,
+  AppVersionsStatusDto,
   PasswordPolicyDto,
   BillingDto,
   BillingLinkDto,
@@ -1136,7 +1137,7 @@ export class ApiClient {
     return this.request<void>('POST', `/v1/admin/notices/${enc(id)}/end`);
   }
   adminAppVersions() {
-    return this.request<AppVersionsDto>('GET', '/v1/admin/app-versions');
+    return this.request<AppVersionsStatusDto>('GET', '/v1/admin/app-versions');
   }
   adminSaveAppVersions(input: AppVersionsDto) {
     return this.request<void>('PUT', '/v1/admin/app-versions', input);
@@ -3725,6 +3726,7 @@ export type {
   StaffMemberDto,
   AdminWorkspaceDto,
   AppVersionsDto,
+  AppVersionsStatusDto,
   BillingDto,
   FeatureFlagDto,
   PasswordPolicyDto,

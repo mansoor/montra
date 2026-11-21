@@ -260,6 +260,15 @@ export const AppVersionsDto = z.object({
 export type AppVersionsDto = z.infer<typeof AppVersionsDto>;
 
 /**
+ * What the admin console shows (OPS-04): the minimums staff set, and this server's own floor. A phone below the floor is
+ * asked to update whatever staff set, so the minimum in effect is the later of the two.
+ */
+export const AppVersionsStatusDto = AppVersionsDto.extend({
+  serverMinimum: z.string().regex(/^\d+\.\d+\.\d+$/),
+});
+export type AppVersionsStatusDto = z.infer<typeof AppVersionsStatusDto>;
+
+/**
  * AUTH-02 (ADR-0043): the password policy for the whole service, set in the admin console and enforced by the auth
  * gateway. The length can only rise above Kratos's floor of 12; the score is zxcvbn's 0–4 guessability estimate.
  */
