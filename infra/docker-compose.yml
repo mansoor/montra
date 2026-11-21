@@ -18,7 +18,9 @@ services:
     image: redis:7-alpine
     ports: ['${MONTRA_REDIS_PORT:-6379}:6379']
   minio:
-    image: quay.io/minio/minio:latest
+    # MinIO itself was archived in April 2026 and no longer publishes images; pgsty/minio is a community-maintained
+    # build of it. Pinned, as CI's is (.github/workflows/ci.yml).
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: montra

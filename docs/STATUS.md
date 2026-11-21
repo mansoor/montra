@@ -2255,7 +2255,9 @@ Phase 11 leftovers:
     bucket reported as `refused` or `not_found`;
   - the API with STORAGE_MODE=s3: an upload lands in the bucket and reads back.
 
-  CI's verify job starts MinIO (a step, since a service container can't be given its `server` command) and sets
+  MinIO itself was archived in April 2026 and its images and binaries are gone, so CI and the dev compose file use
+  `pgsty/minio`, a community-maintained build, pinned to RELEASE.2026-08-04T00-00-00Z (the owner's choice).
+  CI's verify job starts it (a step, since a service container can't be given its `server` command) and sets
   S3_TEST_REQUIRED, so there a missing server fails the run rather than skipping. Locally the tests run when
   S3_TEST_ENDPOINT is set (the compose MinIO, port 19000 here) and skip otherwise.
 
