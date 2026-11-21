@@ -79,3 +79,14 @@ variable "image_tag" {
   type        = string
   default     = "bootstrap"
 }
+
+variable "ai_model_prices" {
+  description = "AI model rates over the built-in table, set as AI_MODEL_PRICES: JSON of model id to { input, cachedInput, output } in USD per million tokens. Empty: the table only."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.ai_model_prices == "" || can(jsondecode(var.ai_model_prices))
+    error_message = "ai_model_prices must be empty or a JSON object of model rates."
+  }
+}
