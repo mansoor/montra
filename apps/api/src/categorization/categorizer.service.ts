@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import { addDays, asCurrencyCode, calendarDate, minorUnits, type CalendarDate } from '@montra/domain';
-import { normalizeDescription } from '@montra/importers';
+import { normalizeDescription, payeeKeyFor } from '@montra/importers';
 import {
   amountBand,
   compileRules,
@@ -65,7 +65,8 @@ export const withoutArchived = (rules: CompiledRule[], archived: ReadonlySet<str
 
 export const payeeKeyOf = (payee: string | null | undefined, description?: string | null): string | null => {
   const key = normalizeDescription(payee || description || '');
-  return key || null;
+  // A payment to an account keeps the account's last four digits (backlog item 11).
+  return payeeKeyFor(key, `${payee ?? ''} ${description ?? ''}`) || null;
 };
 
 export const toDto = (c: StoredCategorization | null | undefined): CategorizationDto | null =>

@@ -15,6 +15,7 @@ import {
   normalizeDescription,
   parseAmount,
   payeeDisplayName,
+  payeeKeyFor,
   parseDate,
   readXlsx,
   type DedupeInputRow,
@@ -159,6 +160,39 @@ describe('payees (IMP-10)', () => {
   ])('leaves the merchant %s as %s', (raw, name) => {
     expect(payeeDisplayName(raw)).toBe(name);
     expect(payeeDisplayName(raw)).toBe(displayName(normalizeDescription(raw)));
+  });
+
+  // Backlog item 11: payments to different accounts are different payees; merchants and duplicates are unchanged.
+  it.each([
+    ['ONLINE PAYMENT TO CARD XXXX4321', 'TO ••4321', 'Payment to Card ••4321'],
+    ['ONLINE PAYMENT TO CARD XXXX8765', 'TO ••8765', 'Payment to Card ••8765'],
+    ['ONLINE TRANSFER TO SAV XXXX1111', 'TO SAV ••1111', 'Transfer to Sav ••1111'],
+    [
+      'ONLINE TRANSFER TO CHK ...1234 TRANSACTION#: 12345 10/25',
+      'TO CHK TRANSACTION ••1234',
+      'Transfer to Chk ••1234',
+    ],
+    [
+      'PAYMENT TO CHASE CARD ENDING IN 4321',
+      'PAYMENT TO CHASE ••4321',
+      'Payment to Chase Card Ending In ••4321',
+    ],
+    ['AUTOPAY TO AMEX XXXXX1002', 'AUTOPAY TO AMEX ••1002', 'Autopay To Amex ••1002'],
+    ['TO CARD XXXX4321', 'TO ••4321', 'To Card ••4321'],
+  ])('keys the payment line %s by its account', (raw, key, name) => {
+    const k = payeeKeyFor(normalizeDescription(raw), raw);
+    expect(k).toBe(key);
+    expect(payeeKeyFor(k, raw)).toBe(k);
+    expect(payeeDisplayName(raw, k)).toBe(name);
+  });
+
+  it.each([
+    'POS DEBIT CARD XXXX1234 STARBUCKS SEATTLE WA',
+    'SQ *BLUE BOTTLE 0423 SF CA',
+    'CHASE CREDIT CRD AUTOPAY PPD ID: 4760039224',
+    'ZELLE PAYMENT TO JOHN SMITH 12345',
+  ])('keeps the key of %s', (raw) => {
+    expect(payeeKeyFor(normalizeDescription(raw), raw)).toBe(normalizeDescription(raw));
   });
 });
 

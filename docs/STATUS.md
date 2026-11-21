@@ -282,9 +282,8 @@ finished:
    machine.
 10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
     suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
-11. **Payment lines share a payee key.** The key for "ONLINE PAYMENT TO CARD XXXX4321" is just `TO`, whatever the card,
-    so all such lines share one `app.payee` row and its name is the first one imported. Changing the key would need
-    a migration of payee history and rules.
+11. ~~**Payment lines share a payee key.**~~ Done: a payment or transfer to an account is keyed by its last four
+    digits ("TO ••4321"), and migration 0076 moved what was stored under the shared key (see §7g).
 12. ~~**Patch schemas that fill defaults.**~~ Done: every `Update…` schema now leaves omitted fields out, and
     `packages/schemas/test/patches.test.ts` checks them all.
 13. ~~**Receipt line quantity and unit price**~~ Done: every line shows quantity × unit price = total; quantity 1 at
@@ -2229,6 +2228,24 @@ Phase 11 leftovers:
   - Left: about 12 ms of each row is Node-side work (spec, ledger build, four statements). Bulk posting would cut
     that, but this PC is too loaded to measure it reliably.
   - Tests: DB `ledger.test.ts` (locks and reconciled lines), API `reconciliation.test.ts`, `imports.test.ts`.
+- **Payments to different accounts are different payees** (backlog 11; migration 0076).
+  - Before: the payee normalizer drops masked numbers, which is right for merchants. But it left "ONLINE PAYMENT TO
+    CARD XXXX4321" and "… XXXX8765" with the one key `TO`, sharing a payee, its history, corrections and transfer
+    memory.
+  - New lines: `payeeKeyFor` (@montra/importers) adds the account's last four digits to the payee key: "TO ••4321",
+    "AUTOPAY TO AMEX ••1002". It applies to a line with payment or transfer wording, or one whose key is only
+    "TO"/"FROM", that names a masked number (XXXX, ****, ..., ••) or "ENDING IN dddd". Imports and typed
+    transactions use it; each account gets its own payee row, named as before ("Payment to Card ••4321").
+  - Unchanged: a card purchase that prints the card's own masked number has no payment wording and keeps its merchant
+    key. Duplicate detection still uses `normalizeDescription`, so lines already imported are still recognised.
+  - Migration 0076 re-keys existing transactions the same way, in SQL with the same patterns, and moves along with
+    them: payee history (what each counted, `categorization.learned`), corrections, transfer memory (one count per
+    transfer to the account it went to), and the payee row. Keys already ending in "••dddd" are left, so it can run
+    twice.
+  - Left as they are: rules (they match "payee contains", which still matches), rule suggestions and insights already
+    made, and keys on names (business parties, payslips, expected income, tenants).
+  - Tests: importers `units.test.ts` (keys and names; merchants and an ID-only autopay unchanged), API
+    `payee-keys.test.ts` (an import, a typed payment, the migration and its re-run), `imports.test.ts`.
 
 ---
 
