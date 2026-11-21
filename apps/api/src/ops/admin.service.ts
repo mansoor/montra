@@ -13,6 +13,7 @@ import type {
   AdminWorkspaceDto,
   AiAccuracyRowDto,
   AppVersionsDto,
+  AppVersionsStatusDto,
   PasswordPolicyDto,
   CreateNoticeRequest,
   FeatureFlagDto,
@@ -26,6 +27,7 @@ import type {
 } from '@montra/schemas';
 import { notFound, unprocessable } from '../common/errors.js';
 import { AdminDb, SupportDb } from './staff.js';
+import { MIN_PHONE_APP_VERSION } from './metrics.js';
 import { POLICY_KEYS, readPasswordPolicy } from '../auth-gateway/policy.js';
 import { AI_CEILING_SETTING, readAiCeiling } from '../ai/ai.service.js';
 
@@ -241,11 +243,15 @@ export class AdminService {
     });
   }
 
-  async appVersions(): Promise<AppVersionsDto> {
+  async appVersions(): Promise<AppVersionsStatusDto> {
     return this.db.run(async (trx) => {
       const rows = await trx.selectFrom('app.system_setting').select(['key', 'value']).execute();
       const get = (k: string) => rows.find((r) => r.key === k)?.value ?? '0.0.0';
-      return { ios: get('min_app_version_ios'), android: get('min_app_version_android') };
+      return {
+        ios: get('min_app_version_ios'),
+        android: get('min_app_version_android'),
+        serverMinimum: MIN_PHONE_APP_VERSION,
+      };
     });
   }
 

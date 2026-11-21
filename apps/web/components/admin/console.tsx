@@ -5,12 +5,13 @@ import type {
   AdminSupportRequestDto,
   AdminWorkspaceDto,
   AiCeilingDto,
-  AppVersionsDto,
+  AppVersionsStatusDto,
   PasswordPolicyDto,
   FeatureFlagDto,
   SystemNoticeDto,
 } from '@montra/api-client';
 import Link from 'next/link';
+import { isVersionBelow } from '@montra/domain';
 import { useState } from 'react';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
@@ -495,13 +496,16 @@ export function FlagsPanel({ flags, canChange }: { flags: FeatureFlagDto[]; canC
   );
 }
 
+/** OPS-04: a phone below this server's own minimum is asked to update whatever staff set. */
+const inEffect = (staff: string, server: string) => (isVersionBelow(staff, server) ? server : staff);
+
 export function NoticesPanel({
   notices,
   versions,
   canChange,
 }: {
   notices: (SystemNoticeDto & { showFrom: string })[];
-  versions: AppVersionsDto;
+  versions: AppVersionsStatusDto;
   canChange: boolean;
 }) {
   const { run, busy, message, t } = useAction();
@@ -652,6 +656,13 @@ export function NoticesPanel({
             {t('admin.save')}
           </button>
         )}
+        <p className="w-full text-xs text-muted">
+          {t('admin.versions_in_effect', {
+            server: versions.serverMinimum,
+            ios: inEffect(versions.ios, versions.serverMinimum),
+            android: inEffect(versions.android, versions.serverMinimum),
+          })}
+        </p>
       </form>
       <StatusLine message={message} />
     </section>
