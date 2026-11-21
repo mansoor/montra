@@ -121,8 +121,32 @@ export interface GatewayStore {
   recordEvent(e: AiEventRecord): Promise<void>;
   /** Adds to this month's spend (kept apart from the deletable audit log). */
   addUsage(costMicroUsd: bigint, calls: number): Promise<void>;
-  /** Local mode on the hosted service: park the minimized request for a client on the user's network. */
-  parkLocal?(task: TaskName, input: unknown): Promise<void>;
+  /**
+   * Local mode on the hosted service: park the minimized request for a client on the user's network. The same
+   * `inputHash` is parked once while it is waiting or answered.
+   */
+  parkLocal?(task: TaskName, request: LocalRequest): Promise<void>;
+  /** The client's answer to a parked request with this hash, if one came back (06 §2). */
+  localAnswer?(task: TaskName, inputHash: string): Promise<LocalAnswer | null>;
+  /** Answers to parked row-task requests that hold any of these item cache keys. */
+  localAnswersFor?(task: TaskName, itemKeys: readonly string[]): Promise<LocalAnswer[]>;
+}
+
+/** A request parked for a local client: ready to send to its OpenAI-compatible `chat/completions`. */
+export interface LocalRequest {
+  inputHash: string;
+  /** The chat-completions body ({ model, messages, response_format, ... }); never holds images. */
+  body: Record<string, unknown>;
+  /** Row tasks: the cache key of each wire item, in wire order (i0, i1, ...). */
+  itemKeys?: readonly string[];
+}
+
+/** A local client's answer to a parked request. */
+export interface LocalAnswer {
+  output: unknown;
+  model: string;
+  /** Row tasks: the cache key of each wire item the request held, in wire order. */
+  itemKeys: readonly string[] | null;
 }
 
 export interface AiContext {

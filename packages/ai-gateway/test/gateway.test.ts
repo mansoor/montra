@@ -275,7 +275,80 @@ describe('categorize', () => {
     );
     expect(res).toMatchObject({ ok: false, reason: 'pending_local' });
     expect(store.parked).toHaveLength(1);
-    expect(JSON.stringify(store.parked[0]!.input)).not.toContain('1234');
+    expect(JSON.stringify(store.parked[0]!.request)).not.toContain('1234');
+  });
+
+  it('parks a chat-completions body once, and uses the answer item by item however the next run batches', async () => {
+    const adapter = new Scripted('openai_compatible', () => {
+      throw new Error('must not be called');
+    });
+    const gw = createGateway({ adapterFactory: () => adapter, env: {} });
+    const store = new MemoryStore();
+    const local = ctxOf(store, {
+      mode: 'local',
+      provider: { id: 'openai_compatible', models: { small: 'llama3.1' } },
+      parkLocal: true,
+    });
+    const opts = { categories: CATS, members: [] };
+    const both = [item('a', 'SHELL OIL'), item('b', 'BLUE BOTTLE CAFE')];
+    expect(await gw.categorize(both, opts, local)).toMatchObject({ ok: false, reason: 'pending_local' });
+    // The same request again while it waits: parked once.
+    expect(await gw.categorize(both, opts, local)).toMatchObject({ ok: false, reason: 'pending_local' });
+    expect(store.parked).toHaveLength(1);
+    const body = store.parked[0]!.request.body as { messages: Array<{ role: string }> };
+    expect(body).toMatchObject({
+      model: 'llama3.1',
+      stream: false,
+      response_format: { type: 'json_schema' },
+    });
+    expect(body.messages.map((m) => m.role)).toEqual(['system', 'user']);
+    expect(store.parked[0]!.request.itemKeys).toHaveLength(2);
+
+    // The client answers (c1 = Dining out, c2 = Fuel in the sorted list).
+    const result = (id: string, category: string) => ({
+      id,
+      category,
+      member: null,
+      tags: [],
+      confidence: 0.9,
+      reason: 'from the name',
+      merchant: null,
+    });
+    store.answer(0, { results: [result('i0', 'c2'), result('i1', 'c1')] });
+
+    // The next run holds only the café, so its batch differs from the parked one; its answer is still used.
+    const cafe = await gw.categorize([item('b', 'BLUE BOTTLE CAFE')], opts, local);
+    expect(cafe).toMatchObject({ ok: true, value: [{ id: 'b', categoryId: 'cat-dining' }] });
+    expect(store.parked).toHaveLength(1);
+    expect(store.events.at(-1)).toMatchObject({ outcome: 'ok', model: 'local-model', items: 1 });
+    // Both answers went to the cache, so the full set is answered without the client.
+    const again = await gw.categorize(both, opts, local);
+    expect(again.ok && again.value.map((v) => v.categoryId)).toEqual(['cat-fuel', 'cat-dining']);
+    expect(adapter.calls).toHaveLength(0);
+  });
+
+  it('uses the answer to the same parked request for a single-call task, through its checks', async () => {
+    const adapter = new Scripted('openai_compatible', () => {
+      throw new Error('must not be called');
+    });
+    const gw = createGateway({ adapterFactory: () => adapter, env: {} });
+    const store = new MemoryStore();
+    const local = ctxOf(store, { mode: 'local', provider: { id: 'openai_compatible' }, parkLocal: true });
+    const doc = { pages: ['10/01 COFFEE -4.80'], currency: 'USD' };
+    expect(await gw.extractStatementTable(doc, local)).toMatchObject({ ok: false, reason: 'pending_local' });
+    store.answer(0, { rows: 'not rows' });
+    expect(await gw.extractStatementTable(doc, local)).toMatchObject({ ok: false, reason: 'invalid_output' });
+    store.answer(0, {
+      rows: [{ date: '2026-10-01', description: 'COFFEE', amount: '-4.80', balance: null }],
+      opening: null,
+      closing: null,
+      periodStart: null,
+      periodEnd: null,
+    });
+    const read = await gw.extractStatementTable(doc, local);
+    expect(read).toMatchObject({ ok: true, value: { rows: [{ description: 'COFFEE', amount: '-4.80' }] } });
+    expect(store.parked).toHaveLength(1);
+    expect(adapter.calls).toHaveLength(0);
   });
 });
 

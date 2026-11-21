@@ -10,7 +10,7 @@ import type { z } from 'zod';
 import { AnthropicAdapter } from './adapters/anthropic.js';
 import { FakeAdapter } from './adapters/fake.js';
 import { NullAdapter } from './adapters/null.js';
-import { OpenAiCompatibleAdapter } from './adapters/openai-compatible.js';
+import { chatCompletionBody, OpenAiCompatibleAdapter } from './adapters/openai-compatible.js';
 import { amountBand, roundedAmount } from './bands.js';
 import {
   MASK,
@@ -131,6 +131,8 @@ interface CallSpec<T> {
   eventOutput?: (value: T) => unknown;
   confidence?: (value: T) => number | null;
   items?: number;
+  /** Row tasks: each wire item's cache key, kept with a request parked for a local client. */
+  itemKeys?: readonly string[];
 }
 
 /** Spend observed during one task invocation, so later batches see earlier batches' cost. */
@@ -290,20 +292,36 @@ export class Gateway implements AiGateway {
       await record('budget', null, null);
       return { ok: false, reason: 'budget', detail: 'monthly AI budget reached', meta };
     }
+    const schema = jsonSchemaOf(spec.schema);
     if (ctx.parkLocal) {
-      if (!ctx.store.parkLocal)
-        return { ok: false, reason: 'provider_error', detail: 'local parking unavailable', meta };
-      await ctx.store.parkLocal(spec.task as TaskName, {
-        promptVersion: spec.promptVersion,
-        system: spec.system,
-        context: spec.context ?? null,
-        input: spec.input,
-        schema: jsonSchemaOf(spec.schema),
-      });
-      return { ok: false, reason: 'pending_local', meta };
+      // Local mode on the hosted service (06 §2): a client on the user's network answers parked requests. The
+      // answer to this exact request, once posted, is used here as a provider's would be; until then it's parked.
+      const answer = (await ctx.store.localAnswer?.(spec.task as TaskName, inputHash)) ?? null;
+      if (answer === null) {
+        if (!ctx.store.parkLocal)
+          return { ok: false, reason: 'provider_error', detail: 'local parking unavailable', meta };
+        await ctx.store.parkLocal(spec.task as TaskName, {
+          inputHash,
+          body: chatCompletionBody(
+            {
+              task: spec.task,
+              model: primaryModel,
+              system: spec.system,
+              ...(spec.context ? { context: spec.context } : {}),
+              input: inputText,
+              schema,
+              maxTokens: route.maxTokens,
+            },
+            'json_schema',
+          ),
+          ...(spec.itemKeys ? { itemKeys: spec.itemKeys } : {}),
+        });
+        return { ok: false, reason: 'pending_local', meta };
+      }
+      meta.model = answer.model || primaryModel;
+      return this.finish(spec, meta, answer.output, record);
     }
 
-    const schema = jsonSchemaOf(spec.schema);
     const attempt = async (cfg: ProviderConfig, model: string): Promise<CompletionResponse> => {
       const res = await this.adapter(cfg).complete({
         task: spec.task,
@@ -352,7 +370,17 @@ export class Gateway implements AiGateway {
       await record(res.reason, null, null);
       return { ok: false, reason: res.reason, detail: res.detail, meta };
     }
-    const parsed = spec.schema.safeParse(res.json);
+    return this.finish(spec, meta, res.json, record);
+  }
+
+  /** Validates a provider's (or a local client's) JSON with the task's schema and checks, and records the event. */
+  private async finish<T>(
+    spec: CallSpec<T>,
+    meta: AiMeta,
+    json: unknown,
+    record: (outcome: 'ok' | 'invalid_output', output: unknown, confidence: number | null) => Promise<void>,
+  ): Promise<{ ok: true; value: T; meta: AiMeta } | Fail> {
+    const parsed = spec.schema.safeParse(json);
     const value = parsed.success
       ? spec.validate(parsed.data as never, { provider: meta.provider, model: meta.model })
       : null;
@@ -434,16 +462,58 @@ export class Gateway implements AiGateway {
       });
     }
 
+    const fresh = new Map<string, R>();
+    let answered = 0;
+    // 1b. Local mode on the hosted service (06 §2): answers a client posted for earlier parked requests, taken item
+    // by item through their cache keys, so a run that batches the items differently still uses them.
+    if (ctx.parkLocal && ctx.store.localAnswersFor) {
+      const open = new Set(unique.filter((k) => !cached.has(k)));
+      const answers = open.size ? await ctx.store.localAnswersFor(task, [...open]) : [];
+      for (const a of answers) {
+        const parsed = args.schema.safeParse(a.output);
+        if (!parsed.success || !a.itemKeys) continue;
+        const ans = { provider: ctx.provider.id, model: a.model || model };
+        let used = 0;
+        for (const r of args.resultsOf(parsed.data as never)) {
+          const j = /^i(\d+)$/.exec(r.id);
+          const k = j ? a.itemKeys[Number(j[1])] : undefined;
+          if (!k || !open.has(k)) continue;
+          const v = args.fromWire(r as never, ans);
+          if (v === null) continue;
+          open.delete(k);
+          fresh.set(k, v);
+          used++;
+          answered++;
+          if (route.cacheTtlDays > 0) await ctx.store.cachePut(task, k, v, ans.model, route.cacheTtlDays);
+        }
+        if (used > 0)
+          await ctx.store.recordEvent({
+            task,
+            provider: ctx.provider.id,
+            model: ans.model,
+            promptVersion: args.promptVersion,
+            inputHash: sha256(stableJson(a.itemKeys)),
+            outcome: 'ok',
+            output: null,
+            confidence: null,
+            items: used,
+            latencyMs: 0,
+            tokensIn: 0,
+            tokensOut: 0,
+            costMicroUsd: 0n,
+            ...(ctx.subject ? { subject: ctx.subject } : {}),
+          });
+      }
+    }
+
     // 2. Misses, deduplicated by key, in batches
-    const missKeys = unique.filter((k) => !cached.has(k));
+    const missKeys = unique.filter((k) => !cached.has(k) && !fresh.has(k));
     const firstIndex = new Map<string, number>();
     keys.forEach((k, i) => {
       if (!firstIndex.has(k)) firstIndex.set(k, i);
     });
     const batches = chunk(missKeys, route.batchSize);
     let failure: Fail | null = null;
-    let answered = 0;
-    const fresh = new Map<string, R>();
     await mapLimit(batches, this.concurrency, async (batch) => {
       const wire = batch.map((k, j) => args.toWire(args.items[firstIndex.get(k)!]!, `i${j}`));
       const res = await this.callProvider<Map<string, R>>(
@@ -455,6 +525,7 @@ export class Gateway implements AiGateway {
           input: { items: wire },
           schema: args.schema,
           items: batch.length,
+          itemKeys: batch,
           validate: (parsed: never, ans) => {
             const byWire = new Map<string, R>();
             for (const r of args.resultsOf(parsed)) {
