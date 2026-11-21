@@ -114,6 +114,20 @@ describe('API client', () => {
     expect(headers['x-app-platform']).toBe('ios');
   });
 
+  it('asks what this server needs of the app, before signing in (OPS-04)', async () => {
+    const { f, calls } = fakeFetch(() => ({
+      status: 200,
+      body: {
+        platform: 'android',
+        minVersion: '0.6.0',
+        updateUrl: 'https://github.com/mansoor/montra/releases/latest',
+      },
+    }));
+    const api = createApi({ baseUrl: 'http://api', token: async () => null, fetch: f });
+    expect(await api.appRequirements('android')).toMatchObject({ minVersion: '0.6.0' });
+    expect(calls[0]!.url).toBe('http://api/v1/app/requirements?platform=android');
+  });
+
   it('reports network failures as offline', async () => {
     const api = createApi({
       baseUrl: 'http://api',

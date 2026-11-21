@@ -263,6 +263,17 @@ export type AppVersionsDto = z.infer<typeof AppVersionsDto>;
  * AUTH-02 (ADR-0043): the password policy for the whole service, set in the admin console and enforced by the auth
  * gateway. The length can only rise above Kratos's floor of 12; the score is zxcvbn's 0–4 guessability estimate.
  */
+/**
+ * OPS-04: what a phone app needs to use this server (public, so the app can check before signing in): the oldest
+ * version it serves on that platform, and where to get a newer one.
+ */
+export const AppRequirementsDto = z.object({
+  platform: z.enum(['ios', 'android']),
+  minVersion: z.string(),
+  updateUrl: z.string(),
+});
+export type AppRequirementsDto = z.infer<typeof AppRequirementsDto>;
+
 export const PasswordPolicyDto = z.object({
   minLength: z.number().int().min(12).max(64),
   minScore: z.number().int().min(0).max(4),
