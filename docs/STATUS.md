@@ -276,8 +276,10 @@ finished:
 8. **Camera library:** the camera spike uses `expo-camera`. Moving to `react-native-vision-camera`
    (frame processors, ML Kit / VisionKit edge detection) is the Phase 5 option, decided by the spike. ADR-0009
    stays _proposed_ until the spike runs on devices.
-9. **Commit speed:** an import commit takes about 11 ms per row, so 5,000 rows take about a minute
-   (with a progress bar). Bulk posting would speed it up later.
+9. **Commit speed:** an import commit takes about 11–16 ms per row (on the owner's busy dev PC), so 5,000 rows take
+   a minute or more (with a progress bar). The case where it grew with the square of the rows is fixed (migration
+   0075, see §7g). Bulk posting (fewer statements per row) would speed it up further; judge it on CI or a quiet
+   machine.
 10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
     suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
 11. **Payment lines share a payee key.** The key for "ONLINE PAYMENT TO CARD XXXX4321" is just `TO`, whatever the card,
@@ -2214,6 +2216,19 @@ Phase 11 leftovers:
   - Not changed: deleting a single transaction by hand still keeps what it taught.
   - Tests: API `categorization.test.ts` (choose in preview, commit, undo: history and corrections gone, and the next
     import of the payee isn't suggested the undone category).
+- **Import commits no longer slow down with their size** (backlog 9; migration 0075).
+  - The posting guard (`app.guard_posting`) looked up its journal entry by `coalesce(new.…, old.…)`. PL/pgSQL plans
+    that once per session. When the journal had been analyzed while small (a new install, a test database), the
+    planner chose a sequential scan and kept it while the import added entries. Each posting then scanned every
+    earlier entry of the batch, with the row-level-security check on each.
+  - Measured on such a database for 1,000 rows: 1.07 million `entity_access` calls and 31 s, now 47,000 calls and
+    15 s. 2,000 rows went from 97 s to 34 s, and 5,000 rows take 82 s (16 ms a row), on the owner's busy dev PC. The
+    guard now looks the entry up by its key in plain variables; its checks are unchanged.
+  - Not reproduced on a fresh or well-used database, where the planner picks the index anyway. So there is no test
+    for the slowdown itself; a ratio test didn't fail against the old guard and was dropped.
+  - Left: about 12 ms of each row is Node-side work (spec, ledger build, four statements). Bulk posting would cut
+    that, but this PC is too loaded to measure it reliably.
+  - Tests: DB `ledger.test.ts` (locks and reconciled lines), API `reconciliation.test.ts`, `imports.test.ts`.
 
 ---
 
