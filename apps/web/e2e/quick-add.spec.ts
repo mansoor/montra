@@ -27,7 +27,7 @@ test('adds a transaction from a sentence and suggests a category in the editor',
 
   // Back to the form; the editor suggests a category for an uncategorized coffee. A 99% threshold keeps
   // the pipeline from auto-applying it, so the entry is saved uncategorized with the suggestion pending.
-  await setAi(page, { threshold: 99 });
+  await setAi(page, { threshold: 99, aiThreshold: 99 });
   await nav(page, 'Transactions');
   await page.locator('#qa-amount').fill('4.75');
   await page.locator('#qa-payee').fill('Starbucks');

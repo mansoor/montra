@@ -51,6 +51,7 @@ export function AiSettings({
     large: initial.models.large ?? '',
   });
   const [threshold, setThreshold] = useState(percent(initial.threshold));
+  const [aiThreshold, setAiThreshold] = useState(percent(initial.aiThreshold));
   const [budget, setBudget] = useState(
     initial.monthlyBudgetUsd === null ? '' : String(initial.monthlyBudgetUsd),
   );
@@ -100,6 +101,7 @@ export function AiSettings({
       endpoint: endpoint.trim() || null,
       models: { small: models.small || null, vision: models.vision || null, large: models.large || null },
       threshold: thresholdFromPercent(threshold),
+      aiThreshold: thresholdFromPercent(aiThreshold),
       monthlyBudgetUsd: b.value,
       allowDocumentsToLlm: allowDocs,
       allowReceiptImagesToLlm: allowReceipts,
@@ -304,6 +306,21 @@ export function AiSettings({
             className="w-full"
           />
           <p className="mt-1 text-xs text-muted">{t('ai.threshold_hint')}</p>
+        </div>
+        <div>
+          <label htmlFor="ai-ai-threshold" className="field-label">
+            {t('ai.ai_threshold', { percent: aiThreshold })}
+          </label>
+          <input
+            id="ai-ai-threshold"
+            type="range"
+            min={50}
+            max={99}
+            value={aiThreshold}
+            onChange={(e) => setAiThreshold(Number(e.target.value))}
+            className="w-full"
+          />
+          <p className="mt-1 text-xs text-muted">{t('ai.ai_threshold_hint')}</p>
         </div>
         <Field
           id="ai-budget"

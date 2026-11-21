@@ -375,6 +375,7 @@ export class Categorizer {
       transferMemory: (key) => memory.get(key) ?? [],
       ai,
       threshold: runtime.threshold,
+      aiThreshold: runtime.aiThreshold,
       entityOfCategory: (id) => prepared.categoryById.get(id)?.entityId ?? null,
     });
     await this.bumpRuleHits(trx, ctx, decisions);

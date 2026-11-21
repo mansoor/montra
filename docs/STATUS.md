@@ -233,13 +233,14 @@ finished:
   - PLT-02, PLT-04, PLT-07, IMP-02, BAK-10: mobile behaviour on iOS and Android devices, plus the
     Maestro flows.
   - AUTH-01, NFR-02: run against a live Kratos (`docker compose --profile auth`).
-  - AIA-09, AI-11: **measured on 2026-11-03** with `claude-haiku-5-5` on the 1,056-row test split. Accuracy
-    was 86.7% (target ≥ 85%), macro-F1 0.873, 26.4 s for the whole split, and $0.04. Calibration is off
-    (ECE 0.111): refit the Anthropic curve on the train split. Rerun with:
+  - AIA-09, AI-11: **measured on 2026-11-21** with `claude-haiku-5-5`. Accuracy was 97.3% on the 1,056-row test
+    split (86.7% on 2026-11-03; target ≥ 85%), macro-F1 0.972, about 44 s for the split in 10 calls, and $0.05.
+    Calibration is refit on the train split (ECE 0.011 on the test split, from 0.140; see §7g). Rerun with:
     ```bash
     pnpm --filter @montra/ai-gateway eval -- --provider anthropic --split test
     ```
-    The `--` is now handled; before that fix, the options were silently ignored.
+    Reports (in `eval/reports/`, not committed) now keep each row's raw score and outcome, so a curve can be fitted
+    and checked offline.
 
 - **Finished by a later phase, as planned:**
   - AIA-01: a monthly summary and a budget recommendation by AI.
@@ -2186,6 +2187,22 @@ Phase 11 leftovers:
   - Tests: gateway `adapters.test.ts` (each provider's URL, auth, token field and cached usage), `units.test.ts`
     (defaults, dated prices, snapshots, overrides), API `categorization.test.ts` (keys and Azure's URL and
     deployment), web `phase3.test.ts`.
+- **AI confidence refit, and an AI threshold of its own** (AIA-09; owner, 2026-11-21; no migration).
+  - Measured: Claude Haiku categorizing the benchmark is right 97.3% of the time on both splits but under-states its
+    confidence. ECE was 0.140 on the test split as reported. Total cost $0.39 across four runs.
+  - The fit kept too little: `fitIsotonic` drew lines between block midpoints, so a wide block of right answers
+    became a slope. Now each block keeps its range of raw scores as a flat level, adjacent blocks with the closest
+    levels merge down to 6, and levels are smoothed so none is 0% or 100%. The curve fitted on the train split has
+    ECE 0.011 on the test split.
+  - Honest scores are high, so the owner chose a separate **AI threshold**, default 95%, beside the review
+    threshold, which stays at 80% for rules, transfers, past transactions, file categories and merchants. At 95%,
+    89.6% of test rows apply at 99.2% precision; before, at 80%, 78.8% applied at 100%. It applies to categorized
+    rows and to receipt lines. It's a second slider in Settings → AI (`aiThreshold`; a workspace's saved value
+    wins).
+  - The fake provider's keyword matches now score 0.97 rather than 0.9, as a calibrated provider's sure answers do,
+    so tests and e2e behave as before. e2e that send everything to Review set both thresholds to 99%.
+  - Tests: gateway `units.test.ts` (the curve, the fit's flat blocks and smoothing), API categorization, imports,
+    receipts and bank-feed suites.
 
 ---
 

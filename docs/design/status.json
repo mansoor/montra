@@ -378,7 +378,7 @@
   ],
   "AIA-09": [
     "done",
-    "benchmark v1 (5,280 labelled rows) and eval harness; claude-haiku-5-5 on the 1,056-row test split: 86.7% accuracy (target ≥ 85%), macro-F1 0.873 (2026-11-03)"
+    "benchmark v1 (5,280 labelled rows) and eval harness; claude-haiku-5-5 on the 1,056-row test split: 97.3% accuracy (target ≥ 85%), macro-F1 0.972, calibrated ECE 0.011 (2026-11-21)"
   ],
   "AIA-10": [
     "done",
@@ -398,7 +398,7 @@
   ],
   "AI-03": [
     "done",
-    "threshold on calibrated confidence; auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
+    "thresholds on calibrated confidence (review 80%, AI 95%); auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
   ],
   "AI-04": [
     "done",
@@ -426,7 +426,7 @@
   ],
   "AI-11": [
     "done",
-    "real provider categorized 1,056 rows in 26.4 s (target < 60 s for 1,000) in 10 batched calls (2026-11-03)"
+    "real provider categorized 1,056 rows in 26.4 s (2026-11-03) and 43.7 s (2026-11-21) (target < 60 s for 1,000) in 10 batched calls"
   ],
   "TXN-06": [
     "done",

@@ -118,8 +118,13 @@ export interface PipelineDeps {
   transferMemory?: (payeeKey: string) => readonly TransferMemory[];
   /** Step 5. Called once with every item still open after step 4; returns suggestions by item id. */
   ai?: (open: readonly PipelineItem[]) => Promise<ReadonlyMap<string, AiSuggestion>>;
-  /** Review threshold on calibrated confidence (default 0.80). */
+  /** Review threshold on calibrated confidence (default 0.80) for rules, transfers, history, files and merchants. */
   threshold: number;
+  /**
+   * The threshold an AI suggestion must meet to be applied (default 0.95; owner, 2026-11-21): the AI's calibrated
+   * scores are high, so it has its own. Defaults to `threshold`.
+   */
+  aiThreshold?: number;
   /** The category an entity's category id belongs to, to fill `entityId` on decisions. */
   entityOfCategory: (categoryId: string) => string | null;
 }

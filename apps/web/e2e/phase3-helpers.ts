@@ -33,7 +33,7 @@ export const nav = (page: Page, name: string) =>
     .click();
 
 /** Settings → AI: optionally change the mode and the review threshold, then save. */
-export async function setAi(page: Page, opts: { mode?: RegExp; threshold?: number }) {
+export async function setAi(page: Page, opts: { mode?: RegExp; threshold?: number; aiThreshold?: number }) {
   // Settings → AI: the AI group under Settings in the menu, then its AI tab.
   await nav(page, 'Settings');
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'AI', exact: true }).click();
@@ -44,6 +44,7 @@ export async function setAi(page: Page, opts: { mode?: RegExp; threshold?: numbe
   await expect(page.getByRole('radiogroup', { name: 'Where AI runs' })).toBeVisible();
   if (opts.mode) await page.getByRole('radio', { name: opts.mode }).check();
   if (opts.threshold !== undefined) await page.locator('#ai-threshold').fill(String(opts.threshold));
+  if (opts.aiThreshold !== undefined) await page.locator('#ai-ai-threshold').fill(String(opts.aiThreshold));
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('AI settings saved.')).toBeVisible();
 }

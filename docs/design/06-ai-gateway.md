@@ -119,9 +119,15 @@ A `Minimizer` runs before every provider call:
 ## 6. Confidence calibration
 
 Model-reported confidence is calibrated per provider and model with isotonic regression
-fitted on the benchmark set (§7) and stored in reference data. The review-queue
-threshold (default 0.80) applies to the *calibrated* score, so "accept all above 90%"
-means the same thing whichever provider is used.
+fitted on the benchmark set (§7) and stored in reference data (`reference/calibration.ts`). Each fitted block keeps
+its range of raw scores as a flat level and is smoothed ((right + 1) / (n + 2)), so no score claims 0% or 100%.
+Thresholds apply to the *calibrated* score, so "accept all above 90%" means the same thing whichever provider is used.
+
+There are two (owner, 2026-11-21): the review threshold (default 0.80) for rules, transfers, past transactions,
+the file's own categories and known merchants, and the **AI threshold** (default 0.95) an AI suggestion must meet
+to be applied, on categorized rows and receipt lines. Both are sliders in Settings → AI. Claude Haiku's
+categorizing curve was fitted on the train split on 2026-11-21: it under-states its confidence (ECE 0.140 on the
+test split as reported, 0.011 calibrated), and at 0.95 about nine in ten test rows apply at 99.2% precision.
 
 ## 7. Evaluation (AIA-09)
 
