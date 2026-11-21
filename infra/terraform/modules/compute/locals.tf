@@ -54,6 +54,8 @@ locals {
     PUSH_MODE         = "expo"
     # The hosted service can't reach a user's own AI endpoint (see apps/api/src/config.ts).
     AI_LOCAL_DIRECT = "false"
+    # A provider's price change or a model the table doesn't know, without a release (06 §5).
+    AI_MODEL_PRICES = var.ai_model_prices
     # Cloudflare, then the load balancer: without this, the API sees the load balancer as every client.
     TRUST_PROXY_HOPS = "2"
   }, var.extra_environment)

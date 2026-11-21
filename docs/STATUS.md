@@ -2261,6 +2261,9 @@ Phase 11 leftovers:
   S3_TEST_REQUIRED, so there a missing server fails the run rather than skipping. Locally the tests run when
   S3_TEST_ENDPOINT is set (the compose MinIO, port 19000 here) and skip otherwise.
 
+- **`AI_MODEL_PRICES` on the hosted service** (no migration). The setting was only in the self-host compose file; the
+  Terraform `ai_model_prices` variable (envs → stack → compute) now sets it on the API and worker, empty by default,
+  checked to be JSON at plan time. The example tfvars show its shape. Not applied anywhere: no `terraform apply`.
 ---
 
 ## 8. Session checklist

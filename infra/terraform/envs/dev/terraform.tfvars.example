@@ -10,3 +10,6 @@ github_repository  = "owner/montra"
 alarm_emails         = ["oncall@montra.example"]
 support_email        = "support@montra.example"
 dmarc_report_address = "dmarc@montra.example"
+
+# AI model rates over the built-in table, for a price change or a model it doesn't know (USD per million tokens).
+# ai_model_prices = "{\"gpt-6-luna\":{\"input\":0.1,\"cachedInput\":0.01,\"output\":0.5}}"
