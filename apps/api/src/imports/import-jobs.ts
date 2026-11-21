@@ -1120,6 +1120,7 @@ export class ImportJobs {
         .execute();
       let voided = 0;
       let restored = 0;
+      let unlearned = 0;
       const kept: { transactionId: string; reason: string }[] = [];
       for (const s of sources) {
         const protection = await this.poster.protection(trx, ctx, s.transaction_id);
@@ -1131,7 +1132,7 @@ export class ImportJobs {
         // with it.
         const current = await trx
           .selectFrom('app.transaction')
-          .select('spec')
+          .select(['spec', 'payee_key', 'categorization'])
           .where('workspace_id', '=', ctx.workspaceId)
           .where('id', '=', s.transaction_id)
           .executeTakeFirst();
@@ -1163,6 +1164,13 @@ export class ImportJobs {
             .where('workspace_id', '=', ctx.workspaceId)
             .where('id', '=', s.transaction_id)
             .execute();
+          // What choosing its category taught the payee goes with it (backlog item 5).
+          const u = await this.categorizer.unlearn(trx, ctx, {
+            transactionId: s.transaction_id,
+            payeeKey: current?.payee_key ?? null,
+            categorization: (current?.categorization ?? null) as StoredCategorization | null,
+          });
+          if (u.history) unlearned++;
           voided++;
           if (protection === 'closed')
             kept.push({ transactionId: s.transaction_id, reason: 'reversed_in_open_period' });
@@ -1241,7 +1249,7 @@ export class ImportJobs {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', batchId)
         .execute();
-      return { voided, restored, kept };
+      return { voided, restored, unlearned, kept };
     });
   }
 
