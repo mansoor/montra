@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
+import pg from 'pg';
 import { Db } from '../src/db/database.js';
 import { Worker } from '../src/jobs/queue.js';
 import { ImportJobs } from '../src/imports/import-jobs.js';
 import { RulesService } from '../src/categorization/rules.service.js';
 import { InsightsService } from '../src/categorization/insights.service.js';
+import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
 const usd = (amount: string) => ({ amount, currency: 'USD' });
@@ -242,6 +244,60 @@ describe('categorization pipeline, review and learning (AI-01..06, UP-02)', () =
     expect(q.body.direction).toBe('out');
     expect(q.body.accountId).toBe(w.checking);
     expect(q.body.date).toBe('2026-10-29');
+  });
+});
+
+describe('undoing an import takes back what it taught (backlog item 5)', () => {
+  it("forgets the payee history and corrections from categories chosen in the import's preview", async () => {
+    const w = await setup('Undo learning');
+    // Read as the database owner: these tables are behind row-level security.
+    const admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    const count = async (q: string, key: string) =>
+      (await admin.query(q, [w.ws.id, key])).rows[0].n as number;
+    const learnedFor = (key: string) =>
+      count(
+        'select coalesce(sum(count), 0)::int as n from app.payee_history where workspace_id = $1 and payee_key = $2',
+        key,
+      );
+    const corrections = (key: string) =>
+      count('select count(*)::int as n from app.correction where workspace_id = $1 and payee_key = $2', key);
+    const csv = [
+      'Date,Description,Amount',
+      '2026-10-02,GLORPWAY OUTFITTERS,-42.00',
+      '2026-10-09,GLORPWAY OUTFITTERS,-18.00',
+    ].join('\n');
+    const file = await upload(w.ws.id, 'undo-learning.csv', csv);
+    const batch = (await c.post(w.url('/imports'), { fileId: file.fileId, accountId: w.checking })).body;
+    await drain();
+    const rows = (await c.get(w.url(`/imports/${batch.id}/rows`))).body.data as any[];
+    for (const r of rows)
+      expect(
+        (await c.patch(w.url(`/imports/${batch.id}/rows/${r.id}`), { categoryId: w.cat('Clothing') })).status,
+      ).toBe(200);
+    await c.post(w.url(`/imports/${batch.id}/commit`));
+    await drain();
+    expect((await c.get(w.url(`/imports/${batch.id}`))).body.status).toBe('committed');
+    expect(await learnedFor('GLORPWAY OUTFITTERS')).toBe(2);
+    expect(await corrections('GLORPWAY OUTFITTERS')).toBe(2);
+
+    expect((await c.post(w.url(`/imports/${batch.id}/undo`))).status).toBe(202);
+    await drain();
+    expect((await c.get(w.url(`/imports/${batch.id}`))).body.status).toBe('undone');
+    expect(await learnedFor('GLORPWAY OUTFITTERS')).toBe(0);
+    expect(await corrections('GLORPWAY OUTFITTERS')).toBe(0);
+
+    // The same payee imported again isn't suggested the undone import's category.
+    const again = await upload(
+      w.ws.id,
+      'undo-learning-2.csv',
+      csv.replace('-42.00', '-43.00').replace('-18.00', '-19.00'),
+    );
+    const next = (await c.post(w.url('/imports'), { fileId: again.fileId, accountId: w.checking })).body;
+    await drain();
+    const fresh = (await c.get(w.url(`/imports/${next.id}/rows`))).body.data as any[];
+    expect(fresh.map((r) => r.suggestion?.categoryId ?? null)).not.toContain(w.cat('Clothing'));
+    await admin.end();
   });
 });
 

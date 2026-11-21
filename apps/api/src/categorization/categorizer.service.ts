@@ -513,6 +513,27 @@ export class Categorizer {
     return { learned, suggestion };
   }
 
+  /**
+   * Takes back what `learn` counted for a transaction that is gone (an undone import, backlog item 5): its place in
+   * the payee's history (`categorization.learned`) and the corrections it recorded, so they no longer suggest a
+   * category or a rule. A rule already made, or a suggestion already shown, stays.
+   */
+  async unlearn(
+    trx: Trx,
+    ctx: Ctx,
+    t: { transactionId: string; payeeKey: string | null; categorization: StoredCategorization | null },
+  ): Promise<{ history: boolean; corrections: number }> {
+    const l = t.categorization?.learned;
+    const history = Boolean(t.payeeKey && l);
+    if (t.payeeKey && l) await this.bumpHistory(trx, ctx, t.payeeKey, l.band, l.categoryId, l.memberId, -1);
+    const gone = await trx
+      .deleteFrom('app.correction')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('transaction_id', '=', t.transactionId)
+      .executeTakeFirst();
+    return { history, corrections: Number(gone.numDeletedRows) };
+  }
+
   private async bumpHistory(
     trx: Trx,
     ctx: Ctx,

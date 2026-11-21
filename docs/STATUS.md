@@ -268,8 +268,8 @@ finished:
    or receipt it was for (see §7g).
 3. ~~**More bring-your-own-key adapters.**~~ Done: OpenAI, Google Gemini and Azure OpenAI (see §7g).
 4. **S3 storage** is only stub-tested; there is no MinIO run in CI.
-5. **Undoing an import** doesn't take back payee history learned from categories picked during that
-   import's preview.
+5. ~~**Undoing an import** doesn't take back payee history.~~ Done: an undo forgets what the import's transactions
+   taught (see §7g).
 6. **Mobile has no React Native Testing Library screen tests.** Pure modules have unit tests; screens rely
    on the export builds and on the Maestro flows, which haven't been run.
 7. ~~**Mobile Home**~~ now shows left to spend and left to assign, like the web.
@@ -2203,6 +2203,17 @@ Phase 11 leftovers:
     so tests and e2e behave as before. e2e that send everything to Review set both thresholds to 99%.
   - Tests: gateway `units.test.ts` (the curve, the fit's flat blocks and smoothing), API categorization, imports,
     receipts and bank-feed suites.
+- **Undoing an import takes back what it taught** (backlog 5; no migration). A category chosen in an import's preview
+  (or later in Review) counts in the payee's history and may record a correction, which feeds rule suggestions.
+  Undoing the import voided its transactions but kept both, so the same payee was still suggested the undone choice.
+  - Now each transaction the undo voids gives back what it counted (`Categorizer.unlearn`): its place in the payee's
+    history, read from `categorization.learned`, and its corrections. The undo reports how many (`unlearned`).
+  - Left as they are: a rule already made or a rule suggestion already shown; transfers made by hand for the payee
+    (their count can't be restored exactly); transactions the undo keeps (reconciled, carrying a payslip, invoice or
+    bill, or a transfer with another statement's line).
+  - Not changed: deleting a single transaction by hand still keeps what it taught.
+  - Tests: API `categorization.test.ts` (choose in preview, commit, undo: history and corrections gone, and the next
+    import of the payee isn't suggested the undone category).
 
 ---
 
