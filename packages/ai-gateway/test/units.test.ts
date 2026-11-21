@@ -5,6 +5,7 @@ import {
   calibrate,
   costMicroUsd,
   fitIsotonic,
+  parsePriceOverrides,
   maskText,
   minimizeDate,
   minimizeText,
@@ -172,6 +173,51 @@ describe('prices and routing', () => {
     expect(modelFor({ id: 'anthropic', models: { small: 'y' } }, 'small', { AI_MODEL_SMALL: 'x' })).toBe('y');
     expect(modelFor({ id: 'openai_compatible', models: { small: 'qwen2.5' } }, 'large', {})).toBe('qwen2.5');
     expect(modelFor({ id: 'openai_compatible' }, 'small', {})).toBe('llama3.1');
+    // Your own key (backlog item 3): defaults for OpenAI and Gemini; Azure has only the deployments it's given.
+    expect(modelFor({ id: 'openai' }, 'small', {})).toBe('gpt-6-luna');
+    expect(modelFor({ id: 'gemini' }, 'vision', {})).toBe('gemini-3.8-flash');
+    expect(modelFor({ id: 'openai' }, 'small', { AI_MODEL_SMALL: 'x' })).toBe('gpt-6-luna');
+    expect(modelFor({ id: 'azure_openai', models: { large: 'my-deploy' } }, 'small', {})).toBe('my-deploy');
+    expect(modelFor({ id: 'azure_openai' }, 'small', {})).toBe('');
+  });
+
+  it('prices OpenAI and Gemini, by the day for announced changes, a snapshot as its model', () => {
+    const usage = {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheWriteTokens: 0,
+    };
+    // gpt-6-luna: 0.10 in, 0.01 cached, 0.50 out.
+    expect(costMicroUsd('gpt-6-luna', usage)).toBe(610_000n);
+    expect(costMicroUsd('gpt-6-luna-2026-09-30', usage)).toBe(610_000n);
+    // gemini-4-argon doubles on 1 December 2026; gemini-3.8-flash on 1 January 2027.
+    expect(costMicroUsd('gemini-4-argon', usage, { day: '2026-11-30' })).toBe(12_100_000n);
+    expect(costMicroUsd('gemini-4-argon', usage, { day: '2026-12-01' })).toBe(24_200_000n);
+    expect(costMicroUsd('gemini-3.8-flash', usage, { day: '2026-12-31' })).toBe(4_575_000n);
+    expect(costMicroUsd('gemini-3.8-flash', usage, { day: '2027-01-01' })).toBe(9_150_000n);
+    // A deployment name the table can't know costs nothing.
+    expect(costMicroUsd('my-azure-deployment', usage)).toBe(0n);
+  });
+
+  it('takes rates from AI_MODEL_PRICES over the table, and refuses a bad setting', () => {
+    const overrides = parsePriceOverrides(
+      '{"gpt-6-luna":{"input":0.2,"output":1},"my-azure-deployment":{"input":1,"cachedInput":0.1,"output":4}}',
+    );
+    const usage = {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheWriteTokens: 0,
+    };
+    expect(costMicroUsd('gpt-6-luna', usage, { overrides })).toBe(1_400_000n);
+    expect(costMicroUsd('my-azure-deployment', usage, { overrides })).toBe(5_100_000n);
+    expect(parsePriceOverrides(undefined)).toEqual({});
+    expect(parsePriceOverrides('  ')).toEqual({});
+    expect(() => parsePriceOverrides('{bad')).toThrow('not JSON');
+    expect(() => parsePriceOverrides('[1]')).toThrow('must be an object');
+    expect(() => parsePriceOverrides('{"m":{"input":"1","output":2}}')).toThrow('m.input');
+    expect(() => parsePriceOverrides('{"m":{"input":1,"output":-2}}')).toThrow('m.output');
   });
 });
 

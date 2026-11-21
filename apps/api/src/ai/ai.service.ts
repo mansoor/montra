@@ -14,7 +14,14 @@ import {
   type TaskName,
 } from '@montra/ai-gateway';
 import { aiAlertPct, aiLimitMicroUsd, aiUsedShare } from '@montra/domain';
-import type { AiDisclosureDto, AiProblem, AiSettingsDto, UpdateAiSettingsRequest } from '@montra/schemas';
+import {
+  providerNeedsEndpoint,
+  providerNeedsKey,
+  type AiDisclosureDto,
+  type AiProblem,
+  type AiSettingsDto,
+  type UpdateAiSettingsRequest,
+} from '@montra/schemas';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
@@ -30,7 +37,7 @@ type AiProvider = NonNullable<StoredSettings['provider']>;
 
 /** Stored in `workspace.ai_settings` (03 §1). The BYOK key lives encrypted in `ai_credential`. */
 interface StoredSettings {
-  provider?: 'anthropic' | 'openai_compatible';
+  provider?: AiSettingsDto['provider'];
   endpoint?: string | null;
   models?: { small?: string | null; vision?: string | null; large?: string | null };
   threshold?: number;
@@ -103,6 +110,8 @@ export const AI_DISCLOSURES: AiDisclosureDto[] = [
 export const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
   no_key: 'AI is set to use your own API key, but no key is saved. Add one in Settings → AI.',
   no_endpoint: 'AI is set to a local model, but no model URL is saved. Add one in Settings → AI.',
+  azure_incomplete:
+    'AI is set to Azure OpenAI, but its resource URL or a deployment name is missing. Add them in Settings → AI.',
   not_configured: "Built-in AI isn't set up on this server. Choose another mode in Settings → AI.",
 };
 
@@ -238,8 +247,9 @@ export class AiService {
     if (mode === 'local') return s.endpoint ? null : 'no_endpoint';
     if (mode === 'byok') {
       const provider = s.provider ?? 'anthropic';
-      if (provider !== 'anthropic') return null;
-      return (await this.hasKey(trx, ctx, provider)) ? null : 'no_key';
+      if (providerNeedsKey(provider) && !(await this.hasKey(trx, ctx, provider))) return 'no_key';
+      if (provider === 'azure_openai' && (!s.endpoint || !hasModel(s))) return 'azure_incomplete';
+      return null;
     }
     const id = this.config.AI_PROVIDER;
     if (id === 'null') return 'not_configured';
@@ -287,8 +297,11 @@ export class AiService {
     const apiKey = cred
       ? await this.crypto.decrypt(trx, ctx.workspaceId, `ai_credential.${provider}`, cred.key_enc)
       : null;
-    if (!apiKey && provider === 'anthropic') return { id: 'null' };
-    return { id: provider, apiKey: apiKey ?? undefined, baseUrl: s.endpoint ?? undefined, models };
+    if (!apiKey && providerNeedsKey(provider)) return { id: 'null' };
+    if (provider === 'azure_openai' && (!s.endpoint || !hasModel(s))) return { id: 'null' };
+    // OpenAI and Gemini are reached at their own APIs; a URL saved for another provider isn't theirs.
+    const baseUrl = providerNeedsEndpoint(provider) || provider === 'anthropic' ? s.endpoint : null;
+    return { id: provider, apiKey: apiKey ?? undefined, baseUrl: baseUrl ?? undefined, models };
   }
 
   /**
@@ -624,7 +637,18 @@ export class AiService {
     }
     // Saving "your own key" without one would quietly turn every AI feature off. Removing the key (clearKey on
     // its own) is still allowed; the settings page then says what's missing.
-    if (req.mode === 'byok' && provider === 'anthropic' && !req.apiKey) {
+    // Azure OpenAI is reached at the customer's resource, by their deployment names: without them it can't run.
+    if (req.mode === 'byok' && provider === 'azure_openai') {
+      if (!s.endpoint)
+        throw new AppError(422, 'ai.endpoint_required', 'Enter your Azure OpenAI resource URL', [
+          { path: 'endpoint', message: 'Enter your Azure OpenAI resource URL' },
+        ]);
+      if (!hasModel(s))
+        throw new AppError(422, 'ai.model_required', 'Enter the name of at least one deployment', [
+          { path: 'models.small', message: 'Enter the name of at least one deployment' },
+        ]);
+    }
+    if (req.mode === 'byok' && providerNeedsKey(provider) && !req.apiKey) {
       if (!(await this.hasKey(trx, ctx, provider))) {
         const message = 'Enter your API key to use your own key';
         throw new AppError(422, 'ai.key_required', message, [{ path: 'apiKey', message }]);
@@ -662,4 +686,9 @@ export class AiService {
 function localAnswerOf(row: { result: unknown; input: unknown; item_keys: string[] | null }): LocalAnswer {
   const model = (row.input as { model?: unknown } | null)?.model;
   return { output: row.result, model: typeof model === 'string' ? model : '', itemKeys: row.item_keys };
+}
+
+/** Whether a model (for Azure OpenAI, a deployment name) is saved for any group. */
+function hasModel(s: StoredSettings): boolean {
+  return Boolean(s.models?.small || s.models?.vision || s.models?.large);
 }

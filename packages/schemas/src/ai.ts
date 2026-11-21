@@ -50,14 +50,25 @@ export type MerchantDto = z.infer<typeof MerchantDto>;
 
 export const AiMode = z.enum(['builtin', 'byok', 'local', 'off']);
 export type AiMode = z.infer<typeof AiMode>;
-export const AiProvider = z.enum(['anthropic', 'openai_compatible']);
+/**
+ * Providers for "your own key" (UP-13, backlog item 3). `openai_compatible` is any other server speaking OpenAI's
+ * chat completions API (and the one local mode uses).
+ */
+export const AiProvider = z.enum(['anthropic', 'openai', 'gemini', 'azure_openai', 'openai_compatible']);
 export type AiProvider = z.infer<typeof AiProvider>;
 
+/** Every provider but an OpenAI-compatible server (which may be the user's own, open one) needs a key. */
+export const providerNeedsKey = (p: AiProvider): boolean => p !== 'openai_compatible';
+/** The URL to reach: an OpenAI-compatible server's, or the Azure OpenAI resource's. */
+export const providerNeedsEndpoint = (p: AiProvider): boolean =>
+  p === 'openai_compatible' || p === 'azure_openai';
+
 /**
- * Why a chosen mode can't run: BYOK with no key saved, local mode with no model URL, or built-in AI that this
- * server has no provider for. Every AI feature answers "off" until it's fixed, so the settings page says so.
+ * Why a chosen mode can't run: BYOK with no key saved, local mode with no model URL, Azure OpenAI without its
+ * resource URL or a deployment name, or built-in AI that this server has no provider for. Every AI feature answers
+ * "off" until it's fixed, so the settings page says so.
  */
-export const AiProblem = z.enum(['no_key', 'no_endpoint', 'not_configured']);
+export const AiProblem = z.enum(['no_key', 'no_endpoint', 'azure_incomplete', 'not_configured']);
 export type AiProblem = z.infer<typeof AiProblem>;
 
 export const AiDisclosureDto = z.object({

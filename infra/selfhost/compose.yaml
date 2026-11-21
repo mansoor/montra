@@ -62,6 +62,7 @@ x-api-environment: &api-environment
   AI_PROVIDER: ${AI_PROVIDER:-anthropic}
   ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
   AI_LOCAL_DIRECT: ${AI_LOCAL_DIRECT:-false}
+  AI_MODEL_PRICES: ${AI_MODEL_PRICES:-}
   SENTRY_DSN_FILE: /run/secrets/sentry_dsn
   METRICS_TOKEN_FILE: /run/secrets/metrics_token
   KRATOS_WEBHOOK_SECRET_FILE: /run/secrets/kratos_webhook_secret

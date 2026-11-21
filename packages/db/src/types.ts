@@ -829,7 +829,7 @@ export interface AiUsageTable {
 
 export interface AiCredentialTable {
   workspace_id: string;
-  provider: 'anthropic' | 'openai_compatible';
+  provider: 'anthropic' | 'openai' | 'gemini' | 'azure_openai' | 'openai_compatible';
   key_enc: Buffer;
   last4: string;
   created_by: string | null;

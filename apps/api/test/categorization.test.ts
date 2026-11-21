@@ -278,6 +278,34 @@ describe('AI settings and audit log (UP-13, AIA-08, AIA-10)', () => {
     expect(test.body.ok).toBe(true);
   });
 
+  it('takes your own key for OpenAI, Gemini and Azure OpenAI; Azure also needs its URL and a deployment', async () => {
+    const v = await setup('BYOK providers');
+    const save = (body: object) => c.patch(v.url('/ai/settings'), body);
+    const problem = async () => (await c.get(v.url('/ai/settings'))).body.problem;
+    for (const provider of ['openai', 'gemini']) {
+      expect((await save({ mode: 'byok', provider })).body.code).toBe('ai.key_required');
+      expect((await save({ mode: 'byok', provider, apiKey: `key-${provider}-5678` })).status).toBe(200);
+      expect(await c.get(v.url('/ai/settings'))).toMatchObject({
+        body: { provider, hasKey: true, keyLast4: '5678', problem: null },
+      });
+    }
+    // Keys are kept per provider: Gemini's key doesn't count for Azure.
+    expect((await save({ mode: 'byok', provider: 'azure_openai', endpoint: null })).body.code).toBe(
+      'ai.endpoint_required',
+    );
+    const azure = { mode: 'byok', provider: 'azure_openai', endpoint: 'https://my-res.openai.azure.com' };
+    expect((await save(azure)).body.code).toBe('ai.model_required');
+    const deployments = { small: 'montra-mini', vision: null, large: null };
+    expect((await save({ ...azure, models: deployments })).body.code).toBe('ai.key_required');
+    expect((await save({ ...azure, models: deployments, apiKey: 'azure-key-9012' })).status).toBe(200);
+    expect(await problem()).toBe(null);
+    // Removing the deployment afterwards leaves AI off with a reason, as removing a key does.
+    expect((await save({ models: { small: null, vision: null, large: null } })).status).toBe(200);
+    expect(await problem()).toBe('azure_incomplete');
+    expect((await save({ clearKey: true })).status).toBe(200);
+    expect(await problem()).toBe('no_key');
+  });
+
   it('records AI calls without inputs and lets the user delete them', async () => {
     await c.post(w.url('/transactions'), {
       date: '2026-10-05',

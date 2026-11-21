@@ -9,7 +9,7 @@ export {
   type GatewayOptions,
 } from './gateway.js';
 export { AnthropicAdapter } from './adapters/anthropic.js';
-export { OpenAiCompatibleAdapter } from './adapters/openai-compatible.js';
+export { chatCompletionsUrl, OpenAiCompatibleAdapter } from './adapters/openai-compatible.js';
 export { NullAdapter } from './adapters/null.js';
 export { FakeAdapter, FAKE_SYNONYMS, fakeMatch } from './adapters/fake.js';
 export { amountBand, roundedAmount } from './bands.js';
@@ -24,7 +24,15 @@ export {
   type Pseudonym,
 } from './minimize.js';
 export { DEFAULT_ROUTING, DOWNGRADE_AT, modelFor, type TaskRoute } from './reference/routing.js';
-export { costMicroUsd, PRICES, type ModelPrice } from './reference/prices.js';
+export {
+  costMicroUsd,
+  parsePriceOverrides,
+  PRICE_SCHEDULES,
+  PRICES,
+  priceOf,
+  type ModelPrice,
+  type PriceStep,
+} from './reference/prices.js';
 export {
   applyCurve,
   CALIBRATION,

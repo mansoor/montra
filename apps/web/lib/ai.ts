@@ -3,13 +3,15 @@
  * AIA-08, AIA-10, TXN-06, AI-08/09): pure helpers for the pages. Numbers shown to users are computed here or by
  * the API, never by a model (AIA-05).
  */
-import type {
-  AiEventDto,
-  AiMode,
-  AiSettingsDto,
-  AiTaskDto,
-  InsightDto,
-  QuickAddDraftDto,
+import {
+  providerNeedsEndpoint,
+  providerNeedsKey,
+  type AiEventDto,
+  type AiMode,
+  type AiSettingsDto,
+  type AiTaskDto,
+  type InsightDto,
+  type QuickAddDraftDto,
 } from '@montra/schemas';
 import type { CreateTransactionInput } from '@montra/api-client';
 import { whole } from './review';
@@ -59,9 +61,32 @@ export const OUTCOME_TONE: Record<AiEventDto['outcome'], Tone> = {
 export const needsKey = (mode: AiMode) => mode === 'byok';
 export const needsEndpoint = (mode: AiMode) => mode === 'local';
 
+/** The providers offered for "your own key", in the order shown. */
+export const BYOK_PROVIDERS = [
+  'anthropic',
+  'openai',
+  'gemini',
+  'azure_openai',
+  'openai_compatible',
+] as const satisfies readonly AiSettingsDto['provider'][];
+
+/** Whether "your own key" with this provider asks for a URL: an OpenAI-compatible server's or the Azure resource's. */
+export const byokNeedsEndpoint = (mode: AiMode, provider: AiSettingsDto['provider']) =>
+  needsKey(mode) && providerNeedsEndpoint(provider);
+
 /**
- * Saving "your own key" with Anthropic and no key typed or saved would quietly turn AI off (the API refuses
- * it too). An OpenAI-compatible server may not need a key.
+ * Azure OpenAI is reached by the customer's deployment names, so "your own key" with it needs at least one (the API
+ * refuses it too).
+ */
+export const deploymentMissing = (
+  mode: AiMode,
+  provider: AiSettingsDto['provider'],
+  models: { small: string; vision: string; large: string },
+) => needsKey(mode) && provider === 'azure_openai' && !(models.small || models.vision || models.large).trim();
+
+/**
+ * Saving "your own key" with a provider that needs one and no key typed or saved would quietly turn AI off (the API
+ * refuses it too). An OpenAI-compatible server may not need a key.
  */
 export const keyMissing = (
   mode: AiMode,
@@ -70,7 +95,7 @@ export const keyMissing = (
   saved: Pick<AiSettingsDto, 'provider' | 'hasKey'>,
 ) =>
   needsKey(mode) &&
-  provider === 'anthropic' &&
+  providerNeedsKey(provider) &&
   !typed.trim() &&
   !(saved.hasKey && saved.provider === provider);
 

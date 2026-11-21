@@ -265,8 +265,7 @@ finished:
    convert pairs on its own yet, even at 0.95: they wait in review.
 2. ~~**Local-mode AI tasks.**~~ Done: a posted answer is used where a provider's would be, and applied to the import
    or receipt it was for (see §7g).
-3. **More bring-your-own-key adapters:** OpenAI, Gemini and Azure. Only Anthropic and OpenAI-compatible
-   endpoints exist.
+3. ~~**More bring-your-own-key adapters.**~~ Done: OpenAI, Google Gemini and Azure OpenAI (see §7g).
 4. **S3 storage** is only stub-tested; there is no MinIO run in CI.
 5. **Undoing an import** doesn't take back payee history learned from categories picked during that
    import's preview.
@@ -2166,6 +2165,27 @@ Phase 11 leftovers:
     local runner.
   - Tests: gateway `gateway.test.ts` (parked once, used item by item across different batching, a single-call task
     through its checks), API `ai-local-results.test.ts` (preview, committed import, receipt).
+- **Your own key with OpenAI, Google Gemini and Azure OpenAI** (backlog 3; UP-13; migration 0074 widens
+  `ai_credential.provider`). Settings → AI → Your own API key lists them beside Anthropic and "Other OpenAI-compatible
+  server".
+  - All three go through `OpenAiCompatibleAdapter`, which now speaks per provider:
+    - OpenAI: api.openai.com/v1, a bearer key, and `max_completion_tokens`, which its reasoning models need.
+    - Gemini: Google's OpenAI-compatible endpoint, a bearer key.
+    - Azure OpenAI: the resource URL + `/openai/v1`, the key in `api-key`, and deployment names as the models.
+
+    Cached prompt tokens now count at the cached rate.
+  - Models: defaults as of 2026-11-20. OpenAI uses gpt-6-luna, gpt-6.1-terra and gpt-6.2-sol; Gemini uses
+    gemini-3.5-flash-lite, gemini-3.8-flash and gemini-4-hydrogen. A workspace can name others. Azure needs at least
+    one deployment, which is used for any group left blank, and its resource URL. Without them, saving is refused, and
+    AI turns off with the `azure_incomplete` problem.
+  - Prices: OpenAI and Gemini rates come from their pricing pages on 2026-11-20. Announced changes are dated steps:
+    gemini-4-argon and gemini-4-carbon double on 1 December, gemini-3.8-flash on 1 January. `AI_MODEL_PRICES` (JSON)
+    sets any model's rate without a release, and a bad value stops the server at start. An unpriced model, such as an
+    Azure deployment name, costs nothing, so a budget can't hold it back until it is priced there.
+  - Not tried against the real services: no keys here. The adapters are tested against stubs of each API.
+  - Tests: gateway `adapters.test.ts` (each provider's URL, auth, token field and cached usage), `units.test.ts`
+    (defaults, dated prices, snapshots, overrides), API `categorization.test.ts` (keys and Azure's URL and
+    deployment), web `phase3.test.ts`.
 
 ---
 

@@ -6,7 +6,12 @@
 import type { ColumnMapping } from '@montra/importers';
 
 export type AiMode = 'builtin' | 'byok' | 'local' | 'off';
-export type ProviderId = 'anthropic' | 'openai_compatible' | 'null' | 'fake';
+/**
+ * Providers. `openai`, `gemini` and `azure_openai` are bring-your-own-key providers spoken to through their
+ * OpenAI-compatible chat completions APIs; `openai_compatible` is any other such server (local models).
+ */
+export type ProviderId =
+  'anthropic' | 'openai' | 'gemini' | 'azure_openai' | 'openai_compatible' | 'null' | 'fake';
 export type TaskName =
   | 'categorize'
   | 'normalize_payees'
@@ -55,7 +60,10 @@ export interface ProviderConfig {
   id: ProviderId;
   /** BYOK key or Montra's key (builtin). Never logged. */
   apiKey?: string;
-  /** OpenAI-compatible base URL (…/v1) for local mode; optional base URL override for Anthropic. */
+  /**
+   * OpenAI-compatible base URL (…/v1) for local mode; the Azure OpenAI resource URL; optional base URL override for
+   * Anthropic. OpenAI and Gemini use their own APIs.
+   */
   baseUrl?: string;
   /** Model override per group; defaults come from the routing table. */
   models?: Partial<Record<ModelGroup, string>>;
