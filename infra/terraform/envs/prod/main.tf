@@ -20,7 +20,8 @@ module "stack" {
   support_email               = var.support_email
   dmarc_report_address        = var.dmarc_report_address
 
-  billing_mode = var.billing_mode
+  billing_mode    = var.billing_mode
+  ai_model_prices = var.ai_model_prices
 
   managed_waf_enabled            = var.managed_waf_enabled
   rate_limit_period_seconds      = var.rate_limit_period_seconds

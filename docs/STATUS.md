@@ -2247,6 +2247,9 @@ Phase 11 leftovers:
   - Tests: importers `units.test.ts` (keys and names; merchants and an ID-only autopay unchanged), API
     `payee-keys.test.ts` (an import, a typed payment, the migration and its re-run), `imports.test.ts`.
 
+- **`AI_MODEL_PRICES` on the hosted service** (no migration). The setting was only in the self-host compose file; the
+  Terraform `ai_model_prices` variable (envs → stack → compute) now sets it on the API and worker, empty by default,
+  checked to be JSON at plan time. The example tfvars show its shape. Not applied anywhere: no `terraform apply`.
 ---
 
 ## 8. Session checklist
