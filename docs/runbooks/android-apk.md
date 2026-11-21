@@ -21,6 +21,14 @@ through EAS (`eas.json`, the Mobile workflow).
 
 To build again, for a new `develop` or another address, merge `develop` into the branch or change the file, and push.
 
+## Publish it as a release
+
+Add `MONTRA_PUBLISH_RELEASE=true` to `.github/android-apk.env` and each build also publishes the APK as the repository's
+**latest** GitHub release, which is where the app's "Get the update" button points (`MOBILE_UPDATE_URL`, OPS-04). The
+release is named `android-<branch>-<app version>-dev.N` after the `develop` tag the branch was built from, and its notes
+give the APK's SHA-256 and the PRs merged since the last release. The repository is public, so so is the release: turn
+this on only for one branch at a time, and only for a build that's fine for anyone to download.
+
 ## The computer it talks to
 
 - **The API must listen on the network,** not only on `localhost`. The local servers do.

@@ -2287,6 +2287,16 @@ Phase 11 leftovers:
   - Android reaches a plain-http model only in builds that allow cleartext traffic (the LAN build, whose API is http
     too). A production build needs the model over https. The cleartext policy is unchanged.
   - Tests: mobile `local-ai.test.ts`.
+- **APK releases publish themselves, and the admin console shows the app minimum in effect** (OPS-04; no migration).
+  - The "Android APK" workflow publishes the APK as the repository's latest GitHub release when the branch's
+    `.github/android-apk.env` has `MONTRA_PUBLISH_RELEASE=true`; `android-apk/lan` has it. The release is
+    `android-<branch>-<app version>-dev.N`, after the develop tag it was built from (plus the run number when that
+    release exists already), with the APK's SHA-256 and GitHub's list of merged PRs. The phone's "Get the update"
+    points there, so it no longer depends on someone publishing by hand.
+  - The workflow's token can now write contents (for the release); checkout no longer leaves it in `.git/config`.
+  - `GET /v1/admin/app-versions` adds `serverMinimum`. Under the per-platform fields the admin console says the
+    server's own minimum and the minimum in effect for each platform, since a lower staff setting has no effect.
+  - Tests: API `operations.test.ts`. The workflow step was dry-run locally with a stub `gh`.
 ---
 
 ## 8. Session checklist

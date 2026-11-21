@@ -2,13 +2,15 @@ name: Android APK
 
 # A standalone Android app for a phone on a local network: debug-signed, never for a store. Pushing a branch under
 # `android-apk/` builds it with the settings in `.github/android-apk.env` on that branch, and attaches the APK to the run.
-# See docs/runbooks/android-apk.md.
+# With MONTRA_PUBLISH_RELEASE=true in that file, it also publishes the APK as this repository's latest GitHub release,
+# where the app's "Get the update" button points (OPS-04). See docs/runbooks/android-apk.md.
 on:
   push:
     branches: ['android-apk/**']
 
 permissions:
-  contents: read
+  # Publishing the release needs write; the build itself only reads.
+  contents: write
 
 concurrency:
   group: android-apk-${{ github.ref }}
@@ -20,6 +22,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The release is named after the develop tag the branch is built from, so the tags are needed.
+          fetch-depth: 0
+          # The token can write (for the release), so it isn't left in .git/config for install scripts to find.
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -36,7 +43,7 @@ jobs:
             echo "::error::Add .github/android-apk.env with MONTRA_API_URL (see docs/runbooks/android-apk.md)"
             exit 1
           fi
-          grep -E '^(MONTRA_API_URL|MONTRA_WEB_URL|MONTRA_AUTH_MODE)=' .github/android-apk.env | tee -a "$GITHUB_ENV"
+          grep -E '^(MONTRA_API_URL|MONTRA_WEB_URL|MONTRA_AUTH_MODE|MONTRA_PUBLISH_RELEASE)=' .github/android-apk.env | tee -a "$GITHUB_ENV"
           grep -q '^MONTRA_API_URL=' .github/android-apk.env || { echo "::error::MONTRA_API_URL is missing"; exit 1; }
       - name: Generate the Android project
         working-directory: apps/mobile
@@ -50,3 +57,37 @@ jobs:
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Publish it as the latest release
+        if: env.MONTRA_PUBLISH_RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version=$(grep -oP "^\s*version: '\K[^']+" apps/mobile/app.config.ts | head -1)
+          [ -n "$version" ] || { echo "::error::No version in apps/mobile/app.config.ts"; exit 1; }
+          flavor=$(echo "${BRANCH#android-apk/}" | tr -c 'a-zA-Z0-9.\n' '-')
+          dev=$(git describe --tags --abbrev=0 --match 'v*-dev.*' HEAD 2>/dev/null || true)
+          build=${dev##*-}
+          [ -n "$dev" ] || build="run.${GITHUB_RUN_NUMBER}"
+          tag="android-${flavor}-${version}-${build}"
+          # A second build from the same develop (a changed address, say) gets its own release.
+          if gh release view "$tag" >/dev/null 2>&1; then tag="${tag}-${GITHUB_RUN_NUMBER}"; fi
+          apk="montra-android-${version}-${flavor}.apk"
+          cp apps/mobile/android/app/build/outputs/apk/release/*.apk "$apk"
+          sum=$(sha256sum "$apk" | cut -d' ' -f1)
+          auth="production sign-in"
+          [ "${MONTRA_AUTH_MODE:-}" = "dev" ] && auth="development sign-in"
+          cat > notes.md <<NOTES
+          Montra for Android ${version}, built from \`develop\` at ${dev:-an untagged commit} (commit ${GITHUB_SHA::7} on \`${BRANCH}\`).
+
+          **This is a ${flavor} test build.** It talks only to the Montra server it was built for and uses ${auth}, so it isn't useful anywhere else. It is published here because the app's "Get the update" button (OPS-04) points to this repository's latest release.
+
+          Install: uninstall any older Montra app first, then open the APK on the phone (allow installing from this source when Android asks).
+
+          SHA-256 of \`${apk}\`: \`${sum}\`
+          NOTES
+          gh release create "$tag" "$apk" --target "$GITHUB_SHA" --latest \
+            --title "Montra for Android ${version} (${flavor} test build, ${build})" \
+            --notes-file notes.md --generate-notes
+          echo "Published $tag" >> "$GITHUB_STEP_SUMMARY"

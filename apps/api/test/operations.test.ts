@@ -690,6 +690,12 @@ describe('notices, status and the app version (OPS-03, OPS-04)', () => {
     // Staff ask for nothing: the server's own minimum still holds.
     expect((await staff.put('/v1/admin/app-versions', { ios: '0.0.0', android: '0.0.0' })).status).toBe(204);
     h.app.get(AppVersionInterceptor).forget();
+    // The admin console sees the floor alongside what staff set, so it can show what's really in effect.
+    expect((await staff.get('/v1/admin/app-versions')).body).toEqual({
+      ios: '0.0.0',
+      android: '0.0.0',
+      serverMinimum: MIN_PHONE_APP_VERSION,
+    });
     const requirements = async (platform: string) => {
       const res = await h.app.inject({ method: 'GET', url: `/v1/app/requirements?platform=${platform}` });
       return { status: res.statusCode, body: JSON.parse(res.body) };
