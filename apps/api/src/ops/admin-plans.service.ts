@@ -26,7 +26,8 @@ import type {
   StaffRole,
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { CONFIG, type AppConfig } from '../config.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { entitlementsDto } from './plans.js';
 import { AdminDb } from './staff.js';
 
@@ -54,6 +55,7 @@ export class AdminPlansService {
   constructor(
     @Inject(AdminDb) private readonly db: AdminDb,
     @Inject(MAIL_PORT) private readonly mail: MailPort,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   // ----- Staff (owner) ----------------------------------------------------------------------------
@@ -124,7 +126,14 @@ export class AdminPlansService {
 
   private async tellOwners(to: string[], subject: string, text: string): Promise<void> {
     for (const email of to) {
-      await this.mail.send({ to: email, subject, text, category: 'security' });
+      await this.mail.send(
+        templates.staffNotice({
+          to: email,
+          subject,
+          paragraphs: text.split('\n\n'),
+          url: `${this.config.WEB_URL}/admin`,
+        }),
+      );
     }
   }
 

@@ -19,7 +19,7 @@ import {
 import { AppError, notFound } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { PUSH_PORT, type PushPort } from './push.js';
 import { TextsService } from '../sms/texts.service.js';
 
@@ -439,28 +439,17 @@ export class NotificationsService {
     const oneClick = prefs.unsubscribeToken
       ? `${this.config.API_URL}/v1/unsubscribe?token=${prefs.unsubscribeToken}`
       : null;
-    const lines = [
-      n.body,
-      n.link ? `Open Montra: ${web}${n.link}` : `Open Montra: ${web}`,
-      '',
-      requested || !unsubscribeUrl
-        ? 'You asked for this.'
-        : `Turn off notification emails: ${unsubscribeUrl}`,
-    ];
-    await this.mail.send({
-      to,
-      subject: n.title,
-      text: lines.filter((l, i) => l || i > 0).join('\n'),
-      category: requested ? 'transactional' : 'notification',
-      ...(!requested && oneClick
-        ? {
-            headers: {
-              'List-Unsubscribe': `<${oneClick}>`,
-              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-            },
-          }
-        : {}),
-    });
+    await this.mail.send(
+      templates.notification({
+        to,
+        title: n.title,
+        body: n.body,
+        url: n.link ? `${web}${n.link}` : web,
+        requested,
+        unsubscribeUrl,
+        oneClickUrl: oneClick,
+      }),
+    );
   }
 
   private async forgetDevices(userId: string, tokens: string[]): Promise<void> {

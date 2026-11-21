@@ -26,7 +26,7 @@ import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { AppError, unprocessable } from '../common/errors.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { Plans } from '../ops/plans.js';
 import { ProviderHealth } from '../ops/provider-health.js';
@@ -347,16 +347,14 @@ export class AiService {
       const dollars = (Number(ceiling) / 1e6).toFixed(2);
       this.logger.error(`ai ceiling reached month=${month.slice(0, 7)} ceiling_usd=${dollars}`);
       for (const r of rows) {
-        await this.mail.send({
-          to: r.email,
-          category: 'transactional',
-          subject: 'Montra: built-in AI is stopped for the month',
-          text: [
-            `The service has spent its built-in AI ceiling of $${dollars} for ${month.slice(0, 7)}, so built-in AI is stopped for every workspace until the month ends.`,
-            'Customers fall back as when AI fails: rules categorize transactions, and scans and statements are entered by hand.',
-            'If this is a bug or abuse, find it before raising the ceiling. The ceiling is in the staff console.',
-          ].join('\n\n'),
-        });
+        await this.mail.send(
+          templates.aiCeilingReached({
+            to: r.email,
+            ceiling: `$${dollars}`,
+            month: month.slice(0, 7),
+            url: `${this.config.WEB_URL}/admin`,
+          }),
+        );
       }
     } catch (e) {
       this.logger.error(`ai ceiling alert failed: ${(e as Error).message}`);

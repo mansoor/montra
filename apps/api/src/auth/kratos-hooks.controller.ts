@@ -7,6 +7,7 @@ import { AppError } from '../common/errors.js';
 import { parse } from '../common/zod.js';
 import { Db } from '../db/database.js';
 import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
+import { timeZoneOf } from '../mail/time-zone.js';
 import { AUTH_PORT, type AuthPort } from './auth.js';
 import { KratosAuthAdapter } from './kratos.adapter.js';
 import { TextsService } from '../sms/texts.service.js';
@@ -64,16 +65,17 @@ export class KratosHooksController {
       const to = rows[0]?.email;
       if (!to) return;
       const url = `${this.config.WEB_URL}/settings/security`;
-      await this.mail.send(
-        kind === 'password_changed'
-          ? templates.passwordChanged({ to, at, url })
-          : templates.twoStepChanged({ to, at, url }),
-      );
-      // ADR-0049 §6: by text too, when the person turned that on.
       const { rows: users } = await this.db.run({}, (trx) =>
         sql<{ id: string | null }>`select app.user_id_for_identity(${identityId}) as id`.execute(trx),
       );
       const userId = users[0]?.id;
+      const timeZone = await timeZoneOf(this.db, userId);
+      await this.mail.send(
+        kind === 'password_changed'
+          ? templates.passwordChanged({ to, at, url, timeZone })
+          : templates.twoStepChanged({ to, at, url, timeZone }),
+      );
+      // ADR-0049 §6: by text too, when the person turned that on.
       if (userId) {
         await this.texts.securityAlert(
           userId,

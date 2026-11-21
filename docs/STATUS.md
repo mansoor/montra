@@ -252,7 +252,7 @@ finished:
   - NFR-01: the AWS KMS adapter and TLS.
   - NFR-07: performance; the dashboard target is in Phase 6.
   - NFR-12: load testing.
-  - AUTH-05: email templates.
+  - ~~AUTH-05: email templates.~~ Done: one layout for the API and Kratos (see §7g).
   - AUTH-08: CAPTCHA at the edge.
   - OPS-05: the reference-data admin editor.
   - OPS-06: dependency updates beyond Renovate.
@@ -2297,6 +2297,25 @@ Phase 11 leftovers:
   - `GET /v1/admin/app-versions` adds `serverMinimum`. Under the per-platform fields the admin console says the
     server's own minimum and the minimum in effect for each platform, since a lower staff setting has no effect.
   - Tests: API `operations.test.ts`. The workflow step was dry-run locally with a stub `gh`.
+- **Email templates** (Phase 11 hardening, AUTH-05; no migration). See [`runbooks/email.md`](runbooks/email.md).
+  - Before: the API's emails were built inline at each sender, almost all plain text (only the invite had HTML),
+    with times as raw ISO strings and no common footer. Kratos's had bare HTML of their own.
+  - Now there's one layout (`apps/api/src/mail/layout.ts`): the brand at the top, a card, a button for the main
+    action, a code box, a footer saying why the person got the email, and a text part that says the same thing with
+    every link written out. There are no images, tracking, remote fonts or stylesheets, and every value is escaped.
+  - Every email the API sends is in `apps/api/src/mail/templates.ts` (23 of them), with subjects unchanged. The senders
+    call it, so `SmtpMail` wraps any message still sent without HTML in the layout.
+  - Security alerts give times in the person's own time zone (`app_user.time_zone`), else UTC, always naming the
+    zone. The sign-in pause email stays UTC, since the auth gateway knows only the email address.
+  - An invoice carries the business's name at the top rather than Montra's, and its note is set apart as a quote.
+  - Kratos's recovery and confirmation emails are generated into `infra/kratos/templates` from
+    `apps/api/src/mail/kratos-templates.ts` (`pnpm --filter @montra/api kratos:templates`); a test fails when the files
+    drift.
+  - Checked against Kratos v26.2.0 locally with `scripts/kratos-smoke.mjs` and Mailpit. Every email check passed (arrives,
+    30 minutes stated, code in both bodies, nothing left unfilled, unknown address gets nothing). The recovery hook
+    check failed only because the local API wasn't running with Kratos's webhook secret.
+  - AUTH-05 stays partial: the requirement says an emailed link, and recovery sends a code (an open owner question: "Is an emailed code acceptable for AUTH-05?").
+  - Tests: API `mail-templates.test.ts`, plus the existing tests that read emails.
 ---
 
 ## 8. Session checklist

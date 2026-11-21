@@ -1,7 +1,26 @@
-<p>Hello,</p>
-<p>Please confirm this email address for your Montra account.</p>
-<p>Your confirmation code is:</p>
-<p style="font-size: 24px; font-weight: bold; letter-spacing: 2px">{{ .VerificationCode }}</p>
-<p>You can also <a href="{{ .VerificationURL }}">open this link</a>.</p>
-<p>The code works once and expires in 30 minutes.</p>
-<p>If you didn't create a Montra account, ignore this email.</p>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Confirm your email for Montra</title>
+</head>
+<body style="margin:0;padding:0;background:#faf8f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<div style="display:none;max-height:0;max-width:0;overflow:hidden;opacity:0;mso-hide:all">Your code works once and expires in 30 minutes.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#faf8f4"><tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+<tr><td style="padding:0 4px 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:700;color:#1f5d4c">Montra</td></tr>
+<tr><td style="padding:28px 28px 12px;background:#ffffff;border:1px solid #e6e0d6;border-radius:10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#1c1a17">Please confirm this email address for your Montra account. Your confirmation code:</p>
+<p style="margin:0 0 16px;padding:14px 16px;background:#f2f6f3;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:26px;font-weight:700;letter-spacing:4px;color:#1c1a17;text-align:center">{{ .VerificationCode }}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 20px"><tr><td style="border-radius:6px;background:#1f5d4c"><a href="{{ .VerificationURL }}" style="display:inline-block;padding:11px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:6px">Confirm your email</a></td></tr></table><p style="margin:0 0 16px;font-size:13px;line-height:1.5;color:#5e574e">Or open this link: <a href="{{ .VerificationURL }}" style="color:#1f5d4c;word-break:break-all">{{ .VerificationURL }}</a></p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#1c1a17">The code works once and expires in 30 minutes.</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#1c1a17">If you didn’t create a Montra account, ignore this email.</p>
+</td></tr>
+<tr><td style="padding:16px 4px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#5e574e">You’re getting this because of your Montra account.</td></tr>
+</table>
+</td></tr></table>
+</body>
+</html>

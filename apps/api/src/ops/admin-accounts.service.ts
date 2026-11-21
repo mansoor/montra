@@ -14,8 +14,9 @@ import type {
 } from '@montra/schemas';
 import { AUTH_PORT, type AuthPort } from '../auth/auth.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
+import { CONFIG, type AppConfig } from '../config.js';
 import { OwnershipService } from '../data/ownership.service.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { BILLING_PORT, type BillingPort } from './billing.port.js';
 import { AdminDb } from './staff.js';
 import { ServiceSettings } from './service-settings.js';
@@ -40,6 +41,7 @@ export class AdminAccountsService {
     @Inject(BILLING_PORT) private readonly billing: BillingPort,
     @Inject(OwnershipService) private readonly ownership: OwnershipService,
     @Inject(ServiceSettings) private readonly settings: ServiceSettings,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   private async support(): Promise<string> {
@@ -63,16 +65,7 @@ export class AdminAccountsService {
     if (!person) throw notFound('Account');
     if (person.identity_id) await this.auth.setIdentityActive(person.identity_id, false);
     if (req.kind !== 'legal_hold') {
-      await this.mail.send({
-        to: person.email,
-        category: 'security',
-        subject: 'Your Montra account is suspended',
-        text: [
-          'Your Montra account has been suspended, so you can’t sign in, and workspaces you own are closed for now.',
-          'Nothing has been deleted.',
-          `If you think this is a mistake, write to ${await this.support()}.`,
-        ].join('\n\n'),
-      });
+      await this.mail.send(templates.accountSuspended({ to: person.email, support: await this.support() }));
     }
   }
 
@@ -86,12 +79,9 @@ export class AdminAccountsService {
     });
     if (!person) throw notFound('Suspension');
     if (person.identity_id) await this.auth.setIdentityActive(person.identity_id, true);
-    await this.mail.send({
-      to: person.email,
-      category: 'security',
-      subject: 'Your Montra account is open again',
-      text: 'Your Montra account is no longer suspended. You can sign in, and your workspaces are open as before.',
-    });
+    await this.mail.send(
+      templates.accountRestored({ to: person.email, url: `${this.config.WEB_URL}/sign-in` }),
+    );
   }
 
   // ----- Plans: trials, given plans and coupons -----------------------------------------------------
@@ -241,16 +231,14 @@ export class AdminAccountsService {
         })
         .execute(),
     );
-    await this.mail.send({
-      to: person.email,
-      category: 'security',
-      subject: 'Your Montra account will be deleted',
-      text: [
-        'As you asked, your Montra account is closing. You can’t sign in to the workspaces it owns from now on.',
-        `Everything is deleted for good after 30 days${status.purgeAfter ? `, on ${status.purgeAfter.slice(0, 10)}` : ''}.`,
-        `Changed your mind? Sign in before then and cancel it in Settings → Your data, or write to ${await this.support()}.`,
-      ].join('\n\n'),
-    });
+    await this.mail.send(
+      templates.accountClosing({
+        to: person.email,
+        purgeAfter: status.purgeAfter,
+        support: await this.support(),
+        url: `${this.config.WEB_URL}/sign-in`,
+      }),
+    );
     return { purgeAfter: status.purgeAfter };
   }
 }
