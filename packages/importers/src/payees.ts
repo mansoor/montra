@@ -134,8 +134,10 @@ export function payeeDisplayName(raw: string, key = normalizeDescription(raw)): 
     .trim();
   const m = PAYMENT_LINE.exec(s);
   if (!m) {
-    // A key of only connectors ("TO" from "TO CARD XXXX4321") still names the other side, from the raw text.
-    if (!/^((TO|FROM)( |$))+$/.test(key)) return displayName(key);
+    // A key of only connectors ("TO" from "TO CARD XXXX4321") still names the other side, from the raw text. A payee
+    // key's account digits ("TO ••4321") are the other side's too.
+    const base = key.replace(/ ••\d{4}$/, '');
+    if (!ONLY_CONNECTORS.test(base)) return displayName(key);
     const to = /\b(TO|FROM) (.+)$/.exec(s);
     const name = to ? counterparty(to[2]!) : '';
     return name ? `${displayName(to![1]!)} ${name}` : displayName(key);
@@ -150,6 +152,40 @@ export function payeeDisplayName(raw: string, key = normalizeDescription(raw)): 
   const to = counterparty(rest!);
   const head = lead ? `${lead} ${ACTIONS[action!]}` : displayName(ACTIONS[action!]!);
   return to ? `${head} ${connector!.toLowerCase()} ${to}` : head;
+}
+
+/** Wording of a line that moves money to or from an account rather than paying a merchant. */
+const MOVES_MONEY = /\b(PAYMENT|PMT|PYMT|AUTOPAY|AUTO PAY|TRANSFER|XFER)\b/;
+/** A masked account number ("XXXX4321", "****4321", "...4321") or "ENDING IN 4321": the digits, last four kept. */
+const MASKED_DIGITS = /(?:X{2,}|\*{2,}|\.{2,}|•+)(\d{4,})\b/;
+/** A key of only connectors: "TO CARD XXXX4321" normalizes to "TO". */
+const ONLY_CONNECTORS = /^((TO|FROM)( |$))+$/;
+const ENDING_DIGITS = /\bENDING(?: IN)? (\d{4,})\b/;
+
+/**
+ * The last four digits of the account a payment or transfer line names ("ONLINE PAYMENT TO CARD XXXX4321" → "4321"),
+ * or null: a line with payment or transfer wording, or one whose key is only "TO"/"FROM", and a masked number. A card
+ * purchase that prints the card's own masked number has neither, and keeps its merchant key. Migration 0076 finds the
+ * same with the same patterns in SQL; keep the two in step.
+ */
+export function accountDigitsOf(raw: string, key = ''): string | null {
+  const s = raw.toUpperCase();
+  if (!MOVES_MONEY.test(s) && !ONLY_CONNECTORS.test(key)) return null;
+  const m = MASKED_DIGITS.exec(s) ?? ENDING_DIGITS.exec(s);
+  return m ? m[1]!.slice(-4) : null;
+}
+
+/**
+ * The payee key of a line (backlog item 11): its normalized key, plus " ••4321" when it pays or moves money to an
+ * account named by its last four digits. The normalizer drops masked numbers, which is right for merchants but left
+ * every "ONLINE PAYMENT TO CARD XXXX…" sharing the key "TO", so payments to different cards shared a payee, its
+ * history, its rules and its transfer memory. Only the payee key changes: duplicate detection still uses
+ * `normalizeDescription`, so lines already imported are still recognised.
+ */
+export function payeeKeyFor(key: string, raw: string): string {
+  if (!key) return key;
+  const digits = accountDigitsOf(raw, key);
+  return digits && !key.endsWith(` ••${digits}`) ? `${key} ••${digits}` : key;
 }
 
 /** Trigram set similarity (Jaccard), the same measure Postgres pg_trgm uses, for fuzzy payee matching. */

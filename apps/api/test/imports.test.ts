@@ -240,7 +240,7 @@ describe('other file types and mapping', () => {
     ]);
   });
 
-  it('names payment lines by where the money went, keeping the payee key (IMP-10)', async () => {
+  it('names payment lines by where the money went, a card payment keyed by its last 4 (IMP-10, backlog 11)', async () => {
     const w = await setup();
     const acct = (await c.post(w.url('/accounts'), { name: 'Checking', kind: 'checking' })).body.id;
     const csv = Buffer.from(
@@ -265,7 +265,7 @@ describe('other file types and mapping', () => {
       .run({ workspaceId: w.ws.id, userId: (await c.get('/v1/me')).body.id }, (trx) =>
         trx.selectFrom('app.payee').select('normalized_key').orderBy('normalized_key').execute(),
       );
-    expect(keys.map((k) => k.normalized_key)).toEqual(['CORNER DELI', 'TO', 'TO VISA']);
+    expect(keys.map((k) => k.normalized_key)).toEqual(['CORNER DELI', 'TO ••4321', 'TO VISA']);
   });
 
   it('asks for a mapping when inference is unsure, then re-parses with it (IMP-03)', async () => {

@@ -22,6 +22,7 @@ import {
   normalizeDescription,
   parseAmount,
   payeeDisplayName,
+  payeeKeyFor,
   readTextSheets,
   readXlsx,
   type ColumnMapping,
@@ -632,7 +633,11 @@ export class ImportJobs {
         this.categorizer.item(account, {
           id: String(i),
           payee: r.payee ?? (m ? m.displayName : null),
-          payeeKey: (r.payee ? normalizeDescription(r.payee) : r.normalizedDescription) || null,
+          payeeKey:
+            payeeKeyFor(
+              r.payee ? normalizeDescription(r.payee) : r.normalizedDescription,
+              `${r.payee ?? ''} ${r.description}`,
+            ) || null,
           description: r.description,
           rawDescription: r.description,
           amountMinor: r.amount,
@@ -819,7 +824,9 @@ export class ImportJobs {
             matched++;
           } else {
             const suggestion = row.suggestion as RowSuggestion | null;
-            const key = row.normalized_desc ?? '';
+            // The payee: payments to different accounts are different payees (backlog item 11).
+            const lineText = `${row.payee_raw ?? ''} ${row.description ?? ''}`;
+            const key = payeeKeyFor(row.normalized_desc ?? '', lineText);
             const name =
               suggestion?.renamePayee ||
               (suggestion?.merchantId && merchants.get(suggestion.merchantId)) ||
@@ -849,7 +856,8 @@ export class ImportJobs {
                   }
                 : null;
             const memberId = row.member_id ?? (apply && !userSet ? (suggestion?.memberId ?? null) : null);
-            const rowPayeeKey = (row.payee_raw ? normalizeDescription(row.payee_raw) : key) || null;
+            const rowPayeeKey =
+              (row.payee_raw ? payeeKeyFor(normalizeDescription(row.payee_raw), lineText) : key) || null;
             let payeeId = key ? (payees.get(key) ?? null) : null;
             if (key && !payeeId) {
               payeeId = await this.payeeId(trx, ctx, key, name);
