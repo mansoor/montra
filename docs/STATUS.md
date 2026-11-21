@@ -2247,6 +2247,15 @@ Phase 11 leftovers:
   - Tests: importers `units.test.ts` (keys and names; merchants and an ID-only autopay unchanged), API
     `payee-keys.test.ts` (an import, a typed payment, the migration and its re-run), `imports.test.ts`.
 
+- **The phone answers local AI work too** (06 §2; the follow-up to backlog 2; no migration). With local AI on the
+  hosted service, only an open web page answered the work the server parks for the person's own model.
+  - Now the phone does too, while the app is open and in front (`src/ai/LocalAiRunner.tsx`, `src/features/local-ai.ts`):
+    every 15 s and on coming back to the app, it claims the parked tasks, sends each one's `chat/completions` body to
+    the model, and posts the answer, which the server applies as it does the web's.
+  - Silent: an unreachable model ends the round and is tried again; a 403 stops it.
+  - Android reaches a plain-http model only in builds that allow cleartext traffic (the LAN build, whose API is http
+    too). A production build needs the model over https. The cleartext policy is unchanged.
+  - Tests: mobile `local-ai.test.ts`.
 ---
 
 ## 8. Session checklist

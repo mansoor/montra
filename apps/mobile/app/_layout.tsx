@@ -13,6 +13,7 @@ import { Body, Button, Title, ToastHost } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 import { TwoStep } from '../src/ui/TwoStep';
 import { AccountClosed } from '../src/ui/AccountClosed';
+import { LocalAiRunner } from '../src/ai/LocalAiRunner';
 import { t } from '../src/i18n';
 
 function Gate() {
@@ -134,7 +135,14 @@ function Gate() {
       </Stack.Protected>
     </Stack>
   );
-  return signedIn ? <SyncProvider workspaceId={state.workspace.id}>{stack}</SyncProvider> : stack;
+  return signedIn ? (
+    <SyncProvider workspaceId={state.workspace.id}>
+      {stack}
+      <LocalAiRunner workspaceId={state.workspace.id} />
+    </SyncProvider>
+  ) : (
+    stack
+  );
 }
 
 /**
