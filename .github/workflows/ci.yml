@@ -25,6 +25,12 @@ jobs:
       PGHOST: localhost
       PGUSER: postgres
       PGPASSWORD: postgres
+      # The S3 storage tests run against a real MinIO (apps/api/test/s3-minio.test.ts); required here, so a missing
+      # server fails the run instead of skipping them.
+      S3_TEST_ENDPOINT: http://localhost:9000
+      S3_TEST_ACCESS_KEY: montra
+      S3_TEST_SECRET_KEY: montra-ci-secret
+      S3_TEST_REQUIRED: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -33,6 +39,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # A service container can't be given MinIO's `server` command, so it's started here.
+      - name: Start MinIO for the S3 storage tests
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER="$S3_TEST_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$S3_TEST_SECRET_KEY" \
+            quay.io/minio/minio:latest server /data
+          for i in $(seq 1 30); do curl -sf http://localhost:9000/minio/health/live && exit 0; sleep 1; done
+          docker logs minio; exit 1
       - name: Bootstrap database roles and test databases
         run: |
           for db in montra montra_test montra_test_api; do

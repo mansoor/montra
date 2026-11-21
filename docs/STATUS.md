@@ -267,7 +267,7 @@ finished:
 2. ~~**Local-mode AI tasks.**~~ Done: a posted answer is used where a provider's would be, and applied to the import
    or receipt it was for (see §7g).
 3. ~~**More bring-your-own-key adapters.**~~ Done: OpenAI, Google Gemini and Azure OpenAI (see §7g).
-4. **S3 storage** is only stub-tested; there is no MinIO run in CI.
+4. ~~**S3 storage** is only stub-tested.~~ Done: CI runs it against a real MinIO (see §7g).
 5. ~~**Undoing an import** doesn't take back payee history.~~ Done: an undo forgets what the import's transactions
    taught (see §7g).
 6. **Mobile has no React Native Testing Library screen tests.** Pure modules have unit tests; screens rely
@@ -338,7 +338,7 @@ finished:
 | Verified (automated)                                                                                  | Not yet verified                                                                            |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Ledger invariants, RLS isolation, the DE-10 edit rules                                                | A live Kratos server (sign-up, MFA, recovery emails)                                        |
-| Import corpus (22 layouts), dedupe, undo, reconciliation                                              | S3/MinIO storage                                                                            |
+| Import corpus (22 layouts), dedupe, undo, reconciliation; S3 storage against MinIO                   | A real cloud bucket (AWS S3, Backblaze B2, R2) for files and backups                        |
 | AI pipeline with the fake provider, rules, learning, review, insights                                 | **Real-provider accuracy (≥ 85%) and latency**                                              |
 | Scanned-PDF OCR with real Tesseract                                                                   | Real scanned statements end to end through both workers _(the parts are tested separately)_ |
 | Offline sync: server, engine, and two simulated devices against the real API                          | **Mobile on devices**: SQLCipher, biometrics, camera, share sheet, push, gestures, Maestro  |
@@ -2246,6 +2246,18 @@ Phase 11 leftovers:
     made, and keys on names (business parties, payslips, expected income, tenants).
   - Tests: importers `units.test.ts` (keys and names; merchants and an ID-only autopay unchanged), API
     `payee-keys.test.ts` (an import, a typed payment, the migration and its re-run), `imports.test.ts`.
+- **S3 storage is tested against a real MinIO** (backlog 4; no migration). The in-process fakes check what Montra
+  sends; `apps/api/test/s3-minio.test.ts` checks that a real S3 server takes it, in a bucket of its own that it removes
+  afterwards. It covers:
+  - Montra's own file store (`S3Storage`, STORAGE_MODE=s3): put, get, a 256 KB file streamed from disk and back (as
+    archives are), delete twice, and an unsafe key refused;
+  - your own storage (`S3Destination`): put, a get within and over the size limit, delete, and a wrong key or missing
+    bucket reported as `refused` or `not_found`;
+  - the API with STORAGE_MODE=s3: an upload lands in the bucket and reads back.
+
+  CI's verify job starts MinIO (a step, since a service container can't be given its `server` command) and sets
+  S3_TEST_REQUIRED, so there a missing server fails the run rather than skipping. Locally the tests run when
+  S3_TEST_ENDPOINT is set (the compose MinIO, port 19000 here) and skip otherwise.
 
 ---
 
