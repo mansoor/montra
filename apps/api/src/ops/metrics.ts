@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { sql } from 'kysely';
 import { Counter, Gauge, Histogram, Registry } from 'prom-client';
 import { isVersionBelow } from '@montra/domain';
+import type { AppRequirementsDto } from '@montra/schemas';
 import type { Observable } from 'rxjs';
 import { AppError } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
@@ -158,25 +159,45 @@ export class MetricsService {
 
 const VERSION_CACHE_MS = 60_000;
 
+/**
+ * OPS-04: the oldest phone app this server's API works with. Raise it in the same change that drops or changes
+ * something an older app relies on, so a phone on an older app is sent to update rather than meeting errors. Staff
+ * can ask for a newer one (Settings in the admin console, per platform), never an older one.
+ */
+export const MIN_PHONE_APP_VERSION = '0.5.0';
+
+/** The later of the server's own minimum and the one staff set. */
+const atLeastServers = (staff: string) =>
+  isVersionBelow(staff, MIN_PHONE_APP_VERSION) ? MIN_PHONE_APP_VERSION : staff;
+
 /** OPS-04: too old a phone app gets 426 and shows an update screen. Web requests don't send these headers. */
 @Injectable()
 export class AppVersionInterceptor implements NestInterceptor {
   private cached: { at: number; ios: string; android: string } | null = null;
 
-  constructor(@Inject(Db) private readonly db: Db) {}
+  constructor(
+    @Inject(Db) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: AppConfig,
+  ) {}
 
   private async minimums() {
     if (this.cached && Date.now() - this.cached.at < VERSION_CACHE_MS) return this.cached;
     const rows = await this.db.run({ actorType: 'system' }, (trx) =>
       trx.selectFrom('app.system_setting').select(['key', 'value']).execute(),
     );
-    const get = (k: string) => rows.find((r) => r.key === k)?.value ?? '0.0.0';
+    const get = (k: string) => atLeastServers(rows.find((r) => r.key === k)?.value ?? '0.0.0');
     this.cached = {
       at: Date.now(),
       ios: get('min_app_version_ios'),
       android: get('min_app_version_android'),
     };
     return this.cached;
+  }
+
+  /** What a phone app on `platform` needs: `GET /v1/app/requirements`, before signing in. */
+  async requirements(platform: 'ios' | 'android'): Promise<AppRequirementsDto> {
+    const min = await this.minimums();
+    return { platform, minVersion: min[platform], updateUrl: this.config.MOBILE_UPDATE_URL };
   }
 
   /** For tests, and for right after staff change it in this process. */
@@ -188,7 +209,9 @@ export class AppVersionInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest<FastifyRequest>();
     const version = req.headers['x-app-version'];
     const platform = req.headers['x-app-platform'];
-    if (typeof version === 'string' && (platform === 'ios' || platform === 'android')) {
+    // Where to get a newer app is the one thing a too-old app may still ask.
+    const asksWhere = req.url.startsWith('/v1/app/requirements');
+    if (!asksWhere && typeof version === 'string' && (platform === 'ios' || platform === 'android')) {
       const min = await this.minimums();
       if (isVersionBelow(version, min[platform])) {
         throw new AppError(426, 'app.update_required', 'Please update Montra to keep using it');

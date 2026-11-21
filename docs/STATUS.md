@@ -2264,6 +2264,20 @@ Phase 11 leftovers:
 - **`AI_MODEL_PRICES` on the hosted service** (no migration). The setting was only in the self-host compose file; the
   Terraform `ai_model_prices` variable (envs → stack → compute) now sets it on the API and worker, empty by default,
   checked to be JSON at plan time. The example tfvars show its shape. Not applied anywhere: no `terraform apply`.
+- **The phone checks it's new enough for its server, and sends the person to update** (OPS-04; owner, 2026-11-21; no
+  migration).
+  - Before: a too-old app was refused with 426 only by the staff-set minimums, which default to 0.0.0, so nothing
+    was refused, and a self-hosted server has no staff. The update screen had no way to get a newer app.
+  - Each server version now has its own minimum: `MIN_PHONE_APP_VERSION` in `apps/api/src/ops/metrics.ts`, now
+    0.5.0, the current app. Raise it in the change that drops something older apps rely on. Staff can ask for newer
+    per platform, never older.
+  - `GET /v1/app/requirements?platform=` is public and never refused for the app's version. It gives the minimum and
+    `MOBILE_UPDATE_URL`, a setting that defaults to the project's GitHub releases page (the owner's choice for now,
+    until the stores).
+  - The phone asks on start (before sign-in), on coming back to the app, and after a 426. The update screen says both
+    versions and has "Get the update", which opens the link (https only, else the GitHub releases).
+  - Tests: API `operations.test.ts` (the server's minimum under staff's, the public endpoint, a too-old app still
+    asking), mobile `app-update.test.ts` and `clients.test.ts`.
 ---
 
 ## 8. Session checklist
