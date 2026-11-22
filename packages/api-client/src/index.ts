@@ -4,6 +4,16 @@
  */
 import type { z } from 'zod';
 import type {
+  AdminLogEntryDto,
+  AdminLogPageDto,
+  AdminLogQuery,
+  AdminLogStaffDto,
+  AuditActorType,
+  AuditEntryDto,
+  AuditLogPageDto,
+  AuditLogQuery,
+} from '@montra/schemas';
+import type {
   AddI9DocumentRequest,
   CreatePersonRequest,
   CreateW4Request,
@@ -497,6 +507,16 @@ export type CreateW9Input = z.input<typeof CreateW9Request>;
 export type SaveI9Section1Input = z.input<typeof SaveI9Section1Request>;
 export type SaveI9Section2Input = z.input<typeof SaveI9Section2Request>;
 export type AddI9DocumentInput = z.input<typeof AddI9DocumentRequest>;
+export type {
+  AdminLogEntryDto,
+  AdminLogPageDto,
+  AdminLogQuery,
+  AdminLogStaffDto,
+  AuditActorType,
+  AuditEntryDto,
+  AuditLogPageDto,
+  AuditLogQuery,
+};
 export type { I9Dto, PayrollFileDto, PayrollPersonDto, PersonKind, RevealResponse, W4Dto, W9Dto };
 export type CreatePayScheduleInput = z.input<typeof CreatePayScheduleRequest>;
 export type UpdatePayScheduleInput = z.input<typeof UpdatePayScheduleRequest>;
@@ -1211,6 +1231,10 @@ export class ApiClient {
   adminSaveAiCeiling(input: SaveAiCeilingRequest) {
     return this.request<void>('PUT', '/v1/admin/ai-ceiling', input);
   }
+  /** What staff did (OPS-01), admins and owners. */
+  adminLog(opts: AdminLogQuery = {}) {
+    return this.request<AdminLogPageDto>('GET', `/v1/admin/log${query({ ...opts })}`);
+  }
   adminImportFailures(days: number) {
     return this.request<{ data: ImportFailureRowDto[] }>(
       'GET',
@@ -1782,6 +1806,10 @@ export class ApiClient {
       'GET',
       this.ws(workspaceId, `/ai/events${query({ ...opts })}`),
     );
+  }
+  /** The workspace audit log (NFR-03), owners and admins: newest first, `nextCursor` for the page before. */
+  getAuditLog(workspaceId: string, opts: AuditLogQuery = {}) {
+    return this.request<AuditLogPageDto>('GET', this.ws(workspaceId, `/audit-log${query({ ...opts })}`));
   }
   deleteAiEvent(workspaceId: string, id: string) {
     return this.request<void>('DELETE', this.ws(workspaceId, `/ai/events/${enc(id)}`));

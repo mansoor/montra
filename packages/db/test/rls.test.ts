@@ -555,6 +555,7 @@ describe('staff (ADR-0020)', () => {
       'admin_extend_trial',
       'admin_find_accounts',
       'admin_import_failures',
+      'admin_log_staff',
       'admin_move_subscribers',
       'admin_notify_free_change',
       'admin_owner_emails',
