@@ -71,6 +71,10 @@ jobs:
           build=${dev##*-}
           [ -n "$dev" ] || build="run.${GITHUB_RUN_NUMBER}"
           tag="android-${flavor}-${version}-${build}"
+          # GitHub lists the PRs merged since this branch's last release; left to guess, it lists every PR since #1.
+          prev=$(gh release list --exclude-drafts --limit 100 --json tagName -q "[.[] | select(.tagName | startswith(\"android-${flavor}-\"))][0].tagName // empty")
+          since=()
+          [ -n "$prev" ] && since=(--notes-start-tag "$prev")
           # A second build from the same develop (a changed address, say) gets its own release.
           if gh release view "$tag" >/dev/null 2>&1; then tag="${tag}-${GITHUB_RUN_NUMBER}"; fi
           apk="montra-android-${version}-${flavor}.apk"
@@ -89,5 +93,5 @@ jobs:
           NOTES
           gh release create "$tag" "$apk" --target "$GITHUB_SHA" --latest \
             --title "Montra for Android ${version} (${flavor} test build, ${build})" \
-            --notes-file notes.md --generate-notes
+            --notes-file notes.md --generate-notes "${since[@]}"
           echo "Published $tag" >> "$GITHUB_STEP_SUMMARY"

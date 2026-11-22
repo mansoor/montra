@@ -12,7 +12,7 @@ option. It is open source, so the self-hosted edition can use the same stack. Se
 | AUTH-02 | Minimum length 12, HaveIBeenPwned k-anonymity check (built into Kratos), Argon2id hasher configured, no forced resets. |
 | AUTH-03 | `verification` flow is required. The API rejects financial writes until `email_verified_at` is set (onboarding can show demo data). |
 | AUTH-04 | TOTP + WebAuthn as second factors, 10 lookup-secret recovery codes, SMS only as a fallback (code via the courier). The AAL2 requirement is enforced for owners by default and always for accountant roles. |
-| AUTH-05 | `recovery` flow with a 30-minute one-time link and a neutral response. The API revokes all sessions after a reset and sends a confirmation email. AAL2 is still required. |
+| AUTH-05 | `recovery` flow with a 30-minute one-time emailed code (the owner chose a code over a link on 2026-11-21; a link is AUTH-19, for later) and a neutral response. The API revokes all sessions after a reset and sends a confirmation email. AAL2 is still required. |
 | AUTH-06 | Recovery-code login. Without codes: a support identity check with a 72-hour hold, implemented as a `pending_mfa_reset` record and alerts. |
 | AUTH-07 | Kratos sessions with rotating refresh on mobile, idle timeout 30 min on web (configurable), and a device list in `session_device`. Mobile biometric unlock gates the stored token. |
 | AUTH-08 | Kratos rate limits plus a Cloudflare WAF rule, progressive delay after 5 failures, Turnstile CAPTCHA after repeated failures, and a new-device email alert. |
@@ -51,7 +51,10 @@ backstop.
 `audit_log` is append-only (the app role has no `UPDATE`/`DELETE` grant). It records
 every create/update/delete on financial records (with a field diff), sign-ins, MFA
 changes, exports, support access, invites and AI provider changes. Users see the security
-subset (AUTH-12) and owners see the full log.
+subset (AUTH-12) and owners and admins see the full log in Settings → Your data → Audit log
+(`GET /v1/workspaces/:id/audit-log`, paged by id, filtered by person, record, action and day; the ledger's own
+journal, posting, ledger-account and tag rows are hidden there unless asked for). What staff do in the console is in
+`admin_log`, which admins and owners read in the console's Staff log (`GET /v1/admin/log`).
 
 ## 5. Privacy (NFR-05/06, UP-06)
 

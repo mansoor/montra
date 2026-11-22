@@ -590,7 +590,7 @@ The recommendation is a TypeScript monorepo: Next.js on web, React Native (Expo)
 | AUTH-02 | Passwords: minimum 12 characters (operators may require more, and a minimum strength score), checked against known-breached lists, no forced periodic resets (NIST SP 800-63B), stored with Argon2id. A strength meter shows as people type. | M |
 | AUTH-03 | Email verification before any financial data is added. | M |
 | AUTH-04 | MFA: authenticator app (TOTP) and passkeys; SMS only as a fallback; 10 single-use recovery codes. MFA on by default for workspace owners, admins, partners and anyone who can see business books, always required for accountant access, and the owner can require it of everyone; someone required to use it is led to set it up. | M |
-| AUTH-05 | Forgot password: single-use emailed link valid 30 minutes; the same message is shown whether or not the email exists; MFA still required after reset; all other sessions signed out; a confirmation email sent. | M |
+| AUTH-05 | Forgot password: single-use emailed code valid 30 minutes (owner, 2026-11-21: a code, not a link; a link is AUTH-19); the same message is shown whether or not the email exists; MFA still required after reset; all other sessions signed out; a confirmation email sent. | M |
 | AUTH-06 | Lost MFA device: sign in with a recovery code; otherwise an identity check with a 72-hour waiting period and alerts to the account email. | M |
 | AUTH-07 | Sessions: rotating refresh tokens, idle timeout (web default 30 minutes, adjustable), device list with remote sign-out, biometric unlock on mobile. | M |
 | AUTH-08 | Brute-force protection: rate limits, progressive delays after 5 failed attempts, CAPTCHA after repeated failures, new-device sign-in alerts. | M |
@@ -604,6 +604,7 @@ The recommendation is a TypeScript monorepo: Next.js on web, React Native (Expo)
 | AUTH-16 | An invite can name the family member it is for, and accepting it links that person to the login, so each person appears once in the Family list and Sharing. Their own payslips become visible to them. | S |
 | AUTH-17 | A member role, for children or staff, that adds and edits transactions, receipts and trips, and submits staff spending claims, in the books it is given, with no access to settings, rules, imports or sharing. | S |
 | AUTH-18 | The phone app shows each role only what it may do: a viewer, or books shared read-only, show without the add, edit, review or capture actions; a member records transactions, receipts and trips but gets no setup (categories, budgets, goals, payslips, imports, business settings); a whole-workspace backup is offered to owners and admins only. | S |
+| AUTH-19 | Forgot password by an emailed link, as well as or instead of the code (AUTH-05). Build it only if users ask: on the phone it needs app links so it opens the app, and some mail scanners open links on their own, which can use up a single-use link. | C (future) |
 
 ### 13.2 Backup, restore and storage
 

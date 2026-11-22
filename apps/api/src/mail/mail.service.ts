@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { CONFIG, type AppConfig } from '../config.js';
 import { ServiceSettings } from '../ops/service-settings.js';
+import { p, renderHtml } from './layout.js';
 
 export interface MailMessage {
   to: string;
@@ -55,7 +56,8 @@ export class SmtpMail implements MailPort {
       to: m.to,
       subject: m.subject,
       text: m.text,
-      ...(m.html ? { html: m.html } : {}),
+      // A message built without a template still goes out in the shared layout.
+      html: m.html ?? htmlFromText(m),
       ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       ...(m.attachments
         ? {
@@ -75,93 +77,22 @@ export class SmtpMail implements MailPort {
   }
 }
 
+/** The text part's paragraphs in the layout, for a message that has no HTML of its own. */
+export function htmlFromText(m: Pick<MailMessage, 'subject' | 'text'>): string {
+  return renderHtml({
+    subject: m.subject,
+    blocks: m.text
+      .trim()
+      .split(/\n{2,}/)
+      .map((para) => p(para)),
+    footer: ['You’re getting this because of your Montra account.'],
+  });
+}
+
 export const mailProvider = (config: AppConfig) => ({
   provide: MAIL_PORT,
   useClass: config.MAIL_MODE === 'smtp' ? SmtpMail : config.MAIL_MODE === 'memory' ? MemoryMail : LogMail,
 });
 
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-
-/** Transactional templates. Plain text first; the HTML part escapes every interpolated value. */
-export const templates = {
-  invite(args: { to: string; inviter: string; workspace: string; role: string; url: string }): MailMessage {
-    const text = [
-      `${args.inviter} invited you to the "${args.workspace}" workspace on Montra as ${args.role}.`,
-      '',
-      `Accept the invite: ${args.url}`,
-      '',
-      'The link expires in 7 days. If you did not expect this, you can ignore this email.',
-    ].join('\n');
-    return {
-      to: args.to,
-      subject: `${args.inviter} invited you to ${args.workspace} on Montra`,
-      text,
-      html: `<p>${escapeHtml(args.inviter)} invited you to the <strong>${escapeHtml(args.workspace)}</strong> workspace on Montra as ${escapeHtml(args.role)}.</p><p><a href="${escapeHtml(args.url)}">Accept the invite</a></p><p>The link expires in 7 days.</p>`,
-      category: 'sharing',
-    };
-  },
-  newDevice(args: {
-    to: string;
-    userAgent: string | null;
-    ip: string | null;
-    at: Date;
-    url: string;
-  }): MailMessage {
-    const device = args.userAgent ?? 'an unknown device';
-    const text = [
-      `A new sign-in to your Montra account was made from ${device}${args.ip ? ` (${args.ip})` : ''} at ${args.at.toISOString()}.`,
-      '',
-      `If this was you, no action is needed. If not, sign out the session and change your password: ${args.url}`,
-    ].join('\n');
-    return { to: args.to, subject: 'New sign-in to your Montra account', text, category: 'security' };
-  },
-  /** AUTH-12 (ADR-0045): the password changed, so an attacker who changed it is noticed. */
-  passwordChanged(args: { to: string; at: Date; url: string }): MailMessage {
-    const text = [
-      `The password for your Montra account was changed at ${args.at.toISOString()}, and your other devices were signed out.`,
-      '',
-      `If this was you, no action is needed. If not, reset your password now and check your devices: ${args.url}`,
-    ].join('\n');
-    return { to: args.to, subject: 'Your Montra password was changed', text, category: 'security' };
-  },
-  /** ADR-0049 §6, ADR-0045: the mobile number on the account was added, changed or removed. To the email address. */
-  phoneChanged(args: { to: string; at: Date; url: string; now: string | null }): MailMessage {
-    const what = args.now ? `is now the number ending ${args.now.slice(-4)}` : 'was removed';
-    const text = [
-      `The mobile number on your Montra account ${what}, at ${args.at.toISOString()}. Texted sign-in codes and alerts go to it.`,
-      '',
-      `If this was you, no action is needed. If not, reset your password and check your security settings now: ${args.url}`,
-    ].join('\n');
-    return {
-      to: args.to,
-      subject: 'The mobile number on your Montra account changed',
-      text,
-      category: 'security',
-    };
-  },
-  /** AUTH-12 (ADR-0045): an authenticator app, security key or recovery codes were added, changed or removed. */
-  twoStepChanged(args: { to: string; at: Date; url: string }): MailMessage {
-    const text = [
-      `The two-step verification for your Montra account changed at ${args.at.toISOString()}: an authenticator app, security key or set of recovery codes was added, replaced or removed.`,
-      '',
-      `If this was you, no action is needed. If not, reset your password and review your two-step verification now: ${args.url}`,
-    ].join('\n');
-    return {
-      to: args.to,
-      subject: 'Two-step verification changed on your Montra account',
-      text,
-      category: 'security',
-    };
-  },
-  /** AUTH-08: sign-in paused for this email after too many wrong passwords (ADR-0042). */
-  signInLocked(args: { to: string; ip: string | null; until: Date; url: string }): MailMessage {
-    const text = [
-      `Someone entered the wrong password for your Montra account too many times${args.ip ? ` (from ${args.ip})` : ''}, so signing in with a password is paused until ${args.until.toISOString()}.`,
-      '',
-      'If this was you, wait and try again, or reset your password now; the reset works while sign-in is paused.',
-      `If it wasn't you, your password still kept them out. Consider changing it and turning on two-step verification: ${args.url}`,
-    ].join('\n');
-    return { to: args.to, subject: 'Sign-in to your Montra account was paused', text, category: 'security' };
-  },
-};
+// Every email's wording and layout: `templates.ts` and `layout.ts`.
+export { templates } from './templates.js';

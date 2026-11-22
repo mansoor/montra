@@ -22,6 +22,7 @@ import { canSeeVault } from '@/lib/vault';
 import { BankFeedsCard } from '@/components/settings/bank-feeds';
 import { canSeeBankFeeds } from '@/lib/bank-feeds';
 import { CategorySettings } from '@/components/settings/category-settings';
+import { AuditLog } from '@/components/settings/audit-log';
 import { SETTINGS_TABS, settingsGroupOf, settingsTabOf } from '@/lib/settings-sections';
 import { isAdminRole } from '@/lib/settings';
 import {
@@ -219,6 +220,9 @@ export default async function SettingsPage({
         canManage={isOwner}
       />
     );
+  } else if (tab === 'audit-log') {
+    // NFR-03: owners and admins only; settingsTabOf sends anyone else to Profile.
+    body = <AuditLog workspaceId={workspaceId} members={await load((api) => api.listMembers(workspaceId))} />;
   } else if (tab === 'privacy') {
     const settings = await load((api) => api.getAiSettings(workspaceId));
     body = <PrivacyPanel disclosures={settings.disclosures} currentMode={settings.mode} />;

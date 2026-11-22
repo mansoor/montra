@@ -612,14 +612,17 @@ export class ReceiptsService {
   ): Promise<ReceiptRow> {
     const r = await this.row(trx, ctx, receiptId);
     const categorized = await this.categorizeLines(trx, ctx, r.entity_id, header, lines);
-    const validation = validateReceipt(categorized.map(amountsOf), {
-      tax: header.taxMinor,
-      taxIncluded: header.taxIncluded,
-      discount: header.discountMinor,
-      fees: header.feesMinor,
-      tip: header.tipMinor,
-      total: header.totalMinor,
-    });
+    const validation = validateReceipt(
+      categorized.map((l) => amountsOf(l, r.entity_id)),
+      {
+        tax: header.taxMinor,
+        taxIncluded: header.taxIncluded,
+        discount: header.discountMinor,
+        fees: header.feesMinor,
+        tip: header.tipMinor,
+        total: header.totalMinor,
+      },
+    );
     await trx
       .updateTable('app.receipt')
       .set({
@@ -905,6 +908,11 @@ export class ReceiptsService {
       }
       const currency = currencyCode as CurrencyCode;
       const before = await this.lines(trx, ctx, id);
+      const entityOfCategory = await this.categoryEntities(
+        trx,
+        ctx,
+        (req.lines ?? []).flatMap((l) => (l.entityId === undefined && l.categoryId ? [l.categoryId] : [])),
+      );
       const lines: LineInput[] = req.lines
         ? req.lines.map((l) => {
             const prev = l.id ? before.find((b) => b.id === l.id) : undefined;
@@ -932,7 +940,13 @@ export class ReceiptsService {
               discountMinor: BigInt(l.discount),
               taxable: l.taxable,
               categoryId,
-              entityId: l.entityId === undefined ? (prev?.entity_id ?? null) : l.entityId,
+              // A newly picked category says whose the line is; otherwise it keeps what it had.
+              entityId:
+                l.entityId !== undefined
+                  ? l.entityId
+                  : userChose && categoryId
+                    ? (entityOfCategory.get(categoryId) ?? prev?.entity_id ?? null)
+                    : (prev?.entity_id ?? null),
               memberId: l.memberId === undefined ? (prev?.member_id ?? null) : l.memberId,
               confidence:
                 userChose || !prev
@@ -1315,7 +1329,7 @@ export class ReceiptsService {
     if (lines.length === 0) throw unprocessable('receipt.no_lines', 'The receipt has no lines to apply');
     const account = await this.categorizer.accountInfo(trx, ctx, spec.accountId);
     const groups = groupReceipt(
-      lines.map((l) => amountsOf(fromRow(l))),
+      lines.map((l) => amountsOf(fromRow(l), r.entity_id)),
       {
         tax: r.tax_minor,
         taxIncluded: r.tax_included,
@@ -1682,6 +1696,18 @@ export class ReceiptsService {
   // ----- Helpers ------------------------------------------------------------------------------------------
 
   /** The receipt's entity: the caller's choice, the transaction's, or the Personal entity. */
+  /** Each category's entity: a category is a ledger account, which belongs to one entity. */
+  private async categoryEntities(trx: Trx, ctx: Ctx, ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await trx
+      .selectFrom('app.ledger_account')
+      .select(['id', 'entity_id'])
+      .where('workspace_id', '=', ctx.workspaceId!)
+      .where('id', 'in', [...new Set(ids)])
+      .execute();
+    return new Map(rows.map((x) => [x.id, x.entity_id]));
+  }
+
   private async entityFor(trx: Trx, ctx: Ctx, entityId?: string, transactionId?: string): Promise<string> {
     if (entityId) return entityId;
     if (transactionId) {
@@ -1733,10 +1759,14 @@ export function fromRow(l: ReceiptLineRow): LineInput {
   };
 }
 
-/** Lines with the same (category, entity, member) become one split (RCP-03, RCP-07). */
-function amountsOf(l: LineInput): ReceiptLineAmounts {
+/**
+ * Lines with the same (category, entity, member) become one split (RCP-03, RCP-07). A line with no entity of its own
+ * is the receipt's: an item left uncategorized has none, and picking its category later used to keep it that way, so
+ * two lines of the same category showed as two splits (owner, 2026-11-21).
+ */
+function amountsOf(l: LineInput, receiptEntityId: string | null): ReceiptLineAmounts {
   return {
-    key: `${l.categoryId ?? ''}|${l.entityId ?? ''}|${l.memberId ?? ''}`,
+    key: `${l.categoryId ?? ''}|${l.entityId ?? receiptEntityId ?? ''}|${l.memberId ?? ''}`,
     lineTotal: l.lineTotalMinor,
     discount: l.discountMinor,
     taxable: l.taxable,
@@ -1745,14 +1775,17 @@ function amountsOf(l: LineInput): ReceiptLineAmounts {
 
 function groupsOf(r: ReceiptRow, rows: ReceiptLineRow[]): ReceiptGroupDto[] {
   const lines = rows.map(fromRow);
-  return groupReceipt(lines.map(amountsOf), {
-    tax: r.tax_minor,
-    taxIncluded: r.tax_included,
-    discount: r.discount_minor,
-    fees: r.fees_minor,
-    tip: r.tip_minor,
-    total: r.total_minor,
-  }).map((g) => {
+  return groupReceipt(
+    lines.map((l) => amountsOf(l, r.entity_id)),
+    {
+      tax: r.tax_minor,
+      taxIncluded: r.tax_included,
+      discount: r.discount_minor,
+      fees: r.fees_minor,
+      tip: r.tip_minor,
+      total: r.total_minor,
+    },
+  ).map((g) => {
     const first = lines[g.lines[0]!]!;
     return {
       categoryId: first.categoryId,

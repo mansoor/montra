@@ -197,8 +197,8 @@
     "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes; authenticator and recovery codes on the phone, and the phone leads a required login to set them up (ADR-0046); a texted code to a verified number as a second factor where texts are on (ADR-0049 §6)"
   ],
   "AUTH-05": [
-    "partial",
-    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
+    "done",
+    "30-minute single-use emailed code (the owner accepted a code over a link on 2026-11-21; a link is AUTH-19, for later), same message either way, session revocation, Kratos email templates tested through Mailpit, in the same layout as every API email (runbooks/email.md); the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
   ],
   "AUTH-06": [
     "done",
@@ -250,7 +250,7 @@
   ],
   "NFR-03": [
     "done",
-    "RLS per entity, roles, trigger-based audit log"
+    "RLS per entity, roles, trigger-based audit log; owners and admins read it in Settings → Your data → Audit log, filtered by person, record and day, with the ledger's bookkeeping rows hidden by default"
   ],
   "PLT-01": [
     "partial",
@@ -1070,7 +1070,7 @@
   ],
   "OPS-01": [
     "done",
-    "staff console on its own database role: account lookup, plans, flags, import failures; an owner role manages staff and edits plans through checked functions; staff suspend and restore accounts, extend trials, give plans or coupons, and close an account on request; owners see each provider's state and last success and failure, without its keys (ADR-0049). A test fails if the role can read anything else. Real staff SSO is not in place: staff sign in like everyone, with a second factor"
+    "staff console on its own database role: account lookup, plans, flags, import failures; an owner role manages staff and edits plans through checked functions; staff suspend and restore accounts, extend trials, give plans or coupons, and close an account on request; owners see each provider's state and last success and failure, without its keys (ADR-0049). A test fails if the role can read anything else. Admins and owners read the staff log in the console, filtered by staff, action, subject and day. Real staff SSO is not in place: staff sign in like everyone, with a second factor"
   ],
   "OPS-02": [
     "done",

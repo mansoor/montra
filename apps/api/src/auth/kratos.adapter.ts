@@ -7,6 +7,7 @@ import { TextsService } from '../sms/texts.service.js';
 import { Db } from '../db/database.js';
 import { AppError } from '../common/errors.js';
 import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
+import { timeZoneOf } from '../mail/time-zone.js';
 import { resolveAppUser, type AuthPort, type AuthUser, type SessionInfo } from './auth.js';
 
 /** The subset of Kratos' session object Montra relies on. */
@@ -162,6 +163,7 @@ export class KratosAuthAdapter implements AuthPort {
           at,
           now: phone,
           url: `${this.config.WEB_URL}/settings/security`,
+          timeZone: await timeZoneOf(this.db, userId),
         }),
       );
     } catch (err) {
@@ -238,6 +240,7 @@ export class KratosAuthAdapter implements AuthPort {
             ip,
             at: new Date(),
             url: `${this.config.WEB_URL}/settings/security`,
+            timeZone: await timeZoneOf(this.db, user.id),
           }),
         )
         .catch((err: Error) => this.logger.warn(`new-device alert failed: ${err.message}`));

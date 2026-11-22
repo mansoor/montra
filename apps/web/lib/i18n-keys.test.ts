@@ -23,6 +23,7 @@ import {
 } from '@montra/schemas';
 import { MONEY_BOXES, READING_STAGES } from './tax-forms';
 import { ITEM_PERIODS } from './receipts';
+import { AUDIT_ACTIONS, AUDIT_OPS, AUDIT_SUBJECT_TYPES, STAFF_ACTIONS } from './audit-log';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SKIP = new Set(['node_modules', '.next', 'e2e', 'test-results', 'playwright-report']);
@@ -79,9 +80,15 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'notices',
     'security',
     'reference',
+    'log',
     'staff',
     'providers',
   ],
+  // The audit trails: the workspace audit log (NFR-03) and the staff log (OPS-01).
+  'audit.subject.': AUDIT_SUBJECT_TYPES,
+  'audit.op.': AUDIT_OPS,
+  'audit.action.': AUDIT_ACTIONS,
+  'admin.log.action.': STAFF_ACTIONS,
   'admin.role.': ['support', 'admin', 'owner'],
   'admin.provider.': [
     'email',

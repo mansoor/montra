@@ -14,7 +14,7 @@ import type {
 } from '@montra/schemas';
 import { PROVIDER_KEYS } from '@montra/schemas';
 import { CONFIG, type AppConfig } from '../config.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { ServiceSettings } from './service-settings.js';
 import { TextsService } from '../sms/texts.service.js';
 import { AdminDb } from './staff.js';
@@ -194,16 +194,7 @@ export class ProvidersService {
 
   /** To the owner's own address, which is the only one this sends to (ADR-0049 §5). */
   async testEmail(to: string): Promise<TestSendDto> {
-    await this.mail.send({
-      to,
-      category: 'transactional',
-      subject: 'Montra test email',
-      text: [
-        'This is a test from the Providers page in the Montra staff console.',
-        `It was sent by the API with the sender ${await this.settings.mailFrom()}.`,
-        'Sign-in codes come from Kratos’s own courier, set up separately.',
-      ].join('\n\n'),
-    });
+    await this.mail.send(templates.providerTest({ to, sender: await this.settings.mailFrom() }));
     return { to };
   }
 

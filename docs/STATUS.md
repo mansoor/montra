@@ -252,7 +252,7 @@ finished:
   - NFR-01: the AWS KMS adapter and TLS.
   - NFR-07: performance; the dashboard target is in Phase 6.
   - NFR-12: load testing.
-  - AUTH-05: email templates.
+  - ~~AUTH-05: email templates.~~ Done: one layout for the API and Kratos (see §7g).
   - AUTH-08: CAPTCHA at the edge.
   - OPS-05: the reference-data admin editor.
   - OPS-06: dependency updates beyond Renovate.
@@ -806,7 +806,8 @@ Questions for the owner, each blocking something:
 
 1. **BAK-01 or BAK-09?** Monthly snapshots kept 12 months conflict with deleted data ageing out within 35 days, and Vault Lock makes the choice permanent 3 days after apply. Settle before the first production apply.
 2. **Is a 5-minute RPO only within a region acceptable?** Cross-region copies are daily, so losing a region can lose up to 24 hours. Closing that needs Aurora Global Database, at a monthly cost.
-3. **Is an emailed code acceptable for AUTH-05?** The requirement says a link.
+3. ~~**Is an emailed code acceptable for AUTH-05?**~~ Yes (owner, 2026-11-21). The requirement now says a code; an
+   emailed link is AUTH-19, a future enhancement if users ask for it.
 4. **Can the Aurora master create a `BYPASSRLS` role?** Untested. The setup runbook checks first and stops.
 
 Measured locally, on 2026-11-04:
@@ -2297,6 +2298,59 @@ Phase 11 leftovers:
   - `GET /v1/admin/app-versions` adds `serverMinimum`. Under the per-platform fields the admin console says the
     server's own minimum and the minimum in effect for each platform, since a lower staff setting has no effect.
   - Tests: API `operations.test.ts`. The workflow step was dry-run locally with a stub `gh`.
+- **Email templates** (Phase 11 hardening, AUTH-05; no migration). See [`runbooks/email.md`](runbooks/email.md).
+  - Before: the API's emails were built inline at each sender, almost all plain text (only the invite had HTML),
+    with times as raw ISO strings and no common footer. Kratos's had bare HTML of their own.
+  - Now there's one layout (`apps/api/src/mail/layout.ts`): the brand at the top, a card, a button for the main
+    action, a code box, a footer saying why the person got the email, and a text part that says the same thing with
+    every link written out. There are no images, tracking, remote fonts or stylesheets, and every value is escaped.
+  - Every email the API sends is in `apps/api/src/mail/templates.ts` (23 of them), with subjects unchanged. The senders
+    call it, so `SmtpMail` wraps any message still sent without HTML in the layout.
+  - Security alerts give times in the person's own time zone (`app_user.time_zone`), else UTC, always naming the
+    zone. The sign-in pause email stays UTC, since the auth gateway knows only the email address.
+  - An invoice carries the business's name at the top rather than Montra's, and its note is set apart as a quote.
+  - Kratos's recovery and confirmation emails are generated into `infra/kratos/templates` from
+    `apps/api/src/mail/kratos-templates.ts` (`pnpm --filter @montra/api kratos:templates`); a test fails when the files
+    drift.
+  - Checked against Kratos v26.2.0 locally with `scripts/kratos-smoke.mjs` and Mailpit. Every email check passed (arrives,
+    30 minutes stated, code in both bodies, nothing left unfilled, unknown address gets nothing). The recovery hook
+    check failed only because the local API wasn't running with Kratos's webhook secret.
+  - AUTH-05 is done: the owner accepted the emailed code on 2026-11-21. An emailed link is AUTH-19, for later.
+  - Tests: API `mail-templates.test.ts`, plus the existing tests that read emails.
+- **The audit trails on screen: Settings → Your data → Audit log, and the console's Staff log** (NFR-03, OPS-01;
+  migration 0077). Both logs were recorded but had no screen.
+  - **Audit log** (`app.audit_log`), owners and admins only (the tab is hidden from other roles, and RLS and the API
+    agree). `GET /v1/workspaces/:id/audit-log` now takes a cursor (`id`) and filters: `actorUserId` or `actorType`,
+    `subjectType`, `action`, `subjectId`, `from`/`to` (the workspace's calendar days) and `bookkeeping=hide`. Each entry
+    carries the person's name (null for someone who has left). The default is unchanged (everything), so the existing
+    callers and tests read as before.
+  - The screen hides the ledger's own trigger rows by default (`AUDIT_BOOKKEEPING_SUBJECTS`: journal lines, journal
+    entries, ledger accounts, transaction tags; most of the dev DB's 60k rows are these), with a "Show bookkeeping
+    detail" switch. Explicit actions on those records (`journal_entry.unlock`) always show. Rows one save wrote (same
+    `at`, which is the transaction's start, and same person) are shown as one group. Actions read as words
+    ("Transaction changed", "Reconciliation undone"), with the record's name from the row, Details (before → after; a
+    JSON column such as `spec` as the keys that changed) and History (that record's whole history, bookkeeping
+    included). Helpers in `apps/web/lib/audit-log.ts`; a new action or table reads as plain words until it gets a label.
+  - **Staff log** (`app.admin_log`), admins and owners, not support: `GET /v1/admin/log` with a cursor (time at
+    Postgres precision plus id) and filters (staff, action, subject, UTC days). `montra_admin` can't read `app_user`, so
+    `app.admin_log_staff(p_staff)` (0077, security definer, admin role checked again) returns the people in the log and
+    only them; the console shows their email and offers them in the Who filter.
+  - Not done: the phone has no audit screen; the log can't be exported; `bank_account` rows have no name of their own
+    (the name is on the ledger account), so an account shows as "Account added" without it.
+  - Tests: API `audit-log.test.ts` and `operations.test.ts` (staff log), DB `rls.test.ts` (the new function in the
+    console role's list), web `audit-log.test.ts` and `i18n-keys.test.ts`. Tried on the dev stack: both screens, the
+    filters, History and paging.
+- **One split per category on a receipt** (RCP-03, RCP-07; owner, 2026-11-21; no migration).
+  - Before: a receipt with four grocery items showed two Groceries splits ($7.26 and $5.64). Lines are grouped by
+    category, entity and member. A line that came in uncategorized has no entity, and picking its category kept it
+    that way, since no client sends one. So it didn't join the lines already in the receipt's entity.
+  - Now picking a category without naming an entity puts the line in that category's entity (a category is a ledger
+    account, which has one). In grouping, a line with no entity counts as the receipt's, which also fixes receipts
+    saved before this on their next read. Applying to a transaction uses the same grouping.
+  - The phone's Splits card follows each category pick before Save (`previewSplits`, the same `groupReceipt`
+    arithmetic as the API), then shows the server's splits once saved. The web still shows the saved splits only.
+  - Tests: API `receipts.test.ts` rebuilds the owner's $12.90 receipt (it fails without the fix, with the two splits);
+    mobile `receipts.test.ts`.
 ---
 
 ## 8. Session checklist

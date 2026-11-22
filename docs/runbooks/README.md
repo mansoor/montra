@@ -15,6 +15,7 @@
 | [Self-hosted restore drill](selfhost-restore-drill.md) | Every quarter, to prove the self-hosted backups restore |
 | [Moving platforms](moving-platforms.md)   | From home to a VPS, or to any cloud                            |
 | [Launch checklist](launch-checklist.md)   | Going from closed beta to `v1.0.0`            |
+| [Email](email.md)                         | Changing an email's wording or look, the API's or Kratos's |
 
 ## What has and hasn't been tested
 

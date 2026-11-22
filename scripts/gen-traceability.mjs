@@ -93,6 +93,7 @@ const overrides = {
   'NFR-14': 3,
   'AUTH-12': 10,
   'AUTH-13': later,
+  'AUTH-19': later,
   'BAK-01': 11,
   'BAK-02': 11,
   'BAK-03': 11,

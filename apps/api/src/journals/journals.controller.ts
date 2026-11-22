@@ -14,6 +14,8 @@ import {
 import { asCurrencyCode, validateEntry, type JournalEntryDraft } from '@montra/domain';
 import {
   AuditedNoteRequest,
+  AuditLogQuery,
+  type AuditLogPageDto,
   CalendarDateDto,
   ManualJournalRequest,
   PeriodLockRequest,
@@ -33,6 +35,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { LedgerService } from '../ledger/ledger.service.js';
+import { readAuditLog } from './audit-log.js';
 
 @Controller('v1/workspaces/:workspaceId')
 @UseGuards(AuthGuard, WorkspaceGuard)
@@ -374,35 +377,14 @@ export class JournalsController {
     return this.get(ctx, id);
   }
 
-  /** Full audit log (NFR-03), owners only via RLS. */
+  /**
+   * The workspace audit log (NFR-03), owners and admins (RLS agrees): newest first, a page at a time, filtered by
+   * record, action, person and day. `bookkeeping=hide` leaves out the ledger's own trigger rows.
+   */
   @Get('audit-log')
-  async audit(
-    @Ctx() ctx: RequestContext,
-    @Query('subjectId') subjectId?: string,
-    @Query('limit') limit?: string,
-  ) {
+  async audit(@Ctx() ctx: RequestContext, @Query() query: unknown): Promise<AuditLogPageDto> {
     requireWorkspaceAdmin(ctx);
-    const rows = await this.db.run(dbCtx(ctx), (trx) => {
-      let q = trx
-        .selectFrom('app.audit_log')
-        .selectAll()
-        .where('workspace_id', '=', ctx.workspaceId!)
-        .orderBy('id', 'desc')
-        .limit(parse(z.coerce.number().int().min(1).max(500).default(100), limit));
-      if (subjectId) q = q.where('subject_id', '=', subjectId);
-      return q.execute();
-    });
-    return {
-      data: rows.map((r) => ({
-        id: r.id.toString(),
-        at: r.at,
-        actorUserId: r.actor_user_id,
-        actorType: r.actor_type,
-        action: r.action,
-        subjectType: r.subject_type,
-        subjectId: r.subject_id,
-        diff: r.diff,
-      })),
-    };
+    const q = parse(AuditLogQuery, query);
+    return this.db.run(dbCtx(ctx), (trx) => readAuditLog(trx, ctx.workspaceId!, q));
   }
 }
