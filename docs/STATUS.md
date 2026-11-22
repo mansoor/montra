@@ -2317,6 +2317,29 @@ Phase 11 leftovers:
     check failed only because the local API wasn't running with Kratos's webhook secret.
   - AUTH-05 is done: the owner accepted the emailed code on 2026-11-21. An emailed link is AUTH-19, for later.
   - Tests: API `mail-templates.test.ts`, plus the existing tests that read emails.
+- **The audit trails on screen: Settings → Your data → Audit log, and the console's Staff log** (NFR-03, OPS-01;
+  migration 0077). Both logs were recorded but had no screen.
+  - **Audit log** (`app.audit_log`), owners and admins only (the tab is hidden from other roles, and RLS and the API
+    agree). `GET /v1/workspaces/:id/audit-log` now takes a cursor (`id`) and filters: `actorUserId` or `actorType`,
+    `subjectType`, `action`, `subjectId`, `from`/`to` (the workspace's calendar days) and `bookkeeping=hide`. Each entry
+    carries the person's name (null for someone who has left). The default is unchanged (everything), so the existing
+    callers and tests read as before.
+  - The screen hides the ledger's own trigger rows by default (`AUDIT_BOOKKEEPING_SUBJECTS`: journal lines, journal
+    entries, ledger accounts, transaction tags; most of the dev DB's 60k rows are these), with a "Show bookkeeping
+    detail" switch. Explicit actions on those records (`journal_entry.unlock`) always show. Rows one save wrote (same
+    `at`, which is the transaction's start, and same person) are shown as one group. Actions read as words
+    ("Transaction changed", "Reconciliation undone"), with the record's name from the row, Details (before → after; a
+    JSON column such as `spec` as the keys that changed) and History (that record's whole history, bookkeeping
+    included). Helpers in `apps/web/lib/audit-log.ts`; a new action or table reads as plain words until it gets a label.
+  - **Staff log** (`app.admin_log`), admins and owners, not support: `GET /v1/admin/log` with a cursor (time at
+    Postgres precision plus id) and filters (staff, action, subject, UTC days). `montra_admin` can't read `app_user`, so
+    `app.admin_log_staff(p_staff)` (0077, security definer, admin role checked again) returns the people in the log and
+    only them; the console shows their email and offers them in the Who filter.
+  - Not done: the phone has no audit screen; the log can't be exported; `bank_account` rows have no name of their own
+    (the name is on the ledger account), so an account shows as "Account added" without it.
+  - Tests: API `audit-log.test.ts` and `operations.test.ts` (staff log), DB `rls.test.ts` (the new function in the
+    console role's list), web `audit-log.test.ts` and `i18n-keys.test.ts`. Tried on the dev stack: both screens, the
+    filters, History and paging.
 - **Back links return to the list as it was left** (owner, 2026-11-21; web only; no migration).
   - Before: "← Transactions" after opening a transaction from Needs review went to All. "← Receipts" from the Matched
     tab went to the Inbox. Lists keep their filters and tabs in the URL, and every back link pointed at the bare list.

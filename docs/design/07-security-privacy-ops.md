@@ -51,7 +51,10 @@ backstop.
 `audit_log` is append-only (the app role has no `UPDATE`/`DELETE` grant). It records
 every create/update/delete on financial records (with a field diff), sign-ins, MFA
 changes, exports, support access, invites and AI provider changes. Users see the security
-subset (AUTH-12) and owners see the full log.
+subset (AUTH-12) and owners and admins see the full log in Settings → Your data → Audit log
+(`GET /v1/workspaces/:id/audit-log`, paged by id, filtered by person, record, action and day; the ledger's own
+journal, posting, ledger-account and tag rows are hidden there unless asked for). What staff do in the console is in
+`admin_log`, which admins and owners read in the console's Staff log (`GET /v1/admin/log`).
 
 ## 5. Privacy (NFR-05/06, UP-06)
 

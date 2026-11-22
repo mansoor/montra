@@ -12,6 +12,7 @@ import {
 } from '@/components/admin/console';
 import { PlansPanel, StaffPanel } from '@/components/admin/plans';
 import { ProvidersPanel } from '@/components/admin/providers';
+import { StaffLogPanel } from '@/components/admin/staff-log';
 
 const TABS = [
   'accounts',
@@ -23,23 +24,29 @@ const TABS = [
   'notices',
   'security',
   'reference',
+  'log',
   'staff',
   'providers',
 ] as const;
 type Tab = (typeof TABS)[number];
 /** Only an owner manages staff and providers (ADR-0049 §3, §5). */
 const OWNER_TABS: readonly Tab[] = ['staff', 'providers'];
+/** The staff log is for admins and owners (OPS-01). */
+const ADMIN_TABS: readonly Tab[] = ['log'];
 
 /** OPS-01, OPS-05: for staff, who can't see financial data here. Anyone else gets the 404 the API gives them. */
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const raw = (await searchParams).tab;
   const staff = await load((api) => api.adminMe());
   const isOwner = staff.role === 'owner';
-  const tabs = TABS.filter((k) => isOwner || !OWNER_TABS.includes(k));
+  const isAdmin = staff.role === 'admin' || isOwner;
+  const tabs = TABS.filter(
+    (k) => (isOwner || !OWNER_TABS.includes(k)) && (isAdmin || !ADMIN_TABS.includes(k)),
+  );
   const tab: Tab = tabs.includes(raw as Tab) ? (raw as Tab) : 'accounts';
   const { t } = await getI18n();
   // Each role includes the one below it.
-  const canChange = staff.role === 'admin' || isOwner;
+  const canChange = isAdmin;
   let body;
   if (tab === 'accounts') {
     const plans = (await load((api) => api.adminPlans())).map((p) => ({ key: p.key, name: p.name }));
@@ -50,6 +57,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     body = <PlansPanel plans={await load((api) => api.adminPlans())} canChange={isOwner} />;
   } else if (tab === 'providers') {
     body = <ProvidersPanel providers={await load((api) => api.adminProviders())} />;
+  } else if (tab === 'log') {
+    body = <StaffLogPanel />;
   } else if (tab === 'staff') {
     body = <StaffPanel staff={await load((api) => api.adminStaff())} />;
   } else if (tab === 'imports') {
