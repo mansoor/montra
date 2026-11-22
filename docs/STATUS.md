@@ -806,7 +806,8 @@ Questions for the owner, each blocking something:
 
 1. **BAK-01 or BAK-09?** Monthly snapshots kept 12 months conflict with deleted data ageing out within 35 days, and Vault Lock makes the choice permanent 3 days after apply. Settle before the first production apply.
 2. **Is a 5-minute RPO only within a region acceptable?** Cross-region copies are daily, so losing a region can lose up to 24 hours. Closing that needs Aurora Global Database, at a monthly cost.
-3. **Is an emailed code acceptable for AUTH-05?** The requirement says a link.
+3. ~~**Is an emailed code acceptable for AUTH-05?**~~ Yes (owner, 2026-11-21). The requirement now says a code; an
+   emailed link is AUTH-19, a future enhancement if users ask for it.
 4. **Can the Aurora master create a `BYPASSRLS` role?** Untested. The setup runbook checks first and stops.
 
 Measured locally, on 2026-11-04:
@@ -2314,7 +2315,7 @@ Phase 11 leftovers:
   - Checked against Kratos v26.2.0 locally with `scripts/kratos-smoke.mjs` and Mailpit. Every email check passed (arrives,
     30 minutes stated, code in both bodies, nothing left unfilled, unknown address gets nothing). The recovery hook
     check failed only because the local API wasn't running with Kratos's webhook secret.
-  - AUTH-05 stays partial: the requirement says an emailed link, and recovery sends a code (an open owner question: "Is an emailed code acceptable for AUTH-05?").
+  - AUTH-05 is done: the owner accepted the emailed code on 2026-11-21. An emailed link is AUTH-19, for later.
   - Tests: API `mail-templates.test.ts`, plus the existing tests that read emails.
 ---
 
