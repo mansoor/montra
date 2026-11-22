@@ -12,6 +12,15 @@ import {
   WEAK_PASSWORD_ID,
 } from '../src/auth-gateway/gateway.js';
 import {
+  SITEVERIFY_URL,
+  TURNSTILE_FIELD,
+  turnstileVerifier,
+  withoutCaptchaField,
+  type CaptchaOptions,
+  type CaptchaResult,
+  type HttpPost,
+} from '../src/auth-gateway/captcha.js';
+import {
   afterFailure,
   delayFor,
   keyOf,
@@ -102,6 +111,8 @@ class MemoryStore {
 function fakeKratos() {
   const app = Fastify();
   const hits: string[] = [];
+  /** What each sign-in and sign-up submission carried, as Kratos received it. */
+  const bodies: Array<Record<string, string>> = [];
   const flows = new Map<string, { state: string; error: boolean }>();
   const flowOf = (id: string) =>
     flows.get(id) ?? flows.set(id, { state: 'choose_method', error: false }).get(id)!;
@@ -136,16 +147,24 @@ function fakeKratos() {
     identity: { traits: { email: EMAIL, name: 'Gateway Owner', phone: '+14155550100' } },
   }));
   for (const kind of ['registration', 'settings']) {
-    app.post(`/self-service/${kind}`, async (req, reply) =>
-      browser(req)
+    app.post(`/self-service/${kind}`, async (req, reply) => {
+      bodies.push(req.body as any);
+      // A sign-up's profile step (two-step registration) comes back to the same form for the credentials.
+      if (browser(req) && kind === 'registration' && (req.body as any).method === 'profile')
+        return reply
+          .code(303)
+          .header('location', `${WEB}/sign-up?flow=${(req.query as any).flow}`)
+          .send();
+      return browser(req)
         ? reply.code(303).header('location', `${WEB}/after-${kind}`).send()
-        : { id: (req.query as any).flow, ok: true },
-    );
+        : { id: (req.query as any).flow, ok: true };
+    });
   }
   const browser = (req: any) => !String(req.headers['content-type']).includes('json');
   app.post('/self-service/login', async (req, reply) => {
     const id = (req.query as any).flow as string;
     const b = req.body as any;
+    bodies.push(b);
     const ok =
       (b.method === 'password' && b.password === 'right password') ||
       (b.method === 'totp' && b.totp_code === '123456');
@@ -174,7 +193,7 @@ function fakeKratos() {
       return reply.code(f.error ? 400 : 200).send(flowBody(id));
     });
   }
-  return { app, hits, flows };
+  return { app, hits, flows, bodies };
 }
 
 describe('the gateway', () => {
@@ -645,6 +664,358 @@ describe('new passwords (AUTH-02, ADR-0043)', () => {
   });
 });
 
+describe('a CAPTCHA after repeated failures (AUTH-08, ADR-0056)', () => {
+  // Only ever a made-up value: nothing here talks to Cloudflare.
+  const TURNSTILE_SECRET = 'test-turnstile-secret-never-sent-anywhere-real';
+  const GOOD = 'good-token';
+  let kratos: ReturnType<typeof fakeKratos>;
+  let store: MemoryStore;
+  let checked: Array<{ token: string; ip: string }>;
+  let logs: string[];
+
+  beforeAll(async () => {
+    kratos = fakeKratos();
+    await kratos.app.listen({ port: 0, host: '127.0.0.1' });
+  });
+  afterAll(async () => {
+    await kratos.app.close();
+  });
+
+  /** A verifier that passes `good-token` only, recording what it was asked. */
+  const fakeVerify = async (token: string, ip: string): Promise<CaptchaResult> => {
+    checked.push({ token, ip });
+    return token === GOOD
+      ? { ok: true }
+      : { ok: false, reason: 'rejected', codes: ['invalid-input-response'] };
+  };
+
+  const gatewayWith = (captcha?: Partial<CaptchaOptions> | null) => {
+    store = new MemoryStore();
+    checked = [];
+    logs = [];
+    kratos.hits.length = 0;
+    kratos.bodies.length = 0;
+    const address = kratos.app.server.address() as { port: number };
+    return buildAuthGateway({
+      kratosUrl: `http://127.0.0.1:${address.port}`,
+      webUrl: WEB,
+      secret: SECRET,
+      store,
+      mail: new MemoryMail(),
+      now: () => t0,
+      sleep: async () => {},
+      logger: { level: 'info', stream: { write: (line: string) => void logs.push(line) } },
+      captcha:
+        captcha === null ? undefined : { verify: fakeVerify, afterFailures: 5, afterSignUps: 5, ...captcha },
+    });
+  };
+
+  const signIn = (
+    g: FastifyInstance,
+    password: string,
+    opts: { token?: string; email?: string; ip?: string; flow?: string } = {},
+  ) =>
+    g.inject({
+      method: 'POST',
+      url: `/self-service/login?flow=${opts.flow ?? 'c1'}`,
+      remoteAddress: opts.ip ?? '203.0.113.20',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
+      payload: new URLSearchParams({
+        method: 'password',
+        identifier: opts.email ?? EMAIL,
+        password,
+        csrf_token: 'x',
+        ...(opts.token !== undefined ? { [TURNSTILE_FIELD]: opts.token } : {}),
+      }).toString(),
+    });
+  const nativeSignIn = (g: FastifyInstance, password: string) =>
+    g.inject({
+      method: 'POST',
+      url: '/self-service/login?flow=n1',
+      remoteAddress: '203.0.113.20',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      payload: { method: 'password', identifier: EMAIL, password },
+    });
+  const signUp = (
+    g: FastifyInstance,
+    opts: { token?: string; method?: string; ip?: string; flow?: string } = {},
+  ) =>
+    g.inject({
+      method: 'POST',
+      url: `/self-service/registration?flow=${opts.flow ?? 'u1'}`,
+      remoteAddress: opts.ip ?? '203.0.113.30',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({
+        method: opts.method ?? 'password',
+        password: 'violet-tractor-mango-ledger-91',
+        'traits.email': 'new.person@example.test',
+        csrf_token: 'x',
+        ...(opts.token !== undefined ? { [TURNSTILE_FIELD]: opts.token } : {}),
+      }).toString(),
+    });
+  const logins = () => kratos.hits.filter((h) => h === 'POST /self-service/login').length;
+  const notice = (res: { headers: Record<string, unknown> }) => {
+    const to = new URL(res.headers.location as string);
+    return { path: `${to.origin}${to.pathname}`, params: Object.fromEntries(to.searchParams) };
+  };
+
+  it('changes nothing when it is off: no field is asked for, and none is touched', async () => {
+    const g = gatewayWith(null);
+    for (let i = 0; i < 8; i++) {
+      const res = await signIn(g, 'wrong');
+      expect(res.headers.location).toBe(`${WEB}/sign-in?flow=c1`);
+    }
+    // Today's behaviour exactly: whatever the form carries reaches Kratos as sent.
+    await signIn(g, 'right password', { token: 'anything' });
+    expect(kratos.bodies.at(-1)).toMatchObject({ [TURNSTILE_FIELD]: 'anything' });
+    expect(checked).toEqual([]);
+    await g.close();
+  });
+
+  it('needs no CAPTCHA below the threshold', async () => {
+    const g = gatewayWith();
+    for (let i = 0; i < 4; i++) {
+      const res = await signIn(g, 'wrong');
+      expect(res.headers.location).toBe(`${WEB}/sign-in?flow=c1`);
+    }
+    expect(logins()).toBe(4);
+    expect(checked).toEqual([]);
+    await g.close();
+  });
+
+  it('says so on the failure that reaches the threshold, then asks for one before Kratos sees anything', async () => {
+    const g = gatewayWith();
+    for (let i = 0; i < 4; i++) await signIn(g, 'wrong');
+    // The fifth failure goes back to the form already asking, so the page shows the widget straight away.
+    const fifth = await signIn(g, 'wrong');
+    expect(notice(fifth)).toEqual({
+      path: `${WEB}/sign-in`,
+      params: { flow: 'c1', notice: 'captcha_required' },
+    });
+    const accountKey = keyOf(SECRET, 'account', EMAIL);
+    expect(store.buckets.get(accountKey)?.failures).toBe(5);
+
+    // No token: back to the form, nothing forwarded, nothing counted.
+    const missing = await signIn(g, 'right password');
+    expect(missing.statusCode).toBe(303);
+    expect(notice(missing)).toEqual({
+      path: `${WEB}/sign-in`,
+      params: { notice: 'captcha_required', flow: 'c1' },
+    });
+    expect(logins()).toBe(5);
+    expect(checked).toEqual([]);
+
+    // A token Turnstile turns down: the same.
+    const failed = await signIn(g, 'right password', { token: 'bad-token' });
+    expect(notice(failed).params).toEqual({ notice: 'captcha_required', flow: 'c1' });
+    expect(checked).toEqual([{ token: 'bad-token', ip: '203.0.113.20' }]);
+    expect(logins()).toBe(5);
+    expect(store.buckets.get(accountKey)?.failures).toBe(5);
+
+    // A good one: forwarded without the field, and the sign-in clears the account's count.
+    const ok = await signIn(g, 'right password', { token: GOOD });
+    expect(ok.headers['set-cookie']).toContain('ory_kratos_session=s3ss; Path=/; HttpOnly');
+    expect(logins()).toBe(6);
+    expect(kratos.bodies.at(-1)).toEqual({
+      method: 'password',
+      identifier: EMAIL,
+      password: 'right password',
+      csrf_token: 'x',
+    });
+    expect(store.buckets.get(accountKey)).toBeUndefined();
+    await g.close();
+  });
+
+  it('keeps asking after a wrong password with a good token, and still pauses after ten', async () => {
+    const g = gatewayWith();
+    for (let i = 0; i < 5; i++) await signIn(g, 'wrong');
+    for (let i = 6; i < RULES.account.maxFailures; i++) {
+      const res = await signIn(g, 'wrong', { token: GOOD });
+      expect(notice(res).params.notice).toBe('captcha_required');
+    }
+    await signIn(g, 'wrong', { token: GOOD });
+    // The pause comes first, CAPTCHA or not.
+    const paused = await signIn(g, 'right password', { token: GOOD });
+    expect(notice(paused).params).toMatchObject({ notice: 'too_many_attempts', retry: '900' });
+    expect(logins()).toBe(RULES.account.maxFailures);
+    await g.close();
+  });
+
+  it('counts per address too, across emails', async () => {
+    const g = gatewayWith();
+    for (let i = 0; i < 5; i++) await signIn(g, 'wrong', { email: `someone${i}@example.test` });
+    const fresh = await signIn(g, 'right password', { email: 'fresh@example.test' });
+    expect(notice(fresh).params.notice).toBe('captcha_required');
+    // Another address with a fresh email isn't asked.
+    const elsewhere = await signIn(g, 'right password', { email: 'fresh@example.test', ip: '192.0.2.77' });
+    expect(elsewhere.headers['set-cookie']).toBeDefined();
+    await g.close();
+  });
+
+  it('never asks the phone (JSON flows): they keep the delay and the pause', async () => {
+    const g = gatewayWith();
+    for (let i = 0; i < 6; i++) expect((await nativeSignIn(g, 'wrong')).statusCode).toBe(400);
+    expect((await nativeSignIn(g, 'right password')).statusCode).toBe(200);
+    expect(checked).toEqual([]);
+    await g.close();
+  });
+
+  it('refuses when siteverify can’t be reached, rather than letting the attempt through unprotected', async () => {
+    const g = gatewayWith({
+      verify: turnstileVerifier({
+        secret: TURNSTILE_SECRET,
+        post: async () => Promise.reject(new TypeError('fetch failed')),
+      }),
+    });
+    for (let i = 0; i < 5; i++) await signIn(g, 'wrong');
+    const res = await signIn(g, 'right password', { token: 'some-token' });
+    expect(notice(res).params.notice).toBe('captcha_required');
+    expect(logins()).toBe(5);
+    expect(logs.join('\n')).toContain('Could not check a CAPTCHA');
+    await g.close();
+  });
+
+  it('asks a browser sign-up once the address passes the sign-up threshold', async () => {
+    const g = gatewayWith();
+    const signUps = () => kratos.hits.filter((h) => h === 'POST /self-service/registration').length;
+    for (let i = 0; i < 5; i++) expect((await signUp(g)).headers.location).toBe(`${WEB}/after-registration`);
+    const missing = await signUp(g);
+    expect(notice(missing)).toEqual({
+      path: `${WEB}/sign-up`,
+      params: { notice: 'captcha_required', flow: 'u1' },
+    });
+    expect(signUps()).toBe(5);
+    expect([...store.buckets.values()][0]?.failures).toBe(5);
+    const ok = await signUp(g, { token: GOOD });
+    expect(ok.headers.location).toBe(`${WEB}/after-registration`);
+    expect(signUps()).toBe(6);
+    expect(kratos.bodies.at(-1)).not.toHaveProperty(TURNSTILE_FIELD);
+    // A step that comes back to the form (the profile step of a two-step sign-up) asks for the next one at once.
+    const step = await signUp(g, { token: GOOD, method: 'profile' });
+    expect(notice(step)).toEqual({
+      path: `${WEB}/sign-up`,
+      params: { flow: 'u1', notice: 'captcha_required' },
+    });
+    // Another address isn't asked.
+    expect((await signUp(g, { ip: '192.0.2.88' })).headers.location).toBe(`${WEB}/after-registration`);
+    await g.close();
+  });
+
+  it('never puts the secret in a log, a response or what Kratos receives', async () => {
+    const sent: string[] = [];
+    let answer: () => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }> = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: false, 'error-codes': ['invalid-input-response'] }),
+    });
+    const g = gatewayWith({
+      verify: turnstileVerifier({
+        secret: TURNSTILE_SECRET,
+        post: async (_url, init) => {
+          sent.push(init.body);
+          return answer();
+        },
+      }),
+    });
+    const responses: string[] = [];
+    const keep = (res: { headers: Record<string, unknown>; body: string }) =>
+      responses.push(JSON.stringify(res.headers), res.body);
+    for (let i = 0; i < 5; i++) keep(await signIn(g, 'wrong'));
+    keep(await signIn(g, 'right password'));
+    keep(await signIn(g, 'right password', { token: 'rejected-token' }));
+    answer = async () => Promise.reject(new Error('timeout'));
+    keep(await signIn(g, 'right password', { token: 'unreachable-token' }));
+    answer = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    keep(await signIn(g, 'right password', { token: 'error-token' }));
+    answer = async () => ({ ok: true, status: 200, json: async () => ({ success: true }) });
+    keep(await signIn(g, 'right password', { token: 'accepted-token' }));
+
+    // It went to siteverify, and only there.
+    expect(sent.length).toBe(4);
+    for (const body of sent) expect(new URLSearchParams(body).get('secret')).toBe(TURNSTILE_SECRET);
+    expect(logs.length).toBeGreaterThan(0);
+    expect(logs.join('\n')).not.toContain(TURNSTILE_SECRET);
+    expect(responses.join('\n')).not.toContain(TURNSTILE_SECRET);
+    expect(JSON.stringify(kratos.bodies)).not.toContain(TURNSTILE_SECRET);
+    await g.close();
+  });
+});
+
+describe('Turnstile’s siteverify (ADR-0056)', () => {
+  const SECRET_KEY = 'test-turnstile-secret-for-unit-tests';
+  type Post = HttpPost;
+  const answering =
+    (status: number, body: unknown, seen?: Array<{ url: string; body: string }>): Post =>
+    async (url, init) => {
+      seen?.push({ url, body: init.body });
+      return { ok: status >= 200 && status < 300, status, json: async () => body };
+    };
+
+  it('posts the secret, the token and the client’s address, and passes what Turnstile passes', async () => {
+    const seen: Array<{ url: string; body: string }> = [];
+    const verify = turnstileVerifier({ secret: SECRET_KEY, post: answering(200, { success: true }, seen) });
+    expect(await verify('tok', '203.0.113.5')).toEqual({ ok: true });
+    expect(seen[0]!.url).toBe(SITEVERIFY_URL);
+    expect(Object.fromEntries(new URLSearchParams(seen[0]!.body))).toEqual({
+      secret: SECRET_KEY,
+      response: 'tok',
+      remoteip: '203.0.113.5',
+    });
+  });
+
+  it('tells a turned-down token from a check that couldn’t be made; both refuse', async () => {
+    const no = turnstileVerifier({
+      secret: SECRET_KEY,
+      post: answering(200, { success: false, 'error-codes': ['timeout-or-duplicate'] }),
+    });
+    expect(await no('tok', 'ip')).toEqual({ ok: false, reason: 'rejected', codes: ['timeout-or-duplicate'] });
+    for (const post of [
+      answering(200, { success: false, 'error-codes': ['invalid-input-secret'] }),
+      answering(200, { success: false, 'error-codes': ['internal-error'] }),
+      answering(502, {}),
+      answering(200, 'not json'),
+      (async () => Promise.reject(new TypeError('fetch failed'))) as Post,
+    ])
+      expect(await turnstileVerifier({ secret: SECRET_KEY, post })('tok', 'ip')).toMatchObject({
+        ok: false,
+        reason: 'unreachable',
+      });
+  });
+
+  it('gives up after a short timeout', async () => {
+    const verify = turnstileVerifier({
+      secret: SECRET_KEY,
+      timeoutMs: 20,
+      post: (_url, init) =>
+        new Promise((_resolve, reject) =>
+          init.signal.addEventListener('abort', () => reject(init.signal.reason)),
+        ),
+    });
+    expect(await verify('tok', 'ip')).toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  it('refuses an empty or oversized token without asking', async () => {
+    const seen: Array<{ url: string; body: string }> = [];
+    const verify = turnstileVerifier({ secret: SECRET_KEY, post: answering(200, { success: true }, seen) });
+    expect(await verify('', 'ip')).toMatchObject({ ok: false, reason: 'missing' });
+    expect(await verify('x'.repeat(2049), 'ip')).toMatchObject({ ok: false, reason: 'missing' });
+    expect(seen).toEqual([]);
+  });
+
+  it('strips the widget’s field from a form, and leaves everything else as it was', () => {
+    const form = 'application/x-www-form-urlencoded';
+    const body = Buffer.from(`method=password&identifier=a%40b.test&${TURNSTILE_FIELD}=tok&csrf_token=x`);
+    expect(withoutCaptchaField(form, body)?.toString()).toBe(
+      'method=password&identifier=a%40b.test&csrf_token=x',
+    );
+    const plain = Buffer.from('method=password&csrf_token=x');
+    expect(withoutCaptchaField(form, plain)).toBe(plain);
+    const json = Buffer.from(JSON.stringify({ [TURNSTILE_FIELD]: 'tok' }));
+    expect(withoutCaptchaField('application/json', json)).toBe(json);
+    expect(withoutCaptchaField(form, undefined)).toBeUndefined();
+  });
+});
+
 describe('the counters in Postgres', () => {
   let db: Db;
   let admin: pg.Client;
@@ -707,5 +1078,31 @@ describe('the gateway’s configuration', () => {
     const ok = loadConfig({ ...prod, AUTH_GATEWAY_SECRET: SECRET }, { process: 'auth-gateway' });
     expect(ok.AUTH_GATEWAY_PORT).toBe(4455);
     expect(() => loadConfig({ ...prod, AUTH_GATEWAY_SECRET: SECRET })).toThrow();
+  });
+
+  it('has no CAPTCHA unless a Turnstile secret is given, and asks after 5 by default (ADR-0056)', () => {
+    const base = { ...prod, AUTH_GATEWAY_SECRET: SECRET };
+    const off = loadConfig(base, { process: 'auth-gateway' });
+    expect(off.TURNSTILE_SECRET_KEY).toBeUndefined();
+    expect([off.CAPTCHA_AFTER_FAILURES, off.CAPTCHA_AFTER_SIGNUPS]).toEqual([5, 5]);
+    // An empty value (ECS fills every secret) is not set.
+    expect(
+      loadConfig({ ...base, TURNSTILE_SECRET_KEY: '' }, { process: 'auth-gateway' }).TURNSTILE_SECRET_KEY,
+    ).toBeUndefined();
+    const on = loadConfig(
+      {
+        ...base,
+        TURNSTILE_SECRET_KEY: 'test-secret',
+        CAPTCHA_AFTER_FAILURES: '3',
+        CAPTCHA_AFTER_SIGNUPS: '8',
+      },
+      { process: 'auth-gateway' },
+    );
+    expect([on.TURNSTILE_SECRET_KEY, on.CAPTCHA_AFTER_FAILURES, on.CAPTCHA_AFTER_SIGNUPS]).toEqual([
+      'test-secret',
+      3,
+      8,
+    ]);
+    expect(() => loadConfig({ ...base, CAPTCHA_AFTER_FAILURES: '0' }, { process: 'auth-gateway' })).toThrow();
   });
 });

@@ -26,6 +26,15 @@ const Env = z.object({
   AUTH_GATEWAY_PORT: z.coerce.number().int().default(4455),
   /** Keys the gateway's attempt counters (HMAC), so the database holds no email or IP address. */
   AUTH_GATEWAY_SECRET: z.string().min(32).optional(),
+  /**
+   * AUTH-08 (ADR-0056): Cloudflare Turnstile's secret key, given to the auth gateway only. Unset (the default, and right
+   * for LAN and self-hosted installs), no CAPTCHA is ever asked for. Never logged.
+   */
+  TURNSTILE_SECRET_KEY: z.string().optional(),
+  /** Failed passwords for one email, or from one address, after which a browser sign-in needs a CAPTCHA. */
+  CAPTCHA_AFTER_FAILURES: z.coerce.number().int().min(1).max(1000).default(5),
+  /** Sign-up submissions from one address in an hour after which a browser sign-up needs a CAPTCHA. */
+  CAPTCHA_AFTER_SIGNUPS: z.coerce.number().int().min(1).max(1000).default(5),
   /** Shared secret Kratos sends in `x-montra-hook-secret` when calling /internal/kratos/hooks. */
   KRATOS_WEBHOOK_SECRET: z.string().min(32).optional(),
   /** How long a validated session is cached; revocation clears it immediately (AUTH-05/07). */

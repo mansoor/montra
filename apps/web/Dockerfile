@@ -10,6 +10,8 @@ ARG NEXT_PUBLIC_AUTH_MODE=kratos
 ARG NEXT_PUBLIC_KRATOS_URL
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_API_WS_URL
+# Optional: Cloudflare Turnstile's site key, for the CAPTCHA after repeated failures (ADR-0056). Empty: off.
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true \
@@ -17,7 +19,8 @@ ENV PNPM_HOME=/pnpm \
     NEXT_PUBLIC_AUTH_MODE=$NEXT_PUBLIC_AUTH_MODE \
     NEXT_PUBLIC_KRATOS_URL=$NEXT_PUBLIC_KRATOS_URL \
     NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
-    NEXT_PUBLIC_API_WS_URL=$NEXT_PUBLIC_API_WS_URL
+    NEXT_PUBLIC_API_WS_URL=$NEXT_PUBLIC_API_WS_URL \
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 RUN corepack enable
 WORKDIR /repo
 # `next build` type-checks everything in tsconfig.json, including vitest.config.ts, which imports vitest.shared.ts.

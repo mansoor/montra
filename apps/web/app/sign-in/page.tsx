@@ -8,7 +8,7 @@ import { toRenderModel } from '@/lib/kratos-ui';
 import { staticT as t } from '@/lib/i18n-static';
 import { AuthShell } from '@/components/kratos/auth-shell';
 import { FlowForm } from '@/components/kratos/flow-form';
-import { GatewayNotice } from '@/components/kratos/gateway-notice';
+import { captchaWidget, GatewayNotice } from '@/components/kratos/gateway-notice';
 
 export const metadata: Metadata = { title: 'Sign in' };
 export const dynamic = 'force-dynamic';
@@ -59,6 +59,7 @@ async function KratosSignIn({ params }: { params: Params }) {
       <FlowForm
         model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })}
         label={t('auth.sign_in_title')}
+        beforeSubmit={captchaWidget(params)}
       />
       {!stepUp && !flow.refresh && (
         <p className="flex justify-between text-sm">

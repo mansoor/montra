@@ -3,6 +3,7 @@ import { loadConfig } from './config.js';
 import { Db } from './db/database.js';
 import { LogMail, MemoryMail, SmtpMail, type MailPort } from './mail/mail.service.js';
 import { buildAuthGateway } from './auth-gateway/gateway.js';
+import { turnstileVerifier } from './auth-gateway/captcha.js';
 import { ThrottleStore, throttleSecret } from './auth-gateway/throttle.js';
 import { readPasswordPolicy } from './auth-gateway/policy.js';
 import { StrengthPool } from './auth-gateway/strength-pool.js';
@@ -42,7 +43,20 @@ const app = buildAuthGateway({
   logger: true,
   policy: currentPolicy,
   strength: (password, words) => pool.score(password, words),
+  // ADR-0056: a CAPTCHA for browsers after repeated failures, only when a Turnstile secret is configured.
+  captcha: config.TURNSTILE_SECRET_KEY
+    ? {
+        verify: turnstileVerifier({ secret: config.TURNSTILE_SECRET_KEY }),
+        afterFailures: config.CAPTCHA_AFTER_FAILURES,
+        afterSignUps: config.CAPTCHA_AFTER_SIGNUPS,
+      }
+    : undefined,
 });
+app.log.info(
+  config.TURNSTILE_SECRET_KEY
+    ? `CAPTCHA (Turnstile) on: after ${config.CAPTCHA_AFTER_FAILURES} failed sign-ins or ${config.CAPTCHA_AFTER_SIGNUPS} sign-ups an hour`
+    : 'CAPTCHA off (no TURNSTILE_SECRET_KEY)',
+);
 
 const prune = setInterval(() => {
   store
