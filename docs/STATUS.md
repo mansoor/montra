@@ -253,11 +253,9 @@ finished:
   - NFR-07: performance; the dashboard target is in Phase 6.
   - NFR-12: load testing.
   - ~~AUTH-05: email templates.~~ Done: one layout for the API and Kratos (see §7g).
-  - AUTH-08: CAPTCHA at the edge.
+  - ~~AUTH-08: CAPTCHA at the edge.~~ Done in the auth gateway, off by default (ADR-0056, see §7g).
   - ~~OPS-05: the reference-data admin editor.~~ Done: tax lines and bank import layouts too, and staff edits survive
     deploys (see §7g). Currencies stay with the code.
-  - ~~AUTH-08: CAPTCHA at the edge.~~ Done in the auth gateway, off by default (ADR-0056, see §7g).
-  - OPS-05: the reference-data admin editor.
   - OPS-06: dependency updates beyond Renovate.
   - OPS-07: alerting.
   - PLT-01: a WCAG audit.
