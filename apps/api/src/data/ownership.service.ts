@@ -5,11 +5,20 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import { asCurrencyCode, addDays, type CalendarDate } from '@montra/domain';
-import type { DeletionStatusDto, SecurityEventDto, StorageUsageDto, TrashItemDto } from '@montra/schemas';
+import type {
+  DeletionStatusDto,
+  RetentionItemRef,
+  RetentionResultDto,
+  RetentionReviewDto,
+  SecurityEventDto,
+  StorageUsageDto,
+  TrashItemDto,
+} from '@montra/schemas';
 import { notFound } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { BackupService } from './backup.service.js';
@@ -32,6 +41,7 @@ export class OwnershipService {
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(BackupService) private readonly backups: BackupService,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
   register(): void {
@@ -228,7 +238,9 @@ export class OwnershipService {
     const done = {
       exports: 0,
       restores: 0,
+      found: 0,
       receipts: 0,
+
       files: 0,
       workspaces: 0,
       users: 0,
@@ -248,13 +260,18 @@ export class OwnershipService {
     rows.sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
     const archives = rows.filter((r) => r.kind === 'export' || r.kind === 'restore');
     for (const r of archives) await this.tryRetainOne(r, done);
-    // RCP-10: receipts past their date, then files; a receipt's files fall due with it, so they go in the same run.
+    // RCP-10: what is past its date is listed for the owners; only what an owner approved goes. Receipts first: a
+    // receipt's files take its approval, so they go in the same run.
+    done.found = await this.findDue();
     done.receipts = await this.purgeReceipts();
+
     done.files = await this.purgeFiles();
     for (const r of rows.filter((x) => !archives.includes(x))) await this.tryRetainOne(r, done);
     done.backups = await this.backups.runSchedules();
-    if (done.receipts || done.files) {
-      this.logger.log(`Removed ${done.receipts} receipts and ${done.files} files past their retention`);
+    if (done.found || done.receipts || done.files) {
+      this.logger.log(
+        `Retention: ${done.found} newly past their date for owners to review; removed ${done.receipts} receipts and ${done.files} files`,
+      );
     }
     return done;
   }
@@ -271,13 +288,113 @@ export class OwnershipService {
   }
 
   /**
-   * RCP-10: receipts past their date, at most RETENTION_BATCH a run. Each goes with its lines, OCR text and extraction;
-   * the transaction it was matched to stays. A legal hold keeps them (migration 0079).
+   * RCP-10: records what is newly past its date as waiting for an owner, at most RETENTION_BATCH a run, and tells each
+   * owner of a workspace with new items, once a day at most. Nothing is deleted here (owner's decision, 2026-11-22).
+   */
+  private async findDue(): Promise<number> {
+    const { rows } = await this.db.run({}, (trx) =>
+      sql<{ workspace_id: string; user_id: string; new_items: number; waiting: number }>`
+        select * from app.retention_find(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
+    );
+    const found = new Map<string, number>();
+    for (const r of rows) {
+      found.set(r.workspace_id, r.new_items);
+      const who = { workspaceId: r.workspace_id, userId: r.user_id };
+      try {
+        await this.db.run(who, async (trx) => {
+          const prefs = await this.notifications.prefsIn(trx, who.userId);
+          await this.notifications.create(
+            trx,
+            who,
+            {
+              type: 'retention_due',
+              dedupeKey: `retention_due:${new Date().toISOString().slice(0, 10)}`,
+              title: 'Receipts and files are past their retention date',
+              body:
+                `${r.waiting} ${r.waiting === 1 ? 'is' : 'are'} waiting for an owner. Nothing is deleted until you ` +
+                'approve it. Review them on the web, in Settings, Data.',
+              link: `/w/${who.workspaceId}/settings?tab=data#retention`,
+            },
+            prefs,
+          );
+        });
+      } catch (e) {
+        this.logger.warn(`Couldn't tell an owner of ${r.workspace_id} about retention: ${(e as Error).name}`);
+      }
+    }
+    return [...found.values()].reduce((a, b) => a + b, 0);
+  }
+
+  /** RCP-10: what is waiting in this workspace, for its owners (the database refuses anyone else). */
+  async retentionReview(ctx: Ctx): Promise<RetentionReviewDto> {
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{
+        kind: 'receipt' | 'file';
+        subject_id: string;
+        retain_until: CalendarDate;
+        title: string;
+        file_kind: string | null;
+        receipt_date: CalendarDate | null;
+        total_minor: bigint | null;
+        currency: string | null;
+        transaction_id: string | null;
+        transaction_date: CalendarDate | null;
+        transaction_payee: string | null;
+        approved_at: Date | null;
+      }>`select * from app.retention_review()`.execute(trx),
+    );
+    return {
+      items: rows.map((r) => ({
+        kind: r.kind,
+        id: r.subject_id,
+        retainUntil: r.retain_until,
+        title: r.title,
+        fileKind: r.file_kind,
+        date: r.receipt_date,
+        amount: r.total_minor === null ? null : String(r.total_minor),
+        currency: r.currency,
+        transaction:
+          r.transaction_id && r.transaction_date
+            ? { id: r.transaction_id, date: r.transaction_date, payee: r.transaction_payee }
+            : null,
+        approvedAt: r.approved_at?.toISOString() ?? null,
+      })),
+      extendYears: this.config.RETENTION_EXTEND_YEARS,
+    };
+  }
+
+  /**
+   * "Delete these": approves exactly these items, if still waiting and past their date, and runs the job now. The
+   * purge still checks for a legal hold. Logged with who approved.
+   */
+  async approveRetention(ctx: Ctx, items: readonly RetentionItemRef[]): Promise<RetentionResultDto> {
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{ n: number }>`select app.retention_approve(
+        ${items.map((i) => i.kind)}::text[], ${items.map((i) => i.id)}::uuid[]) as n`.execute(trx),
+    );
+    const count = Number(rows[0]?.n ?? 0);
+    if (count > 0) await this.schedule(new Date());
+    return { count };
+  }
+
+  /** "Keep for longer": these items' dates move RETENTION_EXTEND_YEARS from today. Logged with who did it. */
+  async extendRetention(ctx: Ctx, items: readonly RetentionItemRef[]): Promise<RetentionResultDto> {
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{ n: number }>`select app.retention_extend(
+        ${items.map((i) => i.kind)}::text[], ${items.map((i) => i.id)}::uuid[],
+        ${this.config.RETENTION_EXTEND_YEARS}::integer) as n`.execute(trx),
+    );
+    return { count: Number(rows[0]?.n ?? 0) };
+  }
+
+  /**
+   * RCP-10: approved receipts still past their date, at most RETENTION_BATCH a run. Each goes with its lines, OCR text
+   * and extraction; the transaction it was matched to stays. A legal hold keeps them, approved or not (migration 0079).
    */
   private async purgeReceipts(): Promise<number> {
     const { rows } = await this.db.run({}, (trx) =>
       sql<{ workspace_id: string; id: string }>`
-        select * from app.receipts_past_retention(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
+        select * from app.retention_receipts_approved(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
     );
     let n = 0;
     for (const r of rows) {
@@ -295,7 +412,7 @@ export class OwnershipService {
   }
 
   /**
-   * Files past their date or 30 days in the trash, at most RETENTION_BATCH a run. The row first: a row with no file is
+   * Files an owner approved, or 30 days in the trash, at most RETENTION_BATCH a run. The row first: a row with no file is
    * a visible gap, but a file with no row could never be found again. The database says which objects in Montra's
    * storage then go: none for a file held only in the vault, whose document the vault keeps (ADR-0054 §10), and never
    * one another file still names.

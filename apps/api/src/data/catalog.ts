@@ -47,6 +47,8 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
   bank_feed_account:
     'Useless without the feed’s secret; reconnecting relinks from learned matches (ADR-0055 §8)',
   bank_feed_run: 'A log of a connection a restore doesn’t have (ADR-0055 §8)',
+  retention_item:
+    'An owner’s review of what is past its retention date; the dates come back with the rows, and the job lists them again',
   notification_pref: 'Follows the person',
   security_event: 'Follows the person',
 };

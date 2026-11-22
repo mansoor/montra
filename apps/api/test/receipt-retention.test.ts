@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { encodeFakeReceiptImage } from '@montra/ai-gateway';
 import { OwnershipService } from '../src/data/ownership.service.js';
 import { Worker } from '../src/jobs/queue.js';
@@ -10,11 +10,13 @@ import { STORAGE_PORT, storageKey, type StoragePort } from '../src/storage/stora
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
-// Receipts and files past their retention date (RCP-10, BAK-09; migration 0079). The hourly job removes the receipt
-// with its lines and extracted text, and its image from storage; the transaction it was matched to stays as it was. A
-// receipt still within its date, a legal hold, another file naming the same object, and the household's vault each
-// keep what is theirs.
+// Receipts and files past their retention date (RCP-10, BAK-09; migration 0079). The hourly job lists them for the
+// workspace's owners and tells them once; nothing goes until an owner approves exactly what was listed, with a recent
+// sign-in, or keeps it for longer. Then the receipt goes with its lines and extracted text, and its image from storage;
+// the transaction it was matched to stays as it was. A legal hold, another file naming the same object, and the
+// household's vault each keep what is theirs.
 const EMAIL = 'receipt-retention@example.com';
+const ADMIN = 'retention-admin@example.com';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
 const WALMART = [
@@ -32,6 +34,7 @@ const WALMART = [
 
 let h: Harness;
 let c: Client;
+let adminUser: Client;
 let worker: Worker;
 let admin: pg.Client;
 let storage: StoragePort;
@@ -52,6 +55,29 @@ const keysOf = async (fileIds: string[]) =>
   (await admin.query(`select storage_key from app.file where id = any ($1)`, [fileIds])).rows.map(
     (r) => r.storage_key as string,
   );
+const review = async () => {
+  const res = await c.get(url('/retention'));
+  expect(res.status).toBe(200);
+  return res.body as { items: any[]; extendYears: number };
+};
+const refs = (items: any[]) => items.map((i) => ({ kind: i.kind, id: i.id }));
+/** Approves everything listed now, as the web's "Delete these" does. */
+const approveListed = async () => {
+  const { items } = await review();
+  const res = await c.post(url('/retention/approve'), { items: refs(items.filter((i) => !i.approvedAt)) });
+  expect(res.status).toBe(200);
+  return res.body.count as number;
+};
+
+/** The sign-in is 30 minutes old by the time the API looks (AUTH-09). */
+async function stale<T>(fn: () => Promise<T>): Promise<T> {
+  const spy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 30 * 60_000);
+  try {
+    return await fn();
+  } finally {
+    spy.mockRestore();
+  }
+}
 
 async function upload(bytes: Uint8Array, fileName: string) {
   const boundary = '----retention' + Math.random().toString(16).slice(2);
@@ -85,11 +111,11 @@ async function capture(text: string) {
 
 /** A file stored the way an upload stores it: bytes in storage, then the row. Given a key, a second row for its bytes. */
 async function storedFile(retainUntil: string, sameAs?: string) {
-  const key = sameAs ?? storageKey(wsId, 'receipt', randomUUID());
+  const key = sameAs ?? storageKey(wsId, 'invoice', randomUUID());
   if (!sameAs) await storage.put(key, PNG, 'image/png');
   const { rows } = await admin.query(
     `insert into app.file (workspace_id, kind, storage_key, file_name, mime, bytes, sha256, retain_until)
-     values ($1, 'receipt', $2, 'r.png', 'image/png', $3, repeat('c', 64), $4::date) returning id`,
+     values ($1, 'invoice', $2, 'bill.png', 'image/png', $3, repeat('c', 64), $4::date) returning id`,
     [wsId, key, PNG.length, retainUntil],
   );
   return { id: rows[0].id as string, key };
@@ -110,6 +136,7 @@ beforeAll(async () => {
   worker = h.app.get(Worker);
   storage = h.app.get(STORAGE_PORT);
   c = h.as(EMAIL);
+  adminUser = h.as(ADMIN);
   admin = new pg.Client({ connectionString: ADMIN_URL });
   await admin.connect();
   const ws = (
@@ -119,11 +146,14 @@ beforeAll(async () => {
   url = (p) => `/v1/workspaces/${ws.id}${p}`;
   await c.patch(url('/ai/settings'), { allowReceiptImagesToLlm: true });
   card = (await c.post(url('/accounts'), { name: 'Visa', kind: 'credit_card', last4: '1234' })).body.id;
+  const invite = await c.post(url('/sharing/invites'), { email: ADMIN, role: 'admin' });
+  expect(invite.status).toBe(201);
+  await adminUser.post(`/v1/invites/${invite.body.token}/accept`);
   ownerId = (await admin.query(`select id from app.app_user where email = $1`, [EMAIL])).rows[0].id;
   personal = (
     await admin.query(`select id from app.entity where workspace_id = $1 and type = 'personal'`, [wsId])
   ).rows[0].id;
-  // Whatever earlier test files left past its date goes now, so each run below counts only this file's rows.
+  // Whatever earlier test files left behind is looked at now, so each run below counts only this file's rows.
   await retention();
 });
 afterAll(async () => {
@@ -135,6 +165,8 @@ describe('a receipt past its retention date (RCP-10)', () => {
   let receipt: any;
   let txn: any;
   let keys: string[];
+  let listed: any[];
+  let later: { id: string; key: string };
 
   it('is kept, with its image, until its date has passed', async () => {
     txn = (
@@ -151,15 +183,12 @@ describe('a receipt past its retention date (RCP-10)', () => {
     keys = await keysOf(receipt.fileIds);
     expect(await exists(keys[0]!)).toBe(true);
 
-    const done = await retention();
-    expect(done).toMatchObject({ receipts: 0, files: 0 });
-    expect((await c.get(url(`/receipts/${receipt.id}`))).status).toBe(200);
+    expect(await retention()).toMatchObject({ found: 0, receipts: 0, files: 0 });
+    expect((await review()).items).toEqual([]);
   });
 
-  it('goes with its lines, text and image; its transaction stays as it was, in a locked period too', async () => {
-    const before = (await c.get(url(`/transactions/${txn.id}`))).body;
-    expect(before.splits.length).toBe(3);
-    // A split posting may point at the line it came from (migration 0012); the purge only clears that pointer.
+  it('is listed for the owners and they are told once; nothing is deleted without an approval', async () => {
+    // A split posting may point at the line it came from (migration 0012); the purge will only clear that pointer.
     const linked = await admin.query(
       `update app.posting p set receipt_line_id = (select l.id from app.receipt_line l where l.receipt_id = $2 limit 1)
          from app.journal_entry e
@@ -171,17 +200,81 @@ describe('a receipt past its retention date (RCP-10)', () => {
     expect(linked.rowCount).toBe(1);
     // Reconciled and locked long ago: the purge must not need to change the books.
     await admin.query(`update app.journal_entry set locked = true where transaction_id = $1`, [txn.id]);
-    // Only the receipt's date has passed; its files follow it in the same run.
     await admin.query(`update app.receipt set retain_until = current_date - 1 where id = $1`, [receipt.id]);
 
-    const done = await retention();
-    expect(done).toMatchObject({ receipts: 1, files: 1 });
+    // Its image goes with it, so only the receipt is listed.
+    expect(await retention()).toMatchObject({ found: 1, receipts: 0, files: 0 });
+    expect(await retention()).toMatchObject({ found: 0, receipts: 0, files: 0 });
+    expect(await count(`select 1 from app.receipt where id = $1`, [receipt.id])).toBe(1);
+    expect(await exists(keys[0]!)).toBe(true);
+
+    listed = (await review()).items;
+    expect(listed).toEqual([
+      expect.objectContaining({
+        kind: 'receipt',
+        id: receipt.id,
+        title: 'WALMART SUPERCENTER',
+        date: '2026-10-05',
+        amount: '2871',
+        currency: 'USD',
+        transaction: expect.objectContaining({ id: txn.id, date: '2026-10-06' }),
+        approvedAt: null,
+      }),
+    ]);
+
+    const told = await admin.query(
+      `select user_id, title, body, link from app.notification where workspace_id = $1 and type = 'retention_due'`,
+      [wsId],
+    );
+    expect(told.rows).toEqual([
+      expect.objectContaining({ user_id: ownerId, link: `/w/${wsId}/settings?tab=data#retention` }),
+    ]);
+    expect(told.rows[0].body).toContain('on the web');
+    expect(told.rows[0].body).not.toContain('WALMART');
+  });
+
+  it('is the owners’ alone to see and decide on', async () => {
+    for (const res of [
+      await adminUser.get(url('/retention')),
+      await adminUser.post(url('/retention/approve'), { items: refs(listed) }),
+      await adminUser.post(url('/retention/extend'), { items: refs(listed) }),
+    ]) {
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('retention.owner_only');
+    }
+    expect((await review()).items[0].approvedAt).toBeNull();
+  });
+
+  it('needs a recent sign-in to approve deleting', async () => {
+    const res = await stale(() => c.post(url('/retention/approve'), { items: refs(listed) }));
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('reauth.required');
+    expect((await review()).items[0].approvedAt).toBeNull();
+  });
+
+  it('approves only the items listed, never one found later', async () => {
+    later = await storedFile('2020-01-01');
+    expect(await retention()).toMatchObject({ found: 1, receipts: 0, files: 0 });
+    // The page still shows what it showed before the file was found.
+    const res = await c.post(url('/retention/approve'), { items: refs(listed) });
+    expect(res.body).toEqual({ count: 1 });
+    const now = (await review()).items;
+    expect(now.find((i) => i.id === receipt.id).approvedAt).not.toBeNull();
+    expect(now.find((i) => i.id === later.id).approvedAt).toBeNull();
+  });
+
+  it('then goes with its lines, text and image; its transaction stays as it was, in a locked period too', async () => {
+    const before = (await c.get(url(`/transactions/${txn.id}`))).body;
+    expect(await retention()).toMatchObject({ receipts: 1, files: 1 });
 
     expect(await count(`select 1 from app.receipt where id = $1`, [receipt.id])).toBe(0);
     expect(await count(`select 1 from app.receipt_line where receipt_id = $1`, [receipt.id])).toBe(0);
     expect(await count(`select 1 from app.file where id = any ($1)`, [receipt.fileIds])).toBe(0);
     expect(await exists(keys[0]!)).toBe(false);
     expect((await c.get(url(`/receipts/${receipt.id}`))).status).toBe(404);
+    // The file found later wasn't approved, so it stays.
+    expect(await exists(later.key)).toBe(true);
+    expect((await review()).items.map((i) => i.id)).toEqual([later.id]);
 
     const after = (await c.get(url(`/transactions/${txn.id}`))).body;
     expect(after).toMatchObject({ id: txn.id, status: before.status, date: before.date, receipt: null });
@@ -197,7 +290,19 @@ describe('a receipt past its retention date (RCP-10)', () => {
     ).toBe(0);
   });
 
-  it('is logged as purged, and its earlier audit entries no longer hold what it said', async () => {
+  it('logs who approved, then each purge, and its earlier audit entries no longer hold what it said', async () => {
+    const approved = await admin.query(
+      `select actor_user_id, actor_type, diff from app.audit_log
+        where workspace_id = $1 and action = 'retention.approved'`,
+      [wsId],
+    );
+    expect(approved.rows).toEqual([
+      {
+        actor_user_id: ownerId,
+        actor_type: 'user',
+        diff: { count: 1, items: [{ kind: 'receipt', id: receipt.id }] },
+      },
+    ]);
     const { rows } = await admin.query(
       `select action, actor_type, diff from app.audit_log
         where workspace_id = $1 and subject_type = 'receipt' and subject_id = $2 order by id`,
@@ -206,7 +311,7 @@ describe('a receipt past its retention date (RCP-10)', () => {
     expect(rows.at(-1)).toMatchObject({
       action: 'receipt.purged',
       actor_type: 'system',
-      diff: { reason: 'retention', transactionId: txn.id, files: 1 },
+      diff: { reason: 'retention', transactionId: txn.id, files: 1, approvedBy: ownerId },
     });
     expect(rows.slice(0, -1).every((r) => r.diff.redacted === 'retention')).toBe(true);
     expect(JSON.stringify(rows)).not.toContain('WALMART');
@@ -214,23 +319,41 @@ describe('a receipt past its retention date (RCP-10)', () => {
       `select diff from app.audit_log where workspace_id = $1 and action = 'file.purged' and subject_id = $2`,
       [wsId, receipt.fileIds[0]],
     );
-    expect(files.rows).toEqual([{ diff: expect.objectContaining({ reason: 'retention', kind: 'receipt' }) }]);
+    expect(files.rows).toEqual([
+      { diff: expect.objectContaining({ reason: 'retention', kind: 'receipt', approvedBy: ownerId }) },
+    ]);
+  });
+
+  it('keeps for longer what the owner picks: the date moves a year on, and it leaves the list', async () => {
+    const res = await c.post(url('/retention/extend'), { items: [{ kind: 'file', id: later.id }] });
+    expect(res.body).toEqual({ count: 1 });
+    const { rows } = await admin.query(
+      `select retain_until = (current_date + interval '1 year')::date as moved from app.file where id = $1`,
+      [later.id],
+    );
+    expect(rows).toEqual([{ moved: true }]);
+    expect((await review()).items).toEqual([]);
+    expect(await retention()).toMatchObject({ found: 0, files: 0 });
+    expect(await exists(later.key)).toBe(true);
+    const logged = await admin.query(
+      `select actor_user_id, diff from app.audit_log where workspace_id = $1 and action = 'retention.extended'`,
+      [wsId],
+    );
+    expect(logged.rows).toEqual([
+      {
+        actor_user_id: ownerId,
+        diff: expect.objectContaining({ count: 1, years: 1, items: [{ kind: 'file', id: later.id }] }),
+      },
+    ]);
   });
 });
 
 describe('what stays', () => {
-  it('keeps a receipt within its date, and its file even when the file’s own date has passed', async () => {
-    const f = await storedFile('2020-01-01');
-    const kept = await receiptHolding([f.id], '2099-12-31');
-    await retention();
-    expect(await count(`select 1 from app.receipt where id = $1`, [kept])).toBe(1);
-    expect(await count(`select 1 from app.file where id = $1`, [f.id])).toBe(1);
-    expect(await exists(f.key)).toBe(true);
-  });
-
-  it('keeps everything while a member is under a legal hold, and purges once it is lifted', async () => {
+  it('keeps everything under a legal hold, even once approved, and purges once it is lifted', async () => {
     const f = await storedFile('2020-01-01');
     const old = await receiptHolding([f.id], '2020-01-01');
+    expect(await retention()).toMatchObject({ found: 1 });
+    expect(await approveListed()).toBe(1);
     await admin.query(
       `insert into app.account_suspension (user_id, kind, reason, suspended_by) values ($1, 'legal_hold', 'case 1', $1)`,
       [ownerId],
@@ -247,22 +370,27 @@ describe('what stays', () => {
     expect(await exists(f.key)).toBe(false);
   });
 
-  it('removes an expired file’s row but not an object another file still names', async () => {
+  it('removes an approved file’s row but not an object another file still names', async () => {
     const live = await storedFile('2099-12-31');
     const expired = await storedFile('2020-01-01', live.key);
+    expect(await retention()).toMatchObject({ found: 1 });
+    expect(await approveListed()).toBe(1);
     expect(await retention()).toMatchObject({ files: 1 });
     expect(await count(`select 1 from app.file where id = $1`, [expired.id])).toBe(0);
     expect(await count(`select 1 from app.file where id = $1`, [live.id])).toBe(1);
     expect(await exists(live.key)).toBe(true);
   });
 
-  it('takes a batch a run, as RETENTION_BATCH says', async () => {
+  it('lists and removes a batch a run, as RETENTION_BATCH says', async () => {
     const a = await storedFile('2020-01-01');
     const b = await storedFile('2020-01-02');
     const ownership = h.app.get(OwnershipService) as any;
     const saved = ownership.config;
     ownership.config = { ...saved, RETENTION_BATCH: 1 };
     try {
+      expect(await retention()).toMatchObject({ found: 1 });
+      expect(await retention()).toMatchObject({ found: 1 });
+      expect(await approveListed()).toBe(2);
       expect(await retention()).toMatchObject({ files: 1 });
       expect(await exists(a.key)).toBe(false);
       expect(await exists(b.key)).toBe(true);
@@ -275,7 +403,7 @@ describe('what stays', () => {
 });
 
 describe('a file held in the household’s vault (ADR-0054 §10)', () => {
-  it('loses only Montra’s row and leftover copy; the vault keeps its document', async () => {
+  it('loses only Montra’s row and leftover copy once approved; the vault keeps its document', async () => {
     const vault = (
       await admin.query(
         `insert into app.storage_destination
@@ -303,6 +431,9 @@ describe('a file held in the household’s vault (ADR-0054 §10)', () => {
     );
     const receipt = await receiptHolding([fileId], '2020-01-01');
 
+    expect(await retention()).toMatchObject({ found: 1, receipts: 0, files: 0 });
+    expect(await count(`select 1 from app.file where id = $1`, [fileId])).toBe(1);
+    expect(await approveListed()).toBe(1);
     expect(await retention()).toMatchObject({ receipts: 1, files: 1 });
     expect(await count(`select 1 from app.receipt where id = $1`, [receipt])).toBe(0);
     expect(await count(`select 1 from app.file where id = $1`, [fileId])).toBe(0);

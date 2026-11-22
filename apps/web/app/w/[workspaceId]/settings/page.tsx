@@ -23,6 +23,7 @@ import { BankFeedsCard } from '@/components/settings/bank-feeds';
 import { canSeeBankFeeds } from '@/lib/bank-feeds';
 import { CategorySettings } from '@/components/settings/category-settings';
 import { AuditLog } from '@/components/settings/audit-log';
+import { RetentionReview } from '@/components/settings/retention-review';
 import { SETTINGS_TABS, settingsGroupOf, settingsTabOf } from '@/lib/settings-sections';
 import { isAdminRole } from '@/lib/settings';
 import {
@@ -146,7 +147,9 @@ export default async function SettingsPage({
     const events = await load((api) => api.getSecurityActivity());
     body = <SecurityActivity events={events} />;
   } else if (tab === 'data') {
-    const [usage, jobs, schedule, restores, deletion, destination] = await load((api) =>
+    // RCP-10: what is past its retention date is for owners only (not admins) to see and decide on.
+    const isWorkspaceOwner = workspace.role === 'owner';
+    const [usage, jobs, schedule, restores, deletion, destination, retention] = await load((api) =>
       Promise.all([
         api.getStorageUsage(workspaceId),
         api.listBackups(workspaceId),
@@ -154,11 +157,13 @@ export default async function SettingsPage({
         api.listRestores(),
         api.getDeletionStatus(),
         isOwner ? api.getStorageDestination(workspaceId) : Promise.resolve(null),
+        isWorkspaceOwner ? api.getRetentionReview(workspaceId) : Promise.resolve(null),
       ]),
     );
     body = (
       <div className="space-y-5">
         <StorageMeter usage={usage} />
+        {retention && <RetentionReview workspaceId={workspaceId} review={retention} />}
         <BackupPanel workspace={workspace} jobs={jobs} schedule={schedule} destination={destination} />
         <RestorePanel workspace={workspace} restores={restores} />
         <section className="card flex flex-wrap items-center justify-between gap-2">

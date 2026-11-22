@@ -25,6 +25,7 @@ import {
   CreateBackupRequest,
   CreateTaxPackageRequest,
   RequestDeletionRequest,
+  RetentionItemsRequest,
   SaveBackupScheduleRequest,
   TRASH_KINDS,
 } from '@montra/schemas';
@@ -131,6 +132,40 @@ export class DataController {
   @Get('storage')
   storage(@Ctx() ctx: RequestContext) {
     return this.ownership.storageUsage(dbCtx(ctx));
+  }
+
+  // RCP-10: receipts and files past their retention date wait for an owner (owner's decision, 2026-11-22).
+  @Get('retention')
+  retention(@Ctx() ctx: RequestContext) {
+    ownerOnly(ctx);
+    return this.ownership.retentionReview(dbCtx(ctx));
+  }
+
+  /** Deleting for good: an owner with a recent sign-in (AUTH-09), for exactly the items sent. */
+  @Post('retention/approve')
+  @HttpCode(200)
+  approveRetention(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    ownerOnly(ctx);
+    requireRecentAuth(ctx);
+    return this.ownership.approveRetention(dbCtx(ctx), parse(RetentionItemsRequest, body).items);
+  }
+
+  @Post('retention/extend')
+  @HttpCode(200)
+  extendRetention(@Ctx() ctx: RequestContext, @Body() body: unknown) {
+    ownerOnly(ctx);
+    return this.ownership.extendRetention(dbCtx(ctx), parse(RetentionItemsRequest, body).items);
+  }
+}
+
+/** What is past its retention date is the owners' to decide on, and theirs alone to see. */
+function ownerOnly(ctx: RequestContext): void {
+  if (ctx.role !== 'owner') {
+    throw new AppError(
+      403,
+      'retention.owner_only',
+      'Only an owner can review what is past its retention date',
+    );
   }
 }
 
