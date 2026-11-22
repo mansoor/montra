@@ -387,9 +387,70 @@ export class TransactionPoster {
     built: BuiltTransaction,
     opts: { fresh?: boolean; clearedAccountId?: string } = {},
   ): Promise<void> {
+    if (opts.fresh) {
+      await this.postFresh(trx, ctx, [{ transactionId, built, clearedAccountId: opts.clearedAccountId }]);
+      return;
+    }
     await this.repost(trx, ctx, transactionId, built.drafts, opts);
-    // New rows start with empty FX columns; only write when there is something to record or clear.
-    if (opts.fresh && !built.fx) return;
+    await this.writeFx(trx, ctx, transactionId, built);
+  }
+
+  /**
+   * Posts brand-new transactions, many at once (backlog item 9): nothing is booked yet, so each draft only has to
+   * fall after its entity's closed period. Entries and postings go in a few statements (`LedgerService.postMany`).
+   */
+  async postFresh(
+    trx: Trx,
+    ctx: Ctx,
+    items: readonly { transactionId: string; built: BuiltTransaction; clearedAccountId?: string }[],
+  ): Promise<void> {
+    const writes = [];
+    for (const it of items) {
+      const drafts: JournalEntryDraft[] = [];
+      for (const entityId of new Set(it.built.drafts.map((d) => d.entityId))) {
+        const lockDate = await this.lockedThrough(trx, ctx, entityId);
+        for (const d of it.built.drafts.filter((x) => x.entityId === entityId)) {
+          if (lockDate !== null && compareDates(d.entryDate, lockDate) <= 0)
+            throw new AppError(
+              409,
+              'period.locked',
+              `The books are closed through ${lockDate}; choose a later date`,
+            );
+          drafts.push(d);
+        }
+      }
+      writes.push({ transactionId: it.transactionId, drafts, clearedAccountId: it.clearedAccountId });
+    }
+    await this.ledger.postMany(trx, ctx, writes);
+    // New rows start with empty FX columns; only write when there is something to record.
+    for (const it of items) if (it.built.fx) await this.writeFx(trx, ctx, it.transactionId, it.built);
+  }
+
+  /**
+   * Whether new transactions in this account must be posted one at a time: a foreign-currency account's carrying
+   * value (ADR-0010) is read from the postings before each one.
+   */
+  async postsInOrder(trx: Trx, ctx: Ctx, accountId: string): Promise<boolean> {
+    const account = await this.ledger.accountRef(trx, ctx.workspaceId, accountId);
+    return account.currency !== (await this.functionalCurrency(trx, account.entityId));
+  }
+
+  /** A bank account's default member (FAM-04); cached for the unit of work when the ledger cache is on. */
+  async defaultMember(trx: Trx, ctx: Ctx, accountId: string): Promise<string | null> {
+    const cache = this.ledger.cacheOf(trx)?.defaultMembers;
+    if (cache?.has(accountId)) return cache.get(accountId)!;
+    const row = await trx
+      .selectFrom('app.bank_account')
+      .select('default_member_id')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('ledger_account_id', '=', accountId)
+      .executeTakeFirst();
+    const member = row?.default_member_id ?? null;
+    cache?.set(accountId, member);
+    return member;
+  }
+
+  private async writeFx(trx: Trx, ctx: Ctx, transactionId: string, built: BuiltTransaction): Promise<void> {
     await trx
       .updateTable('app.transaction')
       .set({
