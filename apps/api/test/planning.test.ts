@@ -392,6 +392,8 @@ describe('recommendations (REC-01, AIA-05)', () => {
       categoryPriorities: {},
       highInterestBps: 800,
       receiptReminderMinor: null,
+      unusedSubscriptionMonths: 3,
+      similarSubscriptionsMin: 2,
     });
     const res = await c.patch(url('/planning/settings'), {
       highInterestBps: 1000,
@@ -401,6 +403,8 @@ describe('recommendations (REC-01, AIA-05)', () => {
       categoryPriorities: { [cat('Groceries')]: 5 },
       highInterestBps: 1000,
       receiptReminderMinor: null,
+      unusedSubscriptionMonths: 3,
+      similarSubscriptionsMin: 2,
     });
   });
 });

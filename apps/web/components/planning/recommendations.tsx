@@ -1,6 +1,7 @@
 'use client';
 
 import { RefreshCw, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { RecommendationDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
@@ -76,7 +77,13 @@ export function RecommendationList({
                       {t('rec.action_fund')} <Money amount={a.amount} currency={r.payload.currency} />
                     </>
                   )}
-                  {a.kind === 'review_subscription' && t('rec.action_review')}
+                  {a.kind === 'review_subscription' && (
+                    <Link className="underline" href={`/w/${workspaceId}/recurring`}>
+                      {t('rec.action_review')}
+                      {r.payload.subjects.length > 1 &&
+                        `: ${r.payload.subjects.find((s) => s.id === a.recurringItemId)?.name ?? ''}`}
+                    </Link>
+                  )}
                   {a.kind === 'transfer' && (
                     <>
                       {t('rec.action_transfer')} <Money amount={a.amount} currency={r.payload.currency} />
@@ -134,10 +141,14 @@ export function RecommendationList({
                 className="btn-secondary"
                 disabled={busy}
                 onClick={() =>
-                  void run(() => browserApi.dismissRecommendation(workspaceId, r.id), t('rec.dismissed'))
+                  void run(
+                    () => browserApi.dismissRecommendation(workspaceId, r.id),
+                    // REC-06: dismissing says "I use it"; that subscription isn't suggested again.
+                    r.type === 'REC-06' ? t('rec.kept') : t('rec.dismissed'),
+                  )
                 }
               >
-                {t('rec.dismiss')}
+                {r.type === 'REC-06' ? t('rec.keep') : t('rec.dismiss')}
               </button>
             </div>
           )}

@@ -689,8 +689,8 @@
     "realistic amount after 3 off periods"
   ],
   "REC-06": [
-    "partial",
-    "price increases flagged and linked to the subscription; unused subscriptions not detected yet"
+    "done",
+    "price increases flagged and linked to the subscription; a subscription may be unused when other spending at its merchant stopped, or when similar ones share a category (thresholds in planning settings); keeping one stops it coming back"
   ],
   "REC-07": [
     "done",
