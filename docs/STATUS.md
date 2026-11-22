@@ -573,7 +573,8 @@ Phase 6 leftovers, not blocking:
 
 - FAM-06/07: the API supports member budgets and goals; the screens have no member picker yet (fits Phase 7).
 - FLOW-06: owner draws never count as spending, but the Sankey doesn't draw them as transfers yet.
-- REC-06: unused subscriptions aren't detected. REC-04's wording can name at-risk bills awkwardly.
+- REC-06: unused subscriptions are now hinted at from spending (see §7g). REC-04's wording can name at-risk bills
+  awkwardly.
 - Mobile: budgets are created only as monthly zero-based. No device run yet. (Goals can now be edited and archived on the phone; see §7g.)
 
 Design notes that the API relies on:
@@ -2504,6 +2505,25 @@ Phase 11 leftovers:
     - `sign-in.test.tsx`: the API's error shows on the form.
     - `transactions.test.tsx`: rows from the offline store, newest first, open their transaction. An empty store shows
       the empty state.
+- **Subscriptions you may not be using** (REC-06; no migration: the thresholds live in the planning settings).
+  - Before: REC-06 flagged only price increases. Nothing said a subscription might be unused.
+  - Montra has no usage data from the services. So "unused" is a hint from the person's own spending, and the
+    suggestion says "may", never "is". Two patterns, in `@montra/categorize` `unusedSubscriptions`:
+    - **No other spending there:** there was other spending at the subscription's merchant before (rides beside
+      Uber One), but none for `unusedSubscriptionMonths` (default 3), while the charge kept coming. The merchant is the
+      first name word of the payee key. Its own charges (linked, or within 5% of the price) don't count. A
+      subscription with no other spending there at all (Netflix) gets no hint either way.
+    - **Similar ones:** `similarSubscriptionsMin` (default 2) or more active subscriptions in one category whose
+      payees match reference merchants with the same MCC (Netflix and Hulu; not Netflix and Spotify). Merchants
+      without a reference entry are never grouped, so two utility bills don't count.
+  - Only active recurring expense items count. An ended or paused one is left alone.
+  - Each is a REC-06 recommendation with a `review_subscription` action, once per period. On web the action links to
+    Recurring, and the dismiss button reads **Keep it** (phone too). Kept or accepted: that subscription, or that
+    exact group, isn't suggested again. Ignored: it expires with the period and comes back.
+  - Settings: `unusedSubscriptionMonths` (0–24, 0 off) and `similarSubscriptionsMin` (0 off, or 2–10) in
+    `PlanningSettingsDto`, stored in `workspace.priorities` like the others. Web Settings › Planning edits them.
+  - Tests: categorize `subscriptions.test.ts`, API `unused-subscriptions.test.ts` (both hints, wording and links, keep
+    stops it, ignored comes back, settings, ended items), API `planning.test.ts` (settings defaults).
 ---
 
 ## 8. Session checklist
