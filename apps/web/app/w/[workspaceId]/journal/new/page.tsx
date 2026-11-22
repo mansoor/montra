@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -16,9 +16,9 @@ export default async function NewJournalPage({ params }: { params: Promise<{ wor
   ]);
   return (
     <div className="space-y-4">
-      <Link href={`/w/${workspaceId}/journal`} className="text-sm text-brand-600 underline">
+      <BackLink href={`/w/${workspaceId}/journal`} className="text-sm text-brand-600 underline">
         ← {t('journal.title')}
-      </Link>
+      </BackLink>
       <h1 className="page-title">{t('journal.new')}</h1>
       <p className="text-sm text-muted">{t('journal.new_intro')}</p>
       <ManualJournalForm

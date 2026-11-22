@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -41,9 +41,12 @@ export default async function LeasePage({
   return (
     <div className="space-y-5">
       <div>
-        <Link href={`${here}/properties/${lease.propertyId}`} className="text-sm text-muted hover:text-ink">
+        <BackLink
+          href={`${here}/properties/${lease.propertyId}`}
+          className="text-sm text-muted hover:text-ink"
+        >
           ← {lease.propertyName}
-        </Link>
+        </BackLink>
         <h2 className="text-lg font-semibold">
           {lease.tenants.map((x) => x.name).join(', ')} · {lease.unitLabel}
         </h2>

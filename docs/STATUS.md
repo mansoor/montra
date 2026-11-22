@@ -2317,6 +2317,18 @@ Phase 11 leftovers:
     check failed only because the local API wasn't running with Kratos's webhook secret.
   - AUTH-05 is done: the owner accepted the emailed code on 2026-11-21. An emailed link is AUTH-19, for later.
   - Tests: API `mail-templates.test.ts`, plus the existing tests that read emails.
+- **Back links return to the list as it was left** (owner, 2026-11-21; web only; no migration).
+  - Before: "← Transactions" after opening a transaction from Needs review went to All. "← Receipts" from the Matched
+    tab went to the Inbox. Lists keep their filters and tabs in the URL, and every back link pointed at the bare list.
+  - Now `RememberUrl` (root layout) keeps each page's last full URL per browser tab (`sessionStorage`,
+    `lib/back-links.ts`). `BackLink` (`components/ui/back-link.tsx`) uses it, in `PageHeader` and on every "← list"
+    link: transactions, receipts and their items, accounts, invoices, assets, payroll, people, rentals, journal,
+    payslips, tax forms, help and the support page. A back link that names its own query (the tax year) keeps it. The
+    previous-month arrows aren't back links and are unchanged.
+  - Going to a list after an action (deleting a receipt, invoice or asset, finishing a payslip) uses it too
+    (`listHref`).
+  - The phone already kept its filters: its detail screens go back on the navigation stack.
+  - Tests: web `back-links.test.ts`. Checked on the local stack: Needs review and Matched both come back after "←".
 ---
 
 ## 8. Session checklist

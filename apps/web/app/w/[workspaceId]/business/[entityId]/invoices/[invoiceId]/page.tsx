@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -36,9 +36,9 @@ export default async function InvoicePage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={`/w/${workspaceId}/business/${entityId}/invoices`} className="text-sm underline">
+        <BackLink href={`/w/${workspaceId}/business/${entityId}/invoices`} className="text-sm underline">
           ← {t('business.tab_invoices')}
-        </Link>
+        </BackLink>
         <h2 className="text-lg font-semibold">{invoice.number}</h2>
         <span className={INVOICE_CHIP[invoice.status]} data-testid="invoice-status">
           {t(`invoices.status.${invoice.status}`)}

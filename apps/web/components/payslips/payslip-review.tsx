@@ -28,6 +28,7 @@ import { Money } from '../money';
 import { ReceiptViewer } from '../receipts/receipt-viewer';
 import { StatusLine, useAction } from '../use-action';
 import { useFileStorageStates, VaultBadges } from '../vault-badges';
+import { listHref } from '@/components/ui/back-link';
 
 /**
  * The payslip review screen (PAY-02, PAY-03): the payslip beside what was read from it. Nothing posts until the
@@ -159,7 +160,7 @@ export function PayslipReview({
       await browserApi.deletePayslip(workspaceId, payslip.id);
       return true;
     });
-    if (done) router.push(`/w/${workspaceId}/payslips`);
+    if (done) router.push(listHref(`/w/${workspaceId}/payslips`));
   }
 
   const viewer = payslip.fileIds.length > 0 && (

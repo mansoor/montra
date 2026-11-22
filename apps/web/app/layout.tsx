@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from 'next';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import '@fontsource-variable/figtree';
 import '@fontsource-variable/fraunces';
 import './globals.css';
 import { THEME_INIT } from '@/lib/theme';
 import { ThemeFollower } from '@/components/theme-choice';
+import { RememberUrl } from '@/components/ui/back-link';
 
 export const metadata: Metadata = {
   title: { default: 'Montra', template: '%s · Montra' },
@@ -29,6 +30,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         <ThemeFollower />
+        {/* Each page's last URL, for back links that return to a list as it was left. */}
+        <Suspense fallback={null}>
+          <RememberUrl />
+        </Suspense>
         {children}
       </body>
     </html>

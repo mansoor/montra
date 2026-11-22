@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { BackLink } from './back-link';
 
 /** The same header on every screen: title, optional subtitle and back link, actions on the right. */
 export function PageHeader({
@@ -17,9 +18,9 @@ export function PageHeader({
     <header className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         {back && (
-          <Link href={back.href} className="mb-1 inline-block text-sm text-muted hover:text-ink">
+          <BackLink href={back.href} className="mb-1 inline-block text-sm text-muted hover:text-ink">
             ← {back.label}
-          </Link>
+          </BackLink>
         )}
         <h1 className="page-title">{title}</h1>
         {subtitle && <p className="page-subtitle">{subtitle}</p>}

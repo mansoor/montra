@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -48,9 +49,9 @@ export default async function PersonPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={`/w/${workspaceId}/business/${entityId}/people`} className="text-sm underline">
+        <BackLink href={`/w/${workspaceId}/business/${entityId}/people`} className="text-sm underline">
           ← {t('business.tab_people')}
-        </Link>
+        </BackLink>
         <h2 className="text-lg font-semibold">{person.displayName}</h2>
         <span className="chip">
           {person.kind === 'employee' ? t('payroll.employee') : t('payroll.contractor')}

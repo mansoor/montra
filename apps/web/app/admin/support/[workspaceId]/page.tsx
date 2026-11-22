@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 
@@ -9,9 +9,9 @@ export default async function SupportViewPage({ params }: { params: Promise<{ wo
   const { t } = await getI18n();
   return (
     <>
-      <Link className="text-sm text-muted hover:underline" href="/admin">
+      <BackLink className="text-sm text-muted hover:underline" href="/admin">
         ← {t('admin.title')}
-      </Link>
+      </BackLink>
       <h1 className="page-title">{view.workspace.name}</h1>
       <p className="card text-sm" role="note" data-testid="support-view">
         {t('admin.support_note', { date: new Date(view.expiresAt).toLocaleString() })}
