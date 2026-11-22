@@ -703,6 +703,8 @@ export interface RefImportProfileTable {
   mapping: Json<Record<string, unknown>>;
   version: Generated<number>;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 export interface RefMerchantTable {
@@ -715,6 +717,8 @@ export interface RefMerchantTable {
   logo_url: string | null;
   version: Generated<number>;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 export interface RuleTable {
@@ -2266,6 +2270,8 @@ export interface TaxLineTable {
   deductible_bps: Generated<number>;
   version: Int8Default;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 export interface MileageRateTable {
@@ -2275,6 +2281,8 @@ export interface MileageRateTable {
   source: string;
   version: Int8Default;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 // Phase 9: rental properties (migration 0019, ADR-0018). Amounts are non-negative minor units.

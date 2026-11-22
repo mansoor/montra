@@ -18,6 +18,8 @@ import {
   TAX_FORM_READING_PROBLEMS,
   TAX_FORM_RESULT_STATES,
   BANK_FEED_STATUSES,
+  IMPORT_PROFILE_SOURCES,
+  TAX_LINE_FORMS,
   VAULT_GROUP_MODES,
   VAULT_GROUPS,
 } from '@montra/schemas';
@@ -123,6 +125,9 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'admin.suspend_kind.': ['abuse', 'fraud', 'legal_hold'],
   'admin.close_channel_': ['email', 'support_request', 'phone', 'letter'],
   'admin.interval.': ['month', 'year'],
+  // OPS-05: reference data in the console.
+  'admin.tax_form.': TAX_LINE_FORMS,
+  'admin.profile_source.': IMPORT_PROFILE_SOURCES,
   'admin.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault', 'bankFeeds'],
   'billing.feature.': ['payroll', 'staffTime', 'scans', 'voice', 'ownStorage', 'familyVault', 'bankFeeds'],
   // ADR-0055: a bank feed's status.

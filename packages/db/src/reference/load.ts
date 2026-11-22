@@ -6,6 +6,10 @@ import { US_MILEAGE_RATES, US_TAX_LINES } from './tax.js';
 /**
  * Upserts reference data (OPS-05). Idempotent; rows whose content changed get their version bumped. Runs
  * after migrations and can run on its own to ship reference updates without an app release.
+ *
+ * A row staff saved in the console (`staff_edited_at` set, migration 0078) is left as they saved it: the shipped
+ * content never overwrites it. A shipped merchant whose match text a staff-saved merchant already uses is skipped
+ * rather than failing the whole load on the unique key. Clearing `staff_edited_at` hands a row back to the shipped data.
  */
 export async function loadReferenceData(
   connectionString: string,
@@ -17,11 +21,14 @@ export async function loadReferenceData(
     for (const r of MERCHANTS) {
       await client.query(
         `insert into ref.merchant (id, display_name, match_key, mcc, category_hint)
-         values ($1, $2, $3, $4, $5)
+         select $1, $2, $3, $4, $5
+          where not exists (select 1 from ref.merchant o
+                             where o.match_key = $3 and o.id <> $1 and o.staff_edited_at is not null)
          on conflict (id) do update set display_name = excluded.display_name, match_key = excluded.match_key,
            mcc = excluded.mcc, category_hint = excluded.category_hint,
            version = ref.merchant.version + 1, updated_at = now()
-         where (ref.merchant.display_name, ref.merchant.match_key, ref.merchant.mcc, ref.merchant.category_hint)
+         where ref.merchant.staff_edited_at is null
+           and (ref.merchant.display_name, ref.merchant.match_key, ref.merchant.mcc, ref.merchant.category_hint)
                is distinct from (excluded.display_name, excluded.match_key, excluded.mcc, excluded.category_hint)`,
         [r.id, r.name, r.key, r.mcc ?? null, r.hint],
       );
@@ -47,7 +54,8 @@ export async function loadReferenceData(
          on conflict (country, code) do update set form = excluded.form, line = excluded.line, label = excluded.label,
            sort_order = excluded.sort_order, deductible_bps = excluded.deductible_bps,
            version = ref.tax_line.version + 1, updated_at = now()
-         where (ref.tax_line.form, ref.tax_line.line, ref.tax_line.label, ref.tax_line.sort_order, ref.tax_line.deductible_bps)
+         where ref.tax_line.staff_edited_at is null
+           and (ref.tax_line.form, ref.tax_line.line, ref.tax_line.label, ref.tax_line.sort_order, ref.tax_line.deductible_bps)
                is distinct from (excluded.form, excluded.line, excluded.label, excluded.sort_order, excluded.deductible_bps)`,
         [l.code, l.form, l.line, l.label, i + 1, l.deductibleBps ?? 10000],
       );
@@ -57,7 +65,8 @@ export async function loadReferenceData(
         `insert into ref.mileage_rate (country, effective_from, tenths_of_cent, source) values ('US', $1, $2, $3)
          on conflict (country, effective_from) do update set tenths_of_cent = excluded.tenths_of_cent,
            source = excluded.source, version = ref.mileage_rate.version + 1, updated_at = now()
-         where (ref.mileage_rate.tenths_of_cent, ref.mileage_rate.source)
+         where ref.mileage_rate.staff_edited_at is null
+           and (ref.mileage_rate.tenths_of_cent, ref.mileage_rate.source)
                is distinct from (excluded.tenths_of_cent, excluded.source)`,
         [r.effectiveFrom, r.tenthsOfCent, r.source],
       );

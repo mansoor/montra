@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import {
   DEFAULT_POLICY,
   judgePassword,
@@ -10,12 +10,14 @@ import {
 } from '@montra/password';
 import type { MailPort } from '../mail/mail.service.js';
 import { templates } from '../mail/mail.service.js';
+import { TURNSTILE_FIELD, withoutCaptchaField, type CaptchaOptions, type CaptchaResult } from './captcha.js';
 import {
   delayFor,
   keyOf,
   liveFailures,
   lockedFor,
   RULES,
+  type Bucket,
   type Rule,
   type ThrottleStore,
 } from './throttle.js';
@@ -70,6 +72,11 @@ export interface Attempt {
   countAlways: boolean;
   /** Cleared when the attempt succeeds. */
   clearOnSuccess: string[];
+  /**
+   * Which CAPTCHA threshold applies to a browser submission (ADR-0056): a password sign-in's failures, or the address's
+   * sign-ups. Null for everything else.
+   */
+  captcha: 'failures' | 'sign_ups' | null;
 }
 
 export interface GatewayOptions {
@@ -81,7 +88,9 @@ export interface GatewayOptions {
   trustProxy?: number;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
-  logger?: boolean;
+  logger?: FastifyServerOptions['logger'];
+  /** A CAPTCHA for browsers after repeated failures (ADR-0056). Absent, none is ever asked for. */
+  captcha?: CaptchaOptions;
   /** The admin console's password policy (ADR-0043). Defaults to 12 characters and a score of 3. */
   policy?: () => Promise<PasswordPolicy>;
   /** Scores a password; the entrypoint runs this on a worker thread. */
@@ -162,9 +171,18 @@ export function attemptOf(
   const fields = parseFields(contentType, req.body);
   const method = fields.method ?? '';
   const at = (rule: Rule, value: string): Check => ({ rule, key: keyOf(secret, rule.name, value) });
-  const base = { kind, flowId, json, identifier: null, countAlways: false, clearOnSuccess: [] as string[] };
+  const base = {
+    kind,
+    flowId,
+    json,
+    identifier: null,
+    countAlways: false,
+    clearOnSuccess: [] as string[],
+    captcha: null,
+  };
 
-  if (kind === 'registration') return { ...base, checks: [at(RULES.sign_up, ip)], countAlways: true };
+  if (kind === 'registration')
+    return { ...base, checks: [at(RULES.sign_up, ip)], countAlways: true, captcha: 'sign_ups' };
 
   /** A text with a code is about to go to this number (ADR-0049 §6): limited per number and per address. */
   const texted = (phone: string): Attempt => ({
@@ -203,7 +221,13 @@ export function attemptOf(
     const identifier = (fields.identifier ?? '').trim().toLowerCase() || null;
     const checks = [at(RULES.address, ip)];
     if (identifier) checks.unshift(at(RULES.account, identifier));
-    return { ...base, identifier, checks, clearOnSuccess: identifier ? [checks[0]!.key] : [] };
+    return {
+      ...base,
+      identifier,
+      checks,
+      clearOnSuccess: identifier ? [checks[0]!.key] : [],
+      captcha: 'failures',
+    };
   }
   if (method === 'totp' || method === 'lookup_secret') {
     const session = sessionOf(req.headers);
@@ -402,13 +426,38 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
     return { email: str(traits.email), name: str(traits.name), phone: str(traits.phone) };
   };
 
+  /**
+   * Whether a browser's next submission of this kind needs a CAPTCHA (ADR-0056): the email's or the address's failures,
+   * or the address's sign-ups, have reached the threshold. Never for JSON (the phone), and never when it's off.
+   */
+  const captchaDue = (a: Attempt, buckets: Map<string, Bucket>, at: Date): boolean => {
+    if (!opts.captcha || a.json || !a.captcha) return false;
+    const limit = a.captcha === 'failures' ? opts.captcha.afterFailures : opts.captcha.afterSignUps;
+    return a.checks.some((c) => liveFailures(buckets.get(c.key), c.rule, at) >= limit);
+  };
+
+  /** A redirect Kratos made back to the same flow's form on the web, with `notice=captcha_required` added. */
+  const withCaptchaNotice = (a: Attempt, location: string): string | null => {
+    let to: URL;
+    try {
+      to = new URL(location, `${web}/`);
+    } catch {
+      return null;
+    }
+    const form = new URL(UI_PATH[a.kind], `${web}/`);
+    if (to.origin !== form.origin || to.pathname !== form.pathname) return null;
+    if (!a.flowId || to.searchParams.get('flow') !== a.flowId || to.searchParams.has('notice')) return null;
+    to.searchParams.set('notice', 'captcha_required');
+    return to.toString();
+  };
+
   const lockedMessage = (seconds: number) => {
     const minutes = Math.max(1, Math.ceil(seconds / 60));
     return `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password.`;
   };
 
   app.all('/*', async (req, reply) => {
-    const body = req.body as Buffer | undefined;
+    let body = req.body as Buffer | undefined;
     const ip = req.ip;
     const attempt = attemptOf(
       { method: req.method, url: req.url, headers: req.headers, body },
@@ -416,8 +465,9 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
       ip,
     );
 
+    let buckets = new Map<string, Bucket>();
     if (attempt) {
-      const buckets = await opts.store.get(attempt.checks.map((c) => c.key));
+      buckets = await opts.store.get(attempt.checks.map((c) => c.key));
       const at = now();
       const locked = Math.max(0, ...attempt.checks.map((c) => lockedFor(buckets.get(c.key), at)));
       if (locked > 0) {
@@ -446,12 +496,30 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
             };
         return reply.code(429).header('content-type', 'application/json').send(JSON.stringify(payload));
       }
+      // A CAPTCHA after repeated failures (ADR-0056). A refused one reaches nothing and counts nothing.
+      if (opts.captcha && captchaDue(attempt, buckets, at)) {
+        const token = parseFields(header(req.headers, 'content-type'), body)[TURNSTILE_FIELD];
+        const result: CaptchaResult = token
+          ? await opts.captcha
+              .verify(token, ip)
+              .catch((): CaptchaResult => ({ ok: false, reason: 'unreachable' }))
+          : { ok: false, reason: 'missing' };
+        if (!result.ok) {
+          if (result.reason === 'unreachable')
+            req.log.warn({ codes: result.codes }, 'Could not check a CAPTCHA, so the attempt was refused');
+          const q = new URLSearchParams({ notice: 'captcha_required' });
+          if (attempt.flowId) q.set('flow', attempt.flowId);
+          return reply.code(303).header('location', `${web}${UI_PATH[attempt.kind]}?${q}`).send();
+        }
+      }
       const wait = Math.max(
         0,
         ...attempt.checks.map((c) => delayFor(liveFailures(buckets.get(c.key), c.rule, at), c.rule)),
       );
       if (wait > 0) await sleep(wait);
     }
+    // Kratos never sees the widget's field.
+    if (opts.captcha) body = withoutCaptchaField(header(req.headers, 'content-type'), body);
 
     // A new password: the admin console's policy, before Kratos ever stores it (ADR-0043).
     const change = passwordChangeOf({ method: req.method, url: req.url, headers: req.headers, body });
@@ -535,12 +603,14 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
     }
 
     const payload = Buffer.from(await res.arrayBuffer());
+    let location = res.headers.get('location');
     if (attempt) {
       const outcome = await outcomeOf(req, attempt, res);
       const at = now();
       if (outcome === 'failure' || attempt.countAlways) {
         for (const c of attempt.checks) {
           const { bucket, locked } = await opts.store.fail(c.key, c.rule, at);
+          buckets.set(c.key, bucket);
           if (locked && c.rule.name === 'account' && attempt.identifier?.includes('@')) {
             void alertLockout(
               attempt.identifier,
@@ -552,13 +622,17 @@ export function buildAuthGateway(opts: GatewayOptions): FastifyInstance {
         }
       } else if (outcome === 'success') {
         await opts.store.clear(attempt.clearOnSuccess);
+        for (const key of attempt.clearOnSuccess) buckets.delete(key);
       }
+      // Back to the form, and the next try needs a CAPTCHA: say so now, so the page shows the widget straight away.
+      if (location && res.status >= 300 && res.status < 400 && captchaDue(attempt, buckets, at))
+        location = withCaptchaNotice(attempt, location) ?? location;
     }
 
     void reply.code(res.status);
     res.headers.forEach((value, name) => {
       if (name === 'set-cookie' || DROP_RESPONSE.has(name)) return;
-      void reply.header(name, value);
+      void reply.header(name, name === 'location' && location ? location : value);
     });
     const cookies = res.headers.getSetCookie();
     if (cookies.length) void reply.header('set-cookie', cookies);

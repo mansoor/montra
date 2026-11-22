@@ -207,3 +207,53 @@ Check:
 `infra/observability` holds the rules and dashboards. Terraform doesn't deploy a Prometheus. Design 07 §7 expects Grafana
 Cloud or similar. Choose one, load the files, and give it the `METRICS_TOKEN`.
 `/internal/metrics` is blocked from the internet, so the scrape must come from inside the VPC.
+
+## 9. Optional: a CAPTCHA after repeated sign-in failures (Turnstile)
+
+Off by default, and right off for LAN and self-hosted installs. With it on, a browser that has had
+`CAPTCHA_AFTER_FAILURES` wrong passwords (per email or per address, default 5), or an address with
+`CAPTCHA_AFTER_SIGNUPS` sign-ups in the hour (default 5), must pass Cloudflare Turnstile before the auth gateway lets
+the next try through ([ADR-0056](../design/adr/0056-turnstile-captcha.md)). The phone is never asked; it keeps the
+delay and the pause.
+
+**Get the keys.** In the Cloudflare dashboard, open **Turnstile**, add a widget, and list the web app's hostname
+(`app.<domain>`; add `localhost` to a development widget only). Pick **Managed** mode. Cloudflare shows a **site key**
+(public) and a **secret key**. Use one widget per environment.
+
+**Turn it on.** Both halves are needed; the gateway asks only when it has the secret, and the page can show the widget
+only when it has the site key.
+
+- [ ] Give the **auth gateway** process (and only it) `TURNSTILE_SECRET_KEY`, or `TURNSTILE_SECRET_KEY_FILE` pointing
+      at a file. Never log it or put it in the repository. Optionally set `CAPTCHA_AFTER_FAILURES` and
+      `CAPTCHA_AFTER_SIGNUPS`.
+- [ ] Build the **web** image with `--build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY=<site key>`. It is compiled in, like
+      `NEXT_PUBLIC_KRATOS_URL`, and also opens the CSP for `https://challenges.cloudflare.com` (script and frame). Without
+      it the CSP is unchanged.
+- [ ] Not wired yet: the Terraform module (`auth_gateway_environment`, `auth_gateway_secrets`, `webBuildArgs`), the
+      self-host `infra/selfhost/compose.yaml` and `deploy.yml` don't pass these settings. Add them there first, as a
+      code change, before turning it on in a deployed environment.
+- [ ] Restart the gateway. Its log says `CAPTCHA (Turnstile) on: after 5 failed sign-ins or 5 sign-ups an hour`, or
+      `CAPTCHA off`.
+
+**Check it.** Type a wrong password five times in a browser. The fifth goes back to the form with
+`notice=captcha_required` and the widget above the Sign in button. The right password with the check passed signs in.
+The phone app's sign-in behaves as before.
+
+**If siteverify can't be reached** (a Cloudflare outage, or the gateway has no route to the internet), challenged
+sign-ins are refused and the gateway logs `Could not check a CAPTCHA`. Below the threshold, sign-in is unaffected. To
+turn it off, remove `TURNSTILE_SECRET_KEY` and restart the gateway; the web image can keep its site key.
+
+**Development.** Cloudflare publishes test keys that need no account (see
+[Turnstile's testing page](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) for the current list):
+
+| Key                                              | Behaviour                     |
+| ------------------------------------------------ | ----------------------------- |
+| Site key `1x00000000000000000000AA`              | Visible widget, always passes |
+| Site key `2x00000000000000000000AB`              | Visible widget, always blocks |
+| Secret key `1x0000000000000000000000000000000AA` | Always passes                 |
+| Secret key `2x0000000000000000000000000000000AA` | Always fails                  |
+
+Run the gateway with a test secret (`TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA pnpm --filter
+@montra/api dev:auth-gateway`) and the web app with the always-pass site key in `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+(restart `next dev`, since the CSP is fixed when it starts). Use them only on a development machine: a test site key's
+dummy token is refused by a real secret. The automated tests never call siteverify; they replace it.

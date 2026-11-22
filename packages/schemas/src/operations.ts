@@ -2,6 +2,7 @@
 import { PLAN_FEATURES } from '@montra/domain';
 import { z } from 'zod';
 import { Id } from './common.js';
+import { ColumnMappingDto } from './imports.js';
 
 /// ----- Plans and billing (UP-12, OPS-08, ADR-0049 §1) ------------------------------------------
 
@@ -326,7 +327,7 @@ export const AdminSupportRequestDto = z.object({
 });
 export type AdminSupportRequestDto = z.infer<typeof AdminSupportRequestDto>;
 
-export const ReferenceDataset = z.enum(['merchant', 'mileage_rate', 'tax_line']);
+export const ReferenceDataset = z.enum(['merchant', 'mileage_rate', 'tax_line', 'import_profile']);
 export type ReferenceDataset = z.infer<typeof ReferenceDataset>;
 
 export const SaveMerchantRequest = z.object({
@@ -345,6 +346,90 @@ export const SaveMileageRateRequest = z.object({
   source: z.string().trim().min(1).max(200),
 });
 export type SaveMileageRateRequest = z.output<typeof SaveMileageRateRequest>;
+
+/**
+ * The tax forms the readers know (Schedules B, C and E). Schedule C and E reports pick their lines by form, so a form
+ * nobody reads would hold lines no report shows.
+ */
+export const TAX_LINE_FORMS = ['schedule_b', 'schedule_c', 'schedule_e'] as const;
+
+export const AdminTaxLineDto = z.object({
+  country: z.string(),
+  code: z.string(),
+  form: z.string(),
+  line: z.string(),
+  label: z.string(),
+  sortOrder: z.number().int(),
+  deductibleBps: z.number().int(),
+  version: z.number().int(),
+  /** Saved in the console: the reference loader leaves it as staff left it. */
+  staffEditedAt: z.string().nullable(),
+});
+export type AdminTaxLineDto = z.infer<typeof AdminTaxLineDto>;
+
+/**
+ * Adds a tax line or changes one, by (country, code). The code is what categories store, so it never changes, and an
+ * existing line keeps its form (the API refuses a move). There's no delete: categories may hold the code.
+ */
+export const SaveTaxLineRequest = z.object({
+  country: z
+    .string()
+    .regex(/^[A-Za-z]{2}$/)
+    .transform((c) => c.toUpperCase()),
+  code: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z][A-Za-z0-9_]{1,63}$/)
+    .transform((c) => c.toUpperCase()),
+  form: z.enum(TAX_LINE_FORMS),
+  line: z.string().trim().min(1).max(10),
+  label: z.string().trim().min(1).max(200),
+  sortOrder: z.number().int().min(0).max(10000),
+  deductibleBps: z.number().int().min(0).max(10000),
+});
+export type SaveTaxLineRequest = z.output<typeof SaveTaxLineRequest>;
+
+export const IMPORT_PROFILE_SOURCES = ['bank', 'app_template'] as const;
+
+export const AdminImportProfileDto = z.object({
+  id: z.string(),
+  name: z.string(),
+  institution: z.string().nullable(),
+  source: z.enum(IMPORT_PROFILE_SOURCES),
+  fingerprint: z.string(),
+  mapping: ColumnMappingDto,
+  version: z.number().int(),
+  staffEditedAt: z.string().nullable(),
+});
+export type AdminImportProfileDto = z.infer<typeof AdminImportProfileDto>;
+
+/**
+ * A bank's statement layout for every workspace (IMP-04, OPS-05). The importer uses it for a file of this shape when
+ * the workspace has no profile of its own for it. The shape is either the fingerprint itself or the file's first lines
+ * (`sample`: the header and a row, which can be made up), from which the API works it out as the importer does. The
+ * sample isn't stored.
+ */
+export const SaveImportProfileRequest = z
+  .object({
+    id: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9_-]{1,99}$/),
+    name: z.string().trim().min(1).max(200),
+    institution: z.string().trim().max(200).optional(),
+    source: z.enum(IMPORT_PROFILE_SOURCES),
+    fingerprint: z
+      .string()
+      .regex(/^[0-9a-f]{32}$/)
+      .optional(),
+    sample: z.object({ fileType: z.enum(['csv', 'xlsx']), text: z.string().min(1).max(5000) }).optional(),
+    mapping: ColumnMappingDto,
+  })
+  .refine((r) => (r.fingerprint === undefined) !== (r.sample === undefined), {
+    message: 'Give either the fingerprint or a sample of the file',
+    path: ['fingerprint'],
+  });
+export type SaveImportProfileRequest = z.output<typeof SaveImportProfileRequest>;
 
 export const SupportViewDto = z.object({
   workspace: z.object({ id: Id, name: z.string(), baseCurrency: z.string() }),

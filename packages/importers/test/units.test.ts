@@ -384,6 +384,37 @@ describe('XLSX and fingerprints (IMP-01, IMP-04)', () => {
     expect(o.parsed.rows.map((r) => r.amount)).toEqual([100n, 200n]);
   });
 
+  it("uses a staff-kept layout when the workspace has none of its own, and the workspace's own first (OPS-05)", () => {
+    const sheet = {
+      name: 'CSV',
+      rows: [
+        ['When', 'What', 'How much'],
+        ['2026-10-01', 'X', '1.00'],
+      ],
+    };
+    const fp = fingerprint('csv', sheet.rows[0]!, 3);
+    const mapping = {
+      headerRow: 0,
+      dataStart: 1,
+      date: 0,
+      dateFormat: 'YYYY-MM-DD' as const,
+      description: [1],
+      amount: 2,
+      sign: 'inverted' as const,
+      decimal: '.' as const,
+    };
+    const staffKept = { id: 'some-bank', fingerprint: fp, mapping, reference: true };
+    const run = (profiles: Parameters<typeof analyze>[1]['profiles']) =>
+      analyze([sheet], { fileType: 'csv', currency: 'USD', accountType: 'asset', profiles });
+    const ref = run([staffKept]);
+    expect(ref.proposal).toMatchObject({ source: 'reference', templateId: 'some-bank', confidence: 1 });
+    expect(ref.proposal.profileId).toBeUndefined();
+    expect(ref.parsed.rows.map((r) => r.amount)).toEqual([-100n]);
+    const own = run([{ id: 'p1', fingerprint: fp, mapping: { ...mapping, sign: 'normal' } }, staffKept]);
+    expect(own.proposal).toMatchObject({ source: 'profile', profileId: 'p1' });
+    expect(own.parsed.rows.map((r) => r.amount)).toEqual([100n]);
+  });
+
   it("keeps a profile's choice of account to the account it was saved for", () => {
     const sheet = {
       name: 'CSV',

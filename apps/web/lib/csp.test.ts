@@ -78,3 +78,43 @@ describe('securityHeaders', () => {
     }
   });
 });
+
+describe('Cloudflare Turnstile in the CSP (ADR-0056)', () => {
+  const TURNSTILE = 'https://challenges.cloudflare.com';
+
+  it('allows nothing from Cloudflare without a site key, and keeps frames to Montra’s own', () => {
+    for (const turnstileSiteKey of [undefined, '', '  ']) {
+      const csp = contentSecurityPolicy({ kratosUrl: 'https://auth.example.com', turnstileSiteKey });
+      expect(csp).not.toContain(TURNSTILE);
+      expect(directive(csp, 'frame-src')).toEqual([]);
+      expect(directive(csp, 'default-src')).toEqual(["'self'"]);
+    }
+  });
+
+  it('allows Turnstile’s script and frame, and nothing more, with a site key', () => {
+    const csp = contentSecurityPolicy({
+      kratosUrl: 'https://auth.example.com',
+      turnstileSiteKey: '1x00000000000000000000AA',
+    });
+    expect(directive(csp, 'script-src')).toEqual([
+      "'self'",
+      "'unsafe-inline'",
+      'https://auth.example.com',
+      TURNSTILE,
+    ]);
+    // 'self' stays, for the receipt and payslip viewers' frames.
+    expect(directive(csp, 'frame-src')).toEqual(["'self'", TURNSTILE]);
+    expect(directive(csp, 'form-action')).not.toContain(TURNSTILE);
+    expect(directive(csp, 'frame-ancestors')).toEqual(["'none'"]);
+  });
+
+  it('passes the key through the headers for pages and for /api alike', () => {
+    for (const frameable of [false, true]) {
+      const value =
+        securityHeaders({ frameable, turnstileSiteKey: '1x00000000000000000000AA' }).find(
+          (h) => h.key === 'Content-Security-Policy',
+        )?.value ?? '';
+      expect(directive(value, 'frame-src')).toContain(TURNSTILE);
+    }
+  });
+});

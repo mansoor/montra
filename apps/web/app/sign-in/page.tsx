@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { AUTH_MODE, DEV_COOKIE, isValidEmail } from '@/lib/session';
+import { AUTH_MODE, DEV_COOKIE, devCookieSecure, isValidEmail } from '@/lib/session';
 import { fetchFlow, flowInitUrl, KRATOS_ORIGIN, safeReturnTo } from '@/lib/kratos';
 import { toRenderModel } from '@/lib/kratos-ui';
 import { staticT as t } from '@/lib/i18n-static';
 import { AuthShell } from '@/components/kratos/auth-shell';
 import { FlowForm } from '@/components/kratos/flow-form';
-import { GatewayNotice } from '@/components/kratos/gateway-notice';
+import { captchaWidget, GatewayNotice } from '@/components/kratos/gateway-notice';
 
 export const metadata: Metadata = { title: 'Sign in' };
 export const dynamic = 'force-dynamic';
@@ -27,7 +27,7 @@ async function devSignIn(formData: FormData) {
   (await cookies()).set(DEV_COOKIE, email, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: devCookieSecure((await headers()).get('host')),
     path: '/',
     maxAge: 60 * 60 * 24 * 7,
   });
@@ -59,6 +59,7 @@ async function KratosSignIn({ params }: { params: Params }) {
       <FlowForm
         model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })}
         label={t('auth.sign_in_title')}
+        beforeSubmit={captchaWidget(params)}
       />
       {!stepUp && !flow.refresh && (
         <p className="flex justify-between text-sm">
