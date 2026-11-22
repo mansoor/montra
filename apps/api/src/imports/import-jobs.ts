@@ -35,7 +35,7 @@ import { FileBytes, type HeldFile } from '../storage/file-bytes.js';
 import { BusinessJobs } from '../business/business-jobs.service.js';
 import { RentalJobs } from '../rentals/rental-jobs.service.js';
 import { ownerOf, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
-import { TransactionsService } from '../transactions/transactions.service.js';
+import { TransactionsService, type PreparedTransaction } from '../transactions/transactions.service.js';
 import { JobQueue, PermanentJobError, Worker, type Job, type JobContext } from '../jobs/queue.js';
 import { effectiveDecision } from './imports.service.js';
 import { Categorizer, type StoredCategorization } from '../categorization/categorizer.service.js';
@@ -826,6 +826,23 @@ export class ImportJobs {
         const sources: { transaction_id: string; import_row_id: string }[] = [];
         const outcomes: { id: string; outcome: string; transaction_id: string | null }[] = [];
         const payees = new Map<string, string>();
+        // New transactions are written 500 at a time (backlog item 9): rows, entries and postings in a few statements
+        // each. A foreign-currency account posts one at a time, as each carrying value reads the postings before it.
+        const oneByOne = await this.poster.postsInOrder(trx, ctx, batch.ledger_account_id);
+        const pending: { prepared: PreparedTransaction; rowId: string; after?: () => Promise<void> }[] = [];
+        const flush = async () => {
+          if (pending.length === 0) return;
+          await this.transactions.insertPrepared(
+            trx,
+            ctx,
+            pending.map((p) => p.prepared),
+          );
+          for (const p of pending) {
+            await p.after?.();
+            sources.push({ transaction_id: p.prepared.id, import_row_id: p.rowId });
+          }
+          pending.length = 0;
+        };
         for (const [i, row] of rows.entries()) {
           if (i % 200 === 0) await jc.progress((i / rows.length) * 100).catch(() => {});
           const decision = effectiveDecision(row);
@@ -838,6 +855,8 @@ export class ImportJobs {
             outcome = 'skipped';
             skipped++;
           } else if (decision === 'match' && row.match_transaction_id) {
+            // Rows stay in statement order: what's waiting is written before a match is confirmed.
+            await flush();
             transactionId = row.match_transaction_id;
             await this.confirmMatch(trx, ctx, batch.ledger_account_id, batch.id, row, currency);
             outcome = 'matched';
@@ -883,7 +902,7 @@ export class ImportJobs {
               payeeId = await this.payeeId(trx, ctx, key, name);
               payees.set(key, payeeId);
             }
-            transactionId = await this.transactions.createInTrx(trx, ctx, {
+            const prepared = await this.transactions.prepareCreate(trx, ctx, {
               date: row.txn_date!,
               accountId: batch.ledger_account_id,
               amount: { amount: row.amount_minor!.toString(), currency },
@@ -903,29 +922,36 @@ export class ImportJobs {
               rawDescription: row.description,
               clearedAccountId: batch.ledger_account_id,
             });
-            if (userSet) {
-              const { learned } = await this.categorizer.learn(trx, ctx, {
-                transactionId,
-                payee: name || null,
-                payeeKey: rowPayeeKey,
-                amountMinor: row.amount_minor!,
-                currency,
-                categoryId: chosen,
-                memberId,
-                previous: categorization && { ...categorization, step: suggestion?.step ?? 'none' },
-                previousCategoryId: null,
-              });
-              await this.transactions.setCategorization(trx, ctx, transactionId, {
-                ...categorization!,
-                learned,
-              });
-            }
-            sources.push({ transaction_id: transactionId, import_row_id: row.id });
+            const id = prepared.id;
+            transactionId = id;
+            pending.push({
+              prepared,
+              rowId: row.id,
+              // A category picked during import teaches a rule, once the transaction exists.
+              after: userSet
+                ? async () => {
+                    const { learned } = await this.categorizer.learn(trx, ctx, {
+                      transactionId: id,
+                      payee: name || null,
+                      payeeKey: rowPayeeKey,
+                      amountMinor: row.amount_minor!,
+                      currency,
+                      categoryId: chosen,
+                      memberId,
+                      previous: categorization && { ...categorization, step: suggestion?.step ?? 'none' },
+                      previousCategoryId: null,
+                    });
+                    await this.transactions.setCategorization(trx, ctx, id, { ...categorization!, learned });
+                  }
+                : undefined,
+            });
+            if (oneByOne || pending.length >= 500) await flush();
             outcome = 'added';
             added++;
           }
           outcomes.push({ id: row.id, outcome, transaction_id: transactionId });
         }
+        await flush();
         // Row bookkeeping in bulk: one statement per 1,000 rows instead of two per row.
         for (let k = 0; k < sources.length; k += 1000) {
           await trx
