@@ -73,6 +73,7 @@ export function makeDto(t: TxInput, version = 1): TransactionDto {
     reconciled: false,
     expenseDetail: null,
     foreign: null,
+    transferFx: null,
     tripId: null,
     localTime: null,
     receipt: null,

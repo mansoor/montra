@@ -2,9 +2,10 @@
  * FX valuation rules for foreign-currency accounts (ADR-0010, design 04 §2.2, CUR-06/07/08). Pure bigint
  * arithmetic in minor units; the builders in `builder.ts` apply it to postings.
  */
-import type { CurrencyCode } from '../currency.js';
+import { minorUnits, type CurrencyCode } from '../currency.js';
 import type { Decimal } from '../decimal.js';
 import { convert, type Money } from '../money.js';
+import { impliedRate } from '../receipt.js';
 import { abs, divRound } from '../rounding.js';
 
 /**
@@ -58,6 +59,30 @@ export function unrealizedFx(
 }
 
 /**
+ * Unrealized FX on a foreign balance, shown in a report's currency (CUR-06). The gain or loss is measured in the
+ * books' functional currency at `toFunctional` (account → functional at the period end), as `unrealizedFx` does,
+ * then translated at `toReport` (functional → report) when the report is in another currency.
+ *
+ * Zero for an account in its books' own currency. Null when a rate it needs is missing, so the caller leaves the
+ * account out instead of guessing, as net worth does.
+ */
+export function unrealizedFxIn(
+  balance: CarryingBalance,
+  accountCurrency: CurrencyCode,
+  functionalCurrency: CurrencyCode,
+  toFunctional: Decimal | null,
+  reportCurrency: CurrencyCode,
+  toReport: Decimal | null,
+): bigint | null {
+  if (accountCurrency === functionalCurrency) return 0n;
+  if (!toFunctional) return null;
+  const gain = unrealizedFx(balance, accountCurrency, functionalCurrency, toFunctional);
+  if (functionalCurrency === reportCurrency) return gain;
+  if (!toReport) return null;
+  return convert({ amount: gain, currency: functionalCurrency }, reportCurrency, toReport).amount;
+}
+
+/**
  * FX cost of a cross-currency transfer against the market rate (CUR-08), in the functional currency:
  * what was given (functional value of the outgoing leg, positive) minus the market value of what arrived.
  * Positive = cost (spread and fees), negative = a better-than-market rate.
@@ -73,4 +98,48 @@ export function transferFxCost(
       ? received.amount
       : convert(received, functionalCurrency, marketRate).amount;
   return givenFunctional - market;
+}
+
+/**
+ * The rate a cross-currency transfer actually got (CUR-08): units of the received currency per one unit sent,
+ * implied by the two amounts (10 decimal places).
+ */
+export function transferEffectiveRate(sent: Money, received: Money): Decimal {
+  if (sent.amount <= 0n || received.amount <= 0n) {
+    throw new RangeError('transferEffectiveRate needs two positive amounts');
+  }
+  return impliedRate(received.amount, minorUnits(received.currency), sent.amount, minorUnits(sent.currency));
+}
+
+/** A cross-currency transfer measured against the market (CUR-08), in the functional currency. */
+export interface TransferFxQuote {
+  /** What was sent, valued at the market rate. */
+  readonly sentValue: bigint;
+  /** `sentValue` minus the market value of what arrived: positive = cost, negative = better than market. */
+  readonly cost: bigint;
+  /** The cost as a share of `sentValue` in basis points (1% = 100), half-up; null when nothing was sent. */
+  readonly costBps: bigint | null;
+}
+
+/**
+ * CUR-08: both legs of a transfer valued at the day's market rates (`market.sent` and `market.received`:
+ * functional units per one unit of each currency). Valuing the sent leg at market too, not at the account's
+ * carrying value, keeps earlier gains on held currency out of the cost: what is left is the spread and fees.
+ */
+export function transferFxQuote(
+  sent: Money,
+  received: Money,
+  functionalCurrency: CurrencyCode,
+  market: { readonly sent: Decimal; readonly received: Decimal },
+): TransferFxQuote {
+  const sentValue =
+    sent.currency === functionalCurrency
+      ? sent.amount
+      : convert(sent, functionalCurrency, market.sent).amount;
+  const cost = transferFxCost(sentValue, received, functionalCurrency, market.received);
+  return {
+    sentValue,
+    cost,
+    costBps: sentValue === 0n ? null : divRound(cost * 10_000n, sentValue, 'half_up'),
+  };
 }

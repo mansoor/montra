@@ -12,6 +12,15 @@ export { proposeRuleFromCorrections } from './learning.js';
 export { detectRecurring } from './recurring.js';
 export { detectAnomalies, type AnomalyInput, type AnomalyTxn } from './anomalies.js';
 export {
+  costPerYear,
+  merchantWord,
+  unusedSubscriptions,
+  type MerchantTxn,
+  type SubscriptionItem,
+  type UnusedSubscriptionFinding,
+  type UnusedSubscriptionSettings,
+} from './subscriptions.js';
+export {
   parseQuickAddHeuristic,
   type QuickAddField,
   type QuickAddHeuristicContext,

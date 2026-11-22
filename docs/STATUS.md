@@ -509,7 +509,7 @@ integration):
   - `/trips` (CUR-09).
   - The transaction page: an FX panel (the original amount, rate and source, a rate override on
     foreign-currency accounts, "Paid in another currency?" with a fee for CUR-03) and "Add a receipt".
-  - The transfer form asks for the amount received across currencies (CUR-08).
+  - The transfer form asks for the amount received across currencies (CUR-08), and previews the FX cost (see §7g).
   - `e2e/receipts.spec.ts` covers the Walmart receipt through the UI and the CUR-03 entry. The foreign
     _receipt_ match is covered by the API tests only: e2e runs against the dev database, which has no FX
     rates unless `fx:load` has fetched them.
@@ -542,7 +542,7 @@ integration):
   - device runs of the mobile capture, the offline queue and the camera spike;
   - device runs (see above).
 - **Phase 5 leftovers, not blocking:**
-  - CUR-08: FX-cost display;
+  - ~~CUR-08: FX-cost display.~~ Done: web and phone (see §7g);
   - RCP-10: purge after retention (done since, migration 0079; see the end of §7g);
   - UP-09: missing-receipt flags, with BIZ-12 in Phase 8.
 
@@ -572,8 +572,9 @@ reduction). Figure names now say what they mean, and the prompt forbids inventin
 Phase 6 leftovers, not blocking:
 
 - FAM-06/07: the API supports member budgets and goals; the screens have no member picker yet (fits Phase 7).
-- FLOW-06: owner draws never count as spending, but the Sankey doesn't draw them as transfers yet.
-- REC-06: unused subscriptions aren't detected. REC-04's wording can name at-risk bills awkwardly.
+- FLOW-06: done since; owner draws and contributions are drawn as transfers between books (see §7g).
+- REC-06: unused subscriptions are now hinted at from spending (see §7g). REC-04's wording can name at-risk bills
+  awkwardly.
 - Mobile: budgets are created only as monthly zero-based. No device run yet. (Goals can now be edited and archived on the phone; see §7g.)
 
 Design notes that the API relies on:
@@ -764,7 +765,7 @@ Phase 10 leftovers, not blocking:
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
 - **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
-- **CUR-06**: net worth revalues at the period-end rate, but no report shows unrealized gain or loss yet.
+- **CUR-06**: done since; net worth now shows unrealized FX gain or loss on the web and the phone (see 7g).
 - Personal books can't be restored into an existing workspace, which already has its one personal entity. Use a new workspace.
 - Restoring to an existing workspace only counts likely duplicates; it doesn't drop them.
 - Search reads the latest 5,000 notes, and leaves receipts out when the query has an amount or a tag.
@@ -2504,6 +2505,85 @@ Phase 11 leftovers:
     - `sign-in.test.tsx`: the API's error shows on the form.
     - `transactions.test.tsx`: rows from the offline store, newest first, open their transaction. An empty store shows
       the empty state.
+- **Unrealized FX gain or loss on net worth** (CUR-06, [ADR-0010](design/adr/0010-fx-accounting-policy.md) §6; no
+  migration).
+  - Before: net worth valued foreign-currency accounts at the date's rate, but nothing showed how much of that was
+    unrealized FX. CUR-06 was partial for that alone.
+  - Now, for each account in a currency other than its books', net worth works out its balance at the date's rate less
+    its carrying value (the sum of its postings' functional amounts, so realized gains and any `fx_revaluation` entry
+    already count). A gain in the books' currency is translated to the base currency at the date's rate. An account
+    without a rate is left out, as net worth already does. Nothing is posted.
+  - `NetWorthDto` has `unrealizedFx` (total), `accounts[].unrealizedFx` (null for an account in its books' currency)
+    and `trend[].unrealizedFx`. `@montra/domain` has `unrealizedFxIn` for the sum.
+  - The net worth report gets an "Unrealized FX" column for each date, and a note saying it isn't booked, but only when
+    some account is in a foreign currency. Export includes the column.
+  - Web: the net worth tab of Cash flow shows the total under net worth and a column per account. Phone: the net worth
+    tab shows the total, and each foreign account's line shows its own.
+  - Not added: an unrealized line on the income statement or balance sheet. Both stay at booked (carrying) values.
+  - Tests: domain `ledger-fx.test.ts` (gain, loss on a foreign debt, translation, own currency, no rate), API
+    `unrealized-fx.test.ts` (a EUR account after a spend, each date's rate, the report column, note and CSV, nothing
+    booked, no column without a foreign account), web `i18n-keys.test.ts`.
+- **Subscriptions you may not be using** (REC-06; no migration: the thresholds live in the planning settings).
+  - Before: REC-06 flagged only price increases. Nothing said a subscription might be unused.
+  - Montra has no usage data from the services. So "unused" is a hint from the person's own spending, and the
+    suggestion says "may", never "is". Two patterns, in `@montra/categorize` `unusedSubscriptions`:
+    - **No other spending there:** there was other spending at the subscription's merchant before (rides beside
+      Uber One), but none for `unusedSubscriptionMonths` (default 3), while the charge kept coming. The merchant is the
+      first name word of the payee key. Its own charges (linked, or within 5% of the price) don't count. A
+      subscription with no other spending there at all (Netflix) gets no hint either way.
+    - **Similar ones:** `similarSubscriptionsMin` (default 2) or more active subscriptions in one category whose
+      payees match reference merchants with the same MCC (Netflix and Hulu; not Netflix and Spotify). Merchants
+      without a reference entry are never grouped, so two utility bills don't count.
+  - Only active recurring expense items count. An ended or paused one is left alone.
+  - Each is a REC-06 recommendation with a `review_subscription` action, once per period. On web the action links to
+    Recurring, and the dismiss button reads **Keep it** (phone too). Kept or accepted: that subscription, or that
+    exact group, isn't suggested again. Ignored: it expires with the period and comes back.
+  - Settings: `unusedSubscriptionMonths` (0–24, 0 off) and `similarSubscriptionsMin` (0 off, or 2–10) in
+    `PlanningSettingsDto`, stored in `workspace.priorities` like the others. Web Settings › Planning edits them.
+  - Tests: categorize `subscriptions.test.ts`, API `unused-subscriptions.test.ts` (both hints, wording and links, keep
+    stops it, ignored comes back, settings, ended items), API `planning.test.ts` (settings defaults).
+- **The FX cost of a transfer between currencies** (CUR-08; no migration).
+  - Before: a transfer between currencies kept both amounts and booked the gap to `fx_gain_loss`, but no screen showed
+    how its rate compared with the market. `transferFxCost` in `@montra/domain` was never called.
+  - Now each `TransactionDto` has `transferFx` (null unless the transfer is between currencies). It holds the amounts
+    sent and received and the rate they imply. It also holds the stored reference rate for the date, the day that rate
+    was published (up to a week earlier, as elsewhere), and the cost in the source books' base currency, with its
+    percent.
+  - The cost is what was sent at the market rate minus what arrived at the market rate. Both legs use the market, not
+    the account's carrying value, so earlier gains on held currency don't count as cost. Positive is a cost, negative
+    is better than market. Math is bigint (`transferFxQuote` in `ledger/fx.ts`).
+  - No stored rate for the date: the market rate, cost and percent are null. The screens say no market rate is stored
+    for that date. They never guess.
+  - `POST /transactions/transfer/fx-cost` gives the same figures for a transfer being typed, without saving. The web
+    transfer form calls it once both amounts are entered and shows the result under the fields.
+  - The web transaction page and the phone's transaction screen show an "Exchange rate" card: your rate, the market rate
+    and the FX cost (or "Better than market"). `transferFxView` in `@montra/domain` shapes it for both.
+  - The list loads rates once per page, only when the page has a transfer between currencies.
+  - Tests: domain `ledger-fx.test.ts` and `transfer-fx-view.test.ts`; API `foreign-currency.test.ts` (on the transfer,
+    its GET and the list, against carrying value, the preview, no rate, one currency, wrong currency); phone
+    `screens-test/transaction-fx.test.tsx` (the card, no rate, nothing on other transactions). The phone's screen-test
+    harness now has an empty receipt queue, so the transaction screen renders there.
+- **Owner draws and contributions as transfers in the money flow** (FLOW-06; no migration).
+  - Before: owner draws never counted as spending, but the Sankey dropped them. The business showed the money as
+    "Not spent", and the personal book showed spending it covered as "From savings or credit".
+  - Now `GET /flow/sankey` reads the money between each pair of books in the window from the inter-entity accounts
+    (DE-05): the personal book's clearing account in equity mode, the due-to and due-from accounts otherwise. Each pair
+    nets to one link, so a draw and a contribution in the same month make one band.
+  - With all books in the view, the link runs from one book's node to the other's, with a `kind`: `owner_draw`,
+    `owner_contribution`, or `transfer` (money between a business and a rental). With one book in the view, the link
+    goes to or from a `transfer` node named after the other book ("Owner draw from Studio"). That node opens the
+    transactions behind it.
+  - Income and spending don't change. Only each book's "Not spent" or "From savings or credit" moves, by the money that
+    went to or came from the other books. Every book passes on exactly what came in.
+  - `SankeyDto` links gain an optional `kind`. Links without one are ordinary flows.
+  - Web: a book that gets money from another book sits one column to its right (`sankeyColumns` in
+    `lib/planning.ts`), so the band runs left to right. Transfer bands and nodes have their own colour, the band's
+    tooltip names the kind, and a note under the chart says these are transfers, not income or spending.
+  - Phone: the cash-flow list gains a "Between your books" card, one row per transfer with its kind.
+  - Tests: API `planning.test.ts` (a draw, a contribution back, a contribution to the rental and a business-to-rental
+    transfer, in the consolidated view and in single-book views), web `planning.test.ts` and `i18n-keys.test.ts`,
+    mobile `planning.test.ts`.
+
 - **Receipts and files purged at their retention date, once an owner approves** (RCP-10, BAK-09; migration 0079).
   - Before: receipts and their files got a date 7 years out, written in code. The hourly retention job removed a file
     past its date, but never the receipt. Its lines, OCR text and extraction stayed, pointing at a file that was gone.
@@ -2543,6 +2623,7 @@ Phase 11 leftovers:
     image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
     blocks after approval; a shared object; the batch size; a vault-held file). `data-ownership.test.ts` now approves
     before a file goes. Web `retention.test.ts`.
+
 ---
 
 ## 8. Session checklist

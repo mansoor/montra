@@ -50,6 +50,7 @@ function Flow({ ws }: { ws: string }) {
     income: 'mobile.flow.came_in',
     spending: 'mobile.flow.went_out',
     set_aside: 'mobile.flow.set_aside',
+    between_books: 'mobile.flow.between_books',
   };
   return (
     <>
@@ -87,7 +88,16 @@ function Flow({ ws }: { ws: string }) {
                     paddingLeft: r.indent ? th.space(4) : 0,
                   }}
                 >
-                  {r.indent ? <Small>{r.label}</Small> : <Body style={{ flexShrink: 1 }}>{r.label}</Body>}
+                  {r.indent ? (
+                    <Small>{r.label}</Small>
+                  ) : r.transfer ? (
+                    <View style={{ flexShrink: 1 }}>
+                      <Body>{r.label}</Body>
+                      <Small>{t(`flow.link_${r.transfer}`)}</Small>
+                    </View>
+                  ) : (
+                    <Body style={{ flexShrink: 1 }}>{r.label}</Body>
+                  )}
                   {r.indent ? (
                     <Small>{fmtMoney(r.value, data.data!.currency)}</Small>
                   ) : (
@@ -174,6 +184,13 @@ function NetWorth({ ws }: { ws: string }) {
               {t('flow.assets')} {fmtMoney(n.assets, n.currency)} · {t('flow.liabilities')}{' '}
               {fmtMoney(n.liabilities, n.currency)}
             </Small>
+            {/* CUR-06. Checked as strings: a cached answer from an older server has no such fields. */}
+            {n.accounts.some((a) => typeof a.unrealizedFx === 'string') &&
+            typeof n.unrealizedFx === 'string' ? (
+              <Small>
+                {t('flow.unrealized_fx')} {fmtMoney(n.unrealizedFx, n.currency)}
+              </Small>
+            ) : null}
             <Sparkline
               values={n.trend.map((p) => p.netWorth)}
               label={t('flow.net_worth_trend')}
@@ -187,7 +204,11 @@ function NetWorth({ ws }: { ws: string }) {
             <Row
               key={a.accountId}
               title={a.name}
-              subtitle={t(`flow.kind_${a.kind}`)}
+              subtitle={
+                typeof a.unrealizedFx !== 'string'
+                  ? t(`flow.kind_${a.kind}`)
+                  : `${t(`flow.kind_${a.kind}`)} · ${t('flow.unrealized_fx')} ${fmtMoney(a.unrealizedFx, n.currency)}`
+              }
               right={<Body>{fmtMoney(a.balance, a.accountCurrency)}</Body>}
             />
           ))}

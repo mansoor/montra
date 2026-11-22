@@ -14,6 +14,7 @@ import {
 import { catalogs } from '@montra/i18n';
 import {
   CALENDAR_ITEM_KINDS,
+  SANKEY_TRANSFER_KINDS,
   INTAKE_REASONS,
   TAX_FORM_READING_PROBLEMS,
   TAX_FORM_RESULT_STATES,
@@ -375,6 +376,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'store',
     'stores',
     'lines',
+    'unrealized_fx',
   ],
   'reports.section.': [
     'income',
@@ -396,6 +398,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'tax_not_advice',
     'unmapped',
     'section_labels',
+    'unrealized_fx',
   ],
   'reports.export_': ['pdf', 'csv', 'xlsx'],
   'ask.metric_': ['spending', 'income', 'net'],
@@ -487,6 +490,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'calendar.color_': BOOK_PALETTE.map((p) => p.name),
   'calendar.weekday_': ['0', '1', '2', '3', '4', '5', '6'],
   'flow.kind_': ['asset', 'liability'],
+  'flow.link_': SANKEY_TRANSFER_KINDS,
   'flow.tab_': ['flow', 'forecast', 'net-worth'],
   'goal.strategy_': ['avalanche', 'snowball'],
   'goal.type_': ['emergency_fund', 'savings', 'sinking_fund', 'debt_payoff'],

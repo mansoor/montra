@@ -11,7 +11,13 @@ import { api } from './harness/api';
 import { renderScreen, signedInAs, WS } from './harness/render';
 import { router } from './harness/router';
 
-const planning = { categoryPriorities: {}, highInterestBps: 1000, receiptReminderMinor: '2500' };
+const planning = {
+  categoryPriorities: {},
+  highInterestBps: 1000,
+  receiptReminderMinor: '2500',
+  unusedSubscriptionMonths: 3,
+  similarSubscriptionsMin: 2,
+};
 
 const books: EntityDetailDto[] = [
   {

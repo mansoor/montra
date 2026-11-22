@@ -28,6 +28,7 @@ import {
   periodContaining,
   spendingPace,
   startOfMonth,
+  unrealizedFxIn,
   type CalendarDate,
   type CurrencyCode,
   type ForecastItem,
@@ -44,6 +45,7 @@ import type {
   ForecastDto,
   NetWorthDto,
   SankeyDto,
+  SankeyTransferKind,
 } from '@montra/schemas';
 import { notFound } from '../common/errors.js';
 import { Db } from '../db/database.js';
@@ -61,6 +63,15 @@ import { occurrenceTotal, PlanningData, previousMonths, type Ctx } from './data.
 
 type Money = CalendarItemDto['currency'];
 
+/** FLOW-06: the name of a transfer node, seen from the book in the view. `other` is null when it isn't visible. */
+function transferLabel(kind: SankeyTransferKind, out: boolean, other: string | null): string {
+  const book = other ?? 'another book';
+  if (kind === 'owner_draw') return out ? `Owner draw to ${book}` : `Owner draw from ${book}`;
+  if (kind === 'owner_contribution')
+    return out ? `Owner contribution to ${book}` : `Owner contribution from ${book}`;
+  return out ? `Transfer to ${book}` : `Transfer from ${book}`;
+}
+
 interface CashAccount {
   id: string;
   entityId: string;
@@ -68,6 +79,8 @@ interface CashAccount {
   kind: string;
   type: 'asset' | 'liability';
   currency: string;
+  /** Its books' functional currency; an account in another currency carries a value in this one (ADR-0010). */
+  functionalCurrency: string;
   lowBalance: bigint;
   creditLimit: bigint | null;
 }
@@ -107,12 +120,16 @@ export class FlowService {
     const rows = await trx
       .selectFrom('app.bank_account as b')
       .innerJoin('app.ledger_account as a', 'a.id', 'b.ledger_account_id')
+      .innerJoin('app.entity as e', (j) =>
+        j.onRef('e.workspace_id', '=', 'a.workspace_id').onRef('e.id', '=', 'a.entity_id'),
+      )
       .select([
         'a.id',
         'a.entity_id',
         'a.name',
         'a.type',
         'a.currency',
+        'e.functional_currency',
         'b.kind',
         'b.low_balance_minor',
         'b.credit_limit_minor',
@@ -130,6 +147,7 @@ export class FlowService {
       kind: r.kind,
       type: r.type as 'asset' | 'liability',
       currency: r.currency,
+      functionalCurrency: r.functional_currency,
       lowBalance: BigInt(r.low_balance_minor),
       creditLimit: r.credit_limit_minor !== null ? BigInt(r.credit_limit_minor) : null,
     }));
@@ -607,6 +625,14 @@ export class FlowService {
       accounts.map((a) => a.id),
       trendDates,
     );
+    // CUR-06: what each foreign-currency account was booked at, to set against its value at the date's rate.
+    const foreign = accounts.filter((a) => a.currency !== a.functionalCurrency);
+    const carrying = await this.data.carryingValues(
+      trx,
+      ctx,
+      foreign.map((a) => a.id),
+      trendDates,
+    );
     // FLOW-07: your share of what each property is worth, or what it cost until a value's entered. Without it a
     // mortgage would count with nothing to set against it. One figure, so the trend moves only when one is bought.
     const properties = await trx
@@ -634,6 +660,7 @@ export class FlowService {
       [
         ...new Set([
           ...accounts.map((a) => a.currency),
+          ...accounts.map((a) => a.functionalCurrency),
           ...properties.map((p) => p.functional_currency),
           base,
         ]),
@@ -647,6 +674,27 @@ export class FlowService {
       // Without a rate the account is left out of the converted totals rather than guessed.
       return r ? convert(money(balance, a.currency), base, parseDecimal(r.rate)).amount : 0n;
     };
+    // CUR-06: unrealized FX in that value (ADR-0010 §6), not posted. Null for an account in its books' currency; an
+    // account left out of the totals for want of a rate is left out of this too.
+    const gainOf = (a: CashAccount, d: CalendarDate, balance: bigint): bigint | null => {
+      if (a.currency === a.functionalCurrency) return null;
+      if (a.currency !== base && !rates.get(a.currency, base, d)) return 0n;
+      const rate = (from: string, to: string) => {
+        const r = from === to ? null : rates.get(from, to, d);
+        return r ? parseDecimal(r.rate) : null;
+      };
+      const functional = carrying.get(a.id)?.get(d) ?? 0n;
+      return (
+        unrealizedFxIn(
+          { foreign: balance, functional },
+          a.currency as CurrencyCode,
+          a.functionalCurrency as CurrencyCode,
+          rate(a.currency, a.functionalCurrency),
+          base,
+          rate(a.functionalCurrency, base),
+        ) ?? 0n
+      );
+    };
     const propertyValue = (p: (typeof properties)[number], d: CalendarDate): bigint => {
       const worth = p.current_value_minor ?? p.purchase_price_minor;
       if (worth === null) return 0n;
@@ -659,12 +707,21 @@ export class FlowService {
     const point = (d: CalendarDate) => {
       let assets = properties.reduce((t, p) => t + propertyValue(p, d), 0n);
       let liabilities = 0n;
+      let unrealized = 0n;
       for (const a of accounts) {
-        const v = valueOf(a, d, balances.get(a.id)?.get(d) ?? 0n);
+        const balance = balances.get(a.id)?.get(d) ?? 0n;
+        const v = valueOf(a, d, balance);
         if (a.type === 'asset') assets += v;
         else liabilities -= v;
+        unrealized += gainOf(a, d, balance) ?? 0n;
       }
-      return { date: d, assets: s(assets), liabilities: s(liabilities), netWorth: s(assets - liabilities) };
+      return {
+        date: d,
+        assets: s(assets),
+        liabilities: s(liabilities),
+        netWorth: s(assets - liabilities),
+        unrealizedFx: s(unrealized),
+      };
     };
     const now = point(date);
     return {
@@ -673,8 +730,10 @@ export class FlowService {
       assets: now.assets,
       liabilities: now.liabilities,
       netWorth: now.netWorth,
+      unrealizedFx: now.unrealizedFx,
       accounts: accounts.map((a) => {
         const balance = balances.get(a.id)?.get(date) ?? 0n;
+        const gain = gainOf(a, date, balance);
         return {
           accountId: a.id,
           entityId: a.entityId,
@@ -683,6 +742,7 @@ export class FlowService {
           balance: s(balance),
           accountCurrency: a.currency as Money,
           value: s(valueOf(a, date, balance)),
+          unrealizedFx: gain === null ? null : s(gain),
         };
       }),
       properties: properties
@@ -1043,6 +1103,8 @@ export class FlowService {
         for (let m = from; m <= to; m = addMonths(m, 1)) periods.push({ start: m, end: endOfMonth(m) });
       } else periods.push({ start: from, end: to });
 
+      const transfers = await this.interEntityFlows(trx, ctx, from, to);
+      const inView = new Set(entities.map((e) => e.id));
       const nodes = new Map<string, SankeyDto['nodes'][number]>();
       const links: SankeyDto['links'] = [];
       const node = (
@@ -1054,12 +1116,13 @@ export class FlowService {
         if (!nodes.has(id)) nodes.set(id, { id, kind, label, value: '0', drill });
         return nodes.get(id)!;
       };
-      const link = (source: string, target: string, value: bigint) => {
+      const link = (source: string, target: string, value: bigint, kind?: SankeyTransferKind) => {
         if (value <= 0n) return;
-        links.push({ source, target, value: s(value) });
+        links.push({ source, target, value: s(value), ...(kind ? { kind } : {}) });
         const t = nodes.get(target)!;
         t.value = s(BigInt(t.value) + value);
-        if (nodes.get(source)!.kind === 'income' || nodes.get(source)!.kind === 'deficit') {
+        const sourceKind = nodes.get(source)!.kind;
+        if (sourceKind === 'income' || sourceKind === 'deficit' || sourceKind === 'transfer') {
           const sn = nodes.get(source)!;
           sn.value = s(BigInt(sn.value) + value);
         }
@@ -1130,7 +1193,30 @@ export class FlowService {
           link(entityNode, `${kind}:${r.id}`, v);
           moved += v;
         }
-        const left = income - spent - moved;
+        // FLOW-06: money to or from another book (owner draws and contributions) is a transfer, never income or
+        // spending. With both books in the view it links their nodes (below); otherwise it ends at a node named
+        // after the other book.
+        let sentOut = 0n;
+        let cameIn = 0n;
+        for (const f of transfers.flows) {
+          if (f.src !== e.id && f.dst !== e.id) continue;
+          const out = f.src === e.id;
+          const other = out ? f.dst : f.src;
+          if (out) sentOut += f.value;
+          else cameIn += f.value;
+          if (inView.has(other)) continue;
+          const id = `transfer:${f.src}:${f.dst}`;
+          const accountIds = transfers.accounts(e.id, other);
+          node(
+            id,
+            'transfer',
+            transferLabel(f.kind, out, transfers.names.get(other) ?? null),
+            accountIds.length ? { entityId: e.id, accountIds, from, to } : null,
+          );
+          if (out) link(entityNode, id, f.value, f.kind);
+          else link(id, entityNode, f.value, f.kind);
+        }
+        const left = income + cameIn - spent - moved - sentOut;
         if (left > 0n) {
           node(`unspent:${e.id}`, 'unspent', 'Not spent', null);
           link(entityNode, `unspent:${e.id}`, left);
@@ -1138,6 +1224,10 @@ export class FlowService {
           node(`deficit:${e.id}`, 'deficit', 'From savings or credit', null);
           link(`deficit:${e.id}`, entityNode, -left);
         }
+      }
+      for (const f of transfers.flows) {
+        if (inView.has(f.src) && inView.has(f.dst))
+          link(`entity:${f.src}`, `entity:${f.dst}`, f.value, f.kind);
       }
       // Entity nodes show what flowed through them.
       for (const n of nodes.values()) {
@@ -1153,6 +1243,86 @@ export class FlowService {
         links,
       };
     });
+  }
+
+  /**
+   * FLOW-06: net money between each pair of books in the window, from the inter-entity accounts (DE-05). In equity
+   * mode only the personal book has a per-book account (its clearing account), and its debit balance grows when
+   * personal money goes to the business: an owner contribution; the other way is an owner draw. In due-to/due-from
+   * mode both books carry accounts and agree, so each pair is read once. Draws and contributions in one window net
+   * to one link, so the flow stays one-way.
+   */
+  private async interEntityFlows(trx: Trx, ctx: Ctx, from: CalendarDate, to: CalendarDate) {
+    const { rows } = await sql<{ entity_id: string; cp: string; equity: boolean; v: string }>`
+      select a.entity_id, a.counterparty_entity_id as cp,
+             bool_or(a.system_role = 'inter_entity_clearing') as equity,
+             sum(p.functional_amount_minor)::text as v
+        from app.ledger_account a
+        join app.posting p on p.workspace_id = a.workspace_id and p.ledger_account_id = a.id
+        join app.journal_entry je on je.workspace_id = p.workspace_id and je.id = p.journal_entry_id
+       where a.workspace_id = ${ctx.workspaceId}
+         and a.counterparty_entity_id is not null
+         and a.system_role in ('inter_entity_clearing', 'due_to_entity', 'due_from_entity')
+         and p.entry_date between ${from} and ${to}
+         and je.kind not in ('opening_balance', 'closing', 'fx_revaluation', 'valuation', 'depreciation')
+       group by 1, 2
+       order by 1, 2`.execute(trx);
+    const flows: { src: string; dst: string; value: bigint; kind: SankeyTransferKind }[] = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const pair = [r.entity_id, r.cp].sort().join('|');
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      const v = BigInt(r.v);
+      if (v === 0n) continue;
+      const out = v > 0n;
+      flows.push({
+        src: out ? r.entity_id : r.cp,
+        dst: out ? r.cp : r.entity_id,
+        value: out ? v : -v,
+        // In equity mode the clearing account's holder is the personal book.
+        kind: r.equity ? (out ? 'owner_contribution' : 'owner_draw') : 'transfer',
+      });
+    }
+    const accounts = flows.length
+      ? await trx
+          .selectFrom('app.ledger_account')
+          .select(['id', 'entity_id', 'system_role', 'counterparty_entity_id'])
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('system_role', 'in', [
+            'inter_entity_clearing',
+            'due_to_entity',
+            'due_from_entity',
+            'owner_draw',
+            'owner_contribution',
+          ])
+          .orderBy('id')
+          .execute()
+      : [];
+    const names = new Map(
+      flows.length
+        ? (
+            await trx
+              .selectFrom('app.entity')
+              .select(['id', 'name'])
+              .where('workspace_id', '=', ctx.workspaceId)
+              .execute()
+          ).map((e) => [e.id, e.name])
+        : [],
+    );
+    return {
+      flows,
+      names,
+      /** The accounts in `entityId` that hold its money with `other`: the drill behind a transfer node. */
+      accounts: (entityId: string, other: string) => {
+        const mine = accounts.filter((a) => a.entity_id === entityId);
+        const paired = mine.filter((a) => a.counterparty_entity_id === other).map((a) => a.id);
+        if (paired.length) return paired;
+        return mine
+          .filter((a) => a.system_role === 'owner_draw' || a.system_role === 'owner_contribution')
+          .map((a) => a.id);
+      },
+    };
   }
 
   // ----- Dashboard (FLOW-01, FAM-09) --------------------------------------------------------------------

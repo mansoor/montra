@@ -10,7 +10,7 @@ import {
   money,
   type BudgetPeriodType,
 } from '@montra/domain';
-import type { BudgetPeriodDto, SankeyDto } from '@montra/schemas';
+import type { BudgetPeriodDto, SankeyDto, SankeyTransferKind } from '@montra/schemas';
 
 type Line = BudgetPeriodDto['groups'][number]['lines'][number];
 
@@ -102,13 +102,15 @@ export function thin<T>(values: readonly T[], points: number): T[] {
 }
 
 export interface FlowSection {
-  key: 'income' | 'spending' | 'set_aside';
-  rows: { id: string; label: string; value: string; indent: boolean }[];
+  key: 'income' | 'spending' | 'set_aside' | 'between_books';
+  /** `transfer`: what kind of money between books the row is (FLOW-06). */
+  rows: { id: string; label: string; value: string; indent: boolean; transfer?: SankeyTransferKind }[];
 }
 
 /**
  * The money flow as lists (a Sankey is unreadable on a phone, and NFR-10 wants a table for every chart anyway):
- * where it came from, where it went (groups with their categories), and what was set aside or left.
+ * where it came from, where it went (groups with their categories), what was set aside or left, and (FLOW-06) what
+ * moved between books, such as owner draws. Those are never income or spending.
  */
 export function flowSections(data: SankeyDto): FlowSection[] {
   const nodes = new Map(data.nodes.map((n) => [n.id, n]));
@@ -130,10 +132,25 @@ export function flowSections(data: SankeyDto): FlowSection[] {
       .sort((a, b) => (BigInt(b.value) > BigInt(a.value) ? 1 : -1));
     return [row(g), ...cats.map((c) => row(c, true))];
   });
+  const betweenBooks = data.links.flatMap((l) => {
+    if (!l.kind) return [];
+    const source = nodes.get(l.source);
+    const target = nodes.get(l.target);
+    if (!source || !target) return [];
+    // Both books in the view: "Business → Personal". One book: the transfer node already names the other one.
+    const label =
+      source.kind === 'transfer'
+        ? source.label
+        : target.kind === 'transfer'
+          ? target.label
+          : `${source.label} → ${target.label}`;
+    return [{ id: `${l.source}>${l.target}`, label, value: l.value, indent: false, transfer: l.kind }];
+  });
   return [
     { key: 'income' as const, rows: by(['income', 'deficit']).map((n) => row(n)) },
     { key: 'spending' as const, rows: spending },
     { key: 'set_aside' as const, rows: by(['savings', 'debt', 'unspent']).map((n) => row(n)) },
+    { key: 'between_books' as const, rows: betweenBooks },
   ].filter((s) => s.rows.length > 0);
 }
 

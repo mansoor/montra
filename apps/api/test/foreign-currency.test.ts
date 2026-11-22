@@ -176,6 +176,21 @@ describe('transfers between currencies (CUR-08)', () => {
     expect(res.status).toBe(201);
     expect(await lines(res.body.id)).toEqual({ 'Euro account': '110000', Checking: '-110000' });
     expect(await carrying(eurAccount)).toEqual({ foreign: '190000', functional: '207875' });
+    // The market had €1 at $1.0912: the €1,000 were worth $1,091.20, so the rate cost $8.80 (0.80%).
+    const fx = {
+      sent: usd('110000'),
+      received: eur('100000'),
+      effectiveRate: '0.9090909091',
+      marketRate: '0.9164222874',
+      marketRateDate: '2026-10-30',
+      baseCurrency: 'USD',
+      cost: usd('880'),
+      costBps: 80,
+    };
+    expect(res.body.transferFx).toEqual(fx);
+    expect((await c.get(url(`/transactions/${res.body.id}`))).body.transferFx).toEqual(fx);
+    const listed = (await c.get(url('/transactions?limit=200'))).body.data;
+    expect(listed.find((t: any) => t.id === res.body.id).transferFx).toEqual(fx);
   });
 
   it('sells EUR back at carrying value and books the gain', async () => {
@@ -193,6 +208,54 @@ describe('transfers between currencies (CUR-08)', () => {
       'Euro account': '-21882',
       fx_gain_loss: '-1118',
     });
+    // Against the market, not the carrying value: €200 at 1.0912 is $218.24, and $230.00 arrived.
+    expect(res.body.transferFx).toMatchObject({
+      effectiveRate: '1.15',
+      marketRate: '1.0912',
+      cost: usd('-1176'),
+      costBps: -539,
+    });
+  });
+
+  it('previews the FX cost of a transfer being entered, without saving it', async () => {
+    const body = {
+      date: '2026-10-30',
+      fromAccountId: usdChecking,
+      toAccountId: eurAccount,
+      amount: usd('110000'),
+      amountIn: eur('100000'),
+    };
+    const before = (await c.get(url('/transactions?limit=200'))).body.data.length;
+    const res = await c.post(url('/transactions/transfer/fx-cost'), body);
+    expect(res.status).toBe(200);
+    expect(res.body.transferFx).toMatchObject({ cost: usd('880'), costBps: 80, marketRate: '0.9164222874' });
+    expect((await c.get(url('/transactions?limit=200'))).body.data.length).toBe(before);
+
+    // No rate stored for the date: said, not guessed.
+    const none = await c.post(url('/transactions/transfer/fx-cost'), { ...body, date: '2026-12-15' });
+    expect(none.status).toBe(200);
+    expect(none.body.transferFx).toEqual({
+      sent: usd('110000'),
+      received: eur('100000'),
+      effectiveRate: '0.9090909091',
+      marketRate: null,
+      marketRateDate: null,
+      baseCurrency: 'USD',
+      cost: null,
+      costBps: null,
+    });
+
+    // One currency: nothing to measure. Amounts in the wrong currency are refused.
+    const same = await c.post(url('/transactions/transfer/fx-cost'), {
+      ...body,
+      toAccountId: usdCard,
+      amountIn: usd('110000'),
+    });
+    expect(same.status).toBe(200);
+    expect(same.body.transferFx).toBeNull();
+    const wrong = await c.post(url('/transactions/transfer/fx-cost'), { ...body, amountIn: usd('100000') });
+    expect(wrong.status).toBe(422);
+    expect(wrong.body.code).toBe('currency.mismatch');
   });
 
   it('empties the account to exactly $0', async () => {
