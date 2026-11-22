@@ -15,7 +15,7 @@ import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { ServiceSettings } from './service-settings.js';
 import { Db } from '../db/database.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { JOB_STALL_MS } from '../jobs/queue.js';
 import { ERROR_REPORTER, type ErrorReporter } from './errors.js';
 import { readPasswordPolicy } from '../auth-gateway/policy.js';
@@ -143,12 +143,15 @@ export class SupportService {
     if (support) {
       // Only that there is one. What it says stays in the console, behind the staff sign-in.
       await this.mail
-        .send({
-          to: support,
-          subject: `New ${req.kind === 'bug' ? 'bug report' : 'question'} ${row.id}`,
-          text: `From ${email}. Read it in the staff console: ${this.config.WEB_URL}/admin/support`,
-          category: 'transactional',
-        })
+        .send(
+          templates.supportRequest({
+            to: support,
+            kind: req.kind,
+            id: row.id,
+            from: email,
+            url: `${this.config.WEB_URL}/admin/support`,
+          }),
+        )
         .catch(() => undefined);
     }
     return { id: row.id };

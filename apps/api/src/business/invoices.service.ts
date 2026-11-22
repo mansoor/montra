@@ -30,7 +30,7 @@ import type {
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
 import type { SplitSpec } from '../transactions/poster.js';
 import { BusinessService } from './business.service.js';
@@ -455,19 +455,18 @@ export class InvoicesService {
         const total = formatMoney(money(BigInt(r.total_minor), asCurrencyCode(r.currency)), {
           locale: 'en-US',
         });
-        const lines = [
-          ...(req.message ? [req.message, ''] : []),
-          `Invoice ${r.number} from ${from} is attached.`,
-          `Total ${total}, due ${String(dateOf(r.due_date))}.`,
-        ];
-        await this.mail.send({
-          to,
-          subject: `Invoice ${r.number} from ${from}`,
-          text: lines.join('\n'),
-          category: 'invoice',
-          ...(profile.email ? { replyTo: profile.email } : {}),
-          attachments: [{ filename: `${r.number}.pdf`, content: bytes, contentType: 'application/pdf' }],
-        });
+        await this.mail.send(
+          templates.invoice({
+            to,
+            from,
+            number: r.number,
+            total,
+            due: String(dateOf(r.due_date)),
+            note: req.message ?? null,
+            replyTo: profile.email ?? null,
+            pdf: bytes,
+          }),
+        );
       }
       return this.dto(trx, ctx, row, todayOf(e));
     });

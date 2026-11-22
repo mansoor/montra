@@ -6,7 +6,8 @@ import { Db } from '../db/database.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { AppError } from '../common/errors.js';
 import { parse } from '../common/zod.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
+import { timeZoneOf } from '../mail/time-zone.js';
 import { AUTH_PORT, AuthGuard, Ctx, requireRecentAuth, type AuthPort, type RequestContext } from './auth.js';
 
 const MAX_ATTEMPTS = 5;
@@ -63,18 +64,8 @@ export class AccountSecurityController {
         .execute();
       return requestId;
     });
-    await this.mail.send({
-      to: ctx.user.email,
-      subject: 'Confirm your Montra email change',
-      text: `Someone asked to change your Montra sign-in email to ${newEmail}.\n\nConfirmation code: ${oldCode}\n\nIf this wasn't you, ignore this email and change your password.`,
-      category: 'security',
-    });
-    await this.mail.send({
-      to: newEmail,
-      subject: 'Confirm your new Montra email address',
-      text: `Use this code to confirm ${newEmail} as your Montra sign-in email: ${freshCode}\n\nThe code expires in 24 hours.`,
-      category: 'security',
-    });
+    await this.mail.send(templates.emailChangeOld({ to: ctx.user.email, newEmail, code: oldCode }));
+    await this.mail.send(templates.emailChangeNew({ to: newEmail, code: freshCode }));
     return { requestId: id, expiresInHours: 24 };
   }
 
@@ -138,12 +129,7 @@ export class AccountSecurityController {
         .where('id', '=', result.id)
         .execute();
     });
-    await this.mail.send({
-      to: ctx.user.email,
-      subject: 'Your Montra sign-in email was changed',
-      text: `Your Montra sign-in email is now ${result.newEmail}. If you didn't make this change, contact support right away.`,
-      category: 'security',
-    });
+    await this.mail.send(templates.emailChanged({ to: ctx.user.email, newEmail: result.newEmail }));
     return { ...result, completed: true };
   }
 
@@ -165,17 +151,14 @@ export class AccountSecurityController {
         .returning(['eligible_at'])
         .executeTakeFirstOrThrow(),
     );
-    await this.mail.send({
-      to: ctx.user.email,
-      subject: 'Second-factor reset requested on your Montra account',
-      text: [
-        'A request was made to remove the second factor (authenticator app, passkeys, recovery codes) from your Montra account.',
-        `For your safety it takes effect after ${row.eligible_at.toISOString()} (72 hours).`,
-        '',
-        `If this wasn't you, cancel it now from any signed-in device: ${this.config.WEB_URL}/settings/security`,
-      ].join('\n'),
-      category: 'security',
-    });
+    await this.mail.send(
+      templates.mfaResetRequested({
+        to: ctx.user.email,
+        eligibleAt: row.eligible_at,
+        url: `${this.config.WEB_URL}/settings/security`,
+        timeZone: await timeZoneOf(this.db, ctx.user.id),
+      }),
+    );
     return { status: 'pending', eligibleAt: row.eligible_at };
   }
 
@@ -214,12 +197,9 @@ export class AccountSecurityController {
         .where('id', '=', row.id)
         .execute(),
     );
-    await this.mail.send({
-      to: ctx.user.email,
-      subject: 'Second factor removed from your Montra account',
-      text: 'Your second factor was removed and all sessions were signed out. Set up a new authenticator or passkey now.',
-      category: 'security',
-    });
+    await this.mail.send(
+      templates.mfaResetCompleted({ to: ctx.user.email, url: `${this.config.WEB_URL}/settings/security` }),
+    );
     return { status: 'completed' };
   }
 

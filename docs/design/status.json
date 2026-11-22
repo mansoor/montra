@@ -198,7 +198,7 @@
   ],
   "AUTH-05": [
     "partial",
-    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit. The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
+    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit, in the same layout as every API email (runbooks/email.md). The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
   ],
   "AUTH-06": [
     "done",

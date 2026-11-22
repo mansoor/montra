@@ -8,7 +8,7 @@ import { AppError, unprocessable } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
-import { MAIL_PORT, type MailPort } from '../mail/mail.service.js';
+import { MAIL_PORT, templates, type MailPort } from '../mail/mail.service.js';
 import {
   BILLING_PORT,
   type BillingEvent,
@@ -301,16 +301,15 @@ export class BillingService {
       for (const n of rows) {
         const date = n.apply_at.toISOString().slice(0, 10);
         for (const to of n.emails) {
-          await this.mail.send({
-            to,
-            category: 'transactional',
-            subject: `Your Montra ${n.plan_name} plan changes on ${date}`,
-            text: [
-              `The ${n.plan_name} plan for ${n.workspace_name} will include less from ${date}.`,
-              `See what it includes, or choose another plan, in Settings → Plan: ${this.config.WEB_URL}`,
-              'Nothing you already have is taken away: books and files stay readable, editable and exportable.',
-            ].join('\n\n'),
-          });
+          await this.mail.send(
+            templates.planChanging({
+              to,
+              plan: n.plan_name,
+              workspace: n.workspace_name,
+              date,
+              url: this.config.WEB_URL,
+            }),
+          );
         }
         await this.db.run({ actorType: 'system' }, (trx) =>
           sql`select app.plan_notice_sent(${n.id}::uuid)`.execute(trx),
