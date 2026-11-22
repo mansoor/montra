@@ -2,6 +2,7 @@
  * Receipt capture on the phone (TXN-08/09): the per-frame verdict shown after each shot, how upload errors are
  * treated by the offline queue, and the review edits. Pure, so it runs in tests.
  */
+import { groupReceipt } from '@montra/domain';
 import type { ErrorKind, QueuedReceipt } from '@montra/sync';
 import type { ReceiptDto } from '@montra/schemas';
 import { ApiError, type ReceiptReviewInput } from '../api/client';
@@ -80,6 +81,41 @@ export function reviewEdits(
       memberId: l.memberId,
     })),
   };
+}
+
+/**
+ * The splits as they'll be once the picked categories are saved (owner, 2026-11-21), so the card follows each pick
+ * rather than waiting for Save. The same arithmetic as the API (`groupReceipt`: tax, discount, fees and tip shared
+ * out by subtotal). Grouped by category and member: a category belongs to one entity, so the entity adds nothing
+ * here. The API's groups replace these once saved.
+ */
+export function previewSplits(
+  r: Pick<ReceiptDto, 'lines' | 'tax' | 'taxIncluded' | 'discount' | 'fees' | 'tip' | 'total'>,
+  picked: ReadonlyMap<string, string | null>,
+): Array<{ key: string; categoryId: string | null; total: string }> {
+  const categoryOf = (l: ReceiptDto['lines'][number]) =>
+    picked.has(l.id) ? picked.get(l.id)! : l.categoryId;
+  const groups = groupReceipt(
+    r.lines.map((l) => ({
+      key: `${categoryOf(l) ?? ''}|${l.memberId ?? ''}`,
+      lineTotal: BigInt(l.lineTotal),
+      discount: BigInt(l.discount),
+      taxable: l.taxable,
+    })),
+    {
+      tax: BigInt(r.tax),
+      taxIncluded: r.taxIncluded,
+      discount: BigInt(r.discount),
+      fees: BigInt(r.fees),
+      tip: BigInt(r.tip),
+      total: r.total === null ? null : BigInt(r.total),
+    },
+  );
+  return groups.map((g) => ({
+    key: g.key,
+    categoryId: categoryOf(r.lines[g.lines[0]!]!),
+    total: g.total.toString(),
+  }));
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   classifyUploadError,
   frameVerdict,
   pageName,
+  previewSplits,
   queuedStatus,
   receiptStatusKey,
   reminderChoices,
@@ -263,5 +264,60 @@ describe('a receipt’s totals and quantities on the phone (owner, 2026-11-18)',
     const money = (m: string) => 'USD ' + (Number(m) / 100).toFixed(2);
     expect(lineQuantityText({ qty: '2', unitPrice: '81' }, money)).toBe('2 × USD 0.81');
     expect(lineQuantityText({ qty: '0.452', unitPrice: null }, money)).toBeNull();
+  });
+});
+
+describe('the Splits card while categories are picked (owner, 2026-11-21)', () => {
+  // The owner's receipt: persimmon in Groceries, fries in Dining out, two coffees uncategorized.
+  const line = (id: string, lineTotal: string, categoryId: string | null) => ({
+    id,
+    lineTotal,
+    discount: '0',
+    taxable: false,
+    categoryId,
+    memberId: null,
+  });
+  const r = {
+    lines: [
+      line('persimmon', '227', 'groceries'),
+      line('coffee-1', '306', null),
+      line('coffee-2', '258', null),
+      line('fries', '499', 'dining'),
+    ],
+    tax: '0',
+    taxIncluded: false,
+    discount: '0',
+    fees: '0',
+    tip: '0',
+    total: '1290',
+  } as never;
+
+  it('follows each pick before Save, one split per category', () => {
+    expect(previewSplits(r, new Map())).toEqual([
+      { key: 'groceries|', categoryId: 'groceries', total: '227' },
+      { key: '|', categoryId: null, total: '564' },
+      { key: 'dining|', categoryId: 'dining', total: '499' },
+    ]);
+    const picked = new Map<string, string | null>([['fries', 'groceries']]);
+    expect(previewSplits(r, picked).map((g) => [g.categoryId, g.total])).toEqual([
+      ['groceries', '726'],
+      [null, '564'],
+    ]);
+    picked.set('coffee-1', 'groceries').set('coffee-2', 'groceries');
+    expect(previewSplits(r, picked).map((g) => [g.categoryId, g.total])).toEqual([['groceries', '1290']]);
+  });
+
+  it('shares tax and tip out the way the server does', () => {
+    const taxed = {
+      lines: [line('a', '1000', 'x'), { ...line('b', '1000', 'y'), taxable: true }],
+      tax: '90',
+      taxIncluded: false,
+      discount: '0',
+      fees: '0',
+      tip: '200',
+      total: '2290',
+    } as never;
+    // Tax on the taxable line only; the tip by subtotal.
+    expect(previewSplits(taxed, new Map()).map((g) => g.total)).toEqual(['1100', '1190']);
   });
 });
