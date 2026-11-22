@@ -2340,6 +2340,17 @@ Phase 11 leftovers:
   - Tests: API `audit-log.test.ts` and `operations.test.ts` (staff log), DB `rls.test.ts` (the new function in the
     console role's list), web `audit-log.test.ts` and `i18n-keys.test.ts`. Tried on the dev stack: both screens, the
     filters, History and paging.
+- **One split per category on a receipt** (RCP-03, RCP-07; owner, 2026-11-21; no migration).
+  - Before: a receipt with four grocery items showed two Groceries splits ($7.26 and $5.64). Lines are grouped by
+    category, entity and member. A line that came in uncategorized has no entity, and picking its category kept it
+    that way, since no client sends one. So it didn't join the lines already in the receipt's entity.
+  - Now picking a category without naming an entity puts the line in that category's entity (a category is a ledger
+    account, which has one). In grouping, a line with no entity counts as the receipt's, which also fixes receipts
+    saved before this on their next read. Applying to a transaction uses the same grouping.
+  - The phone's Splits card follows each category pick before Save (`previewSplits`, the same `groupReceipt`
+    arithmetic as the API), then shows the server's splits once saved. The web still shows the saved splits only.
+  - Tests: API `receipts.test.ts` rebuilds the owner's $12.90 receipt (it fails without the fix, with the two splits);
+    mobile `receipts.test.ts`.
 ---
 
 ## 8. Session checklist

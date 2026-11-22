@@ -14,6 +14,7 @@ import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import {
   lineQuantityText,
+  previewSplits,
   receiptStatusKey,
   receiptTotals,
   reviewEdits,
@@ -96,6 +97,11 @@ export default function ReceiptReview() {
 
   if (!receipt)
     return <Screen>{error ? <Banner tone="danger" text={error} /> : <Body muted>…</Body>}</Screen>;
+  // The server's splits; while categories are being picked, what they'll be once saved (owner, 2026-11-21).
+  const splits =
+    picked.size && receipt.groups.length
+      ? previewSplits(receipt, picked)
+      : receipt.groups.map((g) => ({ key: g.lineIds.join(), categoryId: g.categoryId, total: g.total }));
   // A viewer sees the receipt and its lines; matching and changing them is for those who record.
   const open = can.record && (receipt.status === 'inbox' || receipt.status === 'needs_review');
   const twin = receipt.likelyDuplicates[0];
@@ -251,11 +257,11 @@ export default function ReceiptReview() {
         </Card>
       ) : null}
 
-      {receipt.groups.length ? (
-        <Card>
+      {splits.length ? (
+        <Card testID="receipt-splits">
           <Body>{t('mobile.receipts.splits')}</Body>
-          {receipt.groups.map((g) => (
-            <View key={g.lineIds.join()} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          {splits.map((g) => (
+            <View key={g.key} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <Small>
                 {g.categoryId ? (names.get(g.categoryId) ?? '') : t('mobile.receipts.uncategorized')}
               </Small>
