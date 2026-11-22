@@ -9,6 +9,17 @@ export type AuthMode = 'dev' | 'kratos';
 export const AUTH_MODE: AuthMode = process.env.NEXT_PUBLIC_AUTH_MODE === 'kratos' ? 'kratos' : 'dev';
 
 export const DEV_COOKIE = 'montra_dev_email';
+
+/**
+ * Whether the dev sign-in cookie is marked Secure: in a production build, except on this machine. Chromium and Firefox
+ * keep a Secure cookie on http://localhost, but WebKit doesn't, so e2e in WebKit (PLT-01, against `next start`) would
+ * never be signed in.
+ */
+export function devCookieSecure(host: string | null, nodeEnv = process.env.NODE_ENV): boolean {
+  if (nodeEnv !== 'production') return false;
+  const name = (host ?? '').replace(/:\d+$/, '').toLowerCase();
+  return !(name === 'localhost' || name === '127.0.0.1' || name === '[::1]' || name.endsWith('.localhost'));
+}
 export const KRATOS_COOKIE = 'ory_kratos_session';
 
 /** The cookie whose presence means "signed in" for the current mode. */

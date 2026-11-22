@@ -2410,6 +2410,8 @@ Phase 11 leftovers:
   - Now `playwright.config.ts` has `firefox` and `webkit` projects for seven main-flow specs: happy path, phase 1a,
     quick add, import, review, receipts and accessibility. `E2E_PROJECTS` picks the projects (default `chromium`, which
     still runs every spec). CI runs each extra browser in its own job (`e2e-browsers`), after `verify`.
+  - WebKit keeps no Secure cookie on http://localhost, so the dev sign-in cookie is Secure in a production build only off
+    this machine (`devCookieSecure` in `lib/session.ts`). Before that, every WebKit test ran signed out.
   - Chromium stands in for Chrome and Edge, WebKit for Safari. Neither is the branded browser, and nothing runs on a
     phone.
   - Locally: `pnpm --filter @montra/web exec playwright install firefox`, then `E2E_PROJECTS=firefox pnpm --filter
