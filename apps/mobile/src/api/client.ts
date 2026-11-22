@@ -114,6 +114,12 @@ import type {
   FileProvidedAgainDto,
   TaxYearDto,
   UpdateTaxFormRequest,
+  CreateEntityRequest,
+  CreateFamilyMemberRequest,
+  UpdateAiSettingsRequest,
+  UpdateEntityRequest,
+  UpdateFamilyMemberRequest,
+  UpdateMeRequest,
 } from '@montra/schemas';
 import { CLOSED_CODES } from '@montra/sync';
 
@@ -130,6 +136,21 @@ export interface ReceiptReviewInput {
     categoryId?: string | null;
     memberId?: string | null;
   }>;
+}
+
+/** Books as `GET /entities` lists them (OPS-13): archived ones too, as the web's Settings → Entities has them. */
+export interface EntityDetailDto {
+  id: string;
+  type: 'personal' | 'business' | 'rental';
+  name: string;
+  functionalCurrency: string;
+  businessType: string | null;
+  fiscalYearStartMonth: number;
+  archived: boolean;
+  /** Books are closed through this date (DE-09); null when open. */
+  lockedThrough: string | null;
+  /** The calendar colour, `#rrggbb`; null when unpicked (clients use `bookColors`). */
+  color: string | null;
 }
 
 export type ApplyReceiptInput =
@@ -282,14 +303,18 @@ export function createApi(opts: ApiOptions) {
   return {
     request,
     me: () => request<MeDto>('GET', '/v1/me'),
+    /** Your name and time zone (OPS-13), as the web's Settings → Profile sends them. */
+    updateMe: (input: UpdateMeRequest) => request<MeDto>('PATCH', '/v1/me', input),
     /** AUTH-02 (ADR-0043): the service's password policy, for the strength meter. Needs no sign-in. */
     passwordPolicy: () => request<PasswordPolicyDto>('GET', '/v1/password-policy'),
     /** OPS-04: the oldest app version this server serves, and where to get a newer one. Needs no sign-in. */
     appRequirements: (platform: 'ios' | 'android') =>
       request<AppRequirementsDto>('GET', `/v1/app/requirements?platform=${platform}`),
     workspaces: async () => (await request<{ data: WorkspaceDto[] }>('GET', '/v1/workspaces')).data,
-    aiSettings: (w: string) =>
-      request<Pick<AiSettingsDto, 'mode' | 'usage' | 'endpoint'>>('GET', `${ws(w)}/ai/settings`),
+    aiSettings: (w: string) => request<AiSettingsDto>('GET', `${ws(w)}/ai/settings`),
+    /** Owners and admins (OPS-13). The phone changes only the mode; keys and URLs are typed on the web. */
+    updateAiSettings: (w: string, input: UpdateAiSettingsRequest) =>
+      request<AiSettingsDto>('PATCH', `${ws(w)}/ai/settings`, input),
     /** Local AI mode (06 §2): claims parked work for this phone to run against the person's own model. */
     aiTasks: async (w: string) => (await request<{ data: AiTaskDto[] }>('GET', `${ws(w)}/ai/tasks`)).data,
     postAiTaskResult: (w: string, id: string, output: unknown) =>
@@ -542,6 +567,18 @@ export function createApi(opts: ApiOptions) {
     billing: (w: string) => request<BillingDto>('GET', `${ws(w)}/billing`),
     familyMembers: async (w: string) =>
       (await request<{ data: FamilyMemberDto[] }>('GET', `${ws(w)}/family-members`)).data,
+    /** Owners, admins and partners (OPS-13; the database refuses anyone else). */
+    createFamilyMember: (w: string, input: CreateFamilyMemberRequest) =>
+      request<FamilyMemberDto>('POST', `${ws(w)}/family-members`, input),
+    updateFamilyMember: (w: string, id: string, input: UpdateFamilyMemberRequest) =>
+      request<FamilyMemberDto>('PATCH', `${ws(w)}/family-members/${encodeURIComponent(id)}`, input),
+    /** Every book, archived ones too (OPS-13); adding and changing them is for owners and admins. */
+    entities: async (w: string) =>
+      (await request<{ data: EntityDetailDto[] }>('GET', `${ws(w)}/entities`)).data,
+    createEntity: (w: string, input: CreateEntityRequest) =>
+      request<EntityDetailDto>('POST', `${ws(w)}/entities`, input),
+    updateEntity: (w: string, id: string, input: UpdateEntityRequest) =>
+      request<EntityDetailDto>('PATCH', `${ws(w)}/entities/${encodeURIComponent(id)}`, input),
     notifications: (w: string) => request<NotificationListDto>('GET', `${ws(w)}/notifications`),
     markNotificationRead: (w: string, id: string) =>
       request<void>('POST', `${ws(w)}/notifications/${id}/read`),

@@ -756,7 +756,7 @@ Phase 10 leftovers, not blocking:
   backup download and share sheet; new-device sign-ins on a live Kratos; a large restore (uploads are limited to 1 GB, in one
   transaction).
 - **BAK-05** is the emailed link only. Drive, OneDrive, Dropbox and iCloud need OAuth apps.
-- **OPS-13**: profile, family, entities, currency, time zone, AI mode and quiet hours are read-only on the phone.
+- **OPS-13**: done since; the phone now edits profile, family, books, AI mode and quiet hours (see 7g).
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
 - **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
@@ -834,7 +834,7 @@ Phase 11 leftovers:
 - **Staff sign-in** is the ordinary one with a second factor, not SSO.
 - **Reference data:** merchants and mileage rates are editable. Tax lines, import profiles and currencies need a migration.
 - **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
-- **Profile, family and entities** are read-only on the phone (OPS-13).
+- **Profile, family and entities** are edited on the phone too now (OPS-13, see 7g).
 - **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
 - Import parse p95 was 5.7 to 9.0 s locally for 5,000 rows, close to the 10 s limit, and worth watching.
 
@@ -2381,6 +2381,30 @@ Phase 11 leftovers:
   - Tests: API `imports.test.ts` imports 520 rows, so the commit crosses a chunk, with a category picked in the second
     chunk. It also imports three lines into a EUR account and checks the USD amounts match the same lines entered one
     by one. That test fails, 7 cents out, if the account is batched.
+- **The phone edits its settings, as the web does** (OPS-13; no migration, no new endpoint).
+  - Before: the phone switched notification channels, backed up, showed security activity and deleted the account. Your
+    profile, family members, books, AI mode and quiet hours were read-only there.
+  - Now Settings opens a screen for each, with the web's API calls and the web's rules
+    (`apps/mobile/src/features/settings-edit.ts`):
+    - **Profile** (`PATCH /v1/me`): your name and your own time zone, with a "use this phone's time zone" button. The
+      language, date format and first day of the week stay on the web, since the phone formats by its own settings.
+    - **Family** (`/family-members`): add, rename, change the relationship, archive and restore. Owners, admins and
+      partners, as RLS allows (0041). Invites and each account's default member stay on the web.
+    - **Books** (`/entities`): add business or rental books, rename, archive and restore, and the calendar colour.
+      Owners and admins (`requireWorkspaceAdmin`). The personal books take only a colour (the API refuses the rest, so
+      the phone doesn't offer it). The plan's limits come back in the API's own words (402 `plan.required`, 422
+      `plan.limit`). Closing and reopening a period (DE-09) stays on the web.
+    - **AI mode** (`PATCH /ai/settings`): owners and admins, each mode with its privacy disclosure. BYOK, local and Azure
+      are offered once their key, URL or deployment is saved on the web, by the web's own pre-save checks. Local mode
+      sends the OpenAI-compatible provider, as the web does.
+    - **Quiet hours and the daily cap** (`PATCH /v1/me/notification-prefs`), typed as `22:00`. Both ends or neither,
+      and a cap from 0 to 50. Only those three values are sent, so the per-switch saves stay independent.
+  - Everyone else sees the same lists read-only. Server errors read as on the web: no connection, known codes in plain
+    words, otherwise the server's message.
+  - The workspace's base currency and time zone stay read-only. They're set when the workspace is made, and no API
+    changes them, on the web either.
+  - Tests: mobile `settings-edit.test.ts` (rules, request building, the API paths, and every key the screens use),
+    `routes-guarded.test.ts` and `clients.test.ts`; web `i18n-keys.test.ts`. Not tried on a device.
 ---
 
 ## 8. Session checklist
