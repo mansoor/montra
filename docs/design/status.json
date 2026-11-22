@@ -1025,8 +1025,8 @@
     "separate streams and one-click unsubscribe. SPF, DKIM and DMARC are in Terraform, never applied"
   ],
   "OPS-13": [
-    "partial",
-    "every section on the web. The phone switches notification channels, backs up, shows security activity and deletes the account; profile, family, entities, currency, time zone, AI mode and quiet hours are read-only there"
+    "done",
+    "every section on the web. The phone switches notification channels, backs up, shows security activity and deletes the account, and edits your name and time zone, family members, books (add, rename, archive, colour), AI mode and quiet hours by the web's rules and API calls. The workspace's currency and time zone are read-only everywhere: set when it's made, no API changes them. Keys, invites and period close stay on the web"
   ],
   "UP-12": [
     "partial",
