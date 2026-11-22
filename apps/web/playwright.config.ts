@@ -16,6 +16,27 @@ const STORAGE_DIR = process.env.E2E_STORAGE_DIR ?? join(tmpdir(), 'montra-e2e-st
 // SIMPLEFIN_ALLOW_LOCAL_HTTP=on, which production refuses.
 const SIMPLEFIN_PORT = Number(process.env.E2E_SIMPLEFIN_PORT ?? 4655);
 
+/**
+ * PLT-01: the latest Chrome, Edge, Safari and Firefox. Chromium (Chrome and Edge) runs every spec. Firefox and WebKit
+ * (Safari's engine) run the main flows, in their own CI jobs: `E2E_PROJECTS=firefox pnpm test:e2e`. Each needs
+ * `playwright install firefox` (or webkit) first.
+ */
+const CROSS_BROWSER = [
+  'happy-path',
+  'phase1a',
+  'quick-add',
+  'import',
+  'review',
+  'receipts',
+  'accessibility',
+].map((name) => `${name}.spec.ts`);
+const ALL_PROJECTS = [
+  { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: CROSS_BROWSER },
+  { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: CROSS_BROWSER },
+];
+const WANTED = (process.env.E2E_PROJECTS ?? 'chromium').split(',').map((p) => p.trim());
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
@@ -26,7 +47,7 @@ export default defineConfig({
     baseURL: `http://localhost:${WEB_PORT}`,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: ALL_PROJECTS.filter((p) => WANTED.includes(p.name)),
   webServer: [
     {
       command: 'node ../api/dist/main.js',
