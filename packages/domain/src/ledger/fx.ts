@@ -58,6 +58,30 @@ export function unrealizedFx(
 }
 
 /**
+ * Unrealized FX on a foreign balance, shown in a report's currency (CUR-06). The gain or loss is measured in the
+ * books' functional currency at `toFunctional` (account → functional at the period end), as `unrealizedFx` does,
+ * then translated at `toReport` (functional → report) when the report is in another currency.
+ *
+ * Zero for an account in its books' own currency. Null when a rate it needs is missing, so the caller leaves the
+ * account out instead of guessing, as net worth does.
+ */
+export function unrealizedFxIn(
+  balance: CarryingBalance,
+  accountCurrency: CurrencyCode,
+  functionalCurrency: CurrencyCode,
+  toFunctional: Decimal | null,
+  reportCurrency: CurrencyCode,
+  toReport: Decimal | null,
+): bigint | null {
+  if (accountCurrency === functionalCurrency) return 0n;
+  if (!toFunctional) return null;
+  const gain = unrealizedFx(balance, accountCurrency, functionalCurrency, toFunctional);
+  if (functionalCurrency === reportCurrency) return gain;
+  if (!toReport) return null;
+  return convert({ amount: gain, currency: functionalCurrency }, reportCurrency, toReport).amount;
+}
+
+/**
  * FX cost of a cross-currency transfer against the market rate (CUR-08), in the functional currency:
  * what was given (functional value of the outgoing leg, positive) minus the market value of what arrived.
  * Positive = cost (spread and fees), negative = a better-than-market rate.

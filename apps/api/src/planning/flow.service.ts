@@ -28,6 +28,7 @@ import {
   periodContaining,
   spendingPace,
   startOfMonth,
+  unrealizedFxIn,
   type CalendarDate,
   type CurrencyCode,
   type ForecastItem,
@@ -68,6 +69,8 @@ interface CashAccount {
   kind: string;
   type: 'asset' | 'liability';
   currency: string;
+  /** Its books' functional currency; an account in another currency carries a value in this one (ADR-0010). */
+  functionalCurrency: string;
   lowBalance: bigint;
   creditLimit: bigint | null;
 }
@@ -107,12 +110,16 @@ export class FlowService {
     const rows = await trx
       .selectFrom('app.bank_account as b')
       .innerJoin('app.ledger_account as a', 'a.id', 'b.ledger_account_id')
+      .innerJoin('app.entity as e', (j) =>
+        j.onRef('e.workspace_id', '=', 'a.workspace_id').onRef('e.id', '=', 'a.entity_id'),
+      )
       .select([
         'a.id',
         'a.entity_id',
         'a.name',
         'a.type',
         'a.currency',
+        'e.functional_currency',
         'b.kind',
         'b.low_balance_minor',
         'b.credit_limit_minor',
@@ -130,6 +137,7 @@ export class FlowService {
       kind: r.kind,
       type: r.type as 'asset' | 'liability',
       currency: r.currency,
+      functionalCurrency: r.functional_currency,
       lowBalance: BigInt(r.low_balance_minor),
       creditLimit: r.credit_limit_minor !== null ? BigInt(r.credit_limit_minor) : null,
     }));
@@ -607,6 +615,14 @@ export class FlowService {
       accounts.map((a) => a.id),
       trendDates,
     );
+    // CUR-06: what each foreign-currency account was booked at, to set against its value at the date's rate.
+    const foreign = accounts.filter((a) => a.currency !== a.functionalCurrency);
+    const carrying = await this.data.carryingValues(
+      trx,
+      ctx,
+      foreign.map((a) => a.id),
+      trendDates,
+    );
     // FLOW-07: your share of what each property is worth, or what it cost until a value's entered. Without it a
     // mortgage would count with nothing to set against it. One figure, so the trend moves only when one is bought.
     const properties = await trx
@@ -634,6 +650,7 @@ export class FlowService {
       [
         ...new Set([
           ...accounts.map((a) => a.currency),
+          ...accounts.map((a) => a.functionalCurrency),
           ...properties.map((p) => p.functional_currency),
           base,
         ]),
@@ -647,6 +664,27 @@ export class FlowService {
       // Without a rate the account is left out of the converted totals rather than guessed.
       return r ? convert(money(balance, a.currency), base, parseDecimal(r.rate)).amount : 0n;
     };
+    // CUR-06: unrealized FX in that value (ADR-0010 §6), not posted. Null for an account in its books' currency; an
+    // account left out of the totals for want of a rate is left out of this too.
+    const gainOf = (a: CashAccount, d: CalendarDate, balance: bigint): bigint | null => {
+      if (a.currency === a.functionalCurrency) return null;
+      if (a.currency !== base && !rates.get(a.currency, base, d)) return 0n;
+      const rate = (from: string, to: string) => {
+        const r = from === to ? null : rates.get(from, to, d);
+        return r ? parseDecimal(r.rate) : null;
+      };
+      const functional = carrying.get(a.id)?.get(d) ?? 0n;
+      return (
+        unrealizedFxIn(
+          { foreign: balance, functional },
+          a.currency as CurrencyCode,
+          a.functionalCurrency as CurrencyCode,
+          rate(a.currency, a.functionalCurrency),
+          base,
+          rate(a.functionalCurrency, base),
+        ) ?? 0n
+      );
+    };
     const propertyValue = (p: (typeof properties)[number], d: CalendarDate): bigint => {
       const worth = p.current_value_minor ?? p.purchase_price_minor;
       if (worth === null) return 0n;
@@ -659,12 +697,21 @@ export class FlowService {
     const point = (d: CalendarDate) => {
       let assets = properties.reduce((t, p) => t + propertyValue(p, d), 0n);
       let liabilities = 0n;
+      let unrealized = 0n;
       for (const a of accounts) {
-        const v = valueOf(a, d, balances.get(a.id)?.get(d) ?? 0n);
+        const balance = balances.get(a.id)?.get(d) ?? 0n;
+        const v = valueOf(a, d, balance);
         if (a.type === 'asset') assets += v;
         else liabilities -= v;
+        unrealized += gainOf(a, d, balance) ?? 0n;
       }
-      return { date: d, assets: s(assets), liabilities: s(liabilities), netWorth: s(assets - liabilities) };
+      return {
+        date: d,
+        assets: s(assets),
+        liabilities: s(liabilities),
+        netWorth: s(assets - liabilities),
+        unrealizedFx: s(unrealized),
+      };
     };
     const now = point(date);
     return {
@@ -673,8 +720,10 @@ export class FlowService {
       assets: now.assets,
       liabilities: now.liabilities,
       netWorth: now.netWorth,
+      unrealizedFx: now.unrealizedFx,
       accounts: accounts.map((a) => {
         const balance = balances.get(a.id)?.get(date) ?? 0n;
+        const gain = gainOf(a, date, balance);
         return {
           accountId: a.id,
           entityId: a.entityId,
@@ -683,6 +732,7 @@ export class FlowService {
           balance: s(balance),
           accountCurrency: a.currency as Money,
           value: s(valueOf(a, date, balance)),
+          unrealizedFx: gain === null ? null : s(gain),
         };
       }),
       properties: properties
