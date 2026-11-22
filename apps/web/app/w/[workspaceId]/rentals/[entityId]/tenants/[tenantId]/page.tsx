@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -26,9 +27,9 @@ export default async function TenantPage({
   return (
     <div className="space-y-5">
       <div>
-        <Link href={`${here}/tenants`} className="text-sm text-muted hover:text-ink">
+        <BackLink href={`${here}/tenants`} className="text-sm text-muted hover:text-ink">
           ← {t('rentals.tab_tenants')}
-        </Link>
+        </BackLink>
         <h2 className="text-lg font-semibold">{tenant.name}</h2>
         <p className="text-sm text-muted" data-testid="tenant-current">
           {tenant.current ? (

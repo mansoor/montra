@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { notFound } from 'next/navigation';
 import { accountProfile, BALANCE_RANGES, todayIn, type BalanceRange } from '@montra/domain';
 import { AccountFacts, BalanceHistory } from '@/components/accounts/account-overview';
@@ -81,12 +82,12 @@ export default async function RegisterPage({
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link
+          <BackLink
             href={`/w/${workspaceId}/accounts`}
             className="mb-1 inline-block text-sm text-muted hover:text-ink"
           >
             ← {t('nav.accounts')}
-          </Link>
+          </BackLink>
           <h1 className="page-title">{account.name}</h1>
           <p className="text-sm text-muted" data-testid="account-about">
             {about}

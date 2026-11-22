@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { notFound } from 'next/navigation';
 import { getPublicI18n } from '@/lib/i18n-public';
 import { helpArticle } from '@/lib/help-content';
@@ -13,9 +13,9 @@ export default async function HelpArticlePage({ params }: { params: Promise<{ sl
   const { t } = getPublicI18n();
   return (
     <PublicShell>
-      <Link className="text-sm text-muted hover:underline" href="/help">
+      <BackLink className="text-sm text-muted hover:underline" href="/help">
         ← {t('help.title')}
-      </Link>
+      </BackLink>
       <h1 className="page-title">{article.title}</h1>
       {article.sections.map((s, i) => (
         <section key={s.heading ?? i} className="space-y-2">

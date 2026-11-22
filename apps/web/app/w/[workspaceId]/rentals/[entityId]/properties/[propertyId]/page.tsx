@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -46,9 +47,9 @@ export default async function PropertyPage({
   return (
     <div className="space-y-5">
       <div>
-        <Link href={`${here}/properties`} className="text-sm text-muted hover:text-ink">
+        <BackLink href={`${here}/properties`} className="text-sm text-muted hover:text-ink">
           ← {t('rentals.tab_properties')}
-        </Link>
+        </BackLink>
         <h2 className="text-lg font-semibold">{property.name}</h2>
         {property.address && <p className="text-sm text-muted">{property.address}</p>}
       </div>

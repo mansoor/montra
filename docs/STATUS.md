@@ -2351,6 +2351,18 @@ Phase 11 leftovers:
     arithmetic as the API), then shows the server's splits once saved. The web still shows the saved splits only.
   - Tests: API `receipts.test.ts` rebuilds the owner's $12.90 receipt (it fails without the fix, with the two splits);
     mobile `receipts.test.ts`.
+- **Back links return to the list as it was left** (owner, 2026-11-21; web only; no migration).
+  - Before: "← Transactions" after opening a transaction from Needs review went to All. "← Receipts" from the Matched
+    tab went to the Inbox. Lists keep their filters and tabs in the URL, and every back link pointed at the bare list.
+  - Now `RememberUrl` (root layout) keeps each page's last full URL per browser tab (`sessionStorage`,
+    `lib/back-links.ts`). `BackLink` (`components/ui/back-link.tsx`) uses it, in `PageHeader` and on every "← list"
+    link: transactions, receipts and their items, accounts, invoices, assets, payroll, people, rentals, journal,
+    payslips, tax forms, help and the support page. A back link that names its own query (the tax year) keeps it. The
+    previous-month arrows aren't back links and are unchanged.
+  - Going to a list after an action (deleting a receipt, invoice or asset, finishing a payslip) uses it too
+    (`listHref`).
+  - The phone already kept its filters: its detail screens go back on the navigation stack.
+  - Tests: web `back-links.test.ts`. Checked on the local stack: Needs review and Matched both come back after "←".
 ---
 
 ## 8. Session checklist

@@ -21,6 +21,7 @@ import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { useFileStorageStates, VaultBadges } from '../vault-badges';
 import { ReceiptViewer } from './receipt-viewer';
+import { listHref } from '@/components/ui/back-link';
 
 /**
  * The receipt review screen (RCP-06): the receipt image beside its lines. Lines get a category (and entity,
@@ -184,7 +185,9 @@ export function ReceiptReview({
                 onClick={() =>
                   void run(
                     () =>
-                      browserApi.deleteReceipt(ws, receipt.id).then(() => router.push(`/w/${ws}/receipts`)),
+                      browserApi
+                        .deleteReceipt(ws, receipt.id)
+                        .then(() => router.push(listHref(`/w/${ws}/receipts`))),
                     t('receipts.discarded'),
                   )
                 }

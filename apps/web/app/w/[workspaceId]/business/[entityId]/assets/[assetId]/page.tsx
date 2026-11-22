@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -27,9 +27,9 @@ export default async function AssetPage({
   const { t } = await getI18n();
   return (
     <div className="space-y-4">
-      <Link href={`/w/${workspaceId}/business/${entityId}/assets`} className="text-sm underline">
+      <BackLink href={`/w/${workspaceId}/business/${entityId}/assets`} className="text-sm underline">
         ← {t('business.tab_assets')}
-      </Link>
+      </BackLink>
       <AssetDetail
         workspaceId={workspaceId}
         asset={asset}

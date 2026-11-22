@@ -9,6 +9,7 @@ import { parseAmountInput } from '@/lib/money';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { listHref } from '@/components/ui/back-link';
 
 interface Choice {
   id: string;
@@ -360,7 +361,7 @@ export function AssetDetail({
               await browserApi.deleteAsset(workspaceId, a.id);
               return true;
             }, t('assets.deleted')).then((ok) => {
-              if (ok) router.push(`/w/${workspaceId}/business/${a.entityId}/assets`);
+              if (ok) router.push(listHref(`/w/${workspaceId}/business/${a.entityId}/assets`));
             });
           }}
         >
