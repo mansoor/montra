@@ -137,6 +137,10 @@ function Gate() {
         <Stack.Screen name="suggestions" options={{ title: t('nav.suggestions') }} />
         <Stack.Screen name="activity" options={{ title: t('mobile.activity.title') }} />
         <Stack.Screen name="settings" options={{ title: t('mobile.settings.title') }} />
+        <Stack.Screen name="profile" options={{ title: t('settings.tab.profile') }} />
+        <Stack.Screen name="family" options={{ title: t('settings.tab.family') }} />
+        <Stack.Screen name="books" options={{ title: t('mobile.settings.entities') }} />
+        <Stack.Screen name="ai-settings" options={{ title: t('ai.title') }} />
         <Stack.Screen name="two-step" options={{ title: t('mobile.auth.two_step_title') }} />
         <Stack.Screen name="developer/camera" options={{ title: t('mobile.spike.title') }} />
       </Stack.Protected>

@@ -10,6 +10,7 @@ import { vaultOnlyPage } from '@/lib/vault';
 import {
   amountPlaceholder,
   buildUpdate,
+  previewSplits,
   recalcLine,
   rowsOf,
   STATUS_CHIP,
@@ -21,6 +22,7 @@ import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { useFileStorageStates, VaultBadges } from '../vault-badges';
 import { ReceiptViewer } from './receipt-viewer';
+import { listHref } from '@/components/ui/back-link';
 
 /**
  * The receipt review screen (RCP-06): the receipt image beside its lines. Lines get a category (and entity,
@@ -126,6 +128,18 @@ export function ReceiptReview({
   }
 
   const gap = receipt.validationGap ? BigInt(receipt.validationGap) : null;
+  // The saved splits; once the form is edited, what saving would make of it (owner, 2026-11-21), so a category
+  // picked for a line shows in the splits straight away, and lines of one category show as one split.
+  const edited = JSON.stringify({ header, lines }) !== JSON.stringify(initial);
+  const preview = edited ? previewSplits(receipt, header, lines, categories) : null;
+  const splits =
+    preview ??
+    receipt.groups.map((g) => ({
+      key: g.lineIds.join(),
+      categoryId: g.categoryId,
+      entityId: g.entityId,
+      total: g.total,
+    }));
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]">
       <section className="space-y-4" aria-label={t('receipts.details')}>
@@ -184,7 +198,9 @@ export function ReceiptReview({
                 onClick={() =>
                   void run(
                     () =>
-                      browserApi.deleteReceipt(ws, receipt.id).then(() => router.push(`/w/${ws}/receipts`)),
+                      browserApi
+                        .deleteReceipt(ws, receipt.id)
+                        .then(() => router.push(listHref(`/w/${ws}/receipts`))),
                     t('receipts.discarded'),
                   )
                 }
@@ -398,12 +414,17 @@ export function ReceiptReview({
           </button>
         </div>
 
-        {receipt.groups.length > 0 && (
+        {splits.length > 0 && (
           <div className="card space-y-1" aria-label={t('receipts.splits')}>
             <h2 className="font-medium">{t('receipts.splits')}</h2>
+            {preview && (
+              <p className="text-xs text-muted" data-testid="receipt-splits-unsaved">
+                {t('receipts.splits_unsaved')}
+              </p>
+            )}
             <ul className="text-sm">
-              {receipt.groups.map((g) => (
-                <li key={g.lineIds.join()} className="flex justify-between gap-2" data-testid="receipt-split">
+              {splits.map((g) => (
+                <li key={g.key} className="flex justify-between gap-2" data-testid="receipt-split">
                   <span>
                     {g.categoryId ? categoryName.get(g.categoryId) : t('receipts.uncategorized')}
                     {workspace.entities.length > 1 && g.entityId ? ` · ${entityName.get(g.entityId)}` : ''}

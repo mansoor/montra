@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { canSpendFrom } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -28,9 +28,9 @@ export default async function ReceiptPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={`/w/${workspaceId}/receipts`} className="text-sm underline">
+        <BackLink href={`/w/${workspaceId}/receipts`} className="text-sm underline">
           {t('receipts.back')}
-        </Link>
+        </BackLink>
         <h1 className="page-title">{receipt.merchant ?? t('receipts.unknown_merchant')}</h1>
       </div>
       {(receipt.storeAddress || receipt.storePhone || receipt.storeWebsite) && (

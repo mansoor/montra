@@ -3,6 +3,7 @@ import type { ReceiptDto } from '@montra/api-client';
 import {
   amountToInput,
   buildUpdate,
+  previewSplits,
   recalcLine,
   receiptFileProblem,
   rowsOf,
@@ -176,6 +177,73 @@ describe('receipt helpers (RCP-06)', () => {
       ok: false,
       errors: { currency: expect.any(String) },
     });
+  });
+});
+
+describe('splits while the review form is edited', () => {
+  // The owner's case (2026-11-21): one line already Groceries, two picked as Groceries afterwards.
+  const r: ReceiptDto = {
+    ...receipt,
+    subtotal: null,
+    tax: '0',
+    total: '1290',
+    lines: [
+      { ...receipt.lines[0]!, id: 'fries', rawText: 'FRIES', lineTotal: '726', categoryId: 'dining' },
+      {
+        ...receipt.lines[0]!,
+        id: 'beans1',
+        rawText: 'COFFEE',
+        lineTotal: '282',
+        categoryId: null,
+        entityId: null,
+      },
+      {
+        ...receipt.lines[0]!,
+        id: 'beans2',
+        rawText: 'COFFEE',
+        lineTotal: '282',
+        categoryId: null,
+        entityId: null,
+      },
+    ],
+  };
+  const categories = [
+    { id: 'groceries', entityId: 'e1' },
+    { id: 'dining', entityId: 'e1' },
+    { id: 'supplies', entityId: 'biz' },
+  ];
+
+  it('groups the lines as they would be saved', () => {
+    const { header, lines } = rowsOf(r);
+    expect(previewSplits(r, header, lines, categories)?.map((g) => [g.categoryId, g.total])).toEqual([
+      ['dining', '726'],
+      [null, '564'],
+    ]);
+    const picked = lines.map((l) => ({ ...l, categoryId: 'groceries' }));
+    expect(previewSplits(r, header, picked, categories)).toEqual([
+      { key: 'groceries|e1|', categoryId: 'groceries', entityId: 'e1', memberId: null, total: '1290' },
+    ]);
+  });
+
+  it("takes the category's entity, and allocates tax", () => {
+    const { header, lines } = rowsOf({ ...r, tax: '100', total: '1390' });
+    const out = previewSplits(
+      r,
+      header,
+      lines.map((l, i) => ({ ...l, categoryId: i === 0 ? 'supplies' : 'groceries', taxable: true })),
+      categories,
+    );
+    expect(out?.map((g) => [g.entityId, g.total])).toEqual([
+      ['biz', '782'],
+      ['e1', '608'],
+    ]);
+  });
+
+  it("gives up while an amount doesn't parse", () => {
+    const { header, lines } = rowsOf(r);
+    expect(
+      previewSplits(r, header, [{ ...lines[0]!, lineTotal: '7.2.6' }, ...lines.slice(1)], categories),
+    ).toBe(null);
   });
 });
 

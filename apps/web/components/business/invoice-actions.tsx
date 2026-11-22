@@ -10,6 +10,7 @@ import { amountToInput } from '@/lib/receipts';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { listHref } from '@/components/ui/back-link';
 
 /** Sending, voiding and payments on one invoice (BIZ-05). */
 export function InvoiceActions({
@@ -101,7 +102,7 @@ export function InvoiceActions({
                 await browserApi.deleteInvoice(workspaceId, invoice.id);
                 return true;
               });
-              if (done) router.push(`/w/${workspaceId}/business/${invoice.entityId}/invoices`);
+              if (done) router.push(listHref(`/w/${workspaceId}/business/${invoice.entityId}/invoices`));
             }}
           >
             {t('invoices.delete_draft')}

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { ApiError } from '@montra/api-client';
 import { load, serverApi } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -35,9 +35,9 @@ export default async function PayRunPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={`/w/${workspaceId}/business/${entityId}/payroll`} className="text-sm underline">
+        <BackLink href={`/w/${workspaceId}/business/${entityId}/payroll`} className="text-sm underline">
           ← {t('business.tab_payroll')}
-        </Link>
+        </BackLink>
         <h2 className="text-lg font-semibold">{t('payroll.run.title')}</h2>
       </div>
       <PayRunEditor

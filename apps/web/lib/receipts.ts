@@ -5,6 +5,7 @@
 import {
   addMonths,
   asCurrencyCode,
+  groupReceipt,
   isCurrencyCode,
   lineQuantity,
   minorUnits,
@@ -13,7 +14,7 @@ import {
   toDecimalString,
   type CalendarDate,
 } from '@montra/domain';
-import type { ReceiptDto, UpdateReceiptInput } from '@montra/api-client';
+import type { CategoryDto, ReceiptDto, UpdateReceiptInput } from '@montra/api-client';
 import { parseAmountInput } from './money';
 import { staticT } from './i18n-static';
 
@@ -170,6 +171,71 @@ export function buildUpdate(
     }),
   };
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, input: out };
+}
+
+/** One split as the form stands, before it's saved. */
+export interface PreviewSplit {
+  key: string;
+  categoryId: string | null;
+  entityId: string;
+  memberId: string | null;
+  /** Minor units, in the receipt currency. */
+  total: string;
+}
+
+/**
+ * The splits the review form would save, worked out as it's edited (owner, 2026-11-21): lines grouped by category,
+ * entity and member, with tax, discount, fees and tip allocated as the API does (`groupReceipt`, RCP-03/04). A line
+ * takes its category's entity, else the one it had, else the receipt's. Null while a field doesn't parse; the
+ * screen then keeps showing the saved splits.
+ */
+export function previewSplits(
+  receipt: Pick<ReceiptDto, 'version' | 'entityId' | 'lines'>,
+  header: HeaderFields,
+  lines: LineRow[],
+  categories: ReadonlyArray<Pick<CategoryDto, 'id' | 'entityId'>>,
+  locale?: string,
+): PreviewSplit[] | null {
+  const res = buildUpdate(receipt.version, header, lines, locale);
+  if (!res.ok) return null;
+  const input = res.input;
+  const entityOfCategory = new Map(categories.map((c) => [c.id, c.entityId]));
+  const entityBefore = new Map(receipt.lines.map((l) => [l.id, l.entityId]));
+  const rows = (input.lines ?? []).map((l) => {
+    const categoryId = l.categoryId ?? null;
+    const memberId = l.memberId ?? null;
+    const entityId =
+      (categoryId ? entityOfCategory.get(categoryId) : undefined) ??
+      (l.id ? entityBefore.get(l.id) : undefined) ??
+      receipt.entityId;
+    return { categoryId, memberId, entityId, key: `${categoryId ?? ''}|${entityId}|${memberId ?? ''}` };
+  });
+  const groups = groupReceipt(
+    (input.lines ?? []).map((l, i) => ({
+      key: rows[i]!.key,
+      lineTotal: BigInt(l.lineTotal),
+      discount: BigInt(l.discount ?? '0'),
+      taxable: l.taxable ?? true,
+    })),
+    {
+      tax: BigInt(input.tax ?? '0'),
+      taxIncluded: input.taxIncluded ?? false,
+      discount: BigInt(input.discount ?? '0'),
+      fees: BigInt(input.fees ?? '0'),
+      tip: BigInt(input.tip ?? '0'),
+      total: input.total == null ? null : BigInt(input.total),
+    },
+  );
+  return groups.map((g) => {
+    const first = rows[g.lines[0]!]!;
+    return {
+      key: g.key,
+      categoryId: first.categoryId,
+      entityId: first.entityId,
+      memberId: first.memberId,
+      total: g.total.toString(),
+    };
+  });
 }
 
 /** A quantity the API takes: up to three decimals. */

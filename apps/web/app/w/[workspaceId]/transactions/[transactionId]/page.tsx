@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { AllocatePanel } from '@/components/rentals/rental-ops';
@@ -86,9 +86,9 @@ export default async function TransactionPage({
 
   return (
     <div className="space-y-6">
-      <Link href={`/w/${workspaceId}/transactions`} className="text-sm text-brand-600 underline">
+      <BackLink href={`/w/${workspaceId}/transactions`} className="text-sm text-brand-600 underline">
         ← {t('nav.transactions')}
-      </Link>
+      </BackLink>
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="page-title min-w-0 flex-1">
           {transaction.payee || transaction.description || t('editor.untitled')}

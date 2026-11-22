@@ -276,10 +276,9 @@ finished:
 8. **Camera library:** the camera spike uses `expo-camera`. Moving to `react-native-vision-camera`
    (frame processors, ML Kit / VisionKit edge detection) is the Phase 5 option, decided by the spike. ADR-0009
    stays _proposed_ until the spike runs on devices.
-9. **Commit speed:** an import commit takes about 11–16 ms per row (on the owner's busy dev PC), so 5,000 rows take
-   a minute or more (with a progress bar). The case where it grew with the square of the rows is fixed (migration
-   0075, see §7g). Bulk posting (fewer statements per row) would speed it up further; judge it on CI or a quiet
-   machine.
+9. ~~**Commit speed.**~~ Done: an import commit writes its new transactions 500 at a time (see §7g). 1,000 rows
+   commit in about 5.8 s, from 16.2 s, on the owner's dev PC. Most of what's left is the audit and change-feed
+   triggers every ledger row runs.
 10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
     suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
 11. ~~**Payment lines share a payee key.**~~ Done: a payment or transfer to an account is keyed by its last four
@@ -757,7 +756,7 @@ Phase 10 leftovers, not blocking:
   backup download and share sheet; new-device sign-ins on a live Kratos; a large restore (uploads are limited to 1 GB, in one
   transaction).
 - **BAK-05** is the emailed link only. Drive, OneDrive, Dropbox and iCloud need OAuth apps.
-- **OPS-13**: profile, family, entities, currency, time zone, AI mode and quiet hours are read-only on the phone.
+- **OPS-13**: done since; the phone now edits profile, family, books, AI mode and quiet hours (see 7g).
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
 - **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
@@ -835,7 +834,7 @@ Phase 11 leftovers:
 - **Staff sign-in** is the ordinary one with a second factor, not SSO.
 - **Reference data:** merchants and mileage rates are editable. Tax lines, import profiles and currencies need a migration.
 - **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
-- **Profile, family and entities** are read-only on the phone (OPS-13).
+- **Profile, family and entities** are edited on the phone too now (OPS-13, see 7g).
 - **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
 - Import parse p95 was 5.7 to 9.0 s locally for 5,000 rows, close to the 10 s limit, and worth watching.
 
@@ -2348,9 +2347,64 @@ Phase 11 leftovers:
     account, which has one). In grouping, a line with no entity counts as the receipt's, which also fixes receipts
     saved before this on their next read. Applying to a transaction uses the same grouping.
   - The phone's Splits card follows each category pick before Save (`previewSplits`, the same `groupReceipt`
-    arithmetic as the API), then shows the server's splits once saved. The web still shows the saved splits only.
+    arithmetic as the API), then shows the server's splits once saved.
+  - The web review does the same once the form is edited (`previewSplits` in `apps/web/lib/receipts.ts`): category,
+    member, amount, tax, discount, fee and tip edits, and added or removed lines, show in the Splits card at once,
+    marked "Not saved yet". While a field doesn't parse, it keeps showing the saved splits.
   - Tests: API `receipts.test.ts` rebuilds the owner's $12.90 receipt (it fails without the fix, with the two splits);
-    mobile `receipts.test.ts`.
+    mobile `receipts.test.ts`; web `receipts.test.ts`. Checked on the local stack: the three picks went $7.26 + $5.64,
+    then $10.08 + $2.82, then one Groceries split of $12.90, and Save kept it.
+- **Back links return to the list as it was left** (owner, 2026-11-21; web only; no migration).
+  - Before: "← Transactions" after opening a transaction from Needs review went to All. "← Receipts" from the Matched
+    tab went to the Inbox. Lists keep their filters and tabs in the URL, and every back link pointed at the bare list.
+  - Now `RememberUrl` (root layout) keeps each page's last full URL per browser tab (`sessionStorage`,
+    `lib/back-links.ts`). `BackLink` (`components/ui/back-link.tsx`) uses it, in `PageHeader` and on every "← list"
+    link: transactions, receipts and their items, accounts, invoices, assets, payroll, people, rentals, journal,
+    payslips, tax forms, help and the support page. A back link that names its own query (the tax year) keeps it. The
+    previous-month arrows aren't back links and are unchanged.
+  - Going to a list after an action (deleting a receipt, invoice or asset, finishing a payslip) uses it too
+    (`listHref`).
+  - The phone already kept its filters: its detail screens go back on the navigation stack.
+  - Tests: web `back-links.test.ts`. Checked on the local stack: Needs review and Matched both come back after "←".
+- **Import commits write in chunks** (backlog item 9; no migration).
+  - Before: each new transaction took about five round trips (its row, its entry, its postings, the account's default
+    member). The posting read models' statement trigger also ran once per transaction. 1,000 rows took 16.2 s.
+  - Now `TransactionsService.prepareCreate` works out each transaction without writing it. `insertPrepared` writes them
+    500 at a time: one insert for the rows, then `LedgerService.postMany` with one for the entries and one for the
+    postings. `createInTrx` is the same two steps for one transaction, so every other caller is unchanged.
+  - The commit keeps statement order. What's waiting is written before a matched row is confirmed. A category picked
+    during import is learned once its transaction exists.
+  - A foreign-currency account (`TransactionPoster.postsInOrder`) still posts one at a time, as each line's carrying
+    value (ADR-0010) reads the postings before it.
+  - Measured with `PERF_ROWS=1000 pnpm --filter @montra/api test:perf`: commit 5.8 s, from 16.2 s. The 30 ms per row
+    budget is unchanged.
+  - Tests: API `imports.test.ts` imports 520 rows, so the commit crosses a chunk, with a category picked in the second
+    chunk. It also imports three lines into a EUR account and checks the USD amounts match the same lines entered one
+    by one. That test fails, 7 cents out, if the account is batched.
+- **The phone edits its settings, as the web does** (OPS-13; no migration, no new endpoint).
+  - Before: the phone switched notification channels, backed up, showed security activity and deleted the account. Your
+    profile, family members, books, AI mode and quiet hours were read-only there.
+  - Now Settings opens a screen for each, with the web's API calls and the web's rules
+    (`apps/mobile/src/features/settings-edit.ts`):
+    - **Profile** (`PATCH /v1/me`): your name and your own time zone, with a "use this phone's time zone" button. The
+      language, date format and first day of the week stay on the web, since the phone formats by its own settings.
+    - **Family** (`/family-members`): add, rename, change the relationship, archive and restore. Owners, admins and
+      partners, as RLS allows (0041). Invites and each account's default member stay on the web.
+    - **Books** (`/entities`): add business or rental books, rename, archive and restore, and the calendar colour.
+      Owners and admins (`requireWorkspaceAdmin`). The personal books take only a colour (the API refuses the rest, so
+      the phone doesn't offer it). The plan's limits come back in the API's own words (402 `plan.required`, 422
+      `plan.limit`). Closing and reopening a period (DE-09) stays on the web.
+    - **AI mode** (`PATCH /ai/settings`): owners and admins, each mode with its privacy disclosure. BYOK, local and Azure
+      are offered once their key, URL or deployment is saved on the web, by the web's own pre-save checks. Local mode
+      sends the OpenAI-compatible provider, as the web does.
+    - **Quiet hours and the daily cap** (`PATCH /v1/me/notification-prefs`), typed as `22:00`. Both ends or neither,
+      and a cap from 0 to 50. Only those three values are sent, so the per-switch saves stay independent.
+  - Everyone else sees the same lists read-only. Server errors read as on the web: no connection, known codes in plain
+    words, otherwise the server's message.
+  - The workspace's base currency and time zone stay read-only. They're set when the workspace is made, and no API
+    changes them, on the web either.
+  - Tests: mobile `settings-edit.test.ts` (rules, request building, the API paths, and every key the screens use),
+    `routes-guarded.test.ts` and `clients.test.ts`; web `i18n-keys.test.ts`. Not tried on a device.
 ---
 
 ## 8. Session checklist

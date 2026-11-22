@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BackLink } from '@/components/ui/back-link';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -37,9 +38,9 @@ export default async function ReceiptItemsPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={base} className="text-sm underline">
+        <BackLink href={base} className="text-sm underline">
           {t('receipts.back')}
-        </Link>
+        </BackLink>
         <h1 className="page-title">{t('receipts.items.title')}</h1>
       </div>
       <p className="text-sm text-muted">{t('receipts.items.hint')}</p>
