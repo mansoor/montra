@@ -222,8 +222,12 @@ import type {
   FeatureFlagDto,
   ImportFailureRowDto,
   SaveFeatureFlagRequest,
+  SaveImportProfileRequest,
   SaveMerchantRequest,
   SaveMileageRateRequest,
+  SaveTaxLineRequest,
+  AdminImportProfileDto,
+  AdminTaxLineDto,
   StaffMeDto,
   StatusDto,
   SupportGrantDto,
@@ -1265,6 +1269,7 @@ export class ApiClient {
         matchKey: string;
         categoryHint: string | null;
         version: number;
+        staffEditedAt: string | null;
       }[];
     }>('GET', `/v1/admin/reference/merchants${query({ q })}`).then((r) => r.data);
   }
@@ -1273,11 +1278,37 @@ export class ApiClient {
   }
   adminMileageRates() {
     return this.request<{
-      data: { country: string; effectiveFrom: string; tenthsOfCent: number; source: string }[];
+      data: {
+        country: string;
+        effectiveFrom: string;
+        tenthsOfCent: number;
+        source: string;
+        staffEditedAt: string | null;
+      }[];
     }>('GET', '/v1/admin/reference/mileage-rates').then((r) => r.data);
   }
   adminSaveMileageRate(input: SaveMileageRateRequest) {
     return this.request<void>('PUT', '/v1/admin/reference/mileage-rates', input);
+  }
+  adminTaxLines() {
+    return this.request<{ data: AdminTaxLineDto[] }>('GET', '/v1/admin/reference/tax-lines').then(
+      (r) => r.data,
+    );
+  }
+  adminSaveTaxLine(input: z.input<typeof SaveTaxLineRequest>) {
+    return this.request<void>('PUT', '/v1/admin/reference/tax-lines', input);
+  }
+  adminImportProfiles() {
+    return this.request<{ data: AdminImportProfileDto[] }>('GET', '/v1/admin/reference/import-profiles').then(
+      (r) => r.data,
+    );
+  }
+  /** Answers with the fingerprint saved, which a sample of the file gives. */
+  adminSaveImportProfile(input: z.input<typeof SaveImportProfileRequest>) {
+    return this.request<{ fingerprint: string }>('PUT', '/v1/admin/reference/import-profiles', input);
+  }
+  adminDeleteImportProfile(id: string) {
+    return this.request<void>('DELETE', `/v1/admin/reference/import-profiles/${enc(id)}`);
   }
 
   // ----- Family members (FAM) ------------------------------------------------------------------------------
@@ -3744,6 +3775,8 @@ export type {
 export type {
   ProvidersDto,
   AdminAccountDto,
+  AdminImportProfileDto,
+  AdminTaxLineDto,
   AdminPlanDto,
   AdminPlanVersionDto,
   AdminSupportRequestDto,
