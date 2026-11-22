@@ -16,6 +16,9 @@ export const engine = {
   createTransaction: jest.fn(async () => undefined),
 };
 
+/** The receipt upload queue: empty. One object, as the provider's is, so screens' effects don't re-run. */
+const receipts = { list: async () => [] };
+
 export const refresh = jest.fn(async () => undefined);
 export const touch = jest.fn();
 
@@ -31,7 +34,7 @@ export function useSync() {
   return {
     engine: engine as unknown as SyncEngine,
     store: store as SyncStore,
-    receipts: {} as never,
+    receipts: receipts as never,
     state: null,
     version: 0,
     refresh,

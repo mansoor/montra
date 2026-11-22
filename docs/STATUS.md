@@ -509,7 +509,7 @@ integration):
   - `/trips` (CUR-09).
   - The transaction page: an FX panel (the original amount, rate and source, a rate override on
     foreign-currency accounts, "Paid in another currency?" with a fee for CUR-03) and "Add a receipt".
-  - The transfer form asks for the amount received across currencies (CUR-08).
+  - The transfer form asks for the amount received across currencies (CUR-08), and previews the FX cost (see §7g).
   - `e2e/receipts.spec.ts` covers the Walmart receipt through the UI and the CUR-03 entry. The foreign
     _receipt_ match is covered by the API tests only: e2e runs against the dev database, which has no FX
     rates unless `fx:load` has fetched them.
@@ -542,7 +542,7 @@ integration):
   - device runs of the mobile capture, the offline queue and the camera spike;
   - device runs (see above).
 - **Phase 5 leftovers, not blocking:**
-  - CUR-08: FX-cost display;
+  - ~~CUR-08: FX-cost display.~~ Done: web and phone (see §7g);
   - RCP-10: purge after retention;
   - UP-09: missing-receipt flags, with BIZ-12 in Phase 8.
 
@@ -2542,6 +2542,27 @@ Phase 11 leftovers:
     `PlanningSettingsDto`, stored in `workspace.priorities` like the others. Web Settings › Planning edits them.
   - Tests: categorize `subscriptions.test.ts`, API `unused-subscriptions.test.ts` (both hints, wording and links, keep
     stops it, ignored comes back, settings, ended items), API `planning.test.ts` (settings defaults).
+- **The FX cost of a transfer between currencies** (CUR-08; no migration).
+  - Before: a transfer between currencies kept both amounts and booked the gap to `fx_gain_loss`, but no screen showed
+    how its rate compared with the market. `transferFxCost` in `@montra/domain` was never called.
+  - Now each `TransactionDto` has `transferFx` (null unless the transfer is between currencies). It holds the amounts
+    sent and received and the rate they imply. It also holds the stored reference rate for the date, the day that rate
+    was published (up to a week earlier, as elsewhere), and the cost in the source books' base currency, with its
+    percent.
+  - The cost is what was sent at the market rate minus what arrived at the market rate. Both legs use the market, not
+    the account's carrying value, so earlier gains on held currency don't count as cost. Positive is a cost, negative
+    is better than market. Math is bigint (`transferFxQuote` in `ledger/fx.ts`).
+  - No stored rate for the date: the market rate, cost and percent are null. The screens say no market rate is stored
+    for that date. They never guess.
+  - `POST /transactions/transfer/fx-cost` gives the same figures for a transfer being typed, without saving. The web
+    transfer form calls it once both amounts are entered and shows the result under the fields.
+  - The web transaction page and the phone's transaction screen show an "Exchange rate" card: your rate, the market rate
+    and the FX cost (or "Better than market"). `transferFxView` in `@montra/domain` shapes it for both.
+  - The list loads rates once per page, only when the page has a transfer between currencies.
+  - Tests: domain `ledger-fx.test.ts` and `transfer-fx-view.test.ts`; API `foreign-currency.test.ts` (on the transfer,
+    its GET and the list, against carrying value, the preview, no rate, one currency, wrong currency); phone
+    `screens-test/transaction-fx.test.tsx` (the card, no rate, nothing on other transactions). The phone's screen-test
+    harness now has an empty receipt queue, so the transaction screen renders there.
 ---
 
 ## 8. Session checklist

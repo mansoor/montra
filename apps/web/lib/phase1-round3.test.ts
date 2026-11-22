@@ -127,6 +127,7 @@ describe('closed contract gaps', () => {
       reconciled: false,
       expenseDetail: null,
       foreign: null,
+      transferFx: null,
       tripId: null,
       localTime: null,
       receipt: null,
