@@ -236,6 +236,24 @@ export function toRenderModel(
   };
 }
 
+/**
+ * Where something shown just before submitting goes (the CAPTCHA widget, ADR-0056): before the button that submits a
+ * password (sign-in, sign-up) or a sign-up's profile step, else before the first submit button, else at the end.
+ */
+export function submitSlot(items: RenderItem[]): number {
+  const submit = (item: RenderItem) => item.kind === 'button' && !item.trigger;
+  const main = items.findIndex(
+    (item) =>
+      item.kind === 'button' &&
+      !item.trigger &&
+      item.name === 'method' &&
+      (item.value === 'password' || item.value === 'profile'),
+  );
+  if (main >= 0) return main;
+  const first = items.findIndex(submit);
+  return first >= 0 ? first : items.length;
+}
+
 /** Groups that appear on the settings flow, in display order (password, TOTP, passkeys, recovery codes). */
 export const SETTINGS_GROUPS = [
   'profile',

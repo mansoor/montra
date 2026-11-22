@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FlowForm } from '@/components/kratos/flow-form';
 import { hostileFlow, KRATOS, loginFlow, passedVerificationFlow, settingsFlow } from './kratos-fixtures';
-import { toRenderModel } from './kratos-ui';
+import { submitSlot, toRenderModel, type RenderItem } from './kratos-ui';
 
 describe('Kratos node renderer (ADR-0006)', () => {
   it('maps a login flow to hidden CSRF, labelled inputs, submit and passkey trigger', () => {
@@ -127,5 +127,37 @@ describe('Kratos node renderer (ADR-0006)', () => {
     );
     expect(html).not.toContain('javascript:');
     expect(html).toContain('could not be loaded safely');
+  });
+});
+
+describe('room for the CAPTCHA widget in the form (ADR-0056)', () => {
+  const button = (value: string, trigger?: 'oryPasskeyLogin'): RenderItem => ({
+    kind: 'button',
+    name: 'method',
+    value,
+    label: value,
+    disabled: false,
+    ...(trigger ? { trigger } : {}),
+  });
+  const hidden: RenderItem = { kind: 'hidden', name: 'csrf_token', value: 'x' };
+
+  it('goes before the password or profile submit button, else the first submit, else the end', () => {
+    expect(submitSlot([hidden, button('oidc'), button('password')])).toBe(2);
+    expect(submitSlot([hidden, button('profile'), button('passkey', 'oryPasskeyLogin')])).toBe(1);
+    expect(submitSlot([hidden, button('passkey', 'oryPasskeyLogin'), button('code')])).toBe(2);
+    expect(submitSlot([hidden])).toBe(1);
+  });
+
+  it('renders inside the form, before the sign-in button, and only when given', () => {
+    const model = toRenderModel(loginFlow, { kratosOrigin: KRATOS });
+    const plain = renderToStaticMarkup(<FlowForm model={model} label="Sign in" />);
+    expect(plain).not.toContain('data-captcha');
+    const html = renderToStaticMarkup(
+      <FlowForm model={model} label="Sign in" beforeSubmit={<div data-captcha="yes" />} />,
+    );
+    const form = html.slice(html.indexOf('<form'), html.indexOf('</form>'));
+    expect(form).toContain('data-captcha="yes"');
+    expect(form.indexOf('data-captcha')).toBeLessThan(form.indexOf('value="password"'));
+    expect(form.indexOf('data-captcha')).toBeGreaterThan(form.indexOf('name="password"'));
   });
 });

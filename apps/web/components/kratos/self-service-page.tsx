@@ -6,7 +6,7 @@ import { AUTH_MODE } from '@/lib/session';
 import { staticT as t } from '@/lib/i18n-static';
 import { AuthShell } from './auth-shell';
 import { FlowForm } from './flow-form';
-import { GatewayNotice } from './gateway-notice';
+import { captchaWidget, GatewayNotice } from './gateway-notice';
 import { newPasswordProps } from '@/lib/password-policy';
 
 /** Sign-up, recovery and verification pages: start the flow if needed, then render its nodes. */
@@ -41,6 +41,7 @@ export async function SelfServicePage({
         model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })}
         label={title}
         newPassword={kind === 'registration' ? await newPasswordProps() : undefined}
+        beforeSubmit={kind === 'registration' ? captchaWidget(params) : undefined}
       />
       <p className="text-sm">
         <Link href="/sign-in" className="text-brand-600 underline">
