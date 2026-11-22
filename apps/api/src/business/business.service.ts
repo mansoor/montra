@@ -46,9 +46,8 @@ import {
   type BusinessEntity,
   type Ctx,
 } from './shared.js';
-
-/** Business paperwork is kept as long as receipts: long enough for a tax question. */
-export const RETENTION_YEARS = 7;
+import { CONFIG, type AppConfig } from '../config.js';
+import { retainUntil } from '../data/retention.js';
 
 @Injectable()
 export class BusinessService {
@@ -56,6 +55,7 @@ export class BusinessService {
     @Inject(Db) private readonly db: Db,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(FileBytes) private readonly files: FileBytes,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   // ----- Profile -------------------------------------------------------------------------------------------
@@ -762,7 +762,7 @@ export class BusinessService {
           bytes: bytes.length,
           sha256: createHash('sha256').update(bytes).digest('hex'),
           uploaded_by: ctx.userId,
-          retain_until: sql<string>`(current_date + make_interval(years => ${RETENTION_YEARS}))::date`,
+          retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
         })
         .execute();
     if (trx) await insert(trx);

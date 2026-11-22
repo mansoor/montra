@@ -40,10 +40,10 @@ import { employerIdentity, formatEddAccount, formatEin } from '../business/regis
 import { de4Doc, i9Doc, renderFormPdf, w4Doc, w9Doc, formatTin } from './form-pdf.js';
 import { PeopleService } from './people.service.js';
 import { auditView, conflict, formatAddress, payrollEntity, personName, sealer, type Ctx } from './shared.js';
+import { CONFIG, type AppConfig } from '../config.js';
+import { retainUntil } from '../data/retention.js';
 
 const dateOrNull = (v: unknown): CalendarDate | null => (v ? calendarDate(String(v).slice(0, 10)) : null);
-/** Kept as long as the longest rule that can apply to them (I-9: until destroyed by the owner after retention). */
-const FILE_RETENTION_YEARS = 7;
 
 @Injectable()
 export class FormsService {
@@ -53,6 +53,7 @@ export class FormsService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(PeopleService) private readonly people: PeopleService,
     @Inject(FileBytes) private readonly files: FileBytes,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   // ----- W-4 ------------------------------------------------------------------------------------------------------
@@ -751,7 +752,8 @@ export class FormsService {
           sha256: sha256(bytes),
           uploaded_by: ctx.userId,
           sealed: seal,
-          retain_until: sql<string>`(current_date + make_interval(years => ${FILE_RETENTION_YEARS}))::date`,
+          // Kept as long as the longest rule that can apply to them (I-9: until destroyed by the owner after retention).
+          retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
         })
         .execute();
     });

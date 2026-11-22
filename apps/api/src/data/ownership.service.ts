@@ -7,6 +7,7 @@ import { sql } from 'kysely';
 import { asCurrencyCode, addDays, type CalendarDate } from '@montra/domain';
 import type { DeletionStatusDto, SecurityEventDto, StorageUsageDto, TrashItemDto } from '@montra/schemas';
 import { notFound } from '../common/errors.js';
+import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
@@ -30,6 +31,7 @@ export class OwnershipService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(BackupService) private readonly backups: BackupService,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   register(): void {
@@ -223,7 +225,16 @@ export class OwnershipService {
 
   /** One failure doesn't stop the rest, and it's picked up again next hour. */
   async retention(): Promise<Record<string, number>> {
-    const done = { exports: 0, restores: 0, files: 0, workspaces: 0, users: 0, trash: 0, backups: 0 };
+    const done = {
+      exports: 0,
+      restores: 0,
+      receipts: 0,
+      files: 0,
+      workspaces: 0,
+      users: 0,
+      trash: 0,
+      backups: 0,
+    };
     // The Trash first: a tax form purged there marks its files deleted, and they go below in the same run (§8.5).
     const trash = await this.db.run({}, (trx) =>
       sql<{ n: number }>`select app.purge_trash() as n`.execute(trx),
@@ -233,17 +244,87 @@ export class OwnershipService {
       sql<{ kind: string; workspace_id: string | null; id: string; storage_key: string | null }>`
         select * from app.retention_due()`.execute(trx),
     );
-    const order: Record<string, number> = { export: 0, restore: 1, file: 2, workspace: 3, user: 4 };
+    const order: Record<string, number> = { export: 0, restore: 1, workspace: 2, user: 3 };
     rows.sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
+    const archives = rows.filter((r) => r.kind === 'export' || r.kind === 'restore');
+    for (const r of archives) await this.tryRetainOne(r, done);
+    // RCP-10: receipts past their date, then files; a receipt's files fall due with it, so they go in the same run.
+    done.receipts = await this.purgeReceipts();
+    done.files = await this.purgeFiles();
+    for (const r of rows.filter((x) => !archives.includes(x))) await this.tryRetainOne(r, done);
+    done.backups = await this.backups.runSchedules();
+    if (done.receipts || done.files) {
+      this.logger.log(`Removed ${done.receipts} receipts and ${done.files} files past their retention`);
+    }
+    return done;
+  }
+
+  private async tryRetainOne(
+    r: { kind: string; workspace_id: string | null; id: string; storage_key: string | null },
+    done: Record<string, number>,
+  ): Promise<void> {
+    try {
+      await this.retainOne(r, done);
+    } catch (e) {
+      this.logger.warn(`Retention failed for a ${r.kind}: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * RCP-10: receipts past their date, at most RETENTION_BATCH a run. Each goes with its lines, OCR text and extraction;
+   * the transaction it was matched to stays. A legal hold keeps them (migration 0079).
+   */
+  private async purgeReceipts(): Promise<number> {
+    const { rows } = await this.db.run({}, (trx) =>
+      sql<{ workspace_id: string; id: string }>`
+        select * from app.receipts_past_retention(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
+    );
+    let n = 0;
     for (const r of rows) {
       try {
-        await this.retainOne(r, done);
+        const res = await this.db.run({}, (trx) =>
+          sql<{ gone: boolean }>`
+            select app.purge_receipt(${r.workspace_id}::uuid, ${r.id}::uuid) as gone`.execute(trx),
+        );
+        if (res.rows[0]?.gone) n++;
       } catch (e) {
-        this.logger.warn(`Retention failed for a ${r.kind}: ${(e as Error).message}`);
+        this.logger.warn(`Retention failed for a receipt: ${(e as Error).message}`);
       }
     }
-    done.backups = await this.backups.runSchedules();
-    return done;
+    return n;
+  }
+
+  /**
+   * Files past their date or 30 days in the trash, at most RETENTION_BATCH a run. The row first: a row with no file is
+   * a visible gap, but a file with no row could never be found again. The database says which objects in Montra's
+   * storage then go: none for a file held only in the vault, whose document the vault keeps (ADR-0054 §10), and never
+   * one another file still names.
+   */
+  private async purgeFiles(): Promise<number> {
+    const { rows } = await this.db.run({}, (trx) =>
+      sql<{ workspace_id: string; id: string }>`
+        select * from app.retention_files_due(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
+    );
+    let n = 0;
+    for (const r of rows) {
+      try {
+        const res = await this.db.run({}, (trx) =>
+          sql<{ keys: string[] | null }>`
+            select app.purge_expired_file(${r.workspace_id}::uuid, ${r.id}::uuid) as keys`.execute(trx),
+        );
+        const keys = res.rows[0]?.keys;
+        if (!keys) continue;
+        n++;
+        for (const k of keys) {
+          await this.storage.delete(k).catch((e: Error) => {
+            this.logger.warn(`File ${r.id}: its stored copy couldn't be removed: ${e.message}`);
+          });
+        }
+      } catch (e) {
+        this.logger.warn(`Retention failed for a file: ${(e as Error).message}`);
+      }
+    }
+    return n;
   }
 
   private async retainOne(
@@ -260,15 +341,6 @@ export class OwnershipService {
       if (r.storage_key) await this.storage.delete(r.storage_key);
       await this.db.run({}, (trx) => sql`select app.delete_expired_restore(${r.id}::uuid)`.execute(trx));
       done.restores!++;
-    } else if (r.kind === 'file') {
-      const { rows } = await this.db.run({}, (trx) =>
-        sql<{ gone: boolean }>`select app.purge_file(${r.workspace_id}::uuid, ${r.id}::uuid) as gone`.execute(
-          trx,
-        ),
-      );
-      // The row first: a row with no file is a visible gap, but a file with no row could never be found again.
-      if (rows[0]?.gone && r.storage_key) await this.storage.delete(r.storage_key);
-      done.files!++;
     } else if (r.kind === 'workspace') {
       const { rows } = await this.db.run({}, (trx) =>
         sql<{ key: string }>`select k as key from app.workspace_storage_keys(${r.id}::uuid) k`.execute(trx),

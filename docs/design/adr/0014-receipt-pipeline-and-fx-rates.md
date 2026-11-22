@@ -104,6 +104,12 @@ Several things were still open:
    job deletes them only after that date, and never while the linked transaction is in a locked period.
    OCR text is indexed with a stored `tsvector` (`simple` configuration) plus a trigram index on the
    merchant.
+   - **As built (2026-11-22, migration 0079):** the hourly retention job removes a receipt past its date with its
+     lines and extracted text, and its files with it. The years are a setting (`FILE_RETENTION_YEARS`, default 7).
+     The linked transaction stays, with the same splits. A locked or reconciled period no longer blocks the purge: a
+     7-year-old transaction is almost always in one, so the receipt would never go. Nothing the lock protects changes;
+     a split posting only loses its pointer to the receipt line (`receipt_line_id` set null). A legal hold on any
+     active member blocks the purge instead. To be confirmed by the owner.
 
 7. **API decisions made while building it** (`apps/api/src/receipts`):
    - **Line categorization:**

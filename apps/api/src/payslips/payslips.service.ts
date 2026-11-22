@@ -46,11 +46,11 @@ import { FileBytes } from '../storage/file-bytes.js';
 import { findDuplicate } from '../storage/duplicates.js';
 import { STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
 import { NOT_OWNED, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
+import { CONFIG, type AppConfig } from '../config.js';
+import { retainUntil } from '../data/retention.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
-/** Payslips are kept as long as receipts: long enough for a tax question. */
-const RETENTION_YEARS = 7;
 /** PAY-04: a deposit is this pay within this many days of the pay date, for exactly the amount expected. */
 const MATCH_DAYS = 3;
 const PAYROLL_GROUP = 'Payroll taxes and deductions';
@@ -81,6 +81,7 @@ export class PayslipsService {
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   // ----- Employers (PAY-01) ------------------------------------------------------------------------------
@@ -371,7 +372,7 @@ export class PayslipsService {
           bytes: bytes.length,
           sha256: digest,
           uploaded_by: ctx.userId,
-          retain_until: sql<string>`(current_date + make_interval(years => ${RETENTION_YEARS}))::date`,
+          retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
         })
         .execute();
       return earlier;

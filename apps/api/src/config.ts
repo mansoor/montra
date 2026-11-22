@@ -127,6 +127,14 @@ const Env = z.object({
     .enum(['on', 'off'])
     .default('off')
     .transform((v) => v === 'on'),
+  /**
+   * Retention (RCP-10, BAK-09): the years a receipt, and each file stored with a receipt, payslip, bill, invoice or
+   * payroll form, is kept. Each new upload gets its date from this; dates already set stay as they are. Tax forms keep
+   * theirs by tax year (ADR-0052 §8.5). The hourly retention job then removes what is past its date.
+   */
+  FILE_RETENTION_YEARS: z.coerce.number().int().min(1).max(100).default(7),
+  /** The most receipts, and the most files, one hourly retention run removes. The rest wait for the next run. */
+  RETENTION_BATCH: z.coerce.number().int().min(1).max(100_000).default(500),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce
