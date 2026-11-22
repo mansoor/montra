@@ -10,6 +10,9 @@ import { Worker } from '../src/jobs/queue.js';
 import { ScanJobs } from '../src/scans/scan-jobs.js';
 import { ImportJobs } from '../src/imports/import-jobs.js';
 import { startHarness, type Client, type Harness } from './harness.js';
+import { CONFIG } from '../src/config.js';
+import { FxRatesService } from '../src/fx/fx.service.js';
+import { fixtureHttp } from './fx-fixtures.js';
 
 const corpus = (name: string) =>
   readFileSync(join(__dirname, '../../../packages/importers/test/corpus', name));
@@ -608,5 +611,97 @@ describe('scanned statements find their account (ADR-0048)', () => {
     expect((await c.post(w.url('/scans'), { kind: 'statement', fileIds: [csv.body.fileId] })).status).toBe(
       422,
     );
+  });
+});
+
+describe('commits written in chunks (backlog item 9)', () => {
+  /** Uploads a CSV of [date, description, amount] lines into the account, commits it, and returns the batch. */
+  async function importLines(
+    w: Awaited<ReturnType<typeof setup>>,
+    accountId: string,
+    lines: [string, string, string][],
+    pick?: (batchId: string, rows: any[]) => Promise<void>,
+  ) {
+    const csv = ['Date,Description,Amount', ...lines.map(([d, desc, a]) => `${d},${desc},${a}`)].join('\n');
+    const up = await upload(w.ws.id, `chunks-${lines.length}.csv`, Buffer.from(csv));
+    const batch = (await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId })).body;
+    await worker.drain();
+    if (pick)
+      await pick(batch.id, (await c.get(w.url(`/imports/${batch.id}/rows?cursor=500&limit=500`))).body.data);
+    expect((await c.post(w.url(`/imports/${batch.id}/commit`))).body.status).toBe('committing');
+    await worker.drain();
+    return (await c.get(w.url(`/imports/${batch.id}`))).body;
+  }
+
+  it('crosses a chunk, and a category picked in the second chunk is still learned', async () => {
+    const w = await setup();
+    const acct = (await c.post(w.url('/accounts'), { name: 'Busy checking', kind: 'checking' })).body.id;
+    const lines: [string, string, string][] = [];
+    for (let i = 0; i < 520; i++)
+      lines.push([`2026-09-${String(1 + (i % 28)).padStart(2, '0')}`, `POS PURCHASE ${i}`, '-1.00']);
+    lines[519] = ['2026-09-28', 'GREEN GROCER 77', '-5.00'];
+    const done = await importLines(w, acct, lines, async (batchId, rows) => {
+      const last = rows.find((r: any) => r.description.includes('GREEN GROCER'));
+      expect(
+        (await c.patch(w.url(`/imports/${batchId}/rows/${last.id}`), { categoryId: w.cat('Groceries') }))
+          .status,
+      ).toBe(200);
+    });
+    expect(done.counts).toMatchObject({ added: 520, failed: 0 });
+    const account = (await c.get(w.url('/accounts'))).body.data.find((a: any) => a.id === acct);
+    expect(account.balance).toEqual(usd('-52400')); // 519 × −1.00 and −5.00
+    const ctx = { workspaceId: w.ws.id, userId: (await c.get('/v1/me')).body.id };
+    const grocer = await h.app.get(Db).run(ctx, (trx) =>
+      trx
+        .selectFrom('app.transaction')
+        .select(['review_state', sql<boolean>`categorization->'learned' is not null`.as('learned')])
+        .where('raw_description', 'like', 'GREEN GROCER%')
+        .executeTakeFirstOrThrow(),
+    );
+    expect(grocer).toEqual({ review_state: 'reviewed', learned: true });
+  }, 60_000);
+
+  it('posts a foreign-currency account line by line, at the carrying value the lines before it left', async () => {
+    await new FxRatesService(
+      h.app.get(Db),
+      { ...h.app.get(CONFIG), OXR_APP_ID: undefined },
+      fixtureHttp().get,
+    ).refresh('daily');
+    const w = await setup();
+    const open = (name: string) =>
+      c.post(w.url('/accounts'), {
+        name,
+        kind: 'checking',
+        currency: 'EUR',
+        openingBalance: { amount: '100000', currency: 'EUR' },
+        openingDate: '2026-10-28',
+      });
+    const imported = (await open('Euro imported')).body.id;
+    const typed = (await open('Euro typed')).body.id;
+    const lines: [string, string, string][] = [
+      ['2026-10-29', 'SALARY', '500.00'],
+      ['2026-10-30', 'CAFE', '-40.00'],
+      ['2026-10-30', 'BOOKS', '-60.00'],
+    ];
+    expect((await importLines(w, imported, lines)).counts).toMatchObject({ added: 3, failed: 0 });
+    const ctx = { workspaceId: w.ws.id, userId: (await c.get('/v1/me')).body.id };
+    for (const [date, payee, amount] of lines) {
+      const res = await c.post(w.url('/transactions'), {
+        date,
+        accountId: typed,
+        amount: { amount: amount.replace('.', ''), currency: 'EUR' },
+        payee,
+      });
+      expect(res.status).toBe(201);
+    }
+    const functional = (accountId: string) =>
+      h.app.get(Db).run(ctx, (trx) =>
+        trx
+          .selectFrom('app.posting')
+          .select(sql<string>`sum(functional_amount_minor)::text`.as('usd'))
+          .where('ledger_account_id', '=', accountId)
+          .executeTakeFirstOrThrow(),
+      );
+    expect(await functional(imported)).toEqual(await functional(typed));
   });
 });

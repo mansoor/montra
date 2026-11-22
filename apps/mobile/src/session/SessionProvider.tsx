@@ -47,6 +47,8 @@ interface SessionApi {
   /** Kratos, for sign-up, recovery and two-step settings; null in development sign-in. */
   kratos: KratosClient | null;
   chooseWorkspace(id: string): Promise<void>;
+  /** Reads you and your workspaces again, staying in this one: after a change in Settings (a name, new books). */
+  refresh(): Promise<void>;
   /** Registered by the sync layer: runs before the token is dropped (wipe store, unregister push). */
   setSignOutHook(fn: (() => Promise<void>) | null): void;
   signOut(): Promise<void>;
@@ -244,6 +246,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (closed?.kind === 'workspace') setClosed(null);
         await remember(state.me, ws);
         setState({ status: 'signed_in', me: state.me, workspace: ws, workspaces: state.workspaces });
+      },
+      async refresh() {
+        if (state.status !== 'signed_in') return;
+        const id = state.workspace.id;
+        // Offline or refused: keep what's shown; the next launch reads it again.
+        const fresh = await Promise.all([api.me(), api.workspaces()]).catch(() => null);
+        const ws = fresh?.[1].find((w) => w.id === id);
+        if (!fresh || !ws) return;
+        await remember(fresh[0], ws);
+        setState((s) =>
+          s.status === 'signed_in' && s.workspace.id === id
+            ? { status: 'signed_in', me: fresh[0], workspace: ws, workspaces: fresh[1] }
+            : s,
+        );
       },
       setSignOutHook(fn) {
         setHook({ fn });

@@ -534,6 +534,79 @@ export function Segmented<T extends string>({
   );
 }
 
+/** Mutually exclusive choices that wrap onto more lines: for more, or longer, choices than Segmented holds. */
+export function Chips<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  disabled,
+  testID,
+}: {
+  options: readonly { value: T; label: string; swatch?: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  label: string;
+  disabled?: boolean;
+  testID?: string;
+}) {
+  const th = useTheme();
+  return (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+      testID={testID}
+      style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(2) }}
+    >
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            accessibilityRole="radio"
+            accessibilityLabel={o.label}
+            accessibilityState={{ checked: on, disabled: Boolean(disabled) }}
+            disabled={disabled}
+            testID={testID ? `${testID}-${o.value}` : undefined}
+            onPress={() => {
+              if (!on) haptic.select();
+              onChange(o.value);
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: th.space(1),
+              minHeight: 36,
+              paddingHorizontal: 12,
+              borderRadius: 18,
+              backgroundColor: on ? th.primary : th.surfaceAlt,
+              opacity: disabled ? 0.45 : 1,
+            }}
+          >
+            {o.swatch ? (
+              <View
+                importantForAccessibility="no"
+                accessibilityElementsHidden
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: 7,
+                  backgroundColor: o.swatch,
+                  borderWidth: on ? 2 : 0,
+                  borderColor: th.onPrimary,
+                }}
+              />
+            ) : null}
+            <Text style={{ color: on ? th.onPrimary : th.text, fontSize: th.font.small, fontWeight: '600' }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function Monogram({ name }: { name: string }) {
   const th = useTheme();
   const letters = name
