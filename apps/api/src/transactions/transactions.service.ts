@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { sql } from 'kysely';
-import { newId, type TransactionRow, type Trx } from '@montra/db';
+import { sql, type InsertObject } from 'kysely';
+import { newId, type Database, type TransactionRow, type Trx } from '@montra/db';
 import { addDays, calendarDate, type CalendarDate } from '@montra/domain';
 import type {
   BulkEditRequest,
@@ -22,6 +22,7 @@ import {
   assertNotOwned,
   ownerOf,
   TransactionPoster,
+  type BuiltTransaction,
   type ForeignSpec,
   type SplitSpec,
   type TransactionSpec,
@@ -60,6 +61,45 @@ const LEDGER_FIELDS = [
   'fxRate',
   'foreign',
 ] as const;
+
+/** What `createInTrx` and `prepareCreate` take. */
+export interface CreateInTrxInput {
+  date: string;
+  accountId: string;
+  amount: { amount: string; currency: string };
+  payee: string | null;
+  description: string;
+  categoryId?: string;
+  splits?: CreateTransactionRequest['splits'];
+  memberId?: string | null;
+  propertyId?: string | null;
+  unitId?: string | null;
+  memo?: string;
+  tags?: string[];
+  source: 'manual' | 'import' | 'feed';
+  reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
+  payeeId?: string | null;
+  dedupeKey?: string | null;
+  statementDate?: string | null;
+  rawDescription?: string | null;
+  /** Mark this account's postings cleared on insert (imported statement lines). */
+  clearedAccountId?: string;
+  payeeKey?: string | null;
+  categorization?: StoredCategorization | null;
+  /** Client-generated id (offline creates); a new one otherwise. */
+  id?: string;
+  fxRate?: string;
+  foreign?: ForeignAmountInput;
+}
+
+/** A new transaction worked out by `prepareCreate`, not written yet. */
+export interface PreparedTransaction {
+  id: string;
+  values: InsertObject<Database, 'app.transaction'>;
+  built: BuiltTransaction;
+  clearedAccountId?: string;
+  tags: string[];
+}
 
 @Injectable()
 export class TransactionsService {
@@ -173,38 +213,18 @@ export class TransactionsService {
    * Creates and posts a standard transaction inside the caller's transaction. Used by manual entry and by
    * statement imports, which commit a whole batch atomically.
    */
-  async createInTrx(
-    trx: Trx,
-    ctx: Ctx,
-    input: {
-      date: string;
-      accountId: string;
-      amount: { amount: string; currency: string };
-      payee: string | null;
-      description: string;
-      categoryId?: string;
-      splits?: CreateTransactionRequest['splits'];
-      memberId?: string | null;
-      propertyId?: string | null;
-      unitId?: string | null;
-      memo?: string;
-      tags?: string[];
-      source: 'manual' | 'import' | 'feed';
-      reviewState?: 'auto_applied' | 'needs_review' | 'reviewed';
-      payeeId?: string | null;
-      dedupeKey?: string | null;
-      statementDate?: string | null;
-      rawDescription?: string | null;
-      /** Mark this account's postings cleared on insert (imported statement lines). */
-      clearedAccountId?: string;
-      payeeKey?: string | null;
-      categorization?: StoredCategorization | null;
-      /** Client-generated id (offline creates); a new one otherwise. */
-      id?: string;
-      fxRate?: string;
-      foreign?: ForeignAmountInput;
-    },
-  ): Promise<string> {
+  async createInTrx(trx: Trx, ctx: Ctx, input: CreateInTrxInput): Promise<string> {
+    const prepared = await this.prepareCreate(trx, ctx, input);
+    await this.insertPrepared(trx, ctx, [prepared]);
+    return prepared.id;
+  }
+
+  /**
+   * Works out a new transaction (its spec, entries and row) without writing it. `insertPrepared` then writes many in
+   * a few statements (import commits, backlog item 9). Nothing here reads what an earlier prepared one would write,
+   * except a foreign-currency account's carrying value: ask `postsInOrder` first.
+   */
+  async prepareCreate(trx: Trx, ctx: Ctx, input: CreateInTrxInput): Promise<PreparedTransaction> {
     const id = input.id ?? newId();
     const date = calendarDate(input.date);
     const spec = await this.checkedStandardSpec(trx, ctx, {
@@ -221,9 +241,12 @@ export class TransactionsService {
     });
     const built = await this.poster.build(trx, ctx, spec, date, id);
     const uncategorized = spec.type === 'standard' && spec.uncategorized;
-    await trx
-      .insertInto('app.transaction')
-      .values({
+    return {
+      id,
+      built,
+      clearedAccountId: input.clearedAccountId,
+      tags: input.tags ?? [],
+      values: {
         workspace_id: ctx.workspaceId,
         id,
         primary_entity_id: built.primaryEntityId,
@@ -247,14 +270,23 @@ export class TransactionsService {
         created_by: ctx.userId,
         // CUR-09: a purchase during a trip is tagged with it.
         trip_id: await tripOn(trx, ctx.workspaceId, date),
-      })
-      .execute();
-    await this.poster.post(trx, ctx, id, built, {
-      fresh: true,
-      clearedAccountId: input.clearedAccountId,
-    });
-    if (input.tags?.length) await this.setTags(trx, ctx, id, input.tags);
-    return id;
+      },
+    };
+  }
+
+  /** Writes prepared transactions in order: their rows, then all their entries and postings, then tags. */
+  async insertPrepared(trx: Trx, ctx: Ctx, list: readonly PreparedTransaction[]): Promise<void> {
+    for (let k = 0; k < list.length; k += 500)
+      await trx
+        .insertInto('app.transaction')
+        .values(list.slice(k, k + 500).map((p) => p.values))
+        .execute();
+    await this.poster.postFresh(
+      trx,
+      ctx,
+      list.map((p) => ({ transactionId: p.id, built: p.built, clearedAccountId: p.clearedAccountId })),
+    );
+    for (const p of list) if (p.tags.length) await this.setTags(trx, ctx, p.id, p.tags);
   }
 
   /** Confirms a scheduled occurrence inside the caller's transaction (import matching uses this). */
@@ -936,14 +968,11 @@ export class TransactionsService {
       foreign?: ForeignSpec;
     },
   ): Promise<TransactionSpec> {
-    const detail = await trx
-      .selectFrom('app.bank_account')
-      .select('default_member_id')
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('ledger_account_id', '=', input.accountId)
-      .executeTakeFirst();
     // FAM-04: the account's default member applies unless the caller says otherwise.
-    const memberId = input.memberId === undefined ? (detail?.default_member_id ?? null) : input.memberId;
+    const memberId =
+      input.memberId === undefined
+        ? await this.poster.defaultMember(trx, ctx, input.accountId)
+        : input.memberId;
     let splits: SplitSpec[];
     let uncategorized = false;
     // CUR-03: a foreign transaction fee is part of the charge and gets its own split to Bank fees; the
