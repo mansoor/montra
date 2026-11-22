@@ -247,6 +247,76 @@ describe('the Walmart receipt (Phase 5 exit criterion 1, requirements §3.5)', (
   });
 });
 
+describe('one split per category (RCP-03, RCP-07; owner, 2026-11-21)', () => {
+  // The owner's receipt: all four items are groceries, two came in uncategorized and one as Dining out.
+  it('groups lines picked into the same category as one split, on the receipt and on its transaction', async () => {
+    const receipt = await capture([
+      'NOB HILL FOODS',
+      '11/20/2026 18:10',
+      'FUYU PERSIMMON        2.27',
+      'ARMENIAN COFFEE       3.06',
+      'ARMENIAN COFFEE       2.58',
+      'VEGAN STRAIGHT FRIES  4.99',
+      'TOTAL                12.90',
+    ]);
+    const entity = (await admin.query('select entity_id from app.receipt where id = $1', [receipt.id]))
+      .rows[0].entity_id;
+    // As the phone found it: persimmon in Groceries and fries in Dining out, both in the receipt's entity; the
+    // coffees uncategorized, so with no entity at all.
+    const set = (name: string, category: string | null, entityId: string | null) =>
+      admin.query(
+        `update app.receipt_line set category_id = $3, entity_id = $4
+           where receipt_id = $1 and raw_text like $2`,
+        [receipt.id, `${name}%`, category, entityId],
+      );
+    await set('FUYU', cat('Groceries'), entity);
+    await set('VEGAN', cat('Dining out'), entity);
+    await set('ARMENIAN', null, null);
+    const before = (await c.get(url(`/receipts/${receipt.id}`))).body;
+
+    // "Save categories" on the phone sends every line with its category and no entity.
+    const updated = await c.patch(url(`/receipts/${receipt.id}`), {
+      version: before.version,
+      lines: before.lines.map((l: any) => ({
+        id: l.id,
+        rawText: l.rawText,
+        lineTotal: l.lineTotal,
+        discount: l.discount,
+        taxable: l.taxable,
+        categoryId: cat('Groceries'),
+        memberId: l.memberId,
+      })),
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body.groups.map((g: any) => [g.categoryId, g.total])).toEqual([
+      [cat('Groceries'), '1290'],
+    ]);
+    // The coffees now belong where their new category does.
+    const entities = await admin.query(
+      'select distinct entity_id from app.receipt_line where receipt_id = $1',
+      [receipt.id],
+    );
+    expect(entities.rows).toEqual([{ entity_id: entity }]);
+
+    // A line saved before this fix, still with no entity, counts as the receipt's.
+    await admin.query(
+      `update app.receipt_line set entity_id = null where receipt_id = $1 and raw_text like 'ARM%'`,
+      [receipt.id],
+    );
+    const read = (await c.get(url(`/receipts/${receipt.id}`))).body;
+    expect(read.groups).toHaveLength(1);
+
+    // And its transaction gets one Groceries split.
+    const txn = await spend('2026-11-20', '-1290', 'NOB HILL FOODS', checking);
+    const applied = await c.post(url(`/receipts/${receipt.id}/apply`), {
+      transactionId: txn.id,
+      version: read.version,
+    });
+    expect(applied.status).toBe(200);
+    expect(await splitsOf(txn.id)).toEqual({ Groceries: '1290' });
+  });
+});
+
 describe('a line’s quantity and unit price (owner, 2026-11-18)', () => {
   it('shows 1 × the total when nothing is printed, and keeps quantity × unit price = total through edits', async () => {
     const r = await capture([
