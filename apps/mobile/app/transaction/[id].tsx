@@ -5,12 +5,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { canSpendFrom } from '@montra/domain';
+import { canSpendFrom, transferFxView } from '@montra/domain';
 import type { CategoryDto, TransactionDto, UpdateTransactionRequest } from '@montra/schemas';
 import type { LocalTransaction } from '@montra/sync';
 import { expenseLines } from '../../src/features/business';
 import { editRules } from '../../src/features/transaction-edit';
-import { fmtMoney, t } from '../../src/i18n';
+import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { canChangeOn } from '../../src/features/roles';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
@@ -37,6 +37,8 @@ export default function TransactionDetail() {
   const [error, setError] = useState<string | null>(null);
   // The receipt, fresh from the server: linking one doesn't always change the synced transaction.
   const [fresh, setFresh] = useState<TransactionDto['receipt'] | undefined>(undefined);
+  // CUR-08: a transfer between currencies against the market rate, from the same fresh read.
+  const [freshFx, setFreshFx] = useState<TransactionDto['transferFx'] | undefined>(undefined);
   const [queued, setQueued] = useState(false);
 
   useEffect(() => {
@@ -52,7 +54,9 @@ export default function TransactionDetail() {
       if (ws)
         api.getTransaction(ws, id).then(
           (txn) => {
-            if (live) setFresh(txn.receipt);
+            if (!live) return;
+            setFresh(txn.receipt);
+            setFreshFx(txn.transferFx ?? null);
           },
           () => undefined, // offline or not synced yet: the synced copy stands
         );
@@ -88,6 +92,9 @@ export default function TransactionDetail() {
   // How the category was chosen ("Chosen by you", a rule, the AI): only while it is still that category.
   const how = draft.categoryId === row.categoryId ? row.explanation : null;
   const receipt = fresh !== undefined ? fresh : (row.server?.receipt ?? null);
+  // Rows synced by an older server have no transferFx.
+  const transferFx = freshFx !== undefined ? freshFx : (row.server?.transferFx ?? null);
+  const fx = transferFx ? transferFxView(transferFx) : null;
   // BIZ-18: who spent and, for a meal, who was there and why. Entered on the web.
   const business = expenseLines(row.server?.expenseDetail);
   const canAdd = editable && !row.pending && Boolean(row.amount?.startsWith('-')) && !row.server?.managedBy;
@@ -152,6 +159,41 @@ export default function TransactionDetail() {
         {reconciled ? <Small>{t('mobile.txn.reconciled_note')}</Small> : null}
         {editable ? null : <Small>{t('mobile.role.read_only_books')}</Small>}
       </Card>
+      {transferFx && fx ? (
+        <Card testID="txn-transfer-fx">
+          <Small>{t('fx.transfer.title')}</Small>
+          <Row title={t('fx.transfer.yours')} subtitle={fx.effective} />
+          {fx.market ? (
+            <Row
+              title={t('fx.transfer.market')}
+              subtitle={[
+                fx.market,
+                fx.marketDate ? t('fx.transfer.market_date', { date: fmtDate(fx.marketDate) }) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            />
+          ) : null}
+          {fx.outcome ? (
+            <Row
+              title={fx.outcome.tone === 'gain' ? t('fx.transfer.gain') : t('fx.transfer.cost')}
+              subtitle={
+                fx.outcome.tone === 'even'
+                  ? t('fx.transfer.even')
+                  : fx.outcome.percent === null
+                    ? fmtMoney(fx.outcome.amount, fx.outcome.currency)
+                    : t('fx.transfer.cost_value', {
+                        amount: fmtMoney(fx.outcome.amount, fx.outcome.currency),
+                        percent: fx.outcome.percent,
+                      })
+              }
+              last
+            />
+          ) : (
+            <Small>{t('fx.transfer.no_rate', { date: fmtDate(row.date) })}</Small>
+          )}
+        </Card>
+      ) : null}
       {business ? (
         <Card testID="txn-expense-detail">
           {business.spentBy ? (
