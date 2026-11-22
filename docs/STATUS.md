@@ -253,6 +253,9 @@ finished:
   - NFR-07: performance; the dashboard target is in Phase 6.
   - NFR-12: load testing.
   - ~~AUTH-05: email templates.~~ Done: one layout for the API and Kratos (see §7g).
+  - AUTH-08: CAPTCHA at the edge.
+  - ~~OPS-05: the reference-data admin editor.~~ Done: tax lines and bank import layouts too, and staff edits survive
+    deploys (see §7g). Currencies stay with the code.
   - ~~AUTH-08: CAPTCHA at the edge.~~ Done in the auth gateway, off by default (ADR-0056, see §7g).
   - OPS-05: the reference-data admin editor.
   - OPS-06: dependency updates beyond Renovate.
@@ -756,7 +759,7 @@ Phase 10 leftovers, not blocking:
   backup download and share sheet; new-device sign-ins on a live Kratos; a large restore (uploads are limited to 1 GB, in one
   transaction).
 - **BAK-05** is the emailed link only. Drive, OneDrive, Dropbox and iCloud need OAuth apps.
-- **OPS-13**: profile, family, entities, currency, time zone, AI mode and quiet hours are read-only on the phone.
+- **OPS-13**: done since; the phone now edits profile, family, books, AI mode and quiet hours (see 7g).
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
 - **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
@@ -832,9 +835,10 @@ Phase 11 leftovers:
 - **PLT-01:** only Chromium runs in e2e.
 - **The status page** runs on the same stack it reports on, so it goes down with it. It needs a separate host before launch.
 - **Staff sign-in** is the ordinary one with a second factor, not SSO.
-- **Reference data:** merchants and mileage rates are editable. Tax lines, import profiles and currencies need a migration.
+- **Reference data:** merchants, mileage rates, tax lines and bank import layouts are edited in the console and keep
+  staff's edits through deploys. Currencies ship with the code on purpose (ISO 4217 changes need a release; see §7g).
 - **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
-- **Profile, family and entities** are read-only on the phone (OPS-13).
+- **Profile, family and entities** are edited on the phone too now (OPS-13, see 7g).
 - **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
 - Import parse p95 was 5.7 to 9.0 s locally for 5,000 rows, close to the 10 s limit, and worth watching.
 
@@ -2381,6 +2385,64 @@ Phase 11 leftovers:
   - Tests: API `imports.test.ts` imports 520 rows, so the commit crosses a chunk, with a category picked in the second
     chunk. It also imports three lines into a EUR account and checks the USD amounts match the same lines entered one
     by one. That test fails, 7 cents out, if the account is batched.
+- **The phone edits its settings, as the web does** (OPS-13; no migration, no new endpoint).
+  - Before: the phone switched notification channels, backed up, showed security activity and deleted the account. Your
+    profile, family members, books, AI mode and quiet hours were read-only there.
+  - Now Settings opens a screen for each, with the web's API calls and the web's rules
+    (`apps/mobile/src/features/settings-edit.ts`):
+    - **Profile** (`PATCH /v1/me`): your name and your own time zone, with a "use this phone's time zone" button. The
+      language, date format and first day of the week stay on the web, since the phone formats by its own settings.
+    - **Family** (`/family-members`): add, rename, change the relationship, archive and restore. Owners, admins and
+      partners, as RLS allows (0041). Invites and each account's default member stay on the web.
+    - **Books** (`/entities`): add business or rental books, rename, archive and restore, and the calendar colour.
+      Owners and admins (`requireWorkspaceAdmin`). The personal books take only a colour (the API refuses the rest, so
+      the phone doesn't offer it). The plan's limits come back in the API's own words (402 `plan.required`, 422
+      `plan.limit`). Closing and reopening a period (DE-09) stays on the web.
+    - **AI mode** (`PATCH /ai/settings`): owners and admins, each mode with its privacy disclosure. BYOK, local and Azure
+      are offered once their key, URL or deployment is saved on the web, by the web's own pre-save checks. Local mode
+      sends the OpenAI-compatible provider, as the web does.
+    - **Quiet hours and the daily cap** (`PATCH /v1/me/notification-prefs`), typed as `22:00`. Both ends or neither,
+      and a cap from 0 to 50. Only those three values are sent, so the per-switch saves stay independent.
+  - Everyone else sees the same lists read-only. Server errors read as on the web: no connection, known codes in plain
+    words, otherwise the server's message.
+  - The workspace's base currency and time zone stay read-only. They're set when the workspace is made, and no API
+    changes them, on the web either.
+  - Tests: mobile `settings-edit.test.ts` (rules, request building, the API paths, and every key the screens use),
+    `routes-guarded.test.ts` and `clients.test.ts`; web `i18n-keys.test.ts`. Not tried on a device.
+- **Reference data without a release: tax lines, bank import layouts, and staff edits that survive deploys** (OPS-05;
+  migration 0078).
+  - Before: the console edited merchants and mileage rates only, and the reference loader, which runs after every
+    `pnpm db:migrate` and so on every deploy, put the shipped content back on any seeded row staff had changed. Tax
+    lines and `ref.import_profile` could only change by migration, and the importer never read `ref.import_profile`.
+  - **Edits survive deploys:** `ref.merchant`, `ref.mileage_rate`, `ref.tax_line` and `ref.import_profile` have
+    `staff_edited_at`. Every console save sets it, and `loadReferenceData` leaves those rows alone. Clearing it hands a
+    row back to the shipped data on the next load. A shipped merchant whose match text a staff-saved merchant already
+    uses is skipped instead of failing the whole load on the unique key.
+  - **Tax lines** (Reference tab): list by country and order; add or change by (country, code): line, label, order and
+    deductible share (entered as a percentage, stored in basis points). `PUT /v1/admin/reference/tax-lines`, staff log
+    `reference.tax_line.save`. The form is one of Schedules B, C and E, the forms the readers know. Two rules keep the
+    readers (categories' `setTaxLine`, Schedule C and E, the AI tax-line mapper) sound: an existing line keeps its form
+    (`409 tax_line.form_fixed`, since moving it would move every category mapped to it to another schedule), and
+    **there's no delete**, since `ledger_account.tax_line_code` isn't a foreign key and a category may hold the code.
+    A line no longer wanted can be relabelled; removing one still needs a migration that remaps categories first.
+  - **Bank import layouts** (`ref.import_profile`): list, save by id, delete. Name, institution, kind (`bank` or
+    `app_template`), and the column mapping, checked against the importer's `ColumnMappingDto`. The file shape is
+    either the fingerprint or the file's first lines (header and a row, which can be made up), from which the API
+    works out the fingerprint as the importer does (`sheetFingerprint`); the sample isn't stored. One layout per
+    fingerprint (`409 import_profile.fingerprint_taken`). Staff log `reference.import_profile.save` and `.delete`.
+  - **The importer uses them:** after the workspace's own profiles (this account's first), the parse step looks up the
+    staff layout for the file's fingerprint and passes it to `analyze` as a fallback (`reference: true`, never
+    `sameAccount`). It's reported as `mappingSource: 'reference'` with the layout's id as `analysis.templateId`, and
+    `profile_id` stays null (that names a workspace profile). Committing saves the workspace's own profile as before,
+    which wins from then on. QIF and OFX ignore staff layouts: every such file has the same shape.
+  - **Currencies stay with the code (decision):** money math uses `CURRENCY_CODES` and `minorUnits` from
+    `@montra/domain`, not `ref.currency`, which the loader fills from that list. Editing the table would change nothing
+    that counts and would mislead, so it isn't editable; an ISO 4217 change ships with a release. The console says so.
+  - No grant changes: `montra_admin` already had select, insert, update and delete on the four tables (0021).
+  - Tests: API `operations.test.ts` (staff-only, validation, the staff log, the form rule, no delete, workspace readers
+    seeing a new line), API `imports.test.ts` (a statement of a staff-saved shape is read without asking, then the
+    workspace's own profile wins), db `reference.test.ts` (staff edits survive `loadReferenceData`, untouched rows are
+    restored, the match-text clash), importers `units.test.ts`, web `reference-data.test.ts`.
 - **A CAPTCHA after repeated sign-in failures** (AUTH-08, [ADR-0056](design/adr/0056-turnstile-captcha.md); owner
   chose Cloudflare Turnstile, off by default, on 2026-11-21; no migration).
   - Before: the auth gateway (ADR-0042) delayed wrong passwords after 5 and paused after 10, but never asked for a

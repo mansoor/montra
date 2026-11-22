@@ -1,4 +1,10 @@
-/** Settings (OPS-13): profile, family, entities, currency and time zone to read, app lock (PLT-07), notifications, the mobile number where texts are on (ADR-0049 §6), your data, workspace, AI mode (read-only), sign out (wipes, BAK-10), version. */
+/**
+ * Settings (OPS-13): app lock (PLT-07), receipt reminders, notifications with quiet hours and the daily cap, the mobile
+ * number where texts are on (ADR-0049 §6), your data, then your profile (name, time zone), family members, books and
+ * entities, and where AI runs, each on its own screen, changed by whoever the web lets change them (others read them
+ * there). The workspace's base currency and time zone are read-only, as on the web: they are set when the workspace is
+ * made and no API changes them. Plans are bought on the web. Workspace switching, sign out (wipes, BAK-10), version.
+ */
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, Switch, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -39,32 +45,35 @@ export default function Settings() {
   const [texts, setTexts] = useState<NotificationPrefsDto['texts'] | null>(null);
   const currency = state.status === 'signed_in' ? state.workspace.baseCurrency : 'USD';
 
-  useEffect(() => {
-    if (state.status !== 'signed_in') return;
-    void api.aiSettings(state.workspace.id).then(
-      (s) => {
-        setAi(s.mode);
-        setAiUsed(aiUsedPercent(s.usage?.share));
-      },
-      () => undefined,
-    );
-    void api.me().then(setMe, () => undefined);
-    void api.familyMembers(state.workspace.id).then(setFamily, () => undefined);
-    void api.billing(state.workspace.id).then(setPlan, () => undefined);
-    void api.plans().then(setOffers, () => undefined);
-    void api.planningSettings(state.workspace.id).then(setPlanning, () => undefined);
-    void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
-  }, [api, state]);
+  const wsId = state.status === 'signed_in' ? state.workspace.id : null;
 
-  // ADR-0049 §6: the number is asked for only where texts are on; it couldn't be confirmed otherwise. Read again on
-  // coming back from the number screen.
+  useEffect(() => {
+    if (!wsId) return;
+    void api.billing(wsId).then(setPlan, () => undefined);
+    void api.plans().then(setOffers, () => undefined);
+    void api.planningSettings(wsId).then(setPlanning, () => undefined);
+    void registerForPush(api, false).then(setPush, () => setPush('unavailable'));
+  }, [api, wsId]);
+
+  // Read again on coming back from a screen that changes them: the profile, family, AI mode, and the number (ADR-0049
+  // §6: asked for only where texts are on; it couldn't be confirmed otherwise).
   useFocusEffect(
     useCallback(() => {
       void api.notificationPrefs().then(
         (p) => setTexts(p.texts),
         () => setTexts(null),
       );
-    }, [api]),
+      void api.me().then(setMe, () => undefined);
+      if (!wsId) return;
+      void api.familyMembers(wsId).then(setFamily, () => undefined);
+      void api.aiSettings(wsId).then(
+        (s) => {
+          setAi(s.mode);
+          setAiUsed(aiUsedPercent(s.usage?.share));
+        },
+        () => undefined,
+      );
+    }, [api, wsId]),
   );
 
   const signOut = () =>
@@ -179,28 +188,53 @@ export default function Settings() {
 
       {state.status === 'signed_in' ? (
         <Card testID="settings-account">
-          <Small>{t('mobile.settings.profile')}</Small>
-          {me ? (
-            <>
-              <Body>{me.displayName}</Body>
-              <Small>{me.email}</Small>
-              <Small>{t('mobile.settings.your_time_zone', { zone: me.timeZone })}</Small>
-            </>
-          ) : null}
+          <Row
+            title={t('mobile.settings.profile')}
+            subtitle={
+              me
+                ? [
+                    me.displayName || me.email,
+                    t('mobile.settings.your_time_zone', { zone: me.timeZone }),
+                  ].join(' · ')
+                : undefined
+            }
+            icon="person"
+            onPress={() => router.push('/profile')}
+            testID="settings-profile"
+          />
+          <Row
+            title={t('mobile.settings.family')}
+            subtitle={family
+              .filter((f) => f.status === 'active')
+              .map((f) => f.name)
+              .join(', ')}
+            icon="family"
+            onPress={() => router.push('/family')}
+            testID="settings-family"
+          />
+          <Row
+            title={t('mobile.settings.entities')}
+            subtitle={state.workspace.entities.map((e) => e.name).join(', ')}
+            icon="books"
+            onPress={() => router.push('/books')}
+            testID="settings-books"
+          />
+          <Row
+            title={t('settings.tab.ai')}
+            subtitle={ai ? t('mobile.settings.ai_mode', { mode: t(`ai.mode.${ai}`) }) : undefined}
+            icon="ai"
+            onPress={() => router.push('/ai-settings')}
+            testID="settings-ai"
+            last
+          />
+          {/* Set when the workspace is made; there is no API to change them, on the web either. */}
           <Small>
             {t('mobile.settings.books', {
               currency: state.workspace.baseCurrency,
               zone: state.workspace.timeZone,
             })}
           </Small>
-          <Small>{t('mobile.settings.entities')}</Small>
-          {state.workspace.entities.map((e) => (
-            <Body key={e.id}>{e.name}</Body>
-          ))}
-          {family.length > 0 ? <Small>{t('mobile.settings.family')}</Small> : null}
-          {family.map((f) => (
-            <Body key={f.id}>{f.name}</Body>
-          ))}
+          <Small>{t('mobile.settings.books_fixed')}</Small>
           {plan && plan.mode !== 'off' ? <Small>{plan.planName}</Small> : null}
           {plan && plan.mode !== 'off'
             ? otherPlans(offers, plan.plan).map((o) => {
@@ -222,7 +256,7 @@ export default function Settings() {
                 );
               })
             : null}
-          <Small>{t('mobile.settings.change_on_web')}</Small>
+          {plan && plan.mode !== 'off' ? <Small>{t('mobile.settings.plan_on_web')}</Small> : null}
         </Card>
       ) : null}
 
@@ -237,7 +271,6 @@ export default function Settings() {
               onPress={() => void session.chooseWorkspace(w.id)}
             />
           ))}
-          {ai ? <Small>{t('mobile.settings.ai_mode', { mode: ai })}</Small> : null}
           {aiUsed !== null ? (
             <View
               accessible

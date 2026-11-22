@@ -40,8 +40,10 @@ import {
   SaveAiCeilingRequest,
   SaveProviderSettingsRequest,
   SaveFeatureFlagRequest,
+  SaveImportProfileRequest,
   SaveMerchantRequest,
   SaveMileageRateRequest,
+  SaveTaxLineRequest,
 } from '@montra/schemas';
 import { z } from 'zod';
 import {
@@ -67,6 +69,7 @@ import { requireAdmin, requireOwner, StaffGuard, type StaffRequest } from './sta
 import { StatusService, SupportService } from './support.service.js';
 
 const Id = z.uuid();
+const ImportProfileId = z.string().max(100);
 const Days = z.coerce.number().int().min(1).max(365).default(30);
 
 @Controller('v1/workspaces/:workspaceId')
@@ -541,5 +544,36 @@ export class AdminController {
   async saveMileage(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireAdmin(req);
     await this.admin.saveMileageRate(ctx.user.id, parse(SaveMileageRateRequest, body));
+  }
+
+  @Get('reference/tax-lines')
+  async taxLines() {
+    return { data: await this.admin.taxLines() };
+  }
+
+  /** Add or change a tax line. There's no delete: categories may hold its code. */
+  @Put('reference/tax-lines')
+  @HttpCode(204)
+  async saveTaxLine(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireAdmin(req);
+    await this.admin.saveTaxLine(ctx.user.id, parse(SaveTaxLineRequest, body));
+  }
+
+  @Get('reference/import-profiles')
+  async importProfiles() {
+    return { data: await this.admin.importProfiles() };
+  }
+
+  @Put('reference/import-profiles')
+  async saveImportProfile(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
+    requireAdmin(req);
+    return this.admin.saveImportProfile(ctx.user.id, parse(SaveImportProfileRequest, body));
+  }
+
+  @Delete('reference/import-profiles/:id')
+  @HttpCode(204)
+  async deleteImportProfile(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Param('id') id: string) {
+    requireAdmin(req);
+    await this.admin.deleteImportProfile(ctx.user.id, parse(ImportProfileId, id));
   }
 }
