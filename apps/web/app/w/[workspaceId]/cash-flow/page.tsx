@@ -76,6 +76,7 @@ export default async function CashFlowPage({
         </div>
         <Sankey data={data} base={base} />
         <p className="text-xs text-muted">{t('flow.sankey_hint')}</p>
+        {data.links.some((l) => l.kind) && <p className="text-xs text-muted">{t('flow.transfers_hint')}</p>}
       </section>
     );
   } else if (tab === 'forecast') {

@@ -149,6 +149,34 @@ describe('flowSections (NFR-10: a list instead of the Sankey)', () => {
   it('is empty when nothing happened', () => {
     expect(flowSections({ ...data, nodes: [], links: [] })).toEqual([]);
   });
+
+  it('lists money between books on its own, never as income or spending (FLOW-06)', () => {
+    const s = flowSections({
+      ...data,
+      nodes: [
+        ...data.nodes,
+        { id: 'entity:b', kind: 'entity', label: 'Studio', value: '400', drill: null },
+        {
+          id: 'transfer:p:r',
+          kind: 'transfer',
+          label: 'Owner contribution to Elm',
+          value: '50',
+          drill: null,
+        },
+      ],
+      links: [
+        ...data.links,
+        { source: 'entity:b', target: 'entity:p', value: '150', kind: 'owner_draw' },
+        { source: 'entity:p', target: 'transfer:p:r', value: '50', kind: 'owner_contribution' },
+      ],
+    });
+    expect(s.map((x) => x.key)).toEqual(['income', 'spending', 'set_aside', 'between_books']);
+    expect(s[0]!.rows.map((r) => r.label)).toEqual(['Salary']);
+    expect(s[3]!.rows.map((r) => [r.label, r.value, r.transfer])).toEqual([
+      ['Studio → Personal', '150', 'owner_draw'],
+      ['Owner contribution to Elm', '50', 'owner_contribution'],
+    ]);
+  });
 });
 
 describe('planning API calls', () => {

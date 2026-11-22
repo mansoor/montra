@@ -572,7 +572,7 @@ reduction). Figure names now say what they mean, and the prompt forbids inventin
 Phase 6 leftovers, not blocking:
 
 - FAM-06/07: the API supports member budgets and goals; the screens have no member picker yet (fits Phase 7).
-- FLOW-06: owner draws never count as spending, but the Sankey doesn't draw them as transfers yet.
+- FLOW-06: done since; owner draws and contributions are drawn as transfers between books (see §7g).
 - REC-06: unused subscriptions are now hinted at from spending (see §7g). REC-04's wording can name at-risk bills
   awkwardly.
 - Mobile: budgets are created only as monthly zero-based. No device run yet. (Goals can now be edited and archived on the phone; see §7g.)
@@ -2563,6 +2563,27 @@ Phase 11 leftovers:
     its GET and the list, against carrying value, the preview, no rate, one currency, wrong currency); phone
     `screens-test/transaction-fx.test.tsx` (the card, no rate, nothing on other transactions). The phone's screen-test
     harness now has an empty receipt queue, so the transaction screen renders there.
+- **Owner draws and contributions as transfers in the money flow** (FLOW-06; no migration).
+  - Before: owner draws never counted as spending, but the Sankey dropped them. The business showed the money as
+    "Not spent", and the personal book showed spending it covered as "From savings or credit".
+  - Now `GET /flow/sankey` reads the money between each pair of books in the window from the inter-entity accounts
+    (DE-05): the personal book's clearing account in equity mode, the due-to and due-from accounts otherwise. Each pair
+    nets to one link, so a draw and a contribution in the same month make one band.
+  - With all books in the view, the link runs from one book's node to the other's, with a `kind`: `owner_draw`,
+    `owner_contribution`, or `transfer` (money between a business and a rental). With one book in the view, the link
+    goes to or from a `transfer` node named after the other book ("Owner draw from Studio"). That node opens the
+    transactions behind it.
+  - Income and spending don't change. Only each book's "Not spent" or "From savings or credit" moves, by the money that
+    went to or came from the other books. Every book passes on exactly what came in.
+  - `SankeyDto` links gain an optional `kind`. Links without one are ordinary flows.
+  - Web: a book that gets money from another book sits one column to its right (`sankeyColumns` in
+    `lib/planning.ts`), so the band runs left to right. Transfer bands and nodes have their own colour, the band's
+    tooltip names the kind, and a note under the chart says these are transfers, not income or spending.
+  - Phone: the cash-flow list gains a "Between your books" card, one row per transfer with its kind.
+  - Tests: API `planning.test.ts` (a draw, a contribution back, a contribution to the rental and a business-to-rental
+    transfer, in the consolidated view and in single-book views), web `planning.test.ts` and `i18n-keys.test.ts`,
+    mobile `planning.test.ts`.
+
 ---
 
 ## 8. Session checklist

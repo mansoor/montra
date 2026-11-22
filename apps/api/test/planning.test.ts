@@ -551,3 +551,155 @@ describe('editing expected income (BUD-03)', () => {
     expect(resumed.body).toMatchObject({ active: true, accountId: checking, payee: income.payee });
   });
 });
+
+describe('owner draws and contributions in the money flow (FLOW-06)', () => {
+  let bu: (p: string) => string;
+  let personalBook: string;
+  let business: string;
+  let rental: string;
+  const window = `from=${thisMonth}&to=${endOfMonth(thisMonth)}`;
+  const sankey = async (entityId?: string) =>
+    (await c.get(bu(`/flow/sankey?${window}${entityId ? `&entityId=${entityId}` : ''}`))).body;
+  const total = (s: any, kind: string) =>
+    s.nodes.filter((n: any) => n.kind === kind).reduce((t: bigint, n: any) => t + BigInt(n.value), 0n);
+
+  beforeAll(async () => {
+    const ws = (await c.post('/v1/workspaces', { name: 'Books', baseCurrency: 'USD', template: 'hybrid' }))
+      .body;
+    bu = (p) => `/v1/workspaces/${ws.id}${p}`;
+    const entities = (await c.get(bu('/entities'))).body.data;
+    personalBook = entities.find((e: any) => e.type === 'personal').id;
+    business = entities.find((e: any) => e.type === 'business').id;
+    rental = entities.find((e: any) => e.type === 'rental').id;
+    const account = async (name: string, entityId: string) =>
+      (
+        await c.post(bu('/accounts'), {
+          name,
+          kind: 'checking',
+          openingBalance: usd('1000000'),
+          openingDate: addDays(lastMonth, -1),
+          entityId,
+        })
+      ).body.id as string;
+    const home = await account('Home checking', personalBook);
+    const studio = await account('Studio checking', business);
+    const elm = await account('Elm checking', rental);
+    const cats = (await c.get(bu('/categories'))).body.data;
+    const pick = (entityId: string, type: string, name?: string) =>
+      cats.find((x: any) => x.entityId === entityId && x.type === type && (!name || x.name === name)).id;
+    const post = async (accountId: string, amount: string, categoryId: string) =>
+      expect(
+        (
+          await c.post(bu('/transactions'), {
+            date: thisMonth,
+            accountId,
+            amount: usd(amount),
+            payee: 'X',
+            categoryId,
+          })
+        ).status,
+      ).toBe(201);
+    const move = async (fromAccountId: string, toAccountId: string, amount: string) =>
+      expect(
+        (
+          await c.post(bu('/transactions/transfer'), {
+            date: thisMonth,
+            fromAccountId,
+            toAccountId,
+            amount: usd(amount),
+          })
+        ).status,
+      ).toBe(201);
+    await post(home, '300000', pick(personalBook, 'income', 'Salary'));
+    await post(home, '-50000', pick(personalBook, 'expense', 'Groceries'));
+    await post(studio, '400000', pick(business, 'income', 'Other business income'));
+    await post(studio, '-60000', pick(business, 'expense'));
+    // The owner takes 1,500 out of the business, puts 200 back and 400 into the rental. The business lends the
+    // rental 100: neither side is personal, so that is a plain transfer between books.
+    await move(studio, home, '150000');
+    await move(home, studio, '20000');
+    await move(home, elm, '40000');
+    await move(studio, elm, '10000');
+  });
+
+  it('links the books with transfers in the consolidated view, never income or spending', async () => {
+    const s = await sankey();
+    const node = (id: string) => s.nodes.find((n: any) => n.id === id);
+    // A draw and a contribution in the same month net to one link.
+    expect(s.links).toContainEqual({
+      source: `entity:${business}`,
+      target: `entity:${personalBook}`,
+      value: '130000',
+      kind: 'owner_draw',
+    });
+    expect(s.links).toContainEqual({
+      source: `entity:${personalBook}`,
+      target: `entity:${rental}`,
+      value: '40000',
+      kind: 'owner_contribution',
+    });
+    expect(s.links).toContainEqual({
+      source: `entity:${business}`,
+      target: `entity:${rental}`,
+      value: '10000',
+      kind: 'transfer',
+    });
+    expect(s.links.filter((l: any) => l.kind)).toHaveLength(3);
+    expect(s.nodes.filter((n: any) => n.kind === 'transfer')).toEqual([]);
+    // Income and spending are what was earned and spent; only the books' leftovers move.
+    expect(total(s, 'income')).toBe(700000n);
+    expect(total(s, 'category')).toBe(110000n);
+    expect(node(`unspent:${personalBook}`).value).toBe(String(300000n + 130000n - 50000n - 40000n));
+    expect(node(`unspent:${business}`).value).toBe(String(400000n - 60000n - 130000n - 10000n));
+    expect(node(`unspent:${rental}`).value).toBe('50000');
+    expect(node(`entity:${personalBook}`).value).toBe('430000');
+    // Every book passes on exactly what came in.
+    for (const e of s.nodes.filter((n: any) => n.kind === 'entity')) {
+      const sum = (side: 'source' | 'target') =>
+        s.links.filter((l: any) => l[side] === e.id).reduce((t: bigint, l: any) => t + BigInt(l.value), 0n);
+      expect(sum('source')).toBe(sum('target'));
+    }
+  });
+
+  it('shows the other book as a transfer node in a single-book view', async () => {
+    const biz = await sankey(business);
+    const draw = biz.nodes.find((n: any) => n.id === `transfer:${business}:${personalBook}`);
+    expect(draw).toMatchObject({
+      kind: 'transfer',
+      label: expect.stringMatching(/^Owner draw to /),
+      value: '130000',
+    });
+    expect(draw.drill).toMatchObject({ entityId: business, from: thisMonth });
+    expect(draw.drill.accountIds.length).toBeGreaterThan(0);
+    expect(biz.links).toContainEqual({
+      source: `entity:${business}`,
+      target: draw.id,
+      value: '130000',
+      kind: 'owner_draw',
+    });
+    expect(biz.nodes.find((n: any) => n.id === `transfer:${business}:${rental}`)).toMatchObject({
+      label: expect.stringMatching(/^Transfer to /),
+      value: '10000',
+    });
+    expect(total(biz, 'income')).toBe(400000n);
+    expect(total(biz, 'category')).toBe(60000n);
+    expect(biz.nodes.find((n: any) => n.id === `unspent:${business}`).value).toBe('200000');
+
+    const home = await sankey(personalBook);
+    const from = home.nodes.find((n: any) => n.id === `transfer:${business}:${personalBook}`);
+    expect(from).toMatchObject({ label: expect.stringMatching(/^Owner draw from /), value: '130000' });
+    expect(home.links).toContainEqual({
+      source: from.id,
+      target: `entity:${personalBook}`,
+      value: '130000',
+      kind: 'owner_draw',
+    });
+    expect(home.nodes.find((n: any) => n.id === `transfer:${personalBook}:${rental}`)).toMatchObject({
+      label: expect.stringMatching(/^Owner contribution to /),
+      value: '40000',
+    });
+    // The draw covers the spending: nothing is shown as coming from savings or credit.
+    expect(home.nodes.find((n: any) => n.kind === 'deficit')).toBeUndefined();
+    expect(home.nodes.find((n: any) => n.id === `unspent:${personalBook}`).value).toBe('340000');
+  });
+});

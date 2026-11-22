@@ -323,7 +323,19 @@ export const SANKEY_NODE_KINDS = [
   'deficit',
 ] as const;
 
-/** FLOW-02: income sources → entity → category groups → categories, plus savings/debt (FLOW-06 transfers apart). */
+/**
+ * FLOW-06: what a link between two books is. Owner draws and contributions are money between the personal book and
+ * a business or rental (equity mode); `transfer` is any other money between books (due-to/due-from mode). None of
+ * them is income or spending.
+ */
+export const SANKEY_TRANSFER_KINDS = ['owner_draw', 'owner_contribution', 'transfer'] as const;
+export type SankeyTransferKind = (typeof SANKEY_TRANSFER_KINDS)[number];
+
+/**
+ * FLOW-02: income sources → entity → category groups → categories, plus savings/debt. FLOW-06: money between books
+ * is a link with a `kind`: entity to entity when both books are in the view, otherwise to or from a `transfer`
+ * node named after the other book. Links without a `kind` are ordinary flows.
+ */
 export const SankeyDto = z.object({
   from: CalendarDateDto,
   to: CalendarDateDto,
@@ -337,7 +349,14 @@ export const SankeyDto = z.object({
       drill: DrillDto.nullable(),
     }),
   ),
-  links: z.array(z.object({ source: z.string(), target: z.string(), value: MinorDto })),
+  links: z.array(
+    z.object({
+      source: z.string(),
+      target: z.string(),
+      value: MinorDto,
+      kind: z.enum(SANKEY_TRANSFER_KINDS).optional(),
+    }),
+  ),
 });
 export type SankeyDto = z.infer<typeof SankeyDto>;
 

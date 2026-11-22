@@ -50,6 +50,7 @@ function Flow({ ws }: { ws: string }) {
     income: 'mobile.flow.came_in',
     spending: 'mobile.flow.went_out',
     set_aside: 'mobile.flow.set_aside',
+    between_books: 'mobile.flow.between_books',
   };
   return (
     <>
@@ -87,7 +88,16 @@ function Flow({ ws }: { ws: string }) {
                     paddingLeft: r.indent ? th.space(4) : 0,
                   }}
                 >
-                  {r.indent ? <Small>{r.label}</Small> : <Body style={{ flexShrink: 1 }}>{r.label}</Body>}
+                  {r.indent ? (
+                    <Small>{r.label}</Small>
+                  ) : r.transfer ? (
+                    <View style={{ flexShrink: 1 }}>
+                      <Body>{r.label}</Body>
+                      <Small>{t(`flow.link_${r.transfer}`)}</Small>
+                    </View>
+                  ) : (
+                    <Body style={{ flexShrink: 1 }}>{r.label}</Body>
+                  )}
                   {r.indent ? (
                     <Small>{fmtMoney(r.value, data.data!.currency)}</Small>
                   ) : (
