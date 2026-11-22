@@ -197,8 +197,8 @@
     "AAL2 for owners, admins, partners, accountants and anyone who sees business books; a workspace can require it of everyone; mfa.setup_required leads to setting it up; 2FA status in Sharing (ADR-0044). TOTP, passkeys, recovery codes; authenticator and recovery codes on the phone, and the phone leads a required login to set them up (ADR-0046); a texted code to a verified number as a second factor where texts are on (ADR-0049 §6)"
   ],
   "AUTH-05": [
-    "partial",
-    "30-minute single-use code, same message either way, session revocation, Kratos email templates tested through Mailpit, in the same layout as every API email (runbooks/email.md). The requirement says a link and this is a code, for the owner to accept or change; the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
+    "done",
+    "30-minute single-use emailed code (the owner accepted a code over a link on 2026-11-21; a link is AUTH-19, for later), same message either way, session revocation, Kratos email templates tested through Mailpit, in the same layout as every API email (runbooks/email.md); the password-changed email (ADR-0045) confirms a reset; forgot password on the phone, with the second factor first (ADR-0046)"
   ],
   "AUTH-06": [
     "done",
