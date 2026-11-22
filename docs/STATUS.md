@@ -2316,6 +2316,19 @@ Phase 11 leftovers:
     check failed only because the local API wasn't running with Kratos's webhook secret.
   - AUTH-05 stays partial: the requirement says an emailed link, and recovery sends a code (an open owner question: "Is an emailed code acceptable for AUTH-05?").
   - Tests: API `mail-templates.test.ts`, plus the existing tests that read emails.
+- **One split per category on a receipt** (owner, 2026-11-21; RCP-03, RCP-07; no migration).
+  - Before: the API grouped lines by `category|entity|member`, and a line's entity never followed a category picked
+    in review (the PATCH kept the old one, and no client sends one). Lines that came in uncategorized (no entity) and
+    were then moved to Groceries started a second Groceries split beside the lines that already had the receipt's
+    entity: a 12.90 receipt showed Groceries 7.26 and Groceries 5.64.
+  - Now `receiptSplitKey` / `receiptSplits` (`@montra/domain`) group by category and member only; a category
+    belongs to one entity, so the entity follows it. The API uses them both for the receipt's groups and when
+    applying the receipt to its transaction, reports each group's entity from its category, and sets a categorized
+    line's entity from its category on review (before item rules learn from it).
+  - Phone: the Splits card is a live preview (`receiptSplitRows`, the same domain function over the lines as "Save
+    categories" will send them), so it changes as lines are recategorized. The web review still shows the server's
+    groups, now merged after saving.
+  - Tests: domain `receipt.test.ts`, API `receipts.test.ts` ("one split per category"), mobile `receipts.test.ts`.
 ---
 
 ## 8. Session checklist

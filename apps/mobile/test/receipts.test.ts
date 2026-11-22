@@ -13,6 +13,7 @@ import {
   reminderChoices,
   reviewEdits,
   lineQuantityText,
+  receiptSplitRows,
   receiptTotals,
   stalledMessage,
   uncategorizedLines,
@@ -131,6 +132,86 @@ describe('review on the phone (RCP-06)', () => {
       ['a', 'groceries', '100'],
       ['b', 'electronics', '100'],
     ]);
+  });
+});
+
+describe('the Splits card while lines are recategorized (RCP-03, owner 2026-11-21)', () => {
+  // The owner's receipt: persimmon (Groceries), two Armenian coffees (uncategorized), vegan fries (Dining out);
+  // total 12.90.
+  const amounts: Record<string, string> = { persimmon: '227', coffee1: '306', coffee2: '258', fries: '499' };
+  const base = receipt([
+    { id: 'persimmon', categoryId: 'groceries' },
+    { id: 'coffee1', categoryId: null },
+    { id: 'coffee2', categoryId: null },
+    { id: 'fries', categoryId: 'dining' },
+  ]);
+  const scanned = {
+    ...base,
+    lines: base.lines.map((l) => ({ ...l, lineTotal: amounts[l.id]!, taxable: false })),
+    currency: 'USD',
+    tax: '0',
+    taxIncluded: false,
+    discount: '0',
+    fees: '0',
+    tip: '0',
+    total: '1290',
+  } as ReceiptDto;
+  const rows = (picked: Array<[string, string | null]>) =>
+    receiptSplitRows(scanned, new Map(picked)).map((s) => [s.categoryId, s.total]);
+
+  it('shows the receipt as scanned when nothing is picked', () => {
+    expect(rows([])).toEqual([
+      ['groceries', '227'],
+      [null, '564'],
+      ['dining', '499'],
+    ]);
+  });
+
+  it('merges every line moved to Groceries into one Groceries row, as it goes', () => {
+    expect(rows([['fries', 'groceries']])).toEqual([
+      ['groceries', '726'],
+      [null, '564'],
+    ]);
+    expect(
+      rows([
+        ['fries', 'groceries'],
+        ['coffee1', 'groceries'],
+      ]),
+    ).toEqual([
+      ['groceries', '1032'],
+      [null, '258'],
+    ]);
+    const all = receiptSplitRows(
+      scanned,
+      new Map([
+        ['fries', 'groceries'],
+        ['coffee1', 'groceries'],
+        ['coffee2', 'groceries'],
+      ]),
+    );
+    expect(all).toEqual([
+      expect.objectContaining({
+        categoryId: 'groceries',
+        lineIds: ['persimmon', 'coffee1', 'coffee2', 'fries'],
+        total: '1290',
+      }),
+    ]);
+  });
+
+  it('gives a line moved away its own row, and drops a category left with no lines', () => {
+    expect(rows([['persimmon', 'household']])).toEqual([
+      ['household', '227'],
+      [null, '564'],
+      ['dining', '499'],
+    ]);
+    expect(rows([['fries', null]])).toEqual([
+      ['groceries', '227'],
+      [null, '1063'],
+    ]);
+  });
+
+  it('shows no splits until the receipt has a currency, as the API', () => {
+    expect(receiptSplitRows({ ...scanned, currency: null }, new Map())).toEqual([]);
   });
 });
 

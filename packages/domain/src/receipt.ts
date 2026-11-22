@@ -16,7 +16,7 @@ export interface ReceiptLineAmounts {
   /** Line-level discount or coupon, ≥ 0, already printed against this line. */
   discount: bigint;
   taxable: boolean;
-  /** Grouping key: lines with the same (category, entity, member) become one split (RCP-03/07). */
+  /** Grouping key: lines with the same key become one split. Receipts use `receiptSplitKey` (RCP-03/07). */
   key: string;
 }
 
@@ -118,6 +118,43 @@ export function groupReceipt(lines: readonly ReceiptLineAmounts[], totals: Recei
     g.total = g.subtotal + (totals.taxIncluded ? 0n : g.tax) - g.discount + g.fees + g.tip;
   });
   return groups;
+}
+
+/** What decides a receipt line's split: its category and the family member it's for. */
+export interface ReceiptSplitLine {
+  categoryId: string | null;
+  memberId: string | null;
+  /** Negative for returns (RCP-08). */
+  lineTotal: bigint;
+  discount: bigint;
+  taxable: boolean;
+}
+
+/**
+ * RCP-03/07: one split per category (and member). A category belongs to one entity, so the entity follows the
+ * category and is not part of the key: a line whose stored entity is stale (it was uncategorized, or moved from
+ * another entity's category) still joins the category's split rather than starting a second one beside it. All
+ * uncategorized lines are one split.
+ */
+export function receiptSplitKey(l: Pick<ReceiptSplitLine, 'categoryId' | 'memberId'>): string {
+  return `${l.categoryId ?? ''}|${l.memberId ?? ''}`;
+}
+
+/**
+ * A receipt's splits as a pure function of its lines: grouped by `receiptSplitKey`, with tax, discount, fees and
+ * tip allocated by `groupReceipt`. The API saves these and the phone previews them while lines are recategorized,
+ * so the two can't disagree.
+ */
+export function receiptSplits(lines: readonly ReceiptSplitLine[], totals: ReceiptTotals): ReceiptGroup[] {
+  return groupReceipt(
+    lines.map((l) => ({
+      key: receiptSplitKey(l),
+      lineTotal: l.lineTotal,
+      discount: l.discount,
+      taxable: l.taxable,
+    })),
+    totals,
+  );
 }
 
 /**

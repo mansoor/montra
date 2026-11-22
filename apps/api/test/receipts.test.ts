@@ -247,6 +247,106 @@ describe('the Walmart receipt (Phase 5 exit criterion 1, requirements §3.5)', (
   });
 });
 
+describe('one split per category (RCP-03, owner 2026-11-21)', () => {
+  let receipt: any;
+  let txn: any;
+  const line = (name: string) => receipt.lines.find((l: any) => l.rawText === name);
+  /** Sends every line back as it is, with these lines' categories changed. */
+  const recategorize = (categories: Record<string, string | null>) =>
+    c.patch(url(`/receipts/${receipt.id}`), {
+      version: receipt.version,
+      lines: receipt.lines.map((l: any) => ({
+        id: l.id,
+        rawText: l.rawText,
+        lineTotal: l.lineTotal,
+        discount: l.discount,
+        taxable: l.taxable,
+        ...(l.rawText in categories ? { categoryId: categories[l.rawText] } : {}),
+      })),
+    });
+  const groupsByName = (r: any) =>
+    r.groups.map((g: any) => [
+      g.categoryId ? (g.categoryId === cat('Groceries') ? 'Groceries' : 'Dining out') : null,
+      g.total,
+    ]);
+
+  it('merges a split that was uncategorized into the category its lines move to, rather than relabelling it', async () => {
+    txn = await spend('2026-11-15', '-1290', 'NUTRIFRESH MARKET');
+    receipt = await capture([
+      'NUTRIFRESH MARKET',
+      '11/14/2026 18:10',
+      'FUYU PERSIMMON   2.27 N',
+      'ARMENIAN COFFEE   3.06 N',
+      'ARMENIAN COFFEE   2.58 N',
+      'VEGAN FRIES   4.99 N',
+      'TOTAL   12.90',
+      'CARD **** 1234',
+    ]);
+    if (receipt.status !== 'matched') {
+      receipt = (
+        await c.post(url(`/receipts/${receipt.id}/apply`), {
+          transactionId: txn.id,
+          version: receipt.version,
+        })
+      ).body;
+    }
+    expect(receipt.transactionId).toBe(txn.id);
+    // As the owner's receipt came in: the fries as Dining out, the coffees not categorized and with no entity.
+    await admin.query(
+      `update app.receipt_line set category_id = $2, entity_id = $3 where receipt_id = $1 and raw_text = 'FUYU PERSIMMON'`,
+      [receipt.id, cat('Groceries'), receipt.entityId],
+    );
+    await admin.query(
+      `update app.receipt_line set category_id = $2, entity_id = $3 where receipt_id = $1 and raw_text = 'VEGAN FRIES'`,
+      [receipt.id, cat('Dining out'), receipt.entityId],
+    );
+    await admin.query(
+      `update app.receipt_line set category_id = null, entity_id = null where receipt_id = $1 and raw_text = 'ARMENIAN COFFEE'`,
+      [receipt.id],
+    );
+    receipt = (await c.get(url(`/receipts/${receipt.id}`))).body;
+    expect(groupsByName(receipt)).toEqual([
+      ['Groceries', '227'],
+      [null, '564'],
+      ['Dining out', '499'],
+    ]);
+
+    const updated = await recategorize({
+      'ARMENIAN COFFEE': cat('Groceries'),
+      'VEGAN FRIES': cat('Groceries'),
+    });
+    expect(updated.status).toBe(200);
+    receipt = updated.body;
+    expect(receipt.groups).toEqual([
+      expect.objectContaining({
+        categoryId: cat('Groceries'),
+        entityId: receipt.entityId,
+        lineIds: receipt.lines.map((l: any) => l.id),
+        total: '1290',
+      }),
+    ]);
+    // The coffees now carry Groceries' entity, and the transaction has the one split too.
+    expect(line('ARMENIAN COFFEE').entityId).toBe(receipt.entityId);
+    expect(await splitsOf(txn.id)).toEqual({ Groceries: '1290' });
+  });
+
+  it('gives a line moved away its own split, and drops a category left with no lines', async () => {
+    let updated = await recategorize({ 'VEGAN FRIES': cat('Dining out') });
+    expect(updated.status).toBe(200);
+    receipt = updated.body;
+    expect(groupsByName(receipt)).toEqual([
+      ['Groceries', '791'],
+      ['Dining out', '499'],
+    ]);
+    expect(await splitsOf(txn.id)).toEqual({ Groceries: '791', 'Dining out': '499' });
+
+    updated = await recategorize({ 'VEGAN FRIES': cat('Groceries') });
+    receipt = updated.body;
+    expect(groupsByName(receipt)).toEqual([['Groceries', '1290']]);
+    expect(await splitsOf(txn.id)).toEqual({ Groceries: '1290' });
+  });
+});
+
 describe('a line’s quantity and unit price (owner, 2026-11-18)', () => {
   it('shows 1 × the total when nothing is printed, and keeps quantity × unit price = total through edits', async () => {
     const r = await capture([

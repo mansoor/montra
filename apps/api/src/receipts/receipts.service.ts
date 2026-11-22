@@ -16,18 +16,21 @@ import {
   convertGroupsAtCharge,
   decimalToString,
   fitToCharged,
-  groupReceipt,
   impliedRate,
   isCurrencyCode,
   lineQuantity,
   minorUnits,
   parseMoney,
   receiptHabit,
+  receiptSplitKey,
+  receiptSplits,
   todayIn,
   validateReceipt,
   type CalendarDate,
   type CurrencyCode,
   type ReceiptLineAmounts,
+  type ReceiptSplitLine,
+  type ReceiptTotals,
 } from '@montra/domain';
 import {
   matchReceipts,
@@ -539,7 +542,17 @@ export class ReceiptsService {
 
   async dto(trx: Trx, ctx: Ctx, r: ReceiptRow): Promise<ReceiptDto> {
     const lines = await this.lines(trx, ctx, r.id);
-    const groups = r.currency ? groupsOf(r, lines) : [];
+    const groups = r.currency
+      ? groupsOf(
+          r,
+          lines,
+          await this.categoryEntities(
+            trx,
+            ctx,
+            lines.map((l) => l.category_id),
+          ),
+        )
+      : [];
     const extraction = r.extraction as ReceiptDto['extraction'] | null;
     return {
       id: r.id,
@@ -956,6 +969,17 @@ export class ReceiptsService {
           })
         : before.map(fromRow);
       if (req.lines) {
+        // A line's entity is its category's (RCP-07): a line moved to another category takes that category's
+        // entity, so neither its split nor the item rule learnt from it keeps the old one.
+        const entities = await this.categoryEntities(
+          trx,
+          ctx,
+          lines.map((l) => l.categoryId),
+        );
+        lines.forEach((l, i) => {
+          const entityId = l.categoryId ? entities.get(l.categoryId) : undefined;
+          if (entityId) lines[i] = { ...l, entityId };
+        });
         await this.learnFromCorrections(trx, ctx, before, lines);
       }
       const updated = await this.store(
@@ -1314,16 +1338,10 @@ export class ReceiptsService {
     const lines = await this.lines(trx, ctx, r.id);
     if (lines.length === 0) throw unprocessable('receipt.no_lines', 'The receipt has no lines to apply');
     const account = await this.categorizer.accountInfo(trx, ctx, spec.accountId);
-    const groups = groupReceipt(
-      lines.map((l) => amountsOf(fromRow(l))),
-      {
-        tax: r.tax_minor,
-        taxIncluded: r.tax_included,
-        discount: r.discount_minor,
-        fees: r.fees_minor,
-        tip: r.tip_minor,
-        total: r.total_minor,
-      },
+    // The same splits the receipt shows (`groupsOf`), so what is saved to the transaction is what was reviewed.
+    const groups = receiptSplits(
+      lines.map((l) => splitLineOf(fromRow(l))),
+      totalsOf(r),
     );
     const charged = -BigInt(spec.amount);
     let amounts: bigint[];
@@ -1703,6 +1721,23 @@ export class ReceiptsService {
     return e.id;
   }
 
+  /** The entity each of these categories belongs to. */
+  private async categoryEntities(
+    trx: Trx,
+    ctx: Ctx,
+    categoryIds: ReadonlyArray<string | null>,
+  ): Promise<Map<string, string>> {
+    const ids = [...new Set(categoryIds.filter((c): c is string => c !== null))];
+    if (ids.length === 0) return new Map();
+    const rows = await trx
+      .selectFrom('app.ledger_account')
+      .select(['id', 'entity_id'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', 'in', ids)
+      .execute();
+    return new Map(rows.map((r) => [r.id, r.entity_id]));
+  }
+
   async today(trx: Trx, ctx: Ctx): Promise<CalendarDate> {
     const ws = await trx
       .selectFrom('app.workspace')
@@ -1733,30 +1768,47 @@ export function fromRow(l: ReceiptLineRow): LineInput {
   };
 }
 
-/** Lines with the same (category, entity, member) become one split (RCP-03, RCP-07). */
-function amountsOf(l: LineInput): ReceiptLineAmounts {
+/** What decides a line's split (RCP-03, RCP-07): its category and member, with its amounts. */
+function splitLineOf(l: LineInput): ReceiptSplitLine {
   return {
-    key: `${l.categoryId ?? ''}|${l.entityId ?? ''}|${l.memberId ?? ''}`,
+    categoryId: l.categoryId,
+    memberId: l.memberId,
     lineTotal: l.lineTotalMinor,
     discount: l.discountMinor,
     taxable: l.taxable,
   };
 }
 
-function groupsOf(r: ReceiptRow, rows: ReceiptLineRow[]): ReceiptGroupDto[] {
-  const lines = rows.map(fromRow);
-  return groupReceipt(lines.map(amountsOf), {
+function amountsOf(l: LineInput): ReceiptLineAmounts {
+  return { ...splitLineOf(l), key: receiptSplitKey(l) };
+}
+
+function totalsOf(r: ReceiptRow): ReceiptTotals {
+  return {
     tax: r.tax_minor,
     taxIncluded: r.tax_included,
     discount: r.discount_minor,
     fees: r.fees_minor,
     tip: r.tip_minor,
     total: r.total_minor,
-  }).map((g) => {
+  };
+}
+
+/**
+ * The receipt's splits, one per category (and member), as `receiptSplits` makes them. A split's entity is its
+ * category's; an uncategorized split's is the receipt's.
+ */
+function groupsOf(
+  r: ReceiptRow,
+  rows: ReceiptLineRow[],
+  categoryEntity: ReadonlyMap<string, string>,
+): ReceiptGroupDto[] {
+  const lines = rows.map(fromRow);
+  return receiptSplits(lines.map(splitLineOf), totalsOf(r)).map((g) => {
     const first = lines[g.lines[0]!]!;
     return {
       categoryId: first.categoryId,
-      entityId: first.entityId ?? r.entity_id,
+      entityId: (first.categoryId ? categoryEntity.get(first.categoryId) : undefined) ?? r.entity_id,
       memberId: first.memberId,
       lineIds: g.lines.map((i) => rows[i]!.id),
       subtotal: g.subtotal.toString(),

@@ -11,8 +11,11 @@ import {
   impliedRate,
   lineQuantity,
   mulRound,
+  receiptSplitKey,
+  receiptSplits,
   validateReceipt,
   type ReceiptLineAmounts,
+  type ReceiptSplitLine,
   type ReceiptTotals,
 } from '../src/index.js';
 
@@ -240,5 +243,110 @@ describe('a receipt line’s quantity and unit price (owner, 2026-11-18)', () =>
     expect(lineQuantity(null, 250n, -500n)).toEqual({ qty: null, unitPrice: 250n });
     // Both printed: as printed, weighed items included.
     expect(lineQuantity('0.452', 299n, 135n)).toEqual({ qty: '0.452', unitPrice: 299n });
+  });
+});
+
+describe('one split per category (RCP-03, owner 2026-11-21)', () => {
+  // The owner's receipt: persimmon 2.27 (Groceries), two Armenian coffees 3.06 + 2.58 (uncategorized), vegan
+  // fries 4.99 (Dining out); total 12.90.
+  const item = (
+    categoryId: string | null,
+    lineTotal: bigint,
+    memberId: string | null = null,
+  ): ReceiptSplitLine => ({
+    categoryId,
+    memberId,
+    lineTotal,
+    discount: 0n,
+    taxable: false,
+  });
+  const scanned = [item('groceries', 227n), item(null, 306n), item(null, 258n), item('dining', 499n)];
+  const recategorize = (lines: ReceiptSplitLine[], moves: Record<number, string | null>) =>
+    lines.map((l, i) => (i in moves ? { ...l, categoryId: moves[i]! } : l));
+  const rows = (lines: ReceiptSplitLine[], t: Partial<ReceiptTotals> = {}) =>
+    receiptSplits(lines, totals({ total: 1290n, ...t })).map((g) => [
+      lines[g.lines[0]!]!.categoryId,
+      g.total,
+    ]);
+
+  it('merges an uncategorized split and a Dining out line moved to Groceries into one Groceries split', () => {
+    expect(rows(scanned)).toEqual([
+      ['groceries', 227n],
+      [null, 564n],
+      ['dining', 499n],
+    ]);
+    const all = recategorize(scanned, { 1: 'groceries', 2: 'groceries', 3: 'groceries' });
+    expect(rows(all)).toEqual([['groceries', 1290n]]);
+    expect(receiptSplits(all, totals({ total: 1290n }))[0]!.lines).toEqual([0, 1, 2, 3]);
+  });
+
+  it('gives a line moved away from a category its own split, and drops a category left with no lines', () => {
+    const all = recategorize(scanned, { 1: 'groceries', 2: 'groceries', 3: 'groceries' });
+    expect(rows(recategorize(all, { 3: 'dining' }))).toEqual([
+      ['groceries', 791n],
+      ['dining', 499n],
+    ]);
+    // The last Dining out line moved back: no Dining out split is left, not even an empty one.
+    expect(rows(recategorize(recategorize(all, { 3: 'dining' }), { 3: 'groceries' }))).toEqual([
+      ['groceries', 1290n],
+    ]);
+    // Uncategorizing a line gives the uncategorized lines one split of their own.
+    expect(rows(recategorize(all, { 0: null, 1: null }))).toEqual([
+      [null, 533n],
+      ['groceries', 757n],
+    ]);
+  });
+
+  it('ignores the entity: a category belongs to one, so a stale one on a line never starts a second split', () => {
+    expect(receiptSplitKey({ categoryId: 'groceries', memberId: null })).toBe(
+      receiptSplitKey({ ...item('groceries', 1n), entityId: 'other' } as ReceiptSplitLine),
+    );
+    // Members still keep their lines apart (RCP-07).
+    expect(
+      rows([item('groceries', 500n, 'amira'), item('groceries', 790n), item('groceries', 0n, 'amira')]),
+    ).toEqual([
+      ['groceries', 500n],
+      ['groceries', 790n],
+    ]);
+  });
+
+  it('shares tax, discount, fees and tip between the merged splits to the cent', () => {
+    const all = recategorize(scanned, { 1: 'groceries', 2: 'groceries' });
+    const taxed = all.map((l, i) => (i === 3 ? { ...l, taxable: true } : l));
+    // 8.25% tax on the fries (0.41), a 1.00 coupon, a 0.33 bag fee: 12.90 − 1.00 + 0.41 + 0.33 = 12.64.
+    const groups = receiptSplits(taxed, totals({ tax: 41n, discount: 100n, fees: 33n, total: 1264n }));
+    expect(groups.map((g) => [g.tax, g.discount, g.fees, g.total])).toEqual([
+      [0n, 61n, 20n, 750n],
+      [41n, 39n, 13n, 514n],
+    ]);
+    expect(groups.reduce((s, g) => s + g.total, 0n)).toBe(1264n);
+  });
+
+  it('always makes exactly one split per category and member, summing to the receipt', () => {
+    const lineArb = fc.record({
+      categoryId: fc.constantFrom('groceries', 'dining', 'household', null),
+      memberId: fc.constantFrom('amira', null),
+      lineTotal: fc.bigInt({ min: -5_000n, max: 20_000n }).filter((n) => n !== 0n),
+      discount: fc.bigInt({ min: 0n, max: 100n }),
+      taxable: fc.boolean(),
+    });
+    const totalsArb = fc.record({
+      tax: fc.bigInt({ min: 0n, max: 2_000n }),
+      discount: fc.bigInt({ min: 0n, max: 500n }),
+      fees: fc.bigInt({ min: 0n, max: 500n }),
+      tip: fc.bigInt({ min: 0n, max: 500n }),
+      total: fc.constant(null),
+    });
+    fc.assert(
+      fc.property(fc.array(lineArb, { minLength: 1, maxLength: 20 }), totalsArb, (lines, t) => {
+        const groups = receiptSplits(lines, t);
+        const keys = groups.map((g) => g.key);
+        expect(new Set(keys).size).toBe(keys.length);
+        expect(new Set(lines.map(receiptSplitKey)).size).toBe(groups.length);
+        for (const g of groups) for (const i of g.lines) expect(receiptSplitKey(lines[i]!)).toBe(g.key);
+        const amounts = lines.map((l) => ({ ...l, key: receiptSplitKey(l) }));
+        expect(groups.reduce((s, g) => s + g.total, 0n)).toBe(validateReceipt(amounts, t).computed);
+      }),
+    );
   });
 });

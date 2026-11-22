@@ -14,6 +14,7 @@ import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import {
   lineQuantityText,
+  receiptSplitRows,
   receiptStatusKey,
   receiptTotals,
   reviewEdits,
@@ -108,6 +109,8 @@ export default function ReceiptReview() {
     );
   const payFrom = accounts.find((a) => a.id === payFromId);
   const missing = uncategorizedLines(receipt).length;
+  // One row per category, following the categories picked here before they are saved (owner, 2026-11-21).
+  const splits = receiptSplitRows(receipt, picked);
   const stalled = stalledMessage(receipt);
   const shown = receipt.fileIds.filter((fileId) => !keptOnlyInVault(fileStates, fileId));
   const inVault = receipt.fileIds.filter((fileId) => keptOnlyInVault(fileStates, fileId));
@@ -251,11 +254,15 @@ export default function ReceiptReview() {
         </Card>
       ) : null}
 
-      {receipt.groups.length ? (
-        <Card>
+      {splits.length ? (
+        <Card testID="receipt-splits">
           <Body>{t('mobile.receipts.splits')}</Body>
-          {receipt.groups.map((g) => (
-            <View key={g.lineIds.join()} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          {splits.map((g) => (
+            <View
+              key={g.key}
+              testID="receipt-split"
+              style={{ flexDirection: 'row', justifyContent: 'space-between' }}
+            >
               <Small>
                 {g.categoryId ? (names.get(g.categoryId) ?? '') : t('mobile.receipts.uncategorized')}
               </Small>

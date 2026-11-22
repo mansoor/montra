@@ -2,6 +2,7 @@
  * Receipt capture on the phone (TXN-08/09): the per-frame verdict shown after each shot, how upload errors are
  * treated by the offline queue, and the review edits. Pure, so it runs in tests.
  */
+import { receiptSplits } from '@montra/domain';
 import type { ErrorKind, QueuedReceipt } from '@montra/sync';
 import type { ReceiptDto } from '@montra/schemas';
 import { ApiError, type ReceiptReviewInput } from '../api/client';
@@ -80,6 +81,52 @@ export function reviewEdits(
       memberId: l.memberId,
     })),
   };
+}
+
+/** One row of the Splits card. */
+export interface SplitRow {
+  key: string;
+  categoryId: string | null;
+  memberId: string | null;
+  lineIds: string[];
+  /** Minor units of the receipt currency. */
+  total: string;
+}
+
+/**
+ * The receipt's splits with the categories picked on the phone, before they are saved (RCP-03/04): the API's own
+ * `receiptSplits` over the lines exactly as "Save categories" will send them (`reviewEdits`), so the card updates as
+ * lines are recategorized and shows what saving stores, one row per category. With nothing picked these are the
+ * splits the API sent. None until the receipt has a currency, as on the API.
+ */
+export function receiptSplitRows(r: ReceiptDto, picked: ReadonlyMap<string, string | null>): SplitRow[] {
+  if (!r.currency) return [];
+  const lines = reviewEdits(r, picked).lines.map((l, i) => ({
+    id: l.id ?? r.lines[i]!.id,
+    categoryId: l.categoryId ?? null,
+    memberId: l.memberId ?? null,
+    lineTotal: BigInt(l.lineTotal),
+    discount: BigInt(l.discount ?? '0'),
+    taxable: l.taxable ?? true,
+  }));
+  const totals = {
+    tax: BigInt(r.tax),
+    taxIncluded: r.taxIncluded,
+    discount: BigInt(r.discount),
+    fees: BigInt(r.fees),
+    tip: BigInt(r.tip),
+    total: r.total === null ? null : BigInt(r.total),
+  };
+  return receiptSplits(lines, totals).map((g) => {
+    const first = lines[g.lines[0]!]!;
+    return {
+      key: g.key,
+      categoryId: first.categoryId,
+      memberId: first.memberId,
+      lineIds: g.lines.map((i) => lines[i]!.id),
+      total: g.total.toString(),
+    };
+  });
 }
 
 /**

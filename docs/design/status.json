@@ -546,7 +546,7 @@
   ],
   "RCP-03": [
     "done",
-    "lines categorized by item rules, item history, then AI on the item name; grouped by (category, entity, member) into splits; review screen on the web"
+    "lines categorized by item rules, item history, then AI on the item name; one split per (category, member), the entity following the category (receiptSplits, shared by the API and the phone's live Splits card); review screen on the web"
   ],
   "RCP-06": [
     "done",
@@ -554,7 +554,7 @@
   ],
   "RCP-07": [
     "done",
-    "each line picks a category of any entity (grouped by entity) and a member; groups split across entities"
+    "each line picks a category of any entity (grouped by entity) and a member; a line takes its category's entity, so groups split across entities"
   ],
   "RCP-08": [
     "done",
