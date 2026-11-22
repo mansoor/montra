@@ -140,10 +140,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <PasswordPolicyPanel policy={await load((api) => api.adminPasswordPolicy())} canChange={canChange} />
     );
   } else {
-    const [merchants, rates] = await load((api) =>
-      Promise.all([api.adminMerchants(''), api.adminMileageRates()]),
+    const [merchants, rates, taxLines, profiles] = await load((api) =>
+      Promise.all([
+        api.adminMerchants(''),
+        api.adminMileageRates(),
+        api.adminTaxLines(),
+        api.adminImportProfiles(),
+      ]),
     );
-    body = <ReferencePanel merchants={merchants} rates={rates} canChange={canChange} />;
+    body = (
+      <ReferencePanel
+        merchants={merchants}
+        rates={rates}
+        taxLines={taxLines}
+        profiles={profiles}
+        canChange={canChange}
+      />
+    );
   }
   return (
     <>

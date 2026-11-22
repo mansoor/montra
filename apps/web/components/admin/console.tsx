@@ -2,7 +2,9 @@
 
 import type {
   AdminAccountDto,
+  AdminImportProfileDto,
   AdminSupportRequestDto,
+  AdminTaxLineDto,
   AdminWorkspaceDto,
   AiCeilingDto,
   AppVersionsStatusDto,
@@ -13,7 +15,9 @@ import type {
 import Link from 'next/link';
 import { isVersionBelow } from '@montra/domain';
 import { useState } from 'react';
+import { IMPORT_PROFILE_SOURCES, TAX_LINE_FORMS } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
+import { bpsToPercent, MAPPING_EXAMPLE, percentToBps, readMappingJson } from '@/lib/reference-data';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
@@ -841,9 +845,15 @@ export function SupportRequestsPanel({ requests }: { requests: AdminSupportReque
   );
 }
 
+/**
+ * OPS-05: reference data staff change without a release. A row saved here keeps what staff saved through later
+ * deploys (the loader leaves it). Currencies aren't here: money math uses the list built into the app.
+ */
 export function ReferencePanel({
   merchants,
   rates,
+  taxLines,
+  profiles,
   canChange,
 }: {
   merchants: {
@@ -852,8 +862,17 @@ export function ReferencePanel({
     matchKey: string;
     categoryHint: string | null;
     version: number;
+    staffEditedAt: string | null;
   }[];
-  rates: { country: string; effectiveFrom: string; tenthsOfCent: number; source: string }[];
+  rates: {
+    country: string;
+    effectiveFrom: string;
+    tenthsOfCent: number;
+    source: string;
+    staffEditedAt: string | null;
+  }[];
+  taxLines: AdminTaxLineDto[];
+  profiles: AdminImportProfileDto[];
   canChange: boolean;
 }) {
   const { run, busy, message, t } = useAction();
@@ -912,6 +931,7 @@ export function ReferencePanel({
             {m.displayName}{' '}
             <span className="text-xs text-muted">
               · {m.matchKey} · {m.categoryHint ?? '—'} · v{m.version}
+              {m.staffEditedAt && ` · ${t('admin.staff_edited')}`}
             </span>
           </li>
         ))}
@@ -962,11 +982,351 @@ export function ReferencePanel({
         {rates.map((r) => (
           <li key={`${r.country}-${r.effectiveFrom}`} className="px-4 py-2 text-sm">
             {r.country} · {r.effectiveFrom} · {r.tenthsOfCent / 10}¢{' '}
-            <span className="text-xs text-muted">· {r.source}</span>
+            <span className="text-xs text-muted">
+              · {r.source}
+              {r.staffEditedAt && ` · ${t('admin.staff_edited')}`}
+            </span>
           </li>
         ))}
       </ul>
       <StatusLine message={message} />
+      <TaxLinesEditor lines={taxLines} canChange={canChange} />
+      <ImportProfilesEditor profiles={profiles} canChange={canChange} />
+      <p className="text-xs text-muted">{t('admin.currencies_note')}</p>
     </section>
+  );
+}
+
+/** Tax lines: add or change, never delete (categories hold the code), and a line stays on its form. */
+function TaxLinesEditor({ lines, canChange }: { lines: AdminTaxLineDto[]; canChange: boolean }) {
+  const { run, busy, message, t } = useAction();
+  const blank = {
+    country: 'US',
+    code: '',
+    form: 'schedule_c',
+    line: '',
+    label: '',
+    sortOrder: '',
+    percent: '100',
+  };
+  const [f, setF] = useState(blank);
+  const [editing, setEditing] = useState(false);
+  const set = (k: keyof typeof blank) => (e: { target: { value: string } }) =>
+    setF((x) => ({ ...x, [k]: e.target.value }));
+  const bps = percentToBps(f.percent);
+  const ready = !!f.code && !!f.line && !!f.label && f.sortOrder !== '' && bps !== null;
+  return (
+    <>
+      <h2 className="text-base font-semibold">{t('admin.tax_lines')}</h2>
+      <p className="text-xs text-muted">{t('admin.tax_lines_hint')}</p>
+      {canChange && (
+        <form
+          className="card flex flex-wrap items-end gap-2"
+          aria-label={t('admin.tax_line_save')}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (bps === null) return;
+            void run(
+              () =>
+                browserApi.adminSaveTaxLine({
+                  country: f.country,
+                  code: f.code,
+                  form: f.form as (typeof TAX_LINE_FORMS)[number],
+                  line: f.line,
+                  label: f.label,
+                  sortOrder: Number(f.sortOrder),
+                  deductibleBps: bps,
+                }),
+              t('admin.saved'),
+            );
+          }}
+        >
+          <label>
+            <span className="field-label">{t('admin.tax_country')}</span>
+            <input
+              className="input w-16"
+              value={f.country}
+              maxLength={2}
+              readOnly={editing}
+              onChange={set('country')}
+            />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.tax_code')}</span>
+            <input className="input" value={f.code} readOnly={editing} onChange={set('code')} />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.tax_form')}</span>
+            <select className="input" value={f.form} disabled={editing} onChange={set('form')}>
+              {TAX_LINE_FORMS.map((form) => (
+                <option key={form} value={form}>
+                  {t(`admin.tax_form.${form}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="field-label">{t('admin.tax_line')}</span>
+            <input className="input w-20" value={f.line} onChange={set('line')} />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.tax_label')}</span>
+            <input className="input" value={f.label} onChange={set('label')} />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.tax_sort')}</span>
+            <input
+              className="input w-20"
+              type="number"
+              min={0}
+              value={f.sortOrder}
+              onChange={set('sortOrder')}
+            />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.tax_deductible')}</span>
+            <input className="input w-20" inputMode="decimal" value={f.percent} onChange={set('percent')} />
+          </label>
+          <button type="submit" className="btn-secondary" disabled={busy || !ready}>
+            {t('admin.tax_line_save')}
+          </button>
+          {editing && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setF(blank);
+                setEditing(false);
+              }}
+            >
+              {t('common.cancel')}
+            </button>
+          )}
+        </form>
+      )}
+      <ul className="card divide-y divide-line p-0">
+        {lines.map((l) => (
+          <li
+            key={`${l.country}-${l.code}`}
+            className="flex items-center justify-between gap-2 px-4 py-2 text-sm"
+            data-testid="admin-tax-line"
+          >
+            <span>
+              {l.label}{' '}
+              <span className="text-xs text-muted">
+                · {l.country} · {t(`admin.tax_form.${formKey(l.form)}`)} {t('admin.tax_line')} {l.line} ·{' '}
+                {l.code} · {bpsToPercent(l.deductibleBps)}% · v{l.version}
+                {l.staffEditedAt && ` · ${t('admin.staff_edited')}`}
+              </span>
+            </span>
+            {canChange && (
+              <button
+                type="button"
+                className="btn-ghost text-xs"
+                onClick={() => {
+                  setF({
+                    country: l.country,
+                    code: l.code,
+                    form: l.form,
+                    line: l.line,
+                    label: l.label,
+                    sortOrder: String(l.sortOrder),
+                    percent: bpsToPercent(l.deductibleBps),
+                  });
+                  setEditing(true);
+                }}
+              >
+                {t('common.edit')}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <StatusLine message={message} />
+    </>
+  );
+}
+
+const formKey = (form: string): (typeof TAX_LINE_FORMS)[number] =>
+  (TAX_LINE_FORMS as readonly string[]).includes(form)
+    ? (form as (typeof TAX_LINE_FORMS)[number])
+    : 'schedule_c';
+
+/** Bank statement layouts every workspace's importer can use (IMP-04, OPS-05). */
+function ImportProfilesEditor({
+  profiles,
+  canChange,
+}: {
+  profiles: AdminImportProfileDto[];
+  canChange: boolean;
+}) {
+  const { run, busy, message, setMessage, t } = useAction();
+  const blank = {
+    id: '',
+    name: '',
+    institution: '',
+    source: 'bank' as (typeof IMPORT_PROFILE_SOURCES)[number],
+    fingerprint: '',
+    fileType: 'csv' as 'csv' | 'xlsx',
+    sample: '',
+    mapping: MAPPING_EXAMPLE,
+  };
+  const [f, setF] = useState(blank);
+  const set = (k: keyof typeof blank) => (e: { target: { value: string } }) =>
+    setF((x) => ({ ...x, [k]: e.target.value }));
+  const ready = !!f.id && !!f.name && !!f.mapping && (!!f.fingerprint.trim() || !!f.sample.trim());
+  return (
+    <>
+      <h2 className="text-base font-semibold">{t('admin.import_profiles')}</h2>
+      <p className="text-xs text-muted">{t('admin.import_profiles_hint')}</p>
+      {canChange && (
+        <form
+          className="card grid gap-2 sm:grid-cols-2"
+          aria-label={t('admin.profile_save')}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const checked = readMappingJson(f.mapping);
+            if (!checked.ok) {
+              setMessage({
+                tone: 'bad',
+                text:
+                  checked.problem === 'json'
+                    ? t('admin.mapping_json')
+                    : t('admin.mapping_invalid', { problem: checked.problem }),
+              });
+              return;
+            }
+            void run(
+              () =>
+                browserApi.adminSaveImportProfile({
+                  id: f.id,
+                  name: f.name,
+                  ...(f.institution ? { institution: f.institution } : {}),
+                  source: f.source,
+                  ...(f.fingerprint.trim()
+                    ? { fingerprint: f.fingerprint.trim() }
+                    : { sample: { fileType: f.fileType, text: f.sample } }),
+                  mapping: checked.mapping,
+                }),
+              (r) => t('admin.profile_saved', { fingerprint: r.fingerprint }),
+            );
+          }}
+        >
+          <label>
+            <span className="field-label">{t('admin.profile_id')}</span>
+            <input className="input w-full" value={f.id} onChange={set('id')} />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.profile_name')}</span>
+            <input className="input w-full" value={f.name} onChange={set('name')} />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.profile_institution')}</span>
+            <input className="input w-full" value={f.institution} onChange={set('institution')} />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.profile_source')}</span>
+            <select className="input w-full" value={f.source} onChange={set('source')}>
+              {IMPORT_PROFILE_SOURCES.map((x) => (
+                <option key={x} value={x}>
+                  {t(`admin.profile_source.${x}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="sm:col-span-2">
+            <span className="field-label">{t('admin.profile_fingerprint')}</span>
+            <input className="input w-full font-mono" value={f.fingerprint} onChange={set('fingerprint')} />
+          </label>
+          <label className="sm:col-span-2">
+            <span className="field-label">{t('admin.profile_sample')}</span>
+            <textarea
+              className="input w-full font-mono"
+              rows={3}
+              value={f.sample}
+              disabled={!!f.fingerprint.trim()}
+              onChange={set('sample')}
+            />
+          </label>
+          <label>
+            <span className="field-label">{t('admin.profile_file_type')}</span>
+            <select
+              className="input w-full"
+              value={f.fileType}
+              disabled={!!f.fingerprint.trim()}
+              onChange={set('fileType')}
+            >
+              <option value="csv">CSV</option>
+              <option value="xlsx">Excel</option>
+            </select>
+          </label>
+          <label className="sm:col-span-2">
+            <span className="field-label">{t('admin.profile_mapping')}</span>
+            <textarea
+              className="input w-full font-mono"
+              rows={10}
+              value={f.mapping}
+              onChange={set('mapping')}
+            />
+          </label>
+          <div className="sm:col-span-2">
+            <button type="submit" className="btn-secondary" disabled={busy || !ready}>
+              {t('admin.profile_save')}
+            </button>
+          </div>
+        </form>
+      )}
+      <ul className="card divide-y divide-line p-0">
+        {profiles.map((p) => (
+          <li
+            key={p.id}
+            className="flex items-center justify-between gap-2 px-4 py-2 text-sm"
+            data-testid="admin-import-profile"
+          >
+            <span>
+              {p.name}{' '}
+              <span className="text-xs text-muted">
+                · {p.id} · {p.institution ?? '—'} · {t(`admin.profile_source.${p.source}`)} ·{' '}
+                <span className="font-mono">{p.fingerprint}</span> · v{p.version}
+                {p.staffEditedAt && ` · ${t('admin.staff_edited')}`}
+              </span>
+            </span>
+            {canChange && (
+              <span className="flex gap-1">
+                <button
+                  type="button"
+                  className="btn-ghost text-xs"
+                  onClick={() =>
+                    setF({
+                      ...blank,
+                      id: p.id,
+                      name: p.name,
+                      institution: p.institution ?? '',
+                      source: p.source,
+                      fingerprint: p.fingerprint,
+                      mapping: JSON.stringify(p.mapping, null, 2),
+                    })
+                  }
+                >
+                  {t('common.edit')}
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost text-xs text-bad"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm(t('admin.profile_delete_confirm', { name: p.name })))
+                      void run(() => browserApi.adminDeleteImportProfile(p.id), t('admin.profile_deleted'));
+                  }}
+                >
+                  {t('common.delete')}
+                </button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <StatusLine message={message} />
+    </>
   );
 }

@@ -15,6 +15,8 @@ const nextConfig = {
   async headers() {
     const options = {
       kratosUrl: process.env.NEXT_PUBLIC_KRATOS_URL,
+      // ADR-0056: Turnstile's script and frame are allowed only when a site key is built in.
+      turnstileSiteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
       dev: process.env.NODE_ENV !== 'production',
     };
     return [
