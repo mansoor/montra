@@ -4007,6 +4007,7 @@
   "receipts.search": "Search receipts",
   "receipts.search_go": "Search",
   "receipts.splits": "Splits",
+  "receipts.splits_unsaved": "Not saved yet: Save keeps these splits.",
   "receipts.stalled.documents_failed": "The document worker couldn’t read a receipt. Allow receipt images in Settings → AI, then upload it again.",
   "receipts.stalled.documents_waiting": "Still reading: these need the document worker, and nothing has picked them up. If you run Montra yourself, start the document worker. Or allow receipt images in Settings → AI, which reads receipts without it.",
   "receipts.stalled.jobs_failed": "Reading a receipt failed. Upload it again.",

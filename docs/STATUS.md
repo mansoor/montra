@@ -2348,9 +2348,13 @@ Phase 11 leftovers:
     account, which has one). In grouping, a line with no entity counts as the receipt's, which also fixes receipts
     saved before this on their next read. Applying to a transaction uses the same grouping.
   - The phone's Splits card follows each category pick before Save (`previewSplits`, the same `groupReceipt`
-    arithmetic as the API), then shows the server's splits once saved. The web still shows the saved splits only.
+    arithmetic as the API), then shows the server's splits once saved.
+  - The web review does the same once the form is edited (`previewSplits` in `apps/web/lib/receipts.ts`): category,
+    member, amount, tax, discount, fee and tip edits, and added or removed lines, show in the Splits card at once,
+    marked "Not saved yet". While a field doesn't parse, it keeps showing the saved splits.
   - Tests: API `receipts.test.ts` rebuilds the owner's $12.90 receipt (it fails without the fix, with the two splits);
-    mobile `receipts.test.ts`.
+    mobile `receipts.test.ts`; web `receipts.test.ts`. Checked on the local stack: the three picks went $7.26 + $5.64,
+    then $10.08 + $2.82, then one Groceries split of $12.90, and Save kept it.
 - **Back links return to the list as it was left** (owner, 2026-11-21; web only; no migration).
   - Before: "← Transactions" after opening a transaction from Needs review went to All. "← Receipts" from the Matched
     tab went to the Inbox. Lists keep their filters and tabs in the URL, and every back link pointed at the bare list.
