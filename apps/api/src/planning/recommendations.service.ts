@@ -9,6 +9,7 @@ import { sql } from 'kysely';
 import type { BudgetRow, RecommendationRow, Trx } from '@montra/db';
 import {
   addDays,
+  addMonths,
   calendarDate,
   draftBudget,
   formatMoney,
@@ -35,7 +36,10 @@ import {
   type RecommendationPayloadDto,
   type RecommendationType,
 } from '@montra/schemas';
+import { merchantWord, unusedSubscriptions, type SubscriptionItem } from '@montra/categorize';
+import { normalizeDescription } from '@montra/importers';
 import { z } from 'zod';
+import { MerchantDirectory } from '../categorization/merchants.js';
 import { forbidden, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { AiService } from '../ai/ai.service.js';
@@ -60,12 +64,18 @@ export interface PlanningSettings {
   /** REC-03: debts at or above this APR count as high-interest. */
   highInterestBps: number;
   receiptReminderMinor: string | null;
+  /** REC-06: months without other spending at a subscription's merchant before it may be unused; 0 = off. */
+  unusedSubscriptionMonths: number;
+  /** REC-06: how many similar subscriptions in one category may overlap; 0 = off. */
+  similarSubscriptionsMin: number;
 }
 
 export const DEFAULT_SETTINGS: PlanningSettings = {
   categoryPriorities: {},
   highInterestBps: 800,
   receiptReminderMinor: null,
+  unusedSubscriptionMonths: 3,
+  similarSubscriptionsMin: 2,
 };
 
 interface Draft {
@@ -98,6 +108,7 @@ export class RecommendationsService {
     @Inject(BusinessJobs) private readonly business: BusinessJobs,
     @Inject(RentalJobs) private readonly rentals: RentalJobs,
     @Inject(NotificationJobs) private readonly notifications: NotificationJobs,
+    @Inject(MerchantDirectory) private readonly merchants: MerchantDirectory,
   ) {}
 
   // ----- Jobs (TZ-04) ------------------------------------------------------------------------------------
@@ -577,6 +588,7 @@ export class RecommendationsService {
         money: ['previousPrice', 'newPrice'],
       });
     }
+    out.push(...(await this.unusedSubscriptions(trx, ctx, b, c, settings, base)));
 
     // REC-07: monthly review of the period that just ended (in the first days of the new one).
     const prev = c.results.length > 1 ? c.results[c.results.length - 2]! : null;
@@ -608,6 +620,162 @@ export class RecommendationsService {
             actions: [],
           },
           money: ['incomeToBudgetFrom', 'bufferTarget', 'stillNeededForBuffer'],
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * REC-06: subscriptions the person may not be using (no usage data from the services: a hint from their own
+   * spending, see @montra/categorize unusedSubscriptions). One per subscription, or per group of similar ones, each
+   * period until answered: once dismissed ("keep it") or accepted, the same subscription or group isn't suggested
+   * again. Ignored ones expire with the period and come back in the next.
+   */
+  private async unusedSubscriptions(
+    trx: Trx,
+    ctx: Ctx,
+    b: BudgetRow,
+    c: ComputedPeriod,
+    settings: PlanningSettings,
+    base: { currency: RecommendationPayloadDto['currency']; review: null },
+  ): Promise<Draft[]> {
+    const idleMonths = settings.unusedSubscriptionMonths;
+    const similarMin = settings.similarSubscriptionsMin;
+    if (idleMonths <= 0 && similarMin < 2) return [];
+    const rows = await trx
+      .selectFrom('app.recurring_item')
+      .select(['id', 'name', 'spec', 'cadence', 'start_date'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('primary_entity_id', '=', b.entity_id)
+      .where('status', '=', 'active')
+      .execute();
+    const dir = await this.merchants.load(trx);
+    const items: SubscriptionItem[] = rows.flatMap((r) => {
+      const spec = r.spec as {
+        type?: string;
+        amount?: string;
+        currency?: string;
+        payee?: string | null;
+        splits?: { accountId: string }[];
+      };
+      if (spec.type !== 'standard' || !spec.amount || !spec.currency || BigInt(spec.amount) >= 0n) return [];
+      const payeeKey = normalizeDescription(spec.payee || r.name);
+      return [
+        {
+          id: r.id,
+          name: r.name,
+          payeeKey,
+          categoryId: spec.splits?.length === 1 ? spec.splits[0]!.accountId : null,
+          mcc: dir.match(payeeKey)?.mcc ?? null,
+          amountMinor: BigInt(spec.amount),
+          currency: spec.currency,
+          cadence: r.cadence,
+          startDate: calendarDate(String(r.start_date)),
+        },
+      ];
+    });
+    if (!items.length) return [];
+
+    // Spending at the same merchants, from 12 months before the quiet window.
+    const words = [...new Set(items.map((i) => merchantWord(i.payeeKey)).filter(Boolean))];
+    const txns =
+      idleMonths > 0 && words.length
+        ? (
+            await sql<{ id: string; date: string; payee_key: string; amount: string; item: string | null }>`
+              select t.id, t.txn_date::text as date, t.payee_key, t.spec->>'amount' as amount,
+                     t.recurring_item_id as item
+                from app.transaction t
+               where t.workspace_id = ${ctx.workspaceId} and t.primary_entity_id = ${b.entity_id}
+                 and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
+                 and t.payee_key like any(${words.map((w) => `%${w}%`)}::text[])
+                 and (t.spec->>'amount')::bigint < 0
+                 and t.txn_date >= ${addMonths(c.today, -(idleMonths + 12))}`.execute(trx)
+          ).rows.map((r) => ({
+            id: r.id,
+            date: calendarDate(r.date),
+            payeeKey: r.payee_key,
+            amountMinor: BigInt(r.amount),
+            recurringItemId: r.item,
+          }))
+        : [];
+    const findings = unusedSubscriptions({
+      items,
+      txns,
+      today: c.today,
+      settings: { idleMonths, similarMin },
+    });
+    if (!findings.length) return [];
+
+    // Answered before (kept or acted on): not again. The key without its period names the subscription or group.
+    const answered = new Set(
+      (
+        await trx
+          .selectFrom('app.recommendation')
+          .select('dedupe_key')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('type', '=', 'REC-06')
+          .where('status', 'in', ['dismissed', 'accepted', 'edited'])
+          .where((eb) =>
+            eb.or([
+              eb('dedupe_key', 'like', 'REC-06:unused:%'),
+              eb('dedupe_key', 'like', 'REC-06:similar:%'),
+            ]),
+          )
+          .execute()
+      ).map((r) => r.dedupe_key.slice(0, r.dedupe_key.lastIndexOf(':'))),
+    );
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const start = c.period.start;
+    const sameCurrency = (i: SubscriptionItem) => i.currency === c.currency;
+    const out: Draft[] = [];
+    for (const f of findings) {
+      if (f.kind === 'idle') {
+        const key = `REC-06:unused:${f.itemId}`;
+        if (answered.has(key)) continue;
+        const i = byId.get(f.itemId)!;
+        const same = sameCurrency(i);
+        out.push({
+          type: 'REC-06',
+          dedupeKey: `${key}:${start}`,
+          periodStart: start,
+          title: `You may not be using ${i.name}: no other spending there since ${f.lastOtherSpending}`,
+          payload: {
+            ...base,
+            figures: {
+              lastOtherSpendingThere: f.lastOtherSpending,
+              monthsWithoutOtherSpending: `${idleMonths} months`,
+              ...(same ? { charge: String(-i.amountMinor), costPerYear: String(f.costPerYearMinor) } : {}),
+            },
+            subjects: [{ id: i.id, name: i.name, amount: same ? String(-i.amountMinor) : null }],
+            actions: [{ kind: 'review_subscription', recurringItemId: i.id }],
+          },
+          money: ['charge', 'costPerYear'],
+        });
+      } else {
+        const key = `REC-06:similar:${f.itemIds.join('+')}`;
+        if (answered.has(key)) continue;
+        const group = f.itemIds.map((id) => byId.get(id)!);
+        const same = group.every(sameCurrency);
+        out.push({
+          type: 'REC-06',
+          dedupeKey: `${key}:${start}`,
+          periodStart: start,
+          title: `You pay for ${group.length} similar subscriptions (${group.map((i) => i.name).join(', ')}); you may not need them all`,
+          payload: {
+            ...base,
+            figures: {
+              similarSubscriptions: String(group.length),
+              ...(same ? { combinedCostPerYear: String(f.costPerYearMinor) } : {}),
+            },
+            subjects: group.map((i) => ({
+              id: i.id,
+              name: i.name,
+              amount: same ? String(-i.amountMinor) : null,
+            })),
+            actions: group.map((i) => ({ kind: 'review_subscription' as const, recurringItemId: i.id })),
+          },
+          money: ['combinedCostPerYear'],
         });
       }
     }
