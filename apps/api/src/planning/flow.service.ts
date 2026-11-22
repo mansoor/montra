@@ -44,6 +44,7 @@ import type {
   ForecastDto,
   NetWorthDto,
   SankeyDto,
+  SankeyTransferKind,
 } from '@montra/schemas';
 import { notFound } from '../common/errors.js';
 import { Db } from '../db/database.js';
@@ -60,6 +61,15 @@ import { BudgetsService, isBudgetCategory, specOf } from './budgets.service.js';
 import { occurrenceTotal, PlanningData, previousMonths, type Ctx } from './data.js';
 
 type Money = CalendarItemDto['currency'];
+
+/** FLOW-06: the name of a transfer node, seen from the book in the view. `other` is null when it isn't visible. */
+function transferLabel(kind: SankeyTransferKind, out: boolean, other: string | null): string {
+  const book = other ?? 'another book';
+  if (kind === 'owner_draw') return out ? `Owner draw to ${book}` : `Owner draw from ${book}`;
+  if (kind === 'owner_contribution')
+    return out ? `Owner contribution to ${book}` : `Owner contribution from ${book}`;
+  return out ? `Transfer to ${book}` : `Transfer from ${book}`;
+}
 
 interface CashAccount {
   id: string;
@@ -1043,6 +1053,8 @@ export class FlowService {
         for (let m = from; m <= to; m = addMonths(m, 1)) periods.push({ start: m, end: endOfMonth(m) });
       } else periods.push({ start: from, end: to });
 
+      const transfers = await this.interEntityFlows(trx, ctx, from, to);
+      const inView = new Set(entities.map((e) => e.id));
       const nodes = new Map<string, SankeyDto['nodes'][number]>();
       const links: SankeyDto['links'] = [];
       const node = (
@@ -1054,12 +1066,13 @@ export class FlowService {
         if (!nodes.has(id)) nodes.set(id, { id, kind, label, value: '0', drill });
         return nodes.get(id)!;
       };
-      const link = (source: string, target: string, value: bigint) => {
+      const link = (source: string, target: string, value: bigint, kind?: SankeyTransferKind) => {
         if (value <= 0n) return;
-        links.push({ source, target, value: s(value) });
+        links.push({ source, target, value: s(value), ...(kind ? { kind } : {}) });
         const t = nodes.get(target)!;
         t.value = s(BigInt(t.value) + value);
-        if (nodes.get(source)!.kind === 'income' || nodes.get(source)!.kind === 'deficit') {
+        const sourceKind = nodes.get(source)!.kind;
+        if (sourceKind === 'income' || sourceKind === 'deficit' || sourceKind === 'transfer') {
           const sn = nodes.get(source)!;
           sn.value = s(BigInt(sn.value) + value);
         }
@@ -1130,7 +1143,30 @@ export class FlowService {
           link(entityNode, `${kind}:${r.id}`, v);
           moved += v;
         }
-        const left = income - spent - moved;
+        // FLOW-06: money to or from another book (owner draws and contributions) is a transfer, never income or
+        // spending. With both books in the view it links their nodes (below); otherwise it ends at a node named
+        // after the other book.
+        let sentOut = 0n;
+        let cameIn = 0n;
+        for (const f of transfers.flows) {
+          if (f.src !== e.id && f.dst !== e.id) continue;
+          const out = f.src === e.id;
+          const other = out ? f.dst : f.src;
+          if (out) sentOut += f.value;
+          else cameIn += f.value;
+          if (inView.has(other)) continue;
+          const id = `transfer:${f.src}:${f.dst}`;
+          const accountIds = transfers.accounts(e.id, other);
+          node(
+            id,
+            'transfer',
+            transferLabel(f.kind, out, transfers.names.get(other) ?? null),
+            accountIds.length ? { entityId: e.id, accountIds, from, to } : null,
+          );
+          if (out) link(entityNode, id, f.value, f.kind);
+          else link(id, entityNode, f.value, f.kind);
+        }
+        const left = income + cameIn - spent - moved - sentOut;
         if (left > 0n) {
           node(`unspent:${e.id}`, 'unspent', 'Not spent', null);
           link(entityNode, `unspent:${e.id}`, left);
@@ -1138,6 +1174,10 @@ export class FlowService {
           node(`deficit:${e.id}`, 'deficit', 'From savings or credit', null);
           link(`deficit:${e.id}`, entityNode, -left);
         }
+      }
+      for (const f of transfers.flows) {
+        if (inView.has(f.src) && inView.has(f.dst))
+          link(`entity:${f.src}`, `entity:${f.dst}`, f.value, f.kind);
       }
       // Entity nodes show what flowed through them.
       for (const n of nodes.values()) {
@@ -1153,6 +1193,86 @@ export class FlowService {
         links,
       };
     });
+  }
+
+  /**
+   * FLOW-06: net money between each pair of books in the window, from the inter-entity accounts (DE-05). In equity
+   * mode only the personal book has a per-book account (its clearing account), and its debit balance grows when
+   * personal money goes to the business: an owner contribution; the other way is an owner draw. In due-to/due-from
+   * mode both books carry accounts and agree, so each pair is read once. Draws and contributions in one window net
+   * to one link, so the flow stays one-way.
+   */
+  private async interEntityFlows(trx: Trx, ctx: Ctx, from: CalendarDate, to: CalendarDate) {
+    const { rows } = await sql<{ entity_id: string; cp: string; equity: boolean; v: string }>`
+      select a.entity_id, a.counterparty_entity_id as cp,
+             bool_or(a.system_role = 'inter_entity_clearing') as equity,
+             sum(p.functional_amount_minor)::text as v
+        from app.ledger_account a
+        join app.posting p on p.workspace_id = a.workspace_id and p.ledger_account_id = a.id
+        join app.journal_entry je on je.workspace_id = p.workspace_id and je.id = p.journal_entry_id
+       where a.workspace_id = ${ctx.workspaceId}
+         and a.counterparty_entity_id is not null
+         and a.system_role in ('inter_entity_clearing', 'due_to_entity', 'due_from_entity')
+         and p.entry_date between ${from} and ${to}
+         and je.kind not in ('opening_balance', 'closing', 'fx_revaluation', 'valuation', 'depreciation')
+       group by 1, 2
+       order by 1, 2`.execute(trx);
+    const flows: { src: string; dst: string; value: bigint; kind: SankeyTransferKind }[] = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const pair = [r.entity_id, r.cp].sort().join('|');
+      if (seen.has(pair)) continue;
+      seen.add(pair);
+      const v = BigInt(r.v);
+      if (v === 0n) continue;
+      const out = v > 0n;
+      flows.push({
+        src: out ? r.entity_id : r.cp,
+        dst: out ? r.cp : r.entity_id,
+        value: out ? v : -v,
+        // In equity mode the clearing account's holder is the personal book.
+        kind: r.equity ? (out ? 'owner_contribution' : 'owner_draw') : 'transfer',
+      });
+    }
+    const accounts = flows.length
+      ? await trx
+          .selectFrom('app.ledger_account')
+          .select(['id', 'entity_id', 'system_role', 'counterparty_entity_id'])
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('system_role', 'in', [
+            'inter_entity_clearing',
+            'due_to_entity',
+            'due_from_entity',
+            'owner_draw',
+            'owner_contribution',
+          ])
+          .orderBy('id')
+          .execute()
+      : [];
+    const names = new Map(
+      flows.length
+        ? (
+            await trx
+              .selectFrom('app.entity')
+              .select(['id', 'name'])
+              .where('workspace_id', '=', ctx.workspaceId)
+              .execute()
+          ).map((e) => [e.id, e.name])
+        : [],
+    );
+    return {
+      flows,
+      names,
+      /** The accounts in `entityId` that hold its money with `other`: the drill behind a transfer node. */
+      accounts: (entityId: string, other: string) => {
+        const mine = accounts.filter((a) => a.entity_id === entityId);
+        const paired = mine.filter((a) => a.counterparty_entity_id === other).map((a) => a.id);
+        if (paired.length) return paired;
+        return mine
+          .filter((a) => a.system_role === 'owner_draw' || a.system_role === 'owner_contribution')
+          .map((a) => a.id);
+      },
+    };
   }
 
   // ----- Dashboard (FLOW-01, FAM-09) --------------------------------------------------------------------

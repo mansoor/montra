@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import type { SankeyDto } from '@montra/api-client';
-import { drillHref } from '@/lib/planning';
+import { drillHref, sankeyColumns } from '@/lib/planning';
 import { useI18n } from '../i18n';
 
 type Node = SankeyDto['nodes'][number];
@@ -10,11 +10,8 @@ type Node = SankeyDto['nodes'][number];
 const W = 960;
 const NODE_W = 12;
 const GAP = 10;
-const COLS = 4;
-
-/** Column of a node: income → entity → groups (and savings, debt, unspent) → categories. */
-const column = (n: Node) =>
-  n.kind === 'income' || n.kind === 'deficit' ? 0 : n.kind === 'entity' ? 1 : n.kind === 'category' ? 3 : 2;
+/** FLOW-06: money between books (owner draws and contributions) has its own colour: it is neither income nor spending. */
+const TRANSFER = 'var(--chart-6)';
 
 const colour = (n: Node, i: number) =>
   n.kind === 'income'
@@ -23,22 +20,27 @@ const colour = (n: Node, i: number) =>
       ? 'var(--bad)'
       : n.kind === 'entity'
         ? 'var(--accent)'
-        : n.kind === 'savings' || n.kind === 'unspent'
-          ? 'var(--chart-3)'
-          : n.kind === 'debt'
-            ? 'var(--chart-5)'
-            : `var(--chart-${(i % 8) + 1})`;
+        : n.kind === 'transfer'
+          ? TRANSFER
+          : n.kind === 'savings' || n.kind === 'unspent'
+            ? 'var(--chart-3)'
+            : n.kind === 'debt'
+              ? 'var(--chart-5)'
+              : `var(--chart-${(i % 8) + 1})`;
 
 /**
- * Money flow (FLOW-02): a dependency-free Sankey. Node height is proportional to the money through it; links
- * are bands between nodes. Clicking a node opens the transactions behind it.
+ * Money flow (FLOW-02, FLOW-06): a dependency-free Sankey. Node height is proportional to the money through it;
+ * links are bands between nodes. Money between books is a band between their nodes (or to a transfer node in a
+ * one-book view), in its own colour and named in its tooltip. Clicking a node opens the transactions behind it.
  */
 export function Sankey({ data, base }: { data: SankeyDto; base: string }) {
   const { money, t } = useI18n();
   const router = useRouter();
   const value = (n: Node) => Number(BigInt(n.value));
+  const layout = sankeyColumns(data.nodes, data.links);
+  const COLS = layout.count;
   const cols: Node[][] = Array.from({ length: COLS }, () => []);
-  for (const n of data.nodes) if (value(n) > 0) cols[column(n)]!.push(n);
+  for (const n of data.nodes) if (value(n) > 0) cols[layout.column.get(n.id)!]!.push(n);
   for (const c of cols) c.sort((a, b) => value(b) - value(a));
   const totals = cols.map((c) => c.reduce((s, n) => s + value(n), 0));
   const maxTotal = Math.max(1, ...totals);
@@ -82,11 +84,15 @@ export function Sankey({ data, base }: { data: SankeyDto; base: string }) {
             key={i}
             d={`M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1}`}
             fill="none"
-            stroke={colour(src, nodeIndex.get(l.source)!)}
-            strokeOpacity="0.25"
+            stroke={l.kind ? TRANSFER : colour(src, nodeIndex.get(l.source)!)}
+            strokeOpacity={l.kind ? '0.45' : '0.25'}
             strokeWidth={w}
           >
-            <title>{money(BigInt(l.value), data.currency)}</title>
+            <title>
+              {l.kind
+                ? `${t(`flow.link_${l.kind}`)} · ${money(BigInt(l.value), data.currency)}`
+                : money(BigInt(l.value), data.currency)}
+            </title>
           </path>
         );
       })}
