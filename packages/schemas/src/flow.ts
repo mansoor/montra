@@ -75,6 +75,8 @@ export const NetWorthPointDto = z.object({
   assets: MinorDto,
   liabilities: MinorDto,
   netWorth: MinorDto,
+  /** CUR-06: the part of `netWorth` that is unrealized FX gain (+) or loss (−) on that date. See `NetWorthDto`. */
+  unrealizedFx: MinorDto,
 });
 
 /** FLOW-07: assets minus liabilities, in the workspace base currency. */
@@ -84,6 +86,12 @@ export const NetWorthDto = z.object({
   assets: MinorDto,
   liabilities: MinorDto,
   netWorth: MinorDto,
+  /**
+   * CUR-06, ADR-0010 §6: unrealized FX gain (+) or loss (−) included in `netWorth`. For each account in a currency
+   * other than its books', the balance at the date's rate less its carrying value (what it was booked at). Not
+   * posted to the ledger. Zero when every account is in its books' currency.
+   */
+  unrealizedFx: MinorDto,
   accounts: z.array(
     z.object({
       accountId: Id,
@@ -95,6 +103,8 @@ export const NetWorthDto = z.object({
       accountCurrency: CurrencyCodeDto,
       /** Converted to the base currency at the date's rate. */
       value: MinorDto,
+      /** CUR-06: unrealized FX in `value`, base currency. Null for an account in its books' own currency. */
+      unrealizedFx: MinorDto.nullable(),
     }),
   ),
   /** FLOW-07: your share of each property's value, in the base currency. In `assets`, from its purchase date. */

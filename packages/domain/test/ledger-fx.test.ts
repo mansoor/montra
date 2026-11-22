@@ -8,6 +8,7 @@ import {
   parseDecimal,
   transferFxCost,
   unrealizedFx,
+  unrealizedFxIn,
   valueAtCarrying,
   type AccountResolver,
   type AccountType,
@@ -186,6 +187,32 @@ describe('revaluation (ADR-0010 §6, CUR-06)', () => {
     expect(
       buildRevaluationEntry(checking, { foreign: 1n, functional: 1n }, parseDecimal('2'), D, resolver),
     ).toBeNull();
+  });
+});
+
+describe('unrealized FX in a report currency (CUR-06)', () => {
+  it("is the revalued balance less its carrying value, in the books' currency", () => {
+    // €1,000.00 carried at $1,050.00 is worth $1,100.00 at 1.10, and $1,000.00 at 1.00.
+    expect(unrealizedFxIn(held, 'EUR', 'USD', parseDecimal('1.10'), 'USD', null)).toBe(5_000n);
+    expect(unrealizedFxIn(held, 'EUR', 'USD', parseDecimal('1.00'), 'USD', null)).toBe(-5_000n);
+  });
+
+  it('is a loss on a foreign debt when that currency gets stronger', () => {
+    // A €200.00 card balance (a credit) carried at $210.00 is $220.00 owed at 1.10.
+    const owed: CarryingBalance = { foreign: -20_000n, functional: -21_000n };
+    expect(unrealizedFxIn(owed, 'EUR', 'USD', parseDecimal('1.10'), 'USD', null)).toBe(-1_000n);
+  });
+
+  it('translates the gain when the report is in another currency', () => {
+    // Books in CAD: €1,000.00 carried at C$1,500.00 is worth C$1,550.00 at 1.55; C$50.00 is $35.00 at 0.70.
+    const cad: CarryingBalance = { foreign: 100_000n, functional: 150_000n };
+    expect(unrealizedFxIn(cad, 'EUR', 'CAD', parseDecimal('1.55'), 'USD', parseDecimal('0.70'))).toBe(3_500n);
+  });
+
+  it("is zero in the books' own currency, and null without a rate", () => {
+    expect(unrealizedFxIn({ foreign: 500n, functional: 500n }, 'USD', 'USD', null, 'EUR', null)).toBe(0n);
+    expect(unrealizedFxIn(held, 'EUR', 'USD', null, 'USD', null)).toBeNull();
+    expect(unrealizedFxIn(held, 'EUR', 'CAD', parseDecimal('1.55'), 'USD', null)).toBeNull();
   });
 });
 
