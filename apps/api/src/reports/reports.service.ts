@@ -541,6 +541,8 @@ export class ReportsService {
       ),
     );
     const n = await this.flow.netWorth(ctx, { date: to, entityId: f.entityId ?? null, months });
+    // CUR-06: with a foreign-currency account, show how much of each net worth is unrealized FX (not posted).
+    const fx = n.accounts.some((a) => a.unrealizedFx !== null);
     return {
       currency: n.currency,
       columns: columns(
@@ -548,13 +550,20 @@ export class ReportsService {
         ['assets', 'money'],
         ['liabilities', 'money'],
         ['net_worth', 'money'],
+        ...(fx ? [['unrealized_fx', 'money'] as [string, 'money']] : []),
       ),
       rows: n.trend.map((p) =>
-        row(p.date, { date: p.date, assets: p.assets, liabilities: p.liabilities, net_worth: p.netWorth }),
+        row(p.date, {
+          date: p.date,
+          assets: p.assets,
+          liabilities: p.liabilities,
+          net_worth: p.netWorth,
+          ...(fx ? { unrealized_fx: p.unrealizedFx } : {}),
+        }),
       ),
       totals: null,
       chart: { kind: 'line', x: 'date', y: ['net_worth'] },
-      notes: [],
+      notes: fx ? ['unrealized_fx'] : [],
     };
   }
 
