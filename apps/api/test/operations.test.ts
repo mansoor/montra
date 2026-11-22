@@ -413,6 +413,45 @@ describe('the staff console (OPS-01, ADR-0020)', () => {
     ).toBe(400);
   });
 
+  it('shows the staff log to admins and owners, with who did it', async () => {
+    expect((await owner.get('/v1/admin/log')).status).toBe(404);
+    expect((await staff.get('/v1/admin/log')).status).toBe(403);
+    const page = (await adminStaff.get(`/v1/admin/log?subject=${ws}`)).body;
+    expect(page.data[0]).toMatchObject({
+      action: 'plan.give',
+      subject: ws,
+      staffEmail: 'admin-staff@example.com',
+      detail: { plan: 'pro', reason: 'Beta tester' },
+    });
+    expect(page.staff.map((s: any) => s.email)).toContain('admin-staff@example.com');
+    expect((await adminStaff.get(`/v1/admin/log?subject=${ws}&action=flag.save`)).body.data).toEqual([]);
+    expect((await adminStaff.get(`/v1/admin/log?subject=${ws}&from=2099-01-01`)).body.data).toEqual([]);
+    expect((await adminStaff.get(`/v1/admin/log?subject=${ws}&to=${today}`)).body.data).toHaveLength(1);
+  });
+
+  it('pages the staff log by time and id, even when times tie', async () => {
+    const subject = `paging-${Date.now()}`;
+    const staffId = await userId('admin-staff@example.com');
+    await admin.query(
+      `insert into app.admin_log (staff_id, action, subject, at)
+       select $1, 'flag.save', $2, now() from generate_series(1, 5)`,
+      [staffId, subject],
+    );
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const res: any = await adminStaff.get(
+        `/v1/admin/log?subject=${subject}&limit=2${cursor ? `&cursor=${cursor}` : ''}`,
+      );
+      expect(res.status).toBe(200);
+      seen.push(...res.body.data.map((r: any) => r.id));
+      cursor = res.body.nextCursor;
+    } while (cursor);
+    expect(seen).toHaveLength(5);
+    expect(new Set(seen).size).toBe(5);
+    expect((await adminStaff.get('/v1/admin/log?cursor=nonsense')).status).toBe(400);
+  });
+
   it('won’t override a plan someone is paying for', async () => {
     const paying = await newWorkspace(owner);
     await admin.query(
