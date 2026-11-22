@@ -253,7 +253,7 @@ finished:
   - NFR-07: performance; the dashboard target is in Phase 6.
   - NFR-12: load testing.
   - ~~AUTH-05: email templates.~~ Done: one layout for the API and Kratos (see §7g).
-  - AUTH-08: CAPTCHA at the edge.
+  - ~~AUTH-08: CAPTCHA at the edge.~~ Done in the auth gateway, off by default (ADR-0056, see §7g).
   - OPS-05: the reference-data admin editor.
   - OPS-06: dependency updates beyond Renovate.
   - OPS-07: alerting.
@@ -2367,6 +2367,28 @@ Phase 11 leftovers:
     (`listHref`).
   - The phone already kept its filters: its detail screens go back on the navigation stack.
   - Tests: web `back-links.test.ts`. Checked on the local stack: Needs review and Matched both come back after "←".
+- **A CAPTCHA after repeated sign-in failures** (AUTH-08, [ADR-0056](design/adr/0056-turnstile-captcha.md); owner
+  chose Cloudflare Turnstile, off by default, on 2026-11-21; no migration).
+  - Before: the auth gateway (ADR-0042) delayed wrong passwords after 5 and paused after 10, but never asked for a
+    CAPTCHA. AUTH-08 was partial for that alone.
+  - Now, with `TURNSTILE_SECRET_KEY` on the gateway, a browser password sign-in whose email or address has reached
+    `CAPTCHA_AFTER_FAILURES` failures (default 5, ADR-0042's counters), or a browser sign-up from an address past
+    `CAPTCHA_AFTER_SIGNUPS` (default 5 an hour), must carry `cf-turnstile-response`. The gateway checks it with
+    siteverify (5 s timeout) and strips it before Kratos. Missing, refused or unreachable: nothing is forwarded or
+    counted, and the browser goes back with `notice=captcha_required`. The failure that reaches the threshold already
+    comes back with that notice. The pause after 10 still comes first.
+  - Web: with the notice and a build-time `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, sign-in and sign-up render the widget in
+    the form before the submit button, loading Turnstile's script only then. Without a site key the page says the check
+    can't be shown here. The CSP allows `https://challenges.cloudflare.com` (script, frame) only with a site key.
+  - Unset (the default, and for LAN and self-hosted installs), nothing changes. **The phone's JSON flows are never
+    asked**, so a script using Kratos's API flows meets only the delay and pause; documented in the ADR.
+  - **Not wired into deployment:** Terraform, the self-host Compose file and `deploy.yml` don't pass the settings
+    yet; `apps/web/Dockerfile` takes the site key as a build argument. How to get keys and turn it on, and Cloudflare's
+    always-pass and always-fail test keys for development: [first-time setup §9](runbooks/first-time-setup.md).
+  - Not tried against real Turnstile: tests replace siteverify, and no browser run with the widget was made.
+  - Tests: API `auth-gateway.test.ts` (off by default, below and at the threshold, missing, refused and good tokens,
+    per address, sign-ups, JSON never asked, siteverify unreachable or timing out, the secret in no log, response or
+    Kratos body, settings), web `csp.test.ts`, `gateway-notice.test.ts`, `kratos-ui.test.tsx` and `i18n-keys.test.ts`.
 ---
 
 ## 8. Session checklist

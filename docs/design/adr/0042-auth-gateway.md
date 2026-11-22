@@ -63,6 +63,7 @@ stores it, so it can enforce a strength score and the minimum length the admin c
 - **Someone can pause another person's password sign-in** by typing their email wrongly ten times. The pause lasts
   15 minutes, passkeys and a password reset still work, and the owner is emailed. That trade is the usual one for an
   account-level limit; a CAPTCHA instead of a pause would need a provider, and can be added in front later.
+  _Added 2026-11-21:_ ADR-0056 adds a Turnstile CAPTCHA for browsers before the pause, off by default; the pause stays.
 - Production has one more service (`auth-gateway`, Terraform `modules/compute`) and one more secret
   (`AUTH_GATEWAY_SECRET`). The load balancer's auth hostname points at the gateway; Kratos no longer has a target
   group.

@@ -209,8 +209,8 @@
     "device list, remote sign-out; web idle sign-out per workspace (5-30 min, warning first) and a 30-minute server limit on browser sessions (ADR-0044)"
   ],
   "AUTH-08": [
-    "partial",
-    "Auth gateway in front of Kratos (ADR-0042): per-account, per-address, per-session and per-flow counts, delays after 5 failures, a 15-minute pause after 10, owner alert email and security event; new-device alerts. No CAPTCHA yet; the Cloudflare challenge is in Terraform, never applied; texted codes limited per number and per address (ADR-0049 §6)"
+    "done",
+    "Auth gateway in front of Kratos (ADR-0042): per-account, per-address, per-session and per-flow counts, delays after 5 failures, a 15-minute pause after 10, owner alert email and security event; new-device alerts; texted codes limited per number and per address (ADR-0049 §6). CAPTCHA after repeated failures (ADR-0056): Cloudflare Turnstile for browser sign-in and sign-up, off unless TURNSTILE_SECRET_KEY is set; the phone's JSON flows are never asked and keep the delay and pause only; not yet wired into Terraform or the self-host Compose file. The Cloudflare challenge is in Terraform, never applied"
   ],
   "AUTH-09": [
     "done",
