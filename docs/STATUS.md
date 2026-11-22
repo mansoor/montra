@@ -271,8 +271,11 @@ finished:
 4. ~~**S3 storage** is only stub-tested.~~ Done: CI runs it against a real MinIO (see §7g).
 5. ~~**Undoing an import** doesn't take back payee history.~~ Done: an undo forgets what the import's transactions
    taught (see §7g).
-6. **Mobile has no React Native Testing Library screen tests.** Pure modules have unit tests; screens rely
-   on the export builds and on the Maestro flows, which haven't been run.
+6. ~~**Mobile has no React Native Testing Library screen tests.**~~ Partly done: Jest with `jest-expo` and React
+   Native Testing Library render screens in `apps/mobile/screens-test` (`pnpm --filter @montra/mobile test:screens`;
+   `test` and CI run them too). Six screens have tests so far: settings, books, profile, receipt review, sign-in and
+   transactions (see §7g). The other screens still rely on the export builds and the Maestro flows, which haven't
+   been run.
 7. ~~**Mobile Home**~~ now shows left to spend and left to assign, like the web.
 8. **Camera library:** the camera spike uses `expo-camera`. Moving to `react-native-vision-camera`
    (frame processors, ML Kit / VisionKit edge detection) is the Phase 5 option, decided by the spike. ADR-0009
@@ -2474,6 +2477,33 @@ Phase 11 leftovers:
     phone.
   - Locally: `pnpm --filter @montra/web exec playwright install firefox`, then `E2E_PROJECTS=firefox pnpm --filter
     @montra/web test:e2e`.
+- **Screen tests on the phone** (backlog item 6; test tooling only, no app change).
+  - Before: Vitest tested the phone's pure modules (`apps/mobile/test`). Nothing rendered a screen; screens were
+    checked only by the `expo export` builds, and the Maestro flows have never run.
+  - Now Jest with the `jest-expo` preset (`~58.0.15`, Expo SDK 58's) and React Native Testing Library (14.1, on
+    `test-renderer` 1.3, as `jest-expo` uses) render screens. They live in `apps/mobile/screens-test/*.test.tsx`, and
+    `jest.config.js` looks nowhere else. Vitest still takes only `test/**/*.test.ts`. The mobile `test` script runs
+    Vitest, then Jest, so `pnpm verify` (turbo `test`) and both CI workflows run them. Run them alone with
+    `pnpm --filter @montra/mobile test:screens`.
+  - The real `SessionProvider`, screens and UI run. Mocked (`screens-test/setup.tsx`, `harness/`):
+    - the API client at its module boundary: `createApi` returns `jest.fn`s, and one a test hasn't answered never
+      settles;
+    - the sync layer: @montra/sync's `MemoryStore` stands in for SQLite;
+    - expo-router's hooks, SecureStore (in memory), the build-time config (dev sign-in), safe-area insets and Lucide's
+      icons (decorative; loading its 1,600 modules took longer than the tests);
+    - the transaction row's swipe actions and the receipt zoom viewer. Gesture Handler and Reanimated's worklets need
+      the phone's UI thread.
+  - jest-expo's own mocks cover the other Expo native modules.
+  - Tests (13):
+    - `settings.test.tsx`: an owner sees the receipt reminders and a viewer doesn't. An owner can rename and add books;
+      a viewer sees them read-only.
+    - `profile.test.tsx`: Save stays off until something changes. A time zone that doesn't exist shows the error and
+      sends nothing. A save sends only what changed, then shows the toast.
+    - `receipt.test.tsx`: the Splits card follows each category pick before Save, and same-category lines make one
+      split (owner, 2026-11-21, PR #180). The two fail with the preview taken out.
+    - `sign-in.test.tsx`: the API's error shows on the form.
+    - `transactions.test.tsx`: rows from the offline store, newest first, open their transaction. An empty store shows
+      the empty state.
 ---
 
 ## 8. Session checklist

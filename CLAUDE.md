@@ -43,6 +43,7 @@ pnpm --filter @montra/api dev | dev:worker         # API on :4000 | job worker (
 pnpm --filter @montra/api fx:load [-- --full]      # load ECB (+ OXR) rates now; --full backfills ECB since 1999
 pnpm --filter @montra/web dev                      # web on :3000 (dev sign-in: any email)
 pnpm --filter @montra/mobile start                 # Expo dev server
+pnpm --filter @montra/mobile test:screens          # phone screen tests (Jest + React Native Testing Library)
 ```
 
 - API tests create their own database (`montra_test_api`) in a global setup, so they need Postgres running.
