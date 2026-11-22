@@ -6,6 +6,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import { maintenanceNoticeOk } from '@montra/domain';
+import { AdminLogQuery, type AdminLogPageDto } from '@montra/schemas';
+import { z } from 'zod';
 import type {
   AiCeilingDto,
   AdminAccountDto,
@@ -25,13 +27,26 @@ import type {
   SupportViewDto,
   SystemNoticeDto,
 } from '@montra/schemas';
-import { notFound, unprocessable } from '../common/errors.js';
+import { AppError, badRequest, notFound, unprocessable } from '../common/errors.js';
 import { AdminDb, SupportDb } from './staff.js';
 import { MIN_PHONE_APP_VERSION } from './metrics.js';
 import { POLICY_KEYS, readPasswordPolicy } from '../auth-gateway/policy.js';
 import { AI_CEILING_SETTING, readAiCeiling } from '../ai/ai.service.js';
 
 const iso = (d: Date | null | undefined) => d?.toISOString() ?? null;
+
+const encodeLogCursor = (at: string, id: string) => Buffer.from(`${at}|${id}`).toString('base64url');
+/** Postgres's text for a timestamptz, as `at::text` gives it: microseconds kept, so no row is skipped or repeated. */
+const LogCursor = z.object({
+  at: z.string().regex(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/),
+  id: z.uuid(),
+});
+function decodeLogCursor(cursor: string): { at: string; id: string } {
+  const [at, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  const parsed = LogCursor.safeParse({ at, id });
+  if (!parsed.success) throw badRequest('admin_log.cursor', 'That page of the staff log is not valid');
+  return parsed.data;
+}
 
 @Injectable()
 export class AdminService {
@@ -326,6 +341,64 @@ export class AdminService {
           .execute();
       }
       await this.log(trx, staffId, 'ai_ceiling.save', null, { ceilingUsd: req.ceilingUsd });
+    });
+  }
+
+  // ----- Staff log (OPS-01) -------------------------------------------------------------------------
+
+  /**
+   * What staff did, newest first. The cursor is the last row's time, at the database's precision, and id. Admins and
+   * owners only: the database checks the role again before saying who each person is.
+   */
+  async staffLog(staffId: string, q: z.output<typeof AdminLogQuery>): Promise<AdminLogPageDto> {
+    const after = q.cursor ? decodeLogCursor(q.cursor) : null;
+    return this.db.run(async (trx) => {
+      const { rows: staff } = await sql<{ user_id: string; email: string; display_name: string }>`
+        select * from app.admin_log_staff(${staffId}::uuid)`
+        .execute(trx)
+        .catch((e: { code?: string }) => {
+          if (e.code === '42501') throw new AppError(403, 'forbidden', 'This needs the admin role');
+          throw e;
+        });
+      let query = trx
+        .selectFrom('app.admin_log as l')
+        .select([
+          'l.id',
+          'l.at',
+          sql<string>`l.at::text`.as('at_text'),
+          'l.staff_id',
+          'l.action',
+          'l.subject',
+          'l.detail',
+        ])
+        .orderBy('l.at', 'desc')
+        .orderBy('l.id', 'desc')
+        .limit(q.limit + 1);
+      if (after)
+        query = query.where(sql<boolean>`(l.at, l.id) < (${after.at}::timestamptz, ${after.id}::uuid)`);
+      if (q.action) query = query.where('l.action', '=', q.action);
+      if (q.staffId) query = query.where('l.staff_id', '=', q.staffId);
+      if (q.subject) query = query.where('l.subject', '=', q.subject);
+      if (q.from) query = query.where(sql<boolean>`l.at >= (${q.from}::date)::timestamp at time zone 'UTC'`);
+      if (q.to) query = query.where(sql<boolean>`l.at < (${q.to}::date + 1)::timestamp at time zone 'UTC'`);
+      const rows = await query.execute();
+      const page = rows.slice(0, q.limit);
+      const who = new Map(staff.map((p) => [p.user_id, p]));
+      const last = page[page.length - 1];
+      return {
+        data: page.map((r) => ({
+          id: r.id,
+          at: r.at.toISOString(),
+          staffId: r.staff_id,
+          staffEmail: who.get(r.staff_id)?.email ?? null,
+          staffName: who.get(r.staff_id)?.display_name || null,
+          action: r.action,
+          subject: r.subject,
+          detail: (r.detail ?? {}) as Record<string, unknown>,
+        })),
+        nextCursor: rows.length > q.limit && last ? encodeLogCursor(last.at_text, last.id) : null,
+        staff: staff.map((p) => ({ userId: p.user_id, email: p.email, displayName: p.display_name })),
+      };
     });
   }
 

@@ -19,6 +19,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   AddPlanPriceRequest,
+  AdminLogQuery,
   AddPlanVersionRequest,
   AdminSetPlanRequest,
   CloseAccountRequest,
@@ -475,6 +476,15 @@ export class AdminController {
   moveSubscribers(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Body() body: unknown) {
     requireOwner(req, ctx);
     return this.owner.moveSubscribers(ctx.user.id, parse(MoveSubscribersRequest, body));
+  }
+
+  // ----- Staff log (OPS-01) ---------------------------------------------------------------------------
+
+  /** What staff did, for admins and owners. Support staff don't read it. */
+  @Get('log')
+  async staffLog(@Req() req: StaffRequest, @Ctx() ctx: RequestContext, @Query() query: unknown) {
+    requireAdmin(req);
+    return this.admin.staffLog(ctx.user.id, parse(AdminLogQuery, query));
   }
 
   @Get('analytics/imports')
