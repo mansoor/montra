@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
+import pg from 'pg';
 import { sql } from 'kysely';
 import { Db } from '../src/db/database.js';
 import { Worker } from '../src/jobs/queue.js';
 import { ScanJobs } from '../src/scans/scan-jobs.js';
 import { ImportJobs } from '../src/imports/import-jobs.js';
+import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
 
 const corpus = (name: string) =>
@@ -518,6 +520,86 @@ describe('contract additions for the import UI', () => {
       mappingSource: 'profile',
     });
     expect(await amounts(again.id)).toEqual(['-650', '320000']);
+  });
+});
+
+describe('bank layouts staff keep for every workspace (OPS-05, IMP-04)', () => {
+  // A layout the heuristics would read the other way round: the bank lists money out as positive "Sum".
+  const header = 'Booked;Text;Sum';
+  const statement = (rows: string[]) => Buffer.from([header, ...rows].join('\n') + '\n');
+  const mapping = {
+    headerRow: 0,
+    dataStart: 1,
+    date: 0,
+    dateFormat: 'DD.MM.YYYY',
+    description: [1],
+    amount: 2,
+    sign: 'inverted',
+    decimal: ',',
+  };
+  let admin: pg.Client;
+
+  beforeAll(async () => {
+    admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+  });
+  afterAll(async () => {
+    await admin.query(`delete from ref.import_profile where id = 'test-layout-bank'`);
+    await admin.end();
+  });
+
+  it("reads a statement of a staff-saved shape without asking, and the workspace's own profile wins after", async () => {
+    const staffEmail = 'layout-staff@example.com';
+    const staff = h.as(staffEmail);
+    await staff.get('/v1/me');
+    await admin.query(
+      `insert into app.staff_user (user_id, role) select id, 'admin' from app.app_user where email = $1`,
+      [staffEmail],
+    );
+    const saved = await staff.put('/v1/admin/reference/import-profiles', {
+      id: 'test-layout-bank',
+      name: 'Test Layout Bank',
+      source: 'bank',
+      sample: { fileType: 'csv', text: `${header}\n01.10.2026;Something;1,00\n` },
+      mapping,
+    });
+    expect(saved.status).toBe(200);
+
+    const w = await setup();
+    const checking = (await c.post(w.url('/accounts'), { name: 'Layout Checking', kind: 'checking' })).body
+      .id;
+    const amounts = async (batchId: string) =>
+      (await c.get(w.url(`/imports/${batchId}/rows`))).body.data.map((r: any) => r.amount.amount);
+
+    const up = await upload(
+      w.ws.id,
+      'layout.csv',
+      statement(['02.10.2026;COFFEE ROASTERS;4,50', '03.10.2026;REFUND SHOP;-12,00']),
+    );
+    const first = (await c.post(w.url('/imports'), { fileId: up.body.fileId, accountId: checking })).body;
+    await worker.drain();
+    const batch = (await c.get(w.url(`/imports/${first.id}`))).body;
+    expect(batch).toMatchObject({
+      status: 'preview',
+      mappingSource: 'reference',
+      mappingConfidence: 1,
+      mapping,
+    });
+    expect(batch.analysis.templateId).toBe('test-layout-bank');
+    expect(await amounts(first.id)).toEqual(['-450', '1200']);
+
+    // Committed: the workspace now has its own profile for this shape, and it comes first from now on.
+    expect((await c.post(w.url(`/imports/${first.id}/commit`))).status).toBe(202);
+    await worker.drain();
+    expect((await c.get(w.url(`/imports/${first.id}`))).body.status).toBe('committed');
+    const up2 = await upload(w.ws.id, 'layout-2.csv', statement(['10.10.2026;BOOK SHOP;20,00']));
+    const second = (await c.post(w.url('/imports'), { fileId: up2.body.fileId, accountId: checking })).body;
+    await worker.drain();
+    expect((await c.get(w.url(`/imports/${second.id}`))).body).toMatchObject({
+      status: 'preview',
+      mappingSource: 'profile',
+    });
+    expect(await amounts(second.id)).toEqual(['-2000']);
   });
 });
 

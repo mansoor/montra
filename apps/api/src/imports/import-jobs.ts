@@ -25,6 +25,7 @@ import {
   payeeKeyFor,
   readTextSheets,
   readXlsx,
+  sheetFingerprint,
   type ColumnMapping,
   type Sheet,
 } from '@montra/importers';
@@ -276,6 +277,16 @@ export class ImportJobs {
         ...profiles.filter((x) => x.ledger_account_id === account.id),
         ...profiles.filter((x) => x.ledger_account_id !== account.id),
       ];
+      // Then the layout staff keep for files of this shape in every workspace (OPS-05), after the workspace's own,
+      // which still win. Fingerprints are unique there, so it's one row at most.
+      const fp = sheetFingerprint(sheets, fileType);
+      const shared = fp
+        ? await trx
+            .selectFrom('ref.import_profile')
+            .select(['id', 'fingerprint', 'mapping'])
+            .where('fingerprint', '=', fp)
+            .execute()
+        : [];
       const user = await trx
         .selectFrom('app.app_user')
         .select('locale')
@@ -289,12 +300,21 @@ export class ImportJobs {
         currency,
         accountType: migration || account.type !== 'liability' ? 'asset' : 'liability',
         preferDayFirst: DAY_FIRST_LOCALES.test(user?.locale ?? 'en-US'),
-        profiles: ordered.map((x) => ({
-          id: x.id,
-          fingerprint: x.fingerprint,
-          mapping: x.mapping as unknown as ColumnMapping,
-          sameAccount: x.ledger_account_id === account.id,
-        })),
+        profiles: [
+          ...ordered.map((x) => ({
+            id: x.id,
+            fingerprint: x.fingerprint,
+            mapping: x.mapping as unknown as ColumnMapping,
+            sameAccount: x.ledger_account_id === account.id,
+          })),
+          ...shared.map((x) => ({
+            id: x.id,
+            fingerprint: x.fingerprint,
+            mapping: x.mapping as unknown as ColumnMapping,
+            sameAccount: false,
+            reference: true,
+          })),
+        ],
         accountFilter: p.accountFilter ?? undefined,
         statement: statementBalances,
         // Dates printed without a year fall back to the upload day when the statement states no period.

@@ -23,6 +23,13 @@ export interface SavedProfile {
    * still hold: for any other account, that choice was someone else's account.
    */
   sameAccount?: boolean;
+  /**
+   * A layout staff keep for every workspace (`ref.import_profile`, OPS-05), not one this workspace saved. It's reported
+   * as `reference` with its id as `templateId`, never as `profileId` (that names the workspace's own profile). List
+   * these after the workspace's own: the first profile with the file's fingerprint wins. QIF and OFX files ignore them,
+   * as every such file has the same shape.
+   */
+  reference?: boolean;
 }
 
 /**
@@ -38,10 +45,10 @@ function fromProfile(
 ): Analysis['proposal'] {
   const base = {
     confidence: 1,
-    source: 'profile' as const,
+    source: saved.reference ? ('reference' as const) : ('profile' as const),
     warnings: [] as string[],
     header,
-    profileId: saved.id,
+    ...(saved.reference ? { templateId: saved.id } : { profileId: saved.id }),
   };
   const { filter, ...rest } = saved.mapping;
   if (!filter) return { ...base, mapping: saved.mapping };
@@ -160,7 +167,7 @@ export function analyze(sheets: readonly Sheet[], opts: AnalyzeOptions, override
     // Every QIF (or OFX) grid has the same columns, so a saved profile can't tell one bank's file from another's: the
     // fixed mapping always applies, and a profile only settles the day/month order the user confirmed before.
     proposal = fixedProposal(sheet, opts.fileType, opts);
-    const saved = opts.profiles?.find((p) => p.fingerprint === fp);
+    const saved = opts.profiles?.find((p) => p.fingerprint === fp && !p.reference);
     const dates = sheet.rows
       .slice(1)
       .map((r) => r[FIXED.date] ?? '')
