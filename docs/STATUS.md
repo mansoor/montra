@@ -254,7 +254,8 @@ finished:
   - NFR-12: load testing.
   - ~~AUTH-05: email templates.~~ Done: one layout for the API and Kratos (see §7g).
   - AUTH-08: CAPTCHA at the edge.
-  - OPS-05: the reference-data admin editor.
+  - ~~OPS-05: the reference-data admin editor.~~ Done: tax lines and bank import layouts too, and staff edits survive
+    deploys (see §7g). Currencies stay with the code.
   - OPS-06: dependency updates beyond Renovate.
   - OPS-07: alerting.
   - PLT-01: a WCAG audit.
@@ -832,7 +833,8 @@ Phase 11 leftovers:
 - **PLT-01:** only Chromium runs in e2e.
 - **The status page** runs on the same stack it reports on, so it goes down with it. It needs a separate host before launch.
 - **Staff sign-in** is the ordinary one with a second factor, not SSO.
-- **Reference data:** merchants and mileage rates are editable. Tax lines, import profiles and currencies need a migration.
+- **Reference data:** merchants, mileage rates, tax lines and bank import layouts are edited in the console and keep
+  staff's edits through deploys. Currencies ship with the code on purpose (ISO 4217 changes need a release; see §7g).
 - **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
 - **Profile, family and entities** are edited on the phone too now (OPS-13, see 7g).
 - **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
@@ -2405,6 +2407,40 @@ Phase 11 leftovers:
     changes them, on the web either.
   - Tests: mobile `settings-edit.test.ts` (rules, request building, the API paths, and every key the screens use),
     `routes-guarded.test.ts` and `clients.test.ts`; web `i18n-keys.test.ts`. Not tried on a device.
+- **Reference data without a release: tax lines, bank import layouts, and staff edits that survive deploys** (OPS-05;
+  migration 0078).
+  - Before: the console edited merchants and mileage rates only, and the reference loader, which runs after every
+    `pnpm db:migrate` and so on every deploy, put the shipped content back on any seeded row staff had changed. Tax
+    lines and `ref.import_profile` could only change by migration, and the importer never read `ref.import_profile`.
+  - **Edits survive deploys:** `ref.merchant`, `ref.mileage_rate`, `ref.tax_line` and `ref.import_profile` have
+    `staff_edited_at`. Every console save sets it, and `loadReferenceData` leaves those rows alone. Clearing it hands a
+    row back to the shipped data on the next load. A shipped merchant whose match text a staff-saved merchant already
+    uses is skipped instead of failing the whole load on the unique key.
+  - **Tax lines** (Reference tab): list by country and order; add or change by (country, code): line, label, order and
+    deductible share (entered as a percentage, stored in basis points). `PUT /v1/admin/reference/tax-lines`, staff log
+    `reference.tax_line.save`. The form is one of Schedules B, C and E, the forms the readers know. Two rules keep the
+    readers (categories' `setTaxLine`, Schedule C and E, the AI tax-line mapper) sound: an existing line keeps its form
+    (`409 tax_line.form_fixed`, since moving it would move every category mapped to it to another schedule), and
+    **there's no delete**, since `ledger_account.tax_line_code` isn't a foreign key and a category may hold the code.
+    A line no longer wanted can be relabelled; removing one still needs a migration that remaps categories first.
+  - **Bank import layouts** (`ref.import_profile`): list, save by id, delete. Name, institution, kind (`bank` or
+    `app_template`), and the column mapping, checked against the importer's `ColumnMappingDto`. The file shape is
+    either the fingerprint or the file's first lines (header and a row, which can be made up), from which the API
+    works out the fingerprint as the importer does (`sheetFingerprint`); the sample isn't stored. One layout per
+    fingerprint (`409 import_profile.fingerprint_taken`). Staff log `reference.import_profile.save` and `.delete`.
+  - **The importer uses them:** after the workspace's own profiles (this account's first), the parse step looks up the
+    staff layout for the file's fingerprint and passes it to `analyze` as a fallback (`reference: true`, never
+    `sameAccount`). It's reported as `mappingSource: 'reference'` with the layout's id as `analysis.templateId`, and
+    `profile_id` stays null (that names a workspace profile). Committing saves the workspace's own profile as before,
+    which wins from then on. QIF and OFX ignore staff layouts: every such file has the same shape.
+  - **Currencies stay with the code (decision):** money math uses `CURRENCY_CODES` and `minorUnits` from
+    `@montra/domain`, not `ref.currency`, which the loader fills from that list. Editing the table would change nothing
+    that counts and would mislead, so it isn't editable; an ISO 4217 change ships with a release. The console says so.
+  - No grant changes: `montra_admin` already had select, insert, update and delete on the four tables (0021).
+  - Tests: API `operations.test.ts` (staff-only, validation, the staff log, the form rule, no delete, workspace readers
+    seeing a new line), API `imports.test.ts` (a statement of a staff-saved shape is read without asking, then the
+    workspace's own profile wins), db `reference.test.ts` (staff edits survive `loadReferenceData`, untouched rows are
+    restored, the match-text clash), importers `units.test.ts`, web `reference-data.test.ts`.
 ---
 
 ## 8. Session checklist

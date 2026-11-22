@@ -337,8 +337,8 @@
     "loss-proof import accounting, duplicate detection, balance reconciliation"
   ],
   "OPS-05": [
-    "partial",
-    "versioned loader, plus editing merchants and mileage rates in the console. Tax lines, import profiles and currencies are still by migration"
+    "done",
+    "versioned loader, and the staff console edits merchants, mileage rates, tax lines and bank import layouts (which the importer uses after a workspace's own profiles). Staff edits survive deploys (migration 0078). The currency list ships with the code: money math uses @montra/domain, so ISO 4217 changes need a release"
   ],
   "NFR-07": [
     "partial",

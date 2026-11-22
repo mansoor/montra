@@ -6,12 +6,15 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import { maintenanceNoticeOk } from '@montra/domain';
+import { parseDelimited, sheetFingerprint } from '@montra/importers';
 import { AdminLogQuery, type AdminLogPageDto } from '@montra/schemas';
 import { z } from 'zod';
 import type {
   AiCeilingDto,
   AdminAccountDto,
+  AdminImportProfileDto,
   AdminSupportRequestDto,
+  AdminTaxLineDto,
   AdminWorkspaceDto,
   AiAccuracyRowDto,
   AppVersionsDto,
@@ -23,7 +26,9 @@ import type {
   SaveAiCeilingRequest,
   SaveFeatureFlagRequest,
   SaveMerchantRequest,
+  SaveImportProfileRequest,
   SaveMileageRateRequest,
+  SaveTaxLineRequest,
   SupportViewDto,
   SystemNoticeDto,
 } from '@montra/schemas';
@@ -599,6 +604,7 @@ export class AdminService {
         mcc: r.mcc,
         categoryHint: r.category_hint,
         version: r.version,
+        staffEditedAt: iso(r.staff_edited_at),
       }));
     });
   }
@@ -610,6 +616,8 @@ export class AdminService {
         match_key: req.matchKey.toUpperCase(),
         mcc: req.mcc ?? null,
         category_hint: req.categoryHint ?? null,
+        // The reference loader leaves it as saved here (migration 0078).
+        staff_edited_at: sql<Date>`now()`,
       };
       await trx
         .insertInto('ref.merchant')
@@ -640,6 +648,7 @@ export class AdminService {
         effectiveFrom: String(r.effective_from).slice(0, 10),
         tenthsOfCent: r.tenths_of_cent,
         source: r.source,
+        staffEditedAt: iso(r.staff_edited_at),
       }));
     });
   }
@@ -647,14 +656,150 @@ export class AdminService {
   async saveMileageRate(staffId: string, req: SaveMileageRateRequest): Promise<void> {
     await this.db.run(async (trx) => {
       await sql`
-        insert into ref.mileage_rate as m (country, effective_from, tenths_of_cent, source)
-        values (${req.country.toUpperCase()}, ${req.effectiveFrom}::date, ${req.tenthsOfCent}, ${req.source})
+        insert into ref.mileage_rate as m (country, effective_from, tenths_of_cent, source, staff_edited_at)
+        values (${req.country.toUpperCase()}, ${req.effectiveFrom}::date, ${req.tenthsOfCent}, ${req.source}, now())
         on conflict (country, effective_from) do update
           set tenths_of_cent = excluded.tenths_of_cent, source = excluded.source,
-              version = m.version + 1, updated_at = now()`.execute(trx);
+              version = m.version + 1, updated_at = now(), staff_edited_at = now()`.execute(trx);
       await this.log(trx, staffId, 'reference.mileage.save', `${req.country}:${req.effectiveFrom}`, {
         tenthsOfCent: req.tenthsOfCent,
       });
     });
   }
+
+  async taxLines(): Promise<AdminTaxLineDto[]> {
+    return this.db.run(async (trx) => {
+      const rows = await trx
+        .selectFrom('ref.tax_line')
+        .selectAll()
+        .orderBy('country')
+        .orderBy('sort_order')
+        .orderBy('code')
+        .execute();
+      return rows.map((r) => ({
+        country: r.country,
+        code: r.code,
+        form: r.form,
+        line: r.line,
+        label: r.label,
+        sortOrder: r.sort_order,
+        deductibleBps: r.deductible_bps,
+        version: Number(r.version),
+        staffEditedAt: iso(r.staff_edited_at),
+      }));
+    });
+  }
+
+  /**
+   * Adds a tax line or changes one, by (country, code). Categories hold the code (`ledger_account.tax_line_code`) and
+   * the Schedule C and E reports pick lines by form, so an existing line keeps its form: moving it would move every
+   * category mapped to it onto another schedule. There's no delete for the same reason: a category may hold the code.
+   */
+  async saveTaxLine(staffId: string, req: SaveTaxLineRequest): Promise<void> {
+    await this.db.run(async (trx) => {
+      const existing = await trx
+        .selectFrom('ref.tax_line')
+        .select('form')
+        .where('country', '=', req.country)
+        .where('code', '=', req.code)
+        .executeTakeFirst();
+      if (existing && existing.form !== req.form)
+        throw new AppError(
+          409,
+          'tax_line.form_fixed',
+          'A tax line stays on its form. Add a line with a new code for the other form instead.',
+        );
+      await sql`
+        insert into ref.tax_line as t (country, code, form, line, label, sort_order, deductible_bps, staff_edited_at)
+        values (${req.country}, ${req.code}, ${req.form}, ${req.line}, ${req.label}, ${req.sortOrder},
+                ${req.deductibleBps}, now())
+        on conflict (country, code) do update
+          set line = excluded.line, label = excluded.label, sort_order = excluded.sort_order,
+              deductible_bps = excluded.deductible_bps,
+              version = t.version + 1, updated_at = now(), staff_edited_at = now()`.execute(trx);
+      await this.log(trx, staffId, 'reference.tax_line.save', `${req.country}:${req.code}`, {
+        created: !existing,
+        deductibleBps: req.deductibleBps,
+      });
+    });
+  }
+
+  async importProfiles(): Promise<AdminImportProfileDto[]> {
+    return this.db.run(async (trx) => {
+      const rows = await trx
+        .selectFrom('ref.import_profile')
+        .selectAll()
+        .orderBy('name')
+        .limit(500)
+        .execute();
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        institution: r.institution,
+        source: r.source,
+        fingerprint: r.fingerprint,
+        mapping: r.mapping as unknown as AdminImportProfileDto['mapping'],
+        version: r.version,
+        staffEditedAt: iso(r.staff_edited_at),
+      }));
+    });
+  }
+
+  /**
+   * A bank's layout for every workspace, by id (IMP-04, OPS-05). The importer uses it for a file of this fingerprint
+   * when the workspace has none of its own. A sample of the file gives the fingerprint the importer would.
+   */
+  async saveImportProfile(staffId: string, req: SaveImportProfileRequest): Promise<{ fingerprint: string }> {
+    const fp = req.fingerprint ?? sampleFingerprint(req.sample!);
+    await this.db.run(async (trx) => {
+      const taken = await trx
+        .selectFrom('ref.import_profile')
+        .select('id')
+        .where('fingerprint', '=', fp)
+        .where('id', '<>', req.id)
+        .executeTakeFirst();
+      if (taken)
+        throw new AppError(
+          409,
+          'import_profile.fingerprint_taken',
+          `Files of this shape already have a layout: ${taken.id}. Change that one instead.`,
+        );
+      const values = {
+        name: req.name,
+        institution: req.institution || null,
+        source: req.source,
+        fingerprint: fp,
+        mapping: JSON.stringify(req.mapping),
+        staff_edited_at: sql<Date>`now()`,
+      };
+      await trx
+        .insertInto('ref.import_profile')
+        .values({ id: req.id, ...values })
+        .onConflict((oc) =>
+          oc.column('id').doUpdateSet({
+            ...values,
+            version: sql`ref.import_profile.version + 1`,
+            updated_at: sql`now()`,
+          }),
+        )
+        .execute();
+      await this.log(trx, staffId, 'reference.import_profile.save', req.id, { fingerprint: fp });
+    });
+    return { fingerprint: fp };
+  }
+
+  async deleteImportProfile(staffId: string, id: string): Promise<void> {
+    await this.db.run(async (trx) => {
+      const res = await trx.deleteFrom('ref.import_profile').where('id', '=', id).executeTakeFirst();
+      if (!res.numDeletedRows) throw notFound('Import profile');
+      await this.log(trx, staffId, 'reference.import_profile.delete', id);
+    });
+  }
+}
+
+/** The fingerprint the importer gives a file whose first lines are these (`sheetFingerprint`). */
+export function sampleFingerprint(sample: { fileType: 'csv' | 'xlsx'; text: string }): string {
+  const fp = sheetFingerprint([parseDelimited(sample.text)], sample.fileType);
+  if (!fp) throw unprocessable('import_profile.sample', 'That sample has no rows to read');
+  return fp;
 }

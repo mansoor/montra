@@ -124,7 +124,7 @@ keeps every number reconcilable to transactions (NFR-09, UP-05).
 
 | Table | Key columns | Notes |
 | --- | --- | --- |
-| `import_profile` | `id`, `workspace_id`, `name`, `institution`, `fingerprint` (hash of normalized header + column count + file type), `mapping jsonb` (columns, date format, decimal separator, sign convention, header rows, skip patterns), `ledger_account_id`, `use_count` | IMP-03/04. System-wide profiles live in `ref.import_profile`. |
+| `import_profile` | `id`, `workspace_id`, `name`, `institution`, `fingerprint` (hash of normalized header + column count + file type), `mapping jsonb` (columns, date format, decimal separator, sign convention, header rows, skip patterns), `ledger_account_id`, `use_count` | IMP-03/04. System-wide profiles live in `ref.import_profile`, kept by staff in the console (OPS-05) and used after the workspace's own. |
 | `import_batch` | `id`, `workspace_id`, `ledger_account_id`, `attachment_id`, `file_name`, `file_type`, `profile_id`, `min_date`, `max_date` (the covered range, used by dedupe),  `status` (`uploaded`/`parsing`/`needs_mapping`/`preview`/`committing`/`committed`/`failed`/`undone`), `rows_read/added/matched/skipped/failed`, `statement_opening_minor`, `statement_closing_minor`, `balance_check` (`ok`/`mismatch`/`n_a`), `committed_at`, `undo_until` (committed_at + 30d) | IMP-08/09. |
 | `import_row` | `id`, `import_batch_id`, `row_no`, `raw jsonb`, `parsed jsonb` (date, amount, description, balance), `status` (`new`/`duplicate`/`match`/`error`/`skipped`), `match_transaction_id`, `error`, `suggestion jsonb` | Staging for the preview (IMP-06). Purged 30 days after commit. |
 | `document_intake` | `id`, `workspace_id`, `kind` (`statement`/`bill`), `file_ids`, `file_name`, `file_type` (import types and `image`), `status` (`reading`/`suggested`/`review`/`importing`/`done`/`dismissed`), `reason`, `signal`, `detected jsonb` (digits, issuer, file-name pattern, candidates, a bill's reading), `reading jsonb` (the doc-worker's result, used once), `target_id`, `automatic`, `commit_if_clean`, `import_batch_id`, `scan_id`, `filed jsonb` | A statement or bill without a destination yet, read once and matched; open ones are Review items (ADR-0051, migration 0058). The workspace's, not the uploader's. |
@@ -200,7 +200,7 @@ One generic table keeps matching uniform (design note §11):
 | `notification`, `notification_pref`, `push_token` | NOT-01..03 |
 | `idempotency_key (workspace_id, key, request_hash, response jsonb, expires_at)` | Safe retries for online clients (24 h). Offline mobile creates use the client-generated UUID as the primary key with `ON CONFLICT DO NOTHING`, which is idempotent indefinitely. |
 | `support_grant (workspace_id, granted_by, staff_id, scope, expires_at, revoked_at)` | OPS-02 |
-| `ref.currency (code, minor_units, symbol)`, `ref.fx_rate (date, base, quote, rate, source)`, `ref.tax_line`, `ref.mileage_rate`, `ref.merchant`, `ref.mcc` | Reference data (OPS-05) |
+| `ref.currency (code, minor_units, symbol)`, `ref.fx_rate (date, base, quote, rate, source)`, `ref.tax_line`, `ref.mileage_rate`, `ref.merchant`, `ref.import_profile`, `ref.mcc` | Reference data (OPS-05), loaded from `packages/db/src/reference` after every migration. Staff edit merchants, mileage rates, tax lines and import profiles in the console; `staff_edited_at` (0078) keeps the loader off a row staff saved. `ref.currency` mirrors `@montra/domain` and isn't edited. |
 
 ## 11. Row-level security
 

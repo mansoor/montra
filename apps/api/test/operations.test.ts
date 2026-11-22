@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { todayIn } from '@montra/domain';
+import { fingerprint } from '@montra/importers';
 import { loadConfig } from '../src/config.js';
 import { AwsKms } from '../src/crypto/crypto.service.js';
 import { MAIL_PORT, type MemoryMail } from '../src/mail/mail.service.js';
@@ -512,8 +513,153 @@ describe('the staff console (OPS-01, ADR-0020)', () => {
     expect(rates).toEqual(
       expect.arrayContaining([expect.objectContaining({ effectiveFrom: '2030-01-01', tenthsOfCent: 800 })]),
     );
+    // Saved here, so the reference loader leaves them as staff left them (migration 0078).
+    expect(rows[0].staffEditedAt).not.toBeNull();
+    expect(rates.find((r: any) => r.effectiveFrom === '2030-01-01').staffEditedAt).not.toBeNull();
     await admin.query(`delete from ref.merchant where id = 'test-cafe'`);
     await admin.query(`delete from ref.mileage_rate where effective_from = '2030-01-01'`);
+  });
+
+  it('adds and changes tax lines, which stay on their form and are never deleted (OPS-05)', async () => {
+    const line = {
+      country: 'us',
+      code: 'us_sch_c_test',
+      form: 'schedule_c',
+      line: '27b',
+      label: 'Test line',
+      sortOrder: 999,
+      deductibleBps: 5000,
+    };
+    const path = '/v1/admin/reference/tax-lines';
+    expect((await owner.get(path)).status).toBe(404);
+    expect((await owner.put(path, line)).status).toBe(404);
+    expect((await staff.put(path, line)).status).toBe(403);
+    for (const bad of [
+      { ...line, deductibleBps: 10001 },
+      { ...line, form: 'form_1040' },
+      { ...line, country: 'USA' },
+      { ...line, code: 'has space' },
+      { ...line, label: '' },
+    ])
+      expect((await adminStaff.put(path, bad)).status).toBe(400);
+    try {
+      expect((await adminStaff.put(path, line)).status).toBe(204);
+      await adminStaff.put(path, { ...line, label: 'Test line, changed', deductibleBps: 10000 });
+      const rows = (await staff.get(path)).body.data;
+      const saved = rows.find((r: any) => r.code === 'US_SCH_C_TEST');
+      expect(saved).toMatchObject({
+        country: 'US',
+        form: 'schedule_c',
+        line: '27b',
+        label: 'Test line, changed',
+        sortOrder: 999,
+        deductibleBps: 10000,
+        version: 2,
+      });
+      expect(saved.staffEditedAt).not.toBeNull();
+      // By country, then the order the forms print them in.
+      const us = rows.filter((r: any) => r.country === 'US').map((r: any) => r.sortOrder);
+      expect(us).toEqual([...us].sort((a: number, b: number) => a - b));
+      // Moving it to another schedule would move every category mapped to it.
+      const moved = await adminStaff.put(path, { ...line, form: 'schedule_e' });
+      expect(moved.status).toBe(409);
+      expect(moved.body.code).toBe('tax_line.form_fixed');
+      // There's no delete.
+      expect((await adminStaff.delete(`${path}/US/US_SCH_C_TEST`)).status).toBe(404);
+      // The workspace's readers see it at once.
+      const lines = (await owner.get(`/v1/workspaces/${ws}/tax/lines?form=schedule_c`)).body.data;
+      expect(lines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'US_SCH_C_TEST', label: 'Test line, changed' }),
+        ]),
+      );
+      const log = await admin.query(
+        `select action, detail from app.admin_log where subject = 'US:US_SCH_C_TEST' order by at`,
+      );
+      expect(log.rows).toEqual([
+        { action: 'reference.tax_line.save', detail: { created: true, deductibleBps: 5000 } },
+        { action: 'reference.tax_line.save', detail: { created: false, deductibleBps: 10000 } },
+      ]);
+    } finally {
+      await admin.query(`delete from ref.tax_line where code = 'US_SCH_C_TEST'`);
+    }
+  });
+
+  it('keeps bank import layouts for every workspace (OPS-05, IMP-04)', async () => {
+    const path = '/v1/admin/reference/import-profiles';
+    const mapping = {
+      headerRow: 0,
+      dataStart: 1,
+      date: 0,
+      dateFormat: 'DD.MM.YYYY',
+      description: [1],
+      amount: 2,
+      sign: 'normal',
+      decimal: ',',
+    };
+    const header = ['Buchungstag', 'Verwendungszweck', 'Betrag', 'Saldo'];
+    const profile = {
+      id: 'test-bank-giro',
+      name: 'Test Bank Girokonto',
+      institution: 'Test Bank',
+      source: 'bank',
+      sample: { fileType: 'csv', text: `${header.join(';')}\n01.10.2026;Miete;-800,00;1200,00\n` },
+      mapping,
+    };
+    expect((await owner.get(path)).status).toBe(404);
+    expect((await staff.put(path, profile)).status).toBe(403);
+    for (const bad of [
+      { ...profile, mapping: { ...mapping, amount: undefined } },
+      { ...profile, mapping: { ...mapping, dateFormat: 'whenever' } },
+      { ...profile, sample: undefined },
+      { ...profile, fingerprint: 'abc' },
+      { ...profile, fingerprint: '0'.repeat(32) },
+      { ...profile, source: 'scraper' },
+      { ...profile, id: 'Has Spaces' },
+    ])
+      expect((await adminStaff.put(path, bad)).status).toBe(400);
+    try {
+      const saved = await adminStaff.put(path, profile);
+      expect(saved.status).toBe(200);
+      // The fingerprint the importer gives a file of this shape.
+      expect(saved.body.fingerprint).toBe(fingerprint('csv', header, header.length));
+      const rows = (await staff.get(path)).body.data;
+      expect(rows).toEqual([
+        expect.objectContaining({
+          id: 'test-bank-giro',
+          institution: 'Test Bank',
+          source: 'bank',
+          fingerprint: saved.body.fingerprint,
+          mapping,
+          version: 1,
+        }),
+      ]);
+      expect(rows[0].staffEditedAt).not.toBeNull();
+      // Changed by id, with the fingerprint given directly this time.
+      const { sample: _, ...rest } = profile;
+      const again = { ...rest, name: 'Test Bank Giro', fingerprint: saved.body.fingerprint };
+      expect((await adminStaff.put(path, again)).status).toBe(200);
+      expect((await staff.get(path)).body.data[0]).toMatchObject({ name: 'Test Bank Giro', version: 2 });
+      // One layout per file shape.
+      const clash = await adminStaff.put(path, { ...again, id: 'test-bank-other' });
+      expect(clash.status).toBe(409);
+      expect(clash.body.code).toBe('import_profile.fingerprint_taken');
+
+      expect((await staff.delete(`${path}/test-bank-giro`)).status).toBe(403);
+      expect((await adminStaff.delete(`${path}/test-bank-giro`)).status).toBe(204);
+      expect((await adminStaff.delete(`${path}/test-bank-giro`)).status).toBe(404);
+      expect((await staff.get(path)).body.data).toEqual([]);
+      const log = await admin.query(
+        `select action, detail from app.admin_log where subject = 'test-bank-giro' order by at`,
+      );
+      expect(log.rows).toEqual([
+        { action: 'reference.import_profile.save', detail: { fingerprint: saved.body.fingerprint } },
+        { action: 'reference.import_profile.save', detail: { fingerprint: saved.body.fingerprint } },
+        { action: 'reference.import_profile.delete', detail: {} },
+      ]);
+    } finally {
+      await admin.query(`delete from ref.import_profile where id like 'test-bank-%'`);
+    }
   });
 
   describe('support access (OPS-02)', () => {
