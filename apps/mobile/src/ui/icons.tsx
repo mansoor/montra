@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Banknote,
   Bell,
+  BookOpen,
   Briefcase,
   Building2,
   CalendarDays,
@@ -41,11 +42,14 @@ import {
   Square,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Tag,
   Target,
   Trash2,
   TrendingUp,
   Upload,
+  User,
+  Users,
   Wallet,
   WifiOff,
   X,
@@ -101,6 +105,10 @@ const ICONS = {
   place: MapPin,
   phone: Phone,
   website: Globe,
+  person: User,
+  family: Users,
+  books: BookOpen,
+  ai: Sparkles,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
