@@ -12,6 +12,8 @@ import type {
   MakeTransferDto,
   MakeTransferRequest,
   TransactionDto,
+  TransferFxDto,
+  TransferFxQuery,
   UpdateTransactionRequest,
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
@@ -37,6 +39,8 @@ import {
 } from '../categorization/categorizer.service.js';
 import { MerchantDirectory } from '../categorization/merchants.js';
 import { LoansService } from '../rentals/loans.service.js';
+import { FxRatesService } from '../fx/fx.service.js';
+import { transferFxFor, type TransferFxInput } from './transfer-fx.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -110,6 +114,7 @@ export class TransactionsService {
     @Inject(Categorizer) private readonly categorizer: Categorizer,
     @Inject(MerchantDirectory) private readonly merchants: MerchantDirectory,
     @Inject(LoansService) private readonly loans: LoansService,
+    @Inject(FxRatesService) private readonly fx: FxRatesService,
   ) {}
 
   /** Income, expense or split transaction (TXN-01..03, DE-05). Uncategorized items go to the review queue. */
@@ -346,6 +351,49 @@ export class TransactionsService {
       await this.poster.post(trx, ctx, id, built);
     }
     return id;
+  }
+
+  /**
+   * CUR-08: a transfer between currencies being entered, against the market rate for its date. Null when the two
+   * accounts share a currency.
+   */
+  async transferFx(ctx: Ctx, q: TransferFxQuery): Promise<TransferFxDto | null> {
+    if (q.fromAccountId === q.toAccountId) {
+      throw unprocessable('account.same', 'Choose two different accounts');
+    }
+    return this.db.run(ctx, async (trx) => {
+      const rows = await trx
+        .selectFrom('app.ledger_account')
+        .select(['id', 'currency'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', 'in', [q.fromAccountId, q.toAccountId])
+        .execute();
+      const currencyOf = (id: string) => {
+        const row = rows.find((r) => r.id === id);
+        if (!row) throw notFound(`Account ${id}`);
+        return row.currency;
+      };
+      const from = currencyOf(q.fromAccountId);
+      const to = currencyOf(q.toAccountId);
+      if (from === to) return null;
+      if (q.amount.currency !== from || q.amountIn.currency !== to) {
+        throw unprocessable('currency.mismatch', `Amounts must be in ${from} and ${to}`);
+      }
+      const amountOut = BigInt(q.amount.amount);
+      const amountIn = BigInt(q.amountIn.amount);
+      if (amountOut <= 0n || amountIn <= 0n) {
+        throw unprocessable('amount.not_positive', 'Both amounts must be positive');
+      }
+      const input = {
+        date: q.date,
+        fromAccountId: q.fromAccountId,
+        toAccountId: q.toAccountId,
+        amountOut,
+        amountIn,
+      };
+      const map = await transferFxFor(trx, ctx.workspaceId, this.fx, new Map([['q', input]]));
+      return map.get('q') ?? null;
+    });
   }
 
   /**
@@ -1400,6 +1448,7 @@ export class TransactionsService {
     const order = new Map(ids.map((id, i) => [id, i]));
     const merchants = await this.merchants.load(trx);
     const entryIds = new Map(entries.map((e) => [e.id, e.transaction_id]));
+    const transferFx = await transferFxFor(trx, ctx.workspaceId, this.fx, crossCurrencyTransfers(txns));
     const result: TransactionDto[] = [];
     for (const t of txns.sort((a, b) => order.get(a.id)! - order.get(b.id)!)) {
       result.push({
@@ -1417,6 +1466,7 @@ export class TransactionsService {
         tags: tags.filter((x) => x.transaction_id === t.id).map((x) => x.name),
         recurringItemId: t.recurring_item_id,
         foreign: foreignAmount(t),
+        transferFx: transferFx.get(t.id) ?? null,
         tripId: t.trip_id,
         localTime: t.local_time,
         amount: specAmount(t.spec as TransactionSpec | null),
@@ -1479,6 +1529,23 @@ function specAmount(spec: TransactionSpec | null): TransactionDto['amount'] {
   if (!spec) return null;
   const amount = spec.type === 'transfer' ? (-BigInt(spec.amount)).toString() : spec.amount;
   return { amount, currency: spec.currency as NonNullable<TransactionDto['amount']>['currency'] };
+}
+
+/** CUR-08: transfers that record an amount received (only stored when the two currencies differ). */
+function crossCurrencyTransfers(txns: readonly TransactionRow[]): Map<string, TransferFxInput> {
+  const out = new Map<string, TransferFxInput>();
+  for (const t of txns) {
+    const spec = t.spec as TransactionSpec | null;
+    if (spec?.type !== 'transfer' || !spec.amountIn) continue;
+    out.set(t.id, {
+      date: t.txn_date as CalendarDate,
+      fromAccountId: spec.fromAccountId,
+      toAccountId: spec.toAccountId,
+      amountOut: BigInt(spec.amount),
+      amountIn: BigInt(spec.amountIn),
+    });
+  }
+  return out;
 }
 
 /** CUR-03: the original foreign amount and rate, when the transaction stores one. The fee is a split. */

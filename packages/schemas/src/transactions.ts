@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CalendarDateDto, Id, MoneyDto } from './common.js';
 import { CategorizationDto, MerchantDto } from './ai.js';
-import { ForeignAmountDto, ForeignAmountInput, RateDto } from './fx.js';
+import { ForeignAmountDto, ForeignAmountInput, RateDto, TransferFxDto } from './fx.js';
 import { RECEIPT_STATUSES } from './receipts.js';
 import { ExpenseDetailDto } from './assets.js';
 
@@ -139,6 +139,11 @@ export const TransactionDto = z.object({
     .nullable(),
   /** CUR-03: the original foreign amount and rate when the purchase was made in another currency. */
   foreign: ForeignAmountDto.nullable(),
+  /**
+   * CUR-08: a transfer between currencies against the market rate on its date (effective rate, market rate, FX
+   * cost in the base currency). Null for other transactions, and when an account is in books the caller can't read.
+   */
+  transferFx: TransferFxDto.nullable(),
   /** Travel mode (CUR-09). */
   tripId: z.string().nullable(),
   /** The receipt's wall-clock time, 'HH:MM:SS' (TZ-03); `date` stays the statement date. */

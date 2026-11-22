@@ -22,9 +22,11 @@ import {
   CreateTransactionRequest,
   CreateTransferRequest,
   MakeTransferRequest,
+  TransferFxQuery,
   UpdateTransactionRequest,
   type BulkEditResult,
   type TransactionDto,
+  type TransferFxDto,
 } from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
@@ -81,6 +83,16 @@ export class TransactionsController {
   @Post('transfer')
   transfer(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<TransactionDto> {
     return this.transactions.transfer(dbCtx(ctx), parse(CreateTransferRequest, body));
+  }
+
+  /** CUR-08: a transfer between currencies being entered, against the market rate for its date. Writes nothing. */
+  @Post('transfer/fx-cost')
+  @HttpCode(200)
+  async transferFx(
+    @Ctx() ctx: RequestContext,
+    @Body() body: unknown,
+  ): Promise<{ transferFx: TransferFxDto | null }> {
+    return { transferFx: await this.transactions.transferFx(dbCtx(ctx), parse(TransferFxQuery, body)) };
   }
 
   /** A plain transaction becomes a transfer (a card payment, a move between accounts), absorbing the other side. */

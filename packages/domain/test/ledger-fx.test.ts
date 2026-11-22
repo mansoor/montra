@@ -5,8 +5,11 @@ import {
   buildTransactionEntries,
   buildTransferEntries,
   calendarDate,
+  decimalToString,
   parseDecimal,
+  transferEffectiveRate,
   transferFxCost,
+  transferFxQuote,
   unrealizedFx,
   valueAtCarrying,
   type AccountResolver,
@@ -170,6 +173,31 @@ describe('transfers (ADR-0010 §4, CUR-08)', () => {
       2_000n,
     );
     expect(transferFxCost(500n, { amount: 500n, currency: 'USD' }, 'USD', parseDecimal('1'))).toBe(0n);
+  });
+
+  it('quotes a transfer against the market: effective rate, cost and its share (CUR-08)', () => {
+    const usd = (amount: bigint) => ({ amount, currency: 'USD' as CurrencyCode });
+    const eur = (amount: bigint) => ({ amount, currency: 'EUR' as CurrencyCode });
+    // $1,100.00 → €1,000.00: 0.909… EUR per USD; at 1.08 the euros are worth $1,080.00, so $20.00 (1.82%).
+    expect(decimalToString(transferEffectiveRate(usd(110_000n), eur(100_000n)))).toBe('0.9090909091');
+    const one = parseDecimal('1');
+    expect(
+      transferFxQuote(usd(110_000n), eur(100_000n), 'USD', { sent: one, received: parseDecimal('1.08') }),
+    ).toEqual({ sentValue: 110_000n, cost: 2_000n, costBps: 182n });
+    // Better than market: negative.
+    expect(
+      transferFxQuote(usd(100_000n), eur(100_000n), 'USD', { sent: one, received: parseDecimal('1.08') }),
+    ).toEqual({ sentValue: 100_000n, cost: -8_000n, costBps: -800n });
+    // Euros → yen in USD books: both legs at market. €100.00 at 1.10 = $110.00; ¥15,000 at 0.0072 = $108.00.
+    const jpy = { amount: 15_000n, currency: 'JPY' as CurrencyCode };
+    expect(decimalToString(transferEffectiveRate(eur(10_000n), jpy))).toBe('150.0000000000');
+    expect(
+      transferFxQuote(eur(10_000n), jpy, 'USD', {
+        sent: parseDecimal('1.10'),
+        received: parseDecimal('0.0072'),
+      }),
+    ).toEqual({ sentValue: 11_000n, cost: 200n, costBps: 182n });
+    expect(() => transferEffectiveRate(usd(0n), eur(1n))).toThrow(RangeError);
   });
 });
 
