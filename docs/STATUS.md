@@ -276,10 +276,9 @@ finished:
 8. **Camera library:** the camera spike uses `expo-camera`. Moving to `react-native-vision-camera`
    (frame processors, ML Kit / VisionKit edge detection) is the Phase 5 option, decided by the spike. ADR-0009
    stays _proposed_ until the spike runs on devices.
-9. **Commit speed:** an import commit takes about 11–16 ms per row (on the owner's busy dev PC), so 5,000 rows take
-   a minute or more (with a progress bar). The case where it grew with the square of the rows is fixed (migration
-   0075, see §7g). Bulk posting (fewer statements per row) would speed it up further; judge it on CI or a quiet
-   machine.
+9. ~~**Commit speed.**~~ Done: an import commit writes its new transactions 500 at a time (see §7g). 1,000 rows
+   commit in about 5.8 s, from 16.2 s, on the owner's dev PC. Most of what's left is the audit and change-feed
+   triggers every ledger row runs.
 10. ~~**Account-only transfer candidates.**~~ Done: a payment whose text names another account's last 4 digits is
     suggested as a transfer (0.80) before that account's statement arrives, and that statement later matches it.
 11. ~~**Payment lines share a payee key.**~~ Done: a payment or transfer to an account is keyed by its last four
@@ -2367,6 +2366,21 @@ Phase 11 leftovers:
     (`listHref`).
   - The phone already kept its filters: its detail screens go back on the navigation stack.
   - Tests: web `back-links.test.ts`. Checked on the local stack: Needs review and Matched both come back after "←".
+- **Import commits write in chunks** (backlog item 9; no migration).
+  - Before: each new transaction took about five round trips (its row, its entry, its postings, the account's default
+    member). The posting read models' statement trigger also ran once per transaction. 1,000 rows took 16.2 s.
+  - Now `TransactionsService.prepareCreate` works out each transaction without writing it. `insertPrepared` writes them
+    500 at a time: one insert for the rows, then `LedgerService.postMany` with one for the entries and one for the
+    postings. `createInTrx` is the same two steps for one transaction, so every other caller is unchanged.
+  - The commit keeps statement order. What's waiting is written before a matched row is confirmed. A category picked
+    during import is learned once its transaction exists.
+  - A foreign-currency account (`TransactionPoster.postsInOrder`) still posts one at a time, as each line's carrying
+    value (ADR-0010) reads the postings before it.
+  - Measured with `PERF_ROWS=1000 pnpm --filter @montra/api test:perf`: commit 5.8 s, from 16.2 s. The 30 ms per row
+    budget is unchanged.
+  - Tests: API `imports.test.ts` imports 520 rows, so the commit crosses a chunk, with a category picked in the second
+    chunk. It also imports three lines into a EUR account and checks the USD amounts match the same lines entered one
+    by one. That test fails, 7 cents out, if the account is batched.
 ---
 
 ## 8. Session checklist
