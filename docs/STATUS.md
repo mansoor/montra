@@ -573,7 +573,8 @@ Phase 6 leftovers, not blocking:
 
 - FAM-06/07: the API supports member budgets and goals; the screens have no member picker yet (fits Phase 7).
 - FLOW-06: owner draws never count as spending, but the Sankey doesn't draw them as transfers yet.
-- REC-06: unused subscriptions aren't detected. REC-04's wording can name at-risk bills awkwardly.
+- REC-06: unused subscriptions are now hinted at from spending (see §7g). REC-04's wording can name at-risk bills
+  awkwardly.
 - Mobile: budgets are created only as monthly zero-based. No device run yet. (Goals can now be edited and archived on the phone; see §7g.)
 
 Design notes that the API relies on:
@@ -764,7 +765,7 @@ Phase 10 leftovers, not blocking:
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
 - **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
-- **CUR-06**: net worth revalues at the period-end rate, but no report shows unrealized gain or loss yet.
+- **CUR-06**: done since; net worth now shows unrealized FX gain or loss on the web and the phone (see 7g).
 - Personal books can't be restored into an existing workspace, which already has its one personal entity. Use a new workspace.
 - Restoring to an existing workspace only counts likely duplicates; it doesn't drop them.
 - Search reads the latest 5,000 notes, and leaves receipts out when the query has an amount or a tag.
@@ -2504,6 +2505,43 @@ Phase 11 leftovers:
     - `sign-in.test.tsx`: the API's error shows on the form.
     - `transactions.test.tsx`: rows from the offline store, newest first, open their transaction. An empty store shows
       the empty state.
+- **Unrealized FX gain or loss on net worth** (CUR-06, [ADR-0010](design/adr/0010-fx-accounting-policy.md) §6; no
+  migration).
+  - Before: net worth valued foreign-currency accounts at the date's rate, but nothing showed how much of that was
+    unrealized FX. CUR-06 was partial for that alone.
+  - Now, for each account in a currency other than its books', net worth works out its balance at the date's rate less
+    its carrying value (the sum of its postings' functional amounts, so realized gains and any `fx_revaluation` entry
+    already count). A gain in the books' currency is translated to the base currency at the date's rate. An account
+    without a rate is left out, as net worth already does. Nothing is posted.
+  - `NetWorthDto` has `unrealizedFx` (total), `accounts[].unrealizedFx` (null for an account in its books' currency)
+    and `trend[].unrealizedFx`. `@montra/domain` has `unrealizedFxIn` for the sum.
+  - The net worth report gets an "Unrealized FX" column for each date, and a note saying it isn't booked, but only when
+    some account is in a foreign currency. Export includes the column.
+  - Web: the net worth tab of Cash flow shows the total under net worth and a column per account. Phone: the net worth
+    tab shows the total, and each foreign account's line shows its own.
+  - Not added: an unrealized line on the income statement or balance sheet. Both stay at booked (carrying) values.
+  - Tests: domain `ledger-fx.test.ts` (gain, loss on a foreign debt, translation, own currency, no rate), API
+    `unrealized-fx.test.ts` (a EUR account after a spend, each date's rate, the report column, note and CSV, nothing
+    booked, no column without a foreign account), web `i18n-keys.test.ts`.
+- **Subscriptions you may not be using** (REC-06; no migration: the thresholds live in the planning settings).
+  - Before: REC-06 flagged only price increases. Nothing said a subscription might be unused.
+  - Montra has no usage data from the services. So "unused" is a hint from the person's own spending, and the
+    suggestion says "may", never "is". Two patterns, in `@montra/categorize` `unusedSubscriptions`:
+    - **No other spending there:** there was other spending at the subscription's merchant before (rides beside
+      Uber One), but none for `unusedSubscriptionMonths` (default 3), while the charge kept coming. The merchant is the
+      first name word of the payee key. Its own charges (linked, or within 5% of the price) don't count. A
+      subscription with no other spending there at all (Netflix) gets no hint either way.
+    - **Similar ones:** `similarSubscriptionsMin` (default 2) or more active subscriptions in one category whose
+      payees match reference merchants with the same MCC (Netflix and Hulu; not Netflix and Spotify). Merchants
+      without a reference entry are never grouped, so two utility bills don't count.
+  - Only active recurring expense items count. An ended or paused one is left alone.
+  - Each is a REC-06 recommendation with a `review_subscription` action, once per period. On web the action links to
+    Recurring, and the dismiss button reads **Keep it** (phone too). Kept or accepted: that subscription, or that
+    exact group, isn't suggested again. Ignored: it expires with the period and comes back.
+  - Settings: `unusedSubscriptionMonths` (0–24, 0 off) and `similarSubscriptionsMin` (0 off, or 2–10) in
+    `PlanningSettingsDto`, stored in `workspace.priorities` like the others. Web Settings › Planning edits them.
+  - Tests: categorize `subscriptions.test.ts`, API `unused-subscriptions.test.ts` (both hints, wording and links, keep
+    stops it, ignored comes back, settings, ended items), API `planning.test.ts` (settings defaults).
 - **The FX cost of a transfer between currencies** (CUR-08; no migration).
   - Before: a transfer between currencies kept both amounts and booked the gap to `fx_gain_loss`, but no screen showed
     how its rate compared with the market. `transferFxCost` in `@montra/domain` was never called.

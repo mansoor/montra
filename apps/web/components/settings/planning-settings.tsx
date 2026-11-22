@@ -8,9 +8,9 @@ import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
 
 /**
- * Inputs to the recommendation rules (REC-01, REC-03): which spending categories to protect when the plan is
- * over income, the APR from which a debt counts as high-interest, and the amount from which everyday purchases are
- * worth a receipt (UP-09).
+ * Inputs to the recommendation rules (REC-01, REC-03, REC-06): which spending categories to protect when the plan
+ * is over income, the APR from which a debt counts as high-interest, the amount from which everyday purchases are
+ * worth a receipt (UP-09), and when a subscription may be unused.
  */
 export function PlanningSettings({
   workspaceId,
@@ -37,6 +37,8 @@ export function PlanningSettings({
   const { run, busy, message } = useAction();
   const [apr, setApr] = useState((initial.highInterestBps / 100).toFixed(2));
   const [priorities, setPriorities] = useState<Record<string, number>>(initial.categoryPriorities);
+  const [idleMonths, setIdleMonths] = useState(String(initial.unusedSubscriptionMonths));
+  const [similarMin, setSimilarMin] = useState(String(initial.similarSubscriptionsMin));
   const spending = categories.filter((c) => c.type === 'expense' && c.group);
 
   return (
@@ -54,6 +56,8 @@ export function PlanningSettings({
           // Not a number: keep what was saved.
         }
         if (!canEdit) return;
+        const months = Math.trunc(Number(idleMonths));
+        const similar = Math.trunc(Number(similarMin));
         void run(
           () =>
             browserApi.updatePlanningSettings(workspaceId, {
@@ -62,6 +66,15 @@ export function PlanningSettings({
                 : initial.highInterestBps,
               categoryPriorities: priorities,
               receiptReminderMinor,
+              unusedSubscriptionMonths: Number.isFinite(months)
+                ? Math.max(0, Math.min(24, months))
+                : initial.unusedSubscriptionMonths,
+              // 1 can't overlap with anything: it means off, like 0.
+              similarSubscriptionsMin: Number.isFinite(similar)
+                ? similar < 2
+                  ? 0
+                  : Math.min(10, similar)
+                : initial.similarSubscriptionsMin,
             }),
           t('common.saved'),
         );
@@ -95,6 +108,30 @@ export function PlanningSettings({
               data-testid="receipt-reminder"
             />
             <span className="text-sm">{currency}</span>
+          </label>
+        </section>
+        <section className="card max-w-xl space-y-2">
+          <h2 className="text-base font-semibold">{t('planning.unused_subscriptions')}</h2>
+          <p className="text-sm text-muted">{t('planning.unused_subscriptions_hint')}</p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              className="input num w-20"
+              inputMode="numeric"
+              value={idleMonths}
+              onChange={(e) => setIdleMonths(e.target.value)}
+              data-testid="unused-subscription-months"
+            />
+            {t('planning.unused_subscription_months')}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              className="input num w-20"
+              inputMode="numeric"
+              value={similarMin}
+              onChange={(e) => setSimilarMin(e.target.value)}
+              data-testid="similar-subscriptions-min"
+            />
+            {t('planning.similar_subscriptions_min')}
           </label>
         </section>
         <section className="card-flush">

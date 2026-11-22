@@ -513,8 +513,8 @@
     "foreign receipts match their home-currency line within ±3% of the day rate; the implied rate is stored on the receipt and the transaction"
   ],
   "CUR-06": [
-    "partial",
-    "reports convert at the charged rate, else the transaction date, and net worth revalues at the period-end rate. Unrealized gain or loss isn't shown on a report yet"
+    "done",
+    "reports convert at the charged rate, else the transaction date. Net worth revalues foreign-currency accounts at the period-end rate and shows the unrealized FX gain or loss (value less carrying value) per account, in total and on the net worth report; it is not booked"
   ],
   "CUR-07": [
     "done",
@@ -689,8 +689,8 @@
     "realistic amount after 3 off periods"
   ],
   "REC-06": [
-    "partial",
-    "price increases flagged and linked to the subscription; unused subscriptions not detected yet"
+    "done",
+    "price increases flagged and linked to the subscription; a subscription may be unused when other spending at its merchant stopped, or when similar ones share a category (thresholds in planning settings); keeping one stops it coming back"
   ],
   "REC-07": [
     "done",

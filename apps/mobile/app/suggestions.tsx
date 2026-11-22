@@ -59,9 +59,14 @@ export default function Suggestions() {
           {canAct ? (
             <Button
               kind="secondary"
-              label={t('rec.dismiss')}
+              label={r.type === 'REC-06' ? t('rec.keep') : t('rec.dismiss')}
               disabled={busy || recs.stale}
-              onPress={() => act(() => api.dismissRecommendation(ws, r.id), t('rec.dismissed'))}
+              onPress={() =>
+                act(
+                  () => api.dismissRecommendation(ws, r.id),
+                  r.type === 'REC-06' ? t('rec.kept') : t('rec.dismissed'),
+                )
+              }
             />
           ) : null}
         </Card>

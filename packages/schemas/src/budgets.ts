@@ -295,6 +295,16 @@ export const PlanningSettingsDto = z.object({
     .string()
     .regex(/^\d{1,19}$/)
     .nullable(),
+  /**
+   * REC-06: a subscription may be unused when nothing else was spent at its merchant for this many months, though
+   * there was spending there before. 0: off.
+   */
+  unusedSubscriptionMonths: z.number().int().min(0).max(24),
+  /**
+   * REC-06: this many subscriptions in one category from the same kind of merchant (reference merchant code) may
+   * overlap. 0: off; otherwise at least 2.
+   */
+  similarSubscriptionsMin: z.union([z.literal(0), z.number().int().min(2).max(10)]),
 });
 export type PlanningSettingsDto = z.infer<typeof PlanningSettingsDto>;
 export const UpdatePlanningSettingsRequest = PlanningSettingsDto.partial();
