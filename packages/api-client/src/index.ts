@@ -237,6 +237,8 @@ import type {
   CreateRecurringRequest,
   CreateTransactionRequest,
   CreateTransferRequest,
+  TransferFxDto,
+  TransferFxQuery,
   MakeTransferDto,
   MakeTransferRequest,
   CreateWorkspaceRequest,
@@ -576,6 +578,7 @@ export type CreateTransactionInput = z.input<typeof CreateTransactionRequest>;
 export type UpdateTransactionInput = z.input<typeof UpdateTransactionRequest>;
 export type BulkEditInput = z.input<typeof BulkEditRequest>;
 export type CreateTransferInput = z.input<typeof CreateTransferRequest>;
+export type TransferFxInput = z.input<typeof TransferFxQuery>;
 export type ConfirmOccurrenceInput = z.input<typeof ConfirmOccurrenceRequest>;
 export type CreateEntityInput = z.input<typeof CreateEntityRequest>;
 export type UpdateEntityInput = z.input<typeof UpdateEntityRequest>;
@@ -1465,6 +1468,14 @@ export class ApiClient {
   }
   createTransfer(workspaceId: string, input: CreateTransferInput) {
     return this.request<TransactionDto>('POST', this.ws(workspaceId, '/transactions/transfer'), input);
+  }
+  /** CUR-08: a transfer between currencies being entered, against the market rate; null for one currency. */
+  transferFx(workspaceId: string, input: TransferFxInput) {
+    return this.request<{ transferFx: TransferFxDto | null }>(
+      'POST',
+      this.ws(workspaceId, '/transactions/transfer/fx-cost'),
+      input,
+    ).then((r) => r.transferFx);
   }
   /** A plain transaction becomes a transfer to or from `accountId`, absorbing the other side if it was recorded. */
   makeTransfer(workspaceId: string, id: string, input: MakeTransferRequest) {
@@ -3728,6 +3739,7 @@ export type {
   InviteRole,
   RecurringDto,
   TransactionDto,
+  TransferFxDto,
   WorkspaceDto,
   WorkspaceSecurityDto,
   FxRateDto,

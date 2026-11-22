@@ -184,6 +184,13 @@ function NetWorth({ ws }: { ws: string }) {
               {t('flow.assets')} {fmtMoney(n.assets, n.currency)} · {t('flow.liabilities')}{' '}
               {fmtMoney(n.liabilities, n.currency)}
             </Small>
+            {/* CUR-06. Checked as strings: a cached answer from an older server has no such fields. */}
+            {n.accounts.some((a) => typeof a.unrealizedFx === 'string') &&
+            typeof n.unrealizedFx === 'string' ? (
+              <Small>
+                {t('flow.unrealized_fx')} {fmtMoney(n.unrealizedFx, n.currency)}
+              </Small>
+            ) : null}
             <Sparkline
               values={n.trend.map((p) => p.netWorth)}
               label={t('flow.net_worth_trend')}
@@ -197,7 +204,11 @@ function NetWorth({ ws }: { ws: string }) {
             <Row
               key={a.accountId}
               title={a.name}
-              subtitle={t(`flow.kind_${a.kind}`)}
+              subtitle={
+                typeof a.unrealizedFx !== 'string'
+                  ? t(`flow.kind_${a.kind}`)
+                  : `${t(`flow.kind_${a.kind}`)} · ${t('flow.unrealized_fx')} ${fmtMoney(a.unrealizedFx, n.currency)}`
+              }
               right={<Body>{fmtMoney(a.balance, a.accountCurrency)}</Body>}
             />
           ))}

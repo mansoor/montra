@@ -376,6 +376,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'store',
     'stores',
     'lines',
+    'unrealized_fx',
   ],
   'reports.section.': [
     'income',
@@ -397,6 +398,7 @@ const DYNAMIC: Record<string, readonly string[]> = {
     'tax_not_advice',
     'unmapped',
     'section_labels',
+    'unrealized_fx',
   ],
   'reports.export_': ['pdf', 'csv', 'xlsx'],
   'ask.metric_': ['spending', 'income', 'net'],

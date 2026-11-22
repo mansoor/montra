@@ -5,9 +5,13 @@ import {
   buildTransactionEntries,
   buildTransferEntries,
   calendarDate,
+  decimalToString,
   parseDecimal,
+  transferEffectiveRate,
   transferFxCost,
+  transferFxQuote,
   unrealizedFx,
+  unrealizedFxIn,
   valueAtCarrying,
   type AccountResolver,
   type AccountType,
@@ -171,6 +175,31 @@ describe('transfers (ADR-0010 §4, CUR-08)', () => {
     );
     expect(transferFxCost(500n, { amount: 500n, currency: 'USD' }, 'USD', parseDecimal('1'))).toBe(0n);
   });
+
+  it('quotes a transfer against the market: effective rate, cost and its share (CUR-08)', () => {
+    const usd = (amount: bigint) => ({ amount, currency: 'USD' as CurrencyCode });
+    const eur = (amount: bigint) => ({ amount, currency: 'EUR' as CurrencyCode });
+    // $1,100.00 → €1,000.00: 0.909… EUR per USD; at 1.08 the euros are worth $1,080.00, so $20.00 (1.82%).
+    expect(decimalToString(transferEffectiveRate(usd(110_000n), eur(100_000n)))).toBe('0.9090909091');
+    const one = parseDecimal('1');
+    expect(
+      transferFxQuote(usd(110_000n), eur(100_000n), 'USD', { sent: one, received: parseDecimal('1.08') }),
+    ).toEqual({ sentValue: 110_000n, cost: 2_000n, costBps: 182n });
+    // Better than market: negative.
+    expect(
+      transferFxQuote(usd(100_000n), eur(100_000n), 'USD', { sent: one, received: parseDecimal('1.08') }),
+    ).toEqual({ sentValue: 100_000n, cost: -8_000n, costBps: -800n });
+    // Euros → yen in USD books: both legs at market. €100.00 at 1.10 = $110.00; ¥15,000 at 0.0072 = $108.00.
+    const jpy = { amount: 15_000n, currency: 'JPY' as CurrencyCode };
+    expect(decimalToString(transferEffectiveRate(eur(10_000n), jpy))).toBe('150.0000000000');
+    expect(
+      transferFxQuote(eur(10_000n), jpy, 'USD', {
+        sent: parseDecimal('1.10'),
+        received: parseDecimal('0.0072'),
+      }),
+    ).toEqual({ sentValue: 11_000n, cost: 200n, costBps: 182n });
+    expect(() => transferEffectiveRate(usd(0n), eur(1n))).toThrow(RangeError);
+  });
 });
 
 describe('revaluation (ADR-0010 §6, CUR-06)', () => {
@@ -186,6 +215,32 @@ describe('revaluation (ADR-0010 §6, CUR-06)', () => {
     expect(
       buildRevaluationEntry(checking, { foreign: 1n, functional: 1n }, parseDecimal('2'), D, resolver),
     ).toBeNull();
+  });
+});
+
+describe('unrealized FX in a report currency (CUR-06)', () => {
+  it("is the revalued balance less its carrying value, in the books' currency", () => {
+    // €1,000.00 carried at $1,050.00 is worth $1,100.00 at 1.10, and $1,000.00 at 1.00.
+    expect(unrealizedFxIn(held, 'EUR', 'USD', parseDecimal('1.10'), 'USD', null)).toBe(5_000n);
+    expect(unrealizedFxIn(held, 'EUR', 'USD', parseDecimal('1.00'), 'USD', null)).toBe(-5_000n);
+  });
+
+  it('is a loss on a foreign debt when that currency gets stronger', () => {
+    // A €200.00 card balance (a credit) carried at $210.00 is $220.00 owed at 1.10.
+    const owed: CarryingBalance = { foreign: -20_000n, functional: -21_000n };
+    expect(unrealizedFxIn(owed, 'EUR', 'USD', parseDecimal('1.10'), 'USD', null)).toBe(-1_000n);
+  });
+
+  it('translates the gain when the report is in another currency', () => {
+    // Books in CAD: €1,000.00 carried at C$1,500.00 is worth C$1,550.00 at 1.55; C$50.00 is $35.00 at 0.70.
+    const cad: CarryingBalance = { foreign: 100_000n, functional: 150_000n };
+    expect(unrealizedFxIn(cad, 'EUR', 'CAD', parseDecimal('1.55'), 'USD', parseDecimal('0.70'))).toBe(3_500n);
+  });
+
+  it("is zero in the books' own currency, and null without a rate", () => {
+    expect(unrealizedFxIn({ foreign: 500n, functional: 500n }, 'USD', 'USD', null, 'EUR', null)).toBe(0n);
+    expect(unrealizedFxIn(held, 'EUR', 'USD', null, 'USD', null)).toBeNull();
+    expect(unrealizedFxIn(held, 'EUR', 'CAD', parseDecimal('1.55'), 'USD', null)).toBeNull();
   });
 });
 

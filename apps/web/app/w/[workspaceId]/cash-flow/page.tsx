@@ -149,6 +149,8 @@ export default async function CashFlowPage({
     );
   } else {
     const n = await load((api) => api.getNetWorth(workspaceId, { months: 12, entityId: sp.entityId }));
+    // CUR-06: shown only when some account is in a currency other than its books'.
+    const fx = n.accounts.some((a) => a.unrealizedFx !== null);
     body = (
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
@@ -157,6 +159,12 @@ export default async function CashFlowPage({
             <div className="mt-1 font-display text-2xl font-semibold">
               <Money amount={n.netWorth} currency={n.currency} />
             </div>
+            {fx && (
+              <div className="mt-1 text-xs text-muted" data-testid="net-worth-unrealized-fx">
+                <span title={t('flow.unrealized_fx_hint')}>{t('flow.unrealized_fx')}</span>{' '}
+                <Money amount={n.unrealizedFx} currency={n.currency} signed />
+              </div>
+            )}
           </div>
           <div className="card">
             <div className="text-xs font-semibold text-muted">{t('flow.assets')}</div>
@@ -196,6 +204,11 @@ export default async function CashFlowPage({
                 <th scope="col" className="px-4 py-2 text-right">
                   {t('flow.value', { currency: n.currency })}
                 </th>
+                {fx && (
+                  <th scope="col" className="px-4 py-2 text-right" title={t('flow.unrealized_fx_hint')}>
+                    {t('flow.unrealized_fx')}
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -213,6 +226,15 @@ export default async function CashFlowPage({
                   <td className="px-4 py-2 text-right">
                     <Money amount={a.value} currency={n.currency} />
                   </td>
+                  {fx && (
+                    <td className="px-4 py-2 text-right">
+                      {a.unrealizedFx === null ? (
+                        <span className="text-muted">—</span>
+                      ) : (
+                        <Money amount={a.unrealizedFx} currency={n.currency} signed />
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
               {n.properties.map((p) => (
@@ -230,6 +252,7 @@ export default async function CashFlowPage({
                   <td className="px-4 py-2 text-right">
                     <Money amount={p.value} currency={n.currency} />
                   </td>
+                  {fx && <td className="px-4 py-2" />}
                 </tr>
               ))}
             </tbody>

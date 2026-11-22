@@ -6,6 +6,7 @@ import { AllocatePanel } from '@/components/rentals/rental-ops';
 import { TransactionEditor } from '@/components/transaction-editor';
 import { JournalView } from '@/components/journal-view';
 import { TransactionFx } from '@/components/receipts/transaction-fx';
+import { TransferFxSummary } from '@/components/transfer-fx-summary';
 import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 import { ReceiptButton, receiptButtonState } from '@/components/receipts/receipt-button';
 import { ExpenseDetailPanel } from '@/components/business/expense-detail';
@@ -146,6 +147,14 @@ export default async function TransactionPage({
         />
       )}
       <TransactionFx workspaceId={workspaceId} transaction={transaction} foreignAccount={foreignAccount} />
+      {transaction.transferFx && (
+        <section className="card space-y-2" aria-labelledby="transfer-fx-title">
+          <h2 id="transfer-fx-title" className="font-medium">
+            {t('fx.transfer.title')}
+          </h2>
+          <TransferFxSummary fx={transaction.transferFx} date={transaction.date} />
+        </section>
+      )}
       {receiptState === 'add' && (
         <section id="receipt" aria-labelledby="receipt-heading" className="card space-y-2">
           <h2 id="receipt-heading" className="font-medium">

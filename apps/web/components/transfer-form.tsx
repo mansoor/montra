@@ -1,12 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
-import type { AccountDto, WorkspaceDto } from '@montra/api-client';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { AccountDto, TransferFxDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { toFormErrors, type FormErrors } from '@/lib/errors';
 import { parseAmountInput } from '@/lib/money';
 import { Field, FormError } from './field';
+import { TransferFxSummary } from './transfer-fx-summary';
 import { useI18n } from './i18n';
 
 /** Transfer between accounts, including card payments (TXN-04). Never counts as income or expense. */
@@ -26,13 +27,45 @@ export function TransferForm({
   const [errors, setErrors] = useState<FormErrors>({ fields: {} });
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
-
-  if (accounts.length < 2)
-    return <p className="card text-sm text-muted">{t('transfer.need_two_accounts')}</p>;
+  // CUR-08: what is typed, for the FX cost preview between currencies.
+  const [typed, setTyped] = useState({ amount: '', amountIn: '', date: today });
+  const [preview, setPreview] = useState<TransferFxDto | null>(null);
   const from = accounts.find((a) => a.id === fromId);
   const to = accounts.find((a) => a.id === toId);
   // CUR-08: between currencies, both amounts are kept; the API books the gap as FX cost or gain.
   const crossCurrency = Boolean(from && to && from.currency !== to.currency);
+
+  useEffect(() => {
+    setPreview(null);
+    if (!crossCurrency || !from || !to) return;
+    const sent = parseAmountInput(typed.amount, from.currency, locale, t);
+    const received = parseAmountInput(typed.amountIn, to.currency, locale, t);
+    if (!sent.ok || !received.ok || sent.minor <= 0n || received.minor <= 0n) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      browserApi
+        .transferFx(workspace.id, {
+          date: typed.date || today,
+          fromAccountId: from.id,
+          toAccountId: to.id,
+          amount: { amount: sent.minor.toString(), currency: from.currency },
+          amountIn: { amount: received.minor.toString(), currency: to.currency },
+        })
+        .then(
+          (fx) => {
+            if (live) setPreview(fx);
+          },
+          () => undefined, // A preview only: saving reports any real problem.
+        );
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [crossCurrency, from, to, typed, today, locale, t, workspace.id]);
+
+  if (accounts.length < 2)
+    return <p className="card text-sm text-muted">{t('transfer.need_two_accounts')}</p>;
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -65,6 +98,7 @@ export function TransferForm({
       });
       setSaved(t('transfer.saved'));
       form.reset();
+      setTyped({ amount: '', amountIn: '', date: today });
       setFromId(accounts[0]?.id ?? '');
       setToId(accounts.find((a) => a.id !== accounts[0]?.id)?.id ?? '');
       router.refresh();
@@ -117,7 +151,16 @@ export function TransferForm({
           )}
         </Field>
         <Field id="tr-amount" label={t('fields.amount')} error={errors.fields.amount}>
-          {(p) => <input {...p} name="amount" className="input num" inputMode="decimal" placeholder="0.00" />}
+          {(p) => (
+            <input
+              {...p}
+              name="amount"
+              className="input num"
+              inputMode="decimal"
+              placeholder="0.00"
+              onChange={(e) => setTyped((v) => ({ ...v, amount: e.target.value }))}
+            />
+          )}
         </Field>
         {crossCurrency && to && (
           <Field
@@ -127,12 +170,28 @@ export function TransferForm({
             hint={t('transfer.amount_in_hint')}
           >
             {(p) => (
-              <input {...p} name="amountIn" className="input num" inputMode="decimal" placeholder="0.00" />
+              <input
+                {...p}
+                name="amountIn"
+                className="input num"
+                inputMode="decimal"
+                placeholder="0.00"
+                onChange={(e) => setTyped((v) => ({ ...v, amountIn: e.target.value }))}
+              />
             )}
           </Field>
         )}
         <Field id="tr-date" label={t('fields.date')} error={errors.fields.date}>
-          {(p) => <input {...p} name="date" type="date" className="input" defaultValue={today} />}
+          {(p) => (
+            <input
+              {...p}
+              name="date"
+              type="date"
+              className="input"
+              defaultValue={today}
+              onChange={(e) => setTyped((v) => ({ ...v, date: e.target.value }))}
+            />
+          )}
         </Field>
         <Field id="tr-desc" label={t('transfer.note')} error={errors.fields.description}>
           {(p) => (
@@ -146,6 +205,12 @@ export function TransferForm({
           )}
         </Field>
       </div>
+      {crossCurrency && preview && (
+        <div className="rounded border border-line p-3" aria-live="polite">
+          <p className="mb-1 text-xs font-medium text-muted">{t('fx.transfer.preview')}</p>
+          <TransferFxSummary fx={preview} date={typed.date || today} testId="transfer-fx-preview" />
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <button type="submit" className="btn-primary" disabled={busy}>
           {busy ? t('common.saving') : t('transfer.submit')}

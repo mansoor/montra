@@ -420,6 +420,29 @@ export class PlanningData {
     for (const m of out.values()) for (const d of dates) if (!m.has(d)) m.set(d, 0n);
     return out;
   }
+
+  /**
+   * Carrying value (ADR-0010) of each account at the end of each date: Σ functional amounts of its postings through
+   * the date, in its books' functional currency. For foreign-currency accounts (CUR-06).
+   */
+  async carryingValues(
+    trx: Trx,
+    ctx: Ctx,
+    accountIds: readonly string[],
+    dates: readonly CalendarDate[],
+  ): Promise<Map<string, Map<CalendarDate, bigint>>> {
+    const out = new Map<string, Map<CalendarDate, bigint>>(accountIds.map((a) => [a, new Map()]));
+    if (!accountIds.length || !dates.length) return out;
+    const { rows } = await sql<{ account: string; d: string; v: string }>`
+      select p.ledger_account_id as account, d.d::text as d, sum(p.functional_amount_minor)::text as v
+        from unnest(${sql.val([...dates])}::date[]) as d(d)
+        join app.posting p on p.entry_date <= d.d
+       where p.workspace_id = ${ctx.workspaceId} and p.ledger_account_id = any(${sql.val([...accountIds])}::uuid[])
+       group by 1, 2`.execute(trx);
+    for (const r of rows) out.get(r.account)?.set(calendarDate(r.d), BigInt(r.v));
+    for (const m of out.values()) for (const d of dates) if (!m.has(d)) m.set(d, 0n);
+    return out;
+  }
 }
 
 /** Month starts for the `n` months before the month of `date` (oldest first). */

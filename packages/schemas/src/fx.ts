@@ -62,6 +62,47 @@ export const SetTransactionRateRequest = z.object({
 });
 export type SetTransactionRateRequest = z.output<typeof SetTransactionRateRequest>;
 
+// ----- Transfers between currencies (CUR-08) -------------------------------------------------------------
+
+/**
+ * A transfer between currencies against the market (CUR-08): the rate it got, the reference rate for its date,
+ * and the gap in the base currency of the books it leaves from.
+ */
+export const TransferFxDto = z.object({
+  /** Amount that left the source account, in its currency. */
+  sent: MoneyDto,
+  /** Amount that arrived, in the destination account's currency. */
+  received: MoneyDto,
+  /** Received units per one unit sent, implied by the two amounts. */
+  effectiveRate: RateDto,
+  /** The reference rate (received per sent) for the date; null when no rate is stored for it. */
+  marketRate: RateDto.nullable(),
+  /** The day that rate was published: up to a week before the transfer on weekends and holidays. */
+  marketRateDate: z.string().nullable(),
+  /** The source account's books' base (functional) currency, which `cost` is in. */
+  baseCurrency: z.string(),
+  /**
+   * What was sent at market minus what arrived at market: positive = cost (spread and fees), negative = better
+   * than market. Null when no market rate exists for the date.
+   */
+  cost: MoneyDto.nullable(),
+  /** The cost as a share of what was sent at market, in basis points (1% = 100); null without a market rate. */
+  costBps: z.number().int().nullable(),
+});
+export type TransferFxDto = z.infer<typeof TransferFxDto>;
+
+/** POST /transactions/transfer/fx-cost: the same figures for a transfer being entered, before it is saved. */
+export const TransferFxQuery = z.object({
+  date: CalendarDateDto,
+  fromAccountId: Id,
+  toAccountId: Id,
+  /** Positive amount leaving the source account, in its currency. */
+  amount: MoneyDto,
+  /** Positive amount arriving in the destination account, in its currency. */
+  amountIn: MoneyDto,
+});
+export type TransferFxQuery = z.output<typeof TransferFxQuery>;
+
 // ----- Travel mode (CUR-09) ------------------------------------------------------------------------------
 
 export const TripInput = z

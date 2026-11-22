@@ -46,6 +46,9 @@ Implemented in `@montra/domain` (`ledger/fx.ts`, `ledger/builder.ts`) in Phase 5
 - A transfer between two accounts in the same foreign currency carries the value over and realizes
   nothing.
 - `unrealizedFx`, `buildRevaluationEntry` and `transferFxCost` cover §6 and the CUR-08 display.
+- §6 is shown on net worth (CUR-06): `unrealizedFxIn` measures each foreign account's gain in its books' currency at
+  the date's rate and translates it to the base currency. `NetWorthDto` carries it per account, in total and per trend
+  date, and the net worth report adds an "Unrealized FX" column. It is not posted.
 - The API (`transactions/poster.ts`) supplies each foreign account's balance before the posting: the
   sum of its postings up to the transaction date, without the transaction's own entries. Postings on
   the same day all count as earlier.
