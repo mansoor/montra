@@ -257,7 +257,7 @@ finished:
   - OPS-05: the reference-data admin editor.
   - OPS-06: dependency updates beyond Renovate.
   - OPS-07: alerting.
-  - PLT-01: a WCAG audit.
+  - PLT-01: Firefox and WebKit run the main flows in CI (see §7g); a manual WCAG audit is NFR-10.
 
 ### Cross-phase backlog (known gaps not tied to one requirement)
 
@@ -830,7 +830,7 @@ Phase 11 leftovers:
   Reasons and expiry dates are in `docs/runbooks/security-patching.md`.
 - **PLT-08** (widgets) moves to R1.x. **Store billing** isn't built, so the phone shows the plan and doesn't sell it.
 - **NFR-10:** axe only. No screen reader or manual audit, and nothing on mobile.
-- **PLT-01:** only Chromium runs in e2e.
+- **PLT-01:** Chromium runs every e2e spec; Firefox and WebKit run seven main-flow specs (§7g). No real Safari or Edge.
 - **The status page** runs on the same stack it reports on, so it goes down with it. It needs a separate host before launch.
 - **Staff sign-in** is the ordinary one with a second factor, not SSO.
 - **Reference data:** merchants and mileage rates are editable. Tax lines, import profiles and currencies need a migration.
@@ -2367,6 +2367,15 @@ Phase 11 leftovers:
     (`listHref`).
   - The phone already kept its filters: its detail screens go back on the navigation stack.
   - Tests: web `back-links.test.ts`. Checked on the local stack: Needs review and Matched both come back after "←".
+- **End-to-end tests in Firefox and WebKit** (PLT-01; CI only; no migration).
+  - Before: Playwright ran only Chromium, so Safari and Firefox were never exercised.
+  - Now `playwright.config.ts` has `firefox` and `webkit` projects for seven main-flow specs: happy path, phase 1a,
+    quick add, import, review, receipts and accessibility. `E2E_PROJECTS` picks the projects (default `chromium`, which
+    still runs every spec). CI runs each extra browser in its own job (`e2e-browsers`), after `verify`.
+  - Chromium stands in for Chrome and Edge, WebKit for Safari. Neither is the branded browser, and nothing runs on a
+    phone.
+  - Locally: `pnpm --filter @montra/web exec playwright install firefox`, then `E2E_PROJECTS=firefox pnpm --filter
+    @montra/web test:e2e`.
 ---
 
 ## 8. Session checklist

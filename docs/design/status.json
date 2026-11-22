@@ -254,7 +254,7 @@
   ],
   "PLT-01": [
     "partial",
-    "responsive and passing an automated WCAG pass, with phone-width overflow checks on main screens. Not tested across browsers: only Chromium runs"
+    "responsive and passing an automated WCAG pass, with phone-width overflow checks on main screens. Chromium runs every e2e spec; Firefox and WebKit run the main flows in CI. No manual audit (NFR-10)"
   ],
   "PLT-06": [
     "done",
