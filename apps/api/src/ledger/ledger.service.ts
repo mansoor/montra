@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { sql } from 'kysely';
-import { newId, type Trx } from '@montra/db';
+import { sql, type InsertObject } from 'kysely';
+import { newId, type Database, type Trx } from '@montra/db';
 import {
   asCurrencyCode,
   naturalBalance,
@@ -24,8 +24,20 @@ interface ResolverBase {
 export interface UnitCache {
   accounts: Map<string, LedgerAccountRef & { name: string }>;
   locks: Map<string, string | null>;
+  /** A bank account's default member (FAM-04), by ledger account. */
+  defaultMembers: Map<string, string | null>;
   base?: ResolverBase;
 }
+
+/** One transaction's entries, for `postMany`. */
+export interface EntryWrite {
+  transactionId: string | null;
+  drafts: readonly JournalEntryDraft[];
+  clearedAccountId?: string;
+}
+
+/** Rows per insert statement: well under Postgres's 65,535 parameters for both tables. */
+const CHUNK = 1000;
 
 type CounterpartyRole = Extract<SystemRole, 'inter_entity_clearing' | 'due_to_entity' | 'due_from_entity'>;
 
@@ -49,7 +61,8 @@ export class LedgerService {
   private readonly caches = new WeakMap<Trx, UnitCache>();
 
   enableCache(trx: Trx): void {
-    if (!this.caches.has(trx)) this.caches.set(trx, { accounts: new Map(), locks: new Map() });
+    if (!this.caches.has(trx))
+      this.caches.set(trx, { accounts: new Map(), locks: new Map(), defaultMembers: new Map() });
   }
 
   cacheOf(trx: Trx): UnitCache | undefined {
@@ -230,29 +243,38 @@ export class LedgerService {
     drafts: readonly JournalEntryDraft[],
     opts: { clearedAccountId?: string } = {},
   ): Promise<string[]> {
-    const ids: string[] = [];
-    for (const draft of drafts) {
-      const entryId = newId();
-      ids.push(entryId);
-      await trx
-        .insertInto('app.journal_entry')
-        .values({
+    return this.postMany(trx, ctx, [{ transactionId, drafts, clearedAccountId: opts.clearedAccountId }]);
+  }
+
+  /**
+   * Writes the entries of many transactions in a few statements: all the journal entries, then all their postings
+   * (statement import commits, backlog item 9). Each insert fires the posting read models' statement trigger once,
+   * not once per transaction. Returns the entry ids in order.
+   */
+  async postMany(
+    trx: Trx,
+    ctx: { workspaceId: string; userId: string },
+    writes: readonly EntryWrite[],
+  ): Promise<string[]> {
+    const entries: InsertObject<Database, 'app.journal_entry'>[] = [];
+    const postings: InsertObject<Database, 'app.posting'>[] = [];
+    for (const w of writes) {
+      for (const draft of w.drafts) {
+        const entryId = newId();
+        entries.push({
           workspace_id: ctx.workspaceId,
           id: entryId,
           entity_id: draft.entityId,
-          transaction_id: transactionId,
+          transaction_id: w.transactionId,
           entry_date: draft.entryDate,
           description: draft.description,
           kind: draft.kind,
           restricted: draft.restricted ?? false,
           restricted_member_id: draft.restrictedMemberId ?? null,
           posted_by: ctx.userId,
-        })
-        .execute();
-      await trx
-        .insertInto('app.posting')
-        .values(
-          draft.postings.map((p) => ({
+        });
+        for (const p of draft.postings) {
+          postings.push({
             workspace_id: ctx.workspaceId,
             id: newId(),
             journal_entry_id: entryId,
@@ -268,14 +290,24 @@ export class LedgerService {
             memo: p.memo ?? null,
             public_line: p.publicLine ?? false,
             // Statement lines are cleared on arrival (DE-08).
-            ...(opts.clearedAccountId && p.accountId === opts.clearedAccountId
+            ...(w.clearedAccountId && p.accountId === w.clearedAccountId
               ? { cleared: 'cleared' as const }
               : {}),
-          })),
-        )
-        .execute();
+          });
+        }
+      }
     }
-    return ids;
+    for (let k = 0; k < entries.length; k += CHUNK)
+      await trx
+        .insertInto('app.journal_entry')
+        .values(entries.slice(k, k + CHUNK))
+        .execute();
+    for (let k = 0; k < postings.length; k += CHUNK)
+      await trx
+        .insertInto('app.posting')
+        .values(postings.slice(k, k + CHUNK))
+        .execute();
+    return entries.map((e) => e.id as string);
   }
 
   /** Debit-positive balances per account, for the accounts list. */
