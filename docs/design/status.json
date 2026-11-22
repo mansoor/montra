@@ -250,7 +250,7 @@
   ],
   "NFR-03": [
     "done",
-    "RLS per entity, roles, trigger-based audit log"
+    "RLS per entity, roles, trigger-based audit log; owners and admins read it in Settings → Your data → Audit log, filtered by person, record and day, with the ledger's bookkeeping rows hidden by default"
   ],
   "PLT-01": [
     "partial",
@@ -1070,7 +1070,7 @@
   ],
   "OPS-01": [
     "done",
-    "staff console on its own database role: account lookup, plans, flags, import failures; an owner role manages staff and edits plans through checked functions; staff suspend and restore accounts, extend trials, give plans or coupons, and close an account on request; owners see each provider's state and last success and failure, without its keys (ADR-0049). A test fails if the role can read anything else. Real staff SSO is not in place: staff sign in like everyone, with a second factor"
+    "staff console on its own database role: account lookup, plans, flags, import failures; an owner role manages staff and edits plans through checked functions; staff suspend and restore accounts, extend trials, give plans or coupons, and close an account on request; owners see each provider's state and last success and failure, without its keys (ADR-0049). A test fails if the role can read anything else. Admins and owners read the staff log in the console, filtered by staff, action, subject and day. Real staff SSO is not in place: staff sign in like everyone, with a second factor"
   ],
   "OPS-02": [
     "done",

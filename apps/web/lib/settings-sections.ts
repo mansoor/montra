@@ -19,6 +19,7 @@ export const SETTINGS_TABS = {
   storage: 'settings.tab.storage',
   'bank-feeds': 'settings.tab.bank_feeds',
   privacy: 'settings.tab.privacy',
+  'audit-log': 'settings.tab.audit_log',
   billing: 'settings.tab.billing',
   support: 'settings.tab.support',
 } as const;
@@ -42,13 +43,22 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     key: 'data',
     label: 'settings.group.data',
-    tabs: ['data', 'storage', 'bank-feeds', 'privacy', 'support', 'billing'],
+    tabs: ['data', 'storage', 'bank-feeds', 'privacy', 'audit-log', 'support', 'billing'],
   },
 ];
 
-/** Members (AUTH-17) see only their own settings: the workspace's setup isn't theirs to change. */
-export const settingsGroupsFor = (role: string): SettingsGroup[] =>
-  role === 'member' ? SETTINGS_GROUPS.filter((g) => g.key === 'you') : SETTINGS_GROUPS;
+/** Sections only owners and admins see: the audit log (NFR-03) is theirs, as the database says too. */
+const ADMIN_TABS: readonly SettingsTab[] = ['audit-log'];
+
+/**
+ * Members (AUTH-17) see only their own settings: the workspace's setup isn't theirs to change. Partners, viewers and
+ * accountants see the workspace's settings but not the audit log.
+ */
+export const settingsGroupsFor = (role: string): SettingsGroup[] => {
+  if (role === 'member') return SETTINGS_GROUPS.filter((g) => g.key === 'you');
+  if (role === 'owner' || role === 'admin') return SETTINGS_GROUPS;
+  return SETTINGS_GROUPS.map((g) => ({ ...g, tabs: g.tabs.filter((k) => !ADMIN_TABS.includes(k)) }));
+};
 
 export const isSettingsTab = (raw: string | null | undefined): raw is SettingsTab =>
   Boolean(raw && Object.prototype.hasOwnProperty.call(SETTINGS_TABS, raw));
