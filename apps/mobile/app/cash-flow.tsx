@@ -191,6 +191,13 @@ function NetWorth({ ws }: { ws: string }) {
                 {t('flow.unrealized_fx')} {fmtMoney(n.unrealizedFx, n.currency)}
               </Small>
             ) : null}
+            {/* ADR-0010 §7: only with books in another currency than the base. Strings, for the same reason. */}
+            {n.accounts.some((a) => typeof a.translationAdjustment === 'string') &&
+            typeof n.translationAdjustment === 'string' ? (
+              <Small>
+                {t('flow.translation_adjustment')} {fmtMoney(n.translationAdjustment, n.currency)}
+              </Small>
+            ) : null}
             <Sparkline
               values={n.trend.map((p) => p.netWorth)}
               label={t('flow.net_worth_trend')}
