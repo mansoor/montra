@@ -56,6 +56,10 @@
     "done",
     "Personal template in chart-templates.ts (Health, Home, Transportation and Taxes groups, insurance split, more income); migration 0042 (replaced in 0046 for the Health group) adds the missing groups and categories once to existing personal books and renames Fuel & transport and Gifts & donations (app.add_personal_categories)"
   ],
+  "ACC-14": [
+    "done",
+    "GET accounts/:id/deletion says what stops a delete; DELETE accounts/:id (owners and admins, recent sign-in) removes an empty account with its opening-balance entry, values that posted nothing, loan details, import mapping and statement memory in one transaction, or answers 409 with the reason (account.not_empty, account.opening_locked for closed books); audit entry account.deleted; the sync pull sends removedAccounts and the phone drops them; web Settings > Accounts has Delete beside Archive"
+  ],
   "TXN-01": [
     "done",
     "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"

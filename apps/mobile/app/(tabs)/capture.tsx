@@ -168,7 +168,8 @@ export default function Capture() {
   useEffect(() => {
     void store.getMeta(LAST_ACCOUNT).then((id) => {
       if (id && accounts.some((a) => a.id === id)) setAccountId(id);
-      else if (!accountId && accounts[0]) setAccountId(accounts[0].id);
+      // None chosen yet, or the chosen one was deleted (ACC-14): take the first.
+      else if (!accounts.some((a) => a.id === accountId) && accounts[0]) setAccountId(accounts[0].id);
     });
     // Runs when the account list arrives.
   }, [accounts.length]);

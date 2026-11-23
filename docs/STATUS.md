@@ -2740,6 +2740,34 @@ Phase 11 leftovers:
     `photo-uploads.test.ts` (the profile's choice and limits, a bad setting stops the start, the meter counts the bytes
     stored).
 
+- **Delete an account added by mistake, when it is empty** (ACC-14; no migration).
+  - Before: an account could only be archived (ACC-06). One added by mistake stayed in the lists for good.
+  - Now `DELETE /accounts/:id` deletes an empty account. `GET /accounts/:id/deletion` says first what stops it.
+    - Owners and admins only, as for moving an account to other books, and only after a recent sign-in
+      (`reauth.required`).
+    - Empty means no transactions (posted, scheduled or in the trash), receipts on them, balance adjustments, journals,
+      values that changed the balance, statement imports or statements waiting for it in Review, reconciliations, loan
+      payments, other loans, cards or assets that use it, recurring items, rules or pending rule suggestions. Every other
+      table that points at it counts too: employers and payslips, payroll, business and rental settings, invoices and
+      bills, goals, expected income, tax forms.
+    - Otherwise the answer is 409 `account.not_empty` with a sentence such as "This account has 12 transactions.
+      Archive it instead, or remove them first." The web shows it.
+    - What goes with it, in one transaction: its opening-balance entry (only when its other lines are on
+      opening-balance equity), values that posted nothing, its loan details, its saved import mapping and its
+      statement memory. Visibility, past moves, payee transfers and tax-form waivers go by cascade, and a linked feed
+      account is left unlinked. The books stay balanced.
+    - An opening balance in closed books, or a locked one, is refused with 409 `account.opening_locked` and the date.
+    - The audit log gets `account.deleted` with who, the name, kind, type, currency, books and opening balance.
+    - Sync: the pull reads deletes from the change feed and sends `removedAccounts`; the phone drops them from its
+      accounts. Quick add picks another account if the chosen one was deleted. The phone has no account settings
+      screen, so Delete is on the web only: Settings › Accounts, beside Archive, for owners and admins. It asks the API
+      first, shows the reason or asks to confirm by name, and a stale sign-in shows the step-up link.
+    - Not changed: the read models (`account_balance_daily`, `category_activity_monthly`) keep zeroed rows for the
+      deleted account; nothing reads them without the account.
+  - Tests: API `account-delete.test.ts` (an empty account goes with its opening entry, books balanced; partner refused;
+    stale sign-in refused; 409 with a transaction, a receipt, a statement; closed books refused; the audit entry; the
+    sync pull's `removedAccounts`). Sync `engine.test.ts`, mobile `store.test.ts`, web `account-delete.test.ts`.
+
 ---
 
 ## 8. Session checklist

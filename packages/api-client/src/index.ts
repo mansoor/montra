@@ -367,6 +367,7 @@ import type {
   RetentionReviewDto,
   UpdateNotificationPrefsRequest,
   AccountMovePreviewDto,
+  AccountDeletionDto,
   BusinessDashboardDto,
   BusinessLogoDto,
   ConnectStorageRequest,
@@ -1350,6 +1351,17 @@ export class ApiClient {
   }
   updateAccount(workspaceId: string, accountId: string, input: UpdateAccountInput) {
     return this.request<AccountDto>('PATCH', this.ws(workspaceId, `/accounts/${enc(accountId)}`), input);
+  }
+  /** ACC-14: whether an account added by mistake can be deleted, and what stops it. */
+  accountDeletion(workspaceId: string, accountId: string) {
+    return this.request<AccountDeletionDto>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/deletion`),
+    );
+  }
+  /** ACC-14: deletes an empty account. 409 with the reason when it has history; 403 reauth.required for step-up. */
+  deleteAccount(workspaceId: string, accountId: string) {
+    return this.request<AccountDeletionDto>('DELETE', this.ws(workspaceId, `/accounts/${enc(accountId)}`));
   }
   /** ADR-0033: what moving the account to other books would do; nothing changes. */
   previewAccountMove(workspaceId: string, accountId: string, entityId: string) {
@@ -3708,6 +3720,7 @@ export type {
   TenantLeaseDto,
   BillDto,
   AccountMovePreviewDto,
+  AccountDeletionDto,
   BusinessDashboardDto,
   BusinessLogoDto,
   BusinessProfileDto,
