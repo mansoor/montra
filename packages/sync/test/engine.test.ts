@@ -90,6 +90,40 @@ describe('bootstrap', () => {
   });
 });
 
+describe('deleted accounts (ACC-14)', () => {
+  it('drops an account the server deleted, keeping the others', async () => {
+    const account = (id: string, name: string) =>
+      ({ id, name }) as unknown as SyncPullResponse['accounts'][0];
+    const page = (p: Partial<SyncPullResponse>): SyncPullResponse => ({
+      latestSeq: '1',
+      hasMore: false,
+      full: false,
+      transactions: [],
+      removedTransactions: [],
+      accounts: [],
+      categories: [],
+      members: [],
+      entities: [],
+      reviewCount: 0,
+      ...p,
+    });
+    const pages = [
+      page({ latestSeq: '10', full: true, accounts: [account('a1', 'Checking'), account('a2', 'Mistake')] }),
+      // Its only account left was deleted: the list comes back empty, the tombstone still applies.
+      page({ latestSeq: '11', removedAccounts: ['a2', 'never-seen'] }),
+    ];
+    const transport: SyncTransport = {
+      pull: async () => pages.shift()!,
+      push: async () => ({ results: [], latestSeq: '0' }),
+    };
+    const { engine, store } = setup({ transport });
+    await engine.bootstrap();
+    expect((await store.getReference('accounts')).map((a) => a.id)).toEqual(['a1', 'a2']);
+    await engine.sync();
+    expect((await store.getReference('accounts')).map((a) => a.id)).toEqual(['a1']);
+  });
+});
+
 describe('outbox', () => {
   it('creates offline, then pushes with the client id', async () => {
     const { engine, store, server } = setup();

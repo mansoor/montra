@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { PayRunDto, PayScheduleDto, PayrollPersonDto, ReimbursementDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { photoForUpload } from '@/lib/photo-upload';
 import { parseAmountInput } from '@/lib/money';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
@@ -97,7 +98,8 @@ export function PayrollHome({
       return;
     }
     const fileIds: string[] = [];
-    for (const f of receipts) {
+    for (const picked of receipts) {
+      const f = await photoForUpload(picked);
       const up = await run(() => browserApi.uploadReceiptForReimbursement(workspaceId, entityId, f, f.name));
       if (!up) return;
       fileIds.push(up.fileId);

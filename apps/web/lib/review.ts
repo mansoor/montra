@@ -2,10 +2,19 @@
  * Review queue model (AI-03/04, PLT-10): keyboard commands, confidence display and list updates. Kept free of
  * React so the shortcut map and the "accept all above X%" count can be unit-tested.
  */
-import type { AccountDto, MakeTransferDto, MoneyDto, ReviewItemDto } from '@montra/schemas';
+import type { AccountDto, MakeTransferDto, MoneyDto, PropertyDto, ReviewItemDto } from '@montra/schemas';
 
 export type ReviewCommand =
-  'next' | 'prev' | 'accept' | 'category' | 'member' | 'select' | 'acceptAbove' | 'help' | 'close';
+  | 'next'
+  | 'prev'
+  | 'accept'
+  | 'category'
+  | 'member'
+  | 'property'
+  | 'select'
+  | 'acceptAbove'
+  | 'help'
+  | 'close';
 
 export interface KeyInput {
   key: string;
@@ -37,6 +46,8 @@ export function reviewCommand(e: KeyInput): ReviewCommand | null {
       return 'category';
     case 'm':
       return 'member';
+    case 'p':
+      return 'property';
     case 'x':
     case ' ':
       return 'select';
@@ -54,6 +65,7 @@ export const SHORTCUTS: ReadonlyArray<{ keys: string; label: string }> = [
   { keys: 'a / Enter', label: 'review.shortcut.accept' },
   { keys: 'c', label: 'review.shortcut.category' },
   { keys: 'm', label: 'review.shortcut.member' },
+  { keys: 'p', label: 'review.shortcut.property' },
   { keys: 'x', label: 'review.shortcut.select' },
   { keys: 'Shift + A', label: 'review.shortcut.accept_above' },
   { keys: 'g r', label: 'review.shortcut.go_review' },
@@ -92,6 +104,53 @@ export const proposedTransfer = (
   item: ReviewItemDto,
 ): { accountId: string; transactionId: string | null } | null =>
   item.categorization?.step === 'transfer' ? (item.categorization.transfer ?? null) : null;
+
+/**
+ * AI-02: the property (and unit) the pipeline offers for a line, while it isn't on the line yet. Accepting puts it on
+ * with the category; one already on the line (set by hand, or by a lease or mortgage) is never replaced.
+ */
+export const proposedProperty = (item: ReviewItemDto) => {
+  const p = item.categorization?.property;
+  return p && !p.applied && item.propertyId === null ? p : null;
+};
+
+/** What the line's property reads as: the one on it, else the one offered. */
+export function propertyLabel(item: ReviewItemDto, properties: readonly PropertyDto[]): string | null {
+  if (item.propertyId) {
+    const p = properties.find((x) => x.id === item.propertyId);
+    const u = item.unitId ? p?.units.find((x) => x.id === item.unitId) : undefined;
+    return p ? (u ? `${p.name}, ${u.label}` : p.name) : null;
+  }
+  return proposedProperty(item)?.label ?? null;
+}
+
+/**
+ * Picker options for a line's property: each active property in the books, then its units when it has more than one,
+ * and "No property". Ids are `propertyId` or `propertyId/unitId`; '' is none.
+ */
+export function propertyOptions(
+  properties: readonly PropertyDto[],
+  entityId: string | null,
+  noneLabel: string,
+): { id: string; label: string; group?: string }[] {
+  const mine = properties.filter((p) => !p.archived && (!entityId || p.entityId === entityId));
+  return [
+    { id: '', label: noneLabel },
+    ...mine.flatMap((p) => [
+      { id: p.id, label: p.name, group: p.name },
+      ...(p.units.length > 1
+        ? p.units.map((u) => ({ id: `${p.id}/${u.id}`, label: `${p.name}, ${u.label}`, group: p.name }))
+        : []),
+    ]),
+  ];
+}
+
+/** A picked option's property and unit (null for "No property"). */
+export function parsePropertyPick(id: string): { propertyId: string | null; unitId: string | null } {
+  if (!id) return { propertyId: null, unitId: null };
+  const [propertyId, unitId] = id.split('/');
+  return { propertyId: propertyId!, unitId: unitId ?? null };
+}
 
 /** Items "accept all ≥ X%" would accept, among those loaded (the API applies it to the whole queue). */
 export function countAtOrAbove(items: readonly ReviewItemDto[], min: number): number {

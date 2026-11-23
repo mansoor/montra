@@ -156,6 +156,12 @@ export class SqliteStore implements SyncStore {
     });
   }
 
+  async removeReference(table: ReferenceTable, ids: string[]): Promise<void> {
+    await this.transaction(async () => {
+      for (const id of ids) await this.db.run('delete from reference where tbl = ? and id = ?', [table, id]);
+    });
+  }
+
   async getReference<T extends ReferenceTable>(table: T): Promise<ReferenceRows[T]> {
     const rows = await this.db.all<{ data: string }>(
       'select data from reference where tbl = ? order by ord',

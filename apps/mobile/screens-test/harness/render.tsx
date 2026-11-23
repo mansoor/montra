@@ -4,7 +4,7 @@
  */
 import type { ReactElement, ReactNode } from 'react';
 import { render } from '@testing-library/react-native';
-import type { MemberRole, MeDto, WorkspaceDto } from '@montra/schemas';
+import { PHOTO_UPLOAD_DEFAULTS, type MemberRole, type MeDto, type WorkspaceDto } from '@montra/schemas';
 import { SessionProvider, useSession } from '../../src/session/SessionProvider';
 import { ToastHost } from '../../src/ui/components';
 import { api } from './api';
@@ -21,6 +21,8 @@ export const me = (over: Partial<MeDto> = {}): MeDto => ({
   dateFormat: null,
   weekStart: 1,
   emailVerified: true,
+  keepOriginalPhotos: false,
+  photoLimits: { ...PHOTO_UPLOAD_DEFAULTS },
   ...over,
 });
 

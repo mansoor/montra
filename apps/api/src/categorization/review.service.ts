@@ -21,8 +21,8 @@ import type {
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { transactionConditions } from '../common/list-filters.js';
 import { AiService } from '../ai/ai.service.js';
-import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
-import { TransactionsService } from '../transactions/transactions.service.js';
+import { ownerOf, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
+import { singleProperty, TransactionsService } from '../transactions/transactions.service.js';
 import { Categorizer, toDto, type StoredCategorization } from './categorizer.service.js';
 import { MerchantDirectory } from './merchants.js';
 
@@ -100,6 +100,7 @@ export class ReviewService {
       const spec = r.spec as TransactionSpec | null;
       const std = spec?.type === 'standard' ? spec : null;
       const single = std && std.splits.length === 1 ? std.splits[0]! : null;
+      const property = std ? singleProperty(std) : null;
       return {
         transactionId: r.id,
         date: r.txn_date,
@@ -110,6 +111,8 @@ export class ReviewService {
         entityId: r.primary_entity_id,
         categoryId: single && !std!.uncategorized ? single.accountId : null,
         memberId: single?.memberId ?? std?.memberId ?? null,
+        propertyId: property?.propertyId ?? null,
+        unitId: property?.unitId ?? null,
         categorization: toDto(r.categorization as StoredCategorization | null),
         merchant: r.payee_key ? merchants.lookup(r.payee_key) : null,
         version: r.version.toString(),
@@ -131,7 +134,11 @@ export class ReviewService {
     return out;
   }
 
-  /** Accepts suggestions as they are. Items without a suggestion, split items and locked items are skipped. */
+  /**
+   * Accepts suggestions as they are. Items without a suggestion, split items and locked items are skipped. A suggested
+   * property (AI-02) goes on with the category, unless the transaction has a property already, comes from a lease or a
+   * mortgage, or the property is in other books than the category.
+   */
   async accept(trx: Trx, ctx: Ctx, req: AcceptReviewRequest): Promise<AcceptReviewResponse> {
     let q = trx
       .selectFrom('app.transaction as t')
@@ -185,9 +192,11 @@ export class ReviewService {
         skipped++;
         continue;
       }
+      const property = await this.acceptableProperty(trx, ctx, c, spec, categoryId);
       await this.transactions.updateInTrx(trx, ctx, r.id, {
         categoryId,
         ...(c.suggested?.memberId ? { memberId: c.suggested.memberId } : {}),
+        ...(property ? { propertyId: property.propertyId, unitId: property.unitId } : {}),
         reviewState: 'reviewed',
       });
       accepted++;
@@ -195,7 +204,41 @@ export class ReviewService {
     return { accepted, skipped, transfers };
   }
 
-  /** A different category than suggested: a correction the app learns from (AI-05). */
+  /** The suggested property, when accepting may put it on: none there yet, no lease or loan, the same books. */
+  private async acceptableProperty(
+    trx: Trx,
+    ctx: Ctx,
+    c: StoredCategorization,
+    spec: TransactionSpec & { type: 'standard' },
+    categoryId: string,
+  ): Promise<{ propertyId: string; unitId: string | null } | null> {
+    const p = c.property;
+    if (!p || p.applied || ownerOf(spec) || spec.splits.some((s) => s.propertyId)) return null;
+    const row = await trx
+      .selectFrom('app.property as p')
+      .innerJoin('app.ledger_account as a', (j) => j.onRef('a.workspace_id', '=', 'p.workspace_id'))
+      .select(['p.entity_id as property_entity', 'a.entity_id as category_entity', 'p.archived_at'])
+      .where('p.workspace_id', '=', ctx.workspaceId)
+      .where('p.id', '=', p.propertyId)
+      .where('a.id', '=', categoryId)
+      .executeTakeFirst();
+    if (!row || row.archived_at || row.property_entity !== row.category_entity) return null;
+    if (p.unitId) {
+      const unit = await trx
+        .selectFrom('app.unit')
+        .select('property_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', p.unitId)
+        .executeTakeFirst();
+      if (unit?.property_id !== p.propertyId) return { propertyId: p.propertyId, unitId: null };
+    }
+    return { propertyId: p.propertyId, unitId: p.unitId };
+  }
+
+  /**
+   * A different category than suggested: a correction the app learns from (AI-05). A property (and unit) given here
+   * replaces the suggested one and is learned for the payee (AI-02).
+   */
   async resolve(trx: Trx, ctx: Ctx, id: string, req: ResolveReviewRequest): Promise<ResolveReviewResponse> {
     const { ruleSuggestion } = await this.transactions.updateInTrx(
       trx,
@@ -204,6 +247,8 @@ export class ReviewService {
       {
         categoryId: req.categoryId,
         ...(req.memberId !== undefined ? { memberId: req.memberId } : {}),
+        ...(req.propertyId !== undefined ? { propertyId: req.propertyId } : {}),
+        ...(req.unitId !== undefined ? { unitId: req.unitId } : {}),
         reviewState: 'reviewed',
       },
       req.version !== undefined ? `"v${req.version}"` : undefined,

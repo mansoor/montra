@@ -52,6 +52,14 @@ per environment and per workspace mode.
 | --- | --- | --- | --- | --- |
 | `categorize`, `normalize_payees`, `map_columns`, `parse_quick_add` | `claude-haiku-5-5` (small, cheap) | `low` | up to 100 rows per call | JSON schema |
 | `map_tax_lines`, `flag_separation`, `flag_capital` | `claude-haiku-5-5` (small, cheap) | `low` | 1 list per call | JSON schema; answers limited to what was offered, and the user decides |
+| `suggest_property` (AI-02) | `claude-haiku-5-5` (small, cheap) | `low` | up to 100 rows per call, one call per set of rental books | JSON schema; short ids for properties (p1) and units (u1) |
+
+`suggest_property` (`tasks/suggest-property/v1.ts`) gets the lines whose rental property is still open after rules,
+payee history and an address or unit in the text. It sends each line minimized as `categorize` does (masked payee and
+description, a rounded amount, the category's name) and the books' properties as short ids with the owner's name for
+each, masked like any text, and unit labels. It never sends an address. Its score is the model's own, not calibrated,
+so the API applies it only at the AI threshold as well as the property threshold. Results are cached per line for 30
+days.
 | `extract_receipt`, `extract_payslip`, `extract_statement_table` | `claude-sonnet-5-5` (vision) | `medium` | 1 document | JSON schema |
 
 `extract_receipt` (`tasks/extract-receipt/v3.ts`; v3 adds the store's address, phone and website) sends the receipt images in builtin and BYOK modes only,

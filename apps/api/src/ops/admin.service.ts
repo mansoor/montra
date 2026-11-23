@@ -93,6 +93,7 @@ export class AdminService {
         reason: string | null;
         suspended_at: Date | null;
         purge_after: Date | null;
+        purge_held_at: Date | null;
       }>`select * from app.admin_account_states(${rows.map((r) => r.id)}::uuid[])`.execute(trx);
       const state = new Map(states.map((x) => [x.user_id, x]));
       return rows.map((r) => {
@@ -109,6 +110,7 @@ export class AdminService {
               ? { kind: st.kind, reason: st.reason ?? '', at: st.suspended_at.toISOString() }
               : null,
           purgeAfter: iso(st?.purge_after),
+          purgeHeldSince: iso(st?.purge_held_at),
         };
       });
     });
@@ -132,12 +134,18 @@ export class AdminService {
         deleted_at: Date | null;
         support_until: Date | null;
       }>`select * from app.admin_account_workspaces(${userId}::uuid)`.execute(trx);
-      const { rows: plans } = await sql<{ workspace_id: string; plan_name: string; trial_end: Date | null }>`
+      const { rows: plans } = await sql<{
+        workspace_id: string;
+        plan_name: string;
+        trial_end: Date | null;
+        purge_held_at: Date | null;
+      }>`
         select * from app.admin_workspace_plans(${rows.map((r) => r.id)}::uuid[])`.execute(trx);
       const plan = new Map(plans.map((p) => [p.workspace_id, p]));
       return rows.map((r) => ({
         planName: plan.get(r.id)?.plan_name ?? r.plan,
         trialEnd: iso(plan.get(r.id)?.trial_end),
+        purgeHeldSince: iso(plan.get(r.id)?.purge_held_at),
         id: r.id,
         name: r.name,
         role: r.role,

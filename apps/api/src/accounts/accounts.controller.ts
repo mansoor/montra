@@ -23,6 +23,7 @@ import {
   type InvestmentPerformanceDto,
   type AccountDto,
   type AccountMovePreviewDto,
+  type AccountDeletionDto,
   type CategoryDto,
   type CategoryGroupDto,
   CreateCategoryRequest,
@@ -30,9 +31,17 @@ import {
   UpdateCategoryRequest,
 } from '@montra/schemas';
 import { z } from 'zod';
-import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import {
+  AuthGuard,
+  Ctx,
+  dbCtx,
+  requireRecentAuth,
+  WorkspaceGuard,
+  type RequestContext,
+} from '../auth/auth.js';
 import { requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
+import { AccountDeleteService } from './account-delete.service.js';
 import { AccountMoveService } from './account-move.service.js';
 import { AccountsService } from './accounts.service.js';
 import { CardsService } from './cards.service.js';
@@ -48,7 +57,23 @@ export class AccountsController {
     @Inject(CardsService) private readonly cards: CardsService,
     @Inject(AccountMoveService) private readonly moves: AccountMoveService,
     @Inject(CategoriesService) private readonly categoriesService: CategoriesService,
+    @Inject(AccountDeleteService) private readonly deletes: AccountDeleteService,
   ) {}
+
+  /** ACC-14: whether an account added by mistake can be deleted, and what stops it. Owners and admins, as for a move. */
+  @Get('accounts/:accountId/deletion')
+  deletion(@Ctx() ctx: RequestContext, @Param('accountId') accountId: string): Promise<AccountDeletionDto> {
+    requireWorkspaceAdmin(ctx);
+    return this.deletes.check(dbCtx(ctx), parse(z.uuid(), accountId));
+  }
+
+  /** ACC-14: deletes an empty account with its own setup. Needs a recent sign-in, like other deletions. */
+  @Delete('accounts/:accountId')
+  remove(@Ctx() ctx: RequestContext, @Param('accountId') accountId: string): Promise<AccountDeletionDto> {
+    requireWorkspaceAdmin(ctx);
+    requireRecentAuth(ctx);
+    return this.deletes.delete(dbCtx(ctx), parse(z.uuid(), accountId));
+  }
 
   /**
    * ADR-0033: what moving the account to other books would do, changing nothing. Owners only: the move rewrites

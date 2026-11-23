@@ -34,8 +34,35 @@ export const CategorizationDto = z.object({
   /**
    * Step 3: the other account of a likely transfer or card payment, and the other side when it was already recorded
    * (null: only this side is in yet). Accepting the suggestion makes it a transfer. Absent on older entries.
+   * `made`, once it is a transfer: `import` when an import made it on its own (a pair at or above the workspace's
+   * `transferThreshold`), `you` when it was made in Review or by hand. Either can be undone
+   * (`POST /transactions/:id/undo-transfer`). Absent on transfers made before undo existed.
    */
-  transfer: z.object({ accountId: z.string(), transactionId: z.string().nullable() }).nullable().optional(),
+  transfer: z
+    .object({
+      accountId: z.string(),
+      transactionId: z.string().nullable(),
+      made: z.enum(['import', 'you']).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * AI-02: the rental property and unit the pipeline found for a line in rental books. `applied` says whether it was
+   * put on the transaction (at or above the property threshold); otherwise Review offers it. `label` is the property's
+   * name (and the unit's) when it was found. Absent on older entries and outside rental books.
+   */
+  property: z
+    .object({
+      propertyId: z.string(),
+      unitId: z.string().nullable(),
+      label: z.string(),
+      step: z.enum(['rule', 'history', 'text', 'ai']),
+      confidence: z.number(),
+      explanation: z.string(),
+      applied: z.boolean(),
+    })
+    .nullable()
+    .optional(),
 });
 export type CategorizationDto = z.infer<typeof CategorizationDto>;
 
@@ -97,6 +124,16 @@ export const AiSettingsDto = z.object({
   threshold: z.number(),
   /** The threshold an AI suggestion must meet to be applied automatically (default 0.95). */
   aiThreshold: z.number(),
+  /**
+   * AI-02: the confidence a suggested rental property (and unit) must reach to be applied (default 0.80). Below it,
+   * Review offers it. A property from AI must also reach `aiThreshold`.
+   */
+  propertyThreshold: z.number(),
+  /**
+   * TXN-04, AI-03: an import makes a detected transfer pair a transfer on its own when the pair's confidence is at or
+   * above this (default 0.95, a sure pair). Null: off, every pair waits in Review.
+   */
+  transferThreshold: z.number().nullable(),
   monthlyBudgetUsd: z.number().nullable(),
   /** PAY-09/UP-06: allow statement scans and payslip images to be sent to an LLM. */
   allowDocumentsToLlm: z.boolean(),
@@ -138,6 +175,9 @@ export const UpdateAiSettingsRequest = z
     clearKey: z.boolean(),
     threshold: z.number().min(0.5).max(0.99),
     aiThreshold: z.number().min(0.5).max(0.99),
+    propertyThreshold: z.number().min(0.5).max(0.99),
+    /** Null turns making transfers at import off. Below 0.9 would take pairs on amount alone. */
+    transferThreshold: z.number().min(0.9).max(0.99).nullable(),
     monthlyBudgetUsd: z.number().min(0).max(10000).nullable(),
     allowDocumentsToLlm: z.boolean(),
     allowReceiptImagesToLlm: z.boolean(),
@@ -219,6 +259,9 @@ export const RuleActions = z
     tags: z.array(z.string().max(50)).max(10),
     renamePayee: z.string().max(200).nullable(),
     markReviewed: z.boolean(),
+    /** AI-02: the rental property (and unit) a matching line belongs to. A unit needs its property. */
+    propertyId: Id.nullable(),
+    unitId: Id.nullable(),
   })
   .partial()
   .refine((a) => Object.values(a).some((v) => v !== undefined && v !== null), {
@@ -323,6 +366,9 @@ export const ReviewItemDto = z.object({
   /** Category currently posted (often the entity's uncategorized account). */
   categoryId: z.string().nullable(),
   memberId: z.string().nullable(),
+  /** AI-02: the property and unit on the transaction now (a single property across its splits), or null. */
+  propertyId: z.string().nullable(),
+  unitId: z.string().nullable(),
   categorization: CategorizationDto.nullable(),
   merchant: MerchantDto.nullable(),
   version: z.string(),
@@ -379,6 +425,12 @@ export type AcceptReviewResponse = z.infer<typeof AcceptReviewResponse>;
 export const ResolveReviewRequest = z.object({
   categoryId: Id,
   memberId: Id.nullable().optional(),
+  /**
+   * AI-02: the property (and unit) chosen instead of the one suggested; null for none. Absent: the suggested one is
+   * kept only if it was already applied. A choice is learned for the payee.
+   */
+  propertyId: Id.nullable().optional(),
+  unitId: Id.nullable().optional(),
   version: z.string().optional(),
 });
 export type ResolveReviewRequest = z.output<typeof ResolveReviewRequest>;

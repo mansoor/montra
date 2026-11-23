@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-09, with Phase 11 code complete (on `claude/phase11-contracts`, PR open). Launch steps remain. Keep this file current:
+_Last updated 2026-11-23. Phase 11 is code complete and merged; launch steps remain. Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -11,14 +11,14 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 ## 1. Snapshot
 
-|                        |                                                                                                                                                                                                                                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Integration branch** | `develop`: Phases 0–10 merged. Last merge was PR #17 at `4d5e62c`                                                                                                                                                                                                                                                                                   |
-| **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
-| **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
-| **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 338 IDs in total: **256 done, 65 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
-| **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
+|                        |                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Integration branch** | `develop`: Phases 0–11 merged, and the work since (§7g). Last merge was PR #193 at `99e8105` (2026-11-22)                                                                                                                                                                                                                                                                           |
+| **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                                                    |
+| **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10 · `v0.12.0-dev.1` Phase 11, then one `v0.12.0-dev.N` per merge since (latest `v0.12.0-dev.140`) |
+| **Pull requests**      | #1–#17 Phases 1–10, #18 Phase 11, then the work in §7g, up to #193. Each merged into `develop` with green CI                                                                                                                                                                                                                                                                        |
+| **Requirements**       | 349 IDs in total: **279 done, 56 partial**, 14 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
+| **Next**               | The owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                                                                                                 |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on 2026-11-16.
@@ -32,15 +32,15 @@ later; tax forms use an owner-only setting for accountants instead.
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
 
-**Accepted, ready to build:** [ADR-0055](design/adr/0055-bank-feeds-simplefin.md), bank feeds per workspace, with
+**Built, the chain complete (2026-11-20):** [ADR-0055](design/adr/0055-bank-feeds-simplefin.md), bank feeds per workspace, with
 SimpleFIN Bridge as the first provider behind a provider port, accepted by the owner on 2026-11-19. An owner (recent
 sign-in) pastes a SimpleFIN setup token, Montra claims it once and seals the access URL, each institution account is
 linked to a Montra account, and a daily sync (plus Sync now for owners, admins and partners, within SimpleFIN's daily
 limit) brings posted transactions only through the existing import pipeline, one batch per account, with the provider's
 id as the dedupe key. Clean syncs import themselves with Undo; others wait in Review. Feeds sit alongside uploaded
 statements, and the first sync starts the day after the account's latest transaction, at most 90 days back, or from a
-date picked when linking. A hidden `bankFeeds` plan key, in every plan with `ownStorage`. Nothing built yet; four PRs
-planned (ADR's Delivery).
+date picked when linking. A `bankFeeds` plan key, in every plan with `ownStorage`, now shown in the plans. All
+six PRs are merged (PR 1 to PR 5, PR 3 in two parts; #157–#162), and a live run against SimpleFIN's demo passed (see §7g).
 
 **Built, the chain complete (2026-11-18):** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
 Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. Montra connects
@@ -245,7 +245,7 @@ finished:
 - **Finished by a later phase, as planned:**
   - AIA-01: a monthly summary and a budget recommendation by AI.
   - AIA-12 and NFR-14: tax outputs, in Phase 8.
-  - AI-02: AI doesn't suggest a property or unit. They're tagged by hand or by rent, mortgage and capital improvement links.
+  - ~~AI-02: AI doesn't suggest a property or unit.~~ Done: the pipeline suggests the rental property and unit (see §7g).
   - PLT-03 and UP-07: mobile screens arrive with each feature phase.
   - AI-07: logos, via reference data.
 - **Phase 11 hardening:**
@@ -263,8 +263,9 @@ finished:
 ### Cross-phase backlog (known gaps not tied to one requirement)
 
 1. ~~**Transfers.**~~ Done: accepting a suggested transfer in review (web or phone, one at a time or "accept all
-   above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import doesn't
-   convert pairs on its own yet, even at 0.95: they wait in review.
+   above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import now makes
+   pairs at or above the workspace's setting (default 0.95) transfers on its own, and either kind can be undone from
+   the transaction (see §7g).
 2. ~~**Local-mode AI tasks.**~~ Done: a posted answer is used where a provider's would be, and applied to the import
    or receipt it was for (see §7g).
 3. ~~**More bring-your-own-key adapters.**~~ Done: OpenAI, Google Gemini and Azure OpenAI (see §7g).
@@ -764,7 +765,8 @@ Phase 10 leftovers, not blocking:
 - **OPS-13**: done since; the phone now edits profile, family, books, AI mode and quiet hours (see 7g).
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
-- **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
+- **BAK-08**: photos are compressed on the web as on the phone, and a person can keep originals (see 7g). Partial until
+  tried on a real phone and in real browsers.
 - **CUR-06**: done since; net worth now shows unrealized FX gain or loss on the web and the phone (see 7g).
 - Personal books can't be restored into an existing workspace, which already has its one personal entity. Use a new workspace.
 - Restoring to an existing workspace only counts likely duplicates; it doesn't drop them.
@@ -2616,13 +2618,191 @@ Phase 11 leftovers:
     receipt, payslip, bill, invoice or payroll form. Dates already set don't change. `RETENTION_EXTEND_YEARS`
     (default 1) is what "Keep for longer" adds. `RETENTION_BATCH` (default 500) caps what one run lists, and what it
     removes. Tax forms keep their own date (tax year + 7, ADR-0052 §8.5).
-  - Not changed: a receipt in the trash still waits for its retention date, although the Trash shows a purge date
-    30 days out.
+  - A receipt in the trash still waits for its retention date. The Trash showed a purge date 30 days out; it shows the
+    retention date now (next entry).
   - Tests: API `receipt-retention.test.ts` (nothing goes without an approval; listed and told once; owners only;
     approving needs a recent sign-in; approval covers only the items listed; then the receipt goes with its lines,
     image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
     blocks after approval; a shared object; the batch size; a vault-held file). `data-ownership.test.ts` now approves
+---
     before a file goes. Web `retention.test.ts`.
+- **The translation adjustment on net worth** (CUR-01, [ADR-0010](design/adr/0010-fx-accounting-policy.md) §7; no
+  migration).
+  - Before: net worth converted books kept in another currency (a business in EUR in a USD workspace) at each date's
+    rate, but nothing said how much of that came from the rate moving. §7's translation adjustment line wasn't built.
+  - Now, for each account in books whose currency isn't the base, net worth works out its carrying value at the
+    date's rate less each of its postings at its own day's rate. Income, spending, transfers and opening balances all
+    count at their own day's rate. That is the closing-rate net assets less the opening translated net assets and the
+    movements at their rates, cumulative from the books' first posting. Nothing is posted.
+  - It doesn't overlap CUR-06's unrealized FX, which is measured in the books' own currency before translation. Net
+    worth less every posting at its day's rate is the two added together (to a cent or so of cross-rate rounding when
+    an account's currency is neither its books' nor the base).
+  - `NetWorthDto` has `translationAdjustment` in total, per account (null when the books are in the base currency) and
+    per trend date. `@montra/domain` has `translationAdjustment` (one period, bigint) and `translationAdjustments`
+    (rolled forward over dates).
+  - The net worth report gets a "Translation adjustment" column and a note, only when some books are in another
+    currency. Export includes the column.
+  - Web: the net worth tab of Cash flow shows the total under net worth and a column per account. Phone: the net worth
+    tab shows the total.
+  - Left out: properties (their worth isn't booked, so there are no days' rates); an account missing a rate counts as
+    zero, as net worth already leaves it out. Not changed: the income and spending reports still convert other books
+    at the period end's rate (ADR-0019 §2), and there's no other comprehensive income line on an income statement.
+  - Tests: domain `ledger-fx.test.ts` (EUR books in USD with the rate moving: from the start, one period, rolled
+    forward, flat rates give zero, after the money has gone, no rate), API `translation-adjustment.test.ts` (the
+    figure per account, in total and per date, no double count with unrealized FX, the report column, note and CSV,
+    nothing booked, no column when every set of books is in the base currency), web `i18n-keys.test.ts`.
+- **Receipts in the Trash, and a legal hold on account deletion** (BAK-06, NFR-06, BAK-09, RCP-10; migration 0080).
+  - Before: a deleted receipt waits in the Trash for its retention date (RCP-10), but the Trash said it would go 30
+    days after it was deleted. And the hourly job purged a closed account, and the workspaces that went with it, after
+    its 30 days, under a legal hold too. `purge_user` even deleted the hold.
+  - Now the Trash says how and when each item goes. `TrashItemDto` has `removal` and `until` in place of `purgeOn`:
+    - `trash`: transactions and tax forms, removed for good 30 days after they were deleted (as before).
+    - `retention`: a receipt. It is a tax record, so it is kept until its retention date, and can be restored until
+      then. Deleting it doesn't shorten that.
+    - `owner_approval`: a receipt past its retention date. It is listed for the owners in Settings › Data like any
+      other, and goes only once one approves.
+    - `in_use`: a transaction still there 2 hours after its 30 days. The hourly job couldn't delete it because another
+      record (a payslip deposit or a rent payment, say) still points at it, so it stays until that changes.
+  - The web's Trash and Settings › Data say so. The phone has no Trash screen. How files in the Trash go is unchanged.
+  - A legal hold on a closing account keeps it, and its workspaces, as they are: `retention_due()` leaves them out, and
+    `purge_user` and `purge_workspace` refuse them. A closing workspace is also kept while any active member is under
+    a legal hold. The account that closed it is still purged.
+  - The job notes when it first held one back (`purge_held_at` on the user and the workspace) and logs a warning once,
+    not every hour. The staff console shows "Deletion held back by a legal hold since …" on the account and on the
+    workspace. When the hold is lifted (or the deletion cancelled) the note is cleared and logged, and the same run
+    purges what is due.
+  - The person is not told: a legal hold is never emailed to them (ADR-0049 §4), so nothing goes in their security
+    log either.
+  - No new settings: the 30 days and the hourly job are as before.
+  - Tests: API `receipt-retention.test.ts` (a deleted receipt shows its retention date and outlasts the 30 days; it can
+    be restored; past its date it waits for an owner and goes only after an approval). New `deletion-legal-hold.test.ts`
+    (a closing account under a hold isn't purged, the purge functions refuse it, it's logged once, the console shows it,
+    and it goes on the next run after the hold is lifted; a workspace held by another member's hold).
+    `data-ownership.test.ts` and web `i18n-keys.test.ts` updated.
+- **Import makes sure transfer pairs transfers** (TXN-04, AI-03, backlog item 1; ADR-0028 amendment of 2026-11-23;
+  migration 0081).
+  - Before: a pair step 3 was sure of (0.95) waited in Review like any other, so every card payment had to be accepted
+    by hand on each statement. A transfer made in Review couldn't be taken apart again.
+  - Now an import commit makes each such pair a transfer on its own, the same way accepting it in Review does: the
+    other side is absorbed and its statement line moves to the transfer. It runs once all the rows are written in their
+    chunks of 500, so it costs a few statements per pair and nothing per other row.
+  - Setting, not code: `ai_settings.transferThreshold` (default 0.95; 0.90 to 0.99; null is off), in Settings › AI as
+    "Make pairs … transfers when importing". Below it, pairs wait in Review as before.
+  - Left in Review, not forced: a row that was a possible duplicate or got a category picked in the preview; a pair
+    with no other side yet (0.80); two rows of one import claiming the same other side; another currency (it needs the
+    amount received); an other side that changed since the preview or whose account is archived; an other side that is
+    reconciled or in closed books (DE-10). A switch from another app keeps its own pairing step.
+  - Undo: `app.transfer_conversion` records what making a transfer changed (by an import, in Review or by hand).
+    `POST /transactions/:id/undo-transfer` puts both sides back as they were, statement lines and their roles included,
+    and the editor has an "Undo transfer" button. Undoing the import that made one takes it apart first, so the other
+    side comes back and this import's line is removed. One that was changed since, or is reconciled or closed, is
+    kept with reason `transfer`, as before.
+  - Shown: the import summary says "N transfers matched" (`counts.transfers`, from `import_batch.rows_transferred`;
+    the phone too), the undo result how many were taken apart, and the transaction that the import made it
+    (`categorization.transfer.made`: `import` or `you`). An automatic one stays `auto_applied` and doesn't teach the
+    payee its account.
+  - Tests: API `import-auto-transfers.test.ts` (a sure pair converts with balances and both cleared lines kept, a 0.60
+    pair waits, off and 0.99 convert none, a threshold below 0.90 is refused, a reconciled and a closed other side are
+    skipped, a side claimed twice and another currency wait, undoing the import restores both sides and balances,
+    re-importing finds duplicates, undo from the transaction for an automatic and a manual one). `transfers.test.ts`
+    turns the setting off to keep testing the Review path.
+
+- **Photos compressed before upload on the web too, and originals kept by choice** (BAK-08; migration 0083).
+  - Before: the phone's camera and scanner saved JPEGs at quality 80 to 85, at full size. Photos picked on the phone,
+    and every photo uploaded on the web, went as they were. There was no way to keep an original.
+  - Now photos are compressed the same way on the web and the phone, before they upload or are queued:
+    - JPEG, PNG and WebP are drawn upright (EXIF orientation applied) with the long edge at most 2,000 px, and saved as
+      JPEG at quality 80. While the result is over about 1 MB, the quality steps down by 10, to 60 at the lowest.
+    - The saved JPEG has no EXIF, so no location. A JPEG is always sent re-encoded for that reason. A small PNG is sent
+      as it is when the JPEG would be no smaller.
+    - PDFs, CSVs and anything else are never touched. A photo the browser can't read goes as it is.
+    - The decisions are pure functions in `@montra/schemas` (`photo-uploads.ts`), shared by both clients. The web draws
+      on a canvas (`apps/web/lib/photo-upload.ts`); the phone uses expo-image-manipulator (`src/receipts/photo-tool.ts`).
+  - Where: on the web, receipts, reimbursement receipts, business bills, household bills, payslips, rental files, I-9
+    documents and tax forms. On the phone, receipts (camera, scanner and picked photos; the camera now shoots at full
+    quality and is compressed once) and payslips. The phone's tax-form scan now uses the same width and quality for its
+    PDF (it was 1,800 px). Statement imports, logos, restores and "Files to provide again" are not changed: a provided
+    file must match the original's bytes.
+  - Keep originals: `app_user.keep_original_photos`, off by default, as the design says ("kept if the user opts in").
+    It is in Profile on the web (saved with the profile) and on the phone (a switch, saved at once). The web's receipt
+    upload also shows "Upload the original photos this time", ticked from the profile's choice. `MeDto` gains
+    `keepOriginalPhotos` and `photoLimits`; `PATCH /v1/me` takes `keepOriginalPhotos`.
+  - Settings, not code: `PHOTO_MAX_EDGE_PX` (2000), `PHOTO_QUALITY` (80), `PHOTO_MIN_QUALITY` (60) and
+    `PHOTO_TARGET_BYTES` (1048576), checked at start and sent to the clients with `GET /v1/me`. The defaults live once,
+    in `PHOTO_UPLOAD_DEFAULTS`, which the phone also uses offline before it has a profile with limits.
+  - The meter: unchanged, and it already counts what is stored. A file's `bytes` is the length of what the client sent,
+    so a compressed photo counts at its compressed size.
+  - Duplicate checks compare the compressed bytes. The same photo compressed twice in the same browser gives the same
+    bytes, so it is still found; across browsers or a phone and a browser it may not be.
+  - Not tried on a real phone or in a real browser; the canvas and manipulator paths are covered by tests with fakes.
+  - Tests: schemas `photo-uploads.test.ts` (what is compressed, the sizes, the quality steps, which file goes, the
+    settings), web `photo-upload.test.ts` and mobile `photos.test.ts` (compressing with a fake encoder: resized, quality
+    stepped down, PDFs and originals left alone, unreadable photos sent as they are, dropped copies removed), API
+    `photo-uploads.test.ts` (the profile's choice and limits, a bad setting stops the start, the meter counts the bytes
+    stored).
+
+- **Delete an account added by mistake, when it is empty** (ACC-14; no migration).
+  - Before: an account could only be archived (ACC-06). One added by mistake stayed in the lists for good.
+  - Now `DELETE /accounts/:id` deletes an empty account. `GET /accounts/:id/deletion` says first what stops it.
+    - Owners and admins only, as for moving an account to other books, and only after a recent sign-in
+      (`reauth.required`).
+    - Empty means no transactions (posted, scheduled or in the trash), receipts on them, balance adjustments, journals,
+      values that changed the balance, statement imports or statements waiting for it in Review, reconciliations, loan
+      payments, other loans, cards or assets that use it, recurring items, rules or pending rule suggestions. Every other
+      table that points at it counts too: employers and payslips, payroll, business and rental settings, invoices and
+      bills, goals, expected income, tax forms.
+    - Otherwise the answer is 409 `account.not_empty` with a sentence such as "This account has 12 transactions.
+      Archive it instead, or remove them first." The web shows it.
+    - What goes with it, in one transaction: its opening-balance entry (only when its other lines are on
+      opening-balance equity), values that posted nothing, its loan details, its saved import mapping and its
+      statement memory. Visibility, past moves, payee transfers and tax-form waivers go by cascade, and a linked feed
+      account is left unlinked. The books stay balanced.
+    - An opening balance in closed books, or a locked one, is refused with 409 `account.opening_locked` and the date.
+    - The audit log gets `account.deleted` with who, the name, kind, type, currency, books and opening balance.
+    - Sync: the pull reads deletes from the change feed and sends `removedAccounts`; the phone drops them from its
+      accounts. Quick add picks another account if the chosen one was deleted. The phone has no account settings
+      screen, so Delete is on the web only: Settings › Accounts, beside Archive, for owners and admins. It asks the API
+      first, shows the reason or asks to confirm by name, and a stale sign-in shows the step-up link.
+    - Not changed: the read models (`account_balance_daily`, `category_activity_monthly`) keep zeroed rows for the
+      deleted account; nothing reads them without the account.
+  - Tests: API `account-delete.test.ts` (an empty account goes with its opening entry, books balanced; partner refused;
+    stale sign-in refused; 409 with a transaction, a receipt, a statement; closed books refused; the audit entry; the
+    sync pull's `removedAccounts`). Sync `engine.test.ts`, mobile `store.test.ts`, web `account-delete.test.ts`.
+- **The rental property and unit suggested for a line** (AI-02; migration 0082).
+  - Before: the pipeline suggested a category, its books and a member. A line's property and unit were tagged by hand,
+    or by a rent, mortgage or capital improvement link.
+  - Now the pipeline also finds the property, and the unit when the property has more than one, for lines that land
+    in rental books. Same order as categories:
+    - a rule (rules may now set `propertyId` and `unitId`; a unit needs its property);
+    - the payee's history: where most of its lines went (at least 2 and 80%), kept in the new `app.payee_property`;
+    - the text: the property's street address ("12 ELM ST" or "12 North Elm Street"), its name as a phrase, or a unit
+      ("APT 2B", "#2B", "UNIT NO 1"). A unit on its own counts only when one property has it. Two properties named
+      means none. A house's only unit ("Main") is never matched by its label;
+    - AI: the new `suggest_property` task, once per set of books with the lines still open. It gets masked text, a
+      rounded amount and the category's name, and the properties as short ids with their names (masked, so a street
+      number becomes "#") and unit labels. Never an address. A failure returns `ok: false` and the line keeps what
+      the earlier steps found, or nothing. The fake provider answers by distinctive words in a property's name.
+  - Settings, not code: `propertyThreshold` (default 0.80) in the AI settings, on the web's AI settings page. At or
+    above it the property goes on the line; a property from AI also needs the AI threshold. Below it, the line waits
+    in Review with the property offered, even when its category was applied.
+  - Applied on manual entries, imports and bank feeds. The property goes on with the category, or on the uncategorized
+    line in the account's own books. A line whose category is in other books only gets a suggestion.
+  - Review: the web shows the property on each row ("Suggested property: Elm duplex, 2B" and its confidence, the reason
+    on hover). Accept puts it on with the category. "Property" (or `p`) picks another property or unit, or none. The
+    phone's review card shows the suggested property, and accepting there applies it. Choosing another one on the phone
+    isn't there yet: that's on the web.
+  - Learning: accepting a property, choosing one in Review, on a transaction or with a new entry counts it for the
+    payee. Changing it takes back what that transaction counted. Undoing an import takes it back too.
+  - Never overridden: a property given with an entry, set on the transaction, or put there by a lease or mortgage link
+    stays. Accept skips the property when the line has one, belongs to a lease or loan, or the property is in other
+    books than the category.
+  - Not done: "apply to existing" for a rule leaves properties alone, and the web rule editor doesn't offer a property
+    yet (the API takes one). There is no benchmark for properties, so AI scores aren't calibrated.
+  - Tests: categorize `property-suggest.test.ts` (address, name and unit matching, history, the order rules → history
+    → text → AI, thresholds, AI failure, kept properties, transfers, books); gateway `suggest-property.test.ts` (the
+    fake provider, what is sent, ids, failures, the cache); API `property-suggestions.test.ts` (two properties: a
+    learned payee, a unit from the text, AI, an import, a set property and a lease win, a correction learned, the
+    setting); web `phase3.test.ts`; mobile `models.test.ts`.
 
 - **A date window and filters on the Transactions, Review and Receipts lists** (RPT-05, nearest ID; migration 0087).
   - Before: Transactions had only the All, Needs review, Scheduled and Trash tabs, and showed the newest 200 of all

@@ -624,6 +624,7 @@ function toBatchDto(b: Batch, counts: Record<string, number>, job: ImportBatchDt
       added: b.rows_added,
       matched: b.rows_matched,
       failed: b.rows_failed,
+      transfers: b.rows_transferred,
     },
     minDate: b.min_date,
     maxDate: b.max_date,

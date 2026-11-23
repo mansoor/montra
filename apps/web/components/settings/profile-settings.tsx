@@ -6,6 +6,7 @@ import { calendarDate, fromEpochDay, toEpochDay } from '@montra/domain';
 import { formatCalendarDate, weekdayName } from '@montra/i18n';
 import { browserApi } from '@/lib/browser-api';
 import { toFormErrors, type FormErrors } from '@/lib/errors';
+import { forgetPhotoSettings } from '@/lib/photo-upload';
 import { Field, FormError } from '../field';
 import { StatusLine, useAction } from '../use-action';
 
@@ -15,7 +16,7 @@ const DATE_FORMATS = ['YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY', 'DD.MM.YYYY'] as
 const MONDAY = toEpochDay(calendarDate('2024-01-01'));
 const SAMPLE_DATE = calendarDate('2026-10-31');
 
-/** Profile and formats (TZ-01, TZ-05, CUR-10). */
+/** Profile, formats and photo uploads (TZ-01, TZ-05, CUR-10, BAK-08). */
 export function ProfileSettings({ me }: { me: MeDto }) {
   const { busy, message, run, t } = useAction();
   const [errors, setErrors] = useState<FormErrors>({ fields: {} });
@@ -35,6 +36,11 @@ export function ProfileSettings({ me }: { me: MeDto }) {
             locale: get('locale'),
             dateFormat: dateFormat ? (dateFormat as (typeof DATE_FORMATS)[number]) : null,
             weekStart: Number(get('weekStart')),
+            keepOriginalPhotos: f.get('keepOriginalPhotos') === 'on',
+          })
+          .then((r) => {
+            forgetPhotoSettings();
+            return r;
           })
           .catch((err: unknown) => {
             setErrors(toFormErrors(err, {}, t));
@@ -110,6 +116,18 @@ export function ProfileSettings({ me }: { me: MeDto }) {
             </select>
           )}
         </Field>
+      </div>
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            name="keepOriginalPhotos"
+            defaultChecked={me.keepOriginalPhotos}
+            data-testid="keep-original-photos"
+          />
+          {t('profile.keep_original_photos')}
+        </label>
+        <p className="text-xs text-muted">{t('profile.keep_original_photos_hint')}</p>
       </div>
       <div className="flex items-center gap-3">
         <button type="submit" className="btn-primary" disabled={busy}>

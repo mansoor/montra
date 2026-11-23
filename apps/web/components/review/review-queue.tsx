@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccountDto, CategoryDto, FamilyMemberDto, WorkspaceDto } from '@montra/api-client';
-import type { ReviewItemDto, RuleSuggestionDto } from '@montra/schemas';
+import type { PropertyDto, ReviewItemDto, RuleSuggestionDto } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import {
@@ -13,8 +13,12 @@ import {
   countAtOrAbove,
   isEditableTarget,
   madeTransferMessage,
+  parsePropertyPick,
   percent,
+  propertyLabel,
+  propertyOptions,
   proposedCategoryId,
+  proposedProperty,
   proposedTransfer,
   removeItems,
   reviewCommand,
@@ -46,12 +50,15 @@ export function ReviewQueue({
   categories,
   members,
   threshold,
+  properties = [],
 }: {
   workspace: WorkspaceDto;
   accounts: AccountDto[];
   categories: CategoryDto[];
   members: FamilyMemberDto[];
   threshold: number;
+  /** AI-02: the rental properties, to show and change a line's property. */
+  properties?: PropertyDto[];
 }) {
   const { t, locale } = useI18n();
   // The filter bar's date window, merchant, amount and direction, from the URL.
@@ -68,7 +75,7 @@ export function ReviewQueue({
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [picker, setPicker] = useState<'category' | 'member' | 'transfer' | null>(null);
+  const [picker, setPicker] = useState<'category' | 'member' | 'property' | 'transfer' | null>(null);
   const [aboveOpen, setAboveOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [above, setAbove] = useState(percent(threshold));
@@ -188,7 +195,12 @@ export function ReviewQueue({
   }, [selected, current, items, cursor, total, drop, workspace.id, t, load, acceptedMessage]);
 
   const resolve = useCallback(
-    async (item: ReviewItemDto, categoryId: string, memberId: string | null | undefined) => {
+    async (
+      item: ReviewItemDto,
+      categoryId: string,
+      memberId: string | null | undefined,
+      property?: { propertyId: string | null; unitId: string | null },
+    ) => {
       const before = { items, cursor, total };
       setError(null);
       drop(new Set([item.transactionId]));
@@ -196,6 +208,7 @@ export function ReviewQueue({
         const r = await browserApi.resolveReview(workspace.id, item.transactionId, {
           categoryId,
           ...(memberId !== undefined ? { memberId } : {}),
+          ...(property ? { propertyId: property.propertyId, unitId: property.unitId } : {}),
           version: item.version,
         });
         setAnnounce(
@@ -294,6 +307,9 @@ export function ReviewQueue({
         case 'member':
           if (current) setPicker('member');
           break;
+        case 'property':
+          if (current && properties.length > 0) setPicker('property');
+          break;
         case 'select':
           if (current)
             setSelected((s) => {
@@ -314,9 +330,16 @@ export function ReviewQueue({
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [picker, aboveOpen, helpOpen, items.length, current, accept, threshold]);
+  }, [picker, aboveOpen, helpOpen, items.length, current, accept, threshold, properties.length]);
 
   const categoryName = (id: string | null) => (id ? (categoryById.get(id)?.name ?? null) : null);
+  // AI-02: a line's property is chosen among those in its category's books.
+  const currentPropertyOptions = useMemo(() => {
+    if (!current) return [];
+    const cat = suggestedCategoryId(current);
+    const entityId = (cat && categoryById.get(cat)?.entityId) || current.entityId;
+    return propertyOptions(properties, entityId, t('review.no_property'));
+  }, [current, properties, categoryById, t]);
 
   return (
     <div className="space-y-4">
@@ -421,6 +444,8 @@ export function ReviewQueue({
               : null;
             const sugMember = suggestedMemberId(item);
             const conf = confidenceOf(item);
+            const sugProperty = proposedProperty(item);
+            const place = propertyLabel(item, properties);
             return (
               <li
                 key={item.transactionId}
@@ -477,6 +502,16 @@ export function ReviewQueue({
                     {(sugCat || sugTransfer) && <ConfidenceChip confidence={conf} threshold={threshold} />}
                     {sugMember && memberById.get(sugMember) && (
                       <span className="chip chip-muted">{memberById.get(sugMember)!.name}</span>
+                    )}
+                    {place && (
+                      <span
+                        className="chip chip-muted"
+                        data-testid="suggested-property"
+                        title={sugProperty?.explanation}
+                      >
+                        {sugProperty ? t('review.property_suggested', { property: place }) : place}
+                        {sugProperty && ` · ${percent(sugProperty.confidence)}%`}
+                      </span>
                     )}
                   </p>
                   <Explanation categorization={item.categorization} />
@@ -547,6 +582,23 @@ export function ReviewQueue({
                     >
                       {t('review.change')}
                     </button>
+                    {properties.length > 0 && !sugTransfer && (
+                      <button
+                        type="button"
+                        className="btn-secondary px-2 py-1"
+                        data-testid="change-property"
+                        aria-label={t('review.change_property_row', {
+                          payee: item.payee || item.description,
+                        })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCursor(i);
+                          setPicker('property');
+                        }}
+                      >
+                        {t('review.change_property')}
+                      </button>
+                    )}
                   </div>
                 </div>
               </li>
@@ -597,6 +649,29 @@ export function ReviewQueue({
           const cat = suggestedCategoryId(current);
           if (!cat) return setError(t('review.member_needs_category'));
           void resolve(current, cat, id || null);
+        }}
+      />
+      <PickerDialog
+        open={picker === 'property'}
+        title={t('review.pick_property')}
+        options={currentPropertyOptions}
+        initialId={
+          current
+            ? (() => {
+                const p = proposedProperty(current);
+                const id = current.propertyId ?? p?.propertyId ?? null;
+                const unit = current.propertyId ? current.unitId : (p?.unitId ?? null);
+                return id ? (unit ? `${id}/${unit}` : id) : '';
+              })()
+            : null
+        }
+        onClose={() => setPicker(null)}
+        onPick={(id) => {
+          setPicker(null);
+          if (!current) return;
+          const cat = suggestedCategoryId(current);
+          if (!cat) return setError(t('review.property_needs_category'));
+          void resolve(current, cat, undefined, parsePropertyPick(id));
         }}
       />
       <PickerDialog
