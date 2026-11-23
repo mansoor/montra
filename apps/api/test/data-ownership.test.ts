@@ -283,6 +283,10 @@ beforeAll(async () => {
   receiptId = receipt.rows[0].id;
 });
 afterAll(async () => {
+  // "Delete these" queues a retention run now. Leave none queued, or a later file's drain of 'schedule' jobs picks it up.
+  await admin.query(
+    `delete from app.job where workspace_id is null and type = 'data.retention' and status = 'queued'`,
+  );
   await admin.end();
   await h.close();
 });
