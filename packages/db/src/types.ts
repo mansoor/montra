@@ -26,6 +26,8 @@ export interface AppUserTable {
   updated_at: Generated<Date>;
   deleted_at: Date | null;
   purge_after: Date | null;
+  /** When the retention job first kept this closing account because of a legal hold (migration 0080). */
+  purge_held_at: Date | null;
   /** ADR-0049 §6: the number in Kratos's traits, as last seen at sign-in (migration 0055). */
   phone_e164: string | null;
   phone_verified: Generated<boolean>;
@@ -51,6 +53,8 @@ export interface WorkspaceTable {
   storage_quota_bytes: Int8Default;
   deleted_at: Date | null;
   purge_after: Date | null;
+  /** When the retention job first kept this closing workspace because of a legal hold (migration 0080). */
+  purge_held_at: Date | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
