@@ -764,7 +764,8 @@ Phase 10 leftovers, not blocking:
 - **OPS-13**: done since; the phone now edits profile, family, books, AI mode and quiet hours (see 7g).
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
-- **BAK-08**: done since; photos are compressed on the web as on the phone, and a person can keep originals (see 7g).
+- **BAK-08**: photos are compressed on the web as on the phone, and a person can keep originals (see 7g). Partial until
+  tried on a real phone and in real browsers.
 - **CUR-06**: done since; net worth now shows unrealized FX gain or loss on the web and the phone (see 7g).
 - Personal books can't be restored into an existing workspace, which already has its one personal entity. Use a new workspace.
 - Restoring to an existing workspace only counts likely duplicates; it doesn't drop them.
