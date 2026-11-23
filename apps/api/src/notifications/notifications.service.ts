@@ -47,6 +47,7 @@ export const DEFAULT_CHANNELS: Record<NotificationType, ChannelPrefs> = {
   vault_attention: on(true, false),
   files_missing: on(true, false),
   bank_feed_attention: on(true, false),
+  retention_due: on(true, false),
 };
 
 /** ADR-0049 §6: reminders that can also go by text, on plans that include texts. */
@@ -70,6 +71,8 @@ const REQUESTED: ReadonlySet<NotificationType> = new Set([
   'files_missing',
   // ADR-0055 §7: the bank feed someone connected needs them; once per problem.
   'bank_feed_attention',
+  // RCP-10: nothing past its retention date is deleted until an owner approves; once per new set.
+  'retention_due',
 ]);
 
 export interface NewNotification {

@@ -703,6 +703,8 @@ export interface RefImportProfileTable {
   mapping: Json<Record<string, unknown>>;
   version: Generated<number>;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 export interface RefMerchantTable {
@@ -715,6 +717,8 @@ export interface RefMerchantTable {
   logo_url: string | null;
   version: Generated<number>;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 export interface RuleTable {
@@ -1925,6 +1929,20 @@ export interface RestoreJobTable {
   expires_at: Timestamp;
 }
 
+/**
+ * RCP-10 (migration 0079): a receipt or file past its retention date, waiting for an owner. Owners read it; only the
+ * `app.retention_*` functions write it. Purged by the retention job once approved, unless a legal hold stops it.
+ */
+export interface RetentionItemTable {
+  workspace_id: string;
+  kind: 'receipt' | 'file';
+  subject_id: string;
+  retain_until: CalendarDateCol;
+  found_at: Generated<Date>;
+  approved_at: Date | null;
+  approved_by: string | null;
+}
+
 export interface Database extends PayrollDatabase, AssetDatabase {
   'app.app_user': AppUserTable;
   'app.workspace': WorkspaceTable;
@@ -2051,6 +2069,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.bank_feed_account': BankFeedAccountTable;
   'app.bank_feed_run': BankFeedRunTable;
   'app.restore_job': RestoreJobTable;
+  'app.retention_item': RetentionItemTable;
   'app.subscription': SubscriptionTable;
   'app.plan': PlanTable;
   'app.plan_version': PlanVersionTable;
@@ -2266,6 +2285,8 @@ export interface TaxLineTable {
   deductible_bps: Generated<number>;
   version: Int8Default;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 export interface MileageRateTable {
@@ -2275,6 +2296,8 @@ export interface MileageRateTable {
   source: string;
   version: Int8Default;
   updated_at: Generated<Date>;
+  /** Set by a staff console save (OPS-05): the reference loader leaves the row alone (migration 0078). */
+  staff_edited_at: Date | null;
 }
 
 // Phase 9: rental properties (migration 0019, ADR-0018). Amounts are non-negative minor units.

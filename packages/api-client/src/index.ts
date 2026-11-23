@@ -222,8 +222,12 @@ import type {
   FeatureFlagDto,
   ImportFailureRowDto,
   SaveFeatureFlagRequest,
+  SaveImportProfileRequest,
   SaveMerchantRequest,
   SaveMileageRateRequest,
+  SaveTaxLineRequest,
+  AdminImportProfileDto,
+  AdminTaxLineDto,
   StaffMeDto,
   StatusDto,
   SupportGrantDto,
@@ -233,6 +237,8 @@ import type {
   CreateRecurringRequest,
   CreateTransactionRequest,
   CreateTransferRequest,
+  TransferFxDto,
+  TransferFxQuery,
   MakeTransferDto,
   MakeTransferRequest,
   CreateWorkspaceRequest,
@@ -353,6 +359,11 @@ import type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  RetentionItemDto,
+  RetentionItemRef,
+  RetentionItemsRequest,
+  RetentionResultDto,
+  RetentionReviewDto,
   UpdateNotificationPrefsRequest,
   AccountMovePreviewDto,
   BusinessDashboardDto,
@@ -572,6 +583,7 @@ export type CreateTransactionInput = z.input<typeof CreateTransactionRequest>;
 export type UpdateTransactionInput = z.input<typeof UpdateTransactionRequest>;
 export type BulkEditInput = z.input<typeof BulkEditRequest>;
 export type CreateTransferInput = z.input<typeof CreateTransferRequest>;
+export type TransferFxInput = z.input<typeof TransferFxQuery>;
 export type ConfirmOccurrenceInput = z.input<typeof ConfirmOccurrenceRequest>;
 export type CreateEntityInput = z.input<typeof CreateEntityRequest>;
 export type UpdateEntityInput = z.input<typeof UpdateEntityRequest>;
@@ -1265,6 +1277,7 @@ export class ApiClient {
         matchKey: string;
         categoryHint: string | null;
         version: number;
+        staffEditedAt: string | null;
       }[];
     }>('GET', `/v1/admin/reference/merchants${query({ q })}`).then((r) => r.data);
   }
@@ -1273,11 +1286,37 @@ export class ApiClient {
   }
   adminMileageRates() {
     return this.request<{
-      data: { country: string; effectiveFrom: string; tenthsOfCent: number; source: string }[];
+      data: {
+        country: string;
+        effectiveFrom: string;
+        tenthsOfCent: number;
+        source: string;
+        staffEditedAt: string | null;
+      }[];
     }>('GET', '/v1/admin/reference/mileage-rates').then((r) => r.data);
   }
   adminSaveMileageRate(input: SaveMileageRateRequest) {
     return this.request<void>('PUT', '/v1/admin/reference/mileage-rates', input);
+  }
+  adminTaxLines() {
+    return this.request<{ data: AdminTaxLineDto[] }>('GET', '/v1/admin/reference/tax-lines').then(
+      (r) => r.data,
+    );
+  }
+  adminSaveTaxLine(input: z.input<typeof SaveTaxLineRequest>) {
+    return this.request<void>('PUT', '/v1/admin/reference/tax-lines', input);
+  }
+  adminImportProfiles() {
+    return this.request<{ data: AdminImportProfileDto[] }>('GET', '/v1/admin/reference/import-profiles').then(
+      (r) => r.data,
+    );
+  }
+  /** Answers with the fingerprint saved, which a sample of the file gives. */
+  adminSaveImportProfile(input: z.input<typeof SaveImportProfileRequest>) {
+    return this.request<{ fingerprint: string }>('PUT', '/v1/admin/reference/import-profiles', input);
+  }
+  adminDeleteImportProfile(id: string) {
+    return this.request<void>('DELETE', `/v1/admin/reference/import-profiles/${enc(id)}`);
   }
 
   // ----- Family members (FAM) ------------------------------------------------------------------------------
@@ -1434,6 +1473,14 @@ export class ApiClient {
   }
   createTransfer(workspaceId: string, input: CreateTransferInput) {
     return this.request<TransactionDto>('POST', this.ws(workspaceId, '/transactions/transfer'), input);
+  }
+  /** CUR-08: a transfer between currencies being entered, against the market rate; null for one currency. */
+  transferFx(workspaceId: string, input: TransferFxInput) {
+    return this.request<{ transferFx: TransferFxDto | null }>(
+      'POST',
+      this.ws(workspaceId, '/transactions/transfer/fx-cost'),
+      input,
+    ).then((r) => r.transferFx);
   }
   /** A plain transaction becomes a transfer to or from `accountId`, absorbing the other side if it was recorded. */
   makeTransfer(workspaceId: string, id: string, input: MakeTransferRequest) {
@@ -2586,6 +2633,18 @@ export class ApiClient {
   getStorageUsage(workspaceId: string) {
     return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
   }
+  /** RCP-10: receipts and files past their retention date, waiting for an owner. Owners only. */
+  getRetentionReview(workspaceId: string) {
+    return this.request<RetentionReviewDto>('GET', this.ws(workspaceId, '/retention'));
+  }
+  /** Approves deleting exactly these items. Needs a recent sign-in. */
+  approveRetention(workspaceId: string, input: RetentionItemsRequest) {
+    return this.request<RetentionResultDto>('POST', this.ws(workspaceId, '/retention/approve'), input);
+  }
+  /** Keeps these items for RETENTION_EXTEND_YEARS more. */
+  extendRetention(workspaceId: string, input: RetentionItemsRequest) {
+    return this.request<RetentionResultDto>('POST', this.ws(workspaceId, '/retention/extend'), input);
+  }
   /** The workspace's own storage (ADR-0031). Owners only. */
   getStorageDestination(workspaceId: string) {
     return this.request<{ destination: StorageDestinationDto | null }>(
@@ -3606,6 +3665,11 @@ export type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  RetentionItemDto,
+  RetentionItemRef,
+  RetentionItemsRequest,
+  RetentionResultDto,
+  RetentionReviewDto,
   AllocationRuleDto,
   AmortizationRowDto,
   ArrearsDto,
@@ -3697,6 +3761,7 @@ export type {
   InviteRole,
   RecurringDto,
   TransactionDto,
+  TransferFxDto,
   WorkspaceDto,
   WorkspaceSecurityDto,
   FxRateDto,
@@ -3744,6 +3809,8 @@ export type {
 export type {
   ProvidersDto,
   AdminAccountDto,
+  AdminImportProfileDto,
+  AdminTaxLineDto,
   AdminPlanDto,
   AdminPlanVersionDto,
   AdminSupportRequestDto,

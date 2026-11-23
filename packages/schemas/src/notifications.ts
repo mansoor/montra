@@ -26,6 +26,8 @@ export const NOTIFICATION_TYPES = [
   'files_missing',
   /** ADR-0055 §7: a bank feed needs a person (access revoked, payment, failing, a bank to sign in to); once, no amounts. */
   'bank_feed_attention',
+  /** RCP-10 (migration 0079): receipts or files past their retention date wait for an owner's approval; once per new set. */
+  'retention_due',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;

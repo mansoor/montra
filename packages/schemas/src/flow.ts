@@ -75,6 +75,8 @@ export const NetWorthPointDto = z.object({
   assets: MinorDto,
   liabilities: MinorDto,
   netWorth: MinorDto,
+  /** CUR-06: the part of `netWorth` that is unrealized FX gain (+) or loss (−) on that date. See `NetWorthDto`. */
+  unrealizedFx: MinorDto,
 });
 
 /** FLOW-07: assets minus liabilities, in the workspace base currency. */
@@ -84,6 +86,12 @@ export const NetWorthDto = z.object({
   assets: MinorDto,
   liabilities: MinorDto,
   netWorth: MinorDto,
+  /**
+   * CUR-06, ADR-0010 §6: unrealized FX gain (+) or loss (−) included in `netWorth`. For each account in a currency
+   * other than its books', the balance at the date's rate less its carrying value (what it was booked at). Not
+   * posted to the ledger. Zero when every account is in its books' currency.
+   */
+  unrealizedFx: MinorDto,
   accounts: z.array(
     z.object({
       accountId: Id,
@@ -95,6 +103,8 @@ export const NetWorthDto = z.object({
       accountCurrency: CurrencyCodeDto,
       /** Converted to the base currency at the date's rate. */
       value: MinorDto,
+      /** CUR-06: unrealized FX in `value`, base currency. Null for an account in its books' own currency. */
+      unrealizedFx: MinorDto.nullable(),
     }),
   ),
   /** FLOW-07: your share of each property's value, in the base currency. In `assets`, from its purchase date. */
@@ -313,7 +323,19 @@ export const SANKEY_NODE_KINDS = [
   'deficit',
 ] as const;
 
-/** FLOW-02: income sources → entity → category groups → categories, plus savings/debt (FLOW-06 transfers apart). */
+/**
+ * FLOW-06: what a link between two books is. Owner draws and contributions are money between the personal book and
+ * a business or rental (equity mode); `transfer` is any other money between books (due-to/due-from mode). None of
+ * them is income or spending.
+ */
+export const SANKEY_TRANSFER_KINDS = ['owner_draw', 'owner_contribution', 'transfer'] as const;
+export type SankeyTransferKind = (typeof SANKEY_TRANSFER_KINDS)[number];
+
+/**
+ * FLOW-02: income sources → entity → category groups → categories, plus savings/debt. FLOW-06: money between books
+ * is a link with a `kind`: entity to entity when both books are in the view, otherwise to or from a `transfer`
+ * node named after the other book. Links without a `kind` are ordinary flows.
+ */
 export const SankeyDto = z.object({
   from: CalendarDateDto,
   to: CalendarDateDto,
@@ -327,7 +349,14 @@ export const SankeyDto = z.object({
       drill: DrillDto.nullable(),
     }),
   ),
-  links: z.array(z.object({ source: z.string(), target: z.string(), value: MinorDto })),
+  links: z.array(
+    z.object({
+      source: z.string(),
+      target: z.string(),
+      value: MinorDto,
+      kind: z.enum(SANKEY_TRANSFER_KINDS).optional(),
+    }),
+  ),
 });
 export type SankeyDto = z.infer<typeof SankeyDto>;
 

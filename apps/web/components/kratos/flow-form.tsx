@@ -1,4 +1,5 @@
-import type { Message, RenderItem, RenderModel } from '@/lib/kratos-ui';
+import { Fragment, type ReactNode } from 'react';
+import { submitSlot, type Message, type RenderItem, type RenderModel } from '@/lib/kratos-ui';
 import type { PasswordPolicy } from '@montra/password';
 import { PasswordField, type PasswordFieldLabels } from './password-field';
 import { TriggerButton } from './trigger-button';
@@ -172,10 +173,13 @@ export function FlowForm({
   model,
   label,
   newPassword,
+  beforeSubmit,
 }: {
   model: RenderModel;
   label: string;
   newPassword?: NewPassword;
+  /** Shown inside the form, just before its password or profile submit button (the CAPTCHA widget, ADR-0056). */
+  beforeSubmit?: ReactNode;
 }) {
   if (!model.action) {
     // A finished flow has nothing to submit: its action is the next page, with method GET, offered as a link too.
@@ -194,17 +198,17 @@ export function FlowForm({
       <FlowMessages messages={[{ id: 0, text: 'This form could not be loaded safely.', tone: 'error' }]} />
     );
   }
+  const slot = beforeSubmit ? submitSlot(model.items) : -1;
   return (
     <form action={model.action} method={model.method} className="space-y-4" aria-label={label}>
       <FlowMessages messages={model.messages} />
       {model.items.map((item, i) => (
-        <Item
-          key={`${item.kind}-${'name' in item ? item.name : ''}-${i}`}
-          item={item}
-          index={i}
-          newPassword={newPassword}
-        />
+        <Fragment key={`${item.kind}-${'name' in item ? item.name : ''}-${i}`}>
+          {i === slot && beforeSubmit}
+          <Item item={item} index={i} newPassword={newPassword} />
+        </Fragment>
       ))}
+      {beforeSubmit && slot === model.items.length && beforeSubmit}
     </form>
   );
 }

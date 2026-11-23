@@ -26,6 +26,15 @@ const Env = z.object({
   AUTH_GATEWAY_PORT: z.coerce.number().int().default(4455),
   /** Keys the gateway's attempt counters (HMAC), so the database holds no email or IP address. */
   AUTH_GATEWAY_SECRET: z.string().min(32).optional(),
+  /**
+   * AUTH-08 (ADR-0056): Cloudflare Turnstile's secret key, given to the auth gateway only. Unset (the default, and right
+   * for LAN and self-hosted installs), no CAPTCHA is ever asked for. Never logged.
+   */
+  TURNSTILE_SECRET_KEY: z.string().optional(),
+  /** Failed passwords for one email, or from one address, after which a browser sign-in needs a CAPTCHA. */
+  CAPTCHA_AFTER_FAILURES: z.coerce.number().int().min(1).max(1000).default(5),
+  /** Sign-up submissions from one address in an hour after which a browser sign-up needs a CAPTCHA. */
+  CAPTCHA_AFTER_SIGNUPS: z.coerce.number().int().min(1).max(1000).default(5),
   /** Shared secret Kratos sends in `x-montra-hook-secret` when calling /internal/kratos/hooks. */
   KRATOS_WEBHOOK_SECRET: z.string().min(32).optional(),
   /** How long a validated session is cached; revocation clears it immediately (AUTH-05/07). */
@@ -118,6 +127,20 @@ const Env = z.object({
     .enum(['on', 'off'])
     .default('off')
     .transform((v) => v === 'on'),
+  /**
+   * Retention (RCP-10, BAK-09): the years a receipt, and each file stored with a receipt, payslip, bill, invoice or
+   * payroll form, is kept. Each new upload gets its date from this; dates already set stay as they are. Tax forms keep
+   * theirs by tax year (ADR-0052 §8.5). Past its date, the hourly retention job lists it for the workspace's owners,
+   * and removes it once an owner approves.
+   */
+  FILE_RETENTION_YEARS: z.coerce.number().int().min(1).max(100).default(7),
+  /** What an owner's "Keep for longer" adds, in years from today, to a receipt or file past its date. */
+  RETENTION_EXTEND_YEARS: z.coerce.number().int().min(1).max(100).default(1),
+  /**
+   * The most receipts, and the most files, one hourly retention run lists for owners, and the most it removes once
+   * approved. The rest wait for the next run.
+   */
+  RETENTION_BATCH: z.coerce.number().int().min(1).max(100_000).default(500),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce

@@ -48,3 +48,54 @@ export function shiftDays(date: string, n: number): string {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
+
+/** The parts of a Sankey node and link that its layout reads. */
+interface FlowNode {
+  id: string;
+  kind: string;
+}
+interface FlowLink {
+  source: string;
+  target: string;
+}
+
+/**
+ * Sankey columns (FLOW-02, FLOW-06): income → books → groups, savings and what's left → categories. A book that gets
+ * money from another book (an owner draw or contribution) sits one column to the right of it, so money between books
+ * flows left to right like the rest. A transfer node that feeds a book sits with income; one a book pays into sits
+ * with the groups. `count` is the number of columns.
+ */
+export function sankeyColumns(
+  nodes: readonly FlowNode[],
+  links: readonly FlowLink[],
+): { column: Map<string, number>; count: number } {
+  const depth = new Map(nodes.filter((n) => n.kind === 'entity').map((n) => [n.id, 0]));
+  const between = links.filter((l) => depth.has(l.source) && depth.has(l.target));
+  // Longest path, capped so a loop between books (not expected: the server nets each pair) still ends.
+  for (let pass = 0; pass < depth.size; pass++) {
+    let changed = false;
+    for (const l of between) {
+      const d = depth.get(l.source)! + 1;
+      if (d > depth.get(l.target)! && d < depth.size) {
+        depth.set(l.target, d);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  const shift = Math.max(0, ...depth.values());
+  const sources = new Set(links.map((l) => l.source));
+  const column = new Map(
+    nodes.map((n) => [
+      n.id,
+      n.kind === 'income' || n.kind === 'deficit' || (n.kind === 'transfer' && sources.has(n.id))
+        ? 0
+        : n.kind === 'entity'
+          ? 1 + depth.get(n.id)!
+          : n.kind === 'category'
+            ? 3 + shift
+            : 2 + shift,
+    ]),
+  );
+  return { column, count: 4 + shift };
+}

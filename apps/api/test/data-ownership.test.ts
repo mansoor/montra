@@ -283,6 +283,10 @@ beforeAll(async () => {
   receiptId = receipt.rows[0].id;
 });
 afterAll(async () => {
+  // "Delete these" queues a retention run now. Leave none queued, or a later file's drain of 'schedule' jobs picks it up.
+  await admin.query(
+    `delete from app.job where workspace_id is null and type = 'data.retention' and status = 'queued'`,
+  );
   await admin.end();
   await h.close();
 });
@@ -910,7 +914,7 @@ describe('expiry and schedules (BAK-05, BAK-09)', () => {
     await expect(storage.get(rows[0].storage_key)).rejects.toThrow();
   });
 
-  it('removes a file past its retention, and leaves the rest', async () => {
+  it('removes a file past its retention once an owner approves, and leaves the rest', async () => {
     const before = await admin.query(`select count(*)::int as n from app.file where workspace_id = $1`, [
       wsId,
     ]);
@@ -920,6 +924,16 @@ describe('expiry and schedules (BAK-05, BAK-09)', () => {
       [wsId, `${wsId}/receipt/${year}/old`],
     );
     await storage.put(`${wsId}/receipt/${year}/old`, PNG, 'image/png');
+    // RCP-10 (migration 0079): past its date it waits for an owner; nothing goes without an approval.
+    await h.app.get(OwnershipService).retention();
+    expect((await admin.query(`select 1 from app.file where id = $1`, [old.rows[0].id])).rowCount).toBe(1);
+    const listed = (await c.get(url('/retention'))).body.items;
+    expect(listed.map((i: any) => i.id)).toEqual([old.rows[0].id]);
+    expect(
+      (await c.post(url('/retention/approve'), { items: [{ kind: 'file', id: old.rows[0].id }] })).body,
+    ).toEqual({
+      count: 1,
+    });
     await h.app.get(OwnershipService).retention();
     expect((await admin.query(`select 1 from app.file where id = $1`, [old.rows[0].id])).rowCount).toBe(0);
     await expect(storage.get(`${wsId}/receipt/${year}/old`)).rejects.toThrow();

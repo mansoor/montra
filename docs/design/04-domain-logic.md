@@ -397,7 +397,10 @@ semimonthly, monthly 28–31, quarterly, yearly) using median interval and MAD. 
 amount stability (fixed if max/min ≤ 1.02, otherwise variable with a band). Propose a
 `recurring_item` with `next_date`. Price-change alert (REC-06/AI-09): the last amount is
 more than 5% above the previous stable amount. New subscription: a recurring candidate
-first seen within 45 days.
+first seen within 45 days. Possibly unused (REC-06): there is no usage data, so it is a hint
+from spending. Either other spending at the subscription's merchant stopped for N months
+while the charge continued, or M or more subscriptions in one category share a reference
+merchant's MCC. N and M are planning settings; keeping one stops it being suggested again.
 
 ## 11. Forecast (FLOW-03)
 

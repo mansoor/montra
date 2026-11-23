@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gatewayNotice, pausedMinutes } from './gateway-notice';
+import { captchaSiteKey, gatewayNotice, pausedMinutes } from './gateway-notice';
 
 describe('pausedMinutes (AUTH-08)', () => {
   it('rounds the gateway’s seconds up to whole minutes', () => {
@@ -43,5 +43,30 @@ describe('gatewayNotice (AUTH-02)', () => {
       minutes: 2,
     });
     expect(gatewayNotice({})).toBeNull();
+  });
+});
+
+describe('a CAPTCHA the gateway asked for (AUTH-08, ADR-0056)', () => {
+  // Cloudflare's published always-pass test site key: never a real one in tests.
+  const KEY = '1x00000000000000000000AA';
+
+  it('shows the widget only when asked and the build has a site key', () => {
+    expect(captchaSiteKey({ notice: 'captcha_required' }, KEY)).toBe(KEY);
+    expect(captchaSiteKey({ notice: 'captcha_required' }, null)).toBeNull();
+    expect(captchaSiteKey({}, KEY)).toBeNull();
+    expect(captchaSiteKey({ notice: 'too_many_attempts' }, KEY)).toBeNull();
+  });
+
+  it('reads the notice, with or without a key to show the widget with', () => {
+    expect(gatewayNotice({ notice: 'captcha_required', flow: 'f1' }, KEY)).toEqual({
+      kind: 'captcha',
+      siteKey: KEY,
+    });
+    expect(gatewayNotice({ notice: 'captcha_required' }, null)).toEqual({ kind: 'captcha', siteKey: null });
+    // A pause is never mixed up with a CAPTCHA.
+    expect(gatewayNotice({ notice: 'too_many_attempts', retry: '60' }, KEY)).toEqual({
+      kind: 'paused',
+      minutes: 1,
+    });
   });
 });

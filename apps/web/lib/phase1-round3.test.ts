@@ -3,7 +3,7 @@ import { ApiError, type LedgerAccountDto, type TransactionDto } from '@montra/ap
 import { errorAction, friendlyMessage, toFormErrors } from './errors';
 import { makeFormatters } from './format';
 import { groupLedgerAccounts } from './journal';
-import { authHeaders, stepUpHref, wsToken } from './session';
+import { authHeaders, devCookieSecure, stepUpHref, wsToken } from './session';
 import { isFatalSocketError, parseServerMessage, reconnectDelay } from './sync';
 import { toEditState } from './transaction-edit';
 
@@ -127,6 +127,7 @@ describe('closed contract gaps', () => {
       reconciled: false,
       expenseDetail: null,
       foreign: null,
+      transferFx: null,
       tripId: null,
       localTime: null,
       receipt: null,
@@ -201,5 +202,17 @@ describe('closed contract gaps', () => {
       ['equity', ['Opening balance equity']],
       ['expense', ['Groceries']],
     ]);
+  });
+});
+
+describe('the dev sign-in cookie (PLT-01)', () => {
+  it('is Secure in a production build, except on this machine', () => {
+    expect(devCookieSecure('app.example.com', 'production')).toBe(true);
+    expect(devCookieSecure('localhost:3000', 'production')).toBe(false);
+    expect(devCookieSecure('127.0.0.1:3000', 'production')).toBe(false);
+    expect(devCookieSecure('[::1]:3000', 'production')).toBe(false);
+    expect(devCookieSecure('app.localhost', 'production')).toBe(false);
+    expect(devCookieSecure(null, 'production')).toBe(true);
+    expect(devCookieSecure('app.example.com', 'development')).toBe(false);
   });
 });

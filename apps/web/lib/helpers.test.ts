@@ -192,6 +192,7 @@ describe('view models', () => {
       reconciled: false,
       expenseDetail: null,
       foreign: null,
+      transferFx: null,
       tripId: null,
       localTime: null,
       receipt: null,
