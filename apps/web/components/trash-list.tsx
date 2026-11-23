@@ -6,7 +6,10 @@ import { DateText } from './i18n';
 import { Money } from './money';
 import { StatusLine, useAction } from './use-action';
 
-/** BAK-06: what's been deleted, and until when it can come back. */
+/**
+ * BAK-06: what's been deleted, and how and when it goes. Everything can come back until then; a receipt, a tax record,
+ * stays until its retention date (RCP-10).
+ */
 export function TrashList({ workspaceId, items }: { workspaceId: string; items: TrashItemDto[] }) {
   const { run, busy, message, t } = useAction();
   // Restoring the last item empties the list; the confirmation stays on screen with the empty state.
@@ -38,7 +41,7 @@ export function TrashList({ workspaceId, items }: { workspaceId: string; items: 
                 )}
               </p>
               <p className="text-xs text-muted">
-                {t(`trash.kind_${i.kind}`)} · {t('trash.until')} <DateText date={i.purgeOn} />
+                {t(`trash.kind_${i.kind}`)} · {t(`trash.removal.${i.removal}`)} <DateText date={i.until} />
               </p>
             </div>
             <button

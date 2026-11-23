@@ -21,6 +21,8 @@ import {
   BANK_FEED_STATUSES,
   IMPORT_PROFILE_SOURCES,
   TAX_LINE_FORMS,
+  TRASH_KINDS,
+  TRASH_REMOVALS,
   VAULT_GROUP_MODES,
   VAULT_GROUPS,
 } from '@montra/schemas';
@@ -453,7 +455,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'storage.file_kind_': ['statement', 'receipt', 'payslip', 'invoice', 'lease', 'other', 'tax_form'],
   'switch.problem_': ['unsupported_type', 'unreadable', 'no_transactions', 'needs_mapping'],
   'data.status_': ['queued', 'running', 'ready', 'failed', 'expired'],
-  'trash.kind_': ['transaction', 'receipt'],
+  'trash.kind_': TRASH_KINDS,
+  'trash.removal.': TRASH_REMOVALS,
   'rules.dow.': ['0', '1', '2', '3', '4', '5', '6'],
   'rules.field.': [
     'payee',
