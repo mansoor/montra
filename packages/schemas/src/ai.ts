@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CalendarDateDto, Id, MoneyDto } from './common.js';
+import { CalendarDateDto, Id, ListFilterQuery, MoneyDirection, MoneyDto } from './common.js';
 
 // ----- How a category was chosen (AI-03, AI-06) -----------------------------------------------------------
 
@@ -329,6 +329,22 @@ export const ReviewItemDto = z.object({
 });
 export type ReviewItemDto = z.infer<typeof ReviewItemDto>;
 
+/** What narrows the review queue on the web: a date window, merchant words, an amount range and money in or out. */
+export const ReviewFilters = ListFilterQuery.extend({
+  from: CalendarDateDto.optional(),
+  to: CalendarDateDto.optional(),
+  direction: MoneyDirection.optional(),
+});
+export type ReviewFilters = z.output<typeof ReviewFilters>;
+
+export const ReviewListQuery = ReviewFilters.extend({
+  entityId: Id.optional(),
+  minConfidence: z.coerce.number().min(0).max(1).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+export type ReviewListQuery = z.output<typeof ReviewListQuery>;
+
 export const ReviewListResponse = z.object({
   items: z.array(ReviewItemDto),
   total: z.number(),
@@ -338,18 +354,17 @@ export type ReviewListResponse = z.infer<typeof ReviewListResponse>;
 
 /**
  * Accept the suggestions as they are: either listed transactions, or everything at or above a confidence. A suggested
- * transfer is made a transfer (`POST /transactions/:id/make-transfer`).
+ * transfer is made a transfer (`POST /transactions/:id/make-transfer`). With a confidence, the queue's filters narrow
+ * what is accepted to what the list shows.
  */
-export const AcceptReviewRequest = z
-  .object({
-    transactionIds: z.array(Id).max(1000).optional(),
-    minConfidence: z.number().min(0).max(1).optional(),
-    entityId: Id.optional(),
-  })
-  .refine((r) => Boolean(r.transactionIds?.length) !== (r.minConfidence !== undefined), {
-    message: 'Give either transactionIds or minConfidence',
-    path: ['transactionIds'],
-  });
+export const AcceptReviewRequest = ReviewFilters.extend({
+  transactionIds: z.array(Id).max(1000).optional(),
+  minConfidence: z.number().min(0).max(1).optional(),
+  entityId: Id.optional(),
+}).refine((r) => Boolean(r.transactionIds?.length) !== (r.minConfidence !== undefined), {
+  message: 'Give either transactionIds or minConfidence',
+  path: ['transactionIds'],
+});
 export type AcceptReviewRequest = z.output<typeof AcceptReviewRequest>;
 
 export const AcceptReviewResponse = z.object({

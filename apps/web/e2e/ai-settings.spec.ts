@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { importCsv, nav, onboardHousehold, setAi } from './phase3-helpers';
+import { daysAgo, importCsv, nav, onboardHousehold, setAi } from './phase3-helpers';
 
 /**
  * Phase 3: AI settings show a privacy disclosure per mode (UP-06); with AI off, rules and history still
@@ -44,9 +44,11 @@ test('turns AI off and still categorizes imports with rules', async ({ page }) =
     page,
     'Everyday checking',
     'ai-off.csv',
-    ['Date,Description,Amount', '2026-10-02,NETFLIX.COM,-15.49', '2026-10-03,ZQX TRADING POST,-19.99'].join(
-      '\n',
-    ),
+    [
+      'Date,Description,Amount',
+      `${daysAgo(9)},NETFLIX.COM,-15.49`,
+      `${daysAgo(8)},ZQX TRADING POST,-19.99`,
+    ].join('\n'),
     2,
   );
 

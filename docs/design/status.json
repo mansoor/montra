@@ -966,7 +966,7 @@
   ],
   "RPT-05": [
     "done",
-    "payees, descriptions, notes, amounts, tags and receipt OCR text. Notes are decrypted in the API, for the latest 5,000 with a note. Receipts are left out when a query has an amount or tag"
+    "payees, descriptions, notes, amounts, tags and receipt OCR text. Notes are decrypted in the API, for the latest 5,000 with a note. Receipts are left out when a query has an amount or tag. The web Transactions, Review and Receipts lists open on the last 90 days and filter by merchant, amount range, money in or out, account and category, kept in the URL. The phone lists have no filters yet"
   ],
   "RPT-06": [
     "done",

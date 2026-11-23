@@ -24,12 +24,15 @@ export function TransactionsTable({
   categories,
   members,
   trash,
+  empty,
 }: {
   workspace: WorkspaceDto;
   rows: TransactionRow[];
   categories: CategoryDto[];
   members: FamilyMemberDto[];
   trash: boolean;
+  /** What an empty list says instead of the plain text, such as that the filters hide everything. */
+  empty?: ReactNode;
 }) {
   const router = useRouter();
   const { t } = useI18n();
@@ -91,9 +94,11 @@ export function TransactionsTable({
             {message.text}
           </p>
         )}
-        <p className="card text-sm text-muted">
-          {trash ? t('transactions.trash_empty') : t('transactions.none_here')}
-        </p>
+        {empty ?? (
+          <p className="card text-sm text-muted">
+            {trash ? t('transactions.trash_empty') : t('transactions.none_here')}
+          </p>
+        )}
       </div>
     );
   }

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { sql } from 'kysely';
+import { sql, type RawBuilder } from 'kysely';
 import { newId, type Trx } from '@montra/db';
 import { asCurrencyCode, calendarDate, type CalendarDate } from '@montra/domain';
 import { parseQuickAddHeuristic } from '@montra/categorize';
@@ -12,11 +12,14 @@ import type {
   ResolveReviewRequest,
   ResolveReviewResponse,
   ReviewItemDto,
+  ReviewFilters,
+  ReviewListQuery,
   ReviewListResponse,
   SuggestionDto,
   SuggestRequest,
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
+import { transactionConditions } from '../common/list-filters.js';
 import { AiService } from '../ai/ai.service.js';
 import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
@@ -45,12 +48,9 @@ export class ReviewService {
 
   // ----- Review queue -------------------------------------------------------------------------------------
 
-  async list(
-    trx: Trx,
-    ctx: Ctx,
-    q: { entityId?: string; minConfidence?: number; cursor?: string; limit?: number },
-  ): Promise<ReviewListResponse> {
+  async list(trx: Trx, ctx: Ctx, q: ReviewListQuery): Promise<ReviewListResponse> {
     const PAGE = q.limit ?? DEFAULT_PAGE;
+    const narrow = await this.filters(trx, ctx, q);
     const base = () => {
       let b = trx
         .selectFrom('app.transaction as t')
@@ -63,6 +63,7 @@ export class ReviewService {
         b = b.where(
           sql<boolean>`coalesce((t.categorization->>'confidence')::numeric, 0) >= ${q.minConfidence}`,
         );
+      for (const c of narrow) b = b.where(c);
       return b;
     };
     const total = Number(
@@ -122,21 +123,32 @@ export class ReviewService {
     };
   }
 
+  /** The web list's filters on `app.transaction as t`: a date window, merchant words, an amount range, in or out. */
+  private async filters(trx: Trx, ctx: Ctx, f: ReviewFilters): Promise<RawBuilder<boolean>[]> {
+    const out = await transactionConditions(trx, ctx.workspaceId, f);
+    if (f.from) out.push(sql<boolean>`t.txn_date >= ${f.from}`);
+    if (f.to) out.push(sql<boolean>`t.txn_date <= ${f.to}`);
+    return out;
+  }
+
   /** Accepts suggestions as they are. Items without a suggestion, split items and locked items are skipped. */
   async accept(trx: Trx, ctx: Ctx, req: AcceptReviewRequest): Promise<AcceptReviewResponse> {
     let q = trx
-      .selectFrom('app.transaction')
-      .select(['id', 'categorization', 'spec'])
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('review_state', '=', 'needs_review')
-      .where('status', '=', 'posted')
-      .where('deleted_at', 'is', null);
-    if (req.transactionIds?.length) q = q.where('id', 'in', req.transactionIds);
-    if (req.entityId) q = q.where('primary_entity_id', '=', req.entityId);
-    if (req.minConfidence !== undefined)
+      .selectFrom('app.transaction as t')
+      .select(['t.id', 't.categorization', 't.spec'])
+      .where('t.workspace_id', '=', ctx.workspaceId)
+      .where('t.review_state', '=', 'needs_review')
+      .where('t.status', '=', 'posted')
+      .where('t.deleted_at', 'is', null);
+    if (req.transactionIds?.length) q = q.where('t.id', 'in', req.transactionIds);
+    if (req.entityId) q = q.where('t.primary_entity_id', '=', req.entityId);
+    if (req.minConfidence !== undefined) {
       q = q.where(
-        sql<boolean>`coalesce((categorization->>'confidence')::numeric, 0) >= ${req.minConfidence}`,
+        sql<boolean>`coalesce((t.categorization->>'confidence')::numeric, 0) >= ${req.minConfidence}`,
       );
+      // "Accept all above" takes what the filtered list shows, not what the filters hide.
+      for (const c of await this.filters(trx, ctx, req)) q = q.where(c);
+    }
     const rows = await q.limit(5000).execute();
     let accepted = 0;
     let skipped = 0;

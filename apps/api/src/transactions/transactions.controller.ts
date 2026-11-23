@@ -21,7 +21,9 @@ import {
   ConfirmOccurrenceRequest,
   CreateTransactionRequest,
   CreateTransferRequest,
+  ListFilterQuery,
   MakeTransferRequest,
+  MoneyDirection,
   TransferFxQuery,
   UpdateTransactionRequest,
   type BulkEditResult,
@@ -34,7 +36,7 @@ import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
 import { parse } from '../common/zod.js';
 import { TransactionsService } from './transactions.service.js';
 
-const ListQuery = z.object({
+const ListQuery = ListFilterQuery.extend({
   from: CalendarDateDto.optional(),
   to: CalendarDateDto.optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -60,6 +62,8 @@ const ListQuery = z.object({
     .optional()
     .transform((v) => (v ? v.split(',') : undefined))
     .pipe(z.array(z.uuid()).max(200).optional()),
+  /** Money in or out (web list filters); transfers are neither. */
+  direction: MoneyDirection.optional(),
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
   trash: z
     .enum(['true', 'false'])

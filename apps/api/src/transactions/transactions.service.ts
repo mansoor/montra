@@ -30,6 +30,7 @@ import {
   type TransactionSpec,
 } from './poster.js';
 import { searchFilter } from './search-filter.js';
+import { transactionConditions, type TransactionListFilters } from '../common/list-filters.js';
 import { loadExpenseDetails } from '../business/expense-details.js';
 import {
   Categorizer,
@@ -903,7 +904,7 @@ export class TransactionsService {
       categoryIds?: string[];
       accountIds?: string[];
       trash?: boolean;
-    },
+    } & TransactionListFilters,
   ): Promise<TransactionDto[]> {
     return this.db.run(ctx, async (trx) => {
       let q = trx
@@ -971,6 +972,7 @@ export class TransactionsService {
         const { where } = await searchFilter(trx, ctx, this.crypto, opts.q);
         q = q.where(where);
       }
+      for (const c of await transactionConditions(trx, ctx.workspaceId, opts)) q = q.where(c);
       const ids = await q.execute();
       return this.load(
         trx,

@@ -8,6 +8,8 @@ import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 import { ReceiptRecommendations } from '@/components/receipts/recommendations';
 import { OrderImport } from '@/components/receipts/order-import';
 import { ReceiptAmount, ReceiptDate } from '@/components/receipts/receipt-cells';
+import { ListEmpty, ListFilterBar, ListWindowFooter } from '@/components/list-filter-bar';
+import { FILTER_PARAMS, listApiQuery, parseListFilters } from '@/lib/list-filters';
 
 export const metadata: Metadata = { title: 'Receipts' };
 export const dynamic = 'force-dynamic';
@@ -26,22 +28,36 @@ export default async function ReceiptsPage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ tab?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const { workspaceId } = await params;
   const sp = await searchParams;
   const tab: TabKey = sp.tab && sp.tab in TABS ? (sp.tab as TabKey) : sp.q ? 'all' : 'inbox';
   const q = sp.q?.trim() || undefined;
+  const { filters } = parseListFilters(sp);
+  const { t, locale } = await getI18n();
+  const workspace = await load((api) => api.getWorkspace(workspaceId));
+  // Receipts have no money in or out: a return is a negative total on the same kind of receipt.
+  const narrow = listApiQuery(
+    { ...filters, dir: undefined },
+    {
+      timeZone: workspace.timeZone,
+      currency: workspace.baseCurrency,
+      locale,
+    },
+  );
   const [page, recommended, reading] = await load((api) =>
     Promise.all([
-      api.listReceipts(workspaceId, { ...TABS[tab].query, ...(q ? { q } : {}), limit: 100 }),
+      api.listReceipts(workspaceId, { ...TABS[tab].query, ...(q ? { q } : {}), ...narrow, limit: 100 }),
       api.listReceiptRecommendations(workspaceId),
       // Receipts still being read aren't in any tab but All, so they're listed above the tabs.
       api.listReceipts(workspaceId, { status: 'processing', limit: 100 }),
     ]),
   );
-  const { t } = await getI18n();
   const base = `/w/${workspaceId}/receipts`;
+  // The tabs and the search keep the filters.
+  const kept: Record<string, string> = {};
+  for (const k of FILTER_PARAMS) if (sp[k]) kept[k] = sp[k];
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -104,7 +120,7 @@ export default async function ReceiptsPage({
             {(Object.keys(TABS) as TabKey[]).map((k) => (
               <Link
                 key={k}
-                href={`${base}?tab=${k}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
+                href={`${base}?${new URLSearchParams({ ...kept, tab: k, ...(q ? { q } : {}) }).toString()}`}
                 aria-current={k === tab ? 'page' : undefined}
                 className={`rounded-md px-2 py-1 text-sm ${k === tab ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
               >
@@ -113,6 +129,10 @@ export default async function ReceiptsPage({
             ))}
           </nav>
           <form action={base} className="ml-auto flex gap-2" role="search">
+            {/* The search keeps the tab and the filters. */}
+            {Object.entries({ ...kept, ...(sp.tab ? { tab } : {}) }).map(([k, v]) => (
+              <input key={k} type="hidden" name={k} value={v} />
+            ))}
             <input
               className="input"
               type="search"
@@ -126,8 +146,9 @@ export default async function ReceiptsPage({
             </button>
           </form>
         </div>
+        <ListFilterBar screen="receipts" workspace={workspace} />
         {page.data.length === 0 ? (
-          <p className="text-sm text-muted">{t('receipts.empty')}</p>
+          <ListEmpty screen="receipts" fallback={t('receipts.empty')} />
         ) : (
           <table className="tbl text-sm">
             <thead className="text-left text-muted">
@@ -164,6 +185,7 @@ export default async function ReceiptsPage({
             </tbody>
           </table>
         )}
+        <ListWindowFooter screen="receipts" />
       </section>
     </div>
   );

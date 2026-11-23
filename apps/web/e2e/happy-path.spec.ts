@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { daysAgo } from './phase3-helpers';
 
 /** Phase 1 happy path: sign in → onboarding → account → quick-add expense → register balance. */
 test('a new freelancer records an expense and sees the running balance', async ({ page }) => {
@@ -32,7 +33,8 @@ test('a new freelancer records an expense and sees the running balance', async (
   await page.getByLabel('Amount').first().fill('42.10');
   await page.getByLabel('Payee').fill('Blue Bottle Coffee');
   await page.getByLabel('Category', { exact: true }).selectOption({ label: 'Dining out' });
-  await page.getByLabel('Date').first().fill('2026-10-05');
+  // A recent date, so the list's default window of the last 90 days shows it.
+  await page.getByLabel('Date').first().fill(daysAgo(3));
   await page.getByLabel('Payee').press('Enter');
   await expect(page.getByText('Saved Blue Bottle Coffee')).toBeVisible();
   await expect(
