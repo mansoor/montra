@@ -35,7 +35,7 @@ treated anything an import had touched as "dedupe only" on every account.
     suggested as a transfer to that account (0.80).
   - Making it one leaves that account's line to be matched by its statement later.
 - **Refusals:** either side reconciled, split, or owned by a payslip, invoice or bill.
-- **Import doesn't convert pairs on its own,** even at 0.95. They wait in review, where one tap or "accept all above"
+- **Import doesn't convert pairs on its own,** even at 0.95 (changed by the amendment of 2026-11-23 below). They wait in review, where one tap or "accept all above"
   does it.
 
 ## Consequences
@@ -70,4 +70,33 @@ Card and loan payments often carry the payee's ID rather than the account's last
 - **Remembered per payee** in `payee_transfer`, beside `payee_history` (whose entries are applied as categories). The next
   line from that payee is suggested as a transfer to the same account at 0.90: above the weak pairs (0.60, 0.80) and below
   a sure pair (0.95). Like every detected transfer it waits in Review. Choosing a category for the payee counts against it.
+
+## Amendment (2026-11-23): import makes sure pairs transfers
+
+The review path has been used for a while, and a sure pair still had to be accepted by hand on every statement. AI-03
+says high-confidence items apply on their own, so the alternative left for later above is taken, with an undo.
+
+- **A setting, not a constant:** `ai_settings.transferThreshold`, default 0.95 (a sure pair). Null turns it off, and
+  every pair waits in Review as before. It can be 0.90 to 0.99; lower would take pairs on amount alone (0.60). It is in
+  Settings › AI next to the review thresholds.
+- **What converts:** a committed row that was new (not a possible duplicate), that nobody chose a category for, and whose
+  pair is a recorded other side at or above the setting. It's made a transfer by the same `makeTransferInTrx` as Review,
+  so the other side is absorbed and its statement line moves to the transfer. It is marked `made: 'import'`, stays
+  `auto_applied`, and doesn't teach the payee its account (no one chose it).
+- **What waits in Review instead:** a pair with no other side yet (0.80); another row of the same import claiming the
+  same other side; another currency (it needs the amount received, CUR-08); an other side that changed since the
+  preview, or whose account is archived; an other side reconciled or in closed books (DE-10: skipped, not forced). A
+  switch from another app keeps its own pairing step.
+- **Speed:** the conversions run once all the batch's rows are written in chunks of 500, a few statements per pair and
+  none per other row.
+- **Undo:** making a transfer (by an import, in Review or by hand) records what it changed in `app.transfer_conversion`:
+  the plain transaction's spec, suggestion, review state and cleared line, and the other side's review state, cleared
+  line and statement lines with their roles and before images.
+  - `POST /transactions/:id/undo-transfer` takes it apart: both sides come back as they were. It's refused when the
+    transfer was changed since, is reconciled or in closed books, or the other side was restored by hand. When the other
+    side's own import was undone since, it stays in the trash.
+  - Undoing the import that made it takes it apart first, so the other side comes back and this import's line is
+    removed as usual. One that can't be taken apart is kept with reason `transfer`, as before.
+- **Visibility:** the import summary says how many transfers it matched (`counts.transfers`), and the transaction says
+  the import made it, with an "Undo transfer" button.
 

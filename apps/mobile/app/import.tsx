@@ -413,6 +413,9 @@ export default function ImportScreen() {
               skipped: batch.counts.skipped,
             })}
           </Body>
+          {batch.counts.transfers > 0 ? (
+            <Body>{t('mobile.import.transfers', { count: batch.counts.transfers })}</Body>
+          ) : null}
           <Button label={t('mobile.import.pick')} onPress={() => setPhase('pick')} />
         </Card>
       ) : null}

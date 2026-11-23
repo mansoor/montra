@@ -263,8 +263,9 @@ finished:
 ### Cross-phase backlog (known gaps not tied to one requirement)
 
 1. ~~**Transfers.**~~ Done: accepting a suggested transfer in review (web or phone, one at a time or "accept all
-   above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import doesn't
-   convert pairs on its own yet, even at 0.95: they wait in review.
+   above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import now makes
+   pairs at or above the workspace's setting (default 0.95) transfers on its own, and either kind can be undone from
+   the transaction (see §7g).
 2. ~~**Local-mode AI tasks.**~~ Done: a posted answer is used where a provider's would be, and applied to the import
    or receipt it was for (see §7g).
 3. ~~**More bring-your-own-key adapters.**~~ Done: OpenAI, Google Gemini and Azure OpenAI (see §7g).
@@ -2676,6 +2677,33 @@ Phase 11 leftovers:
     (a closing account under a hold isn't purged, the purge functions refuse it, it's logged once, the console shows it,
     and it goes on the next run after the hold is lifted; a workspace held by another member's hold).
     `data-ownership.test.ts` and web `i18n-keys.test.ts` updated.
+- **Import makes sure transfer pairs transfers** (TXN-04, AI-03, backlog item 1; ADR-0028 amendment of 2026-11-23;
+  migration 0081).
+  - Before: a pair step 3 was sure of (0.95) waited in Review like any other, so every card payment had to be accepted
+    by hand on each statement. A transfer made in Review couldn't be taken apart again.
+  - Now an import commit makes each such pair a transfer on its own, the same way accepting it in Review does: the
+    other side is absorbed and its statement line moves to the transfer. It runs once all the rows are written in their
+    chunks of 500, so it costs a few statements per pair and nothing per other row.
+  - Setting, not code: `ai_settings.transferThreshold` (default 0.95; 0.90 to 0.99; null is off), in Settings › AI as
+    "Make pairs … transfers when importing". Below it, pairs wait in Review as before.
+  - Left in Review, not forced: a row that was a possible duplicate or got a category picked in the preview; a pair
+    with no other side yet (0.80); two rows of one import claiming the same other side; another currency (it needs the
+    amount received); an other side that changed since the preview or whose account is archived; an other side that is
+    reconciled or in closed books (DE-10). A switch from another app keeps its own pairing step.
+  - Undo: `app.transfer_conversion` records what making a transfer changed (by an import, in Review or by hand).
+    `POST /transactions/:id/undo-transfer` puts both sides back as they were, statement lines and their roles included,
+    and the editor has an "Undo transfer" button. Undoing the import that made one takes it apart first, so the other
+    side comes back and this import's line is removed. One that was changed since, or is reconciled or closed, is
+    kept with reason `transfer`, as before.
+  - Shown: the import summary says "N transfers matched" (`counts.transfers`, from `import_batch.rows_transferred`;
+    the phone too), the undo result how many were taken apart, and the transaction that the import made it
+    (`categorization.transfer.made`: `import` or `you`). An automatic one stays `auto_applied` and doesn't teach the
+    payee its account.
+  - Tests: API `import-auto-transfers.test.ts` (a sure pair converts with balances and both cleared lines kept, a 0.60
+    pair waits, off and 0.99 convert none, a threshold below 0.90 is refused, a reconciled and a closed other side are
+    skipped, a side claimed twice and another currency wait, undoing the import restores both sides and balances,
+    re-importing finds duplicates, undo from the transaction for an automatic and a manual one). `transfers.test.ts`
+    turns the setting off to keep testing the Review path.
 
 ---
 

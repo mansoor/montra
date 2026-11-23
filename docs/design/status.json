@@ -70,7 +70,7 @@
   ],
   "TXN-04": [
     "done",
-    ""
+    "transfers post as one entry; a detected pair is made one in Review, by hand, or by the import itself when it's sure enough (a workspace setting, default 95%, can be off); each can be undone from the transaction"
   ],
   "TXN-05": [
     "done",
@@ -398,7 +398,7 @@
   ],
   "AI-03": [
     "done",
-    "thresholds on calibrated confidence (review 80%, AI 95%); auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
+    "thresholds on calibrated confidence (review 80%, AI 95%, transfer pairs made at import 95%); auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
   ],
   "AI-04": [
     "done",
