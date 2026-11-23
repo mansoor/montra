@@ -52,6 +52,7 @@ export function AiSettings({
   });
   const [threshold, setThreshold] = useState(percent(initial.threshold));
   const [aiThreshold, setAiThreshold] = useState(percent(initial.aiThreshold));
+  const [propertyThreshold, setPropertyThreshold] = useState(percent(initial.propertyThreshold));
   const [budget, setBudget] = useState(
     initial.monthlyBudgetUsd === null ? '' : String(initial.monthlyBudgetUsd),
   );
@@ -102,6 +103,7 @@ export function AiSettings({
       models: { small: models.small || null, vision: models.vision || null, large: models.large || null },
       threshold: thresholdFromPercent(threshold),
       aiThreshold: thresholdFromPercent(aiThreshold),
+      propertyThreshold: thresholdFromPercent(propertyThreshold),
       monthlyBudgetUsd: b.value,
       allowDocumentsToLlm: allowDocs,
       allowReceiptImagesToLlm: allowReceipts,
@@ -321,6 +323,21 @@ export function AiSettings({
             className="w-full"
           />
           <p className="mt-1 text-xs text-muted">{t('ai.ai_threshold_hint')}</p>
+        </div>
+        <div>
+          <label htmlFor="ai-property-threshold" className="field-label">
+            {t('ai.property_threshold', { percent: propertyThreshold })}
+          </label>
+          <input
+            id="ai-property-threshold"
+            type="range"
+            min={50}
+            max={99}
+            value={propertyThreshold}
+            onChange={(e) => setPropertyThreshold(Number(e.target.value))}
+            className="w-full"
+          />
+          <p className="mt-1 text-xs text-muted">{t('ai.property_threshold_hint')}</p>
         </div>
         <Field
           id="ai-budget"

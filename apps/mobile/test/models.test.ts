@@ -10,7 +10,7 @@ import {
   previousStep,
   recentAccountIds,
 } from '../src/features/quick-add';
-import { effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
+import { effectiveOutcome, reviewQueue, suggestedProperty, swipeOutcome } from '../src/features/review';
 import { monthSummary } from '../src/features/home';
 import {
   buildMapping,
@@ -159,6 +159,27 @@ describe('swipe review', () => {
     expect(effectiveOutcome('accept', t('x', '2026-10-01', { suggestedTransferAccountId: 'card' }))).toBe(
       'accept',
     );
+  });
+
+  it('shows a suggested rental property only while none is on the line (AI-02)', () => {
+    const property = {
+      propertyId: 'p-elm',
+      unitId: 'u-2b',
+      label: 'Elm duplex, 2B',
+      step: 'history' as const,
+      confidence: 0.6,
+      explanation: 'Like 3 past transactions at Elm duplex, 2B',
+      applied: false,
+    };
+    const server = (over: { applied?: boolean; tagged?: boolean } = {}) =>
+      ({
+        categorization: { property: { ...property, applied: over.applied ?? false } },
+        splits: [{ accountId: 'c', amount: '-100', propertyId: over.tagged ? 'p-oak' : null, unitId: null }],
+      }) as unknown as LocalTransaction['server'];
+    expect(suggestedProperty(t('x', '2026-10-01', { server: server() }))).toBe('Elm duplex, 2B');
+    expect(suggestedProperty(t('x', '2026-10-01', { server: server({ applied: true }) }))).toBeNull();
+    expect(suggestedProperty(t('x', '2026-10-01', { server: server({ tagged: true }) }))).toBeNull();
+    expect(suggestedProperty(t('x', '2026-10-01'))).toBeNull();
   });
 
   it('orders the stack by confidence, then date', () => {
