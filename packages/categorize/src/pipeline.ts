@@ -9,11 +9,28 @@
  * the threshold. Below the threshold they are kept as a fallback, the item still goes to the AI, and the more
  * confident of the two wins. The AI is called once, with every item still open. If it fails, the pipeline
  * degrades to the fallbacks and the review queue; it never throws.
+ *
+ * Then, for lines that land in rental books (AI-02), the property and unit in the same order: rules, the payee's
+ * history, an address or unit in the text, then AI (called once with every line still open). A line whose property
+ * someone set, and a transfer, get none.
  */
 import { applyRules, type RulesResult } from './rules.js';
 import { amountBand, historySuggestion, type HistorySuggestion } from './history.js';
 import { rememberedTransfer, transferSuggestion } from './transfers.js';
-import type { AiSuggestion, Decision, PipelineDeps, PipelineItem, Step, TransferCandidate } from './types.js';
+import { propertyFromText, propertyHistorySuggestion, unitFromText, type PropertyHint } from './property.js';
+import type {
+  AiPropertySuggestion,
+  AiSuggestion,
+  Decision,
+  PipelineDeps,
+  PipelineItem,
+  PropertyDecision,
+  PropertyOption,
+  PropertyQuestion,
+  PropertyStep,
+  Step,
+  TransferCandidate,
+} from './types.js';
 
 interface Candidate {
   step: Step;
@@ -132,7 +149,146 @@ export async function runPipeline(items: readonly PipelineItem[], deps: Pipeline
     }
   }
 
-  return work.map((w) => decide(w, deps));
+  const decisions = work.map((w) => decide(w, deps));
+  await decideProperties(work, decisions, deps);
+  return decisions;
+}
+
+// ----- AI-02: property and unit --------------------------------------------------------------------------------
+
+interface PropertyCandidate extends PropertyHint {
+  step: PropertyStep;
+}
+
+interface PropertyWork {
+  w: Work;
+  decision: Decision;
+  entityId: string;
+  options: readonly PropertyOption[];
+  closed: PropertyCandidate | null;
+  fallback: PropertyCandidate | null;
+}
+
+const betterProperty = (a: PropertyCandidate | null, b: PropertyCandidate): PropertyCandidate =>
+  a && a.confidence >= b.confidence ? a : b;
+
+const textOf = (i: PipelineItem) => [i.payee ?? '', i.description, i.rawDescription ?? ''].join(' ');
+
+/** A property without a unit takes the unit the text names, when the property has units. */
+function withUnit(
+  c: PropertyCandidate,
+  options: readonly PropertyOption[],
+  item: PipelineItem,
+): PropertyCandidate {
+  if (c.unitId) return c;
+  const units = options.find((p) => p.id === c.propertyId)?.units ?? [];
+  const u = units.length ? unitFromText(textOf(item), units) : null;
+  return u ? { ...c, unitId: u.id, explanation: `${c.explanation}; the text names ${u.label}` } : c;
+}
+
+async function decideProperties(
+  work: readonly Work[],
+  decisions: Decision[],
+  deps: PipelineDeps,
+): Promise<void> {
+  if (!deps.properties) return;
+  const threshold = deps.propertyThreshold ?? deps.threshold;
+  const pending: PropertyWork[] = [];
+  work.forEach((w, i) => {
+    const decision = decisions[i]!;
+    if (w.item.keepProperty || decision.step === 'transfer') return;
+    const entityId = decision.entityId ?? w.item.entityId;
+    const options = deps.properties!(entityId);
+    if (options.length === 0) return;
+    const pw: PropertyWork = { w, decision, entityId, options, closed: null, fallback: null };
+    pending.push(pw);
+    const a = w.rules.actions;
+    const ruled = a.propertyId ? options.find((p) => p.id === a.propertyId) : undefined;
+    if (ruled) {
+      const unit = a.unitId ? ruled.units.find((u) => u.id === a.unitId) : undefined;
+      pw.closed = withUnit(
+        {
+          step: 'rule',
+          propertyId: ruled.id,
+          unitId: unit?.id ?? null,
+          confidence: 1,
+          explanation: `Matched rule '${w.rules.propertyRuleName ?? ''}'`,
+        },
+        options,
+        w.item,
+      );
+      return;
+    }
+    const hints: PropertyCandidate[] = [];
+    const history =
+      w.item.payeeKey && deps.propertyHistory
+        ? propertyHistorySuggestion(deps.propertyHistory(w.item.payeeKey), options)
+        : null;
+    if (history) hints.push(withUnit({ step: 'history', ...history }, options, w.item));
+    const text = propertyFromText(textOf(w.item), options);
+    if (text) hints.push({ step: 'text', ...text });
+    for (const h of hints) {
+      if (h.confidence >= threshold) {
+        pw.closed = h;
+        return;
+      }
+      pw.fallback = betterProperty(pw.fallback, h);
+    }
+  });
+
+  const open = pending.filter((p) => !p.closed);
+  if (deps.aiProperty && open.length > 0) {
+    let suggestions: ReadonlyMap<string, AiPropertySuggestion> = new Map();
+    try {
+      suggestions = await deps.aiProperty(
+        open.map((p): PropertyQuestion => ({
+          item: p.w.item,
+          entityId: p.entityId,
+          categoryId: p.decision.categoryId,
+        })),
+      );
+    } catch {
+      // Graceful degradation: the fallbacks, or no property.
+    }
+    for (const p of open) {
+      const s = suggestions.get(p.w.item.id);
+      const property = s?.propertyId ? p.options.find((o) => o.id === s.propertyId) : undefined;
+      if (!s || !property) continue;
+      const unit = s.unitId ? property.units.find((u) => u.id === s.unitId) : undefined;
+      p.fallback = betterProperty(
+        p.fallback,
+        withUnit(
+          {
+            step: 'ai',
+            propertyId: property.id,
+            unitId: unit?.id ?? null,
+            confidence: s.confidence,
+            explanation: s.explanation,
+          },
+          p.options,
+          p.w.item,
+        ),
+      );
+    }
+  }
+
+  for (const p of pending) {
+    const chosen = p.closed ?? p.fallback;
+    if (!chosen) continue;
+    const needed = chosen.step === 'ai' ? Math.max(threshold, deps.aiThreshold ?? threshold) : threshold;
+    // The line's split can carry the property only when it is in the property's books: the category applied there,
+    // or, uncategorized, the account's own books.
+    const fits = (p.decision.autoApply && p.decision.categoryId !== null) || p.entityId === p.w.item.entityId;
+    const property: PropertyDecision = {
+      propertyId: chosen.propertyId,
+      unitId: chosen.unitId,
+      step: chosen.step,
+      confidence: chosen.confidence,
+      explanation: chosen.explanation,
+      autoApply: chosen.confidence >= needed && fits,
+    };
+    p.decision.property = property;
+  }
 }
 
 function decide(w: Work, deps: PipelineDeps): Decision {
@@ -175,5 +331,6 @@ function decide(w: Work, deps: PipelineDeps): Decision {
     ruleId: chosen.step === 'rule' ? rules.ruleId : null,
     matchedRuleIds: rules.matchedRuleIds,
     autoApply,
+    property: null,
   };
 }

@@ -277,6 +277,8 @@ export class FakeAdapter implements ProviderAdapter {
         return fakeSeparation(input);
       case 'flag_capital':
         return fakeCapital(input);
+      case 'suggest_property':
+        return fakeProperty(input, context);
       case 'answer_question':
         return fakeQuestion(input);
       case 'word_summary': {
@@ -304,6 +306,76 @@ export class FakeAdapter implements ProviderAdapter {
         return { ok: true };
     }
   }
+}
+
+/** Words that say nothing about which property: street types, unit words and the masked street number. */
+const PROPERTY_STOPWORDS = new Set([
+  'st',
+  'street',
+  'ave',
+  'avenue',
+  'rd',
+  'road',
+  'dr',
+  'drive',
+  'ln',
+  'lane',
+  'blvd',
+  'way',
+  'ct',
+  'court',
+  'pl',
+  'place',
+  'unit',
+  'apt',
+  'suite',
+  'the',
+  'house',
+  'home',
+  'property',
+  'rental',
+]);
+const words = (s: string) =>
+  s
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * AI-02: a property is chosen when one of its name's distinctive words (3+ letters) is in the line's text and no
+ * other property's is; a unit when its label's last word follows a unit word ("apt 2b", "unit 3") or a word label is
+ * in the text. Sure answers score 0.97, so they clear the AI threshold; otherwise nothing, at 0.2.
+ */
+function fakeProperty(input: Json, context: Json) {
+  type P = { id: string; name: string; units: { id: string; label: string }[] };
+  const properties = (context.properties as P[] | undefined) ?? [];
+  const items = (input.items as Json[] | undefined) ?? [];
+  return {
+    results: items.map((i) => {
+      const text = words(`${String(i.payee ?? '')} ${String(i.description ?? '')}`);
+      const has = new Set(text);
+      const hits = properties.filter((p) =>
+        words(p.name).some(
+          (w) => w.length >= 3 && /[a-z]/.test(w) && !PROPERTY_STOPWORDS.has(w) && has.has(w),
+        ),
+      );
+      const p = hits.length === 1 ? hits[0]! : null;
+      const unit = p?.units.find((u) => {
+        const label = words(u.label);
+        const core = label.at(-1);
+        if (!core) return false;
+        if (label.length === 1 && core.length >= 4 && !/\d/.test(core) && has.has(core)) return true;
+        return text.some((w, k) => ['unit', 'apt', 'suite', 'no'].includes(w) && text[k + 1] === core);
+      });
+      return {
+        id: i.id,
+        property: p?.id ?? null,
+        unit: unit?.id ?? null,
+        confidence: p ? 0.97 : 0.2,
+        reason: p ? `the text names ${p.name}` : 'Nothing names a property',
+      };
+    }),
+  };
 }
 
 function fakeCategorize(input: Json, context: Json) {
