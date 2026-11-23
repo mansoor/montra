@@ -130,8 +130,12 @@ export function namesUnit(text: readonly string[], label: string): boolean {
   return false;
 }
 
-/** The one unit of a property the text names, or null when none or more than one. */
+/**
+ * The one unit of a property the text names, or null when none or more than one. A property with one unit (a house
+ * has "Main") is never matched by unit: "MAIN ST HARDWARE" says nothing about it.
+ */
 export function unitFromText(text: string, units: readonly UnitOption[]): UnitOption | null {
+  if (units.length < 2) return null;
   const t = tokens(text);
   const hits = units.filter((u) => namesUnit(t, u.label));
   return hits.length === 1 ? hits[0]! : null;
@@ -165,9 +169,9 @@ export function propertyFromText(text: string, properties: readonly PropertyOpti
       explanation: `The text names ${label(p, u)}`,
     };
   }
-  const units = properties.flatMap((p) =>
-    p.units.filter((u) => namesUnit(t, u.label)).map((u) => ({ p, u })),
-  );
+  const units = properties
+    .filter((p) => p.units.length > 1)
+    .flatMap((p) => p.units.filter((u) => namesUnit(t, u.label)).map((u) => ({ p, u })));
   if (units.length !== 1) return null;
   const { p, u } = units[0]!;
   return {

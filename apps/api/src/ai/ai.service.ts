@@ -42,6 +42,7 @@ interface StoredSettings {
   models?: { small?: string | null; vision?: string | null; large?: string | null };
   threshold?: number;
   aiThreshold?: number;
+  propertyThreshold?: number;
   monthlyBudgetUsd?: number | null;
   allowDocumentsToLlm?: boolean;
   allowReceiptImagesToLlm?: boolean;
@@ -54,6 +55,8 @@ export interface AiRuntime {
   threshold: number;
   /** The threshold an AI suggestion must meet to be applied (its own; DEFAULT_AI_THRESHOLD). */
   aiThreshold: number;
+  /** AI-02: the confidence a suggested property must reach to be applied (DEFAULT_PROPERTY_THRESHOLD). */
+  propertyThreshold: number;
   allowDocumentsToLlm: boolean;
   /** Receipt images may go to the provider (builtin/BYOK only); otherwise receipts are OCR'd first. */
   allowReceiptImages: boolean;
@@ -70,6 +73,11 @@ export const DEFAULT_THRESHOLD = 0.8;
  * 99% precision (2026-11-21 refit), close to what 80% gave before the refit.
  */
 export const DEFAULT_AI_THRESHOLD = 0.95;
+/**
+ * AI-02: a suggested rental property is applied at 80%, as a category is. A property from AI must also reach the AI
+ * threshold. A wrong property misstates that property's Schedule E, so an owner may want this higher.
+ */
+export const DEFAULT_PROPERTY_THRESHOLD = 0.8;
 const CACHE_TTL_DAYS = 90;
 
 /** Per-mode privacy disclosure shown next to each choice (UP-06). Plain language, no marketing. */
@@ -241,6 +249,7 @@ export class AiService {
       mode,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
       aiThreshold: s.aiThreshold ?? DEFAULT_AI_THRESHOLD,
+      propertyThreshold: s.propertyThreshold ?? DEFAULT_PROPERTY_THRESHOLD,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImages: (mode === 'builtin' || mode === 'byok') && (s.allowReceiptImagesToLlm ?? false),
       available: provider.id !== 'null',
@@ -600,6 +609,7 @@ export class AiService {
       keyLast4: cred?.last4 ?? null,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
       aiThreshold: s.aiThreshold ?? DEFAULT_AI_THRESHOLD,
+      propertyThreshold: s.propertyThreshold ?? DEFAULT_PROPERTY_THRESHOLD,
       monthlyBudgetUsd: budget,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImagesToLlm: s.allowReceiptImagesToLlm ?? false,
@@ -630,6 +640,7 @@ export class AiService {
     if (req.models !== undefined) s.models = req.models;
     if (req.threshold !== undefined) s.threshold = req.threshold;
     if (req.aiThreshold !== undefined) s.aiThreshold = req.aiThreshold;
+    if (req.propertyThreshold !== undefined) s.propertyThreshold = req.propertyThreshold;
     if (req.monthlyBudgetUsd !== undefined) s.monthlyBudgetUsd = req.monthlyBudgetUsd;
     if (req.allowDocumentsToLlm !== undefined) s.allowDocumentsToLlm = req.allowDocumentsToLlm;
     if (req.allowReceiptImagesToLlm !== undefined) s.allowReceiptImagesToLlm = req.allowReceiptImagesToLlm;

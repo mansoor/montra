@@ -188,6 +188,8 @@ export class ImportJobs {
             ruleId: s.ruleId,
             suggested: s.suggested,
             transfer: s.transfer ?? null,
+            // AI-02: the transaction is posted already; Review offers the property.
+            property: s.property ? { ...s.property, applied: false } : null,
           });
         } else {
           await trx
@@ -876,6 +878,10 @@ export class ImportJobs {
             const chosen = row.category_id;
             const userSet = Boolean(chosen && suggestion?.userSet);
             const apply = Boolean(chosen && (userSet || suggestion?.autoApply));
+            // AI-02: the property found for the line goes on with the pipeline's category, or on its own while the
+            // line is uncategorized. A category picked in the preview may be in other books, so then it doesn't.
+            const property = !userSet && suggestion?.property?.applied ? suggestion.property : null;
+            const propertyPending = Boolean(suggestion?.property && !property);
             const categorization: StoredCategorization | null = userSet
               ? {
                   step: 'user',
@@ -883,6 +889,7 @@ export class ImportJobs {
                   explanation: 'Chosen during import',
                   ruleId: null,
                   suggested: suggestion?.suggested ?? null,
+                  property: suggestion?.property ? { ...suggestion.property, applied: false } : null,
                 }
               : suggestion
                 ? {
@@ -892,6 +899,7 @@ export class ImportJobs {
                     ruleId: suggestion.ruleId,
                     suggested: suggestion.suggested,
                     transfer: suggestion.transfer ?? null,
+                    property: suggestion.property ?? null,
                   }
                 : null;
             const memberId = row.member_id ?? (apply && !userSet ? (suggestion?.memberId ?? null) : null);
@@ -911,10 +919,12 @@ export class ImportJobs {
               description: row.description ?? '',
               categoryId: apply ? chosen! : undefined,
               memberId,
+              ...(property ? { propertyId: property.propertyId, unitId: property.unitId } : {}),
               tags: apply && !userSet ? (suggestion?.tags ?? []) : [],
               // A bank feed's rows are the feed's transactions (ADR-0055 §5).
               source: batch.source === 'feed' ? 'feed' : 'import',
-              reviewState: userSet ? 'reviewed' : 'auto_applied',
+              // A category applied with a property only suggested still waits in Review for the property.
+              reviewState: userSet ? 'reviewed' : propertyPending ? 'needs_review' : 'auto_applied',
               payeeKey: rowPayeeKey,
               categorization,
               dedupeKey: row.dedupe_key,

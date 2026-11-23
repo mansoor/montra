@@ -279,9 +279,12 @@ async function decideProperties(
     // The line's split can carry the property only when it is in the property's books: the category applied there,
     // or, uncategorized, the account's own books.
     const fits = (p.decision.autoApply && p.decision.categoryId !== null) || p.entityId === p.w.item.entityId;
+    const p0 = p.options.find((o) => o.id === chosen.propertyId)!;
+    const unit = chosen.unitId ? p0.units.find((u) => u.id === chosen.unitId) : undefined;
     const property: PropertyDecision = {
       propertyId: chosen.propertyId,
       unitId: chosen.unitId,
+      label: unit ? `${p0.name}, ${unit.label}` : p0.name,
       step: chosen.step,
       confidence: chosen.confidence,
       explanation: chosen.explanation,

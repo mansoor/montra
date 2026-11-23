@@ -157,6 +157,8 @@ export interface PropertyQuestion {
 export interface PropertyDecision {
   propertyId: string;
   unitId: string | null;
+  /** The property's name, and the unit's label after a comma ("Elm duplex, 2B"). */
+  label: string;
   step: PropertyStep;
   confidence: number;
   explanation: string;

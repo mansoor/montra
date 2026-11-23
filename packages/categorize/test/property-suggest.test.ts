@@ -83,6 +83,22 @@ describe('addresses and units in the text (AI-02)', () => {
     expect(unitFromText('carpet upstairs', oak.units)?.id).toBe('u-up');
   });
 
+  it('never matches the only unit of a house by its label', () => {
+    const house: PropertyOption = {
+      id: 'p-h',
+      entityId: 'ent-rental',
+      name: 'Pine cottage',
+      address: '9 Pine Rd',
+      units: [{ id: 'u-main', label: 'Main' }],
+    };
+    expect(unitFromText('MAIN ST HARDWARE', house.units)).toBeNull();
+    expect(propertyFromText('MAIN ST HARDWARE', [house])).toBeNull();
+    expect(propertyFromText('GUTTERS 9 PINE ROAD', [house])).toMatchObject({
+      propertyId: 'p-h',
+      unitId: null,
+    });
+  });
+
   it('a unit alone names its property only when no other property has it', () => {
     expect(propertyFromText('HANDYMAN UNIT 10', properties)).toMatchObject({
       propertyId: 'p-oak',
@@ -93,7 +109,10 @@ describe('addresses and units in the text (AI-02)', () => {
       ...oak,
       id: 'p-twin',
       name: 'Twin',
-      units: [{ id: 'u-t10', label: '10' }],
+      units: [
+        { id: 'u-t10', label: '10' },
+        { id: 'u-t11', label: '11' },
+      ],
     };
     expect(propertyFromText('HANDYMAN UNIT 10', [elm, oak, twin])).toBeNull();
   });
@@ -170,6 +189,7 @@ describe('runPipeline: property and unit (AI-02)', () => {
     expect(d!.property).toMatchObject({
       propertyId: 'p-elm',
       unitId: 'u-2b',
+      label: 'Elm duplex, 2B',
       step: 'rule',
       confidence: 1,
       autoApply: true,

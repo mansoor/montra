@@ -360,7 +360,7 @@ function fakeProperty(input: Json, context: Json) {
         ),
       );
       const p = hits.length === 1 ? hits[0]! : null;
-      const unit = p?.units.find((u) => {
+      const unit = (p && p.units.length > 1 ? p.units : []).find((u) => {
         const label = words(u.label);
         const core = label.at(-1);
         if (!core) return false;
