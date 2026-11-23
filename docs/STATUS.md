@@ -245,7 +245,7 @@ finished:
 - **Finished by a later phase, as planned:**
   - AIA-01: a monthly summary and a budget recommendation by AI.
   - AIA-12 and NFR-14: tax outputs, in Phase 8.
-  - AI-02: AI doesn't suggest a property or unit. They're tagged by hand or by rent, mortgage and capital improvement links.
+  - ~~AI-02: AI doesn't suggest a property or unit.~~ Done: the pipeline suggests the rental property and unit (see §7g).
   - PLT-03 and UP-07: mobile screens arrive with each feature phase.
   - AI-07: logos, via reference data.
 - **Phase 11 hardening:**
@@ -2622,6 +2622,7 @@ Phase 11 leftovers:
     approving needs a recent sign-in; approval covers only the items listed; then the receipt goes with its lines,
     image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
     blocks after approval; a shared object; the batch size; a vault-held file). `data-ownership.test.ts` now approves
+---
     before a file goes. Web `retention.test.ts`.
 - **The translation adjustment on net worth** (CUR-01, [ADR-0010](design/adr/0010-fx-accounting-policy.md) §7; no
   migration).
@@ -2648,6 +2649,41 @@ Phase 11 leftovers:
     forward, flat rates give zero, after the money has gone, no rate), API `translation-adjustment.test.ts` (the
     figure per account, in total and per date, no double count with unrealized FX, the report column, note and CSV,
     nothing booked, no column when every set of books is in the base currency), web `i18n-keys.test.ts`.
+- **The rental property and unit suggested for a line** (AI-02; migration 0082).
+  - Before: the pipeline suggested a category, its books and a member. A line's property and unit were tagged by hand,
+    or by a rent, mortgage or capital improvement link.
+  - Now the pipeline also finds the property, and the unit when the property has more than one, for lines that land
+    in rental books. Same order as categories:
+    - a rule (rules may now set `propertyId` and `unitId`; a unit needs its property);
+    - the payee's history: where most of its lines went (at least 2 and 80%), kept in the new `app.payee_property`;
+    - the text: the property's street address ("12 ELM ST" or "12 North Elm Street"), its name as a phrase, or a unit
+      ("APT 2B", "#2B", "UNIT NO 1"). A unit on its own counts only when one property has it. Two properties named
+      means none. A house's only unit ("Main") is never matched by its label;
+    - AI: the new `suggest_property` task, once per set of books with the lines still open. It gets masked text, a
+      rounded amount and the category's name, and the properties as short ids with their names (masked, so a street
+      number becomes "#") and unit labels. Never an address. A failure returns `ok: false` and the line keeps what
+      the earlier steps found, or nothing. The fake provider answers by distinctive words in a property's name.
+  - Settings, not code: `propertyThreshold` (default 0.80) in the AI settings, on the web's AI settings page. At or
+    above it the property goes on the line; a property from AI also needs the AI threshold. Below it, the line waits
+    in Review with the property offered, even when its category was applied.
+  - Applied on manual entries, imports and bank feeds. The property goes on with the category, or on the uncategorized
+    line in the account's own books. A line whose category is in other books only gets a suggestion.
+  - Review: the web shows the property on each row ("Suggested property: Elm duplex, 2B" and its confidence, the reason
+    on hover). Accept puts it on with the category. "Property" (or `p`) picks another property or unit, or none. The
+    phone's review card shows the suggested property, and accepting there applies it. Choosing another one on the phone
+    isn't there yet: that's on the web.
+  - Learning: accepting a property, choosing one in Review, on a transaction or with a new entry counts it for the
+    payee. Changing it takes back what that transaction counted. Undoing an import takes it back too.
+  - Never overridden: a property given with an entry, set on the transaction, or put there by a lease or mortgage link
+    stays. Accept skips the property when the line has one, belongs to a lease or loan, or the property is in other
+    books than the category.
+  - Not done: "apply to existing" for a rule leaves properties alone, and the web rule editor doesn't offer a property
+    yet (the API takes one). There is no benchmark for properties, so AI scores aren't calibrated.
+  - Tests: categorize `property-suggest.test.ts` (address, name and unit matching, history, the order rules → history
+    → text → AI, thresholds, AI failure, kept properties, transfers, books); gateway `suggest-property.test.ts` (the
+    fake provider, what is sent, ids, failures, the cache); API `property-suggestions.test.ts` (two properties: a
+    learned payee, a unit from the text, AI, an import, a set property and a lease win, a correction learned, the
+    setting); web `phase3.test.ts`; mobile `models.test.ts`.
 
 ---
 
