@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState, type DragEvent } from 'react';
 import type { EmployerDto, FamilyMemberDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { photoForUpload } from '@/lib/photo-upload';
 import { friendlyMessage } from '@/lib/errors';
 import { anyDuplicate } from '@/lib/missing-files';
 import { RECEIPT_ACCEPT, receiptFileProblem } from '@/lib/receipts';
@@ -57,7 +58,10 @@ export function PayslipCapture({
       const fileIds: string[] = [];
       if (route === 'files') {
         const uploads = [];
-        for (const f of files) uploads.push(await browserApi.uploadPayslipFile(workspaceId, f, f.name));
+        for (const picked of files) {
+          const f = await photoForUpload(picked);
+          uploads.push(await browserApi.uploadPayslipFile(workspaceId, f, f.name));
+        }
         // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
         if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) return;
         fileIds.push(...uploads.map((u) => u.fileId));

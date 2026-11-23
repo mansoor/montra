@@ -13,6 +13,7 @@ import type {
   RentalContactDto,
 } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { withPhoto } from '@/lib/photo-upload';
 import {
   ALLOCATION_BASES,
   MAINTENANCE_CHIP,
@@ -368,7 +369,7 @@ export function MaintenanceLog({
           if (!c.ok) return setMessage({ tone: 'bad', text: c.error });
           void run(async () => {
             const fileIds = file
-              ? [(await browserApi.uploadRentalFile(workspaceId, file, file.name)).fileId]
+              ? [(await withPhoto(file, (f) => browserApi.uploadRentalFile(workspaceId, f, f.name))).fileId]
               : [];
             return browserApi.createMaintenance(workspaceId, {
               propertyId,

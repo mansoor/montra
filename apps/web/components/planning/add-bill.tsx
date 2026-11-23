@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type DragEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BillerDto, ScanBillDetectedDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { photoForUpload } from '@/lib/photo-upload';
 import { friendlyMessage } from '@/lib/errors';
 import {
   autoFiledName,
@@ -131,7 +132,10 @@ export function AddBill({
     setReadState('uploading');
     try {
       const uploads = [];
-      for (const f of files) uploads.push(await browserApi.uploadHouseholdBillFile(workspaceId, f, f.name));
+      for (const picked of files) {
+        const f = await photoForUpload(picked);
+        uploads.push(await browserApi.uploadHouseholdBillFile(workspaceId, f, f.name));
+      }
       // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
       if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) {
         setReadState('idle');

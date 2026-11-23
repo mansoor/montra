@@ -765,7 +765,8 @@ Phase 10 leftovers, not blocking:
 - **OPS-13**: done since; the phone now edits profile, family, books, AI mode and quiet hours (see 7g).
 - **AUTH-12**: password, two-step and device changes are logged (ADR-0045); support access waits for the Phase 11 tool.
 - **OPS-10**: SPF, DKIM and DMARC with Phase 11's domains. **BAK-09**: ageing out of backups with Phase 11's infrastructure.
-- **BAK-08**: one 5 GB quota until plans exist. Web receipt uploads aren't compressed, and there's no choice to keep an original.
+- **BAK-08**: photos are compressed on the web as on the phone, and a person can keep originals (see 7g). Partial until
+  tried on a real phone and in real browsers.
 - **CUR-06**: done since; net worth now shows unrealized FX gain or loss on the web and the phone (see 7g).
 - Personal books can't be restored into an existing workspace, which already has its one personal entity. Use a new workspace.
 - Restoring to an existing workspace only counts likely duplicates; it doesn't drop them.
@@ -2704,6 +2705,40 @@ Phase 11 leftovers:
     skipped, a side claimed twice and another currency wait, undoing the import restores both sides and balances,
     re-importing finds duplicates, undo from the transaction for an automatic and a manual one). `transfers.test.ts`
     turns the setting off to keep testing the Review path.
+
+- **Photos compressed before upload on the web too, and originals kept by choice** (BAK-08; migration 0083).
+  - Before: the phone's camera and scanner saved JPEGs at quality 80 to 85, at full size. Photos picked on the phone,
+    and every photo uploaded on the web, went as they were. There was no way to keep an original.
+  - Now photos are compressed the same way on the web and the phone, before they upload or are queued:
+    - JPEG, PNG and WebP are drawn upright (EXIF orientation applied) with the long edge at most 2,000 px, and saved as
+      JPEG at quality 80. While the result is over about 1 MB, the quality steps down by 10, to 60 at the lowest.
+    - The saved JPEG has no EXIF, so no location. A JPEG is always sent re-encoded for that reason. A small PNG is sent
+      as it is when the JPEG would be no smaller.
+    - PDFs, CSVs and anything else are never touched. A photo the browser can't read goes as it is.
+    - The decisions are pure functions in `@montra/schemas` (`photo-uploads.ts`), shared by both clients. The web draws
+      on a canvas (`apps/web/lib/photo-upload.ts`); the phone uses expo-image-manipulator (`src/receipts/photo-tool.ts`).
+  - Where: on the web, receipts, reimbursement receipts, business bills, household bills, payslips, rental files, I-9
+    documents and tax forms. On the phone, receipts (camera, scanner and picked photos; the camera now shoots at full
+    quality and is compressed once) and payslips. The phone's tax-form scan now uses the same width and quality for its
+    PDF (it was 1,800 px). Statement imports, logos, restores and "Files to provide again" are not changed: a provided
+    file must match the original's bytes.
+  - Keep originals: `app_user.keep_original_photos`, off by default, as the design says ("kept if the user opts in").
+    It is in Profile on the web (saved with the profile) and on the phone (a switch, saved at once). The web's receipt
+    upload also shows "Upload the original photos this time", ticked from the profile's choice. `MeDto` gains
+    `keepOriginalPhotos` and `photoLimits`; `PATCH /v1/me` takes `keepOriginalPhotos`.
+  - Settings, not code: `PHOTO_MAX_EDGE_PX` (2000), `PHOTO_QUALITY` (80), `PHOTO_MIN_QUALITY` (60) and
+    `PHOTO_TARGET_BYTES` (1048576), checked at start and sent to the clients with `GET /v1/me`. The defaults live once,
+    in `PHOTO_UPLOAD_DEFAULTS`, which the phone also uses offline before it has a profile with limits.
+  - The meter: unchanged, and it already counts what is stored. A file's `bytes` is the length of what the client sent,
+    so a compressed photo counts at its compressed size.
+  - Duplicate checks compare the compressed bytes. The same photo compressed twice in the same browser gives the same
+    bytes, so it is still found; across browsers or a phone and a browser it may not be.
+  - Not tried on a real phone or in a real browser; the canvas and manipulator paths are covered by tests with fakes.
+  - Tests: schemas `photo-uploads.test.ts` (what is compressed, the sizes, the quality steps, which file goes, the
+    settings), web `photo-upload.test.ts` and mobile `photos.test.ts` (compressing with a fake encoder: resized, quality
+    stepped down, PDFs and originals left alone, unreadable photos sent as they are, dropped copies removed), API
+    `photo-uploads.test.ts` (the profile's choice and limits, a bad setting stops the start, the meter counts the bytes
+    stored).
 
 ---
 

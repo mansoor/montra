@@ -10,6 +10,7 @@ import {
   MoneyDto,
 } from './common.js';
 import { ForeignAmountInput, RateDto } from './fx.js';
+import { PhotoUploadLimits } from './photo-uploads.js';
 import { SplitInput } from './transactions.js';
 
 // ----- Transactions: edit, bulk, void (TXN-10, DE-10) -----------------------------------------------------
@@ -274,6 +275,8 @@ export const UpdateMeRequest = z
     }, 'Unknown time zone'),
     dateFormat: z.enum(['YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY', 'DD.MM.YYYY']).nullable(),
     weekStart: z.number().int().min(1).max(7),
+    /** BAK-08: upload photos as they are instead of compressed. */
+    keepOriginalPhotos: z.boolean(),
   })
   .partial();
 export type UpdateMeRequest = z.output<typeof UpdateMeRequest>;
@@ -287,6 +290,10 @@ export const MeDto = z.object({
   dateFormat: z.string().nullable(),
   weekStart: z.number(),
   emailVerified: z.boolean(),
+  /** BAK-08: this person uploads photos as they are; off by default, so they're compressed. */
+  keepOriginalPhotos: z.boolean(),
+  /** BAK-08: how photos are compressed before upload (the API's settings). */
+  photoLimits: PhotoUploadLimits,
 });
 export type MeDto = z.infer<typeof MeDto>;
 

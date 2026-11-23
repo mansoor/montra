@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { AccountDto, LeaseDto, RentalContactDto, TenantDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { photoForUpload } from '@/lib/photo-upload';
 import {
   brokerContacts,
   buildLeasePerson,
@@ -99,7 +100,8 @@ export function LeaseDocuments({ workspaceId, lease }: { workspaceId: string; le
           e.preventDefault();
           if (!file) return setMessage({ tone: 'bad', text: t('rentals.choose_file') });
           void run(async () => {
-            const { fileId } = await browserApi.uploadRentalFile(workspaceId, file, file.name);
+            const photo = await photoForUpload(file);
+            const { fileId } = await browserApi.uploadRentalFile(workspaceId, photo, photo.name);
             return browserApi.updateLease(workspaceId, lease.id, {
               fileIds: [...lease.fileIds, fileId],
               version: lease.version,
