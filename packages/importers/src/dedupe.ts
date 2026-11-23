@@ -12,7 +12,7 @@
  */
 import { diffDays, type CalendarDate } from '@montra/domain';
 import { createHash } from 'node:crypto';
-import { similarity } from './payees.js';
+import { similarityCache } from './payees.js';
 
 export interface DedupeInputRow {
   date: CalendarDate;
@@ -92,6 +92,11 @@ export function classifyRows(
     score: null,
   }));
   const usedImported = new Set<string>();
+  // Candidates are only ever paired with rows of the same amount: grouped by it (in their order), each row looks at a
+  // handful instead of every candidate. Each text's trigrams are built once.
+  const importedByAmount = byAmount(imported);
+  const manualByAmount = byAmount(manual);
+  const similarity = similarityCache();
 
   // 1. Exact duplicates (re-importing the same or an overlapping file).
   rows.forEach((_, i) => {
@@ -107,13 +112,8 @@ export function classifyRows(
   rows.forEach((r, i) => {
     if (out[i]!.status !== 'new' || !covered(r.date)) return;
     let best: { c: ImportedCandidate; s: number } | null = null;
-    for (const c of imported) {
-      if (
-        usedImported.has(c.transactionId) ||
-        c.amount !== r.amount ||
-        !within(c.date, r.date, MATCH_WINDOW_DAYS)
-      )
-        continue;
+    for (const c of importedByAmount.get(r.amount) ?? []) {
+      if (usedImported.has(c.transactionId) || !within(c.date, r.date, MATCH_WINDOW_DAYS)) continue;
       const s = similarity(c.normalizedDescription, r.normalizedDescription);
       if (s >= 0.6 && (!best || s > best.s)) best = { c, s };
     }
@@ -132,8 +132,8 @@ export function classifyRows(
   const pairs: { i: number; c: ManualCandidate; score: number }[] = [];
   rows.forEach((r, i) => {
     if (out[i]!.status !== 'new') return;
-    for (const c of manual) {
-      if (c.amount !== r.amount || !within(c.date, r.date, MATCH_WINDOW_DAYS)) continue;
+    for (const c of manualByAmount.get(r.amount) ?? []) {
+      if (!within(c.date, r.date, MATCH_WINDOW_DAYS)) continue;
       const sim =
         c.normalizedDescription && r.normalizedDescription
           ? similarity(c.normalizedDescription, r.normalizedDescription)
@@ -157,3 +157,13 @@ export function classifyRows(
 }
 
 const round = (n: number) => Number(n.toFixed(4));
+
+function byAmount<T extends { amount: bigint }>(list: readonly T[]): Map<bigint, T[]> {
+  const out = new Map<bigint, T[]>();
+  for (const c of list) {
+    const same = out.get(c.amount);
+    if (same) same.push(c);
+    else out.set(c.amount, [c]);
+  }
+  return out;
+}

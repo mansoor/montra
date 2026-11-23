@@ -457,6 +457,52 @@ export class AiService {
             .execute(),
         );
       },
+      cacheGetMany: async (task: TaskName, keyHashes: readonly string[]) => {
+        const out = new Map<string, unknown>();
+        if (keyHashes.length === 0) return out;
+        await run(async (trx) => {
+          for (let i = 0; i < keyHashes.length; i += 1000) {
+            const rows = await trx
+              .selectFrom('app.ai_cache')
+              .select(['key_hash', 'output'])
+              .where('workspace_id', '=', ctx.workspaceId)
+              .where('task', '=', task)
+              .where('key_hash', 'in', keyHashes.slice(i, i + 1000))
+              .where('expires_at', '>', new Date())
+              .execute();
+            for (const r of rows) out.set(r.key_hash, r.output);
+          }
+        });
+        return out;
+      },
+      cachePutMany: async (task, entries, model, ttlDays = CACHE_TTL_DAYS) => {
+        if (entries.length === 0) return;
+        const expires = new Date(Date.now() + ttlDays * 86_400_000);
+        await run(async (trx) => {
+          for (let i = 0; i < entries.length; i += 500) {
+            await trx
+              .insertInto('app.ai_cache')
+              .values(
+                entries.slice(i, i + 500).map((e) => ({
+                  workspace_id: ctx.workspaceId,
+                  task,
+                  key_hash: e.keyHash,
+                  output: JSON.stringify(e.output),
+                  model,
+                  expires_at: expires,
+                })),
+              )
+              .onConflict((oc) =>
+                oc.columns(['workspace_id', 'task', 'key_hash']).doUpdateSet({
+                  output: sql`excluded.output`,
+                  model: (eb) => eb.ref('excluded.model'),
+                  expires_at: (eb) => eb.ref('excluded.expires_at'),
+                }),
+              )
+              .execute();
+          }
+        });
+      },
       recordEvent: async (e: AiEventRecord) => {
         // ADR-0049 §5: built-in AI is the service's own provider; a customer's key or model is theirs.
         if (mode === 'builtin' && e.outcome === 'ok') this.health.ok('ai');

@@ -8,7 +8,7 @@ import { startHarness, type Harness } from './harness.js';
 
 let h: Harness;
 beforeAll(async () => {
-  h = await startHarness({ STORAGE_DIR: mkdtempSync(join(tmpdir(), 'montra-perf-')) });
+  h = await startHarness({ AI_PROVIDER: 'fake', STORAGE_DIR: mkdtempSync(join(tmpdir(), 'montra-perf-')) });
   h.app.get(ImportJobs).register();
 });
 afterAll(() => h.close());
@@ -57,6 +57,8 @@ describe('import throughput', () => {
     const done = (await c.get(`/v1/workspaces/${ws.id}/imports/${batch.id}`)).body;
     expect(done.counts.added).toBe(ROWS);
     expect(commitMs).toBeLessThan(ROWS * 30);
-    console.log(`${ROWS} rows: parse ${parseMs.toFixed(0)} ms, commit ${commitMs.toFixed(0)} ms`);
+    process.stdout.write(
+      `[perf] ${ROWS} rows: parse ${parseMs.toFixed(0)} ms, commit ${commitMs.toFixed(0)} ms\n`,
+    );
   }, 300_000);
 });
