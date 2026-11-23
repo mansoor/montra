@@ -241,6 +241,7 @@ import type {
   TransferFxQuery,
   MakeTransferDto,
   MakeTransferRequest,
+  UndoTransferDto,
   CreateWorkspaceRequest,
   EntityGrant,
   FamilyMemberDto,
@@ -1488,6 +1489,13 @@ export class ApiClient {
       'POST',
       this.ws(workspaceId, `/transactions/${enc(id)}/make-transfer`),
       input,
+    );
+  }
+  /** Takes a transfer made from a plain transaction apart again: both sides come back as they were. */
+  undoTransfer(workspaceId: string, id: string) {
+    return this.request<UndoTransferDto>(
+      'POST',
+      this.ws(workspaceId, `/transactions/${enc(id)}/undo-transfer`),
     );
   }
   /** Edits with optimistic concurrency; a stale `version` fails with ApiError code `version.mismatch` (412). */

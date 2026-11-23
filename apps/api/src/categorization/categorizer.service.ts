@@ -33,7 +33,8 @@ export interface StoredCategorization {
   suggested: { categoryId: string | null; entityId: string | null; memberId: string | null } | null;
   /** The category this transaction contributed to payee history (so a later change can take it back). */
   learned?: { categoryId: string; memberId: string | null; band: number } | null;
-  transfer?: { accountId: string; transactionId: string | null } | null;
+  /** `made`: once it is a transfer, whether an import made it on its own or a person did (either can be undone). */
+  transfer?: { accountId: string; transactionId: string | null; made?: 'import' | 'you' | null } | null;
 }
 
 export interface AccountInfo {

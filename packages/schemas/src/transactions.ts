@@ -199,3 +199,12 @@ export const MakeTransferDto = z.object({
     .default(null),
 });
 export type MakeTransferDto = z.infer<typeof MakeTransferDto>;
+
+/** Undoing a transfer made from a plain transaction (`POST /transactions/:id/undo-transfer`). */
+export const UndoTransferDto = z.object({
+  /** The transaction, plain again: back in Review if it was there before. */
+  transaction: TransactionDto,
+  /** The other side brought back out of the trash, if one was absorbed and its statement is still imported. */
+  restoredId: Id.nullable(),
+});
+export type UndoTransferDto = z.infer<typeof UndoTransferDto>;

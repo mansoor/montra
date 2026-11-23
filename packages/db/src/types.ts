@@ -595,6 +595,8 @@ export interface ImportBatchTable {
   rows_matched: Generated<number>;
   rows_skipped: Generated<number>;
   rows_failed: Generated<number>;
+  /** Rows the commit made transfers on its own (0081, ADR-0028 amendment of 2026-11-23). */
+  rows_transferred: Generated<number>;
   min_date: CalendarDateCol | null;
   max_date: CalendarDateCol | null;
   statement_opening_minor: Int8 | null;
@@ -657,6 +659,19 @@ export interface TransactionSourceTable {
   ledger_account_id: string;
   role: 'created' | 'matched' | 'second_leg';
   before_image: Json<Record<string, unknown>> | null;
+  created_at: Generated<Date>;
+}
+
+/**
+ * What making a transfer changed (0081, ADR-0028 amendment of 2026-11-23), so undoing it puts both sides back. One row
+ * per transfer made from a plain transaction; `import_batch_id` is set when an import's commit made it.
+ */
+export interface TransferConversionTable {
+  workspace_id: string;
+  transaction_id: string;
+  absorbed_id: string | null;
+  import_batch_id: string | null;
+  before: Json<Record<string, unknown>>;
   created_at: Generated<Date>;
 }
 
@@ -1980,6 +1995,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.import_migration': ImportMigrationTable;
   'app.import_row': ImportRowTable;
   'app.transaction_source': TransactionSourceTable;
+  'app.transfer_conversion': TransferConversionTable;
   'app.payee_alias': PayeeAliasTable;
   'app.reconciliation': ReconciliationTable;
   'ref.import_profile': RefImportProfileTable;
