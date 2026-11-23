@@ -93,6 +93,7 @@ type AuditOp = (typeof AUDIT_OPS)[number];
 
 /** Actions the services write by name, each with `audit.action.<action>`. */
 export const AUDIT_ACTIONS = [
+  'account.deleted',
   'bank_feed.account_ignored',
   'bank_feed.account_linked',
   'bank_feed.account_unlinked',

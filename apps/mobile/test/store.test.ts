@@ -124,6 +124,20 @@ describe.each(stores)('%s (SyncStore contract)', (_name, make) => {
     expect((await s.getReference('categories')).map((c) => c.id)).toEqual(['9']);
   });
 
+  it('drops reference rows the server deleted, only from that table (ACC-14)', async () => {
+    const s = await make();
+    const row = (id: string) => ({ id, name: id }) as never;
+    await s.replaceReference({
+      accounts: [row('a1'), row('a2'), row('a3')],
+      categories: [row('a2')],
+      members: [],
+      entities: [],
+    });
+    await s.removeReference('accounts', ['a2', 'missing']);
+    expect((await s.getReference('accounts')).map((a) => a.id)).toEqual(['a1', 'a3']);
+    expect((await s.getReference('categories')).map((c) => c.id)).toEqual(['a2']);
+  });
+
   it('keeps the outbox in order and patches items without changing their opId', async () => {
     const s = await make();
     await s.enqueue(item('op-1'));

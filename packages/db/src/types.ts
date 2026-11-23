@@ -26,10 +26,14 @@ export interface AppUserTable {
   updated_at: Generated<Date>;
   deleted_at: Date | null;
   purge_after: Date | null;
+  /** When the retention job first kept this closing account because of a legal hold (migration 0080). */
+  purge_held_at: Date | null;
   /** ADR-0049 §6: the number in Kratos's traits, as last seen at sign-in (migration 0055). */
   phone_e164: string | null;
   phone_verified: Generated<boolean>;
   phone_opted_out_at: Date | null;
+  /** BAK-08: upload photos as they are instead of compressed (migration 0083). */
+  keep_original_photos: Generated<boolean>;
 }
 
 export interface WorkspaceTable {
@@ -51,6 +55,8 @@ export interface WorkspaceTable {
   storage_quota_bytes: Int8Default;
   deleted_at: Date | null;
   purge_after: Date | null;
+  /** When the retention job first kept this closing workspace because of a legal hold (migration 0080). */
+  purge_held_at: Date | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
@@ -595,6 +601,8 @@ export interface ImportBatchTable {
   rows_matched: Generated<number>;
   rows_skipped: Generated<number>;
   rows_failed: Generated<number>;
+  /** Rows the commit made transfers on its own (0081, ADR-0028 amendment of 2026-11-23). */
+  rows_transferred: Generated<number>;
   min_date: CalendarDateCol | null;
   max_date: CalendarDateCol | null;
   statement_opening_minor: Int8 | null;
@@ -657,6 +665,19 @@ export interface TransactionSourceTable {
   ledger_account_id: string;
   role: 'created' | 'matched' | 'second_leg';
   before_image: Json<Record<string, unknown>> | null;
+  created_at: Generated<Date>;
+}
+
+/**
+ * What making a transfer changed (0081, ADR-0028 amendment of 2026-11-23), so undoing it puts both sides back. One row
+ * per transfer made from a plain transaction; `import_batch_id` is set when an import's commit made it.
+ */
+export interface TransferConversionTable {
+  workspace_id: string;
+  transaction_id: string;
+  absorbed_id: string | null;
+  import_batch_id: string | null;
+  before: Json<Record<string, unknown>>;
   created_at: Generated<Date>;
 }
 
@@ -757,6 +778,17 @@ export interface PayeeTransferTable {
   id: Generated<string>;
   payee_key: string;
   account_id: string;
+  count: Generated<number>;
+  last_used_at: Generated<Date>;
+}
+
+/** The rental property (and unit) a payee's lines went to, learned for AI-02 (0082). */
+export interface PayeePropertyTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payee_key: string;
+  property_id: string;
+  unit_id: string | null;
   count: Generated<number>;
   last_used_at: Generated<Date>;
 }
@@ -1980,6 +2012,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.import_migration': ImportMigrationTable;
   'app.import_row': ImportRowTable;
   'app.transaction_source': TransactionSourceTable;
+  'app.transfer_conversion': TransferConversionTable;
   'app.payee_alias': PayeeAliasTable;
   'app.reconciliation': ReconciliationTable;
   'ref.import_profile': RefImportProfileTable;
@@ -1987,6 +2020,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.rule': RuleTable;
   'app.payee_history': PayeeHistoryTable;
   'app.payee_transfer': PayeeTransferTable;
+  'app.payee_property': PayeePropertyTable;
   'app.correction': CorrectionTable;
   'app.rule_suggestion': RuleSuggestionTable;
   'app.ai_cache': AiCacheTable;

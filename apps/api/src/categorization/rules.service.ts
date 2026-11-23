@@ -26,6 +26,8 @@ type RuleActions = {
   tags?: string[];
   renamePayee?: string | null;
   markReviewed?: boolean;
+  propertyId?: string | null;
+  unitId?: string | null;
 };
 
 const SCAN_CHUNK = 2000;
@@ -175,6 +177,26 @@ export class RulesService {
         .where('id', '=', actions.memberId)
         .executeTakeFirst();
       if (!m) throw unprocessable('rule.member_invalid', 'Unknown family member');
+    }
+    // AI-02: a rule may name a property and one of its units. New lines only: "apply to existing" leaves them.
+    if (actions.propertyId) {
+      const p = await trx
+        .selectFrom('app.property')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', actions.propertyId)
+        .executeTakeFirst();
+      if (!p) throw unprocessable('rule.property_invalid', 'Unknown property');
+    }
+    if (actions.unitId) {
+      const u = await trx
+        .selectFrom('app.unit')
+        .select('property_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', actions.unitId)
+        .executeTakeFirst();
+      if (!u || u.property_id !== actions.propertyId)
+        throw unprocessable('rule.unit_invalid', 'That unit is not in the chosen property');
     }
   }
 

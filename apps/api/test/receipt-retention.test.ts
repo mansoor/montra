@@ -447,3 +447,63 @@ describe('a file held in the household’s vault (ADR-0054 §10)', () => {
     await admin.query(`delete from app.storage_destination where id = $1`, [vault]);
   });
 });
+
+describe('a receipt in the Trash', () => {
+  // A receipt is a tax record, so deleting it doesn't shorten how long it is kept: it stays until its retention date,
+  // and then goes only once an owner approves, as any other. The Trash says so, and it can be restored meanwhile.
+  let f: { id: string; key: string };
+  let receipt: string;
+  const inTrash = async () => {
+    const res = await c.get(url('/trash'));
+    expect(res.status).toBe(200);
+    return (res.body.data as any[]).find((i) => i.id === receipt);
+  };
+
+  it('shows its retention date, not 30 days, and outlasts the Trash’s 30 days', async () => {
+    f = await storedFile('2099-12-31');
+    receipt = await receiptHolding([f.id], '2032-06-30');
+    expect((await c.delete(url(`/receipts/${receipt}`))).status).toBeLessThan(300);
+    expect(await inTrash()).toMatchObject({ kind: 'receipt', removal: 'retention', until: '2032-06-30' });
+
+    await admin.query(`update app.receipt set deleted_at = now() - interval '40 days' where id = $1`, [
+      receipt,
+    ]);
+    expect(await retention()).toMatchObject({ found: 0, receipts: 0, files: 0 });
+    expect(await count(`select 1 from app.receipt where id = $1`, [receipt])).toBe(1);
+    expect(await exists(f.key)).toBe(true);
+    expect(await inTrash()).toMatchObject({ removal: 'retention', until: '2032-06-30' });
+  });
+
+  it('can be restored meanwhile, and deleted again', async () => {
+    expect((await c.post(url(`/trash/receipt/${receipt}/restore`))).status).toBe(204);
+    expect((await c.get(url(`/receipts/${receipt}`))).status).toBe(200);
+    expect(await inTrash()).toBeUndefined();
+    expect((await c.delete(url(`/receipts/${receipt}`))).status).toBeLessThan(300);
+    await admin.query(`update app.receipt set deleted_at = now() - interval '40 days' where id = $1`, [
+      receipt,
+    ]);
+  });
+
+  it('past its date, waits for an owner; nothing goes before an approval', async () => {
+    await admin.query(`update app.receipt set retain_until = '2020-01-01' where id = $1`, [receipt]);
+    expect(await inTrash()).toMatchObject({ removal: 'owner_approval', until: '2020-01-01' });
+    expect(await retention()).toMatchObject({ found: 1, receipts: 0, files: 0 });
+    expect(await retention()).toMatchObject({ receipts: 0, files: 0 });
+    expect(await count(`select 1 from app.receipt where id = $1`, [receipt])).toBe(1);
+    expect(await exists(f.key)).toBe(true);
+    expect((await review()).items.map((i) => i.id)).toEqual([receipt]);
+
+    expect(await approveListed()).toBe(1);
+    expect(await retention()).toMatchObject({ receipts: 1, files: 1 });
+    expect(await count(`select 1 from app.receipt where id = $1`, [receipt])).toBe(0);
+    expect(await exists(f.key)).toBe(false);
+    expect(await inTrash()).toBeUndefined();
+    const purged = await admin.query(
+      `select diff from app.audit_log where workspace_id = $1 and action = 'receipt.purged' and subject_id = $2`,
+      [wsId, receipt],
+    );
+    expect(purged.rows).toEqual([
+      { diff: expect.objectContaining({ wasInTrash: true, approvedBy: ownerId }) },
+    ]);
+  });
+});

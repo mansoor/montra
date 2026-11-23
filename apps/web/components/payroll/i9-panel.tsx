@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { I9Dto, PayrollPersonDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { photoForUpload } from '@/lib/photo-upload';
 import { digitsOnly, formatTinInput, I9_DOCUMENTS } from '@/lib/payroll';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
@@ -135,7 +136,8 @@ export function I9Panel({
 
   async function addDocument() {
     const fileIds: string[] = [];
-    for (const file of files) {
+    for (const picked of files) {
+      const file = await photoForUpload(picked);
       const up = await run(() => browserApi.uploadPayrollFile(workspaceId, person.entityId, file, file.name));
       if (!up) return;
       fileIds.push(up.fileId);

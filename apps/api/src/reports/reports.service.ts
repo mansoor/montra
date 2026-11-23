@@ -543,6 +543,8 @@ export class ReportsService {
     const n = await this.flow.netWorth(ctx, { date: to, entityId: f.entityId ?? null, months });
     // CUR-06: with a foreign-currency account, show how much of each net worth is unrealized FX (not posted).
     const fx = n.accounts.some((a) => a.unrealizedFx !== null);
+    // ADR-0010 §7: with books in another currency than the base, a separate translation adjustment (not posted).
+    const cta = n.accounts.some((a) => a.translationAdjustment !== null);
     return {
       currency: n.currency,
       columns: columns(
@@ -551,6 +553,7 @@ export class ReportsService {
         ['liabilities', 'money'],
         ['net_worth', 'money'],
         ...(fx ? [['unrealized_fx', 'money'] as [string, 'money']] : []),
+        ...(cta ? [['translation_adjustment', 'money'] as [string, 'money']] : []),
       ),
       rows: n.trend.map((p) =>
         row(p.date, {
@@ -559,11 +562,12 @@ export class ReportsService {
           liabilities: p.liabilities,
           net_worth: p.netWorth,
           ...(fx ? { unrealized_fx: p.unrealizedFx } : {}),
+          ...(cta ? { translation_adjustment: p.translationAdjustment } : {}),
         }),
       ),
       totals: null,
       chart: { kind: 'line', x: 'date', y: ['net_worth'] },
-      notes: fx ? ['unrealized_fx'] : [],
+      notes: [...(fx ? ['unrealized_fx'] : []), ...(cta ? ['translation_adjustment'] : [])],
     };
   }
 

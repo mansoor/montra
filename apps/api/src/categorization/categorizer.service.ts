@@ -8,11 +8,16 @@ import {
   compileRules,
   proposeRuleFromCorrections,
   runPipeline,
+  type AiPropertySuggestion,
   type AiSuggestion,
   type CompiledRule,
   type Decision,
   type HistoryEntry,
   type PipelineItem,
+  type PropertyDecision,
+  type PropertyHistoryEntry,
+  type PropertyOption,
+  type PropertyQuestion,
   type RuleRecord,
   type TransferCandidate,
   type TransferMemory,
@@ -33,7 +38,12 @@ export interface StoredCategorization {
   suggested: { categoryId: string | null; entityId: string | null; memberId: string | null } | null;
   /** The category this transaction contributed to payee history (so a later change can take it back). */
   learned?: { categoryId: string; memberId: string | null; band: number } | null;
-  transfer?: { accountId: string; transactionId: string | null } | null;
+  /** `made`: once it is a transfer, whether an import made it on its own or a person did (either can be undone). */
+  transfer?: { accountId: string; transactionId: string | null; made?: 'import' | 'you' | null } | null;
+  /** AI-02: the property and unit the pipeline found; `applied` once it is on the transaction. */
+  property?: NonNullable<CategorizationDto['property']> | null;
+  /** AI-02: the property this transaction counted in the payee's property history (so a change can take it back). */
+  learnedProperty?: { propertyId: string; unitId: string | null } | null;
 }
 
 export interface AccountInfo {
@@ -55,6 +65,8 @@ export interface Prepared {
   members: MemberOption[];
   /** ACC-10: archived categories. Rules and history that would set one are skipped until it's unarchived. */
   archivedCategoryIds: Set<string>;
+  /** AI-02: active properties with their active units, by the books they're in. */
+  propertiesByEntity: Map<string, PropertyOption[]>;
 }
 
 /** Rules whose category is archived stop applying (ACC-10); the rest keep their order. */
@@ -78,6 +90,7 @@ export const toDto = (c: StoredCategorization | null | undefined): Categorizatio
         ruleId: c.ruleId ?? null,
         suggested: c.suggested ?? null,
         transfer: c.transfer ?? null,
+        property: c.property ?? null,
       }
     : null;
 
@@ -171,7 +184,65 @@ export class Categorizer {
       categoryById: new Map(categories.map((c) => [c.id, c])),
       members: members.map((m) => ({ id: m.id, name: m.name, relationship: m.relationship })),
       archivedCategoryIds,
+      propertiesByEntity: await this.properties(trx, ctx),
     };
+  }
+
+  /** AI-02: the workspace's active properties and their active units, by books. */
+  private async properties(trx: Trx, ctx: Ctx): Promise<Map<string, PropertyOption[]>> {
+    const props = await trx
+      .selectFrom('app.property')
+      .select(['id', 'entity_id', 'name', 'address'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('archived_at', 'is', null)
+      .orderBy('created_at')
+      .execute();
+    const out = new Map<string, PropertyOption[]>();
+    if (props.length === 0) return out;
+    const units = await trx
+      .selectFrom('app.unit')
+      .select(['id', 'property_id', 'label'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('archived_at', 'is', null)
+      .orderBy('label')
+      .execute();
+    for (const p of props) {
+      const list = out.get(p.entity_id) ?? [];
+      list.push({
+        id: p.id,
+        entityId: p.entity_id,
+        name: p.name,
+        address: p.address,
+        units: units.filter((u) => u.property_id === p.id).map((u) => ({ id: u.id, label: u.label })),
+      });
+      out.set(p.entity_id, list);
+    }
+    return out;
+  }
+
+  /** AI-02: where each payee's lines went, for many keys at once. */
+  async propertyHistory(
+    trx: Trx,
+    ctx: Ctx,
+    keys: readonly string[],
+  ): Promise<Map<string, PropertyHistoryEntry[]>> {
+    const out = new Map<string, PropertyHistoryEntry[]>();
+    const unique = [...new Set(keys)];
+    for (let i = 0; i < unique.length; i += 1000) {
+      const rows = await trx
+        .selectFrom('app.payee_property')
+        .select(['payee_key', 'property_id', 'unit_id', 'count'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('payee_key', 'in', unique.slice(i, i + 1000))
+        .where('count', '>', 0)
+        .execute();
+      for (const r of rows) {
+        const list = out.get(r.payee_key) ?? [];
+        list.push({ propertyId: r.property_id, unitId: r.unit_id, count: r.count });
+        out.set(r.payee_key, list);
+      }
+    }
+    return out;
   }
 
   /** Payee history for many keys at once (step 4). */
@@ -312,6 +383,10 @@ export class Categorizer {
     const keys = items.map((i) => i.payeeKey).filter((k): k is string => Boolean(k));
     const history = await this.history(trx, ctx, keys);
     const memory = await this.transferMemory(trx, ctx, keys);
+    const rental = prepared.propertiesByEntity.size > 0;
+    const propertyHistory = rental
+      ? await this.propertyHistory(trx, ctx, keys)
+      : new Map<string, PropertyHistoryEntry[]>();
     const dates = items.map((i) => i.date).sort();
     const candidates = await this.transferCandidates(trx, ctx, account.id, {
       from: addDays(dates[0]!, -3),
@@ -361,6 +436,44 @@ export class Categorizer {
             return map;
           }
         : undefined;
+    // AI-02, step 4: one call per set of books, with the lines still open there.
+    const aiProperty =
+      opts.useAi && runtime.available && rental
+        ? async (open: readonly PropertyQuestion[]): Promise<ReadonlyMap<string, AiPropertySuggestion>> => {
+            const map = new Map<string, AiPropertySuggestion>();
+            const byEntity = new Map<string, PropertyQuestion[]>();
+            for (const q of open) byEntity.set(q.entityId, [...(byEntity.get(q.entityId) ?? []), q]);
+            for (const [entityId, qs] of byEntity) {
+              const res = await this.ai.gateway.suggestProperty(
+                qs.map((q) => ({
+                  id: q.item.id,
+                  payee: q.item.payee,
+                  description: q.item.description,
+                  amountMinor: q.item.amountMinor,
+                  currency: q.item.currency,
+                  category: q.categoryId ? (prepared.categoryById.get(q.categoryId)?.name ?? null) : null,
+                })),
+                (prepared.propertiesByEntity.get(entityId) ?? []).map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  units: p.units,
+                })),
+                runtime.ctx,
+              );
+              if (!res.ok) continue;
+              aiUsed = true;
+              for (const o of res.value)
+                if (o.propertyId)
+                  map.set(o.id, {
+                    propertyId: o.propertyId,
+                    unitId: o.unitId,
+                    confidence: o.confidence,
+                    explanation: o.explanation,
+                  });
+            }
+            return map;
+          }
+        : undefined;
     const decisions = await runPipeline(items, {
       rules: prepared.rules,
       history: (key) =>
@@ -383,6 +496,10 @@ export class Categorizer {
       threshold: runtime.threshold,
       aiThreshold: runtime.aiThreshold,
       entityOfCategory: (id) => prepared.categoryById.get(id)?.entityId ?? null,
+      properties: (entityId) => prepared.propertiesByEntity.get(entityId) ?? [],
+      propertyHistory: (key) => propertyHistory.get(key) ?? [],
+      aiProperty,
+      propertyThreshold: runtime.propertyThreshold,
     });
     await this.bumpRuleHits(trx, ctx, decisions);
     return { decisions, threshold: runtime.threshold, aiUsed };
@@ -403,6 +520,8 @@ export class Categorizer {
       fileCategoryId?: string | null;
       fileCategoryName?: string | null;
       merchant?: PipelineItem['merchant'];
+      /** AI-02: a property is set already; the pipeline leaves it. */
+      keepProperty?: boolean;
     },
   ): PipelineItem {
     return {
@@ -426,6 +545,7 @@ export class Categorizer {
       fileCategoryId: input.fileCategoryId ?? null,
       fileCategoryName: input.fileCategoryName ?? null,
       merchant: input.merchant ?? null,
+      keepProperty: input.keepProperty ?? false,
     };
   }
 
@@ -443,7 +563,52 @@ export class Categorizer {
       transfer: d.transfer
         ? { accountId: d.transfer.accountId, transactionId: d.transfer.transactionId }
         : null,
+      property: d.property ? storedProperty(d.property) : null,
     };
+  }
+
+  // ----- Learning a property (AI-02) ------------------------------------------------------------------------
+
+  /**
+   * Counts the property (and unit) a person accepted or chose for a payee's line, and takes back what the same
+   * transaction counted before. Null `next` takes back only. Returns what to keep in `categorization.learnedProperty`.
+   */
+  async learnProperty(
+    trx: Trx,
+    ctx: Ctx,
+    payeeKey: string | null,
+    previous: StoredCategorization['learnedProperty'],
+    next: { propertyId: string; unitId: string | null } | null,
+  ): Promise<StoredCategorization['learnedProperty']> {
+    if (!payeeKey) return previous ?? null;
+    if (previous && next && previous.propertyId === next.propertyId && previous.unitId === next.unitId)
+      return previous;
+    if (previous) await this.bumpProperty(trx, ctx, payeeKey, previous, -1);
+    if (next) await this.bumpProperty(trx, ctx, payeeKey, next, 1);
+    return next;
+  }
+
+  private async bumpProperty(
+    trx: Trx,
+    ctx: Ctx,
+    payeeKey: string,
+    p: { propertyId: string; unitId: string | null },
+    delta: 1 | -1,
+  ): Promise<void> {
+    if (delta < 0) {
+      await sql`
+        update app.payee_property set count = greatest(count - 1, 0)
+         where workspace_id = ${ctx.workspaceId} and payee_key = ${payeeKey} and property_id = ${p.propertyId}
+           and coalesce(unit_id, '00000000-0000-0000-0000-000000000000'::uuid)
+             = coalesce(${p.unitId}::uuid, '00000000-0000-0000-0000-000000000000'::uuid)`.execute(trx);
+      return;
+    }
+    await sql`
+      insert into app.payee_property (workspace_id, payee_key, property_id, unit_id, count)
+      values (${ctx.workspaceId}, ${payeeKey}, ${p.propertyId}, ${p.unitId}, 1)
+      on conflict (workspace_id, payee_key, property_id,
+                   coalesce(unit_id, '00000000-0000-0000-0000-000000000000'::uuid))
+      do update set count = app.payee_property.count + 1, last_used_at = now()`.execute(trx);
   }
 
   private async bumpRuleHits(trx: Trx, ctx: Ctx, decisions: readonly Decision[]): Promise<void> {
@@ -532,6 +697,8 @@ export class Categorizer {
     const l = t.categorization?.learned;
     const history = Boolean(t.payeeKey && l);
     if (t.payeeKey && l) await this.bumpHistory(trx, ctx, t.payeeKey, l.band, l.categoryId, l.memberId, -1);
+    const lp = t.categorization?.learnedProperty;
+    if (t.payeeKey && lp) await this.bumpProperty(trx, ctx, t.payeeKey, lp, -1);
     const gone = await trx
       .deleteFrom('app.correction')
       .where('workspace_id', '=', ctx.workspaceId)
@@ -678,6 +845,19 @@ export function ruleRecord(r: {
     actions: r.actions as RuleRecord['actions'],
     enabled: r.enabled,
     createdAt: r.created_at.toISOString(),
+  };
+}
+
+/** The stored form of the pipeline's property: applied when it was put on the transaction. */
+export function storedProperty(p: PropertyDecision): NonNullable<StoredCategorization['property']> {
+  return {
+    propertyId: p.propertyId,
+    unitId: p.unitId,
+    label: p.label,
+    step: p.step,
+    confidence: Number(p.confidence.toFixed(3)),
+    explanation: p.explanation,
+    applied: p.autoApply,
   };
 }
 

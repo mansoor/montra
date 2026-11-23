@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import type { PropertyDto } from '@montra/schemas';
 import { load, serverApi } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { DocumentQueue } from '@/components/review/document-queue';
@@ -34,6 +35,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ workspa
     workspace.role === 'viewer'
       ? []
       : await (await serverApi()).listFeedImportsWaiting(workspaceId).catch(() => []);
+  // AI-02: the rental properties, to show and change a line's property.
+  const rentals = workspace.entities.filter((e) => e.type === 'rental');
+  const properties = (
+    await Promise.all(
+      rentals.map(async (e) =>
+        (await serverApi()).listProperties(workspaceId, e.id).catch(() => [] as PropertyDto[]),
+      ),
+    )
+  ).flat();
   const { t } = await getI18n();
   return (
     <div className="space-y-4">
@@ -53,6 +63,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ workspa
         categories={categories}
         members={members}
         threshold={threshold}
+        properties={properties}
       />
     </div>
   );

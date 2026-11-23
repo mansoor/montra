@@ -113,6 +113,8 @@ Several things were still open:
        7-year-old transaction is almost always in one, so the receipt would never go. Nothing the lock protects
        changes; a split posting only loses its pointer to the receipt line (`receipt_line_id` set null).
      - A legal hold on any active member blocks the purge, even after approval.
+     - A receipt someone deletes goes to the Trash but keeps its retention date: it can be restored until then, and
+       then waits for an owner's approval like any other (migration 0080). The Trash shows that date, not 30 days.
 
 7. **API decisions made while building it** (`apps/api/src/receipts`):
    - **Line categorization:**

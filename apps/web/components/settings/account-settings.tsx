@@ -2,14 +2,16 @@
 
 import { useState } from 'react';
 import type { AccountDto, WorkspaceDto } from '@montra/api-client';
+import { canDeleteAccounts, deleteStep } from '@/lib/account-delete';
 import { browserApi } from '@/lib/browser-api';
+import { errorAction, friendlyMessage } from '@/lib/errors';
 import { minorToInput, parseAmountInput } from '@/lib/money';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { useI18n } from '../i18n';
 import { AccountPlanning } from './account-planning';
 
-/** Rename, archive, hide and adjust balances with an audit note (ACC-05, ACC-06, UP-04). */
+/** Rename, archive, hide, delete when empty, and adjust balances with an audit note (ACC-05, ACC-06, ACC-14, UP-04). */
 export function AccountSettings({
   workspace,
   accounts,
@@ -31,6 +33,7 @@ export function AccountSettings({
           account={a}
           entity={entityName.get(a.entityId) ?? ''}
           today={today}
+          canDelete={canDeleteAccounts(workspace.role)}
         />
       ))}
     </ul>
@@ -42,11 +45,13 @@ function AccountCard({
   account,
   entity,
   today,
+  canDelete,
 }: {
   workspaceId: string;
   account: AccountDto;
   entity: string;
   today: string;
+  canDelete: boolean;
 }) {
   const { busy, message, setMessage, run, t } = useAction();
   const { locale } = useI18n();
@@ -70,6 +75,20 @@ function AccountCard({
       t('accounts.adjusted'),
     );
     if (ok !== undefined) setNote('');
+  }
+
+  /** ACC-14: asks the API whether it is empty, shows why not, or confirms and deletes. Step-up comes back as a link. */
+  async function remove() {
+    setMessage(null);
+    let step: ReturnType<typeof deleteStep>;
+    try {
+      step = deleteStep(await browserApi.accountDeletion(workspaceId, id));
+    } catch (err) {
+      return setMessage({ tone: 'bad', text: friendlyMessage(err, t), action: errorAction(err, t) });
+    }
+    if (step.kind === 'blocked') return setMessage({ tone: 'bad', text: step.reason });
+    if (!window.confirm(t('accounts.delete_confirm', { name: account.name }))) return;
+    await run(() => browserApi.deleteAccount(workspaceId, id), t('accounts.deleted'));
   }
 
   return (
@@ -133,6 +152,17 @@ function AccountCard({
         >
           {account.archived ? t('common.unarchive') : t('common.archive')}
         </button>
+        {canDelete && (
+          <button
+            type="button"
+            className="btn-secondary text-bad"
+            disabled={busy}
+            title={t('accounts.delete_hint')}
+            onClick={remove}
+          >
+            {t('common.delete')}
+          </button>
+        )}
       </div>
       <details>
         <summary className="cursor-pointer text-sm text-muted">{t('accounts.adjust_title')}</summary>

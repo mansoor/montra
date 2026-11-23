@@ -85,6 +85,17 @@ export class SyncService {
       members: tables.has('family_member'),
       entities: tables.has('entity') || tables.has('period_lock'),
     });
+    // Deleted accounts (ACC-14) are tombstones: the change feed keeps their delete, and the client drops them.
+    const removedAccounts = [
+      ...new Set(
+        page.rows
+          .filter(
+            (r) =>
+              r.op === 'delete' && (r.table_name === 'ledger_account' || r.table_name === 'bank_account'),
+          )
+          .map((r) => r.row_id),
+      ),
+    ];
     return {
       latestSeq: page.latest.toString(),
       hasMore: page.hasMore,
@@ -92,6 +103,7 @@ export class SyncService {
       transactions: out.visible,
       removedTransactions: out.removed,
       ...ref,
+      removedAccounts,
       reviewCount: out.reviewCount,
     };
   }
@@ -145,7 +157,7 @@ export class SyncService {
   private async feedPage(trx: Trx, ctx: Ctx, since: bigint, limit: number) {
     const rows = await trx
       .selectFrom('app.change_log')
-      .select(['seq', 'sub', 'table_name', 'row_id', 'restricted'])
+      .select(['seq', 'sub', 'table_name', 'row_id', 'op', 'restricted'])
       .where('workspace_id', '=', ctx.workspaceId)
       .where('seq', '>', since)
       .orderBy('seq')
@@ -157,7 +169,7 @@ export class SyncService {
       const last = page.at(-1)!;
       const rest = await trx
         .selectFrom('app.change_log')
-        .select(['seq', 'sub', 'table_name', 'row_id', 'restricted'])
+        .select(['seq', 'sub', 'table_name', 'row_id', 'op', 'restricted'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('seq', '=', last.seq)
         .where('sub', '>', last.sub)

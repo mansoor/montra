@@ -80,7 +80,7 @@ journal, posting, ledger-account and tag rows are hidden there unless asked for)
 | BAK-05 | Scheduled exports to Google Drive, OneDrive or Dropbox through OAuth connectors (tokens KMS-encrypted), or an emailed link. iCloud via the mobile Files export. |
 | BAK-06 | Restore: upload the archive, validate the manifest and checksums, show a preview (counts per entity, date range, conflicts), then import into a new workspace (default) or merge into an existing one (ids remapped; duplicates detected through dedupe keys). Trash: soft-deleted rows are kept 30 days and restorable from `/trash`. |
 | BAK-07 | RPO ≤ 5 min (Aurora PITR), RTO ≤ 4 h (runbook + Terraform). A quarterly restore drill restores into an isolated account and runs the reconciliation checks (Σ postings = 0 per entry, balances equal the read models). |
-| BAK-08 | Storage usage meter (`attachment.bytes` summed per workspace) and plan quotas. Receipts are compressed on device to about 1 MB (JPEG/HEIC → WebP/JPEG q≈80, long edge 2,000 px), and the original is kept if the user opts in. |
+| BAK-08 | Storage usage meter (`attachment.bytes` summed per workspace) and plan quotas. Photos are compressed on the phone and in the browser before upload, to about 1 MB: JPEG, long edge 2,000 px, quality 80 stepping down to 60 while over 1 MB (`PHOTO_*` settings, sent with `GET /v1/me`). PDFs are never re-encoded. The original is uploaded instead if the user opts in (Profile, `keepOriginalPhotos`, off by default; the web also asks per receipt). |
 | BAK-09/10 | See §5 and §3. |
 
 ## 7. Observability (NFR-13, OPS-07)

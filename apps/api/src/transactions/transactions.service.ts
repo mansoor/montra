@@ -12,6 +12,7 @@ import type {
   MakeTransferDto,
   MakeTransferRequest,
   TransactionDto,
+  UndoTransferDto,
   TransferFxDto,
   TransferFxQuery,
   UpdateTransactionRequest,
@@ -132,8 +133,10 @@ export class TransactionsService {
       const payeeKey = payeeKeyOf(req.payee, req.description);
       let categoryId = req.categoryId;
       let memberId = req.memberId;
+      let propertyId = req.propertyId;
+      let unitId = req.unitId;
       let categorization: StoredCategorization | null = null;
-      let reviewState: 'auto_applied' | 'reviewed' | undefined;
+      let reviewState: 'auto_applied' | 'needs_review' | 'reviewed' | undefined;
       const tags = [...(req.tags ?? [])];
       if (!categoryId && !req.splits?.length) {
         // AI-01: the pipeline runs on manual entries too. Confident results are applied; the rest are
@@ -145,6 +148,8 @@ export class TransactionsService {
           description: req.description ?? '',
           amountMinor: BigInt(req.amount.amount),
           date: calendarDate(req.date),
+          // AI-02: a property given with the entry stays; the pipeline doesn't suggest another.
+          keepProperty: Boolean(req.propertyId || req.unitId),
         });
         const { decisions } = await this.categorizer.categorize(trx, ctx, account, [item], { useAi: true });
         const d = decisions[0];
@@ -155,6 +160,13 @@ export class TransactionsService {
             reviewState = 'auto_applied';
             if (memberId === undefined && d.memberId) memberId = d.memberId;
             for (const t of d.tags) if (!tags.includes(t)) tags.push(t);
+          }
+          if (d.property?.autoApply) {
+            propertyId = d.property.propertyId;
+            unitId = d.property.unitId;
+          } else if (d.property && reviewState === 'auto_applied') {
+            // The category is applied but the property is only suggested: Review offers it.
+            reviewState = 'needs_review';
           }
         }
       } else {
@@ -175,8 +187,8 @@ export class TransactionsService {
         categoryId,
         splits: req.splits,
         memberId,
-        propertyId: req.propertyId,
-        unitId: req.unitId,
+        propertyId,
+        unitId,
         memo: req.memo,
         tags,
         source: 'manual',
@@ -199,7 +211,14 @@ export class TransactionsService {
           previous: null,
           previousCategoryId: null,
         });
-        await this.setCategorization(trx, ctx, txnId, { ...categorization, learned });
+        // AI-02: a property chosen with the entry is learned for the payee too.
+        const learnedProperty = req.propertyId
+          ? await this.categorizer.learnProperty(trx, ctx, payeeKey, null, {
+              propertyId: req.propertyId,
+              unitId: req.unitId ?? null,
+            })
+          : null;
+        await this.setCategorization(trx, ctx, txnId, { ...categorization, learned, learnedProperty });
       }
       return txnId;
     }
@@ -490,8 +509,18 @@ export class TransactionsService {
    * moves to the transfer: the line stays cleared, and its import's source row moves too (as a second leg), so
    * re-importing that statement still recognises it and undoing that import only unclears the line. The other side
    * goes to the trash. A reconciled line can't be rewritten this way, so either side being reconciled is refused.
+   *
+   * What changed is recorded in `transfer_conversion`, so `undoTransferInTrx` can put both sides back. `importBatchId`:
+   * an import's commit made it on its own (ADR-0028 amendment of 2026-11-23). It is marked `made: 'import'`, left
+   * auto-applied rather than reviewed, and the payee isn't remembered with the account, since no one chose it.
    */
-  async makeTransferInTrx(trx: Trx, ctx: Ctx, id: string, req: MakeTransferRequest): Promise<string | null> {
+  async makeTransferInTrx(
+    trx: Trx,
+    ctx: Ctx,
+    id: string,
+    req: MakeTransferRequest,
+    opts: { importBatchId?: string } = {},
+  ): Promise<string | null> {
     const { row, spec } = await this.transferable(trx, ctx, id, req.accountId);
     const amount = BigInt(spec.amount);
     const date = calendarDate(row.txn_date);
@@ -550,6 +579,34 @@ export class TransactionsService {
     // Cleared state of both statement lines, to carry over.
     const mineCleared = await this.clearedOn(trx, ctx, id, spec.accountId);
     const theirsCleared = other ? await this.clearedOn(trx, ctx, other.row.id, req.accountId) : 'uncleared';
+    const auto = opts.importBatchId !== undefined;
+    // What undo puts back (recorded once the transfer is written).
+    const conversion: ConversionBefore = {
+      spec,
+      categorization: (row.categorization as StoredCategorization | null) ?? null,
+      reviewState: row.review_state,
+      cleared: mineCleared,
+      remembered: !auto,
+      made: { ...transferShape(next), date },
+      absorbed: other
+        ? {
+            reviewState: other.row.review_state,
+            cleared: theirsCleared,
+            sources: (
+              await trx
+                .selectFrom('app.transaction_source')
+                .select(['import_row_id', 'role', 'before_image'])
+                .where('workspace_id', '=', ctx.workspaceId)
+                .where('transaction_id', '=', other.row.id)
+                .execute()
+            ).map((x) => ({
+              importRowId: x.import_row_id,
+              role: x.role,
+              beforeImage: x.before_image ?? null,
+            })),
+          }
+        : null,
+    };
     if (other) {
       await this.poster.unpost(trx, ctx, other.row.id);
       await trx
@@ -602,21 +659,167 @@ export class TransactionsService {
       explanation: confirmed ? before!.explanation : 'Made a transfer by you',
       ruleId: null,
       suggested: before?.suggested ?? null,
-      transfer: { accountId: req.accountId, transactionId: other?.row.id ?? null },
+      transfer: {
+        accountId: req.accountId,
+        transactionId: other?.row.id ?? null,
+        made: auto ? 'import' : 'you',
+      },
     };
     await trx
       .updateTable('app.transaction')
       .set({
         spec: JSON.stringify(next),
-        review_state: 'reviewed',
+        review_state: auto ? 'auto_applied' : 'reviewed',
         categorization: JSON.stringify(categorization),
       })
       .where('workspace_id', '=', ctx.workspaceId)
       .where('id', '=', id)
       .execute();
-    // AI-05: the payee's next line is suggested as a transfer to the same account.
-    await this.categorizer.rememberTransfer(trx, ctx, row.payee_key, req.accountId);
+    await sql`
+      insert into app.transfer_conversion (workspace_id, transaction_id, absorbed_id, import_batch_id, before)
+      values (${ctx.workspaceId}, ${id}, ${other?.row.id ?? null}, ${opts.importBatchId ?? null},
+              ${JSON.stringify(conversion)}::jsonb)
+      on conflict (workspace_id, transaction_id) do update
+        set absorbed_id = excluded.absorbed_id, import_batch_id = excluded.import_batch_id,
+            before = excluded.before, created_at = now()`.execute(trx);
+    // AI-05: the payee's next line is suggested as a transfer to the same account (when someone chose it).
+    if (!auto) await this.categorizer.rememberTransfer(trx, ctx, row.payee_key, req.accountId);
     return other?.row.id ?? null;
+  }
+
+  /** Takes a transfer made from a plain transaction apart again (`POST /transactions/:id/undo-transfer`). */
+  async undoTransfer(ctx: Ctx, id: string): Promise<UndoTransferDto> {
+    const restoredId = await this.db.run(ctx, (trx) => this.undoTransferInTrx(trx, ctx, id));
+    return { transaction: await this.getOrThrow(ctx, id), restoredId };
+  }
+
+  /**
+   * Puts a transfer made by `makeTransferInTrx` back as the plain transaction it was (spec, category suggestion, review
+   * state, cleared line), and brings the absorbed other side back out of the trash with its statement lines and their
+   * roles. Refused, changing nothing, when the transfer was changed since, is reconciled or in closed books (DE-10), or
+   * the other side was restored by hand. When the other side's own import was undone since, it stays in the trash.
+   * Returns the side brought back, if any.
+   */
+  async undoTransferInTrx(trx: Trx, ctx: Ctx, id: string): Promise<string | null> {
+    const row = await this.lockRow(trx, ctx, id);
+    const conv = await trx
+      .selectFrom('app.transfer_conversion')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('transaction_id', '=', id)
+      .executeTakeFirst();
+    if (!conv)
+      throw unprocessable(
+        'transfer.not_undoable',
+        'This transfer wasn’t made from a plain transaction, so there is nothing to undo; delete it instead',
+      );
+    const before = conv.before as unknown as ConversionBefore;
+    const spec = row.spec as TransactionSpec | null;
+    const changed = () =>
+      unprocessable(
+        'transfer.changed',
+        'This transfer was changed after it was made, so it can’t be undone; edit or delete it instead',
+      );
+    if (
+      row.status !== 'posted' ||
+      row.deleted_at ||
+      spec?.type !== 'transfer' ||
+      calendarDate(row.txn_date) !== before.made.date ||
+      !sameTransfer(transferShape(spec), before.made)
+    )
+      throw changed();
+    if ((await this.poster.protection(trx, ctx, id)) !== 'none')
+      throw unprocessable(
+        'transfer.reconciled',
+        'This transfer is reconciled or in closed books; unreconcile it or reopen the period first',
+      );
+
+    // The other side comes back while its statement lines are still on the transfer. When its import was undone since,
+    // they're gone, and it stays in the trash with them.
+    let other: TransactionRow | null = null;
+    if (conv.absorbed_id && before.absorbed) {
+      const ids = before.absorbed.sources.map((x) => x.importRowId);
+      const still = ids.length
+        ? await trx
+            .selectFrom('app.transaction_source')
+            .select('import_row_id')
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('transaction_id', '=', id)
+            .where('role', '=', 'second_leg')
+            .where('import_row_id', 'in', ids)
+            .execute()
+        : [];
+      if (still.length > 0 && still.length < ids.length) throw changed();
+      if (still.length === ids.length) {
+        const b = await this.lockRow(trx, ctx, conv.absorbed_id);
+        if (b.status !== 'void' || !b.deleted_at || (await this.poster.hasEntries(trx, ctx, b.id)))
+          throw unprocessable(
+            'transfer.absorbed_restored',
+            'The other side is no longer in the trash; delete one of the two instead',
+          );
+        other = b;
+      }
+    }
+
+    // Built before anything is written: a refusal here (e.g. closed books on the other side's date) changes nothing.
+    const built = await this.poster.build(trx, ctx, before.spec, calendarDate(row.txn_date), id);
+    const otherSpec = other ? (other.spec as Extract<TransactionSpec, { type: 'standard' }>) : null;
+    const otherBuilt =
+      other && otherSpec
+        ? await this.poster.build(trx, ctx, otherSpec, calendarDate(other.txn_date), other.id)
+        : null;
+
+    await this.poster.post(trx, ctx, id, built);
+    if (before.cleared !== 'uncleared') await this.setCleared(trx, ctx, id, before.spec.accountId, 'cleared');
+    await trx
+      .updateTable('app.transaction')
+      .set({
+        spec: JSON.stringify(before.spec),
+        review_state: before.reviewState,
+        categorization: before.categorization ? JSON.stringify(before.categorization) : null,
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('id', '=', id)
+      .execute();
+    if (other && otherSpec && otherBuilt && before.absorbed) {
+      await this.poster.post(trx, ctx, other.id, otherBuilt);
+      await trx
+        .updateTable('app.transaction')
+        .set({ status: 'posted', deleted_at: null, review_state: before.absorbed.reviewState })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', other.id)
+        .execute();
+      if (before.absorbed.cleared !== 'uncleared')
+        await this.setCleared(trx, ctx, other.id, otherSpec.accountId, 'cleared');
+      for (const x of before.absorbed.sources)
+        await trx
+          .updateTable('app.transaction_source')
+          .set({
+            transaction_id: other.id,
+            role: x.role,
+            before_image: x.beforeImage === null ? null : JSON.stringify(x.beforeImage),
+          })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('transaction_id', '=', id)
+          .where('import_row_id', '=', x.importRowId)
+          .execute();
+    }
+    await trx
+      .deleteFrom('app.transfer_conversion')
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('transaction_id', '=', id)
+      .execute();
+    // A transfer made by hand taught the payee its account (AI-05); taking it apart takes that back.
+    if (before.remembered && row.payee_key) {
+      const otherAccount =
+        spec.fromAccountId === before.spec.accountId ? spec.toAccountId : spec.fromAccountId;
+      await sql`
+        update app.payee_transfer set count = greatest(count - 1, 0)
+         where workspace_id = ${ctx.workspaceId} and payee_key = ${row.payee_key} and account_id = ${otherAccount}`.execute(
+        trx,
+      );
+    }
+    return other?.id ?? null;
   }
 
   /** The other side of a transfer: on `accountId`, the opposite amount in the same currency, within 3 days, closest. */
@@ -783,6 +986,49 @@ export class TransactionsService {
           ruleId: accepted ? (categorization?.ruleId ?? null) : null,
           suggested: categorization?.suggested ?? null,
           learned: res.learned,
+          ...(categorization?.property ? { property: categorization.property } : {}),
+          ...(categorization?.learnedProperty ? { learnedProperty: categorization.learnedProperty } : {}),
+        };
+      }
+      // AI-02: a property someone chose, or accepted with the line in Review, is learned for the payee. Clearing one
+      // takes back what this transaction counted.
+      const propertyAfter = singleProperty(next);
+      const propertyChosen = req.propertyId !== undefined || req.unitId !== undefined;
+      const confirmed = row.review_state !== 'reviewed' && reviewState === 'reviewed';
+      if (
+        !opts.categorization &&
+        opts.learn !== false &&
+        !managed &&
+        next.type === 'standard' &&
+        (propertyChosen || (confirmed && propertyAfter))
+      ) {
+        const learnedProperty = await this.categorizer.learnProperty(
+          trx,
+          ctx,
+          payeeKey,
+          categorization?.learnedProperty ?? null,
+          propertyAfter,
+        );
+        const suggested = categorization?.property;
+        categorization = {
+          ...(categorization ?? {
+            step: 'user',
+            confidence: 1,
+            explanation: 'Chosen by you',
+            ruleId: null,
+            suggested: null,
+          }),
+          ...(suggested
+            ? {
+                property: {
+                  ...suggested,
+                  applied:
+                    propertyAfter?.propertyId === suggested.propertyId &&
+                    propertyAfter.unitId === suggested.unitId,
+                },
+              }
+            : {}),
+          learnedProperty,
         };
       }
       await trx
@@ -1062,6 +1308,9 @@ export class TransactionsService {
           ),
           amount: categorized,
           memberId,
+          // AI-02: a property found (or given) for a line still waiting for its category stays on it, so choosing
+          // the category in Review keeps it.
+          ...(input.propertyId ? { propertyId: input.propertyId, unitId: input.unitId ?? null } : {}),
         },
       ];
       uncategorized = true;
@@ -1564,6 +1813,17 @@ function foreignAmount(t: TransactionRow): TransactionDto['foreign'] {
 }
 
 /** The single category (and member) of a one-split standard transaction; nulls otherwise. */
+/** AI-02: the one property (and unit) every split of a standard transaction is tagged with, or null. */
+export function singleProperty(spec: TransactionSpec): { propertyId: string; unitId: string | null } | null {
+  if (spec.type !== 'standard' || spec.splits.length === 0) return null;
+  const first = spec.splits[0]!;
+  if (!first.propertyId) return null;
+  const same = spec.splits.every(
+    (s) => s.propertyId === first.propertyId && (s.unitId ?? null) === (first.unitId ?? null),
+  );
+  return same ? { propertyId: first.propertyId, unitId: first.unitId ?? null } : null;
+}
+
 function singleCategory(spec: TransactionSpec): { categoryId: string | null; memberId: string | null } {
   if (spec.type !== 'standard' || spec.splits.length !== 1) return { categoryId: null, memberId: null };
   const split = spec.splits[0]!;
@@ -1601,3 +1861,46 @@ function foreignSpec(input: ForeignAmountInput, amount: { amount: string; curren
   const signed = charged < 0n === original < 0n ? original : -original;
   return { amount: signed.toString(), currency: input.original.currency, fee, rate: input.rate ?? null };
 }
+
+/** What making a transfer changed (`app.transfer_conversion.before`), for `undoTransferInTrx`. */
+interface ConversionBefore {
+  spec: Extract<TransactionSpec, { type: 'standard' }>;
+  categorization: StoredCategorization | null;
+  reviewState: 'auto_applied' | 'needs_review' | 'reviewed';
+  cleared: 'uncleared' | 'cleared' | 'reconciled';
+  /** The payee was remembered with the account (made by hand, AI-05). */
+  remembered: boolean;
+  /** The transfer as it was made: one changed since isn't undone over the change. */
+  made: TransferShape & { date: CalendarDate };
+  absorbed: {
+    reviewState: 'auto_applied' | 'needs_review' | 'reviewed';
+    cleared: 'uncleared' | 'cleared' | 'reconciled';
+    sources: { importRowId: string; role: 'created' | 'matched' | 'second_leg'; beforeImage: unknown }[];
+  } | null;
+}
+
+interface TransferShape {
+  fromAccountId: string;
+  toAccountId: string;
+  amount: string;
+  currency: string;
+  amountIn: string | null;
+}
+
+/** The money of a transfer: its accounts, amount and currency, and the amount received between currencies. */
+function transferShape(spec: Extract<TransactionSpec, { type: 'transfer' }>): TransferShape {
+  return {
+    fromAccountId: spec.fromAccountId,
+    toAccountId: spec.toAccountId,
+    amount: spec.amount,
+    currency: spec.currency,
+    amountIn: spec.amountIn ?? null,
+  };
+}
+
+const sameTransfer = (a: TransferShape, b: TransferShape) =>
+  a.fromAccountId === b.fromAccountId &&
+  a.toAccountId === b.toAccountId &&
+  a.amount === b.amount &&
+  a.currency === b.currency &&
+  a.amountIn === b.amountIn;

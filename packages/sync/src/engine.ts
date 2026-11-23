@@ -453,6 +453,8 @@ export class SyncEngine implements SyncEngineApi {
       await this.store.mergeReference(
         Object.fromEntries(Object.entries(refs).filter(([, rows]) => rows.length > 0)),
       );
+    // An account deleted on the server (ACC-14). It was empty, so no stored transaction refers to it.
+    if (page.removedAccounts?.length) await this.store.removeReference('accounts', page.removedAccounts);
     const categories = await this.store.getReference('categories');
     for (const t of page.transactions) await this.putServer(t, categories);
     const busy = await this.busyIds();

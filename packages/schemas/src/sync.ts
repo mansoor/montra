@@ -28,6 +28,8 @@ export const SyncPullResponse = z.object({
   /** Voided, deleted or no longer visible to this member. */
   removedTransactions: z.array(z.string()),
   accounts: z.array(AccountDto),
+  /** Accounts deleted since `since` (ACC-14): the client drops them. Absent from older servers. */
+  removedAccounts: z.array(z.string()).optional(),
   categories: z.array(CategoryDto),
   members: z.array(FamilyMemberDto),
   entities: z.array(EntityDto),
