@@ -15,11 +15,12 @@ import { seedWorkspace, type SeededWorkspace } from './perf-seed.js';
 // the file, the mapping, dedupe against what the account already holds, matching, transfer pairing and the
 // categorization pipeline (rules, history, merchants and the AI, fake here). Unlike perf-commit's five repeated payees,
 // this file looks like a real statement: many payees, card payments, rules, and a workspace with other accounts whose
-// postings are transfer candidates. The budget is the requirement's own rate, 2 ms a row. PERF_PARSE_ROWS and
-// PERF_PARSE_SEED change the sizes for a local benchmark.
+// postings are transfer candidates. The budget is the requirement's: 10 s for up to 5,000 rows (part of the time is the
+// workspace's, not the file's), 2 ms a row above that. PERF_PARSE_ROWS and PERF_PARSE_SEED change the sizes for a local
+// benchmark.
 const ROWS = Number(process.env.PERF_PARSE_ROWS ?? 5000);
 const SEED = Number(process.env.PERF_PARSE_SEED ?? 10_000);
-const BUDGET_MS_PER_ROW = 2;
+const BUDGET_MS = Math.max(ROWS, 5000) * 2;
 
 let h: Harness;
 let c: Client;
@@ -162,6 +163,6 @@ describe('import parse throughput (NFR-07)', () => {
     }
     await admin.end();
     process.stdout.write(`[perf] ${ROWS} rows on ${SEED} transactions: parse ${parseMs.toFixed(0)} ms\n`);
-    expect(parseMs).toBeLessThan(ROWS * BUDGET_MS_PER_ROW);
+    expect(parseMs).toBeLessThan(BUDGET_MS);
   }, 600_000);
 });

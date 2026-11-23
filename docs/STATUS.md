@@ -842,7 +842,9 @@ Phase 11 leftovers:
 - **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
 - **Profile, family and entities** are edited on the phone too now (OPS-13, see 7g).
 - **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
-- Import parse p95 was 5.7 to 9.0 s locally for 5,000 rows, close to the 10 s limit, and worth watching.
+- Import parse: a realistic 5,000-row statement now takes 3.6 to 6.0 s locally, from 9.0 to 10.7 s, against the 10 s
+  limit, and `perf-parse` holds it to that in CI (§7g). The transfer candidate query still grows with the workspace's
+  size. Not measured on real infrastructure.
 
 ---
 
@@ -2623,6 +2625,46 @@ Phase 11 leftovers:
     image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
     blocks after approval; a shared object; the batch size; a vault-held file). `data-ownership.test.ts` now approves
     before a file goes. Web `retention.test.ts`.
+- **Import parsing is faster, with the same results** (NFR-07; migration 0085, an index only).
+  - Before: a realistic 5,000-row statement took 9.0 to 10.7 s to parse on this machine, at the 10 s limit. Most of
+    the time went to work done again for every row:
+    - each row was compared with every reference merchant, and both sides' trigrams were rebuilt for each pair;
+    - the pipeline compiled 17 keyword patterns for each row;
+    - each row was checked against every transfer, dedupe and match candidate, whatever its amount;
+    - each AI cache key was read in its own transaction, and each answer written in its own.
+  - Now:
+    - a payee key is matched to the merchants once per import (`MerchantDirectory.match` remembers it), and each
+      merchant's trigrams are built once;
+    - keyword patterns are compiled once (`hasWord`);
+    - transfer, dedupe and match candidates are grouped by amount, and a row looks only at those with its amount (or
+      the opposite one for a transfer), in the same order as before. Each text's trigrams are built once
+      (`similarityCache`);
+    - the gateway reads the AI cache for a whole run in one query and writes each batch's answers in one statement,
+      when the store offers it (`cacheGetMany`, `cachePutMany`; the API's store does);
+    - migration 0085 adds an index on `transaction_source (workspace_id, import_row_id)`. Deleting an import's rows (a
+      parse run again after a mapping change, a discarded import) looked up each row's statement-line records by
+      reading all of the workspace's. 5,000 rows took 7.2 s with 5,000 such records, and 0.28 s with the index.
+  - Rows, statuses, scores, categories, confidences, explanations and transfer candidates come out the same. The new
+    perf test's dump (`PERF_PARSE_DUMP`) matched line for line before and after, at 1,000 and 5,000 rows.
+  - Measured on this machine, which was busy with other work, so the numbers move by a second or so between runs.
+    Before is develop's parse code with the same tests:
+
+    | Test (`@montra/api test:perf`)                    | 1,000 rows        | 5,000 rows         |
+    | ------------------------------------------------- | ----------------- | ------------------ |
+    | `perf-parse` (realistic statement, 10k txns)      | 4.1 s → 2.1 s     | 10.7 s → 3.6 s     |
+    | `perf-commit` (five payees, empty workspace)      | 1.8 s → 1.2 s     | 5.5 s → 2.3 s      |
+
+    An earlier pair of runs of `perf-parse` at 5,000 rows gave 9.0 s → 6.0 s.
+  - Still the largest costs, and left as they are: inserting the rows (about 0.3 ms a row, mostly the row-level
+    security check), and two candidate queries whose time grows with the workspace, not the file. The transfer
+    candidate query reads every posting of the other accounts, not only those in the file's dates, and returns them in
+    no fixed order. Making it read by date would change which candidate wins a tie, so it needs a decision first.
+  - Tests: `perf-parse.test.ts`, new in `@montra/api test:perf`: 5,000 lines with many payees, card payments and
+    rules, into a workspace with 10,000 transactions on other accounts, an earlier import over the last month and a
+    card named by its last 4 digits. Budget: the requirement's 10 s for 5,000 rows. `perf-commit.test.ts` now uses
+    the fake AI provider, as the app would, and its 30 ms a row commit budget is unchanged. Gateway
+    `gateway.test.ts` (the bulk cache gives the same answers in one read and one write per batch), importers
+    `units.test.ts` (remembered trigrams compare the same; a merchant's changed key is used).
 
 ---
 
