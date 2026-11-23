@@ -443,6 +443,30 @@ export class PlanningData {
     for (const m of out.values()) for (const d of dates) if (!m.has(d)) m.set(d, 0n);
     return out;
   }
+
+  /**
+   * Each account's net functional amount per day through `through`, oldest first: the history its carrying value is
+   * made of. For translating books kept in another currency at each day's rate (ADR-0010 §7).
+   */
+  async functionalByDay(
+    trx: Trx,
+    ctx: Ctx,
+    accountIds: readonly string[],
+    through: CalendarDate,
+  ): Promise<Map<string, { date: CalendarDate; amount: bigint }[]>> {
+    const out = new Map<string, { date: CalendarDate; amount: bigint }[]>(accountIds.map((a) => [a, []]));
+    if (!accountIds.length) return out;
+    const { rows } = await sql<{ account: string; d: string; v: string }>`
+      select p.ledger_account_id as account, p.entry_date::text as d, sum(p.functional_amount_minor)::text as v
+        from app.posting p
+       where p.workspace_id = ${ctx.workspaceId} and p.ledger_account_id = any(${sql.val([...accountIds])}::uuid[])
+         and p.entry_date <= ${through}
+       group by 1, 2
+      having sum(p.functional_amount_minor) <> 0
+       order by 2`.execute(trx);
+    for (const r of rows) out.get(r.account)?.push({ date: calendarDate(r.d), amount: BigInt(r.v) });
+    return out;
+  }
 }
 
 /** Month starts for the `n` months before the month of `date` (oldest first). */

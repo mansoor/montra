@@ -2623,6 +2623,31 @@ Phase 11 leftovers:
     image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
     blocks after approval; a shared object; the batch size; a vault-held file). `data-ownership.test.ts` now approves
     before a file goes. Web `retention.test.ts`.
+- **The translation adjustment on net worth** (CUR-01, [ADR-0010](design/adr/0010-fx-accounting-policy.md) §7; no
+  migration).
+  - Before: net worth converted books kept in another currency (a business in EUR in a USD workspace) at each date's
+    rate, but nothing said how much of that came from the rate moving. §7's translation adjustment line wasn't built.
+  - Now, for each account in books whose currency isn't the base, net worth works out its carrying value at the
+    date's rate less each of its postings at its own day's rate. Income, spending, transfers and opening balances all
+    count at their own day's rate. That is the closing-rate net assets less the opening translated net assets and the
+    movements at their rates, cumulative from the books' first posting. Nothing is posted.
+  - It doesn't overlap CUR-06's unrealized FX, which is measured in the books' own currency before translation. Net
+    worth less every posting at its day's rate is the two added together (to a cent or so of cross-rate rounding when
+    an account's currency is neither its books' nor the base).
+  - `NetWorthDto` has `translationAdjustment` in total, per account (null when the books are in the base currency) and
+    per trend date. `@montra/domain` has `translationAdjustment` (one period, bigint) and `translationAdjustments`
+    (rolled forward over dates).
+  - The net worth report gets a "Translation adjustment" column and a note, only when some books are in another
+    currency. Export includes the column.
+  - Web: the net worth tab of Cash flow shows the total under net worth and a column per account. Phone: the net worth
+    tab shows the total.
+  - Left out: properties (their worth isn't booked, so there are no days' rates); an account missing a rate counts as
+    zero, as net worth already leaves it out. Not changed: the income and spending reports still convert other books
+    at the period end's rate (ADR-0019 §2), and there's no other comprehensive income line on an income statement.
+  - Tests: domain `ledger-fx.test.ts` (EUR books in USD with the rate moving: from the start, one period, rolled
+    forward, flat rates give zero, after the money has gone, no rate), API `translation-adjustment.test.ts` (the
+    figure per account, in total and per date, no double count with unrealized FX, the report column, note and CSV,
+    nothing booked, no column when every set of books is in the base currency), web `i18n-keys.test.ts`.
 - **Receipts in the Trash, and a legal hold on account deletion** (BAK-06, NFR-06, BAK-09, RCP-10; migration 0080).
   - Before: a deleted receipt waits in the Trash for its retention date (RCP-10), but the Trash said it would go 30
     days after it was deleted. And the hourly job purged a closed account, and the workspaces that went with it, after

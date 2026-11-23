@@ -158,7 +158,7 @@
   ],
   "CUR-01": [
     "done",
-    "entity functional currency"
+    "entity functional currency. Net worth translates books in another currency at each date's rate and shows the translation adjustment (ADR-0010 §7) in total, per account and on the net worth report; it is not booked"
   ],
   "CUR-02": [
     "done",
