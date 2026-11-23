@@ -14,6 +14,7 @@ const counts = (over: Partial<ImportBatchDto['counts']> = {}): ImportBatchDto['c
   added: 0,
   matched: 0,
   failed: 0,
+  transfers: 0,
   ...over,
 });
 

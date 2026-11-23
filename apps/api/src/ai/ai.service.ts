@@ -42,6 +42,8 @@ interface StoredSettings {
   models?: { small?: string | null; vision?: string | null; large?: string | null };
   threshold?: number;
   aiThreshold?: number;
+  /** Import makes pairs at or above this transfers on their own; null is off (absent: DEFAULT_TRANSFER_THRESHOLD). */
+  transferThreshold?: number | null;
   monthlyBudgetUsd?: number | null;
   allowDocumentsToLlm?: boolean;
   allowReceiptImagesToLlm?: boolean;
@@ -70,6 +72,12 @@ export const DEFAULT_THRESHOLD = 0.8;
  * 99% precision (2026-11-21 refit), close to what 80% gave before the refit.
  */
 export const DEFAULT_AI_THRESHOLD = 0.95;
+/**
+ * TXN-04, AI-03: an import makes a sure transfer pair (step 3's 0.95: the same amount, opposite sign, on another account
+ * within 3 days, with a payment or transfer word or the account's last 4 digits) a transfer on its own (ADR-0028
+ * amendment of 2026-11-23). Weaker pairs, and remembered payees (0.90), wait in Review unless the workspace lowers it.
+ */
+export const DEFAULT_TRANSFER_THRESHOLD = 0.95;
 const CACHE_TTL_DAYS = 90;
 
 /** Per-mode privacy disclosure shown next to each choice (UP-06). Plain language, no marketing. */
@@ -560,6 +568,16 @@ export class AiService {
 
   // ----- Settings (UP-13) ----------------------------------------------------------------------------------
 
+  /** The confidence at which an import makes a transfer pair a transfer on its own; null when that's off. */
+  async transferThreshold(trx: Trx, ctx: Ctx): Promise<number | null> {
+    const ws = await trx
+      .selectFrom('app.workspace')
+      .select('ai_settings')
+      .where('id', '=', ctx.workspaceId)
+      .executeTakeFirstOrThrow();
+    return transferThresholdOf((ws.ai_settings ?? {}) as StoredSettings);
+  }
+
   async settings(trx: Trx, ctx: Ctx): Promise<AiSettingsDto> {
     const ws = await trx
       .selectFrom('app.workspace')
@@ -600,6 +618,7 @@ export class AiService {
       keyLast4: cred?.last4 ?? null,
       threshold: s.threshold ?? DEFAULT_THRESHOLD,
       aiThreshold: s.aiThreshold ?? DEFAULT_AI_THRESHOLD,
+      transferThreshold: transferThresholdOf(s),
       monthlyBudgetUsd: budget,
       allowDocumentsToLlm: s.allowDocumentsToLlm ?? false,
       allowReceiptImagesToLlm: s.allowReceiptImagesToLlm ?? false,
@@ -630,6 +649,7 @@ export class AiService {
     if (req.models !== undefined) s.models = req.models;
     if (req.threshold !== undefined) s.threshold = req.threshold;
     if (req.aiThreshold !== undefined) s.aiThreshold = req.aiThreshold;
+    if (req.transferThreshold !== undefined) s.transferThreshold = req.transferThreshold;
     if (req.monthlyBudgetUsd !== undefined) s.monthlyBudgetUsd = req.monthlyBudgetUsd;
     if (req.allowDocumentsToLlm !== undefined) s.allowDocumentsToLlm = req.allowDocumentsToLlm;
     if (req.allowReceiptImagesToLlm !== undefined) s.allowReceiptImagesToLlm = req.allowReceiptImagesToLlm;
@@ -701,4 +721,8 @@ function localAnswerOf(row: { result: unknown; input: unknown; item_keys: string
 /** Whether a model (for Azure OpenAI, a deployment name) is saved for any group. */
 function hasModel(s: StoredSettings): boolean {
   return Boolean(s.models?.small || s.models?.vision || s.models?.large);
+}
+
+function transferThresholdOf(s: StoredSettings): number | null {
+  return s.transferThreshold === undefined ? DEFAULT_TRANSFER_THRESHOLD : s.transferThreshold;
 }

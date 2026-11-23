@@ -90,6 +90,8 @@ describe('making detected transfers real (TXN-04)', () => {
 
   beforeAll(async () => {
     w = await setup('Transfers');
+    // The Review path: import would otherwise make the sure pair a transfer on its own (import-auto-transfers.test).
+    await c.patch(w.url('/ai/settings'), { transferThreshold: null });
   });
 
   it('suggests the card payment from the checking statement alone, by the card’s last 4 digits', async () => {

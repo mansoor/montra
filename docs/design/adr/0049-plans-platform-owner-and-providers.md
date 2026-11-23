@@ -136,6 +136,9 @@ workspaces, plans and usage (AI spent, storage used, texts sent).
   - A suspended person can't sign in, and their sessions are revoked through Kratos's admin API.
   - Workspaces they own are closed to every member, with a message that names support. The data is kept.
   - A reason is required. The person is emailed unless the reason is a legal hold.
+  - A legal hold also stops deletion (migration 0080): a closing account under one, and a closing workspace with an
+    active member under one, are not purged. The retention job logs it once, and the console shows since when. Once
+    the hold is lifted, the next hourly run purges them.
   - Restoring reverses all of it.
 - **Extend a trial** (`admin`), up to 30 days at a time.
 - **Give a plan** (`admin`): a subscription with provider `comp`, a version and an end date, which never touches Stripe.

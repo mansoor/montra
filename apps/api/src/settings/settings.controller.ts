@@ -12,6 +12,7 @@ import {
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import { CONFIG, photoLimitsOf, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { BillingService } from '../ops/billing.service.js';
 import { notFound } from '../common/errors.js';
@@ -19,11 +20,14 @@ import { requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { WorkspacesService } from '../workspaces/workspaces.service.js';
 
-/** Profile and preferences of the signed-in user (TZ-01, TZ-05, CUR-10). */
+/** Profile and preferences of the signed-in user (TZ-01, TZ-05, CUR-10, BAK-08). */
 @Controller('v1/me')
 @UseGuards(AuthGuard)
 export class MeController {
-  constructor(@Inject(Db) private readonly db: Db) {}
+  constructor(
+    @Inject(Db) private readonly db: Db,
+    @Inject(CONFIG) private readonly config: AppConfig,
+  ) {}
 
   @Get()
   get(@Ctx() ctx: RequestContext): Promise<MeDto> {
@@ -42,6 +46,7 @@ export class MeController {
           ...(req.timeZone !== undefined ? { time_zone: req.timeZone } : {}),
           ...(req.dateFormat !== undefined ? { date_format: req.dateFormat } : {}),
           ...(req.weekStart !== undefined ? { week_start: req.weekStart } : {}),
+          ...(req.keepOriginalPhotos !== undefined ? { keep_original_photos: req.keepOriginalPhotos } : {}),
         })
         .where('id', '=', ctx.user.id)
         .execute(),
@@ -62,6 +67,8 @@ export class MeController {
       dateFormat: u.date_format,
       weekStart: u.week_start,
       emailVerified: u.email_verified_at !== null,
+      keepOriginalPhotos: u.keep_original_photos,
+      photoLimits: photoLimitsOf(this.config),
     };
   }
 }

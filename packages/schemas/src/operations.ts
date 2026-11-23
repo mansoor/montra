@@ -182,6 +182,8 @@ export const AdminAccountDto = z.object({
     .nullable(),
   /** Set while the account is closing, until then. */
   purgeAfter: z.string().nullable(),
+  /** Its date has passed, but a legal hold keeps it: since then. Purged on the job's next run after the hold goes. */
+  purgeHeldSince: z.string().nullable(),
 });
 export type AdminAccountDto = z.infer<typeof AdminAccountDto>;
 
@@ -203,6 +205,8 @@ export const AdminWorkspaceDto = z.object({
   supportUntil: z.string().nullable(),
   planName: z.string(),
   trialEnd: z.string().nullable(),
+  /** Closing, its date has passed, but a legal hold on a member keeps it: since then. */
+  purgeHeldSince: z.string().nullable(),
 });
 export type AdminWorkspaceDto = z.infer<typeof AdminWorkspaceDto>;
 
