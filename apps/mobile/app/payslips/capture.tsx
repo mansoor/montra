@@ -13,8 +13,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { EmployerDto, ScanPayslipDetectedDto } from '@montra/schemas';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { waitForScan, type CapturedPage } from '../../src/features/scanner';
+import { jpegName } from '../../src/features/photos';
 import { removePage } from '../../src/receipts/files';
-import { useAbilities, useSession } from '../../src/session/SessionProvider';
+import { compressForUpload } from '../../src/receipts/photo-tool';
+import { useAbilities, usePhotoSettings, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import { DocumentCapture } from '../../src/ui/DocumentCapture';
 import { NotAllowed } from '../../src/ui/NotAllowed';
@@ -37,6 +39,7 @@ export default function PayslipCapture() {
   const { employerId } = useLocalSearchParams<{ employerId?: string }>();
   const { state: session, api } = useSession();
   const can = useAbilities();
+  const photos = usePhotoSettings();
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const members = useLocal((s) => s.getReference('members')) ?? [];
   const [busy, setBusy] = useState(false);
@@ -56,8 +59,16 @@ export default function PayslipCapture() {
   /** The pages' file ids, or null when one is a possible duplicate and the person chose not to use them. */
   const uploadAll = async (pages: CapturedPage[]): Promise<string[] | null> => {
     const uploads = [];
-    for (const p of pages)
-      uploads.push(await api.uploadPayslipFile(ws, { uri: p.uri, name: p.name, type: p.type }));
+    for (const p of pages) {
+      // BAK-08: a photo goes compressed unless originals are kept.
+      const c = await compressForUpload(p, photos);
+      const name = c.compressed ? jpegName(p.name) : p.name;
+      try {
+        uploads.push(await api.uploadPayslipFile(ws, { uri: c.uri, name, type: c.type }));
+      } finally {
+        if (c.compressed) await removePage(c.uri);
+      }
+    }
     await Promise.all(pages.filter((p) => p.shot).map((p) => removePage(p.uri)));
     // ADR-0054 (2026-11-18): the bytes of a file Montra already holds. Asked, as on the web; no makes nothing.
     if (anyDuplicate(uploads) && !(await askDuplicate())) {

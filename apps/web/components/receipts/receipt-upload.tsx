@@ -1,10 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { photoSkipReason } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import { anyDuplicate } from '@/lib/missing-files';
+import { photoForUpload, photoSettings } from '@/lib/photo-upload';
 import { RECEIPT_ACCEPT, receiptFileProblem } from '@/lib/receipts';
 import { useI18n } from '../i18n';
 
@@ -28,6 +30,12 @@ export function ReceiptUpload({
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // BAK-08: photos are compressed unless the person keeps originals; their profile setting is the default here.
+  const [keepOriginal, setKeepOriginal] = useState(false);
+  useEffect(() => {
+    void photoSettings().then((s) => setKeepOriginal(s.keepOriginal));
+  }, []);
+  const anyPhoto = files.some((f) => photoSkipReason(f.type, { keepOriginal: false }) === null);
 
   function add(list: FileList | File[]) {
     setError(null);
@@ -51,7 +59,10 @@ export function ReceiptUpload({
     setError(null);
     try {
       const uploads = [];
-      for (const f of files) uploads.push(await browserApi.uploadReceiptFile(workspaceId, f, f.name));
+      for (const f of files) {
+        const p = await photoForUpload(f, keepOriginal);
+        uploads.push(await browserApi.uploadReceiptFile(workspaceId, p, p.name));
+      }
       // The same picture is already in Montra, or kept in the vault (ADR-0054): the person decides.
       if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) return;
       const fileIds = uploads.map((u) => u.fileId);
@@ -116,6 +127,17 @@ export function ReceiptUpload({
       )}
       {files.length > 1 && (
         <p className="text-xs text-muted">{t('receipts.pages_hint', { count: files.length })}</p>
+      )}
+      {anyPhoto && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={keepOriginal}
+            onChange={(e) => setKeepOriginal(e.target.checked)}
+            data-testid="receipt-keep-original"
+          />
+          {t('photos.keep_original_once')}
+        </label>
       )}
       {error && (
         <p role="alert" className="text-sm text-bad">

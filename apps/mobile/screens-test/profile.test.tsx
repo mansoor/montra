@@ -51,4 +51,17 @@ describe('profile', () => {
     await act(async () => jest.runOnlyPendingTimers());
     expect(screen.queryByText(t('profile.saved'))).toBeNull();
   });
+
+  it('keeps original photos when switched on, saved at once (BAK-08)', async () => {
+    api.updateMe.mockResolvedValue(me({ keepOriginalPhotos: true }));
+    await renderScreen(<Profile />);
+
+    const toggle = await screen.findByTestId('profile-keep-original-photos');
+    expect(toggle.props.value).toBe(false);
+    await fireEvent(toggle, 'valueChange', true);
+
+    expect(api.updateMe).toHaveBeenCalledWith({ keepOriginalPhotos: true });
+    expect((await screen.findByTestId('profile-keep-original-photos')).props.value).toBe(true);
+    expect(screen.getByText(t('profile.keep_original_photos_hint'))).toBeOnTheScreen();
+  });
 });

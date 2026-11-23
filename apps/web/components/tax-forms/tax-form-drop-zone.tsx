@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import type { TaxFormUploadDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { photoForUpload } from '@/lib/photo-upload';
 import { friendlyMessage } from '@/lib/errors';
 import { UPLOAD_ACCEPT } from '@/lib/tax-forms';
 import { useI18n } from '../i18n';
@@ -29,9 +30,11 @@ export function TaxFormDropZone({ workspaceId, year }: { workspaceId: string; ye
     setBusy(true);
     setError(null);
     try {
+      const photos = [];
+      for (const f of files) photos.push(await photoForUpload(f));
       const res = await browserApi.uploadTaxFormFiles(
         workspaceId,
-        files.map((f) => ({ file: f, name: f.name })),
+        photos.map((f) => ({ file: f, name: f.name })),
         { year, source: 'upload' },
       );
       setDone(res.files);

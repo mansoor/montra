@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parsePriceOverrides } from '@montra/ai-gateway';
+import { PHOTO_UPLOAD_DEFAULTS, PhotoUploadLimits } from '@montra/schemas';
 import {
   assertPrivateKeyFile,
   realFiles,
@@ -153,6 +154,14 @@ const Env = z.object({
     .int()
     .positive()
     .default(25 * 1024 * 1024),
+  /**
+   * BAK-08: how the web and the phone compress a photo before upload, sent to them with `GET /v1/me`. The long edge in
+   * pixels, the JPEG quality in percent and the lowest it steps down to, and the size it aims for (about 1 MB).
+   */
+  PHOTO_MAX_EDGE_PX: z.coerce.number().int().default(PHOTO_UPLOAD_DEFAULTS.maxEdgePx),
+  PHOTO_QUALITY: z.coerce.number().int().default(PHOTO_UPLOAD_DEFAULTS.quality),
+  PHOTO_MIN_QUALITY: z.coerce.number().int().default(PHOTO_UPLOAD_DEFAULTS.minQuality),
+  PHOTO_TARGET_BYTES: z.coerce.number().int().default(PHOTO_UPLOAD_DEFAULTS.targetBytes),
   /** ADR-0020: staff and support connect with their own roles. Locally these come from DATABASE_URL's host. */
   ADMIN_DATABASE_URL: z.string().optional(),
   SUPPORT_DATABASE_URL: z.string().optional(),
@@ -258,6 +267,14 @@ const Env = z.object({
 
 export type AppConfig = z.infer<typeof Env>;
 
+/** BAK-08: the photo compression settings as clients receive them. */
+export const photoLimitsOf = (config: AppConfig): PhotoUploadLimits => ({
+  maxEdgePx: config.PHOTO_MAX_EDGE_PX,
+  quality: config.PHOTO_QUALITY,
+  minQuality: config.PHOTO_MIN_QUALITY,
+  targetBytes: config.PHOTO_TARGET_BYTES,
+});
+
 /**
  * Settings that are read from `NAME_FILE` when given that way (ADR-0050 §2). VAULT_TOKEN is the exception: its file is
  * kept as a path, and read again on each call (`VaultKms`).
@@ -302,6 +319,9 @@ export function loadConfig(
       'SIMPLEFIN_SYNCS_PER_DAY must leave room in SIMPLEFIN_REQUESTS_PER_DAY for Sync now and retries',
     );
   }
+  const photos = PhotoUploadLimits.safeParse(photoLimitsOf(config));
+  if (!photos.success)
+    throw new Error(`PHOTO_* settings: ${photos.error.issues.map((i) => i.message).join('; ')}`);
   if (config.AUTH_MODE === 'kratos' && !config.KRATOS_PUBLIC_URL) {
     throw new Error('KRATOS_PUBLIC_URL is required when AUTH_MODE=kratos');
   }

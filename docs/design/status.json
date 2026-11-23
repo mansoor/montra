@@ -1013,8 +1013,8 @@
     "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions and receipts for 30 days. Restore is web only. ADR-0054 PR 5b2: a file the archive didn't hold (Montra no longer had it when the archive was made) is restored as missing with the reason, listed in Review's Files to provide again, instead of pointing at nothing"
   ],
   "BAK-08": [
-    "partial",
-    "quota per plan, 5 or 50 GB, with a usage meter. The phone compresses receipt photos; web uploads aren’t compressed and there’s no choice to keep an original. A file held only in the household's Family Document Vault (ADR-0054 §5) doesn't count against the quota or the meter; provided again, it does"
+    "done",
+    "quota per plan, 5 or 50 GB, with a usage meter that counts the bytes stored. Photos are compressed before upload on the web and the phone, the same way: JPEG, long edge 2,000 px, quality 80 stepping down to 60 while over about 1 MB. The limits are API settings (PHOTO_*). PDFs and other files are never re-encoded. Keeping originals is a per-person choice in Profile, off by default; the web's receipt upload also asks each time. Re-encoding applies the EXIF orientation and drops location. Not yet tried on a real phone or in a real browser, only in unit tests. A file held only in the household's Family Document Vault (ADR-0054 §5) doesn't count against the quota or the meter; provided again, it does"
   ],
   "BAK-09": [
     "partial",

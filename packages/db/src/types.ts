@@ -30,6 +30,8 @@ export interface AppUserTable {
   phone_e164: string | null;
   phone_verified: Generated<boolean>;
   phone_opted_out_at: Date | null;
+  /** BAK-08: upload photos as they are instead of compressed (migration 0083). */
+  keep_original_photos: Generated<boolean>;
 }
 
 export interface WorkspaceTable {
