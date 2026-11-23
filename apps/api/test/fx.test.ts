@@ -67,7 +67,9 @@ describe('rate sources (CUR-05)', () => {
 
 describe('the fx.daily job (ADR-0014)', () => {
   beforeEach(async () => {
-    await admin.query(`delete from app.job where workspace_id is null and type like 'fx.%'`);
+    // drain() below counts every job in the schedule queue. Files run one at a time, so a run another file queued
+    // (a retention run after an approval, say) is safe to clear here and would otherwise be counted too.
+    await admin.query(`delete from app.job where queue = 'schedule' and status = 'queued'`);
   });
 
   it('loads ECB and OXR rates, then queues the next run', async () => {

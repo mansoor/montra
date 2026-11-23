@@ -77,6 +77,8 @@ export const NetWorthPointDto = z.object({
   netWorth: MinorDto,
   /** CUR-06: the part of `netWorth` that is unrealized FX gain (+) or loss (−) on that date. See `NetWorthDto`. */
   unrealizedFx: MinorDto,
+  /** ADR-0010 §7: the cumulative translation adjustment in `netWorth` on that date. See `NetWorthDto`. */
+  translationAdjustment: MinorDto,
 });
 
 /** FLOW-07: assets minus liabilities, in the workspace base currency. */
@@ -92,6 +94,14 @@ export const NetWorthDto = z.object({
    * posted to the ledger. Zero when every account is in its books' currency.
    */
   unrealizedFx: MinorDto,
+  /**
+   * ADR-0010 §7: the cumulative translation adjustment included in `netWorth`, from books kept in a currency other
+   * than the base. Each such account's carrying value (in its books' currency) at the date's rate, less each of its
+   * postings at its own date's rate. It is what the books' figures gained (+) or lost (−) from rate changes once
+   * translated, separate from `unrealizedFx`, which is measured in the books' own currency. Not posted. Zero when
+   * every account's books are in the base currency.
+   */
+  translationAdjustment: MinorDto,
   accounts: z.array(
     z.object({
       accountId: Id,
@@ -105,6 +115,8 @@ export const NetWorthDto = z.object({
       value: MinorDto,
       /** CUR-06: unrealized FX in `value`, base currency. Null for an account in its books' own currency. */
       unrealizedFx: MinorDto.nullable(),
+      /** ADR-0010 §7: translation adjustment in `value`, base currency. Null when its books are in the base currency. */
+      translationAdjustment: MinorDto.nullable(),
     }),
   ),
   /** FLOW-07: your share of each property's value, in the base currency. In `assets`, from its purchase date. */
