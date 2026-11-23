@@ -28,6 +28,7 @@ import {
   periodContaining,
   spendingPace,
   startOfMonth,
+  translationAdjustments,
   unrealizedFxIn,
   type CalendarDate,
   type CurrencyCode,
@@ -695,6 +696,46 @@ export class FlowService {
         ) ?? 0n
       );
     };
+    // ADR-0010 §7: books in another currency than the base are translated at each date's rate. What that adds beyond
+    // their postings at their own dates' rates is the translation adjustment, shown and not posted. It is measured on
+    // carrying values in the books' currency, so it doesn't overlap the unrealized FX above.
+    const translated = accounts.filter((a) => a.functionalCurrency !== base);
+    const history = await this.data.functionalByDay(
+      trx,
+      ctx,
+      translated.map((a) => a.id),
+      date,
+    );
+    const firstDay = [...history.values()]
+      .map((h) => h[0]?.date)
+      .filter((d): d is CalendarDate => !!d)
+      .sort()[0];
+    const historical = firstDay
+      ? await this.fx.table(
+          trx,
+          [...new Set([...translated.map((a) => a.functionalCurrency), base])],
+          firstDay,
+          date,
+        )
+      : null;
+    const adjustments = new Map(
+      translated.map((a) => [
+        a.id,
+        translationAdjustments(
+          a.functionalCurrency as CurrencyCode,
+          base,
+          history.get(a.id) ?? [],
+          trendDates,
+          (d) => {
+            const r = historical?.get(a.functionalCurrency, base, d);
+            return r ? parseDecimal(r.rate) : null;
+          },
+        ),
+      ]),
+    );
+    // Null for an account whose books are in the base currency; an account without the rates it needs counts as zero.
+    const adjustmentOf = (a: CashAccount, d: CalendarDate): bigint | null =>
+      a.functionalCurrency === base ? null : (adjustments.get(a.id)?.get(d) ?? 0n);
     const propertyValue = (p: (typeof properties)[number], d: CalendarDate): bigint => {
       const worth = p.current_value_minor ?? p.purchase_price_minor;
       if (worth === null) return 0n;
@@ -708,12 +749,14 @@ export class FlowService {
       let assets = properties.reduce((t, p) => t + propertyValue(p, d), 0n);
       let liabilities = 0n;
       let unrealized = 0n;
+      let translation = 0n;
       for (const a of accounts) {
         const balance = balances.get(a.id)?.get(d) ?? 0n;
         const v = valueOf(a, d, balance);
         if (a.type === 'asset') assets += v;
         else liabilities -= v;
         unrealized += gainOf(a, d, balance) ?? 0n;
+        translation += adjustmentOf(a, d) ?? 0n;
       }
       return {
         date: d,
@@ -721,6 +764,7 @@ export class FlowService {
         liabilities: s(liabilities),
         netWorth: s(assets - liabilities),
         unrealizedFx: s(unrealized),
+        translationAdjustment: s(translation),
       };
     };
     const now = point(date);
@@ -731,9 +775,11 @@ export class FlowService {
       liabilities: now.liabilities,
       netWorth: now.netWorth,
       unrealizedFx: now.unrealizedFx,
+      translationAdjustment: now.translationAdjustment,
       accounts: accounts.map((a) => {
         const balance = balances.get(a.id)?.get(date) ?? 0n;
         const gain = gainOf(a, date, balance);
+        const adjustment = adjustmentOf(a, date);
         return {
           accountId: a.id,
           entityId: a.entityId,
@@ -743,6 +789,7 @@ export class FlowService {
           accountCurrency: a.currency as Money,
           value: s(valueOf(a, date, balance)),
           unrealizedFx: gain === null ? null : s(gain),
+          translationAdjustment: adjustment === null ? null : s(adjustment),
         };
       }),
       properties: properties

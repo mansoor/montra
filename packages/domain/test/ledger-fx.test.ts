@@ -10,12 +10,15 @@ import {
   transferEffectiveRate,
   transferFxCost,
   transferFxQuote,
+  translationAdjustment,
+  translationAdjustments,
   unrealizedFx,
   unrealizedFxIn,
   valueAtCarrying,
   type AccountResolver,
   type AccountType,
   type CarryingBalance,
+  type CalendarDate,
   type CurrencyCode,
   type EntityRef,
   type JournalEntryDraft,
@@ -241,6 +244,130 @@ describe('unrealized FX in a report currency (CUR-06)', () => {
     expect(unrealizedFxIn({ foreign: 500n, functional: 500n }, 'USD', 'USD', null, 'EUR', null)).toBe(0n);
     expect(unrealizedFxIn(held, 'EUR', 'USD', null, 'USD', null)).toBeNull();
     expect(unrealizedFxIn(held, 'EUR', 'CAD', parseDecimal('1.55'), 'USD', null)).toBeNull();
+  });
+});
+
+describe('translation adjustment (ADR-0010 §7)', () => {
+  // Books in EUR inside a USD workspace. Rates are dollars per euro.
+  const r = (x: string) => parseDecimal(x);
+  const rates: Record<string, string> = {
+    '2026-01-01': '1.10',
+    '2026-01-31': '1.11',
+    '2026-02-10': '1.12',
+    '2026-03-05': '1.08',
+    '2026-03-31': '1.15',
+  };
+  const rateOn = (d: CalendarDate) => (rates[d] ? r(rates[d]) : null);
+  const movements = [
+    { date: calendarDate('2026-01-01'), amount: 100_000n }, // €1,000.00 paid in: $1,100.00
+    { date: calendarDate('2026-02-10'), amount: 50_000n }, // €500.00 earned: $560.00
+    { date: calendarDate('2026-03-05'), amount: -20_000n }, // €200.00 spent: $216.00
+  ];
+
+  it('is the closing-rate net assets less the opening translated net assets and income at transaction rates', () => {
+    // From the start: €1,300.00 at 1.15 is $1,495.00; the history at its own rates is $1,444.00.
+    const fromStart = translationAdjustment(
+      'EUR',
+      'USD',
+      { netAssets: 0n, translated: 0n },
+      movements.map((m) => ({ amount: m.amount, rate: rateOn(m.date) })),
+      r('1.15'),
+    );
+    expect(fromStart).toBe(149_500n - (110_000n + 56_000n - 21_600n));
+    expect(fromStart).toBe(5_100n);
+    // For February and March: €1,000.00 opened at 1.11 ($1,110.00), then $560.00 − $216.00 at their own rates.
+    const period = translationAdjustment(
+      'EUR',
+      'USD',
+      { netAssets: 100_000n, translated: 111_000n },
+      [
+        { amount: 50_000n, rate: r('1.12') },
+        { amount: -20_000n, rate: r('1.08') },
+      ],
+      r('1.15'),
+    );
+    expect(period).toBe(149_500n - (111_000n + 56_000n - 21_600n));
+    expect(period).toBe(4_100n);
+    // January's $10.00 (€1,000.00 from 1.10 to 1.11) plus the period's $41.00 is the cumulative $51.00.
+    expect(
+      translationAdjustment(
+        'EUR',
+        'USD',
+        { netAssets: 0n, translated: 0n },
+        [movements[0]!].map((m) => ({
+          amount: m.amount,
+          rate: rateOn(m.date),
+        })),
+        r('1.11'),
+      ),
+    ).toBe(1_000n);
+  });
+
+  it('is zero when the rate never moves', () => {
+    const flat = movements.map((m) => ({ amount: m.amount, rate: r('1.10') }));
+    expect(translationAdjustment('EUR', 'USD', { netAssets: 0n, translated: 0n }, flat, r('1.10'))).toBe(0n);
+    const at = translationAdjustments('EUR', 'USD', movements, [calendarDate('2026-03-31')], () => r('1.10'));
+    expect(at.get(calendarDate('2026-03-31'))).toBe(0n);
+  });
+
+  it('rolls forward over each date, the same as working it out from the start', () => {
+    const at = translationAdjustments(
+      'EUR',
+      'USD',
+      movements,
+      [calendarDate('2026-03-31'), calendarDate('2025-12-31'), calendarDate('2026-01-31')],
+      rateOn,
+    );
+    expect(at.get(calendarDate('2025-12-31'))).toBe(0n);
+    expect(at.get(calendarDate('2026-01-31'))).toBe(1_000n);
+    expect(at.get(calendarDate('2026-03-31'))).toBe(5_100n);
+  });
+
+  it('keeps what translation made after the money has gone', () => {
+    // €100.00 in at 1.10 ($110.00) and out at 1.20 ($120.00): nothing held, a $10.00 adjustment, no closing rate needed.
+    const at = translationAdjustment(
+      'EUR',
+      'USD',
+      { netAssets: 0n, translated: 0n },
+      [
+        { amount: 10_000n, rate: r('1.10') },
+        { amount: -10_000n, rate: r('1.20') },
+      ],
+      null,
+    );
+    expect(at).toBe(1_000n);
+  });
+
+  it("is zero in the report's own currency, and null without a rate it needs", () => {
+    expect(translationAdjustment('USD', 'USD', { netAssets: 500n, translated: 0n }, [], null)).toBe(0n);
+    expect(
+      translationAdjustment(
+        'EUR',
+        'USD',
+        { netAssets: 0n, translated: 0n },
+        [{ amount: 1n, rate: null }],
+        r('1.1'),
+      ),
+    ).toBeNull();
+    expect(
+      translationAdjustment(
+        'EUR',
+        'USD',
+        { netAssets: 0n, translated: 0n },
+        [{ amount: 1n, rate: r('1.1') }],
+        null,
+      ),
+    ).toBeNull();
+    // A date before the gap is still known; every date after it isn't.
+    const gap = translationAdjustments(
+      'EUR',
+      'USD',
+      [...movements, { date: calendarDate('2026-02-20'), amount: 1_000n }],
+      [calendarDate('2026-01-31'), calendarDate('2026-03-31')],
+      rateOn,
+    );
+    expect(gap.get(calendarDate('2026-01-31'))).toBe(1_000n);
+    expect(gap.get(calendarDate('2026-03-31'))).toBeNull();
   });
 });
 
