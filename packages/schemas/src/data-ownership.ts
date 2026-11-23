@@ -167,6 +167,46 @@ export const TrashItemDto = z.object({
 });
 export type TrashItemDto = z.infer<typeof TrashItemDto>;
 
+// ----- Past their retention date (RCP-10, BAK-09; migration 0079) ----------------------------------------------------
+
+export const RETENTION_ITEM_KINDS = ['receipt', 'file'] as const;
+export const RetentionItemRef = z.object({ kind: z.enum(RETENTION_ITEM_KINDS), id: Id });
+export type RetentionItemRef = z.infer<typeof RetentionItemRef>;
+
+/** A receipt or file past its date, waiting for an owner. Owners only. */
+export const RetentionItemDto = z.object({
+  kind: z.enum(RETENTION_ITEM_KINDS),
+  id: Id,
+  retainUntil: CalendarDateDto,
+  /** The receipt's merchant, or the file's name. */
+  title: z.string(),
+  /** For a file: what it was stored as (`payslip`, `invoice`, …). */
+  fileKind: z.string().nullable(),
+  /** For a receipt: its date, total and currency. */
+  date: CalendarDateDto.nullable(),
+  amount: z.string().nullable(),
+  currency: z.string().nullable(),
+  /** The transaction a receipt belongs to. It stays when the receipt goes. */
+  transaction: z.object({ id: Id, date: CalendarDateDto, payee: z.string().nullable() }).nullable(),
+  /** Set once an owner approved deleting it; the retention job then removes it. */
+  approvedAt: z.string().nullable(),
+});
+export type RetentionItemDto = z.infer<typeof RetentionItemDto>;
+
+export const RetentionReviewDto = z.object({
+  items: z.array(RetentionItemDto),
+  /** How many years "Keep for longer" adds (RETENTION_EXTEND_YEARS). */
+  extendYears: z.number().int(),
+});
+export type RetentionReviewDto = z.infer<typeof RetentionReviewDto>;
+
+/** "Delete these" and "Keep for longer": exactly the items listed, never ones found later. */
+export const RetentionItemsRequest = z.object({ items: z.array(RetentionItemRef).min(1).max(1000) });
+export type RetentionItemsRequest = z.infer<typeof RetentionItemsRequest>;
+
+export const RetentionResultDto = z.object({ count: z.number().int() });
+export type RetentionResultDto = z.infer<typeof RetentionResultDto>;
+
 // ----- Storage (BAK-08) ----------------------------------------------------------------------------------------------
 
 export const StorageUsageDto = z.object({

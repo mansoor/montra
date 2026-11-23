@@ -5,10 +5,20 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql } from 'kysely';
 import { asCurrencyCode, addDays, type CalendarDate } from '@montra/domain';
-import type { DeletionStatusDto, SecurityEventDto, StorageUsageDto, TrashItemDto } from '@montra/schemas';
+import type {
+  DeletionStatusDto,
+  RetentionItemRef,
+  RetentionResultDto,
+  RetentionReviewDto,
+  SecurityEventDto,
+  StorageUsageDto,
+  TrashItemDto,
+} from '@montra/schemas';
 import { notFound } from '../common/errors.js';
+import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { STORAGE_PORT, type StoragePort } from '../storage/storage.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import { BackupService } from './backup.service.js';
@@ -30,6 +40,8 @@ export class OwnershipService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(BackupService) private readonly backups: BackupService,
+    @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
   register(): void {
@@ -223,7 +235,18 @@ export class OwnershipService {
 
   /** One failure doesn't stop the rest, and it's picked up again next hour. */
   async retention(): Promise<Record<string, number>> {
-    const done = { exports: 0, restores: 0, files: 0, workspaces: 0, users: 0, trash: 0, backups: 0 };
+    const done = {
+      exports: 0,
+      restores: 0,
+      found: 0,
+      receipts: 0,
+
+      files: 0,
+      workspaces: 0,
+      users: 0,
+      trash: 0,
+      backups: 0,
+    };
     // The Trash first: a tax form purged there marks its files deleted, and they go below in the same run (§8.5).
     const trash = await this.db.run({}, (trx) =>
       sql<{ n: number }>`select app.purge_trash() as n`.execute(trx),
@@ -233,17 +256,192 @@ export class OwnershipService {
       sql<{ kind: string; workspace_id: string | null; id: string; storage_key: string | null }>`
         select * from app.retention_due()`.execute(trx),
     );
-    const order: Record<string, number> = { export: 0, restore: 1, file: 2, workspace: 3, user: 4 };
+    const order: Record<string, number> = { export: 0, restore: 1, workspace: 2, user: 3 };
     rows.sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
+    const archives = rows.filter((r) => r.kind === 'export' || r.kind === 'restore');
+    for (const r of archives) await this.tryRetainOne(r, done);
+    // RCP-10: what is past its date is listed for the owners; only what an owner approved goes. Receipts first: a
+    // receipt's files take its approval, so they go in the same run.
+    done.found = await this.findDue();
+    done.receipts = await this.purgeReceipts();
+
+    done.files = await this.purgeFiles();
+    for (const r of rows.filter((x) => !archives.includes(x))) await this.tryRetainOne(r, done);
+    done.backups = await this.backups.runSchedules();
+    if (done.found || done.receipts || done.files) {
+      this.logger.log(
+        `Retention: ${done.found} newly past their date for owners to review; removed ${done.receipts} receipts and ${done.files} files`,
+      );
+    }
+    return done;
+  }
+
+  private async tryRetainOne(
+    r: { kind: string; workspace_id: string | null; id: string; storage_key: string | null },
+    done: Record<string, number>,
+  ): Promise<void> {
+    try {
+      await this.retainOne(r, done);
+    } catch (e) {
+      this.logger.warn(`Retention failed for a ${r.kind}: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * RCP-10: records what is newly past its date as waiting for an owner, at most RETENTION_BATCH a run, and tells each
+   * owner of a workspace with new items, once a day at most. Nothing is deleted here (owner's decision, 2026-11-22).
+   */
+  private async findDue(): Promise<number> {
+    const { rows } = await this.db.run({}, (trx) =>
+      sql<{ workspace_id: string; user_id: string; new_items: number; waiting: number }>`
+        select * from app.retention_find(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
+    );
+    const found = new Map<string, number>();
     for (const r of rows) {
+      found.set(r.workspace_id, r.new_items);
+      const who = { workspaceId: r.workspace_id, userId: r.user_id };
       try {
-        await this.retainOne(r, done);
+        await this.db.run(who, async (trx) => {
+          const prefs = await this.notifications.prefsIn(trx, who.userId);
+          await this.notifications.create(
+            trx,
+            who,
+            {
+              type: 'retention_due',
+              dedupeKey: `retention_due:${new Date().toISOString().slice(0, 10)}`,
+              title: 'Receipts and files are past their retention date',
+              body:
+                `${r.waiting} ${r.waiting === 1 ? 'is' : 'are'} waiting for an owner. Nothing is deleted until you ` +
+                'approve it. Review them on the web, in Settings, Data.',
+              link: `/w/${who.workspaceId}/settings?tab=data#retention`,
+            },
+            prefs,
+          );
+        });
       } catch (e) {
-        this.logger.warn(`Retention failed for a ${r.kind}: ${(e as Error).message}`);
+        this.logger.warn(`Couldn't tell an owner of ${r.workspace_id} about retention: ${(e as Error).name}`);
       }
     }
-    done.backups = await this.backups.runSchedules();
-    return done;
+    return [...found.values()].reduce((a, b) => a + b, 0);
+  }
+
+  /** RCP-10: what is waiting in this workspace, for its owners (the database refuses anyone else). */
+  async retentionReview(ctx: Ctx): Promise<RetentionReviewDto> {
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{
+        kind: 'receipt' | 'file';
+        subject_id: string;
+        retain_until: CalendarDate;
+        title: string;
+        file_kind: string | null;
+        receipt_date: CalendarDate | null;
+        total_minor: bigint | null;
+        currency: string | null;
+        transaction_id: string | null;
+        transaction_date: CalendarDate | null;
+        transaction_payee: string | null;
+        approved_at: Date | null;
+      }>`select * from app.retention_review()`.execute(trx),
+    );
+    return {
+      items: rows.map((r) => ({
+        kind: r.kind,
+        id: r.subject_id,
+        retainUntil: r.retain_until,
+        title: r.title,
+        fileKind: r.file_kind,
+        date: r.receipt_date,
+        amount: r.total_minor === null ? null : String(r.total_minor),
+        currency: r.currency,
+        transaction:
+          r.transaction_id && r.transaction_date
+            ? { id: r.transaction_id, date: r.transaction_date, payee: r.transaction_payee }
+            : null,
+        approvedAt: r.approved_at?.toISOString() ?? null,
+      })),
+      extendYears: this.config.RETENTION_EXTEND_YEARS,
+    };
+  }
+
+  /**
+   * "Delete these": approves exactly these items, if still waiting and past their date, and runs the job now. The
+   * purge still checks for a legal hold. Logged with who approved.
+   */
+  async approveRetention(ctx: Ctx, items: readonly RetentionItemRef[]): Promise<RetentionResultDto> {
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{ n: number }>`select app.retention_approve(
+        ${items.map((i) => i.kind)}::text[], ${items.map((i) => i.id)}::uuid[]) as n`.execute(trx),
+    );
+    const count = Number(rows[0]?.n ?? 0);
+    if (count > 0) await this.schedule(new Date());
+    return { count };
+  }
+
+  /** "Keep for longer": these items' dates move RETENTION_EXTEND_YEARS from today. Logged with who did it. */
+  async extendRetention(ctx: Ctx, items: readonly RetentionItemRef[]): Promise<RetentionResultDto> {
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{ n: number }>`select app.retention_extend(
+        ${items.map((i) => i.kind)}::text[], ${items.map((i) => i.id)}::uuid[],
+        ${this.config.RETENTION_EXTEND_YEARS}::integer) as n`.execute(trx),
+    );
+    return { count: Number(rows[0]?.n ?? 0) };
+  }
+
+  /**
+   * RCP-10: approved receipts still past their date, at most RETENTION_BATCH a run. Each goes with its lines, OCR text
+   * and extraction; the transaction it was matched to stays. A legal hold keeps them, approved or not (migration 0079).
+   */
+  private async purgeReceipts(): Promise<number> {
+    const { rows } = await this.db.run({}, (trx) =>
+      sql<{ workspace_id: string; id: string }>`
+        select * from app.retention_receipts_approved(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
+    );
+    let n = 0;
+    for (const r of rows) {
+      try {
+        const res = await this.db.run({}, (trx) =>
+          sql<{ gone: boolean }>`
+            select app.purge_receipt(${r.workspace_id}::uuid, ${r.id}::uuid) as gone`.execute(trx),
+        );
+        if (res.rows[0]?.gone) n++;
+      } catch (e) {
+        this.logger.warn(`Retention failed for a receipt: ${(e as Error).message}`);
+      }
+    }
+    return n;
+  }
+
+  /**
+   * Files an owner approved, or 30 days in the trash, at most RETENTION_BATCH a run. The row first: a row with no file is
+   * a visible gap, but a file with no row could never be found again. The database says which objects in Montra's
+   * storage then go: none for a file held only in the vault, whose document the vault keeps (ADR-0054 §10), and never
+   * one another file still names.
+   */
+  private async purgeFiles(): Promise<number> {
+    const { rows } = await this.db.run({}, (trx) =>
+      sql<{ workspace_id: string; id: string }>`
+        select * from app.retention_files_due(${this.config.RETENTION_BATCH}::integer)`.execute(trx),
+    );
+    let n = 0;
+    for (const r of rows) {
+      try {
+        const res = await this.db.run({}, (trx) =>
+          sql<{ keys: string[] | null }>`
+            select app.purge_expired_file(${r.workspace_id}::uuid, ${r.id}::uuid) as keys`.execute(trx),
+        );
+        const keys = res.rows[0]?.keys;
+        if (!keys) continue;
+        n++;
+        for (const k of keys) {
+          await this.storage.delete(k).catch((e: Error) => {
+            this.logger.warn(`File ${r.id}: its stored copy couldn't be removed: ${e.message}`);
+          });
+        }
+      } catch (e) {
+        this.logger.warn(`Retention failed for a file: ${(e as Error).message}`);
+      }
+    }
+    return n;
   }
 
   private async retainOne(
@@ -260,15 +458,6 @@ export class OwnershipService {
       if (r.storage_key) await this.storage.delete(r.storage_key);
       await this.db.run({}, (trx) => sql`select app.delete_expired_restore(${r.id}::uuid)`.execute(trx));
       done.restores!++;
-    } else if (r.kind === 'file') {
-      const { rows } = await this.db.run({}, (trx) =>
-        sql<{ gone: boolean }>`select app.purge_file(${r.workspace_id}::uuid, ${r.id}::uuid) as gone`.execute(
-          trx,
-        ),
-      );
-      // The row first: a row with no file is a visible gap, but a file with no row could never be found again.
-      if (rows[0]?.gone && r.storage_key) await this.storage.delete(r.storage_key);
-      done.files!++;
     } else if (r.kind === 'workspace') {
       const { rows } = await this.db.run({}, (trx) =>
         sql<{ key: string }>`select k as key from app.workspace_storage_keys(${r.id}::uuid) k`.execute(trx),

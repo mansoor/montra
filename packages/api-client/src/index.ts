@@ -359,6 +359,11 @@ import type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  RetentionItemDto,
+  RetentionItemRef,
+  RetentionItemsRequest,
+  RetentionResultDto,
+  RetentionReviewDto,
   UpdateNotificationPrefsRequest,
   AccountMovePreviewDto,
   BusinessDashboardDto,
@@ -2628,6 +2633,18 @@ export class ApiClient {
   getStorageUsage(workspaceId: string) {
     return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
   }
+  /** RCP-10: receipts and files past their retention date, waiting for an owner. Owners only. */
+  getRetentionReview(workspaceId: string) {
+    return this.request<RetentionReviewDto>('GET', this.ws(workspaceId, '/retention'));
+  }
+  /** Approves deleting exactly these items. Needs a recent sign-in. */
+  approveRetention(workspaceId: string, input: RetentionItemsRequest) {
+    return this.request<RetentionResultDto>('POST', this.ws(workspaceId, '/retention/approve'), input);
+  }
+  /** Keeps these items for RETENTION_EXTEND_YEARS more. */
+  extendRetention(workspaceId: string, input: RetentionItemsRequest) {
+    return this.request<RetentionResultDto>('POST', this.ws(workspaceId, '/retention/extend'), input);
+  }
   /** The workspace's own storage (ADR-0031). Owners only. */
   getStorageDestination(workspaceId: string) {
     return this.request<{ destination: StorageDestinationDto | null }>(
@@ -3648,6 +3665,11 @@ export type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  RetentionItemDto,
+  RetentionItemRef,
+  RetentionItemsRequest,
+  RetentionResultDto,
+  RetentionReviewDto,
   AllocationRuleDto,
   AmortizationRowDto,
   ArrearsDto,

@@ -561,8 +561,8 @@
     "negative lines (is_return) reverse their category, tax allocated with signs (allocateSigned)"
   ],
   "RCP-10": [
-    "partial",
-    "receipts and files kept 7 years (retain_until), soft delete only; search over merchant and OCR/extracted text (tsvector); no purge job yet"
+    "done",
+    "receipts and their files kept 7 years by default (FILE_RETENTION_YEARS). Past their date they are listed for the workspace owners, who are told once; nothing is deleted until an owner approves the listed items on the web (recent sign-in) or keeps them longer. Then the job removes the receipt with its lines and extracted text, and its files; the matched transaction stays; a legal hold blocks it even after approval; the vault keeps its own copy. Search over merchant and OCR/extracted text (tsvector)"
   ],
   "RCP-11": [
     "done",
@@ -1018,7 +1018,7 @@
   ],
   "BAK-09": [
     "partial",
-    "purge job for deleted accounts, trash and retention dates. Ageing out of backups is in Terraform, and BAK-01’s 12-month snapshots conflict with it"
+    "purge job for deleted accounts, trash and retention dates, receipts included once an owner approves (RCP-10). Ageing out of backups is in Terraform, and BAK-01’s 12-month snapshots conflict with it"
   ],
   "OPS-10": [
     "partial",

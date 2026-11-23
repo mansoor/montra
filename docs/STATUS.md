@@ -543,7 +543,7 @@ integration):
   - device runs (see above).
 - **Phase 5 leftovers, not blocking:**
   - ~~CUR-08: FX-cost display.~~ Done: web and phone (see §7g);
-  - RCP-10: purge after retention;
+  - RCP-10: purge after retention (done since, migration 0079; see the end of §7g);
   - UP-09: missing-receipt flags, with BIZ-12 in Phase 8.
 
 ---
@@ -2583,6 +2583,46 @@ Phase 11 leftovers:
   - Tests: API `planning.test.ts` (a draw, a contribution back, a contribution to the rental and a business-to-rental
     transfer, in the consolidated view and in single-book views), web `planning.test.ts` and `i18n-keys.test.ts`,
     mobile `planning.test.ts`.
+
+- **Receipts and files purged at their retention date, once an owner approves** (RCP-10, BAK-09; migration 0079).
+  - Before: receipts and their files got a date 7 years out, written in code. The hourly retention job removed a file
+    past its date, but never the receipt. Its lines, OCR text and extraction stayed, pointing at a file that was gone.
+  - Now nothing past its date is deleted until a workspace owner approves it (owner's decision, 2026-11-22):
+    - The hourly job (`data.retention`) lists each receipt and file newly past its date in `app.retention_item`, per
+      workspace. A receipt's files are part of the receipt, not listed apart.
+    - Each owner gets one `retention_due` notification per new set (in the app and by email, at most once a day). It has
+      no names or amounts and says to review them on the web. The phone has no screen for it.
+    - On the web, Settings › Data lists them for owners only: the merchant or file name, the dates and amount, and the
+      transaction a receipt belongs to. Admins and other roles can't see or act on it (`retention.owner_only`).
+    - **Delete these** approves exactly the items listed, never ones found later, and needs a recent sign-in
+      (`reauth.required`). The job then runs at once: each receipt goes with its lines, OCR text and extraction, then
+      its files, then the objects in storage (local or S3).
+    - **Keep for longer** moves the date of all the listed items, or the selected ones, `RETENTION_EXTEND_YEARS`
+      (default 1) from today. They leave the list.
+    - Files deleted from the Trash (a tax form's, 30 days on) still go on their own, as before.
+  - The transaction a receipt was matched to stays, with the same splits. A split posting only loses its pointer to the
+    receipt line, in a locked or reconciled period too, so the books don't change. The owner decided this on
+    2026-11-22, amending ADR-0014 §6 (which said a locked period blocks the purge).
+  - What stays: a receipt not yet past its date, with its files; a file another record needs by foreign key; an object
+    another file row still names. A legal hold on any active member of the workspace keeps everything, approved or not,
+    until it is lifted.
+  - The vault (ADR-0054 §10): a file held only in the vault loses its row, and any old copy Montra still had to remove.
+    The vault keeps its document unless the owner turned on "Also delete it in the vault". The owner's own storage is
+    the same as before.
+  - Logged in the audit log: `retention.approved` and `retention.extended`, with who and which items; then
+    `receipt.purged` and `file.purged`, by `system`, with who approved and no contents. The receipt's earlier audit
+    entries keep who and when, but their contents are cleared, since they held the same extracted text.
+  - Settings, not code: `FILE_RETENTION_YEARS` (default 7) dates each new receipt and each file uploaded with a
+    receipt, payslip, bill, invoice or payroll form. Dates already set don't change. `RETENTION_EXTEND_YEARS`
+    (default 1) is what "Keep for longer" adds. `RETENTION_BATCH` (default 500) caps what one run lists, and what it
+    removes. Tax forms keep their own date (tax year + 7, ADR-0052 §8.5).
+  - Not changed: a receipt in the trash still waits for its retention date, although the Trash shows a purge date
+    30 days out.
+  - Tests: API `receipt-retention.test.ts` (nothing goes without an approval; listed and told once; owners only;
+    approving needs a recent sign-in; approval covers only the items listed; then the receipt goes with its lines,
+    image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
+    blocks after approval; a shared object; the batch size; a vault-held file). `data-ownership.test.ts` now approves
+    before a file goes. Web `retention.test.ts`.
 
 ---
 

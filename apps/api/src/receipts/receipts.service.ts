@@ -75,11 +75,11 @@ import { FxRatesService } from '../fx/fx.service.js';
 import { TransactionPoster, ownerOf, type TransactionSpec } from '../transactions/poster.js';
 import { tripOn } from '../trips/trips.js';
 import { parseOrderHistory, OrderHistoryError } from './order-history.js';
+import { CONFIG, type AppConfig } from '../config.js';
+import { retainUntil } from '../data/retention.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
-/** Retention for receipt images and data (RCP-10). */
-export const RETENTION_YEARS = 7;
 /** IMP-11: a candidate scoring at least this links automatically (when unambiguous). */
 const MATCH_WINDOW_DAYS = 5;
 /** RCP-09 item search: the default look-back, and how many receipts it lists (its totals count them all). */
@@ -154,6 +154,7 @@ export class ReceiptsService {
     @Inject(TransactionsService) private readonly transactions: TransactionsService,
     @Inject(FxRatesService) private readonly fx: FxRatesService,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   // ----- Files and creation -------------------------------------------------------------------------------
@@ -196,7 +197,7 @@ export class ReceiptsService {
           bytes: bytes.length,
           sha256: digest,
           uploaded_by: ctx.userId,
-          retain_until: sql<string>`(current_date + make_interval(years => ${RETENTION_YEARS}))::date`,
+          retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
         })
         .execute();
       return {
@@ -248,6 +249,7 @@ export class ReceiptsService {
           attachment_ids: req.fileIds,
           status: 'processing',
           trip_id: await tripOn(trx, ctx.workspaceId, await this.today(trx, ctx)),
+          retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
           created_by: ctx.userId,
           ...(req.transactionId
             ? { match_candidates: JSON.stringify([{ transactionId: req.transactionId }]) }
@@ -1641,6 +1643,7 @@ export class ReceiptsService {
             status: 'processing',
             order_ref: o.orderRef,
             merchant: 'Amazon',
+            retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
             created_by: ctx.userId,
           })
           .execute();

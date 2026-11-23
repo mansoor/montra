@@ -40,9 +40,9 @@ export interface IntakeSource {
   scanId: string | null;
 }
 import { PlanningData, type Ctx } from './data.js';
+import { CONFIG, type AppConfig } from '../config.js';
+import { retainUntil } from '../data/retention.js';
 
-/** Bills are kept like other documents with money on them. */
-const RETENTION_YEARS = 7;
 /** A payment counts for a bill from this many days before its due date to this many after. */
 const PAID_BEFORE_DAYS = 20;
 const PAID_AFTER_DAYS = 15;
@@ -55,6 +55,7 @@ export class HouseholdBillsService {
     @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(BillsService) private readonly business: BillsService,
     @Inject(PlanningData) private readonly data: PlanningData,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   /** A page of a bill: a photo (JPEG, PNG, WebP) or a PDF. */
@@ -81,7 +82,7 @@ export class HouseholdBillsService {
           bytes: bytes.length,
           sha256: digest,
           uploaded_by: ctx.userId,
-          retain_until: sql<string>`(current_date + make_interval(years => ${RETENTION_YEARS}))::date`,
+          retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
         })
         .execute();
       return earlier;

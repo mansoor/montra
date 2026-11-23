@@ -52,7 +52,8 @@ if (config.FX_DAILY) await fx.schedule();
 await planning.schedule();
 // Sends what's waiting every few minutes (NOT-01), holding it through quiet hours.
 await notifications.schedule();
-// Hourly: expired archives, files past retention, accounts past their 30 days, and scheduled backups (BAK-05, BAK-09).
+// Hourly: expired archives, receipts and files past retention (RCP-10), accounts past their 30 days, and scheduled
+// backups (BAK-05, BAK-09).
 await retention.schedule();
 // Copies to the owner's own storage (ADR-0031). Each run schedules the next; this catches up after a restart.
 const mirror = app.get(StorageMirrorJobs);
