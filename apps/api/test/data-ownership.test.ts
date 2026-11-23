@@ -829,7 +829,8 @@ describe('trash (BAK-06)', () => {
       kind: 'transaction',
       title: 'OOPS',
       amount: '-111',
-      purgeOn: addDays(today, 30),
+      removal: 'trash',
+      until: addDays(today, 30),
     });
     expect((await c.post(url(`/trash/transaction/${t.id}/restore`))).status).toBe(204);
     expect((await c.get(url('/trash'))).body.data.map((i: any) => i.id)).not.toContain(t.id);

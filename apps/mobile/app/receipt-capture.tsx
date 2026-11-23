@@ -2,8 +2,8 @@
  * Receipt capture (TXN-08, TXN-09, 08 §3). The phone's document scanner opens first (ADR-0047): it finds the
  * receipt's edges, crops and straightens it, and takes several pages for a long one. Where it isn't available, or
  * when asked, the app's own camera takes over (expo-camera, ADR-0009), with a blur and glare check after each shot.
- * A photo or PDF can be picked instead. The capture is kept on the device and queued, so it works offline; the queue
- * uploads when the network is back.
+ * A photo or PDF can be picked instead. Photos are compressed first unless the person keeps originals (BAK-08). The
+ * capture is kept on the device and queued, so it works offline; the queue uploads when the network is back.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Image, ScrollView, View } from 'react-native';
@@ -15,14 +15,16 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import jpeg from 'jpeg-js';
 import type { ReceiptPageType } from '@montra/sync';
 import { t } from '../src/i18n';
-import { useAbilities } from '../src/session/SessionProvider';
+import { useAbilities, usePhotoSettings } from '../src/session/SessionProvider';
 import { useSync } from '../src/sync/SyncProvider';
 import { NotAllowed } from '../src/ui/NotAllowed';
 import { assessFrame } from '../src/features/camera-metrics';
 import { base64ToBytes } from '../src/features/base64';
+import { jpegName } from '../src/features/photos';
 import { frameVerdict, type FrameVerdict } from '../src/features/receipt-capture';
 import { scanPages } from '../src/features/scanner';
-import { keepPages } from '../src/receipts/files';
+import { keepPages, removePage } from '../src/receipts/files';
+import { compressForUpload } from '../src/receipts/photo-tool';
 import { Banner, Body, Button, Screen, Small } from '../src/ui/components';
 import { useTheme } from '../src/ui/theme';
 
@@ -47,6 +49,7 @@ export default function ReceiptCapture() {
   const { receipts, state, touch } = useSync();
   const camera = useRef<CameraView>(null);
   const can = useAbilities();
+  const photos = usePhotoSettings();
   const [permission, requestPermission] = useCameraPermissions();
   const [pages, setPages] = useState<Shot[]>([]);
   const [doubtful, setDoubtful] = useState<Shot | null>(null);
@@ -73,7 +76,8 @@ export default function ReceiptCapture() {
     setBusy(true);
     setError(null);
     try {
-      const pic = await camera.current.takePictureAsync({ quality: 0.8, shutterSound: false });
+      // Full quality: the photo is compressed once, when the receipt is done, unless originals are kept (BAK-08).
+      const pic = await camera.current.takePictureAsync({ quality: 1, shutterSound: false });
       if (!pic) return;
       const shot: Shot = { uri: pic.uri, type: 'image/jpeg', verdict: await assess(pic.uri) };
       if (shot.verdict === 'ok') setPages((p) => [...p, shot]);
@@ -91,7 +95,13 @@ export default function ReceiptCapture() {
     setBusy(true);
     try {
       const id = Crypto.randomUUID();
-      const kept = await keepPages(id, shots);
+      const ready = [];
+      for (const s of shots) {
+        const c = await compressForUpload(s, photos);
+        ready.push({ ...s, ...c, name: c.compressed && s.name ? jpegName(s.name) : s.name });
+      }
+      const kept = await keepPages(id, ready);
+      await Promise.all(ready.filter((s) => s.compressed).map((s) => removePage(s.uri)));
       await receipts.enqueue({ id, pages: kept, transactionId: transactionId ?? null });
       touch();
       void receipts.process().finally(touch);

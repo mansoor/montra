@@ -351,3 +351,50 @@ export const AccountMovePreviewDto = z.object({
   moved: z.boolean(),
 });
 export type AccountMovePreviewDto = z.infer<typeof AccountMovePreviewDto>;
+
+// ----- Deleting an account added by mistake (ACC-14) ----------------------------------------------------------
+
+/**
+ * Why an account can't be deleted: it has history, or something else points at it. Only its own opening balance, its
+ * values that posted nothing, its loan details and its saved import mapping go with it.
+ */
+export const AccountDeleteBlocker = z.enum([
+  /** Transactions on it, posted or scheduled. */
+  'transactions',
+  /** Transactions on it in the trash: they could be restored. */
+  'trashed',
+  /** Balance adjustments and journals written by hand. */
+  'entries',
+  /** Values that changed the balance (ADR-0025). */
+  'values',
+  'receipts',
+  /** Statement imports, and statements waiting in Review for it. */
+  'statements',
+  'reconciliations',
+  /** Payments recorded against its loan. */
+  'loan_payments',
+  /** Other accounts or loans paid from it, or an asset whose loan it is. */
+  'schedules',
+  'recurring',
+  /** Rules, and rule suggestions still waiting, that use it. */
+  'rules',
+  /** Anything else that points at it: employers and payslips, payroll, business and rental settings, goals, tax forms. */
+  'links',
+  /** Its opening balance is dated in closed books. */
+  'closed_period',
+]);
+export type AccountDeleteBlocker = z.infer<typeof AccountDeleteBlocker>;
+
+/**
+ * GET /accounts/:id/deletion: whether the account can be deleted, and why not. DELETE /accounts/:id deletes it and
+ * answers the same with `deleted: true`, or 409 with `reason` as the message.
+ */
+export const AccountDeletionDto = z.object({
+  accountId: Id,
+  name: z.string(),
+  blockers: z.array(z.object({ code: AccountDeleteBlocker, count: z.number().int() })),
+  /** What stops it, in a sentence; null when nothing does. */
+  reason: z.string().nullable(),
+  deleted: z.boolean(),
+});
+export type AccountDeletionDto = z.infer<typeof AccountDeletionDto>;

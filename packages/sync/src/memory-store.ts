@@ -109,6 +109,14 @@ export class MemoryStore implements SyncStore {
     }
   }
 
+  async removeReference(table: ReferenceTable, ids: string[]): Promise<void> {
+    const gone = new Set(ids);
+    const current = this.s.reference[table] as Array<{ id: string }>;
+    (this.s.reference as unknown as Record<ReferenceTable, unknown[]>)[table] = current.filter(
+      (r) => !gone.has(r.id),
+    );
+  }
+
   async getReference<T extends ReferenceTable>(table: T): Promise<ReferenceRows[T]> {
     return clone(this.s.reference[table]);
   }

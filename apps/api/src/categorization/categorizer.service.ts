@@ -38,7 +38,8 @@ export interface StoredCategorization {
   suggested: { categoryId: string | null; entityId: string | null; memberId: string | null } | null;
   /** The category this transaction contributed to payee history (so a later change can take it back). */
   learned?: { categoryId: string; memberId: string | null; band: number } | null;
-  transfer?: { accountId: string; transactionId: string | null } | null;
+  /** `made`: once it is a transfer, whether an import made it on its own or a person did (either can be undone). */
+  transfer?: { accountId: string; transactionId: string | null; made?: 'import' | 'you' | null } | null;
   /** AI-02: the property and unit the pipeline found; `applied` once it is on the transaction. */
   property?: NonNullable<CategorizationDto['property']> | null;
   /** AI-02: the property this transaction counted in the payee's property history (so a change can take it back). */

@@ -56,6 +56,15 @@ export interface RowSuggestion extends StoredCategorization {
 
 type Ctx = { workspaceId: string; userId: string };
 
+/** A committed row the pipeline paired with another account's recorded line, sure enough to make it a transfer. */
+interface AutoTransferPair {
+  transactionId: string;
+  accountId: string;
+  counterpartId: string;
+  /** The row's amount: the other side must still be its opposite. */
+  amount: bigint;
+}
+
 interface ParsePayload {
   batchId: string;
   accountFilter?: string | null;
@@ -831,6 +840,10 @@ export class ImportJobs {
         // New transactions are written 500 at a time (backlog item 9): rows, entries and postings in a few statements
         // each. A foreign-currency account posts one at a time, as each carrying value reads the postings before it.
         const oneByOne = await this.poster.postsInOrder(trx, ctx, batch.ledger_account_id);
+        // ADR-0028 amendment (2026-11-23): sure transfer pairs are made transfers once everything is written. A switch
+        // from another app pairs its accounts in its own step, so its batches leave them to that.
+        const transferAt = batch.migration_id ? null : await this.ai.transferThreshold(trx, ctx);
+        const pairs: AutoTransferPair[] = [];
         const pending: { prepared: PreparedTransaction; rowId: string; after?: () => Promise<void> }[] = [];
         const flush = async () => {
           if (pending.length === 0) return;
@@ -955,6 +968,22 @@ export class ImportJobs {
                   }
                 : undefined,
             });
+            // A new line (not a possible duplicate) the pipeline paired with a recorded other side, sure enough, and
+            // nobody chose a category for.
+            const pairedWith = suggestion?.step === 'transfer' ? suggestion.transfer : null;
+            if (
+              transferAt !== null &&
+              row.status === 'new' &&
+              !chosen &&
+              pairedWith?.transactionId &&
+              suggestion!.confidence >= transferAt
+            )
+              pairs.push({
+                transactionId: id,
+                accountId: pairedWith.accountId,
+                counterpartId: pairedWith.transactionId,
+                amount: row.amount_minor!,
+              });
             if (oneByOne || pending.length >= 500) await flush();
             outcome = 'added';
             added++;
@@ -977,6 +1006,7 @@ export class ImportJobs {
             )
             .execute();
         }
+        const transferred = await this.autoTransfers(trx, ctx, batch, pairs);
         for (let k = 0; k < outcomes.length; k += 1000) {
           const chunk = outcomes.slice(k, k + 1000);
           await sql`
@@ -994,6 +1024,7 @@ export class ImportJobs {
             rows_matched: matched,
             rows_skipped: skipped,
             rows_failed: failed,
+            rows_transferred: transferred,
             committed_at: now,
             undo_until: new Date(now.getTime() + UNDO_DAYS * 86_400_000),
           })
@@ -1013,7 +1044,7 @@ export class ImportJobs {
         // IMP-11: receipts waiting in the inbox are re-tried after every import.
         if (added > 0)
           await this.queue.enqueue(trx, { ...ctx, queue: 'ai', type: 'receipt.match', payload: {} });
-        return { added, matched, skipped, failed };
+        return { added, matched, skipped, failed, transfers: transferred };
       });
       // BIZ-05, BIZ-06: a new statement may hold the payment of an open invoice or bill. A failure here isn't the import's.
       await this.rentals
@@ -1100,6 +1131,82 @@ export class ImportJobs {
       .execute();
   }
 
+  /**
+   * ADR-0028 amendment (2026-11-23), TXN-04: the commit makes sure pairs transfers, the same way accepting them in Review
+   * does (`makeTransferInTrx`): the other side is absorbed and its statement line moves to the transfer. Run once the
+   * batch's rows are written, so it costs a few statements per pair and nothing per other row. A pair is left waiting
+   * in Review, not forced, when:
+   * - another row of this import claims the same other side (which one it belongs to is a guess);
+   * - the other side has changed since the preview: gone, made a transfer, split, owned by a payslip, invoice or bill,
+   *   moved, or no longer the opposite amount;
+   * - the other side is in another currency (the pair is a coincidence of digits; a real one needs the amount received);
+   * - its account is archived;
+   * - the other side is reconciled or in closed books (DE-10).
+   * Anything else refused on the way is rolled back to before that pair, which then waits too. Returns how many were made.
+   */
+  private async autoTransfers(
+    trx: Trx,
+    ctx: Ctx,
+    batch: { id: string; currency: string },
+    pairs: readonly AutoTransferPair[],
+  ): Promise<number> {
+    if (pairs.length === 0) return 0;
+    const claims = new Map<string, number>();
+    for (const p of pairs) claims.set(p.counterpartId, (claims.get(p.counterpartId) ?? 0) + 1);
+    const others = new Map(
+      (
+        await trx
+          .selectFrom('app.transaction as t')
+          .leftJoin('app.ledger_account as la', (j) =>
+            j
+              .onRef('la.workspace_id', '=', 't.workspace_id')
+              .on('la.id', '=', sql<string>`(t.spec->>'accountId')::uuid`),
+          )
+          .select(['t.id', 't.status', 't.deleted_at', 't.spec', 'la.archived_at'])
+          .where('t.workspace_id', '=', ctx.workspaceId)
+          .where('t.id', 'in', [...claims.keys()])
+          .where(sql<boolean>`t.spec->>'type' = 'standard'`)
+          .execute()
+      ).map((o) => [o.id, o]),
+    );
+    let made = 0;
+    for (const p of pairs) {
+      if (claims.get(p.counterpartId) !== 1) continue;
+      const o = others.get(p.counterpartId);
+      const spec = o?.spec as TransactionSpec | null | undefined;
+      if (
+        !o ||
+        o.status !== 'posted' ||
+        o.deleted_at ||
+        o.archived_at ||
+        spec?.type !== 'standard' ||
+        spec.accountId !== p.accountId ||
+        spec.splits.length !== 1 ||
+        ownerOf(spec) !== null ||
+        spec.currency !== batch.currency ||
+        BigInt(spec.amount) !== -p.amount
+      )
+        continue;
+      if ((await this.poster.protection(trx, ctx, o.id)) !== 'none') continue;
+      await sql`savepoint auto_transfer`.execute(trx);
+      try {
+        await this.transactions.makeTransferInTrx(
+          trx,
+          ctx,
+          p.transactionId,
+          { accountId: p.accountId, counterpartId: o.id },
+          { importBatchId: batch.id },
+        );
+        await sql`release savepoint auto_transfer`.execute(trx);
+        made++;
+      } catch (err) {
+        await sql`rollback to savepoint auto_transfer`.execute(trx);
+        this.logger.warn(`Leaving a transfer pair in Review: ${(err as Error).message}`);
+      }
+    }
+    return made;
+  }
+
   private async accountPostings(trx: Trx, ctx: Ctx, transactionId: string, accountId: string) {
     return trx
       .selectFrom('app.posting as p')
@@ -1176,6 +1283,27 @@ export class ImportJobs {
     const ctx = this.ctxOf(job);
     const { batchId } = job.payload as { batchId: string };
     return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+      // Transfers this import made on its own are taken apart first: their other sides come back out of the trash with
+      // their statement lines, and this import's lines are plain again, to be removed below. One that can't be (changed
+      // since, reconciled, closed) stays a transfer and is kept below, as one made by hand is.
+      const conversions = await trx
+        .selectFrom('app.transfer_conversion')
+        .select('transaction_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('import_batch_id', '=', batchId)
+        .execute();
+      let transfers = 0;
+      for (const cv of conversions) {
+        await sql`savepoint undo_transfer`.execute(trx);
+        try {
+          await this.transactions.undoTransferInTrx(trx, ctx, cv.transaction_id);
+          await sql`release savepoint undo_transfer`.execute(trx);
+          transfers++;
+        } catch (err) {
+          await sql`rollback to savepoint undo_transfer`.execute(trx);
+          this.logger.warn(`Keeping a transfer an import made: ${(err as Error).message}`);
+        }
+      }
       const sources = await trx
         .selectFrom('app.transaction_source')
         .selectAll()
@@ -1313,7 +1441,7 @@ export class ImportJobs {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', batchId)
         .execute();
-      return { voided, restored, unlearned, kept };
+      return { voided, restored, unlearned, transfers, kept };
     });
   }
 

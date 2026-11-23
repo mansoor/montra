@@ -184,6 +184,8 @@ export const ImportBatchDto = z.object({
     added: z.number(),
     matched: z.number(),
     failed: z.number(),
+    /** Added rows the commit made transfers on its own, absorbing the other side (TXN-04; counted in `added`). */
+    transfers: z.number(),
   }),
   minDate: z.string().nullable(),
   maxDate: z.string().nullable(),
@@ -229,6 +231,8 @@ export type ImportRowDto = z.infer<typeof ImportRowDto>;
 export const UndoResultDto = z.object({
   voided: z.number(),
   restored: z.number(),
+  /** Transfers the import made that were taken apart again, their other sides back out of the trash. */
+  transfers: z.number().optional(),
   kept: z.array(z.object({ transactionId: z.string(), reason: z.string() })),
 });
 export type UndoResultDto = z.infer<typeof UndoResultDto>;

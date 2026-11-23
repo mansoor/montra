@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/ui/page-header';
 export const metadata: Metadata = { title: 'Trash' };
 export const dynamic = 'force-dynamic';
 
-/** Deleted records, restorable for 30 days (BAK-06). */
+/** Deleted records, restorable for 30 days, and receipts until their retention date (BAK-06, RCP-10). */
 export default async function TrashPage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
   const items = await load((api) => api.listTrash(workspaceId));

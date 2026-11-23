@@ -34,8 +34,18 @@ export const CategorizationDto = z.object({
   /**
    * Step 3: the other account of a likely transfer or card payment, and the other side when it was already recorded
    * (null: only this side is in yet). Accepting the suggestion makes it a transfer. Absent on older entries.
+   * `made`, once it is a transfer: `import` when an import made it on its own (a pair at or above the workspace's
+   * `transferThreshold`), `you` when it was made in Review or by hand. Either can be undone
+   * (`POST /transactions/:id/undo-transfer`). Absent on transfers made before undo existed.
    */
-  transfer: z.object({ accountId: z.string(), transactionId: z.string().nullable() }).nullable().optional(),
+  transfer: z
+    .object({
+      accountId: z.string(),
+      transactionId: z.string().nullable(),
+      made: z.enum(['import', 'you']).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   /**
    * AI-02: the rental property and unit the pipeline found for a line in rental books. `applied` says whether it was
    * put on the transaction (at or above the property threshold); otherwise Review offers it. `label` is the property's
@@ -119,6 +129,11 @@ export const AiSettingsDto = z.object({
    * Review offers it. A property from AI must also reach `aiThreshold`.
    */
   propertyThreshold: z.number(),
+  /**
+   * TXN-04, AI-03: an import makes a detected transfer pair a transfer on its own when the pair's confidence is at or
+   * above this (default 0.95, a sure pair). Null: off, every pair waits in Review.
+   */
+  transferThreshold: z.number().nullable(),
   monthlyBudgetUsd: z.number().nullable(),
   /** PAY-09/UP-06: allow statement scans and payslip images to be sent to an LLM. */
   allowDocumentsToLlm: z.boolean(),
@@ -161,6 +176,8 @@ export const UpdateAiSettingsRequest = z
     threshold: z.number().min(0.5).max(0.99),
     aiThreshold: z.number().min(0.5).max(0.99),
     propertyThreshold: z.number().min(0.5).max(0.99),
+    /** Null turns making transfers at import off. Below 0.9 would take pairs on amount alone. */
+    transferThreshold: z.number().min(0.9).max(0.99).nullable(),
     monthlyBudgetUsd: z.number().min(0).max(10000).nullable(),
     allowDocumentsToLlm: z.boolean(),
     allowReceiptImagesToLlm: z.boolean(),

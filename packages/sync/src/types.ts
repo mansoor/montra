@@ -118,6 +118,8 @@ export interface SyncStore {
 
   replaceReference(rows: ReferenceRows): Promise<void>;
   mergeReference(rows: Partial<ReferenceRows>): Promise<void>;
+  /** Drops rows the server deleted (an account deleted by mistake, ACC-14); unknown ids are ignored. */
+  removeReference(table: ReferenceTable, ids: string[]): Promise<void>;
   getReference<T extends ReferenceTable>(table: T): Promise<ReferenceRows[T]>;
 
   enqueue(item: OutboxItem): Promise<void>;

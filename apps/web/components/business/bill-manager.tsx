@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { AccountDto, BillDto, CategoryDto, PartyDto, PaymentCandidateDto } from '@montra/api-client';
 import { BILL_CHIP } from '@/lib/business';
 import { browserApi } from '@/lib/browser-api';
+import { photoForUpload } from '@/lib/photo-upload';
 import { parseAmountInput } from '@/lib/money';
 import { anyDuplicate } from '@/lib/missing-files';
 import { receiptFileProblem, RECEIPT_ACCEPT } from '@/lib/receipts';
@@ -84,7 +85,8 @@ export function BillManager({
             })
           ).id!;
         }
-        const uploaded = file ? await browserApi.uploadBusinessFile(workspaceId, file, file.name) : null;
+        const photo = file ? await photoForUpload(file) : null;
+        const uploaded = photo ? await browserApi.uploadBusinessFile(workspaceId, photo, photo.name) : null;
         // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
         if (uploaded && anyDuplicate([uploaded]) && !window.confirm(t('files.duplicate_confirm')))
           return null;
