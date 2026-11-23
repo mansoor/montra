@@ -39,8 +39,8 @@ export const browserCodec: PhotoCodec = {
     canvas.height = height;
     const g = canvas.getContext('2d');
     if (!g) return null;
-    // JPEG has no transparency: a PNG's clear parts become white, not black.
-    g.fillStyle = '#fff';
+    // JPEG has no transparency: a PNG's clear parts become white, not black. This is image data, not a theme colour.
+    g.fillStyle = 'white';
     g.fillRect(0, 0, width, height);
     g.imageSmoothingQuality = 'high';
     g.drawImage(source, 0, 0, width, height);
