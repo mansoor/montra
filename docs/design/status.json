@@ -70,7 +70,7 @@
   ],
   "TXN-04": [
     "done",
-    ""
+    "transfers post as one entry; a detected pair is made one in Review, by hand, or by the import itself when it's sure enough (a workspace setting, default 95%, can be off); each can be undone from the transaction"
   ],
   "TXN-05": [
     "done",
@@ -158,7 +158,7 @@
   ],
   "CUR-01": [
     "done",
-    "entity functional currency"
+    "entity functional currency. Net worth translates books in another currency at each date's rate and shows the translation adjustment (ADR-0010 §7) in total, per account and on the net worth report; it is not booked"
   ],
   "CUR-02": [
     "done",
@@ -398,7 +398,7 @@
   ],
   "AI-03": [
     "done",
-    "thresholds on calibrated confidence (review 80%, AI 95%); auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
+    "thresholds on calibrated confidence (review 80%, AI 95%, transfer pairs made at import 95%); auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
   ],
   "AI-04": [
     "done",
@@ -998,7 +998,7 @@
   ],
   "NFR-06": [
     "done",
-    "backup with JSON, CSV, Excel and files at any time; a deleted account is purged inside 30 days by an hourly job"
+    "backup with JSON, CSV, Excel and files at any time; a deleted account is purged inside 30 days by an hourly job. A legal hold keeps it, and its workspaces, until the hold is lifted: logged once and shown in the staff console"
   ],
   "BAK-04": [
     "done",
@@ -1010,7 +1010,7 @@
   ],
   "BAK-06": [
     "done",
-    "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions and receipts for 30 days. Restore is web only. ADR-0054 PR 5b2: a file the archive didn't hold (Montra no longer had it when the archive was made) is restored as missing with the reason, listed in Review's Files to provide again, instead of pointing at nothing"
+    "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions and tax forms for 30 days; a deleted receipt is a tax record, kept and restorable until its retention date, then an owner decides (RCP-10), and the Trash shows that date. Restore is web only. ADR-0054 PR 5b2: a file the archive didn't hold (Montra no longer had it when the archive was made) is restored as missing with the reason, listed in Review's Files to provide again, instead of pointing at nothing"
   ],
   "BAK-08": [
     "partial",
@@ -1018,7 +1018,7 @@
   ],
   "BAK-09": [
     "partial",
-    "purge job for deleted accounts, trash and retention dates, receipts included once an owner approves (RCP-10). Ageing out of backups is in Terraform, and BAK-01’s 12-month snapshots conflict with it"
+    "purge job for deleted accounts, trash and retention dates, receipts included once an owner approves (RCP-10). A legal hold keeps a closing account and its workspaces. Ageing out of backups is in Terraform, and BAK-01’s 12-month snapshots conflict with it"
   ],
   "OPS-10": [
     "partial",

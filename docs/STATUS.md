@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-09, with Phase 11 code complete (on `claude/phase11-contracts`, PR open). Launch steps remain. Keep this file current:
+_Last updated 2026-11-23. Phase 11 is code complete and merged; launch steps remain. Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -11,14 +11,14 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 
 ## 1. Snapshot
 
-|                        |                                                                                                                                                                                                                                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Integration branch** | `develop`: Phases 0–10 merged. Last merge was PR #17 at `4d5e62c`                                                                                                                                                                                                                                                                                   |
-| **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                    |
-| **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10                                                                 |
-| **Pull requests**      | #1–#4 Phases 1–4; Phase 5: #5 hand-off docs, #6 contracts and receipt arithmetic, #7 matching and FX posting, #8 rates service and foreign-currency accounts, #9 receipts API and web, #10 mobile capture and integration. All merged into `develop` with green CI. Open: #11 receipt-images setting; Phase 6 contracts and engine (stacked on #11) |
-| **Requirements**       | 338 IDs in total: **256 done, 65 partial**, the rest not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                |
-| **Next**               | Merge the Phase 11 PR, tag `v0.12.0-dev.1`, then the owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                |
+|                        |                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Integration branch** | `develop`: Phases 0–11 merged, and the work since (§7g). Last merge was PR #193 at `99e8105` (2026-11-22)                                                                                                                                                                                                                                                                           |
+| **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                                                    |
+| **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10 · `v0.12.0-dev.1` Phase 11, then one `v0.12.0-dev.N` per merge since (latest `v0.12.0-dev.140`) |
+| **Pull requests**      | #1–#17 Phases 1–10, #18 Phase 11, then the work in §7g, up to #193. Each merged into `develop` with green CI                                                                                                                                                                                                                                                                        |
+| **Requirements**       | 349 IDs in total: **279 done, 56 partial**, 14 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
+| **Next**               | The owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                                                                                                 |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
 read, matched and reconciled against the books, then added to the tax package), accepted by the owner on 2026-11-16.
@@ -32,15 +32,15 @@ later; tax forms use an owner-only setting for accountants instead.
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
 
-**Accepted, ready to build:** [ADR-0055](design/adr/0055-bank-feeds-simplefin.md), bank feeds per workspace, with
+**Built, the chain complete (2026-11-20):** [ADR-0055](design/adr/0055-bank-feeds-simplefin.md), bank feeds per workspace, with
 SimpleFIN Bridge as the first provider behind a provider port, accepted by the owner on 2026-11-19. An owner (recent
 sign-in) pastes a SimpleFIN setup token, Montra claims it once and seals the access URL, each institution account is
 linked to a Montra account, and a daily sync (plus Sync now for owners, admins and partners, within SimpleFIN's daily
 limit) brings posted transactions only through the existing import pipeline, one batch per account, with the provider's
 id as the dedupe key. Clean syncs import themselves with Undo; others wait in Review. Feeds sit alongside uploaded
 statements, and the first sync starts the day after the account's latest transaction, at most 90 days back, or from a
-date picked when linking. A hidden `bankFeeds` plan key, in every plan with `ownStorage`. Nothing built yet; four PRs
-planned (ADR's Delivery).
+date picked when linking. A `bankFeeds` plan key, in every plan with `ownStorage`, now shown in the plans. All
+six PRs are merged (PR 1 to PR 5, PR 3 in two parts; #157–#162), and a live run against SimpleFIN's demo passed (see §7g).
 
 **Built, the chain complete (2026-11-18):** [ADR-0054](design/adr/0054-family-document-vault-storage.md), the household's Family
 Document Vault as a per-workspace storage destination (`fdv`), accepted by the owner on 2026-11-17. Montra connects
@@ -263,8 +263,9 @@ finished:
 ### Cross-phase backlog (known gaps not tied to one requirement)
 
 1. ~~**Transfers.**~~ Done: accepting a suggested transfer in review (web or phone, one at a time or "accept all
-   above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import doesn't
-   convert pairs on its own yet, even at 0.95: they wait in review.
+   above") makes it a transfer and absorbs the other side (`POST /transactions/:id/make-transfer`). Import now makes
+   pairs at or above the workspace's setting (default 0.95) transfers on its own, and either kind can be undone from
+   the transaction (see §7g).
 2. ~~**Local-mode AI tasks.**~~ Done: a posted answer is used where a provider's would be, and applied to the import
    or receipt it was for (see §7g).
 3. ~~**More bring-your-own-key adapters.**~~ Done: OpenAI, Google Gemini and Azure OpenAI (see §7g).
@@ -2617,13 +2618,93 @@ Phase 11 leftovers:
     receipt, payslip, bill, invoice or payroll form. Dates already set don't change. `RETENTION_EXTEND_YEARS`
     (default 1) is what "Keep for longer" adds. `RETENTION_BATCH` (default 500) caps what one run lists, and what it
     removes. Tax forms keep their own date (tax year + 7, ADR-0052 §8.5).
-  - Not changed: a receipt in the trash still waits for its retention date, although the Trash shows a purge date
-    30 days out.
+  - A receipt in the trash still waits for its retention date. The Trash showed a purge date 30 days out; it shows the
+    retention date now (next entry).
   - Tests: API `receipt-retention.test.ts` (nothing goes without an approval; listed and told once; owners only;
     approving needs a recent sign-in; approval covers only the items listed; then the receipt goes with its lines,
     image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
     blocks after approval; a shared object; the batch size; a vault-held file). `data-ownership.test.ts` now approves
     before a file goes. Web `retention.test.ts`.
+- **The translation adjustment on net worth** (CUR-01, [ADR-0010](design/adr/0010-fx-accounting-policy.md) §7; no
+  migration).
+  - Before: net worth converted books kept in another currency (a business in EUR in a USD workspace) at each date's
+    rate, but nothing said how much of that came from the rate moving. §7's translation adjustment line wasn't built.
+  - Now, for each account in books whose currency isn't the base, net worth works out its carrying value at the
+    date's rate less each of its postings at its own day's rate. Income, spending, transfers and opening balances all
+    count at their own day's rate. That is the closing-rate net assets less the opening translated net assets and the
+    movements at their rates, cumulative from the books' first posting. Nothing is posted.
+  - It doesn't overlap CUR-06's unrealized FX, which is measured in the books' own currency before translation. Net
+    worth less every posting at its day's rate is the two added together (to a cent or so of cross-rate rounding when
+    an account's currency is neither its books' nor the base).
+  - `NetWorthDto` has `translationAdjustment` in total, per account (null when the books are in the base currency) and
+    per trend date. `@montra/domain` has `translationAdjustment` (one period, bigint) and `translationAdjustments`
+    (rolled forward over dates).
+  - The net worth report gets a "Translation adjustment" column and a note, only when some books are in another
+    currency. Export includes the column.
+  - Web: the net worth tab of Cash flow shows the total under net worth and a column per account. Phone: the net worth
+    tab shows the total.
+  - Left out: properties (their worth isn't booked, so there are no days' rates); an account missing a rate counts as
+    zero, as net worth already leaves it out. Not changed: the income and spending reports still convert other books
+    at the period end's rate (ADR-0019 §2), and there's no other comprehensive income line on an income statement.
+  - Tests: domain `ledger-fx.test.ts` (EUR books in USD with the rate moving: from the start, one period, rolled
+    forward, flat rates give zero, after the money has gone, no rate), API `translation-adjustment.test.ts` (the
+    figure per account, in total and per date, no double count with unrealized FX, the report column, note and CSV,
+    nothing booked, no column when every set of books is in the base currency), web `i18n-keys.test.ts`.
+- **Receipts in the Trash, and a legal hold on account deletion** (BAK-06, NFR-06, BAK-09, RCP-10; migration 0080).
+  - Before: a deleted receipt waits in the Trash for its retention date (RCP-10), but the Trash said it would go 30
+    days after it was deleted. And the hourly job purged a closed account, and the workspaces that went with it, after
+    its 30 days, under a legal hold too. `purge_user` even deleted the hold.
+  - Now the Trash says how and when each item goes. `TrashItemDto` has `removal` and `until` in place of `purgeOn`:
+    - `trash`: transactions and tax forms, removed for good 30 days after they were deleted (as before).
+    - `retention`: a receipt. It is a tax record, so it is kept until its retention date, and can be restored until
+      then. Deleting it doesn't shorten that.
+    - `owner_approval`: a receipt past its retention date. It is listed for the owners in Settings › Data like any
+      other, and goes only once one approves.
+    - `in_use`: a transaction still there 2 hours after its 30 days. The hourly job couldn't delete it because another
+      record (a payslip deposit or a rent payment, say) still points at it, so it stays until that changes.
+  - The web's Trash and Settings › Data say so. The phone has no Trash screen. How files in the Trash go is unchanged.
+  - A legal hold on a closing account keeps it, and its workspaces, as they are: `retention_due()` leaves them out, and
+    `purge_user` and `purge_workspace` refuse them. A closing workspace is also kept while any active member is under
+    a legal hold. The account that closed it is still purged.
+  - The job notes when it first held one back (`purge_held_at` on the user and the workspace) and logs a warning once,
+    not every hour. The staff console shows "Deletion held back by a legal hold since …" on the account and on the
+    workspace. When the hold is lifted (or the deletion cancelled) the note is cleared and logged, and the same run
+    purges what is due.
+  - The person is not told: a legal hold is never emailed to them (ADR-0049 §4), so nothing goes in their security
+    log either.
+  - No new settings: the 30 days and the hourly job are as before.
+  - Tests: API `receipt-retention.test.ts` (a deleted receipt shows its retention date and outlasts the 30 days; it can
+    be restored; past its date it waits for an owner and goes only after an approval). New `deletion-legal-hold.test.ts`
+    (a closing account under a hold isn't purged, the purge functions refuse it, it's logged once, the console shows it,
+    and it goes on the next run after the hold is lifted; a workspace held by another member's hold).
+    `data-ownership.test.ts` and web `i18n-keys.test.ts` updated.
+- **Import makes sure transfer pairs transfers** (TXN-04, AI-03, backlog item 1; ADR-0028 amendment of 2026-11-23;
+  migration 0081).
+  - Before: a pair step 3 was sure of (0.95) waited in Review like any other, so every card payment had to be accepted
+    by hand on each statement. A transfer made in Review couldn't be taken apart again.
+  - Now an import commit makes each such pair a transfer on its own, the same way accepting it in Review does: the
+    other side is absorbed and its statement line moves to the transfer. It runs once all the rows are written in their
+    chunks of 500, so it costs a few statements per pair and nothing per other row.
+  - Setting, not code: `ai_settings.transferThreshold` (default 0.95; 0.90 to 0.99; null is off), in Settings › AI as
+    "Make pairs … transfers when importing". Below it, pairs wait in Review as before.
+  - Left in Review, not forced: a row that was a possible duplicate or got a category picked in the preview; a pair
+    with no other side yet (0.80); two rows of one import claiming the same other side; another currency (it needs the
+    amount received); an other side that changed since the preview or whose account is archived; an other side that is
+    reconciled or in closed books (DE-10). A switch from another app keeps its own pairing step.
+  - Undo: `app.transfer_conversion` records what making a transfer changed (by an import, in Review or by hand).
+    `POST /transactions/:id/undo-transfer` puts both sides back as they were, statement lines and their roles included,
+    and the editor has an "Undo transfer" button. Undoing the import that made one takes it apart first, so the other
+    side comes back and this import's line is removed. One that was changed since, or is reconciled or closed, is
+    kept with reason `transfer`, as before.
+  - Shown: the import summary says "N transfers matched" (`counts.transfers`, from `import_batch.rows_transferred`;
+    the phone too), the undo result how many were taken apart, and the transaction that the import made it
+    (`categorization.transfer.made`: `import` or `you`). An automatic one stays `auto_applied` and doesn't teach the
+    payee its account.
+  - Tests: API `import-auto-transfers.test.ts` (a sure pair converts with balances and both cleared lines kept, a 0.60
+    pair waits, off and 0.99 convert none, a threshold below 0.90 is refused, a reconciled and a closed other side are
+    skipped, a side claimed twice and another currency wait, undoing the import restores both sides and balances,
+    re-importing finds duplicates, undo from the transaction for an automatic and a manual one). `transfers.test.ts`
+    turns the setting off to keep testing the Review path.
 
 - **Photos compressed before upload on the web too, and originals kept by choice** (BAK-08; migration 0083).
   - Before: the phone's camera and scanner saved JPEGs at quality 80 to 85, at full size. Photos picked on the phone,

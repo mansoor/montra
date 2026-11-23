@@ -86,6 +86,11 @@ export function AccountLookup({
                   {a.suspension.reason}
                 </p>
               )}
+              {a.purgeHeldSince && (
+                <p className="text-xs text-warn" data-testid="admin-deletion-held">
+                  {t('admin.deletion_held', { date: date(a.purgeHeldSince) })}
+                </p>
+              )}
             </div>
             <button type="button" className="btn-secondary" onClick={() => open(a.id)}>
               {t('admin.open')}
@@ -108,6 +113,11 @@ export function AccountLookup({
                 {' · '}
                 {gb(w.usedBytes)} / {gb(w.quotaBytes)} GB · {t('admin.members', { count: w.members })}
               </p>
+              {w.purgeHeldSince && (
+                <p className="text-xs text-warn" data-testid="admin-workspace-deletion-held">
+                  {t('admin.deletion_held', { date: date(w.purgeHeldSince) })}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {w.supportUntil ? (
                   <Link className="underline" href={`/admin/support/${w.id}`}>

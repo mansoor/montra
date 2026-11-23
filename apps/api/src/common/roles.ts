@@ -34,6 +34,7 @@ const MEMBER_WRITES = new Set([
   'POST transactions/:id/restore',
   'POST transactions/:id/confirm',
   'POST transactions/:id/make-transfer',
+  'POST transactions/:id/undo-transfer',
   'PUT transactions/:id/expense-detail',
   'POST transactions/parse',
   'POST categorize/suggest',

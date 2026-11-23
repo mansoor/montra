@@ -102,6 +102,13 @@ export class TransactionsController {
     return this.transactions.makeTransfer(dbCtx(ctx), id, parse(MakeTransferRequest, body));
   }
 
+  /** Takes a transfer made from a plain transaction (by an import or a person) apart, bringing back the other side. */
+  @Post(':id/undo-transfer')
+  @HttpCode(200)
+  undoTransfer(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.transactions.undoTransfer(dbCtx(ctx), id);
+  }
+
   @Post('bulk')
   @HttpCode(200)
   bulk(@Ctx() ctx: RequestContext, @Body() body: unknown): Promise<BulkEditResult> {
