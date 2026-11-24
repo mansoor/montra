@@ -331,6 +331,7 @@ describe('keeping in step (ADR-0054 §9)', () => {
       newerVersion: false,
       notKeptReason: null,
       canOpen: true,
+      converted: null,
     });
     expect((await c.get(url('/family-vault'))).body.connection.feedReadAt).not.toBeNull();
   });

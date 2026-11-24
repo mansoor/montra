@@ -535,6 +535,8 @@ export interface FileTable {
   derived_from_file_id: string | null;
   /** ADR-0057 §4: what rendering this file is, or null for an upload. A rendering is never rendered again. */
   rendition: FileRendition | null;
+  /** ADR-0057 §4 (migration 0093): a rendering "Send again" replaced. It stays in the vault; no longer current. */
+  superseded_at: Date | null;
 }
 
 export type FileLocation = 'montra' | 'vault';
@@ -1071,6 +1073,8 @@ export interface ReceiptLineTable {
   categorization: Json<Record<string, unknown>> | null;
   /** Normalized printed text, for item history (RCP-03/06). */
   item_key: string | null;
+  /** Why the line is for its member (0094): { source, explanation, ruleId }. Null for lines stored before. */
+  member_reason: Json<Record<string, unknown>> | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -1826,8 +1830,22 @@ export interface StorageMirrorItemTable {
 
 // The household's Family Document Vault (migration 0063, ADR-0054 §11). Owners and admins only.
 
+/**
+ * `converted` (migration 0093, ADR-0057 §1): a file the vault doesn't keep, sent as PDFs rendered from it instead. The
+ * row stays for the original, which is never sent itself; each PDF has a row of its own.
+ */
 export type VaultItemStatus =
-  'queued' | 'pending' | 'received' | 'filed' | 'not_kept' | 'failed' | 'out_of_reach' | 'delete';
+  | 'queued'
+  | 'pending'
+  | 'received'
+  | 'filed'
+  | 'not_kept'
+  | 'failed'
+  | 'out_of_reach'
+  | 'delete'
+  | 'converted';
+/** ADR-0057 §4 (migration 0093): how far a converted original's conversion to PDF got. */
+export type VaultRenderState = 'rendering' | 'rendered' | 'not_converted' | 'import_undone';
 
 export interface VaultConnectionStateTable {
   workspace_id: string;
@@ -1884,6 +1902,12 @@ export interface VaultItemTable {
   source_removed_at: Date | null;
   /** §5: when the job next looks at removing Montra's copy of a filed file; null when there is nothing to look at (0067). */
   remove_at: Date | null;
+  /** ADR-0057 §1, §4 (0093): for a `converted` original only, how far its conversion got. */
+  render_state: VaultRenderState | null;
+  /** ADR-0057 §3, §4 (0093): what the original's current PDFs were made with, or were asked for. */
+  render_options: Json<Record<string, unknown>> | null;
+  /** ADR-0057 §7 (0093): this row's file is a PDF with its original attached inside it. */
+  carries_original: Generated<boolean>;
   attempts: Generated<number>;
   next_attempt_at: Generated<Date>;
   last_error: string | null;

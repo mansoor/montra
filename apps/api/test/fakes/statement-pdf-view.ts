@@ -2,16 +2,7 @@
  * Test-only views of a rendered statement PDF (VLT-13): the table rows the renderer drew (through its trace, since the
  * embedded fonts' text isn't plain in the file), and the files attached inside the PDF.
  */
-import {
-  decodePDFRawStream,
-  PDFArray,
-  PDFDict,
-  PDFDocument,
-  PDFHexString,
-  PDFName,
-  PDFRawStream,
-  PDFString,
-} from 'pdf-lib';
+import { pdfAttachments } from '../../src/renditions/pdf-attachments.js';
 import { COL, type DrawnText } from '../../src/renditions/statement-pdf.js';
 
 export interface DrawnRow {
@@ -70,22 +61,5 @@ export function coverText(drawn: readonly DrawnText[], part = 1): string {
 export async function attachments(
   bytes: Uint8Array,
 ): Promise<Map<string, { bytes: Uint8Array; mime: string | null }>> {
-  const pdf = await PDFDocument.load(bytes);
-  const out = new Map<string, { bytes: Uint8Array; mime: string | null }>();
-  const names = pdf.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
-  const tree = names?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict);
-  const list = tree?.lookupMaybe(PDFName.of('Names'), PDFArray);
-  if (!list) return out;
-  for (let i = 0; i < list.size(); i += 2) {
-    const name = list.lookup(i) as PDFString | PDFHexString;
-    const spec = list.lookup(i + 1, PDFDict);
-    const ef = spec.lookup(PDFName.of('EF'), PDFDict);
-    const stream = ef.lookup(PDFName.of('F')) as PDFRawStream;
-    const subtype = stream.dict.get(PDFName.of('Subtype'));
-    out.set(name.decodeText(), {
-      bytes: decodePDFRawStream(stream).decode(),
-      mime: subtype instanceof PDFName ? subtype.decodeText() : null,
-    });
-  }
-  return out;
+  return new Map((await pdfAttachments(bytes)).map((a) => [a.name, { bytes: a.bytes, mime: a.mime }]));
 }

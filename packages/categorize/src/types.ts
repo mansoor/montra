@@ -9,7 +9,20 @@ export type Step = 'receipt' | 'rule' | 'transfer' | 'history' | 'file' | 'merch
 // ----- Rules (04 §6) — same shapes as @montra/schemas RuleConditions / RuleActions ------------------------
 
 export type RuleField =
-  'payee' | 'description' | 'raw_description' | 'amount' | 'account' | 'entity' | 'date_dow' | 'item_text';
+  | 'payee'
+  | 'description'
+  | 'raw_description'
+  | 'amount'
+  | 'account'
+  | 'entity'
+  | 'date_dow'
+  | 'item_text'
+  /** Receipt lines only (owner, 2026-11-24): the family member linked to the login that added the receipt. */
+  | 'added_by'
+  /** Receipt lines only: the line's category, once it is known (step 2 of a receipt line's rules). */
+  | 'category';
+/** What a rule runs on. Absent on a record means `transaction`. */
+export type RuleScope = 'transaction' | 'receipt_line';
 export type RuleOp = 'equals' | 'contains' | 'starts_with' | 'regex' | 'between' | 'gt' | 'lt' | 'in';
 export interface RuleCondition {
   field: RuleField;
@@ -24,6 +37,8 @@ export interface RuleActions {
   categoryId?: string | null;
   entityId?: string | null;
   memberId?: string | null;
+  /** Receipt lines only: the line is for the household (no member). Never with `memberId`. */
+  household?: boolean;
   tags?: string[];
   renamePayee?: string | null;
   markReviewed?: boolean;
@@ -40,6 +55,8 @@ export interface RuleRecord {
   actions: RuleActions;
   enabled: boolean;
   createdAt: string;
+  /** Absent: `transaction`. Transaction rules refuse the receipt-line conditions and the household action. */
+  scope?: RuleScope;
 }
 
 /** What a rule is matched against. Amounts are signed minor units from the account's view. */
@@ -55,6 +72,13 @@ export interface Subject {
   entityId: string;
   date: CalendarDate;
   itemText?: string;
+  /** Receipt lines: the member linked to the login that added the receipt (null when none is). */
+  addedByMemberId?: string | null;
+  /**
+   * Receipt lines: the line's category. Undefined while it isn't known yet (step 1, which decides it), so a rule with
+   * a `category` condition doesn't match then; null for a line left uncategorized.
+   */
+  categoryId?: string | null;
 }
 
 // ----- Inputs to the pipeline ------------------------------------------------------------------------------

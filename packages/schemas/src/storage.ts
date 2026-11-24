@@ -274,6 +274,37 @@ export const VAULT_GROUP_DEFAULTS: Readonly<Record<VaultGroup, VaultGroupMode>> 
 export const VAULT_RESTRICTED_GROUPS: readonly VaultGroup[] = ['payslips', 'tax_documents'];
 
 /**
+ * ADR-0057 §1 (VLT-12): "Files the vault doesn't keep", per sent group. A CSV, XLS or OFX statement isn't a type the
+ * vault keeps; Montra can keep it to itself (`dont_send`, as before), send a PDF it renders from the imported rows
+ * (`convert`), or send that PDF with the original file attached inside it (`convert_attach`).
+ */
+export const VAULT_UNKEPT_CHOICES = ['dont_send', 'convert', 'convert_attach'] as const;
+export const VaultUnkeptChoice = z.enum(VAULT_UNKEPT_CHOICES);
+export type VaultUnkeptChoice = z.infer<typeof VaultUnkeptChoice>;
+
+/** ADR-0057 §1: the groups Montra has a renderer for. Every other group offers only `dont_send`. */
+export const VAULT_RENDERED_GROUPS: readonly VaultGroup[] = ['statements'];
+
+/** ADR-0057 §1: the choices offered for a group: all three where Montra can render, else `dont_send` only. */
+export function vaultUnkeptOffered(group: VaultGroup): readonly VaultUnkeptChoice[] {
+  return VAULT_RENDERED_GROUPS.includes(group) ? VAULT_UNKEPT_CHOICES : ['dont_send'];
+}
+
+/** ADR-0057 §1, owner's answer 7: statements convert with the original attached; every other group doesn't send. */
+export function vaultUnkeptDefault(group: VaultGroup): VaultUnkeptChoice {
+  return VAULT_RENDERED_GROUPS.includes(group) ? 'convert_attach' : 'dont_send';
+}
+
+/**
+ * ADR-0057 §3: "Account number on the cover" of a PDF Montra renders, with "Describe documents in more detail" on:
+ * the last four (default), the full number, or none. `full` is owner-only, needs a recent sign-in, and goes in the
+ * security log; the number itself is never in a DTO, an error or a log.
+ */
+export const VAULT_COVER_NUMBERS = ['last4', 'full', 'none'] as const;
+export const VaultCoverNumber = z.enum(VAULT_COVER_NUMBERS);
+export type VaultCoverNumber = z.infer<typeof VaultCoverNumber>;
+
+/**
  * §6: the group a file belongs to, or `never` for what never goes to the vault whatever the modes say: sealed copies
  * of identity documents (ADR-0034 §3, including the documents kept with an I-9), logos and exports.
  */
@@ -428,6 +459,8 @@ export const VAULT_ITEM_STATUSES = [
   'failed',
   'out_of_reach',
   'delete',
+  /** ADR-0057 §1: a file the vault doesn't keep, sent as PDFs rendered from it instead; never sent itself. */
+  'converted',
 ] as const;
 export const VaultItemStatus = z.enum(VAULT_ITEM_STATUSES);
 export type VaultItemStatus = z.infer<typeof VaultItemStatus>;
@@ -478,11 +511,16 @@ export type VaultKeyDto = z.infer<typeof VaultKeyDto>;
 export const VaultKindDto = z.object({ key: z.string().min(1).max(100), name: z.string().max(200) });
 export type VaultKindDto = z.infer<typeof VaultKindDto>;
 
-/** A group's mode, and the vault kind it maps to. A sent group that isn't mapped isn't sent (§3). */
+/**
+ * A group's mode, and the vault kind it maps to. A sent group that isn't mapped isn't sent (§3). `unkept` is what
+ * happens to the group's files the vault doesn't keep (ADR-0057 §1); only a group with a renderer offers more than
+ * `dont_send` (`vaultUnkeptOffered`).
+ */
 export const VaultGroupSettingDto = z.object({
   group: VaultGroup,
   mode: VaultGroupMode,
   vaultKind: z.string().min(1).max(100).nullable(),
+  unkept: VaultUnkeptChoice,
 });
 export type VaultGroupSettingDto = z.infer<typeof VaultGroupSettingDto>;
 
@@ -519,6 +557,11 @@ export const VaultConnectionDto = z.object({
   vaultKinds: z.array(VaultKindDto),
   /** §3, D5: amounts and account last-four digits too. Off by default. */
   describeMore: z.boolean(),
+  /**
+   * ADR-0057 §3: the account number on the cover of a PDF Montra renders, with `describeMore` on. The setting only:
+   * never a number.
+   */
+  coverNumber: VaultCoverNumber,
   /** §10, D10: "Also delete it in the vault when Montra deletes a file for good". Off by default. */
   deleteWithMontra: z.boolean(),
   /** The vault lets Montra delete what it sent. */
@@ -531,6 +574,8 @@ export const VaultConnectionDto = z.object({
     notKept: z.number().int(),
     failed: z.number().int(),
     outOfReach: z.number().int(),
+    /** ADR-0057 §1: files the vault doesn't keep, sent as PDFs instead (their PDFs are counted as any file). */
+    converted: z.number().int(),
   }),
   /** §12: waiting for the vault's daily limits, until then. Not failures. */
   heldUntil: z.object({ sending: z.string().nullable(), reading: z.string().nullable() }),
@@ -600,6 +645,8 @@ export const UpdateVaultConnectionRequest = z
             group: VaultGroup,
             mode: VaultGroupMode.optional(),
             vaultKind: z.string().min(1).max(100).nullable().optional(),
+            /** ADR-0057 §1: owner only; a group without a renderer takes `dont_send` only. */
+            unkept: VaultUnkeptChoice.optional(),
           })
           .strict(),
       )
@@ -607,6 +654,8 @@ export const UpdateVaultConnectionRequest = z
       .refine((gs) => new Set(gs.map((g) => g.group)).size === gs.length, 'Name each group once')
       .optional(),
     describeMore: z.boolean().optional(),
+    /** ADR-0057 §3: owner only; `full` needs a recent sign-in and is recorded in the security log. */
+    coverNumber: VaultCoverNumber.optional(),
     deleteWithMontra: z.boolean().optional(),
     /** Paused sends nothing and keeps what's waiting. */
     paused: z.boolean().optional(),
@@ -762,6 +811,29 @@ export const FileVaultSummaryDto = z.object({
    * made only when the person clicks; nothing here holds one.
    */
   canOpen: z.boolean(),
+  /**
+   * ADR-0057 §1, §4: for a file the vault doesn't keep (`status: converted`), how its conversion to PDF went and how far
+   * its PDFs got with the vault, in counts. Null for any other file.
+   */
+  converted: z
+    .object({
+      /** Being made; made (see the counts); couldn't be made (`notKeptReason` says why); its import was undone. */
+      state: z.enum(['rendering', 'rendered', 'not_converted', 'import_undone']),
+      /** The original travels inside the PDF (its first part). */
+      attached: z.boolean(),
+      /** The current PDFs: how many, and how many wait to go, are in someone's Inbox, filed, not kept, or failed. */
+      parts: z.number().int(),
+      waiting: z.number().int(),
+      received: z.number().int(),
+      filed: z.number().int(),
+      notKept: z.number().int(),
+      failed: z.number().int(),
+      /** PDFs sent before "Send again" made new ones; they stay in the vault. */
+      earlier: z.number().int(),
+      /** "Send again" (owners and admins): the vault has the current PDFs, so a new one is made only when asked. */
+      canSendAgain: z.boolean(),
+    })
+    .nullable(),
 });
 export type FileVaultSummaryDto = z.infer<typeof FileVaultSummaryDto>;
 

@@ -281,7 +281,9 @@ describe('choosing “sent, no local copy” (ADR-0054 §1, §6)', () => {
         [wsId],
       )
     ).rows[0].detail;
-    expect(log.groups).toEqual([{ group: 'receipts', mode: 'sent_no_copy', vaultKind: 'utility_bill' }]);
+    expect(log.groups).toEqual([
+      { group: 'receipts', mode: 'sent_no_copy', vaultKind: 'utility_bill', unkept: 'dont_send' },
+    ]);
 
     await run();
     expect(await fileRow(before.id)).toMatchObject({ location: 'montra', storage_key: before.key });

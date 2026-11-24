@@ -258,6 +258,8 @@ export function fromExtraction(
       memberId: null,
       confidence: null,
       categorization: null,
+      memberReason: null,
+      decideMember: true,
     });
   }
   return {

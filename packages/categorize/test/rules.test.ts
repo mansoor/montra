@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyMemberRules,
   applyRules,
   compileRule,
   compileRules,
   RuleError,
   validateRule,
   type RuleConditions,
+  type RuleRecord,
+  type Subject,
 } from '../src/index.js';
 import { d, rule, subject } from './fixtures.js';
 
@@ -222,6 +225,8 @@ describe('compileRules and applyRules', () => {
       ruleId: cat.id,
       ruleName: 'Shell → Fuel',
       propertyRuleName: null,
+      memberRuleId: tagger.id,
+      memberRuleName: 'Tag fuel',
       matchedRuleIds: [tagger.id, cat.id, later.id],
     });
   });
@@ -239,7 +244,119 @@ describe('compileRules and applyRules', () => {
       ruleId: null,
       ruleName: null,
       propertyRuleName: null,
+      memberRuleId: null,
+      memberRuleName: null,
       matchedRuleIds: [],
     });
+  });
+});
+
+describe('receipt-line conditions and the two-step evaluation (owner, 2026-11-24)', () => {
+  const line = (over: Partial<Subject> = {}) =>
+    subject({ payee: 'Costco', payeeKey: 'COSTCO', accountId: '', itemText: 'KS MILK 2%', ...over });
+  const addedByMansoor = { field: 'added_by' as const, op: 'in' as const, value: ['mem-mansoor'] };
+  const isGroceries = { field: 'category' as const, op: 'equals' as const, value: 'cat-groceries' };
+  const receiptRule = (over: Partial<RuleRecord> = {}) => rule({ scope: 'receipt_line', ...over });
+
+  it('refuses "added by", "category" and Household on transaction rules, with the path', () => {
+    expect(validateRule({ all: [addedByMansoor] }, { categoryId: 'cat-x' })).toEqual([
+      'conditions.all[0]: Only receipt-item rules can check who added the receipt',
+    ]);
+    expect(
+      validateRule(
+        { all: [{ field: 'payee', op: 'contains', value: 'x' }, { any: [isGroceries] }] },
+        { memberId: 'm' },
+      ),
+    ).toEqual(['conditions.all[1].any[0]: Only receipt-item rules can check the category']);
+    expect(
+      validateRule(
+        { all: [{ field: 'payee', op: 'contains', value: 'x' }] },
+        { household: true },
+        'transaction',
+      ),
+    ).toEqual(['actions.household: Only receipt-item rules can set Household']);
+    // A record with no scope is a transaction rule.
+    expect(() =>
+      compileRule(rule({ conditions: { all: [isGroceries] }, actions: { memberId: 'm' } })),
+    ).toThrow(RuleError);
+  });
+
+  it('accepts them on receipt-line rules, and Household counts as an action', () => {
+    expect(validateRule({ all: [addedByMansoor, isGroceries] }, { household: true }, 'receipt_line')).toEqual(
+      [],
+    );
+    expect(validateRule({ all: [addedByMansoor] }, { categoryId: 'cat-x' }, 'receipt_line')).toEqual([]);
+  });
+
+  it('refuses a rule that checks the category and sets it, Household with a member, and bad operators', () => {
+    expect(validateRule({ all: [isGroceries] }, { categoryId: 'cat-x' }, 'receipt_line')).toEqual([
+      "conditions.all[0]: A rule that checks the category can't set the category or the books",
+    ]);
+    expect(validateRule({ all: [isGroceries] }, { household: true, memberId: 'm' }, 'receipt_line')).toEqual([
+      'actions.household: Choose a member or Household, not both',
+    ]);
+    expect(
+      validateRule(
+        { all: [{ field: 'added_by', op: 'contains', value: 'm' }] },
+        { household: true },
+        'receipt_line',
+      ),
+    ).toEqual(['conditions.all[0]: "contains" can\'t be used with added_by']);
+  });
+
+  it('matches "added by" on the adder’s member, and never when no member is linked', () => {
+    const r = compileRule(
+      receiptRule({ conditions: { all: [addedByMansoor] }, actions: { household: true } }),
+    );
+    expect(r.matches(line({ addedByMemberId: 'MEM-MANSOOR' }))).toBe(true);
+    expect(r.matches(line({ addedByMemberId: 'mem-sam' }))).toBe(false);
+    expect(r.matches(line({ addedByMemberId: null }))).toBe(false);
+    expect(r.matches(line())).toBe(false);
+  });
+
+  it('step 1 skips a rule that checks the category; step 2 runs every rule in order with the category known', () => {
+    const { rules, errors } = compileRules([
+      receiptRule({
+        name: 'Mansoor’s groceries are the house’s',
+        priority: 10,
+        conditions: { all: [addedByMansoor, isGroceries] },
+        actions: { household: true },
+      }),
+      receiptRule({
+        name: 'Milk',
+        priority: 20,
+        conditions: { all: [{ field: 'item_text', op: 'contains', value: 'milk' }] },
+        actions: { categoryId: 'cat-groceries', memberId: 'mem-sam' },
+      }),
+    ]);
+    expect(errors).toEqual([]);
+    const s = line({ addedByMemberId: 'mem-mansoor' });
+    // Step 1: the category comes from "Milk"; the rule that checks the category can't match yet.
+    const step1 = applyRules(rules, s);
+    expect(step1.actions.categoryId).toBe('cat-groceries');
+    expect(step1.ruleName).toBe('Milk');
+    expect(step1.matchedRuleIds).toEqual([rules[1]!.record.id]);
+    // Step 2: with Groceries known, the higher-priority rule wins the member: Household.
+    expect(applyMemberRules(rules, { ...s, categoryId: 'cat-groceries' })).toEqual({
+      memberId: null,
+      ruleId: rules[0]!.record.id,
+      ruleName: 'Mansoor’s groceries are the house’s',
+    });
+    // Someone else added it: the first rule doesn't match, so "Milk" sets the member.
+    expect(
+      applyMemberRules(rules, { ...s, addedByMemberId: 'mem-sam', categoryId: 'cat-groceries' })?.memberId,
+    ).toBe('mem-sam');
+    // A line left uncategorized never matches a category condition.
+    expect(applyMemberRules(rules, { ...s, itemText: 'BREAD', categoryId: null })).toBeNull();
+  });
+
+  it('takes the member from the first rule that sets a member or Household', () => {
+    const { rules } = compileRules([
+      receiptRule({ priority: 1, conditions: { all: [isGroceries] }, actions: { memberId: 'mem-sam' } }),
+      receiptRule({ priority: 2, conditions: { all: [isGroceries] }, actions: { household: true } }),
+    ]);
+    const r = applyRules(rules, line({ categoryId: 'cat-groceries' }));
+    expect(r.actions).toEqual({ memberId: 'mem-sam' });
+    expect(r.memberRuleId).toBe(rules[0]!.record.id);
   });
 });

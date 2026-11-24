@@ -16,12 +16,14 @@ import {
   draftActions,
   draftToRequest,
   emptyCondition,
+  fieldsFor,
+  HOUSEHOLD,
   isListField,
   isTextField,
   newKey,
   OPS_BY_FIELD,
-  RULE_FIELDS,
   withField,
+  withScope,
   type ConditionDraft,
   type ConditionItem,
   type RuleDraft,
@@ -36,7 +38,9 @@ const DOW = ['0', '1', '2', '3', '4', '5', '6'];
 
 /**
  * Create or edit a rule (UP-02): conditions (all must match; an "any of" group gives OR), actions, and a live
- * preview of how many existing transactions it matches and would change.
+ * preview of how many existing transactions it matches and would change. A receipt-item rule (scope `receipt_line`)
+ * may also check who added the receipt and the line's category, and set Household (owner, 2026-11-24); it has no
+ * preview, as it runs on receipts as they are read.
  */
 export function RuleForm({
   workspace,
@@ -44,6 +48,7 @@ export function RuleForm({
   categories,
   members,
   initial,
+  canChangeScope = false,
   submitLabel,
   onSubmit,
   onCancel,
@@ -53,6 +58,8 @@ export function RuleForm({
   categories: CategoryDto[];
   members: FamilyMemberDto[];
   initial: RuleDraft;
+  /** A new rule: transactions or receipt items. A saved rule keeps what it runs on. */
+  canChangeScope?: boolean;
   submitLabel: string;
   onSubmit: (result: { value: CreateRuleInput }) => Promise<void>;
   onCancel: () => void;
@@ -66,13 +73,16 @@ export function RuleForm({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const groups = useMemo(() => groupCategories(workspace, categories), [workspace, categories]);
   const categoryName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? null;
+  const receiptLine = draft.scope === 'receipt_line';
+  const firstField = fieldsFor(draft.scope)[0]!;
 
-  // Live preview, debounced; only when the conditions are complete.
-  const conditionsKey = JSON.stringify([draft.items, draft.entityId, draft.actions]);
+  // Live preview, debounced; only when the conditions are complete. Receipt-item rules have none.
+  const conditionsKey = JSON.stringify([draft.items, draft.entityId, draft.actions, draft.scope]);
   useEffect(() => {
     const conditions = draftConditions(draft.items);
-    if (!('ok' in conditions)) {
+    if (receiptLine || !('ok' in conditions)) {
       setPreview(null);
+      setPreviewError(null);
       return;
     }
     const actions = draftActions(draft.actions);
@@ -144,6 +154,9 @@ export function RuleForm({
 
   const condRow = (c: ConditionDraft, label: string) => {
     const ops = OPS_BY_FIELD[c.field];
+    // A saved rule may use a field this kind no longer offers: it stays listed so the condition can be read.
+    const offered = fieldsFor(draft.scope);
+    const fields = offered.includes(c.field) ? offered : [...offered, c.field];
     return (
       <div
         key={c.key}
@@ -156,7 +169,7 @@ export function RuleForm({
           value={c.field}
           onChange={(e) => changeField(c.key, e.target.value as ConditionDraft['field'])}
         >
-          {RULE_FIELDS.map((f) => (
+          {fields.map((f) => (
             <option key={f} value={f}>
               {t(`rules.field.${f}`)}
             </option>
@@ -203,6 +216,24 @@ export function RuleForm({
                   <option key={d} value={d}>
                     {t(`rules.dow.${d}`)}
                   </option>
+                ))}
+              {c.field === 'added_by' &&
+                members
+                  .filter((m) => m.status === 'active' || c.values.includes(m.id))
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              {c.field === 'category' &&
+                groups.map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
             </select>
           ) : c.op === 'between' ? (
@@ -263,6 +294,24 @@ export function RuleForm({
   return (
     <form onSubmit={submit} className="card space-y-4" aria-label={t('rules.form.label')} noValidate>
       <FormError message={errors.form} action={errors.action} />
+      {canChangeScope ? (
+        <fieldset className="flex flex-wrap items-center gap-4 text-sm">
+          <legend className="field-label">{t('rules.form.scope')}</legend>
+          {(['transaction', 'receipt_line'] as const).map((s) => (
+            <label key={s} className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="rule-scope"
+                checked={draft.scope === s}
+                onChange={() => setDraft((d) => withScope(d, s))}
+              />
+              {t(`rules.scope.${s}`)}
+            </label>
+          ))}
+        </fieldset>
+      ) : (
+        receiptLine && <p className="chip chip-muted w-fit">{t('rules.scope.receipt_line')}</p>
+      )}
       <div className="grid gap-3 sm:grid-cols-[1fr_12rem_8rem]">
         <div>
           <label htmlFor="rule-name" className="field-label">
@@ -327,7 +376,7 @@ export function RuleForm({
                   setItems((items) =>
                     items.map((x) =>
                       x.kind === 'any' && x.key === it.key
-                        ? { ...x, conds: [...x.conds, emptyCondition()] }
+                        ? { ...x, conds: [...x.conds, emptyCondition(firstField)] }
                         : x,
                     ),
                   )
@@ -342,7 +391,9 @@ export function RuleForm({
           <button
             type="button"
             className="btn-secondary"
-            onClick={() => setItems((items) => [...items, { kind: 'cond', cond: emptyCondition() }])}
+            onClick={() =>
+              setItems((items) => [...items, { kind: 'cond', cond: emptyCondition(firstField) }])
+            }
           >
             {t('rules.form.add_condition')}
           </button>
@@ -352,7 +403,11 @@ export function RuleForm({
             onClick={() =>
               setItems((items) => [
                 ...items,
-                { kind: 'any', key: newKey(), conds: [emptyCondition(), emptyCondition()] },
+                {
+                  kind: 'any',
+                  key: newKey(),
+                  conds: [emptyCondition(firstField), emptyCondition(firstField)],
+                },
               ])
             }
           >
@@ -398,6 +453,7 @@ export function RuleForm({
             onChange={(e) => setDraft({ ...draft, actions: { ...draft.actions, memberId: e.target.value } })}
           >
             <option value="">{t('rules.form.keep')}</option>
+            {receiptLine && <option value={HOUSEHOLD}>{t('receipts.household')}</option>}
             {members
               .filter((m) => m.status === 'active')
               .map((m) => (
@@ -407,42 +463,46 @@ export function RuleForm({
               ))}
           </select>
         </div>
-        <div>
-          <label htmlFor="rule-tags" className="field-label">
-            {t('fields.tags')}
-          </label>
-          <input
-            id="rule-tags"
-            className="input"
-            value={draft.actions.tags}
-            placeholder={t('fields.comma_separated')}
-            onChange={(e) => setDraft({ ...draft, actions: { ...draft.actions, tags: e.target.value } })}
-          />
-        </div>
-        <div>
-          <label htmlFor="rule-rename" className="field-label">
-            {t('rules.form.rename_payee')}
-          </label>
-          <input
-            id="rule-rename"
-            className="input"
-            maxLength={200}
-            value={draft.actions.renamePayee}
-            onChange={(e) =>
-              setDraft({ ...draft, actions: { ...draft.actions, renamePayee: e.target.value } })
-            }
-          />
-        </div>
-        <label className="flex items-center gap-2 text-sm sm:col-span-2">
-          <input
-            type="checkbox"
-            checked={draft.actions.markReviewed}
-            onChange={(e) =>
-              setDraft({ ...draft, actions: { ...draft.actions, markReviewed: e.target.checked } })
-            }
-          />
-          {t('rules.form.mark_reviewed')}
-        </label>
+        {!receiptLine && (
+          <>
+            <div>
+              <label htmlFor="rule-tags" className="field-label">
+                {t('fields.tags')}
+              </label>
+              <input
+                id="rule-tags"
+                className="input"
+                value={draft.actions.tags}
+                placeholder={t('fields.comma_separated')}
+                onChange={(e) => setDraft({ ...draft, actions: { ...draft.actions, tags: e.target.value } })}
+              />
+            </div>
+            <div>
+              <label htmlFor="rule-rename" className="field-label">
+                {t('rules.form.rename_payee')}
+              </label>
+              <input
+                id="rule-rename"
+                className="input"
+                maxLength={200}
+                value={draft.actions.renamePayee}
+                onChange={(e) =>
+                  setDraft({ ...draft, actions: { ...draft.actions, renamePayee: e.target.value } })
+                }
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={draft.actions.markReviewed}
+                onChange={(e) =>
+                  setDraft({ ...draft, actions: { ...draft.actions, markReviewed: e.target.checked } })
+                }
+              />
+              {t('rules.form.mark_reviewed')}
+            </label>
+          </>
+        )}
         <label className="flex items-center gap-2 text-sm sm:col-span-2">
           <input
             type="checkbox"
@@ -458,7 +518,9 @@ export function RuleForm({
         className="rounded-md border border-line bg-canvas p-3 text-sm"
         data-testid="rule-preview"
       >
-        {previewError ? (
+        {receiptLine ? (
+          <p className="text-muted">{t('rules.preview.receipt_line')}</p>
+        ) : previewError ? (
           <p className="text-bad">{previewError}</p>
         ) : preview ? (
           <>

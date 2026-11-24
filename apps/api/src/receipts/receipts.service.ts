@@ -36,7 +36,14 @@ import {
   type ReceiptForMatch,
   type TransactionForMatch,
 } from '@montra/importers';
-import { applyRules, compileRules, validateRule, type CompiledRule } from '@montra/categorize';
+import {
+  applyMemberRules,
+  applyRules,
+  compileRules,
+  validateRule,
+  type CompiledRule,
+  type Subject,
+} from '@montra/categorize';
 import type {
   ApplyReceiptRequest,
   CreateReceiptRequest,
@@ -47,6 +54,7 @@ import type {
   ReceiptGroupDto,
   ReceiptLineDto,
   ReceiptListQuery,
+  ReceiptMemberReasonDto,
   ReceiptPageDto,
   ReceiptHabitDto,
   ReceiptItemSearchDto,
@@ -68,6 +76,7 @@ import {
   ruleRecord,
   toDto,
   withoutArchived,
+  type Prepared,
   type StoredCategorization,
 } from '../categorization/categorizer.service.js';
 import { MerchantDirectory } from '../categorization/merchants.js';
@@ -140,7 +149,28 @@ export interface LineInput {
   memberId: string | null;
   confidence: number | null;
   categorization: StoredCategorization | null;
+  /** Why the line is for its member. Null for a line stored before 2026-11-24 that nothing has decided since. */
+  memberReason: MemberReason | null;
+  /**
+   * Choose the member in `store`, unless a person picked it: set for new lines, and for lines whose category is worked
+   * out again. Other lines keep the member they have (owner, 2026-11-24).
+   */
+  decideMember?: boolean;
 }
+
+/** Why a receipt line is for its member (migration 0094). */
+export type MemberReason = ReceiptMemberReasonDto;
+export const CHOSEN_BY_YOU: MemberReason = { source: 'user', explanation: 'Chosen by you', ruleId: null };
+
+/** The family member linked to the login that added a receipt. */
+interface Adder {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+/** The receipt-item rules, compiled once per `store`. */
+type LineRules = () => Promise<{ prepared: Prepared; rules: CompiledRule[] }>;
 
 @Injectable()
 export class ReceiptsService {
@@ -632,7 +662,19 @@ export class ReceiptsService {
     lines: LineInput[],
   ): Promise<ReceiptRow> {
     const r = await this.row(trx, ctx, receiptId);
-    const categorized = await this.categorizeLines(trx, ctx, r.entity_id, header, lines);
+    let loaded: ReturnType<LineRules> | undefined;
+    const lineRules: LineRules = () => (loaded ??= this.lineRules(trx, ctx));
+    const adder = await this.adderOf(trx, ctx, r.created_by);
+    // Category first, then the member: a rule that sets the member may check the category (owner, 2026-11-24).
+    const categorized = await this.decideMembers(
+      trx,
+      ctx,
+      r.entity_id,
+      header,
+      await this.categorizeLines(trx, ctx, r.entity_id, header, lines, lineRules, adder),
+      lineRules,
+      adder,
+    );
     const validation = validateReceipt(
       categorized.map((l) => amountsOf(l, r.entity_id)),
       {
@@ -716,6 +758,7 @@ export class ReceiptsService {
             confidence: l.confidence === null ? null : l.confidence.toFixed(3),
             categorization: l.categorization ? JSON.stringify(l.categorization) : null,
             item_key: itemKeyOf(l.rawText) || null,
+            member_reason: l.memberReason ? JSON.stringify(l.memberReason) : null,
           };
         }),
       )
@@ -743,27 +786,22 @@ export class ReceiptsService {
    * Lines the user hasn't categorized go through item rules (scope `receipt_line`), then item history
    * (lines with the same printed text that the user or a rule categorized), then AI over the item names —
    * never the store: a receipt is categorized by what was bought (§3.5). Below the threshold a line keeps
-   * the AI suggestion for review and stays uncategorized.
+   * the AI suggestion for review and stays uncategorized. This is step 1 of a line's rules; the member is
+   * step 2 (`decideMembers`).
    */
-  async categorizeLines(
+  private async categorizeLines(
     trx: Trx,
     ctx: Ctx,
     entityId: string,
     header: { merchant: string | null; receiptDate: CalendarDate | null; currency: CurrencyCode },
     lines: LineInput[],
+    lineRules: LineRules,
+    adder: Adder | null,
   ): Promise<LineInput[]> {
     const open = lines.map((l, i) => ({ l, i })).filter(({ l }) => !l.categoryId);
     if (open.length === 0) return lines;
     const out = [...lines];
-    const prepared = await this.categorizer.prepare(trx, ctx);
-    const ruleRows = await trx
-      .selectFrom('app.rule')
-      .selectAll()
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('enabled', '=', true)
-      .where('scope', '=', 'receipt_line')
-      .execute();
-    const rules = withoutArchived(compileRules(ruleRows.map(ruleRecord)).rules, prepared.archivedCategoryIds);
+    const { prepared, rules } = await lineRules();
     const date = header.receiptDate ?? (await this.today(trx, ctx));
     const exponent = minorUnits(header.currency);
     const entityOf = (categoryId: string) => prepared.categoryById.get(categoryId)?.entityId ?? entityId;
@@ -774,7 +812,8 @@ export class ReceiptsService {
     );
     const forAi: Array<{ i: number; l: LineInput }> = [];
     for (const { l, i } of open) {
-      const byRule = this.byItemRule(rules, l, header.merchant, date, entityId, exponent);
+      const subject = lineSubject(l, header.merchant, date, entityId, exponent, adder);
+      const byRule = this.byItemRule(rules, subject);
       if (byRule) {
         out[i] = { ...l, ...byRule, entityId: byRule.entityId ?? entityOf(byRule.categoryId) };
         continue;
@@ -788,7 +827,6 @@ export class ReceiptsService {
           ...l,
           categoryId: past.categoryId,
           entityId: past.entityId ?? entityOf(past.categoryId),
-          memberId: l.memberId ?? past.memberId,
           confidence: 0.9,
           categorization: {
             step: 'history',
@@ -806,6 +844,7 @@ export class ReceiptsService {
       const runtime = await this.ai.runtime(trx, ctx);
       if (runtime.available) {
         const entity = prepared.categories.find((c) => c.entityId === entityId)?.entityType ?? 'personal';
+        // The members still go in so their names are pseudonymized in the item text; the AI's member is not used.
         const res = await this.ai.gateway.categorize(
           forAi.map(({ i, l }) => ({
             id: String(i),
@@ -826,10 +865,10 @@ export class ReceiptsService {
             const l = out[i]!;
             if (!o.categoryId) continue;
             const apply = o.confidence >= runtime.aiThreshold;
+            // The AI suggests the category only. Who the line is for is never its guess (owner, 2026-11-24).
             out[i] = {
               ...l,
               ...(apply ? { categoryId: o.categoryId, entityId: entityOf(o.categoryId) } : {}),
-              memberId: l.memberId ?? (apply ? o.memberId : null),
               confidence: o.confidence,
               categorization: {
                 step: 'ai',
@@ -838,7 +877,7 @@ export class ReceiptsService {
                 ruleId: null,
                 suggested: apply
                   ? null
-                  : { categoryId: o.categoryId, entityId: entityOf(o.categoryId), memberId: o.memberId },
+                  : { categoryId: o.categoryId, entityId: entityOf(o.categoryId), memberId: null },
               },
             };
           }
@@ -850,33 +889,17 @@ export class ReceiptsService {
 
   private byItemRule(
     rules: readonly CompiledRule[],
-    l: LineInput,
-    merchant: string | null,
-    date: CalendarDate,
-    entityId: string,
-    exponent: number,
+    subject: Subject,
   ):
-    | (Pick<LineInput, 'categoryId' | 'entityId' | 'memberId' | 'confidence' | 'categorization'> & {
+    | (Pick<LineInput, 'categoryId' | 'entityId' | 'confidence' | 'categorization'> & {
         categoryId: string;
       })
     | null {
-    const result = applyRules(rules, {
-      payee: merchant,
-      payeeKey: merchant ? normalizeDescription(merchant) : null,
-      description: l.expandedName ?? l.rawText,
-      rawDescription: l.rawText,
-      amountMinor: -l.lineTotalMinor,
-      exponent,
-      accountId: '',
-      entityId,
-      date,
-      itemText: `${l.rawText} ${l.expandedName ?? ''}`.trim(),
-    });
+    const result = applyRules(rules, subject);
     if (!result.actions.categoryId) return null;
     return {
       categoryId: result.actions.categoryId,
       entityId: result.actions.entityId ?? null,
-      memberId: l.memberId ?? result.actions.memberId ?? null,
       confidence: 1,
       categorization: {
         step: 'rule',
@@ -893,13 +916,13 @@ export class ReceiptsService {
     trx: Trx,
     ctx: Ctx,
     keys: string[],
-  ): Promise<Map<string, { categoryId: string; entityId: string | null; memberId: string | null }>> {
+  ): Promise<Map<string, { categoryId: string; entityId: string | null }>> {
     const unique = [...new Set(keys.filter(Boolean))];
-    const out = new Map<string, { categoryId: string; entityId: string | null; memberId: string | null }>();
+    const out = new Map<string, { categoryId: string; entityId: string | null }>();
     if (unique.length === 0) return out;
     const rows = await trx
       .selectFrom('app.receipt_line')
-      .select(['item_key', 'category_id', 'entity_id', 'member_id', 'updated_at'])
+      .select(['item_key', 'category_id', 'entity_id', 'updated_at'])
       .where('workspace_id', '=', ctx.workspaceId)
       .where('item_key', 'in', unique)
       .where('category_id', 'is not', null)
@@ -908,10 +931,119 @@ export class ReceiptsService {
       .execute();
     for (const r of rows) {
       if (r.item_key && r.category_id && !out.has(r.item_key)) {
-        out.set(r.item_key, { categoryId: r.category_id, entityId: r.entity_id, memberId: r.member_id });
+        out.set(r.item_key, { categoryId: r.category_id, entityId: r.entity_id });
       }
     }
     return out;
+  }
+
+  // ----- Who a line is for (owner, 2026-11-24; FAM-05) ----------------------------------------------------
+
+  /**
+   * Step 2, once each line's category is settled. A line marked `decideMember` that no person picked a member for gets
+   * the first of:
+   *   1. a receipt-item rule that sets a member or Household (it may check the category and who added the receipt);
+   *   2. the member a person picked by hand for the same item on an earlier receipt;
+   *   3. the member linked to the login that added the receipt;
+   *   4. Household.
+   * The AI never sets it. Each line keeps why, for the review screen.
+   */
+  private async decideMembers(
+    trx: Trx,
+    ctx: Ctx,
+    entityId: string,
+    header: { merchant: string | null; receiptDate: CalendarDate | null; currency: CurrencyCode },
+    lines: LineInput[],
+    lineRules: LineRules,
+    adder: Adder | null,
+  ): Promise<LineInput[]> {
+    const todo = lines
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => l.decideMember && l.memberReason?.source !== 'user');
+    if (todo.length === 0) return lines;
+    const out = [...lines];
+    const { rules } = await lineRules();
+    const date = header.receiptDate ?? (await this.today(trx, ctx));
+    const exponent = minorUnits(header.currency);
+    const picked = await this.memberHistory(
+      trx,
+      ctx,
+      todo.map(({ l }) => itemKeyOf(l.rawText)),
+    );
+    for (const { l, i } of todo) {
+      const subject = lineSubject(l, header.merchant, date, entityId, exponent, adder);
+      const byRule = applyMemberRules(rules, { ...subject, categoryId: l.categoryId });
+      const before = picked.get(itemKeyOf(l.rawText));
+      const [memberId, memberReason]: [string | null, MemberReason] = byRule
+        ? [
+            byRule.memberId,
+            { source: 'rule', explanation: `Rule: ${byRule.ruleName}`, ruleId: byRule.ruleId },
+          ]
+        : before !== undefined
+          ? [before, { source: 'history', explanation: 'As you chose for this item before', ruleId: null }]
+          : adder?.active
+            ? [adder.id, { source: 'adder', explanation: `Added by ${adder.name}`, ruleId: null }]
+            : [null, { source: 'household', explanation: 'Household by default', ruleId: null }];
+      out[i] = { ...l, memberId, memberReason, decideMember: false };
+    }
+    return out;
+  }
+
+  /**
+   * The latest member a person picked by hand per item key: a member still active, or null for Household. Members set
+   * by a default, a rule, history or (before 2026-11-24) the AI are never reused.
+   */
+  private async memberHistory(trx: Trx, ctx: Ctx, keys: string[]): Promise<Map<string, string | null>> {
+    const unique = [...new Set(keys.filter(Boolean))];
+    const out = new Map<string, string | null>();
+    if (unique.length === 0) return out;
+    const rows = await trx
+      .selectFrom('app.receipt_line as l')
+      .leftJoin('app.family_member as m', (j) =>
+        j.onRef('m.workspace_id', '=', 'l.workspace_id').onRef('m.id', '=', 'l.member_id'),
+      )
+      .select(['l.item_key', 'l.member_id', 'm.status'])
+      .where('l.workspace_id', '=', ctx.workspaceId)
+      .where('l.item_key', 'in', unique)
+      .where(sql<boolean>`l.member_reason->>'source' = 'user'`)
+      .orderBy('l.updated_at', 'desc')
+      .execute();
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (!r.item_key || seen.has(r.item_key)) continue;
+      seen.add(r.item_key);
+      // The latest pick decides; a member since made inactive leaves the item to the next step.
+      if (r.member_id === null || r.status === 'active') out.set(r.item_key, r.member_id);
+    }
+    return out;
+  }
+
+  /** The family member linked to the login that added the receipt (a login is one person per workspace, AUTH-16). */
+  private async adderOf(trx: Trx, ctx: Ctx, userId: string | null): Promise<Adder | null> {
+    if (!userId) return null;
+    const m = await trx
+      .selectFrom('app.family_member')
+      .select(['id', 'name', 'status'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('linked_user_id', '=', userId)
+      .executeTakeFirst();
+    return m ? { id: m.id, name: m.name, active: m.status === 'active' } : null;
+  }
+
+  /** The workspace's enabled receipt-item rules, in order, without those whose category is archived (ACC-10). */
+  private async lineRules(trx: Trx, ctx: Ctx): Promise<{ prepared: Prepared; rules: CompiledRule[] }> {
+    const prepared = await this.categorizer.prepare(trx, ctx);
+    const ruleRows = await trx
+      .selectFrom('app.rule')
+      .selectAll()
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('enabled', '=', true)
+      .where('scope', '=', 'receipt_line')
+      .execute();
+    return {
+      prepared,
+      rules: withoutArchived(compileRules(ruleRows.map(ruleRecord)).rules, prepared.archivedCategoryIds),
+    };
   }
 
   // ----- Review edits (RCP-06) ----------------------------------------------------------------------------
@@ -952,6 +1084,21 @@ export class ReceiptsService {
               sentUnit !== undefined ? sentUnit : totalChanged || qtyChanged ? null : prevUnit;
             const categoryId = l.categoryId === undefined ? (prev?.category_id ?? null) : l.categoryId;
             const userChose = l.categoryId !== undefined && l.categoryId !== (prev?.category_id ?? null);
+            // Who the line is for (owner, 2026-11-24). A member sent that differs from the saved one is a person's pick.
+            // On a new line, any member sent is, null (Household) included; one left out ("Automatic") is decided.
+            // Otherwise it is decided again only for a line whose category is worked out again: one left
+            // uncategorized, or one whose category a person changed. A line stored before 2026-11-24 (no reason)
+            // keeps its member, unless it has none and its category is redone.
+            const prevReason = (prev?.member_reason as MemberReason | null | undefined) ?? null;
+            const pickedMember = prev
+              ? l.memberId !== undefined && l.memberId !== prev.member_id
+              : l.memberId !== undefined;
+            const decideMember =
+              !pickedMember &&
+              prevReason?.source !== 'user' &&
+              (!prev ||
+                (prevReason !== null && (userChose || !categoryId)) ||
+                (prevReason === null && !categoryId && prev.member_id === null));
             return {
               ...(prev ? { id: prev.id } : {}),
               rawText: l.rawText,
@@ -988,6 +1135,8 @@ export class ReceiptsService {
                       suggested: null,
                     }
                   : ((prev?.categorization as StoredCategorization | null) ?? null),
+              memberReason: pickedMember ? CHOSEN_BY_YOU : prevReason,
+              decideMember,
             } satisfies LineInput;
           })
         : before.map(fromRow);
@@ -1792,6 +1941,8 @@ export class ReceiptsService {
             memberId: null,
             confidence: null,
             categorization: null,
+            memberReason: null,
+            decideMember: true,
           })),
         );
         created.push(id);
@@ -1870,6 +2021,34 @@ export function fromRow(l: ReceiptLineRow): LineInput {
     memberId: l.member_id,
     confidence: l.confidence === null ? null : Number(l.confidence),
     categorization: l.categorization as StoredCategorization | null,
+    memberReason: l.member_reason as MemberReason | null,
+  };
+}
+
+/**
+ * What a receipt-item rule is matched against: the store as the payee, the item's text, its amount as money out. The
+ * category is left unknown here: step 2 (`applyMemberRules`) adds it.
+ */
+function lineSubject(
+  l: LineInput,
+  merchant: string | null,
+  date: CalendarDate,
+  entityId: string,
+  exponent: number,
+  adder: Adder | null,
+): Subject {
+  return {
+    payee: merchant,
+    payeeKey: merchant ? normalizeDescription(merchant) : null,
+    description: l.expandedName ?? l.rawText,
+    rawDescription: l.rawText,
+    amountMinor: -l.lineTotalMinor,
+    exponent,
+    accountId: '',
+    entityId,
+    date,
+    itemText: `${l.rawText} ${l.expandedName ?? ''}`.trim(),
+    addedByMemberId: adder?.id ?? null,
   };
 }
 
@@ -1934,6 +2113,7 @@ function lineDto(l: ReceiptLineRow): ReceiptLineDto {
     entityId: l.entity_id,
     memberId: l.member_id,
     categorization: toDto(l.categorization as StoredCategorization | null),
+    memberReason: (l.member_reason as MemberReason | null) ?? null,
   };
 }
 
