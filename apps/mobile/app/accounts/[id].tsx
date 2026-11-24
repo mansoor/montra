@@ -1,7 +1,8 @@
 /**
  * An account: what its type needs (a loan's next payment, a card's statement, an investment's gain…; ADR-0024…0027), read
  * live and kept for offline viewing, then its register (simple view) from local data, newest first with a running balance
- * from the synced balance.
+ * from the synced balance. Its holders and its number, masked to the last four (ACC-15, ACC-16), come with the synced
+ * account; holders are changed online.
  */
 import { useMemo } from 'react';
 import { FlatList, View } from 'react-native';
@@ -15,6 +16,7 @@ import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
 import { useLocal, useSync } from '../../src/sync/SyncProvider';
 import { AccountDetails, loadAccountDetails } from '../../src/ui/AccountDetails';
+import { AccountHolders } from '../../src/ui/AccountHolders';
 import { Banner, Body, Row, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
@@ -27,6 +29,7 @@ export default function Register() {
   const ws = session.status === 'signed_in' ? session.workspace.id : '';
   const accounts = useLocal((s) => s.getReference('accounts')) ?? [];
   const account = accounts.find((a) => a.id === id);
+  const members = useLocal((s) => s.getReference('members')) ?? [];
   const sections = account ? accountSections(account) : null;
   // Only types with something to read from the server ask for it; a checking account shows its register alone.
   const remote = Boolean(
@@ -102,6 +105,14 @@ export default function Register() {
                   void details.reload();
                   void sync.refresh();
                 }}
+              />
+              <AccountHolders
+                api={api}
+                ws={ws}
+                account={account}
+                members={members}
+                online={!details.stale}
+                onChanged={() => void sync.refresh()}
               />
               {lines.length > 0 ? <Title>{t('mobile.accounts.register')}</Title> : null}
             </View>

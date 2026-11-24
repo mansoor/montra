@@ -14,6 +14,7 @@ import { maskLast4 } from '@montra/domain';
 import type { BusinessRevealField } from '@montra/schemas';
 import { CONFIG, type AppConfig } from '../config.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
+import { sealNumber } from '../crypto/sealed-numbers.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
 
@@ -41,12 +42,8 @@ export async function sealTaxId(
   column: TaxIdColumn,
   value: string | null,
 ): Promise<Partial<Record<keyof TaxIdRow, string | Buffer | null>>> {
-  const v = value || null;
-  return {
-    [column]: null,
-    [`${column}_enc`]: await crypto.encrypt(trx, workspaceId, taxIdLabel(column), v),
-    [`${column}_last4`]: v ? v.slice(-4) : null,
-  };
+  const sealed = await sealNumber(crypto, trx, workspaceId, taxIdLabel(column), value);
+  return { [column]: null, [`${column}_enc`]: sealed.enc, [`${column}_last4`]: sealed.last4 };
 }
 
 /** The full number, for the Show path and the filing outputs only. Never log or return it elsewhere. */

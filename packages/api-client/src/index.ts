@@ -152,6 +152,8 @@ import type {
   UpdateRuleRequest,
   AccountBalanceHistoryDto,
   AccountDto,
+  AccountHolderDto,
+  AccountNumberRevealDto,
   AccountValuationDto,
   AddValuationsRequest,
   CardStatementDto,
@@ -1374,6 +1376,14 @@ export class ApiClient {
   }
   updateAccount(workspaceId: string, accountId: string, input: UpdateAccountInput) {
     return this.request<AccountDto>('PATCH', this.ws(workspaceId, `/accounts/${enc(accountId)}`), input);
+  }
+  /** ACC-16: the account's full number. Owners and admins, after a recent sign-in (403 reauth.required); each is logged. */
+  revealAccountNumber(workspaceId: string, accountId: string) {
+    return this.request<AccountNumberRevealDto>(
+      'POST',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/reveal-number`),
+      {},
+    );
   }
   /** ACC-14: whether an account added by mistake can be deleted, and what stops it. */
   accountDeletion(workspaceId: string, accountId: string) {
@@ -3814,6 +3824,8 @@ export type {
   LedgerAccountDto,
   AccountBalanceHistoryDto,
   AccountDto,
+  AccountHolderDto,
+  AccountNumberRevealDto,
   AccountValuationDto,
   CardStatementDto,
   InvestmentPerformanceDto,

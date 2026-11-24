@@ -52,6 +52,7 @@ let receiptId: string;
 let fileId: string;
 let memoTransaction: string;
 let leaseId: string;
+let holder: string;
 
 const auth = (email = EMAIL) => ({ authorization: `Bearer dev:${email}` });
 const drain = () => worker.drain(['report'], 50);
@@ -335,6 +336,13 @@ describe('what an archive holds (ADR-0019 §7)', () => {
       .catch(() => undefined);
     // BIZ-26: a business's tax numbers are sealed, and in the archive in full, under their plain names.
     await c.patch(url(`/businesses/${business}`), { ein: '12-3456789', cdtfaPermit: '102-345678' });
+    holder = (await c.post(url('/family-members'), { name: 'Ada Owner', relationship: 'self' })).body.id;
+    const joint = await c.patch(url(`/accounts/${checking}`), {
+      accountNumber: '0012-3456-7890-4321',
+      holders: [{ memberId: holder }, { name: 'Partner Name' }],
+    });
+    expect(joint.status).toBe(200);
+    await c.patch(url(`/accounts/${bizChecking}`), { last4: '7777' });
     const { bytes } = await backup();
     const zip = await readZip(bytes);
     const profile = zip
@@ -349,6 +357,35 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     const csvHeader = zip.get('csv/business_profile.csv')!.toString().split('\r\n')[0]!.split(',');
     expect(csvHeader.filter((h) => h === 'ein')).toHaveLength(1);
     const manifest = JSON.parse(zip.get('manifest.json')!.toString());
+    // ACC-15, ACC-16: an account's holders, and its full number in full, unsealed.
+    const bank = zip
+      .get('data/bank_account.jsonl')!
+      .toString()
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+      .find((r: any) => r.ledger_account_id === checking);
+    expect(bank).toMatchObject({ account_number: '0012345678904321', last4: '4321' });
+    expect(bank).not.toHaveProperty('account_number_enc');
+    const holders = zip
+      .get('data/account_holder.jsonl')!
+      .toString()
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+      .filter((r: any) => r.ledger_account_id === checking);
+    expect(holders.map((r: any) => [r.position, r.name, r.member_id])).toEqual([
+      [0, 'Ada Owner', holder],
+      [1, 'Partner Name', null],
+    ]);
+    const accountsSheet = new ExcelJS.Workbook();
+    await accountsSheet.xlsx.load(zip.get('summary.xlsx')! as unknown as ArrayBuffer);
+    const accountRows: unknown[][] = [];
+    accountsSheet
+      .getWorksheet('Accounts')!
+      .eachRow((r) => accountRows.push((r.values as unknown[]).slice(1)));
+    expect(accountRows[0]).toEqual(['Name', 'Type', 'Currency', 'Tax line', 'Holders']);
+    expect(accountRows.find((r) => r[0] === 'Joint')![4]).toBe('Ada Owner, Partner Name');
     expect(manifest).toMatchObject({ format: 1, partial: false, entityScoped: false });
     expect(manifest.workspace.name).toBe('Everything');
     expect(manifest.tables.transaction.rows).toBeGreaterThanOrEqual(4);
@@ -528,6 +565,33 @@ describe('restoring into a new workspace (BAK-06)', () => {
     expect((await c.get(inRestored(`/businesses/${copy}`))).body.registrations.einMasked).toBe('••-•••6789');
     const shown = await c.post(inRestored(`/businesses/${copy}/reveal`), { field: 'ein' });
     expect(shown.body.value).toBe('123456789');
+  });
+
+  it('brings back an account’s holders and its full number, sealed (ACC-15, ACC-16)', async () => {
+    const accounts = (await c.get(inRestored('/accounts?include=all'))).body.data;
+    const copy = accounts.find((a: any) => a.name === 'Joint');
+    const members = (await c.get(inRestored('/family-members'))).body.data;
+    const ada = members.find((m: any) => m.name === 'Ada Owner');
+    expect(ada.id).not.toBe(holder);
+    expect(copy).toMatchObject({
+      last4: '4321',
+      accountNumberMasked: '••••4321',
+      fullNumberKept: true,
+      holders: [
+        { name: 'Ada Owner', memberId: ada.id },
+        { name: 'Partner Name', memberId: null },
+      ],
+    });
+    const { rows } = await admin.query(
+      `select account_number_enc from app.bank_account where workspace_id = $1 and ledger_account_id = $2`,
+      [restored, copy.id],
+    );
+    expect(rows[0].account_number_enc.includes(Buffer.from('0012345678904321'))).toBe(false);
+    const shown = await c.post(inRestored(`/accounts/${copy.id}/reveal-number`), {});
+    expect(shown.body.value).toBe('0012345678904321');
+    // An account with its last four and no full number keeps them.
+    const studio = accounts.find((a: any) => a.name === 'Studio');
+    expect(studio).toMatchObject({ last4: '7777', accountNumberMasked: '••••7777', fullNumberKept: false });
   });
 
   it('copies files under keys of its own', async () => {

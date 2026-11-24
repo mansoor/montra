@@ -81,7 +81,11 @@ export class SyncService {
       return { visible, removed, reviewCount: await this.reviewCount(trx, ctx) };
     });
     const ref = await this.reference(ctx, {
-      accounts: tables.has('ledger_account') || tables.has('bank_account') || tables.has('category_group'),
+      accounts:
+        tables.has('ledger_account') ||
+        tables.has('bank_account') ||
+        tables.has('account_holder') ||
+        tables.has('category_group'),
       members: tables.has('family_member'),
       entities: tables.has('entity') || tables.has('period_lock'),
     });

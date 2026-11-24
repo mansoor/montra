@@ -673,8 +673,10 @@ export class RestoreService {
       const sealed =
         typeof plain === 'string' ? await this.crypto.encrypt(trx, workspaceId, label, plain) : null;
       out[column] = sealed ? `\\x${sealed.toString('hex')}` : null;
+      // The last four follow a restored number. Without one, the archive's are kept: an account can have its last four
+      // and no full number (ACC-16).
       const last4 = LAST4[table]?.[column];
-      if (last4) out[last4] = typeof plain === 'string' && plain ? plain.slice(-4) : null;
+      if (last4 && typeof plain === 'string' && plain) out[last4] = plain.slice(-4);
     }
     for (const column of NOT_RESTORED[table] ?? []) delete out[column];
     return out;

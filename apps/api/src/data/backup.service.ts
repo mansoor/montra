@@ -995,16 +995,31 @@ export class BackupService {
       }
       transactions.commit();
       const accounts = wb.addWorksheet('Accounts');
-      accounts.addRow(['Name', 'Type', 'Currency', 'Tax line']).commit();
+      // ACC-15: an account's holders, in order. Its full number is in bank_account's own file, not here.
+      accounts.addRow(['Name', 'Type', 'Currency', 'Tax line', 'Holders']).commit();
       const list = await trx
-        .selectFrom('app.ledger_account')
-        .select(['name', 'type', 'currency', 'tax_line_code'])
-        .where('workspace_id', '=', ctx.workspaceId)
-        .$if(!!entityId, (q) => q.where('entity_id', '=', entityId!))
-        .orderBy('type')
-        .orderBy('name')
+        .selectFrom('app.ledger_account as a')
+        .select([
+          'a.name',
+          'a.type',
+          'a.currency',
+          'a.tax_line_code',
+          (eb) =>
+            eb
+              .selectFrom('app.account_holder as h')
+              .select(sql<string>`string_agg(h.name, ', ' order by h.position)`.as('n'))
+              .whereRef('h.workspace_id', '=', 'a.workspace_id')
+              .whereRef('h.ledger_account_id', '=', 'a.id')
+              .as('holders'),
+        ])
+        .where('a.workspace_id', '=', ctx.workspaceId)
+        .$if(!!entityId, (q) => q.where('a.entity_id', '=', entityId!))
+        .orderBy('a.type')
+        .orderBy('a.name')
         .execute();
-      for (const a of list) accounts.addRow([safe(a.name), a.type, a.currency, a.tax_line_code]).commit();
+      for (const a of list) {
+        accounts.addRow([safe(a.name), a.type, a.currency, a.tax_line_code, safe(a.holders)]).commit();
+      }
       accounts.commit();
     });
     await wb.commit();
@@ -1307,6 +1322,11 @@ function scopeOf(info: TableInfo, entityId: string) {
   if (info.columns.has('entity_id')) return sql`(t.entity_id = ${entityId} or t.entity_id is null)`;
   if (info.columns.has('primary_entity_id')) return sql`t.primary_entity_id = ${entityId}`;
   if (info.name === 'entity') return sql`t.id = ${entityId}`;
+  // ACC-15: holders are people's names; one book's archive has only its own accounts'.
+  if (info.name === 'account_holder') {
+    return sql`exists (select 1 from app.ledger_account la where la.workspace_id = t.workspace_id
+                        and la.id = t.ledger_account_id and la.entity_id = ${entityId})`;
+  }
   return sql`true`;
 }
 
