@@ -13,6 +13,14 @@ export const columnLabel = (key: string) => en[`reports.col.${key}`] ?? key;
 export const reportTitle = (type: string) => en[`reports.type.${type}`] ?? type;
 const noteText = (key: string) => en[`reports.note.${key}`] ?? key;
 
+/**
+ * The not-advice line a tax report's file carries (AIA-12, NFR-14): the PDF prints every note, and CSV and XLSX end
+ * with this one after a blank row, so a Schedule C or E sent on its own still says it.
+ */
+export const TAX_NOTE = noteText('tax_not_advice');
+const taxNoteRows = (report: ReportDto): string[][] =>
+  report.notes.includes('tax_not_advice') ? [[], [TAX_NOTE]] : [];
+
 export interface RenderedFile {
   bytes: Uint8Array;
   mime: string;
@@ -57,7 +65,8 @@ function table(report: ReportDto, display: boolean): string[][] {
 
 export function reportToCsv(report: ReportDto): string {
   const header = report.columns.map((c) => columnLabel(c.key));
-  return [header, ...table(report, false)].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  const rows = [header, ...table(report, false), ...taxNoteRows(report)];
+  return rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
 export async function reportToXlsx(report: ReportDto): Promise<Uint8Array> {
@@ -81,6 +90,7 @@ export async function reportToXlsx(report: ReportDto): Promise<Uint8Array> {
   };
   for (const r of report.rows) addRow(r.cells, r.emphasis);
   if (report.totals) addRow(report.totals, true);
+  for (const r of taxNoteRows(report)) sheet.addRow(r);
   report.columns.forEach((c, i) => {
     sheet.getColumn(i + 1).width = c.kind === 'text' ? 36 : 14;
     if (c.kind === 'money') sheet.getColumn(i + 1).numFmt = '#,##0.00';

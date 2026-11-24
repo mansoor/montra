@@ -139,6 +139,8 @@ export interface LedgerAccountTable {
   is_category: Generated<boolean>;
   category_group_id: string | null;
   tax_line_code: string | null;
+  /** FAM-10: the kind of education expense this spending category holds (migration 0090). */
+  education_expense_type: 'tuition_fees' | 'books_supplies' | 'room_board' | 'computer' | null;
   system_role: string | null;
   counterparty_entity_id: string | null;
   tracks_account_id: string | null;
@@ -2178,6 +2180,19 @@ export interface BusinessProfileTable {
   filing_city: string | null;
   filing_state: string | null;
   filing_zip: string | null;
+  /**
+   * BIZ-26 (migration 0089): the tax account numbers sealed (FieldCrypto, label `business_profile.<column>`), with their
+   * last four for the masked display. The plain `ein`, `ftb_entity_id`, `ca_employer_account` and `cdtfa_permit` above
+   * are no longer written; the `business.seal_tax_ids` job seals and clears what's left in them.
+   */
+  ein_enc: Buffer | null;
+  ein_last4: string | null;
+  ftb_entity_id_enc: Buffer | null;
+  ftb_entity_id_last4: string | null;
+  ca_employer_account_enc: Buffer | null;
+  ca_employer_account_last4: string | null;
+  cdtfa_permit_enc: Buffer | null;
+  cdtfa_permit_last4: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;

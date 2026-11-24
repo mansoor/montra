@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
+import ExcelJS from 'exceljs';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import yauzl from 'yauzl';
@@ -332,8 +333,21 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     await c
       .put(url('/ai/credentials/anthropic'), { apiKey: 'sk-secret-value-123456' })
       .catch(() => undefined);
+    // BIZ-26: a business's tax numbers are sealed, and in the archive in full, under their plain names.
+    await c.patch(url(`/businesses/${business}`), { ein: '12-3456789', cdtfaPermit: '102-345678' });
     const { bytes } = await backup();
     const zip = await readZip(bytes);
+    const profile = zip
+      .get('data/business_profile.jsonl')!
+      .toString()
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+      .find((r: any) => r.entity_id === business);
+    expect(profile).toMatchObject({ ein: '123456789', ein_last4: '6789', cdtfa_permit: '102-345678' });
+    expect(profile).not.toHaveProperty('ein_enc');
+    const csvHeader = zip.get('csv/business_profile.csv')!.toString().split('\r\n')[0]!.split(',');
+    expect(csvHeader.filter((h) => h === 'ein')).toHaveLength(1);
     const manifest = JSON.parse(zip.get('manifest.json')!.toString());
     expect(manifest).toMatchObject({ format: 1, partial: false, entityScoped: false });
     expect(manifest.workspace.name).toBe('Everything');
@@ -354,6 +368,32 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     // A file holds what it needs to prove itself.
     const hash = createHash('sha256').update(zip.get('data/posting.jsonl')!).digest('hex');
     expect(manifest.tables.posting.sha256).toBe(hash);
+  });
+
+  it('has a summary workbook with each transaction’s account, category and amount in currency units (UP-05)', async () => {
+    const { bytes } = await backup();
+    const zip = await readZip(bytes);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(zip.get('summary.xlsx')! as unknown as ArrayBuffer);
+    const sheet = wb.getWorksheet('Transactions')!;
+    const rows: unknown[][] = [];
+    sheet.eachRow((r) => rows.push((r.values as unknown[]).slice(1)));
+    expect(rows[0]).toEqual([
+      'Date',
+      'Account',
+      'Payee',
+      'Description',
+      'Category',
+      'Amount',
+      'Currency',
+      'Status',
+      'Note',
+    ]);
+    const groceries = rows.find((r) => r[2] === 'WHOLE FOODS')!;
+    expect(groceries.slice(1, 7)).toEqual(['Joint', 'WHOLE FOODS', groceries[3], 'Groceries', -50, 'USD']);
+    expect(groceries[8]).toBe('A private note about a gift');
+    expect(rows.find((r) => r[2] === 'ACME PAYROLL')!.slice(4, 6)).toEqual(['Salary', 3000]);
+    expect(zip.get('README.txt')!.toString()).toContain('1234 is 12.34');
   });
 
   it('lets a partner take only books they can read, and not the workspace', async () => {
@@ -471,6 +511,23 @@ describe('restoring into a new workspace (BAK-06)', () => {
     const t = list.find((x: any) => x.payee === 'WHOLE FOODS');
     const edit = await c.patch(inRestored(`/transactions/${t.id}`), { amount: usd('-6000') });
     expect(edit.status).toBe(200);
+  });
+
+  it('brings back a business’s tax numbers sealed (BIZ-26)', async () => {
+    const { rows } = await admin.query(
+      `select ein, ein_enc is not null as sealed, ein_last4, cdtfa_permit, cdtfa_permit_last4
+         from app.business_profile b join app.entity e on e.id = b.entity_id
+        where b.workspace_id = $1 and e.type = 'business'`,
+      [restored],
+    );
+    expect(rows).toEqual([
+      { ein: null, sealed: true, ein_last4: '6789', cdtfa_permit: null, cdtfa_permit_last4: '5678' },
+    ]);
+    const entities = (await c.get(inRestored('/entities'))).body.data;
+    const copy = entities.find((e: any) => e.type === 'business').id;
+    expect((await c.get(inRestored(`/businesses/${copy}`))).body.registrations.einMasked).toBe('••-•••6789');
+    const shown = await c.post(inRestored(`/businesses/${copy}/reveal`), { field: 'ein' });
+    expect(shown.body.value).toBe('123456789');
   });
 
   it('copies files under keys of its own', async () => {
@@ -787,7 +844,10 @@ describe('the tax package (RPT-04, UP-10)', () => {
     );
     expect(names).not.toContain('reports/schedule-e.pdf');
     expect(zip.get('reports/pnl.pdf')!.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(zip.get('README.txt')!.toString()).toContain('tax advice');
+    // AIA-12, NFR-14: the package says it isn't tax advice, and so does Schedule C on its own.
+    expect(zip.get('README.txt')!.toString()).toContain("It isn't tax advice");
+    expect(zip.get('reports/schedule-c.csv')!.toString()).toContain('not tax advice');
+    expect(zip.get('reports/pnl.csv')!.toString()).not.toContain('tax advice');
     expect(zip.get('receipts.csv')!.toString()).toContain('Print Shop');
     const slip = names.find((n) => n.startsWith('receipts/') && n.endsWith('.png'))!;
     expect(zip.get(slip)!.equals(PNG)).toBe(true);

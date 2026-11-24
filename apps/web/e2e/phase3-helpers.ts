@@ -22,7 +22,11 @@ export async function onboardHousehold(page: Page, email: string, account: strin
   await page.getByLabel('Current balance').fill('2,500.00');
   await page.getByLabel('As of').fill('2026-10-01');
   await page.getByRole('button', { name: 'Add account' }).click();
+  await expect(page).toHaveURL(/\/accounts\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name: account })).toBeVisible();
+  // The form goes to the account and then refreshes it. Let that settle, or WebKit can commit it late and cut off the
+  // caller's next page.goto ("interrupted by another navigation").
+  await page.waitForLoadState('networkidle');
 }
 
 /**

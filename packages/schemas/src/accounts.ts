@@ -1,10 +1,19 @@
 import { z } from 'zod';
-import { ACCOUNT_KINDS, BALANCE_RANGES, PAY_RULES, PLAN_TYPES } from '@montra/domain';
+import {
+  ACCOUNT_KINDS,
+  BALANCE_RANGES,
+  EDUCATION_EXPENSE_TYPES,
+  PAY_RULES,
+  PLAN_TYPES,
+} from '@montra/domain';
 import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
 
 export const BankAccountKind = z.enum(ACCOUNT_KINDS);
 export const PlanTypeDto = z.enum(PLAN_TYPES);
 export const PayRuleDto = z.enum(PAY_RULES);
+/** FAM-10: the kind of education expense a spending category holds (informational only). */
+export const EducationExpenseTypeDto = z.enum(EDUCATION_EXPENSE_TYPES);
+export type EducationExpenseTypeDto = z.infer<typeof EducationExpenseTypeDto>;
 const DayOfMonth = z.number().int().min(1).max(31);
 export type BankAccountKind = z.infer<typeof BankAccountKind>;
 
@@ -226,6 +235,8 @@ export const CategoryDto = z.object({
   archived: z.boolean().optional(),
   /** A built-in system category (Uncategorized, FX, bank fees): it can't be renamed or archived (ACC-09). */
   fixed: z.boolean().optional(),
+  /** FAM-10: marked as this kind of education expense. Optional: phones cached categories before it. */
+  educationExpenseType: EducationExpenseTypeDto.nullable().optional(),
 });
 export type CategoryDto = z.infer<typeof CategoryDto>;
 
@@ -258,15 +269,23 @@ export const CreateCategoryRequest = z.object({
 });
 export type CreateCategoryRequest = z.output<typeof CreateCategoryRequest>;
 
-/** `PATCH categories/:id` (ACC-09, ACC-10): rename, move to another group of the same entity, archive or unarchive. */
+/**
+ * `PATCH categories/:id` (ACC-09, ACC-10): rename, move to another group of the same entity, archive or unarchive.
+ * FAM-10: mark a spending category as a kind of education expense, or clear it with null.
+ */
 export const UpdateCategoryRequest = z
   .object({
     name: CategoryName.optional(),
     groupId: Id.optional(),
     archived: z.boolean().optional(),
+    educationExpenseType: EducationExpenseTypeDto.nullable().optional(),
   })
   .refine(
-    (r) => r.name !== undefined || r.groupId !== undefined || r.archived !== undefined,
+    (r) =>
+      r.name !== undefined ||
+      r.groupId !== undefined ||
+      r.archived !== undefined ||
+      r.educationExpenseType !== undefined,
     'Nothing to change',
   );
 export type UpdateCategoryRequest = z.output<typeof UpdateCategoryRequest>;

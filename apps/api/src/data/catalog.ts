@@ -81,6 +81,30 @@ export const ENCRYPTED: Readonly<Record<string, Readonly<Record<string, string>>
   // Rentals (ADR-0038 §1).
   tenant: { birth_date_enc: 'tenant.birth_date' },
   lease_person: { birth_date_enc: 'lease_person.birth_date' },
+  // A business's tax account numbers (BIZ-26, migration 0089). The archive keeps them under their old plain names, so
+  // archives from before 0089 restore sealed too.
+  business_profile: {
+    ein_enc: 'business_profile.ein',
+    ftb_entity_id_enc: 'business_profile.ftb_entity_id',
+    ca_employer_account_enc: 'business_profile.ca_employer_account',
+    cdtfa_permit_enc: 'business_profile.cdtfa_permit',
+  },
+};
+
+/** Sealed columns that keep their last four beside them for display: filled in on restore from the archive's text. */
+export const LAST4: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  business_profile: {
+    ein_enc: 'ein_last4',
+    ftb_entity_id_enc: 'ftb_entity_id_last4',
+    ca_employer_account_enc: 'ca_employer_account_last4',
+    cdtfa_permit_enc: 'cdtfa_permit_last4',
+  },
+};
+
+/** Columns an archive may hold that are never restored, and why. */
+export const NOT_RESTORED: Readonly<Record<string, readonly string[]>> = {
+  // Unused since 0037 and cleared by 0089 (BIZ-26): the business's own numbers are the ones restored, sealed.
+  payroll_settings: ['ein', 'ca_employer_account'],
 };
 
 export const plainName = (column: string) => column.replace(/_enc$/, '');

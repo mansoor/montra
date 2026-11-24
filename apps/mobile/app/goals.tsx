@@ -17,6 +17,7 @@ import {
   Button,
   Card,
   CheckRow,
+  Disclaimer,
   Disclosure,
   Field,
   ProgressBar,
@@ -149,6 +150,8 @@ export default function Goals() {
           </Card>
         </Pressable>
       ))}
+      {/* A debt payoff plan is a projection from your figures, not advice (AIA-12). */}
+      {active.some((g) => g.payoff) ? <Disclaimer kind="financial" /> : null}
       {archived.length > 0 ? (
         <Disclosure
           title={t('goal.archived_title', { count: archived.length })}

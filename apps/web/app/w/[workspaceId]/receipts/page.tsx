@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import type { ReceiptListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -35,11 +36,18 @@ export default async function ReceiptsPage({
 }) {
   const { workspaceId } = await params;
   const sp = await searchParams;
-  const tab: TabKey = sp.tab && sp.tab in TABS ? (sp.tab as TabKey) : sp.q ? 'all' : 'inbox';
+  const base = `/w/${workspaceId}/receipts`;
+  // A link from before the search moved into the filters (`?q=`) opens on the same words.
+  if (sp.q?.trim() && !sp.text) {
+    const { q: words, ...rest } = sp;
+    const keep = Object.entries(rest).filter((e): e is [string, string] => e[1] !== undefined);
+    redirect(`${base}?${new URLSearchParams([...keep, ['text', words!.trim()]]).toString()}`);
+  }
+  const { filters } = parseListFilters(sp);
+  // Words on the receipt look in every list unless one was chosen, as the search did.
+  const tab: TabKey = sp.tab && sp.tab in TABS ? (sp.tab as TabKey) : filters.text ? 'all' : 'inbox';
   // Deleted receipts: restore, or delete a personal one for good (BAK-06, RCP-10).
   const inTrash = sp.tab === 'trash';
-  const q = sp.q?.trim() || undefined;
-  const { filters } = parseListFilters(sp);
   const { t, locale } = await getI18n();
   const workspace = await load((api) => api.getWorkspace(workspaceId));
   // Receipts have no money in or out: a return is a negative total on the same kind of receipt.
@@ -52,7 +60,12 @@ export default async function ReceiptsPage({
     },
   );
   // What every page of the list is asked for with; "Load more" sends it again with the cursor.
-  const query: ReceiptListOptions = { ...TABS[tab].query, ...(q ? { q } : {}), ...narrow, limit: 100 };
+  const query: ReceiptListOptions = {
+    ...TABS[tab].query,
+    ...(filters.text ? { q: filters.text } : {}),
+    ...narrow,
+    limit: 100,
+  };
   const [page, recommended, reading, trash] = await load((api) =>
     Promise.all([
       api.listReceipts(workspaceId, query),
@@ -62,8 +75,7 @@ export default async function ReceiptsPage({
       inTrash ? api.listTrash(workspaceId) : Promise.resolve(null),
     ]),
   );
-  const base = `/w/${workspaceId}/receipts`;
-  // The tabs and the search keep the filters.
+  // The tabs keep the filters.
   const kept: Record<string, string> = {};
   for (const k of FILTER_PARAMS) if (sp[k]) kept[k] = sp[k];
   return (
@@ -120,47 +132,36 @@ export default async function ReceiptsPage({
       )}
       <ReceiptRecommendations workspaceId={workspaceId} items={recommended} />
       <section className="space-y-3" aria-labelledby="receipt-list">
-        <h2 id="receipt-list" className="sr-only">
-          {t('receipts.list')}
-        </h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <nav aria-label={t('receipts.tabs')} className="flex gap-1">
-            {(Object.keys(TABS) as TabKey[]).map((k) => (
-              <Link
-                key={k}
-                href={`${base}?${new URLSearchParams({ ...kept, tab: k, ...(q ? { q } : {}) }).toString()}`}
-                aria-current={k === tab && !inTrash ? 'page' : undefined}
-                className={`rounded-md px-2 py-1 text-sm ${k === tab && !inTrash ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
-              >
-                {t(TABS[k].label)}
-              </Link>
-            ))}
-            <Link
-              href={`${base}?tab=trash`}
-              aria-current={inTrash ? 'page' : undefined}
-              className={`rounded-md px-2 py-1 text-sm ${inTrash ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
-              data-testid="receipts-trash-tab"
-            >
-              {t('receipts.tab.trash')}
-            </Link>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="receipt-list" className="text-lg font-semibold">
+            {t(inTrash ? 'receipts.tab.trash' : TABS[tab].label)}
+          </h2>
+          {/* Five tabs are wider than a 360 px phone: the strip scrolls sideways instead of the page. */}
+          <nav aria-label={t('receipts.tabs')} className="max-w-full min-w-0">
+            <ul className="tabs border-b-0">
+              {(Object.keys(TABS) as TabKey[]).map((k) => (
+                <li key={k}>
+                  <Link
+                    href={`${base}?${new URLSearchParams({ ...kept, tab: k }).toString()}`}
+                    aria-current={k === tab && !inTrash ? 'page' : undefined}
+                    className="tab"
+                  >
+                    {t(TABS[k].label)}
+                  </Link>
+                </li>
+              ))}
+              <li>
+                <Link
+                  href={`${base}?tab=trash`}
+                  aria-current={inTrash ? 'page' : undefined}
+                  className="tab"
+                  data-testid="receipts-trash-tab"
+                >
+                  {t('receipts.tab.trash')}
+                </Link>
+              </li>
+            </ul>
           </nav>
-          <form action={base} className="ml-auto flex gap-2" role="search">
-            {/* The search keeps the tab and the filters. */}
-            {Object.entries({ ...kept, ...(sp.tab ? { tab } : {}) }).map(([k, v]) => (
-              <input key={k} type="hidden" name={k} value={v} />
-            ))}
-            <input
-              className="input"
-              type="search"
-              name="q"
-              defaultValue={q}
-              placeholder={t('receipts.search')}
-              aria-label={t('receipts.search')}
-            />
-            <button type="submit" className="btn-secondary">
-              {t('receipts.search_go')}
-            </button>
-          </form>
         </div>
         {trash ? (
           <TrashList
@@ -172,7 +173,7 @@ export default async function ReceiptsPage({
           />
         ) : (
           <>
-            <ListFilterBar screen="receipts" workspace={workspace} />
+            <ListFilterBar screen="receipts" workspace={workspace} showText />
             <ReceiptList
               workspaceId={workspaceId}
               first={page.data}

@@ -120,10 +120,26 @@ test('invoices, bills and mileage reach Schedule C and the export', async ({ pag
   await expect(pnl.getByRole('row', { name: /Net profit.*\$110\.00/ })).toBeVisible();
   // ADR-0032: the landing page's month table, with this month's revenue as the P&L has it.
   await expect(page.getByTestId('business-months').getByRole('row').nth(1)).toContainText('$150.00');
+  // UP-05: the totals and the month's revenue lead to the P&L's categories and their transactions.
+  await expect(pnl.getByRole('link', { name: 'Total revenue' })).toHaveAttribute(
+    'href',
+    new RegExp(`/transactions\\?entityId=${entityId}&categoryIds=`),
+  );
+  await page
+    .getByTestId('business-tiles')
+    .getByRole('link', { name: /^Revenue/ })
+    .click();
+  await expect(page).toHaveURL(/show=pnl&from=\d{4}-\d{2}-01&to=\d{4}-\d{2}-\d{2}#pnl$/);
+  await expect(pnl.getByRole('row', { name: /Total revenue.*\$150\.00/ })).toBeVisible();
   await page.getByRole('link', { name: 'Income by customer' }).click();
   await expect(
     page.getByTestId('report-customers').getByRole('row', { name: /Bluebird Cafe.*\$150\.00/ }),
   ).toBeVisible();
+  // A customer leads to their payments.
+  await page.getByTestId('report-customers').getByRole('link', { name: 'Bluebird Cafe' }).click();
+  await expect(page.getByText('Showing the transactions behind a number')).toBeVisible();
+  await expect(page.getByText(/BLUEBIRD CAFE ACH/i).first()).toBeVisible();
+  await page.goBack();
 
   // The journal for an accountant (BIZ-13).
   await sections.getByRole('link', { name: 'Settings' }).click();

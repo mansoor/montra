@@ -76,8 +76,8 @@ test('a Walmart receipt splits its card line into groceries, electronics and clo
   // The receipt is in the matched list and found by what is on it (RCP-10). Its date is fixed by the photo, so look
   // over all time rather than the list's default 90 days.
   await page.goto(`/w/${workspaceId}/receipts?range=all`);
-  await page.getByLabel('Search receipts').fill('chrgr');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByLabel('Words on the receipt').fill('chrgr');
+  await expect(page).toHaveURL(/text=chrgr/);
   await expect(page.getByTestId('receipt-row')).toHaveCount(1);
   await expect(page.getByTestId('receipt-row')).toContainText('Matched');
 });

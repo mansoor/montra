@@ -16,7 +16,6 @@ import {
   incomeTaxWages,
   NEXT_DAY_THRESHOLD,
   FUTA_DEPOSIT_THRESHOLD,
-  maskId,
   PAYROLL_TAX_TABLES,
   payrollTaxYear,
   quarterEnd,
@@ -45,12 +44,8 @@ import type {
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
 import { businessEntity, formatScaled, parseScaled, type BusinessEntity } from '../business/shared.js';
-import {
-  employerIdentity,
-  formatEddAccount,
-  formatEin,
-  type EmployerIdentity,
-} from '../business/registrations.js';
+import { employerIdentity, employerMasked, formatEddAccount, formatEin } from '../business/registrations.js';
+import { FieldCrypto } from '../crypto/crypto.service.js';
 import { TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { payrollAccount, type PayrollAccountRole } from './payroll-accounts.js';
 import { conflict, payrollEntity, type Ctx } from './shared.js';
@@ -115,6 +110,7 @@ export class PayrollTaxesService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(TransactionPoster) private readonly poster: TransactionPoster,
+    @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
   ) {}
 
   // ----- Settings ---------------------------------------------------------------------------------------------------
@@ -125,7 +121,7 @@ export class PayrollTaxesService {
       return settingsDto(
         entityId,
         await this.settingsRow(trx, ctx, entityId),
-        await employerIdentity(trx, ctx, entityId),
+        await employerMasked(trx, ctx, entityId),
       );
     });
   }
@@ -167,7 +163,7 @@ export class PayrollTaxesService {
       return settingsDto(
         entityId,
         await this.settingsRow(trx, ctx, entityId),
-        await employerIdentity(trx, ctx, entityId),
+        await employerMasked(trx, ctx, entityId),
       );
     });
   }
@@ -182,7 +178,7 @@ export class PayrollTaxesService {
       return {
         entityId,
         year,
-        settings: settingsDto(entityId, row, await employerIdentity(trx, ctx, entityId)),
+        settings: settingsDto(entityId, row, await employerMasked(trx, ctx, entityId)),
         obligations: await this.obligations(trx, ctx, entityId, year, row, today),
       };
     });
@@ -285,7 +281,7 @@ export class PayrollTaxesService {
       const checks = await this.paidChecks(trx, ctx, entityId, year);
       const bases = basesFor(checks, year);
       const deposits = await this.deposits(trx, ctx, entityId, year);
-      const id = await employerIdentity(trx, ctx, entityId);
+      const id = await employerIdentity(trx, ctx, entityId, this.crypto);
       const employer = {
         name: (await this.legalName(trx, ctx, e)) ?? e.name,
         ein: formatEin(id.ein),
@@ -613,15 +609,15 @@ export class PayrollTaxesService {
 function settingsDto(
   entityId: string,
   row: PayrollSettingsRow | undefined,
-  id: EmployerIdentity,
+  id: Awaited<ReturnType<typeof employerMasked>>,
 ): PayrollSettingsDto {
   const year = Number(new Date().toISOString().slice(0, 4));
   const t = payrollTaxYear(year) ?? Object.values(PAYROLL_TAX_TABLES).at(-1)!;
   return {
     entityId,
     // ADR-0037: from the business's registrations, masked.
-    einMasked: maskId(id.ein, 'ein'),
-    caEmployerAccountMasked: maskId(id.caEmployerAccount),
+    einMasked: id.einMasked,
+    caEmployerAccountMasked: id.caEmployerAccountMasked,
     caUiRate: row?.ca_ui_rate_ppm != null ? ppmToPercent(row.ca_ui_rate_ppm) : null,
     caUiRateDefault: ppmToPercent(t.california.newEmployerUiRate),
     caEttRate: ppmToPercent(row?.ca_ett_rate_ppm ?? Number(t.california.ettRate)),

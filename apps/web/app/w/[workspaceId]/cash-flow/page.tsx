@@ -93,6 +93,11 @@ export default async function CashFlowPage({
           ))}
         </div>
         {f.accounts.length === 0 && <p className="card text-sm text-muted">{t('flow.no_accounts')}</p>}
+        {f.accounts.length > 0 && (
+          <p className="text-xs text-muted" data-testid="forecast-hint">
+            {t('flow.forecast_hint')}
+          </p>
+        )}
         {f.accounts.map((a) => (
           <section key={a.accountId} className="card space-y-3" aria-labelledby={`fc-${a.accountId}`}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -187,6 +192,9 @@ export default async function CashFlowPage({
             </div>
           </div>
         </div>
+        <p className="text-xs text-muted" data-testid="net-worth-hint">
+          {t('flow.net_worth_hint')}
+        </p>
         <section className="card" aria-label={t('flow.net_worth_trend')}>
           <LineChart
             title={t('flow.net_worth_trend')}

@@ -11,8 +11,9 @@ import { Money } from '@/components/money';
 import { BusinessDashboard } from '@/components/business/business-dashboard';
 import { EntityTypeLine } from '@/components/business/entity-type-line';
 import { RecommendationList } from '@/components/planning/recommendations';
+import { Disclaimer } from '@/components/ui/disclaimer';
 import { LinkTabs } from '@/components/ui/page-header';
-import { BUSINESS_CHART_MONTHS } from '@montra/schemas';
+import { BUSINESS_CHART_MONTHS, recommendationDisclaimer } from '@montra/schemas';
 import { isCalendarDate } from '@montra/domain';
 
 export const metadata: Metadata = { title: 'Business' };
@@ -90,6 +91,11 @@ export default async function BusinessOverviewPage({
     return next.size ? `${here}?${next}` : here;
   };
   const drill = (categoryIds: string[]) => drillHref(base, { entityId, categoryIds, from, to });
+  const pnlFor = (start: string, end: string) =>
+    `${here}?${new URLSearchParams({ ...dash, show: 'pnl', from: start, to: end }).toString()}#pnl`;
+  // UP-05: a customer's or vendor's row leads to their transactions, found by name as the spending report does.
+  const partyDrill = (name: string) =>
+    drillHref(base, { entityId, q: `"${name.replace(/"/g, '')}"`, from, to });
 
   return (
     <div className="space-y-5">
@@ -98,9 +104,10 @@ export default async function BusinessOverviewPage({
         d={dashboard}
         here={here}
         hrefFor={dashHref}
+        pnlFor={pnlFor}
         setAside={estimate.rateBps === null ? null : money(BigInt(estimate.toSetAside), ccy)}
       />
-      <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} />
+      <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} disclaimer={false} />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <LinkTabs
@@ -157,7 +164,7 @@ export default async function BusinessOverviewPage({
               />
             </section>
           )}
-          <section className="card-flush" aria-label={t('business.show_pnl')} data-testid="pnl">
+          <section id="pnl" className="card-flush" aria-label={t('business.show_pnl')} data-testid="pnl">
             <table className="tbl">
               <tbody className="divide-y divide-line">
                 <tr>
@@ -178,7 +185,15 @@ export default async function BusinessOverviewPage({
                   </tr>
                 ))}
                 <tr className="font-semibold">
-                  <td className="px-4 py-2">{t('business.total_revenue')}</td>
+                  <td className="px-4 py-2">
+                    {pnl.income.length ? (
+                      <Link href={drill(pnl.income.map((l) => l.categoryId))} className="underline">
+                        {t('business.total_revenue')}
+                      </Link>
+                    ) : (
+                      t('business.total_revenue')
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <Money amount={pnl.revenue} currency={ccy} />
                   </td>
@@ -201,7 +216,15 @@ export default async function BusinessOverviewPage({
                   </tr>
                 ))}
                 <tr className="font-semibold">
-                  <td className="px-4 py-2">{t('business.total_expenses')}</td>
+                  <td className="px-4 py-2">
+                    {pnl.expense.length ? (
+                      <Link href={drill(pnl.expense.map((l) => l.categoryId))} className="underline">
+                        {t('business.total_expenses')}
+                      </Link>
+                    ) : (
+                      t('business.total_expenses')
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <Money amount={pnl.expenses} currency={ccy} />
                   </td>
@@ -239,7 +262,15 @@ export default async function BusinessOverviewPage({
               <tbody className="divide-y divide-line">
                 {(show === 'customers' ? customers : vendors).rows.map((r) => (
                   <tr key={r.payeeKey ?? r.name}>
-                    <td className="px-4 py-1.5">{r.name || t('business.no_name')}</td>
+                    <td className="px-4 py-1.5">
+                      {r.name ? (
+                        <Link href={partyDrill(r.name)} className="underline">
+                          {r.name}
+                        </Link>
+                      ) : (
+                        t('business.no_name')
+                      )}
+                    </td>
                     <td className="num px-2 py-1.5 text-right">{r.count}</td>
                     <td className="px-4 py-1.5 text-right">
                       <Money amount={r.amount} currency={ccy} />
@@ -250,6 +281,12 @@ export default async function BusinessOverviewPage({
             </table>
           )}
         </section>
+      )}
+      {/* Once for the page: the tax set-aside under profit and the suggestions above (AIA-12). */}
+      {(estimate.rateBps !== null || notes.length > 0) && (
+        <Disclaimer
+          kind={estimate.rateBps !== null ? 'tax' : recommendationDisclaimer(notes.map((r) => r.type))}
+        />
       )}
     </div>
   );

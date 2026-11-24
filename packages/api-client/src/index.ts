@@ -443,6 +443,9 @@ import type {
   CreateEmployerRequest,
   CreatePayslipRequest,
   EmployerDto,
+  EducationExpenseTypeDto,
+  EducationStudentDto,
+  EducationSummaryDto,
   MemberReportDto,
   PayslipDto,
   PayslipSummaryDto,
@@ -2953,6 +2956,10 @@ export class ApiClient {
   getMemberReport(workspaceId: string, opts: { from?: string; to?: string; entityId?: string } = {}) {
     return this.request<MemberReportDto>('GET', this.ws(workspaceId, `/reports/by-member${query(opts)}`));
   }
+  /** FAM-10: education expenses and 529 withdrawals per student for a calendar tax year (informational only). */
+  getEducationSummary(workspaceId: string, opts: { year?: number } = {}) {
+    return this.request<EducationSummaryDto>('GET', this.ws(workspaceId, `/reports/education${query(opts)}`));
+  }
   getPayslipSummary(workspaceId: string, memberId: string, opts: { year?: number } = {}) {
     return this.request<PayslipSummaryDto>(
       'GET',
@@ -3830,6 +3837,9 @@ export type {
   ReceiptDto,
   DepositCandidateDto,
   EmployerDto,
+  EducationExpenseTypeDto,
+  EducationStudentDto,
+  EducationSummaryDto,
   MemberReportDto,
   MemberTotalsDto,
   PayslipDto,
