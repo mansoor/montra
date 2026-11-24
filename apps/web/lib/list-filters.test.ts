@@ -73,6 +73,7 @@ describe('the URL', () => {
       from: d('2026-01-01'),
       to: d('2026-03-31'),
       merchant: 'blue bottle',
+      text: 'usb cable',
       min: '20',
       max: '99.50',
       dir: 'out',
@@ -179,6 +180,11 @@ describe('widening, chips and clearing', () => {
     expect(activeChips(withoutChip(f, 'amount'))).toEqual(['dates', 'merchant', 'dir']);
     expect(withoutChip(f, 'dates')).toMatchObject({ range: '90d', merchant: 'x' });
     expect(activeChips({ range: '1y' })).toEqual([]);
+    // Words on a receipt are a filter of their own, kept apart from the merchant.
+    const r: ListFilters = { range: '90d', merchant: 'x', text: 'order 112' };
+    expect(activeChips(r)).toEqual(['merchant', 'text']);
+    expect(withoutChip(r, 'text')).toEqual({ range: '90d', merchant: 'x' });
+    expect(hasFilters({ range: '90d', text: 'drill' })).toBe(true);
   });
 
   it('clears the filters but keeps a preset window', () => {
