@@ -49,6 +49,7 @@ const receipt = (lines: Array<{ id: string; categoryId: string | null }>): Recei
       entityId: null,
       memberId: null,
       categorization: null,
+      memberReason: null,
     })),
   }) as unknown as ReceiptDto;
 

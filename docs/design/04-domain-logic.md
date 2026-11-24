@@ -259,6 +259,7 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
   can't reinforce its own mistakes.
 - **Entity, member and property** are predicted by the same steps (AI-02, FAM-05). The
   account's `default_member_id` and default entity seed the prior (FAM-04, ACC-03).
+  Receipt lines are the exception: their member never comes from AI (§7 step 4).
 - **Learning** (AI-05): every user correction writes `payee_history` and a
   `correction` record. After 2 identical corrections (same payee → same new category),
   the app offers a rule, and the offer includes "apply to N existing transactions". An
@@ -277,12 +278,20 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
     { "field": "account", "op": "in", "value": ["<uuid>"] }
 ] }
 // ops: equals | contains | starts_with | regex (RE2-safe, 100 chars max) | between | gt | lt | in
-// fields: payee, description, raw_description, amount, account, entity, date_dow, item_text (receipt_line scope)
+// fields: payee, description, raw_description, amount, account, entity, date_dow, item_text (receipt_line scope),
+//         added_by, category (receipt_line scope only; ids with equals / in)
 
 // rule.actions
 { "category_id": "<uuid>", "entity_id": "<uuid>", "member_id": null,
   "property_id": null, "tags": ["fuel"], "rename_payee": "Shell", "mark_reviewed": true }
+// receipt_line scope only: { "household": true } sets "For: Household" (never with member_id)
 ```
+
+- **Receipt-line rules run in two steps** (owner, 2026-11-24). Step 1 decides the line's category; a rule with a
+  `category` condition can't match yet. Once the category is settled (by a rule, item history or AI), step 2 runs
+  every rule again, in the same order, with the category known, and the first to set a member or Household decides
+  who the line is for. A rule that checks the category can't set the category or the books. Transaction rules refuse
+  `added_by`, `category` and `household`.
 
 - Regex runs through `re2` (linear time) to rule out ReDoS.
 - **Apply to existing** (UP-02) runs as a job. It shows a preview count, skips
@@ -302,6 +311,14 @@ open. Every decision records `{ step, confidence, explanation }` (AI-06).
 4. **Categorize lines**: item-level rules (scope `receipt_line`), then item history,
    then AI over the user's categories. Lines with the same (category, entity, member)
    are grouped into one split (RCP-03, RCP-07).
+   **Who each line is for** (owner, 2026-11-24), once its category is settled: a person's
+   pick on the line; else a receipt-line rule that sets a member or Household (step 2 of §6);
+   else the member a person picked by hand for the same item on an earlier receipt; else
+   the member linked to the login that added the receipt (a scan, an upload or an order
+   import); else Household. The AI never sets it. Each line keeps the reason
+   (`receipt_line.member_reason`), shown beside "For" on the review screen. It is decided
+   for new lines, and again for a line whose category is worked out again, unless a person
+   picked the member; lines stored before 2026-11-24 keep theirs.
 5. **Allocate tax, discounts, fees and tip** (RCP-04): tax is allocated across groups
    in proportion to each group's **taxable** subtotal; order-level discounts and fees
    in proportion to each group's subtotal. Each allocation uses `allocate(…, 'largest')`

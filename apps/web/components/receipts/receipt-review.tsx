@@ -10,7 +10,9 @@ import { isAdminRole } from '@/lib/settings';
 import { vaultOnlyPage } from '@/lib/vault';
 import {
   amountPlaceholder,
+  AUTOMATIC_MEMBER,
   buildUpdate,
+  newLine,
   previewSplits,
   recalcLine,
   rowsOf,
@@ -18,6 +20,7 @@ import {
   type HeaderFields,
   type LineRow,
 } from '@/lib/receipts';
+import { Explanation } from '../ai/shared';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
@@ -270,8 +273,13 @@ export function ReceiptReview({
             </thead>
             <tbody className="divide-y divide-line">
               {lines.map((l, i) => {
-                const suggested = receipt.lines.find((x) => x.id === l.id)?.categorization?.suggested
-                  ?.categoryId;
+                const saved = receipt.lines.find((x) => x.id === l.id);
+                const suggested = saved?.categorization?.suggested?.categoryId;
+                // Why the line is for its member, while the pick is still the saved one (owner, 2026-11-24).
+                const memberWhy =
+                  saved?.memberReason && (saved.memberId ?? '') === l.memberId
+                    ? saved.memberReason.explanation
+                    : null;
                 return (
                   <tr key={l.id ?? `new-${i}`} data-testid="receipt-line">
                     <td className="py-1 pr-2">
@@ -359,6 +367,11 @@ export function ReceiptReview({
                           {t('receipts.use_suggestion', { name: categoryName.get(suggested) ?? '' })}
                         </button>
                       )}
+                      {l.categoryId && saved?.categoryId === l.categoryId && (
+                        <span className="max-w-40">
+                          <Explanation categorization={saved.categorization} />
+                        </span>
+                      )}
                     </td>
                     <td className="py-1 pr-2">
                       <select
@@ -367,6 +380,7 @@ export function ReceiptReview({
                         value={l.memberId}
                         onChange={(e) => setLine(i, { memberId: e.target.value })}
                       >
+                        {!l.id && <option value={AUTOMATIC_MEMBER}>{t('receipts.member_automatic')}</option>}
                         <option value="">{t('receipts.household')}</option>
                         {members.map((m) => (
                           <option key={m.id} value={m.id}>
@@ -374,6 +388,16 @@ export function ReceiptReview({
                           </option>
                         ))}
                       </select>
+                      {memberWhy && (
+                        <span
+                          className="mt-1 block max-w-40 truncate text-xs text-muted"
+                          title={memberWhy}
+                          data-testid="receipt-line-member-why"
+                        >
+                          <span className="sr-only">{t('review.why')} </span>
+                          {memberWhy}
+                        </span>
+                      )}
                     </td>
                     <td className="py-1">
                       <button
@@ -394,22 +418,7 @@ export function ReceiptReview({
           <button
             type="button"
             className="btn-secondary"
-            onClick={() =>
-              setLines((list) => [
-                ...list,
-                {
-                  rawText: '',
-                  expandedName: '',
-                  qty: '1',
-                  unitPrice: '',
-                  lineTotal: '',
-                  discount: '',
-                  taxable: true,
-                  categoryId: '',
-                  memberId: '',
-                },
-              ])
-            }
+            onClick={() => setLines((list) => [...list, newLine()])}
           >
             {t('receipts.add_line')}
           </button>

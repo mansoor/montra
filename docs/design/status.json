@@ -454,11 +454,11 @@
   ],
   "FAM-05": [
     "done",
-    "member from rules, history, AI and account default; receipt lines carry their own member and split per member"
+    "member from rules, history, AI and account default; receipt lines carry their own member and split per member. Receipt lines (owner, 2026-11-24): a person's pick, then a receipt-item rule, then the member picked by hand for the same item before, then whoever added the receipt, then Household; the AI no longer sets a receipt line's member, and the review screen shows why"
   ],
   "UP-02": [
     "done",
-    "rules engine (RE2), preview, apply to existing"
+    "rules engine (RE2), preview, apply to existing; receipt-item rules can also check who added the receipt and the line's category, and set Household (category first, then the member)"
   ],
   "UP-06": [
     "done",
@@ -562,11 +562,11 @@
   ],
   "RCP-03": [
     "done",
-    "lines categorized by item rules, item history, then AI on the item name; grouped by (category, entity, member) into splits; review screen on the web"
+    "lines categorized by item rules, item history, then AI on the item name; grouped by (category, entity, member) into splits; review screen on the web. Each line is for the person who added the receipt by default, unless a pick, a receipt-item rule or a hand-picked member for the same item says otherwise (owner, 2026-11-24)"
   ],
   "RCP-06": [
     "done",
-    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line); a transaction's screen (web and phone) opens its receipt, or adds one, from a button by the amount"
+    "web review screen with the image beside editable lines; a changed line category re-splits the transaction and creates an item rule (scope receipt_line); a transaction's screen (web and phone) opens its receipt, or adds one, from a button by the amount. Each line shows why its category and its \"For\" were set"
   ],
   "RCP-07": [
     "done",

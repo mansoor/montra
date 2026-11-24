@@ -6,7 +6,15 @@ import type { AccountDto, CategoryDto, FamilyMemberDto, JobDto, WorkspaceDto } f
 import type { RuleDto, RuleSuggestionDto } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
-import { describeConditions, emptyDraft, ORIGIN_KEYS, ruleToDraft, sortRules } from '@/lib/rules';
+import {
+  canApplyToExisting,
+  describeConditions,
+  describeFor,
+  emptyDraft,
+  ORIGIN_KEYS,
+  ruleToDraft,
+  sortRules,
+} from '@/lib/rules';
 import { RuleOffer } from '../review/rule-offer';
 import { useI18n } from '../i18n';
 import { RuleForm } from './rule-form';
@@ -44,12 +52,16 @@ export function RulesManager({
   useEffect(() => setRules(sortRules(initialRules)), [initialRules]);
   useEffect(() => setSuggestions(initialSuggestions), [initialSuggestions]);
 
+  const membersById = useMemo(() => new Map(members.map((m) => [m.id, m.name])), [members]);
   const names = useMemo(() => {
-    const accountsById = new Map(accounts.map((a) => [a.id, a.name]));
-    const entitiesById = new Map(workspace.entities.map((e) => [e.id, e.name]));
-    return (field: string, id: string) =>
-      (field === 'account' ? accountsById.get(id) : entitiesById.get(id)) ?? id;
-  }, [accounts, workspace.entities]);
+    const byField: Record<string, Map<string, string>> = {
+      account: new Map(accounts.map((a) => [a.id, a.name])),
+      entity: new Map(workspace.entities.map((e) => [e.id, e.name])),
+      added_by: membersById,
+      category: new Map(categories.map((c) => [c.id, c.name])),
+    };
+    return (field: string, id: string) => byField[field]?.get(id) ?? id;
+  }, [accounts, workspace.entities, membersById, categories]);
   const categoryName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? null;
 
   // Poll running apply jobs.
@@ -149,6 +161,7 @@ export function RulesManager({
           categories={categories}
           members={members}
           initial={editing === 'new' ? emptyDraft() : ruleToDraft(editing)}
+          canChangeScope={editing === 'new'}
           submitLabel={editing === 'new' ? t('rules.create') : t('common.save')}
           onCancel={() => setEditing(null)}
           onSubmit={async ({ value }) => {
@@ -181,6 +194,7 @@ export function RulesManager({
             {rules.map((r) => {
               const category =
                 typeof r.actions.categoryId === 'string' ? categoryName(r.actions.categoryId) : null;
+              const forWhom = describeFor(r.actions, t, (id) => membersById.get(id) ?? id);
               const job = jobs[r.id];
               return (
                 <li key={r.id} className="flex flex-wrap items-start gap-3 px-4 py-3" data-testid="rule-row">
@@ -188,11 +202,15 @@ export function RulesManager({
                     <p className="font-medium">
                       {r.name}
                       <span className="chip chip-muted ml-2">{t(ORIGIN_KEYS[r.origin])}</span>
+                      {r.scope === 'receipt_line' && (
+                        <span className="chip chip-muted ml-2">{t('rules.scope.receipt_line')}</span>
+                      )}
                       {!r.enabled && <span className="chip chip-warn ml-2">{t('rules.disabled')}</span>}
                     </p>
                     <p className="text-xs text-muted">
                       {describeConditions(r.conditions, t, names)}
                       {category && ` → ${category}`}
+                      {forWhom && ` · ${forWhom}`}
                     </p>
                     <p className="text-xs text-muted">
                       {t('rules.priority_hits', { priority: r.priority, hits: r.hitCount })}
@@ -212,16 +230,18 @@ export function RulesManager({
                       <button type="button" className="btn-secondary" onClick={() => setEditing(r)}>
                         {t('common.edit')}
                       </button>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={
-                          !r.enabled || (job && (job.status === 'queued' || job.status === 'running'))
-                        }
-                        onClick={() => void apply(r)}
-                      >
-                        {t('rules.apply.button')}
-                      </button>
+                      {canApplyToExisting(r) && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={
+                            !r.enabled || (job && (job.status === 'queued' || job.status === 'running'))
+                          }
+                          onClick={() => void apply(r)}
+                        >
+                          {t('rules.apply.button')}
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn-secondary text-bad"

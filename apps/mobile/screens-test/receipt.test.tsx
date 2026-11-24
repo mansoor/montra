@@ -38,6 +38,7 @@ const line = (id: string, n: number, rawText: string, lineTotal: string, categor
     entityId: null,
     memberId: null,
     categorization: null,
+    memberReason: null,
   }) satisfies ReceiptLineDto;
 
 const group = (categoryId: string | null, lineIds: string[], total: string) => ({

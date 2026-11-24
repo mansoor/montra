@@ -22,6 +22,7 @@ type Ctx = { workspaceId: string; userId: string };
 type RuleActions = {
   categoryId?: string | null;
   memberId?: string | null;
+  household?: true;
   entityId?: string | null;
   tags?: string[];
   renamePayee?: string | null;
@@ -90,7 +91,7 @@ export class RulesService {
     req: CreateRuleRequest,
     origin: 'user' | 'ai_suggested' | 'correction' = 'user',
   ): Promise<RuleDto> {
-    await this.check(trx, ctx, req.conditions, req.actions);
+    await this.check(trx, ctx, req.conditions, req.actions, req.scope);
     const r = await trx
       .insertInto('app.rule')
       .values({
@@ -128,7 +129,7 @@ export class RulesService {
       );
     const conditions = (req.conditions ?? cur.conditions) as RuleConditions;
     const actions = (req.actions ?? cur.actions) as RuleActions;
-    await this.check(trx, ctx, conditions, actions);
+    await this.check(trx, ctx, conditions, actions, cur.scope);
     const r = await trx
       .updateTable('app.rule')
       .set({
@@ -156,9 +157,50 @@ export class RulesService {
   }
 
   /** Validates the grammar and that referenced categories, members and entities exist and are usable. */
-  private async check(trx: Trx, ctx: Ctx, conditions: RuleConditions, actions: RuleActions): Promise<void> {
-    const errors = validateRule(conditions as never, actions);
+  private async check(
+    trx: Trx,
+    ctx: Ctx,
+    conditions: RuleConditions,
+    actions: RuleActions,
+    scope: 'transaction' | 'receipt_line',
+  ): Promise<void> {
+    // Transaction rules refuse the receipt-item conditions ("added by", category) and Household (owner, 2026-11-24).
+    const errors = validateRule(conditions as never, actions, scope);
     if (errors.length) throw unprocessable('rule.invalid', errors.join('; '));
+    const ids = (field: 'added_by' | 'category') => [
+      ...new Set(
+        conditions.all
+          .flatMap((x) => ('any' in x ? x.any : [x]))
+          .filter((c) => c.field === field)
+          .flatMap((c) => (Array.isArray(c.value) ? c.value : [c.value])),
+      ),
+    ];
+    const adders = ids('added_by');
+    if (adders.length) {
+      const found = await trx
+        .selectFrom('app.family_member')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', 'in', adders)
+        .execute();
+      if (found.length !== adders.length)
+        throw unprocessable('rule.member_invalid', '"Added by" names a family member that doesn\'t exist');
+    }
+    const categories = ids('category');
+    if (categories.length) {
+      const found = await trx
+        .selectFrom('app.ledger_account')
+        .select('id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', 'in', categories)
+        .where('is_category', '=', true)
+        .execute();
+      if (found.length !== categories.length)
+        throw unprocessable(
+          'rule.category_invalid',
+          "The category condition names a category that doesn't exist",
+        );
+    }
     if (actions.categoryId) {
       const c = await trx
         .selectFrom('app.ledger_account')
@@ -243,7 +285,13 @@ export class RulesService {
   }
 
   async startApply(trx: Trx, ctx: Ctx, ruleId: string): Promise<string> {
-    await this.get(trx, ctx, ruleId);
+    const rule = await this.get(trx, ctx, ruleId);
+    // "Apply to existing" changes transactions. A receipt-item rule runs on receipt lines as they are read.
+    if (rule.scope === 'receipt_line')
+      throw unprocessable(
+        'rule.apply_receipt_line',
+        'A receipt-item rule applies to receipts as they are read, not to existing transactions',
+      );
     return this.queue.enqueue(trx, { ...ctx, queue: 'ai', type: 'rules.apply', payload: { ruleId } });
   }
 

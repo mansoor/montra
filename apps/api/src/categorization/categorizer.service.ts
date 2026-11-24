@@ -835,6 +835,7 @@ export function ruleRecord(r: {
   actions: unknown;
   enabled: boolean;
   created_at: Date;
+  scope?: 'transaction' | 'receipt_line';
 }): RuleRecord {
   return {
     id: r.id,
@@ -845,6 +846,7 @@ export function ruleRecord(r: {
     actions: r.actions as RuleRecord['actions'],
     enabled: r.enabled,
     createdAt: r.created_at.toISOString(),
+    ...(r.scope ? { scope: r.scope } : {}),
   };
 }
 

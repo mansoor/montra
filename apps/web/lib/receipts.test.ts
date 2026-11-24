@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { ReceiptDto } from '@montra/api-client';
 import {
   amountToInput,
+  AUTOMATIC_MEMBER,
   buildUpdate,
+  newLine,
   previewSplits,
   recalcLine,
   receiptFileProblem,
@@ -49,6 +51,7 @@ const receipt: ReceiptDto = {
       entityId: 'e1',
       memberId: null,
       categorization: null,
+      memberReason: null,
     },
   ],
   groups: [],
@@ -177,6 +180,20 @@ describe('receipt helpers (RCP-06)', () => {
       ok: false,
       errors: { currency: expect.any(String) },
     });
+  });
+
+  it('leaves "For" out for a new line on Automatic, and sends Household as null (owner, 2026-11-24)', () => {
+    const { header, lines } = rowsOf(receipt);
+    const auto = { ...newLine(), rawText: 'GUM', lineTotal: '1.00' };
+    expect(auto.memberId).toBe(AUTOMATIC_MEMBER);
+    const household = { ...auto, rawText: 'MINTS', memberId: '' };
+    const res = buildUpdate('3', header, [...lines, auto, household]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const sent = res.input.lines!;
+    expect(sent[0]).toHaveProperty('memberId', null);
+    expect(sent.find((l) => l.rawText === 'GUM')).not.toHaveProperty('memberId');
+    expect(sent.find((l) => l.rawText === 'MINTS')).toHaveProperty('memberId', null);
   });
 });
 
