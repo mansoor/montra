@@ -25,6 +25,13 @@ export async function onboardHousehold(page: Page, email: string, account: strin
   await expect(page.getByRole('heading', { name: account })).toBeVisible();
 }
 
+/**
+ * A date some days before today in UTC (the workspaces here are in UTC), so the lists' default window of the last
+ * 90 days shows what a test adds whenever it runs.
+ */
+export const daysAgo = (days: number): string =>
+  new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
 /** A sidebar link by the start of its name, so a count badge still matches ("Review 3") but "Month in review" doesn't. */
 export const nav = (page: Page, name: string) =>
   page

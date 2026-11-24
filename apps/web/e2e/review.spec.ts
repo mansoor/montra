@@ -1,18 +1,19 @@
 import { expect, test } from '@playwright/test';
-import { importCsv, onboardHousehold, setAi } from './phase3-helpers';
+import { daysAgo, importCsv, onboardHousehold, setAi } from './phase3-helpers';
 
 /**
  * Phase 3: an import lands in the review queue (AI-03), keyboard accept and correction (AI-04, PLT-10), and a
- * rule offered after two identical corrections (AI-05).
+ * rule offered after two identical corrections (AI-05). Dated in the last few days, so the queue's default window
+ * shows them.
  */
 const CSV = [
   'Date,Description,Amount',
-  '2026-10-02,STARBUCKS STORE 1234,-4.50',
-  '2026-10-03,STARBUCKS STORE 1234,-5.25',
-  '2026-10-04,STARBUCKS STORE 1234,-6.10',
-  '2026-10-05,SHELL OIL 5566,-42.00',
-  '2026-10-06,KROGER #771,-88.13',
-  '2026-10-07,ZQX TRADING POST,-19.99',
+  `${daysAgo(9)},STARBUCKS STORE 1234,-4.50`,
+  `${daysAgo(8)},STARBUCKS STORE 1234,-5.25`,
+  `${daysAgo(7)},STARBUCKS STORE 1234,-6.10`,
+  `${daysAgo(6)},SHELL OIL 5566,-42.00`,
+  `${daysAgo(5)},KROGER #771,-88.13`,
+  `${daysAgo(4)},ZQX TRADING POST,-19.99`,
 ].join('\n');
 
 test('reviews an import with the keyboard and turns repeated corrections into a rule', async ({ page }) => {

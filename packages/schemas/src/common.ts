@@ -25,6 +25,27 @@ export const MoneyDto = z.object({
 });
 export type MoneyDto = z.output<typeof MoneyDto>;
 
+/** One end of an amount filter: minor units of the workspace currency, without a sign. */
+export const AmountBoundDto = z
+  .string()
+  .regex(/^\d{1,18}$/, 'Amount must be a whole number of minor units, without a sign');
+
+/** Money in (income, refunds) or money out (spending). Transfers are neither. */
+export const MoneyDirection = z.enum(['in', 'out']);
+export type MoneyDirection = z.infer<typeof MoneyDirection>;
+
+/**
+ * Filters the web lists share (Transactions, Review, Receipts): the start of words in the merchant or payee, and an
+ * amount range compared without the sign, so "20 to 100" finds $20–$100 spent or received. Each amount is compared in
+ * its own currency, as the search's `>20` is.
+ */
+export const ListFilterQuery = z.object({
+  merchant: z.string().trim().min(1).max(100).optional(),
+  amountMin: AmountBoundDto.optional(),
+  amountMax: AmountBoundDto.optional(),
+});
+export type ListFilterQuery = z.output<typeof ListFilterQuery>;
+
 export const ProblemDto = z.object({
   type: z.string(),
   title: z.string(),

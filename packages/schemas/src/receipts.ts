@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CalendarDateDto, Id, MoneyDto } from './common.js';
+import { CalendarDateDto, Id, ListFilterQuery, MoneyDto } from './common.js';
 import { CategorizationDto } from './ai.js';
 import { RateDto } from './fx.js';
 
@@ -165,7 +165,11 @@ export const ReceiptDto = z.object({
 });
 export type ReceiptDto = z.infer<typeof ReceiptDto>;
 
-export const ReceiptListQuery = z.object({
+/**
+ * The receipt list. `from` and `to` take the receipt's date, or the day it arrived while it has none; `merchant`
+ * matches anywhere in the store's name; the amount range takes the total without its sign.
+ */
+export const ReceiptListQuery = ListFilterQuery.extend({
   status: ReceiptStatus.optional(),
   /** RCP-10: full-text search over merchant and OCR text. */
   q: z.string().trim().min(1).max(200).optional(),
