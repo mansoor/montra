@@ -3119,7 +3119,7 @@ Phase 11 leftovers:
     do, stops at its budget and carries on; the migration's audit redaction and payroll clearing).
     `data-ownership.test.ts` (the archive has the numbers in full and once in the CSV; a restore seals them).
     `business-registration.test.ts` masks updated. Domain `business-registration.test.ts` (`maskLast4`).
-- **Statements rendered as PDFs with a cover page** (VLT-13 partial, migration 0092; ADR-0057 PR 2 of 3).
+- **Statements rendered as PDFs with a cover page** (VLT-13 partial, migration 0092; [ADR-0057](design/adr/0057-vault-statement-pdfs.md) PR 2 of 3).
   - Before: the vault keeps documents and images, so a CSV, XLS or OFX statement stayed in Montra only, shown as "not a
     type the vault keeps".
   - Now:
