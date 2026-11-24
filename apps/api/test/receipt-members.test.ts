@@ -357,6 +357,72 @@ describe('"added by" and "category" conditions', () => {
   });
 });
 
+describe('lines added in review', () => {
+  it('decide "For" when it is left out (Automatic), and take Household or a member sent as a pick', async () => {
+    const r = await capture(SAM, sam, ['FIRST WIDGET']);
+    const res = await sam.patch(url(`/receipts/${r.id}`), {
+      version: r.version,
+      lines: [
+        // The saved line, sent back as the phone does: its member unchanged.
+        ...r.lines.map((l: any) => ({
+          id: l.id,
+          rawText: l.rawText,
+          lineTotal: l.lineTotal,
+          discount: l.discount,
+          taxable: l.taxable,
+          categoryId: l.categoryId,
+          memberId: l.memberId,
+        })),
+        { rawText: 'AUTO WIDGET', lineTotal: '100' },
+        { rawText: 'HOUSE PICK WIDGET', lineTotal: '100', memberId: null },
+        { rawText: 'KID PICK WIDGET', lineTotal: '100', memberId: member.kid },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const saved = res.body;
+    expect(line(saved, 'FIRST WIDGET')).toMatchObject({
+      memberId: member.sam,
+      memberReason: { source: 'adder' },
+    });
+    expect(line(saved, 'AUTO WIDGET')).toMatchObject({
+      memberId: member.sam,
+      memberReason: { source: 'adder', explanation: 'Added by Sam' },
+    });
+    expect(line(saved, 'HOUSE PICK WIDGET')).toMatchObject({
+      memberId: null,
+      memberReason: { source: 'user', explanation: 'Chosen by you' },
+    });
+    expect(line(saved, 'KID PICK WIDGET')).toMatchObject({
+      memberId: member.kid,
+      memberReason: { source: 'user' },
+    });
+    // The Household pick is a hand pick, so the item's next receipt reuses it.
+    const next = await capture(OWNER, owner, ['HOUSE PICK WIDGET']);
+    expect(next.lines[0]).toMatchObject({ memberId: null, memberReason: { source: 'history' } });
+  });
+});
+
+describe('"Apply to existing"', () => {
+  it('is refused for a receipt-item rule', async () => {
+    const rule = (
+      await owner.post(url('/rules'), {
+        name: 'Gum is the house’s',
+        scope: 'receipt_line',
+        conditions: { all: [{ field: 'item_text', op: 'contains', value: 'gum' }] },
+        actions: { household: true },
+      })
+    ).body;
+    const res = await owner.post(url(`/rules/${rule.id}/apply`));
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('rule.apply_receipt_line');
+    const queued = await admin.query(
+      `select count(*)::int as n from app.job where type = 'rules.apply' and payload->>'ruleId' = $1`,
+      [rule.id],
+    );
+    expect(queued.rows[0].n).toBe(0);
+  });
+});
+
 describe('the AI', () => {
   it('no longer sets who a line is for, sure or not', async () => {
     const gateway = h.app.get(AiService).gateway;

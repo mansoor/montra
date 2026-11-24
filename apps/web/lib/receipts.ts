@@ -55,8 +55,29 @@ export interface LineRow {
   discount: string;
   taxable: boolean;
   categoryId: string;
+  /** A member's id, '' for Household, or `AUTOMATIC_MEMBER` (a line added in review): Montra decides who it's for. */
   memberId: string;
 }
+
+/**
+ * The "For" choice of a line added in review until someone picks (owner, 2026-11-24): the member is left out of the
+ * request, so the API decides it (a rule, the item's earlier pick, whoever added the receipt, else Household).
+ * Picking Household sends null, which counts as a person's choice.
+ */
+export const AUTOMATIC_MEMBER = 'automatic';
+
+/** An empty line added in review: quantity 1, taxable, no category, and "For" left to Montra. */
+export const newLine = (): LineRow => ({
+  rawText: '',
+  expandedName: '',
+  qty: '1',
+  unitPrice: '',
+  lineTotal: '',
+  discount: '',
+  taxable: true,
+  categoryId: '',
+  memberId: AUTOMATIC_MEMBER,
+});
 
 export interface HeaderFields {
   merchant: string;
@@ -166,7 +187,7 @@ export function buildUpdate(
         discount: amount(`discount.${i}`, l.discount, false) ?? '0',
         taxable: l.taxable,
         categoryId: l.categoryId || null,
-        memberId: l.memberId || null,
+        ...(l.memberId === AUTOMATIC_MEMBER ? {} : { memberId: l.memberId || null }),
       };
     }),
   };

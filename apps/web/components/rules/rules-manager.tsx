@@ -7,6 +7,7 @@ import type { RuleDto, RuleSuggestionDto } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import {
+  canApplyToExisting,
   describeConditions,
   describeFor,
   emptyDraft,
@@ -229,16 +230,18 @@ export function RulesManager({
                       <button type="button" className="btn-secondary" onClick={() => setEditing(r)}>
                         {t('common.edit')}
                       </button>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={
-                          !r.enabled || (job && (job.status === 'queued' || job.status === 'running'))
-                        }
-                        onClick={() => void apply(r)}
-                      >
-                        {t('rules.apply.button')}
-                      </button>
+                      {canApplyToExisting(r) && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={
+                            !r.enabled || (job && (job.status === 'queued' || job.status === 'running'))
+                          }
+                          onClick={() => void apply(r)}
+                        >
+                          {t('rules.apply.button')}
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn-secondary text-bad"

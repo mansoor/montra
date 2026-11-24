@@ -261,6 +261,10 @@ export const ReceiptLineInput = z.object({
   taxable: z.boolean().default(true),
   categoryId: Id.nullable().optional(),
   entityId: Id.nullable().optional(),
+  /**
+   * Who the line is for. Left out: unchanged on a saved line; on a new line, Montra decides ("Automatic"). Null is
+   * Household, and like a member it counts as a person's pick when it differs from the saved one (or the line is new).
+   */
   memberId: Id.nullable().optional(),
 });
 export type ReceiptLineInput = z.output<typeof ReceiptLineInput>;

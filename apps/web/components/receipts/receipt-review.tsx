@@ -10,7 +10,9 @@ import { isAdminRole } from '@/lib/settings';
 import { vaultOnlyPage } from '@/lib/vault';
 import {
   amountPlaceholder,
+  AUTOMATIC_MEMBER,
   buildUpdate,
+  newLine,
   previewSplits,
   recalcLine,
   rowsOf,
@@ -377,6 +379,7 @@ export function ReceiptReview({
                       value={l.memberId}
                       onChange={(e) => setLine(i, { memberId: e.target.value })}
                     >
+                      {!l.id && <option value={AUTOMATIC_MEMBER}>{t('receipts.member_automatic')}</option>}
                       <option value="">{t('receipts.household')}</option>
                       {members.map((m) => (
                         <option key={m.id} value={m.id}>
@@ -413,22 +416,7 @@ export function ReceiptReview({
           <button
             type="button"
             className="btn-secondary"
-            onClick={() =>
-              setLines((list) => [
-                ...list,
-                {
-                  rawText: '',
-                  expandedName: '',
-                  qty: '1',
-                  unitPrice: '',
-                  lineTotal: '',
-                  discount: '',
-                  taxable: true,
-                  categoryId: '',
-                  memberId: '',
-                },
-              ])
-            }
+            onClick={() => setLines((list) => [...list, newLine()])}
           >
             {t('receipts.add_line')}
           </button>

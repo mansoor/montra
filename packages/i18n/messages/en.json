@@ -4198,6 +4198,7 @@
   "receipts.match_title": "Which transaction is this?",
   "receipts.matched_again": "Matched again.",
   "receipts.member": "For",
+  "receipts.member_automatic": "Automatic",
   "receipts.merchant": "Merchant",
   "receipts.no_candidates": "No matching transaction yet. It will be matched when the statement is imported, or record it now.",
   "receipts.no_date": "No date",

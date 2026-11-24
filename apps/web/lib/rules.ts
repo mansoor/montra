@@ -332,6 +332,9 @@ export function describeFor(
   return '';
 }
 
+/** "Apply to existing" changes transactions, so receipt-item rules don't offer it (the API refuses it too). */
+export const canApplyToExisting = (rule: Pick<RuleDto, 'scope'>) => rule.scope !== 'receipt_line';
+
 export const ORIGIN_KEYS: Record<RuleDto['origin'], string> = {
   user: 'rules.origin.user',
   ai_suggested: 'rules.origin.ai_suggested',

@@ -285,7 +285,13 @@ export class RulesService {
   }
 
   async startApply(trx: Trx, ctx: Ctx, ruleId: string): Promise<string> {
-    await this.get(trx, ctx, ruleId);
+    const rule = await this.get(trx, ctx, ruleId);
+    // "Apply to existing" changes transactions. A receipt-item rule runs on receipt lines as they are read.
+    if (rule.scope === 'receipt_line')
+      throw unprocessable(
+        'rule.apply_receipt_line',
+        'A receipt-item rule applies to receipts as they are read, not to existing transactions',
+      );
     return this.queue.enqueue(trx, { ...ctx, queue: 'ai', type: 'rules.apply', payload: { ruleId } });
   }
 

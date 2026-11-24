@@ -43,6 +43,7 @@ import {
   transferTargets,
 } from './review';
 import {
+  canApplyToExisting,
   describeConditions,
   describeFor,
   draftActions,
@@ -287,6 +288,9 @@ describe('rule drafts (UP-02)', () => {
     expect(describeFor({ household: true }, t)).toBe('for Household');
     expect(describeFor({ memberId: 'm1' }, t, () => 'Sam')).toBe('for Sam');
     expect(describeFor({ categoryId: 'c1' }, t)).toBe('');
+    // "Apply to existing" changes transactions: receipt-item rules don't offer it.
+    expect(canApplyToExisting({ scope: 'transaction' })).toBe(true);
+    expect(canApplyToExisting({ scope: 'receipt_line' })).toBe(false);
     const r = (id: string, priority: number, createdAt: string) => ({ id, priority, createdAt }) as RuleDto;
     expect(
       sortRules([r('b', 5, '2026-02'), r('a', 5, '2026-01'), r('c', 1, '2026-03')]).map((x) => x.id),

@@ -3232,6 +3232,11 @@ Phase 11 leftovers:
   - The web rule editor asks "Runs on: Transactions / Receipt items" for a new rule. Receipt-item rules offer the item,
     store, amount, books, day, "Added by" and "Category", and "For" with Household; they hide tags, rename and
     "reviewed", and have no preview. The list marks them and shows "for …". The phone doesn't edit rules.
+  - "Apply to existing" changes transactions, so receipt-item rules don't offer it: the web hides the button, and the
+    API refuses it with `rule.apply_receipt_line`.
+  - A line added in review starts on "For: Automatic", which leaves `memberId` out of the request, so the line goes
+    through the order. Picking Household sends null, and counts as a person's pick, as on a saved line. On a saved
+    line, a member left out or sent unchanged is kept, so the phone's save is unchanged.
   - Re-running: a line's member is decided when the line is new, or when its category is worked out again (left
     uncategorized, or a category picked in review), unless a person picked the member. So picking Groceries in review
     can turn a line to Household by rule. Lines stored before this keep their members; one with no member and no
@@ -3240,8 +3245,11 @@ Phase 11 leftovers:
     a rule over a hand-picked member over the adder; a pick kept through later saves; a hand-picked Household reused;
     a default or a pre-0094 member not reused; a pre-0094 line left alone; "Added by Mansoor and Category is Groceries"
     gives Household, and follows a category picked in review; the fields and Household refused on transaction rules, by
-    create and by edit; the AI's member ignored, sure or not). Categorize `rules.test.ts` (validation by scope, the
-    conditions, both steps). Web `phase3.test.ts` (receipt-item drafts, Household, switching kind, describing them).
+    create and by edit; new lines in review on Automatic, Household and a member; "Apply to existing" refused for a
+    receipt-item rule, with no job queued; the AI's member ignored, sure or not). Categorize `rules.test.ts`
+    (validation by scope, the conditions, both steps). Web `phase3.test.ts` (receipt-item drafts, Household, switching
+    kind, describing them, no "Apply to existing"), `receipts.test.ts` (Automatic leaves the member out, Household
+    sends null).
 
 ---
 

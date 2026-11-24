@@ -1084,14 +1084,15 @@ export class ReceiptsService {
               sentUnit !== undefined ? sentUnit : totalChanged || qtyChanged ? null : prevUnit;
             const categoryId = l.categoryId === undefined ? (prev?.category_id ?? null) : l.categoryId;
             const userChose = l.categoryId !== undefined && l.categoryId !== (prev?.category_id ?? null);
-            // Who the line is for (owner, 2026-11-24). A member sent that differs from the saved one is a person's pick
-            // (on a new line, any member sent). Otherwise it is decided again only for a new line, or a line whose
-            // category is worked out again: one left uncategorized, or one whose category a person changed. A line
-            // stored before 2026-11-24 (no reason) keeps its member, unless it has none and its category is redone.
+            // Who the line is for (owner, 2026-11-24). A member sent that differs from the saved one is a person's pick.
+            // On a new line, any member sent is, null (Household) included; one left out ("Automatic") is decided.
+            // Otherwise it is decided again only for a line whose category is worked out again: one left
+            // uncategorized, or one whose category a person changed. A line stored before 2026-11-24 (no reason)
+            // keeps its member, unless it has none and its category is redone.
             const prevReason = (prev?.member_reason as MemberReason | null | undefined) ?? null;
             const pickedMember = prev
               ? l.memberId !== undefined && l.memberId !== prev.member_id
-              : l.memberId !== undefined && l.memberId !== null;
+              : l.memberId !== undefined;
             const decideMember =
               !pickedMember &&
               prevReason?.source !== 'user' &&
