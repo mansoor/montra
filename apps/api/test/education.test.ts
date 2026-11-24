@@ -24,13 +24,24 @@ const cat = (name: string) => cats.find((x) => x.name === name).id as string;
 const summary = async (who: Client = c, year: number | null = 2025) =>
   who.get(url(`/reports/education${year === null ? '' : `?year=${year}`}`));
 const transfer = async (date: string, fromAccountId: string, toAccountId: string, amount: string) => {
-  const res = await c.post(url('/transactions/transfer'), { date, fromAccountId, toAccountId, amount: usd(amount) });
+  const res = await c.post(url('/transactions/transfer'), {
+    date,
+    fromAccountId,
+    toAccountId,
+    amount: usd(amount),
+  });
   expect(res.status).toBe(201);
   return res.body;
 };
 const mark = (who: Client, id: string, educationExpenseType: string | null) =>
   who.patch(url(`/categories/${id}`), { educationExpenseType });
-const spend = async (date: string, amount: string, categoryId: string, memberId?: string, accountId = checking) => {
+const spend = async (
+  date: string,
+  amount: string,
+  categoryId: string,
+  memberId?: string,
+  accountId = checking,
+) => {
   const res = await c.post(url('/transactions'), {
     date,
     accountId,
@@ -147,7 +158,13 @@ describe('the summary per student (FAM-10)', () => {
     const res = await summary();
     expect(res.status).toBe(200);
     const r = res.body;
-    expect(r).toMatchObject({ year: 2025, from: '2025-01-01', to: '2025-12-31', currency: 'USD', has529: true });
+    expect(r).toMatchObject({
+      year: 2025,
+      from: '2025-01-01',
+      to: '2025-12-31',
+      currency: 'USD',
+      has529: true,
+    });
     expect(r.categories.map((x: any) => [x.name, x.type])).toEqual([
       ['Dorm', 'room_board'],
       ['Education', 'books_supplies'],
@@ -172,7 +189,12 @@ describe('the summary per student (FAM-10)', () => {
       { type: 'computer', amount: '0' },
     ]);
     // Tuition paid straight from the plan is both an expense and a withdrawal, for the member on it.
-    expect(l).toMatchObject({ memberId: leo, isDependent: false, expenseTotal: '100000', withdrawals529: '100000' });
+    expect(l).toMatchObject({
+      memberId: leo,
+      isDependent: false,
+      expenseTotal: '100000',
+      withdrawals529: '100000',
+    });
     expect(none).toMatchObject({ memberId: null, expenseTotal: '5000', withdrawals529: '0', plans: [] });
   });
 

@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { startOfMonth, todayIn } from '@montra/domain';
-import type { MemberTotalsDto, PayslipSummaryDto } from '@montra/api-client';
+import type { EducationSummaryDto, MemberTotalsDto, PayslipSummaryDto } from '@montra/api-client';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
+import { educationView } from '@/lib/education';
 import { drillHref } from '@/lib/planning';
+import { Disclaimer } from '@/components/ai/shared';
 import { LineChart, ProgressBar } from '@/components/charts/line-chart';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';
@@ -18,7 +20,8 @@ type Range = (typeof RANGES)[number];
 
 /**
  * Income and spending by member, with Household as its own group (FAM-08, RPT-01), every total drilling down to
- * its transactions (FAM-09), and withholding for the members whose payslips this login may read (PAY-06).
+ * its transactions (FAM-09), withholding for the members whose payslips this login may read (PAY-06), and education
+ * expenses and 529 withdrawals per student for the tax year (FAM-10).
  */
 export default async function MembersReportPage({
   params,
@@ -39,8 +42,13 @@ export default async function MembersReportPage({
     last_year: { from: `${year - 1}-01-01`, to: `${year - 1}-12-31` },
   };
   const { from, to } = bounds[range];
-  const [report, employers] = await load((api) =>
-    Promise.all([api.getMemberReport(workspaceId, { from, to }), api.listEmployers(workspaceId)]),
+  const taxYear = range === 'last_year' ? year - 1 : year;
+  const [report, employers, education] = await load((api) =>
+    Promise.all([
+      api.getMemberReport(workspaceId, { from, to }),
+      api.listEmployers(workspaceId),
+      api.getEducationSummary(workspaceId, { year: taxYear }),
+    ]),
   );
   // Employers are as private as payslips, so those this login can see are the summaries it may read.
   const earners = [...new Set(employers.map((e) => e.memberId))];
@@ -147,6 +155,7 @@ export default async function MembersReportPage({
       {summaries.map((s) => (
         <Withholding key={s.memberId} summary={s} t={t} />
       ))}
+      <Education summary={education} base={base} t={t} />
       <p className="text-xs text-muted">{t('members_report.privacy')}</p>
     </div>
   );
@@ -216,6 +225,101 @@ function Withholding({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+/**
+ * FAM-10: education expenses by kind and 529 withdrawals per student for the tax year, with notes on what may matter
+ * for the education credits or a 529 withdrawal. Informational only: nothing is worked out or decided.
+ */
+function Education({
+  summary,
+  base,
+  t,
+}: {
+  summary: EducationSummaryDto;
+  base: string;
+  t: (key: string, values?: Record<string, string | number>) => string;
+}) {
+  const view = educationView(summary);
+  const categoriesLink = `${base}/settings?tab=categories`;
+  if (view.needsCategories && !summary.has529)
+    return (
+      <p className="text-sm text-muted" data-testid="education-hint">
+        {t('education.hint')}{' '}
+        <Link href={categoriesLink} className="underline">
+          {t('education.mark_link')}
+        </Link>
+      </p>
+    );
+  const title = t('education.title', { year: summary.year });
+  return (
+    <section className="card space-y-3" aria-label={title} data-testid="education-summary">
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="text-sm text-muted">{t('education.intro')}</p>
+      {view.needsCategories && (
+        <p className="text-sm">
+          {t('education.no_categories')}{' '}
+          <Link href={categoriesLink} className="underline">
+            {t('education.mark_link')}
+          </Link>
+        </p>
+      )}
+      {view.students.length === 0 ? (
+        <p className="text-sm text-muted">{t('education.empty', { year: summary.year })}</p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {view.students.map((s) => (
+            <div key={s.key} className="space-y-2" data-testid="education-student">
+              <h3 className="text-sm font-semibold">
+                {s.memberId === null ? t('education.no_member') : s.name}
+                {s.isDependent && <span className="ml-2 text-xs text-muted">{t('education.dependent')}</span>}
+              </h3>
+              <table className="tbl text-sm">
+                <tbody className="divide-y divide-line">
+                  {s.expenses.map((e) => (
+                    <tr key={e.type}>
+                      <th scope="row" className="py-1.5 text-left font-normal">
+                        {t(`education.type_${e.type}`)}
+                      </th>
+                      <td className="py-1.5 text-right">
+                        <Money amount={e.amount} currency={summary.currency} />
+                      </td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <th scope="row" className="py-1.5 text-left font-semibold">
+                      {t('education.expense_total')}
+                    </th>
+                    <td className="py-1.5 text-right font-semibold">
+                      <Money amount={s.expenseTotal} currency={summary.currency} />
+                    </td>
+                  </tr>
+                  {s.plans.map((p) => (
+                    <tr key={p.accountId}>
+                      <th scope="row" className="py-1.5 text-left font-normal">
+                        {t('education.withdrawn_from', { name: p.name })}
+                      </th>
+                      <td className="py-1.5 text-right">
+                        <Money amount={p.amount} currency={summary.currency} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {s.notes.length > 0 && (
+                <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
+                  {s.notes.map((n) => (
+                    <li key={n}>{t(`education.note_${n}`)}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <Disclaimer kind="tax" />
     </section>
   );
 }

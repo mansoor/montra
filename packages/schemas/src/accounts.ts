@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { ACCOUNT_KINDS, BALANCE_RANGES, EDUCATION_EXPENSE_TYPES, PAY_RULES, PLAN_TYPES } from '@montra/domain';
+import {
+  ACCOUNT_KINDS,
+  BALANCE_RANGES,
+  EDUCATION_EXPENSE_TYPES,
+  PAY_RULES,
+  PLAN_TYPES,
+} from '@montra/domain';
 import { CalendarDateDto, CurrencyCodeDto, Id, MoneyDto } from './common.js';
 
 export const BankAccountKind = z.enum(ACCOUNT_KINDS);

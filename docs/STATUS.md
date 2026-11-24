@@ -614,7 +614,7 @@ Rules the code depends on (don't undo these):
 
 Phase 7 leftovers, not blocking:
 
-- FAM-10 (could-have) isn't started: marking education expenses for credits or 529 withdrawals.
+- ~~FAM-10 (could-have) isn't started: marking education expenses for credits or 529 withdrawals.~~ Done (see §7g).
 - **`extract_payslip` hasn't been run against the real provider or a real payslip.** Tests use the fake provider. Measure
   this before relying on the drafts; the user checks every draft against the file regardless.
 - Mobile: no prefill from the last payslip and no amount edits (both on the web). No device run yet.
@@ -2960,6 +2960,33 @@ Phase 11 leftovers:
     filter); e2e `receipts.spec.ts` finds a receipt by a word on it through the new field. Checked in a browser on
     the Frame check workspace: a word that matches nothing shows "No receipts match" with a chip, a matching word
     finds the receipt, and `?q=` opens as `?text=`.
+- **Education tax helpers** (FAM-10; migration 0090).
+  - Before: a family member could be marked as a dependent and a 529 plan was a plan type, but nothing tied
+    education spending or 529 withdrawals to a student, so nothing showed what might matter for the education credits.
+  - Now, a personal spending category can be marked as one kind of education expense: tuition and fees, books and
+    supplies, room and board, or computers (`ledger_account.education_expense_type`, the one new column).
+    - Settings → Categories has the choice on each personal spending category. `PATCH categories/:id` takes
+      `educationExpenseType` (null clears it). Income is refused (`category.education_type`).
+    - The student is the family member on each transaction, as for every member report. The Dependent flag is the
+      member's existing one. No student flag or school year was added.
+    - Why a category and not a per-transaction mark or a tag: categories already say what money was for, rules and
+      the AI already set them, and the member is already on each posting. One nullable column covers it.
+  - `GET reports/education?year=` gives, per student and calendar tax year (this year in the workspace time zone by
+    default), the marked spending by kind and the money out of 529 plans (`plan_type = '529'`). A 529 posting with no
+    member counts for the plan's default member. Contributions, market value changes, opening balances and reversed
+    entries aren't withdrawals. What has no member is its own row, so it can be assigned.
+  - The By member page shows it for this year (last year with the Last year tab), with notes on what may matter: the
+    American Opportunity and Lifetime Learning credits, room and board counting for a 529 but not the credits, 529
+    withdrawals above the expenses marked, and not using the same expenses twice. Then the existing tax disclaimer.
+    Nothing works out a credit, eligibility or a taxable amount. With nothing marked and no 529 plan, it is one line
+    pointing to Settings → Categories.
+  - Not done: the phone and the tax package export don't show it. No category is marked out of the box.
+  - Tests: API `education.test.ts` (marking and clearing, income, unknown kinds and a viewer refused; expenses by kind
+    and member with a refund; a 529 transfer counted for the plan's member and tuition paid from the plan for the
+    member on it; contributions, a valuation drop, a deleted withdrawal and opening balances left out; 31 December
+    and 1 January in their own years; the default year in a +14 time zone; a viewer reads it, another workspace sees
+    none of it). Web `education.test.ts` (kinds shown, each note, no member, netting to nothing) and the i18n key
+    coverage for the new dynamic keys.
 
 ---
 
