@@ -82,6 +82,7 @@ export default async function StatementsPage({ params }: { params: Promise<{ wor
           batches={batches}
           accounts={accounts}
           title={t('imports.history.title')}
+          role={workspace.role}
         />
       </section>
     </div>

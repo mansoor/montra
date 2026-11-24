@@ -28,11 +28,11 @@ and matching them automatically (PR 3); the phone (PR 4, not run on a device yet
 the 16 February reminder (PR 5, migration 0060); see §7g. Role-based permissions (ADR-0053) are a separate proposal for
 later; tax forms use an owner-only setting for accountants instead.
 
-**Accepted 2026-11-24, being built:** [ADR-0057](design/adr/0057-vault-statement-pdfs.md), statements the
+**Accepted 2026-11-24, built:** [ADR-0057](design/adr/0057-vault-statement-pdfs.md), statements the
 vault doesn't keep (CSV, XLS, OFX, QIF, a bank's own layout) sent as PDFs drawn from the imported rows, with a cover
 page and, by default, the original attached inside. Each sent group chooses: don't send, convert, or convert with the
-original attached. Accounts gain holder names and a sealed full account number. Three PRs (accounts, rendering,
-sending); PDF/A and bank-feed statements are on the backlog.
+original attached. Accounts gain holder names and a sealed full account number. All three PRs are built (accounts,
+migration 0091; rendering, 0092; sending, 0093); see §7g. PDF/A and bank-feed statements are on the backlog.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
@@ -3208,6 +3208,59 @@ Phase 11 leftovers:
     import; the split by the setting; the derived-file columns, their checks and RLS; Trash with the original; not
     queued for the vault; replace, keep and drop on undo; the job). `data-ownership.test.ts` (a rendering's link to its
     original isn't a file holder).
+- **Statements sent to the vault as PDFs** (VLT-12, VLT-13 done, migration 0093; [ADR-0057](design/adr/0057-vault-statement-pdfs.md) PR 3 of 3).
+  - Before: a CSV, XLS or OFX statement stayed in Montra only, shown as "not a type the vault keeps". PR 2 could render
+    one as a PDF, but nothing asked for it or sent it.
+  - Now:
+    - Each sent group has "Files the vault doesn't keep": Don't send, Convert to PDF and send, or Convert to PDF and
+      attach the original. Only statements offer the last two (Montra has no other renderer); the API refuses them for
+      other groups. The default is convert with the original attached for statements, Don't send for the rest. It is
+      kept in the vault connection's `config` (`groups[].unkept`), so a later S3/WebDAV copy could use it too.
+    - "Account number on the cover": Last four (default), Full or None, in `config.coverNumber`. It only matters with
+      "Describe documents in more detail" on. Full is owner-only, needs a recent sign-in, shows the ADR's warning first,
+      and is recorded in the security log (`vault_changed`, the choice only) and the audit log
+      (`vault.cover_number_full`). Each cover made with it is audited too (`statement.full_number_on_cover`). The number
+      is never in a DTO, an error, a log, a job or a hint to the vault (tested).
+    - The flow: when a statement the vault doesn't keep has its import committed (the commit nudges it through
+      `app.vault_conversion_due`), or a backfill reaches it, the vault's job (`promote`) marks its outbox row
+      `converted` and queues `statement.render` as an owner. The transaction that stores the PDFs gives each part an
+      outbox row of its own (`queueRenditions`); the part with the original inside is marked `carries_original`. What
+      the rendering said otherwise (kept, not converted, import undone, not ready) is recorded on the original's row
+      (`recordConversion`, `render_state`, `render_options`). All of it is in `storage/vault/vault.conversions.ts`.
+    - Each PDF is sent like any file, with the original's hints, the title "<file name> (PDF)" (", part n of m" when
+      split) and the statement's end date (its own when the file said it, else its last row's).
+    - Don't send keeps today's state. A file the import couldn't read, without attaching, is "couldn't be converted"
+      in words.
+    - A change to the choice, the detail switch or the cover number has the job look at every converted file again:
+      unsent PDFs are made again with the new settings (or dropped when the group stops converting); ones the vault has
+      are kept. Statements left as "not a type the vault keeps" go back in line when their group starts converting.
+    - "Send again" (owners and admins, `POST …/family-vault/retry` with the file) sets the PDFs the vault has aside
+      (`app.file.superseded_at`; they stay in the vault and in Montra with their original) and makes and sends a new
+      one with today's settings.
+    - Undoing the import drops unsent PDFs (PR 2) and marks a sent one "import undone"; it stays in the vault.
+    - §7: for a group sent with no local copy, the original goes only once the vault has filed the PDF carrying it,
+      with the same conditions as any file (the vault could give it back, the mirror, nothing reading it, the
+      connection active). Read back, `FileBytes` reads that PDF (Montra's copy, the mirror's, then the vault's) and takes
+      the attachment whose hash is the original's. Without the attachment the original stays; Settings says why. The
+      move backfill counts such originals too.
+    - Badges: `FileVaultSummaryDto.converted` (state, attached, the PDFs in counts, `canSendAgain`), from the definer
+      `app.vault_file_conversions`. The web's import history (Statements and Imports) shows each statement file's
+      vault state, with Send again for owners and admins. Settings shows both settings, the counts gain "sent as PDFs",
+      and a group sent with no local copy says what happens to its originals. The phone shows no statements' files, so
+      it only gained the new count and badge words.
+  - Migration 0093: `vault_item.status` gains `converted`, with `render_state`, `render_options` and
+    `carries_original`; `app.file.superseded_at`; `app.vault_conversion_due()` and `app.vault_file_conversions()`;
+    `vault_due()`/`vault_next()` count converted rows that are due.
+  - Not done: the "belongs to" hint from a holder linked to a member (ADR-0057 §4) isn't sent: statements send no
+    person hint today. A change of holders or of the account doesn't remake an unsent PDF on its own; the next change of
+    settings or import does. A statement already marked "not a type the vault keeps" before this release goes once its
+    group's choice is saved again or with "Send existing documents" only if it isn't in the outbox.
+  - Tests: API `family-vault-converted.test.ts` (defaults and what is offered; Full needing an owner and a recent
+    sign-in, logged; each choice; couldn't be converted; parts with their titles, dates and the original in part 1; the
+    cover number reaching the cover; replace before sending, keep after; Send again; undo before and after sending; §7
+    with and without the attachment, read back from the PDF; no full number anywhere). `family-vault-sending.test.ts`
+    and `family-vault-no-copy.test.ts` updated for the new DTO field. db `vault.test.ts` (the new checks and functions,
+    staff get none). Schema, web `vault.test.ts` and `i18n-keys.test.ts`, phone `vault.test.ts`.
 
 ---
 

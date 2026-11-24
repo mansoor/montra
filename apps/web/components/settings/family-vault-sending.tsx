@@ -8,7 +8,14 @@ import type {
   VaultMoveDto,
   WorkspaceDto,
 } from '@montra/api-client';
-import { isSentMode, type VaultGroup, type VaultGroupMode } from '@montra/schemas';
+import {
+  isSentMode,
+  VAULT_COVER_NUMBERS,
+  type VaultCoverNumber,
+  type VaultGroup,
+  type VaultGroupMode,
+  type VaultUnkeptChoice,
+} from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import {
   canManageVault,
@@ -19,6 +26,7 @@ import {
   vaultGroupRows,
   vaultMirrorKeeps,
   vaultMoveQuestion,
+  vaultOriginalsNote,
   vaultUnmapped,
 } from '@/lib/vault';
 import { DateText, useI18n } from '../i18n';
@@ -28,6 +36,10 @@ import { StatusLine, useAction } from '../use-action';
  * ADR-0054 §6, §12, §13: what the household's Family Document Vault gets, once it is connected. Each group's mode and
  * vault kind ("Send these to the vault"), the counts and any hold for the vault's daily limit, Try again and Send
  * again, sending the documents already in Montra, describing documents in more detail, and pausing.
+ *
+ * ADR-0057 (VLT-12): each sent group's "Files the vault doesn't keep" (statements can be converted to PDF, with the
+ * original attached or not), what that means for the originals of a group sent with no local copy (§7), and "Account
+ * number on the cover" beside the detail switch, with the warning before Full (§3).
  */
 export function VaultSending({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
   const owner = canManageVault(workspace.role);
@@ -43,14 +55,20 @@ export function VaultSending({ workspace, d }: { workspace: WorkspaceDto; d: Vau
   );
 }
 
-type Draft = { group: VaultGroup; mode: VaultGroupMode; vaultKind: string | null }[];
+type Draft = {
+  group: VaultGroup;
+  mode: VaultGroupMode;
+  vaultKind: string | null;
+  unkept: VaultUnkeptChoice;
+}[];
 
 function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
   const { run, busy, message, setMessage, t } = useAction();
   const id = useId();
   const owner = canManageVault(workspace.role);
   const rows = vaultGroupRows(d, workspace.role);
-  const fresh = (): Draft => rows.map((r) => ({ group: r.group, mode: r.mode, vaultKind: r.vaultKind }));
+  const fresh = (): Draft =>
+    rows.map((r) => ({ group: r.group, mode: r.mode, vaultKind: r.vaultKind, unkept: r.unkept }));
   const [draft, setDraft] = useState<Draft>(fresh);
   // A saved change, or a check that reported other kinds, starts the form again from what is saved.
   useEffect(() => setDraft(fresh()), [d.version, d.vaultKinds.length]);
@@ -105,7 +123,8 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
             <tr className="text-left text-xs text-muted">
               <th className="py-1 pr-3 font-normal">{t('vault.group_heading')}</th>
               <th className="py-1 pr-3 font-normal">{t('vault.mode_heading')}</th>
-              <th className="py-1 font-normal">{t('vault.kind_heading')}</th>
+              <th className="py-1 pr-3 font-normal">{t('vault.kind_heading')}</th>
+              <th className="py-1 font-normal">{t('vault.unkept_heading')}</th>
             </tr>
           </thead>
           <tbody>
@@ -138,8 +157,13 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
                         {t('vault.mirror_keeps')}
                       </span>
                     )}
+                    {vaultOriginalsNote(g) && (
+                      <span className="mt-1 block text-xs text-muted" data-testid="vault-originals-note">
+                        {t(vaultOriginalsNote(g)!)}
+                      </span>
+                    )}
                   </td>
-                  <td className="py-2 align-top">
+                  <td className="py-2 pr-3 align-top">
                     {isSentMode(g.mode) ? (
                       <select
                         className="input"
@@ -159,6 +183,28 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
                       <span className="text-muted">—</span>
                     )}
                   </td>
+                  <td className="py-2 align-top">
+                    {!isSentMode(g.mode) ? (
+                      <span className="text-muted">—</span>
+                    ) : r.unkeptChoices.length > 1 ? (
+                      <select
+                        className="input"
+                        aria-label={t('vault.unkept_for', { group: groupName(r.group) })}
+                        disabled={busy}
+                        value={g.unkept}
+                        data-testid={`vault-unkept-${r.group}`}
+                        onChange={(e) => set(r.group, { unkept: e.target.value as VaultUnkeptChoice })}
+                      >
+                        {r.unkeptChoices.map((u) => (
+                          <option key={u} value={u}>
+                            {t(`vault.unkept.${u}`)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-sm">{t(`vault.unkept.${g.unkept}`)}</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -166,6 +212,7 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
         </table>
       </div>
       <p className="text-xs text-muted">{t('vault.no_copy_hint')}</p>
+      <p className="text-xs text-muted">{t('vault.unkept_hint')}</p>
       {unmapped.length > 0 && (
         <p className="text-sm text-bad" role="note" data-testid="vault-unmapped">
           {t('vault.unmapped', { groups: unmapped.map(groupName).join(', ') })}
@@ -445,6 +492,35 @@ function VaultOptions({ workspace, d }: { workspace: WorkspaceDto; d: VaultConne
           {t('vault.describe_more')}
           <span className="block text-xs text-muted">{t('vault.describe_more_hint')}</span>
         </label>
+      </div>
+      <div className="space-y-1 pl-6">
+        <label htmlFor={`${id}-cover`} className="block text-sm">
+          {t('vault.cover_number')}
+        </label>
+        <select
+          id={`${id}-cover`}
+          className="input"
+          value={d.coverNumber}
+          disabled={busy}
+          data-testid="vault-cover-number"
+          onChange={(e) => {
+            const coverNumber = e.target.value as VaultCoverNumber;
+            // ADR-0057 §3: the full number goes to the vault, where the vault decides who sees it.
+            if (coverNumber === 'full' && !window.confirm(t('vault.cover_full_warning'))) return;
+            void run(() =>
+              browserApi.updateVaultConnection(workspace.id, { version: d.version, coverNumber }),
+            );
+          }}
+        >
+          {VAULT_COVER_NUMBERS.map((n) => (
+            <option key={n} value={n}>
+              {t(`vault.cover.${n}`)}
+            </option>
+          ))}
+        </select>
+        <span className="block text-xs text-muted">
+          {d.describeMore ? t('vault.cover_number_hint') : t('vault.cover_number_off')}
+        </span>
       </div>
       <div className="flex items-start gap-2">
         <input
