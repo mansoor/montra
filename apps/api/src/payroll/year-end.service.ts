@@ -397,7 +397,7 @@ export class YearEndService {
       .where('entity_id', '=', e.id)
       .executeTakeFirst();
     // ADR-0037: the EIN, EDD account and filing address are the business's registrations.
-    const id = await employerIdentity(trx, ctx, e.id);
+    const id = await employerIdentity(trx, ctx, e.id, this.crypto);
     const f = id.filingAddress;
     return {
       name: profile?.legal_name || e.name,

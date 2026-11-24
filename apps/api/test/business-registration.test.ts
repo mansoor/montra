@@ -165,9 +165,9 @@ describe('registrations (BIZ-22..24, BIZ-26)', () => {
       formationState: 'CA',
       sosEntityNumber: '202612345678',
       formationDate: '2026-01-02',
-      ftbEntityIdMasked: '•••4321',
+      ftbEntityIdMasked: '••••4321',
       caEmployerAccountMasked: '••••5678',
-      cdtfaPermitMasked: '••••••5678',
+      cdtfaPermitMasked: '••••5678',
       registeredAgentName: 'Pat Agent',
       registeredAgentAddress: '1 Main St, Monterey, CA 93940',
       dbaName: 'Kite Shack',
@@ -268,7 +268,9 @@ describe('one source of truth for the employer (BIZ-23)', () => {
       (await c.post(url('/entities'), { type: 'business', name, businessType: 'partnership' })).body.id;
     const fresh = await make('Old Payroll Co');
     const kept = await make('Already Set Co');
-    await c.patch(url(`/businesses/${kept}`), { ein: '22-2222222' });
+    // As the business held it when 0037 ran: in plain text (0089 seals it later).
+    await c.patch(url(`/businesses/${kept}`), { irsName: 'ALREADY SET' });
+    await admin.query(`update app.business_profile set ein = '222222222' where entity_id = $1`, [kept]);
     for (const [entity, ein] of [
       [fresh, '333333333'],
       [kept, '444444444'],

@@ -135,3 +135,13 @@ export function maskId(value: string | null | undefined, kind: 'ein' | 'other' =
   const last4 = value.slice(-4);
   return kind === 'ein' ? `••-•••${last4}` : `${'•'.repeat(Math.max(value.length - 4, 2))}${last4}`;
 }
+
+/**
+ * The same, from the last four alone, for a number kept sealed (BIZ-26): "••-•••6789" for an EIN, "••••5678" for
+ * anything else, since the length isn't kept.
+ */
+export function maskLast4(last4: string | null | undefined, kind: 'ein' | 'other' = 'other'): string | null {
+  if (!last4) return null;
+  const tail = last4.slice(-4);
+  return kind === 'ein' ? `••-•••${tail}` : `••••${tail}`;
+}

@@ -791,7 +791,10 @@ export class BackupService {
           const csvPath = join(dir, `${table}.csv`);
           const jsonl = createWriteStream(jsonlPath);
           const csv = createWriteStream(csvPath);
-          const columns = [...info.columns.keys()].map((c) => (ENCRYPTED[table]?.[c] ? plainName(c) : c));
+          // A sealed column goes by its plain name; once, where the plain column is still there too (BIZ-26).
+          const columns = [
+            ...new Set([...info.columns.keys()].map((c) => (ENCRYPTED[table]?.[c] ? plainName(c) : c))),
+          ];
           await write(csv, columns.map(csvCell).join(',') + '\r\n');
           const ids = needed.has(table) ? new Set<string>() : null;
           let rows = 0;
@@ -898,6 +901,8 @@ export class BackupService {
     for (const [column, label] of Object.entries(columns)) {
       const value = out[column];
       delete out[column];
+      // A plain value not sealed yet (a business's tax numbers before the job reaches them, BIZ-26) is the current one.
+      if (typeof out[plainName(column)] === 'string') continue;
       if (typeof value === 'string' && value.startsWith('\\x')) {
         out[plainName(column)] = await this.crypto.decrypt(
           trx,
