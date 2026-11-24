@@ -4,6 +4,9 @@ import type { ReceiptListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { STATUS_CHIP, stalledReasons } from '@/lib/receipts';
+import { isAdminRole } from '@/lib/settings';
+import { receiptsInTrash } from '@/lib/trash';
+import { TrashList } from '@/components/trash-list';
 import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 import { ReceiptRecommendations } from '@/components/receipts/recommendations';
 import { OrderImport } from '@/components/receipts/order-import';
@@ -31,13 +34,18 @@ export default async function ReceiptsPage({
   const { workspaceId } = await params;
   const sp = await searchParams;
   const tab: TabKey = sp.tab && sp.tab in TABS ? (sp.tab as TabKey) : sp.q ? 'all' : 'inbox';
+  // Deleted receipts: restore, or delete a personal one for good (BAK-06, RCP-10).
+  const inTrash = sp.tab === 'trash';
   const q = sp.q?.trim() || undefined;
-  const [page, recommended, reading] = await load((api) =>
+  const [page, recommended, reading, trash] = await load((api) =>
     Promise.all([
       api.listReceipts(workspaceId, { ...TABS[tab].query, ...(q ? { q } : {}), limit: 100 }),
       api.listReceiptRecommendations(workspaceId),
       // Receipts still being read aren't in any tab but All, so they're listed above the tabs.
       api.listReceipts(workspaceId, { status: 'processing', limit: 100 }),
+      inTrash
+        ? Promise.all([api.listTrash(workspaceId), api.getWorkspace(workspaceId)])
+        : Promise.resolve(null),
     ]),
   );
   const { t } = await getI18n();
@@ -105,12 +113,20 @@ export default async function ReceiptsPage({
               <Link
                 key={k}
                 href={`${base}?tab=${k}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
-                aria-current={k === tab ? 'page' : undefined}
-                className={`rounded-md px-2 py-1 text-sm ${k === tab ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
+                aria-current={k === tab && !inTrash ? 'page' : undefined}
+                className={`rounded-md px-2 py-1 text-sm ${k === tab && !inTrash ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
               >
                 {t(TABS[k].label)}
               </Link>
             ))}
+            <Link
+              href={`${base}?tab=trash`}
+              aria-current={inTrash ? 'page' : undefined}
+              className={`rounded-md px-2 py-1 text-sm ${inTrash ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
+              data-testid="receipts-trash-tab"
+            >
+              {t('receipts.tab.trash')}
+            </Link>
           </nav>
           <form action={base} className="ml-auto flex gap-2" role="search">
             <input
@@ -126,7 +142,15 @@ export default async function ReceiptsPage({
             </button>
           </form>
         </div>
-        {page.data.length === 0 ? (
+        {trash ? (
+          <TrashList
+            workspaceId={workspaceId}
+            items={receiptsInTrash(trash[0])}
+            canDelete={isAdminRole(trash[1].role)}
+            showDate
+            showEmpty={false}
+          />
+        ) : page.data.length === 0 ? (
           <p className="text-sm text-muted">{t('receipts.empty')}</p>
         ) : (
           <table className="tbl text-sm">

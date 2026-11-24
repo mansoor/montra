@@ -1,8 +1,9 @@
 /**
  * Deleting an account added by mistake (ACC-14). Only an empty account goes: no history and nothing else pointing at it.
  * What is only its own setup goes with it in one transaction: its opening balance and that entry, values that posted
- * nothing, its loan details, its saved import mapping and its statement memory. Everything else is history, and the
- * account can only be archived (ACC-06).
+ * nothing, its loan details, its saved import mapping and its statement memory. Its transactions in the Trash go too, for
+ * good, when they touch nothing else: no other account, no receipt, nothing in closed or reconciled books, and no legal
+ * hold on the workspace. Everything else is history, and the account can only be archived (ACC-06).
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { sql, type RawBuilder } from 'kysely';
@@ -14,9 +15,16 @@ import { Db } from '../db/database.js';
 type Ctx = { workspaceId: string; userId: string };
 
 /** Each blocker as words with its count, for the sentence the web shows. */
-const PHRASES: Record<Exclude<AccountDeleteBlocker, 'closed_period'>, (n: number) => string> = {
+type HistoryBlocker = Exclude<AccountDeleteBlocker, 'closed_period' | 'legal_hold'>;
+const PHRASES: Record<HistoryBlocker, (n: number) => string> = {
   transactions: (n) => `${n} ${n === 1 ? 'transaction' : 'transactions'}`,
   trashed: (n) => `${n} ${n === 1 ? 'transaction' : 'transactions'} in the trash`,
+  trashed_transfers: (n) =>
+    `${n} ${n === 1 ? 'transfer' : 'transfers'} in the trash that also ${n === 1 ? 'touches' : 'touch'} another account`,
+  trashed_receipts: (n) =>
+    `${n} ${n === 1 ? 'transaction' : 'transactions'} in the trash with a receipt kept as a tax record`,
+  trashed_closed: (n) =>
+    `${n} ${n === 1 ? 'transaction' : 'transactions'} in the trash in closed or reconciled books`,
   entries: (n) =>
     `${n} ${n === 1 ? 'balance adjustment or journal entry' : 'balance adjustments or journal entries'}`,
   values: (n) => `${n} ${n === 1 ? 'value' : 'values'} that changed its balance`,
@@ -59,14 +67,41 @@ export class AccountDeleteService {
         .where('id', '=', accountId)
         .forUpdate()
         .executeTakeFirst();
-      const { dto, account, opening } = await this.inspect(trx, ctx, accountId);
+      const { dto, account, opening, trashedIds } = await this.inspect(trx, ctx, accountId);
       if (dto.blockers.length) {
         const code = dto.blockers.every((b) => b.code === 'closed_period')
           ? 'account.opening_locked'
-          : 'account.not_empty';
+          : dto.blockers.every((b) => b.code === 'legal_hold')
+            ? 'account.legal_hold'
+            : 'account.not_empty';
         throw new AppError(409, code, dto.reason!);
       }
       const ws = ctx.workspaceId;
+      // Its transactions in the Trash, for good: any entries they still have go whole, so the books stay balanced.
+      if (trashedIds.length) {
+        await trx
+          .deleteFrom('app.journal_entry')
+          .where('workspace_id', '=', ws)
+          .where('transaction_id', 'in', trashedIds)
+          .execute();
+        try {
+          await trx
+            .deleteFrom('app.transaction')
+            .where('workspace_id', '=', ws)
+            .where('id', 'in', trashedIds)
+            .execute();
+        } catch (err) {
+          const code = (err as { code?: string }).code;
+          if (code === '23503' || code === '23514') {
+            throw new AppError(
+              409,
+              'account.not_empty',
+              'Another record still uses a transaction of this account in the trash. Archive it instead.',
+            );
+          }
+          throw err;
+        }
+      }
       // The opening balance and its entry: removing the whole entry keeps the books balanced.
       if (opening) {
         await trx
@@ -132,6 +167,7 @@ export class AccountDeleteService {
             entityId: account.entity_id,
             openingBalance: account.opening_balance_minor.toString(),
             openingDate: String(account.opening_date).slice(0, 10),
+            trashedTransactions: trashedIds.length,
           }),
         })
         .execute();
@@ -168,8 +204,17 @@ export class AccountDeleteService {
     };
     const like = `%${accountId}%`;
 
-    // Transactions: those with lines on it, and those whose spec names it (scheduled, or in the trash).
-    const txns = await sql<{ live: string; trashed: string; receipts: string }>`
+    // Transactions: those with lines on it, and those whose spec names it (scheduled, or in the trash). One in the Trash
+    // goes with the account when it touches nothing else: no other account (only categories and system accounts), no
+    // receipt (a tax record, RCP-10), and nothing in closed or reconciled books (DE-10).
+    const txns = await sql<{
+      id: string;
+      trashed: boolean;
+      live_receipts: string;
+      other_account: boolean;
+      has_receipt: boolean;
+      closed: boolean;
+    }>`
       with t as (
         select je.transaction_id as id
           from app.posting p
@@ -178,16 +223,49 @@ export class AccountDeleteService {
         union
         select t.id from app.transaction t where t.workspace_id = ${ws} and t.spec::text like ${like}
       )
-      select count(*) filter (where x.deleted_at is null and x.status <> 'void')::text as live,
-             count(*) filter (where x.deleted_at is not null or x.status = 'void')::text as trashed,
+      select x.id, (x.deleted_at is not null or x.status = 'void') as trashed,
              (select count(*) from app.receipt r
-               where r.workspace_id = ${ws} and r.deleted_at is null and r.transaction_id in (select id from t))::text
-               as receipts
+               where r.workspace_id = ${ws} and r.deleted_at is null and r.transaction_id = x.id)::text as live_receipts,
+             exists (
+               select 1 from app.ledger_account la
+                where la.workspace_id = ${ws} and la.id <> ${accountId}::uuid
+                  and not la.is_category and la.system_role is null
+                  and (la.id::text in (select (regexp_matches(coalesce(x.spec::text, ''),
+                                         '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', 'g'))[1])
+                       or exists (select 1 from app.posting p
+                                    join app.journal_entry je on je.workspace_id = p.workspace_id
+                                                             and je.id = p.journal_entry_id
+                                   where p.workspace_id = ${ws} and je.transaction_id = x.id
+                                     and p.ledger_account_id = la.id))) as other_account,
+             exists (select 1 from app.receipt r where r.workspace_id = ${ws} and r.transaction_id = x.id)
+               as has_receipt,
+             (x.txn_date <= app.locked_through(${ws}, x.primary_entity_id)) is true
+               or exists (
+                 select 1 from app.journal_entry je
+                  where je.workspace_id = ${ws} and je.transaction_id = x.id
+                    and (je.locked
+                         or (je.entry_date <= app.locked_through(${ws}, je.entity_id)) is true
+                         or exists (select 1 from app.posting p
+                                     where p.workspace_id = je.workspace_id and p.journal_entry_id = je.id
+                                       and (p.reconciliation_id is not null or p.cleared = 'reconciled')))) as closed
         from app.transaction x
        where x.workspace_id = ${ws} and x.id in (select id from t)`.execute(trx);
-    add('transactions', txns.rows[0]?.live);
-    add('trashed', txns.rows[0]?.trashed);
-    add('receipts', txns.rows[0]?.receipts);
+    const tally = { live: 0, transfers: 0, withReceipts: 0, closed: 0, receipts: 0 };
+    const trashedIds: string[] = [];
+    for (const r of txns.rows) {
+      if (!r.trashed) {
+        tally.live++;
+        tally.receipts += Number(r.live_receipts);
+      } else if (r.other_account) tally.transfers++;
+      else if (r.has_receipt) tally.withReceipts++;
+      else if (r.closed) tally.closed++;
+      else trashedIds.push(r.id);
+    }
+    add('transactions', tally.live);
+    add('trashed_transfers', tally.transfers);
+    add('trashed_receipts', tally.withReceipts);
+    add('trashed_closed', tally.closed);
+    add('receipts', tally.receipts);
 
     // Entries without a transaction. Its own opening balance (against opening-balance equity only) goes with it.
     const entries = (
@@ -313,12 +391,20 @@ export class AccountDeleteService {
       };
     }
 
-    const history = [...counts.entries()] as [Exclude<AccountDeleteBlocker, 'closed_period'>, number][];
+    const history = [...counts.entries()] as [HistoryBlocker, number][];
     const blockers: AccountDeletionDto['blockers'] = history.map(([code, count]) => ({ code, count }));
     let reason: string | null = null;
+    const held =
+      trashedIds.length > 0 &&
+      (await sql<{ held: boolean }>`select app.current_workspace_on_legal_hold() as held`.execute(trx))
+        .rows[0]?.held === true;
     if (history.length) {
       const what = list(history.map(([code, n]) => PHRASES[code](n)));
       reason = `This account has ${what}. Archive it instead, or remove them first.`;
+    } else if (held) {
+      // A legal hold keeps the workspace as it is: nothing in the Trash goes for good meanwhile.
+      blockers.push({ code: 'legal_hold', count: 1 });
+      reason = `A legal hold keeps everything in this workspace as it is, so its ${PHRASES.trashed(trashedIds.length)} can't be removed. Archive it instead.`;
     } else if (
       opening &&
       (opening.locked || (opening.lockedThrough !== null && opening.entryDate <= opening.lockedThrough))
@@ -328,7 +414,14 @@ export class AccountDeleteService {
         ? `Its opening balance is dated ${opening.entryDate}, in books closed through ${opening.lockedThrough}. Reopen them to delete it, or archive it instead.`
         : 'Its opening balance is locked. Unlock it to delete the account, or archive it instead.';
     }
-    const dto: AccountDeletionDto = { accountId, name: account.name, blockers, reason, deleted: false };
-    return { dto, account, opening };
+    const dto: AccountDeletionDto = {
+      accountId,
+      name: account.name,
+      blockers,
+      reason,
+      trashedTransactions: trashedIds.length,
+      deleted: false,
+    };
+    return { dto, account, opening, trashedIds };
   }
 }

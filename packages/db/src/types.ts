@@ -1015,7 +1015,8 @@ export interface ReceiptTable {
   ocr_text: string | null;
   /** Generated tsvector over merchant and OCR text (RCP-10); query it with sql, never write it. */
   search: ColumnType<string, never, never>;
-  retain_until: ColumnType<string, string | undefined, string>;
+  /** Null for a personal receipt: no minimum retention (migration 0088). */
+  retain_until: ColumnType<string | null, string | null | undefined, string | null>;
   reviewed_at: Date | null;
   created_by: string | null;
   version: Int8Default;

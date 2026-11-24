@@ -360,6 +360,7 @@ import type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  EmptyTrashResultDto,
   RetentionItemDto,
   RetentionItemRef,
   RetentionItemsRequest,
@@ -2650,6 +2651,14 @@ export class ApiClient {
   restoreFromTrash(workspaceId: string, kind: TrashItemDto['kind'], id: string) {
     return this.request<void>('POST', this.ws(workspaceId, `/trash/${enc(kind)}/${enc(id)}/restore`));
   }
+  /** Deletes one Trash item for good, now (owners and admins, recent sign-in). Receipts kept as tax records can't. */
+  deleteFromTrash(workspaceId: string, kind: TrashItemDto['kind'], id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/trash/${enc(kind)}/${enc(id)}`));
+  }
+  /** Deletes for good everything in the Trash that would go after 30 days. */
+  emptyTrash(workspaceId: string) {
+    return this.request<EmptyTrashResultDto>('POST', this.ws(workspaceId, '/trash/empty'));
+  }
   getStorageUsage(workspaceId: string) {
     return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
   }
@@ -2968,8 +2977,15 @@ export class ApiClient {
   rejectReceipt(workspaceId: string, id: string) {
     return this.request<ReceiptDto>('POST', this.ws(workspaceId, `/receipts/${enc(id)}/reject`));
   }
-  deleteReceipt(workspaceId: string, id: string) {
-    return this.request<void>('DELETE', this.ws(workspaceId, `/receipts/${enc(id)}`));
+  /**
+   * To the Trash. A matched receipt needs `unlink` (owners and admins, recent sign-in): it is unlinked first and its
+   * transaction stays exactly as it is.
+   */
+  deleteReceipt(workspaceId: string, id: string, opts: { unlink?: boolean } = {}) {
+    return this.request<void>(
+      'DELETE',
+      this.ws(workspaceId, `/receipts/${enc(id)}${opts.unlink ? '?unlink=true' : ''}`),
+    );
   }
 
   // ----- Budgets, goals and money flow (Phase 6) ------------------------------------------------------------
@@ -3685,6 +3701,7 @@ export type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  EmptyTrashResultDto,
   RetentionItemDto,
   RetentionItemRef,
   RetentionItemsRequest,

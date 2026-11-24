@@ -183,7 +183,8 @@ describe('a receipt past its retention date (RCP-10)', () => {
     ).body;
     receipt = await capture(WALMART);
     expect(receipt).toMatchObject({ status: 'matched', transactionId: txn.id });
-    expect(receipt.retainUntil.slice(0, 4)).toBe(String(new Date().getUTCFullYear() + 7));
+    // A personal receipt has no minimum retention (owner, 2026-11-23); this one is dated below as a business one would be.
+    expect(receipt.retainUntil).toBeNull();
     keys = await keysOf(receipt.fileIds);
     expect(await exists(keys[0]!)).toBe(true);
 

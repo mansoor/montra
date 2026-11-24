@@ -135,6 +135,13 @@ const Env = z.object({
    * and removes it once an owner approves.
    */
   FILE_RETENTION_YEARS: z.coerce.number().int().min(1).max(100).default(7),
+  /**
+   * The years a personal receipt is kept at least (owner's decision, 2026-11-23). 0, the default, means no minimum: a
+   * personal receipt is kept while it isn't deleted, and goes 30 days after it is, like a transaction. A receipt is
+   * personal when its books, its lines' books and its matched transaction's books are all personal; any business or
+   * rental part keeps FILE_RETENTION_YEARS.
+   */
+  PERSONAL_RECEIPT_RETENTION_YEARS: z.coerce.number().int().min(0).max(100).default(0),
   /** What an owner's "Keep for longer" adds, in years from today, to a receipt or file past its date. */
   RETENTION_EXTEND_YEARS: z.coerce.number().int().min(1).max(100).default(1),
   /**

@@ -87,7 +87,10 @@ function AccountCard({
       return setMessage({ tone: 'bad', text: friendlyMessage(err, t), action: errorAction(err, t) });
     }
     if (step.kind === 'blocked') return setMessage({ tone: 'bad', text: step.reason });
-    if (!window.confirm(t('accounts.delete_confirm', { name: account.name }))) return;
+    const question = step.trashedTransactions
+      ? t('accounts.delete_confirm_trash', { name: account.name, count: step.trashedTransactions })
+      : t('accounts.delete_confirm', { name: account.name });
+    if (!window.confirm(question)) return;
     await run(() => browserApi.deleteAccount(workspaceId, id), t('accounts.deleted'));
   }
 

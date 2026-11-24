@@ -159,7 +159,8 @@ export const ReceiptDto = z.object({
   stalled: ReceiptStalledDto.nullable(),
   /** Receipts that look like this one scanned again, for the user to compare and discard one (RCP-13). */
   likelyDuplicates: z.array(ReceiptDuplicateDto),
-  retainUntil: z.string(),
+  /** RCP-10: kept as a tax record until then. Null for a personal receipt: no minimum (owner, 2026-11-23). */
+  retainUntil: z.string().nullable(),
   createdAt: z.string(),
   version: z.string(),
 });

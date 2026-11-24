@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { receiptAccountId } from '@montra/domain';
 import type { AccountDto, CategoryDto, FamilyMemberDto, ReceiptDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { isAdminRole } from '@/lib/settings';
 import { vaultOnlyPage } from '@/lib/vault';
 import {
   amountPlaceholder,
@@ -73,6 +74,7 @@ export function ReceiptReview({
   }));
   const currency = header.currency || receipt.currency || 'USD';
   const open = receipt.status === 'inbox' || receipt.status === 'needs_review';
+  const matched = receipt.status === 'matched';
   const setLine = (i: number, patch: Partial<LineRow>) =>
     setLines((list) => list.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   // Quantity × unit price = total stays true as any of the three is edited (owner, 2026-11-18).
@@ -519,6 +521,33 @@ export function ReceiptReview({
                 {t('receipts.reject')}
               </button>
             </div>
+          </div>
+        )}
+        {(!matched || isAdminRole(workspace.role)) && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="btn-secondary text-bad"
+              disabled={busy}
+              data-testid="receipt-delete"
+              onClick={() => {
+                // A matched receipt: owners and admins only, unlinked first, its transaction kept as it is (owner,
+                // 2026-11-23). Step-up comes back as a link.
+                if (
+                  !window.confirm(t(matched ? 'receipts.delete_matched_confirm' : 'receipts.delete_confirm'))
+                )
+                  return;
+                void run(
+                  () =>
+                    browserApi
+                      .deleteReceipt(ws, receipt.id, { unlink: matched })
+                      .then(() => router.push(listHref(`/w/${ws}/receipts`))),
+                  t('receipts.deleted'),
+                );
+              }}
+            >
+              {t('receipts.delete')}
+            </button>
           </div>
         )}
         <StatusLine message={message} />

@@ -30,11 +30,18 @@ import {
   ReceiptRecommendationDto,
 } from '@montra/schemas';
 import { z } from 'zod';
-import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
+import {
+  AuthGuard,
+  Ctx,
+  dbCtx,
+  requireRecentAuth,
+  WorkspaceGuard,
+  type RequestContext,
+} from '../auth/auth.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { AppError } from '../common/errors.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
-import { requireRole } from '../common/roles.js';
+import { requireRole, requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { ReceiptsService } from './receipts.service.js';
 
@@ -153,9 +160,19 @@ export class ReceiptsController {
 
   @Delete(':id')
   @HttpCode(204)
-  async remove(@Ctx() ctx: RequestContext, @Param('id') id: string): Promise<void> {
+  async remove(
+    @Ctx() ctx: RequestContext,
+    @Param('id') id: string,
+    @Query('unlink') unlink?: string,
+  ): Promise<void> {
     requireRole(ctx, ...WRITERS);
-    await this.receipts.remove(dbCtx(ctx), parse(z.uuid(), id));
+    // A matched receipt is unlinked first: owners and admins only, with a recent sign-in (owner, 2026-11-23).
+    const unlinkFirst = unlink === 'true';
+    if (unlinkFirst) {
+      requireWorkspaceAdmin(ctx);
+      requireRecentAuth(ctx);
+    }
+    await this.receipts.remove(dbCtx(ctx), parse(z.uuid(), id), { unlink: unlinkFirst });
   }
 
   private async readFile(req: FastifyRequest, fallbackName: string) {
