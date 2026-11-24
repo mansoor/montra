@@ -3,9 +3,11 @@
  * registrations in their own table. Payroll, the year-end forms and the EFW2 file read the employer's numbers from here.
  */
 import type { BusinessProfileRow, BusinessRegistrationRow, Trx } from '@montra/db';
-import { maskId, type CalendarDate } from '@montra/domain';
+import type { CalendarDate } from '@montra/domain';
 import type { BusinessRegistrationsDto, FilingAddressDto, OtherRegistrationDto } from '@montra/schemas';
+import type { FieldCrypto } from '../crypto/crypto.service.js';
 import type { Ctx } from './shared.js';
+import { maskTaxId, openTaxId } from './tax-ids.js';
 
 /** What payroll needs from the business's registrations, in full. Only server code sees it. */
 export interface EmployerIdentity {
@@ -17,26 +19,60 @@ export interface EmployerIdentity {
   filingAddress: FilingAddressDto | null;
 }
 
-export async function employerIdentity(trx: Trx, ctx: Ctx, entityId: string): Promise<EmployerIdentity> {
-  const r = await trx
+const IDENTITY_COLUMNS = [
+  'legal_name',
+  'ein',
+  'ein_enc',
+  'ein_last4',
+  'ca_employer_account',
+  'ca_employer_account_enc',
+  'ca_employer_account_last4',
+  'filing_line1',
+  'filing_line2',
+  'filing_city',
+  'filing_state',
+  'filing_zip',
+] as const;
+
+function identityRow(trx: Trx, ctx: Ctx, entityId: string) {
+  return trx
     .selectFrom('app.business_profile')
-    .select([
-      'legal_name',
-      'ein',
-      'ca_employer_account',
-      'filing_line1',
-      'filing_line2',
-      'filing_city',
-      'filing_state',
-      'filing_zip',
-    ])
+    .select([...IDENTITY_COLUMNS])
     .where('workspace_id', '=', ctx.workspaceId)
     .where('entity_id', '=', entityId)
     .executeTakeFirst();
+}
+
+/** The employer's numbers in full, unsealed here, for the filing outputs (worksheets, forms, W-2s, EFW2; BIZ-26). */
+export async function employerIdentity(
+  trx: Trx,
+  ctx: Ctx,
+  entityId: string,
+  crypto: FieldCrypto,
+): Promise<EmployerIdentity> {
+  const r = await identityRow(trx, ctx, entityId);
   return {
     legalName: r?.legal_name ?? null,
-    ein: r?.ein ?? null,
-    caEmployerAccount: r?.ca_employer_account ?? null,
+    ein: await openTaxId(crypto, trx, ctx.workspaceId, r, 'ein'),
+    caEmployerAccount: await openTaxId(crypto, trx, ctx.workspaceId, r, 'ca_employer_account'),
+    filingAddress: r ? filingAddressOf(r) : null,
+  };
+}
+
+/** The same, masked to the last four, for screens. Nothing is unsealed. */
+export async function employerMasked(
+  trx: Trx,
+  ctx: Ctx,
+  entityId: string,
+): Promise<{
+  einMasked: string | null;
+  caEmployerAccountMasked: string | null;
+  filingAddress: FilingAddressDto | null;
+}> {
+  const r = await identityRow(trx, ctx, entityId);
+  return {
+    einMasked: maskTaxId(r, 'ein'),
+    caEmployerAccountMasked: maskTaxId(r, 'ca_employer_account'),
     filingAddress: r ? filingAddressOf(r) : null,
   };
 }
@@ -99,15 +135,15 @@ export function registrationsDto(
   other: BusinessRegistrationRow[],
 ): BusinessRegistrationsDto {
   return {
-    einMasked: maskId(r.ein, 'ein'),
+    einMasked: maskTaxId(r, 'ein'),
     irsName: r.irs_name,
     naicsCode: r.naics_code,
     formationState: r.formation_state,
     sosEntityNumber: r.sos_entity_number,
     formationDate: dateOrNull(r.formation_date),
-    ftbEntityIdMasked: maskId(r.ftb_entity_id),
-    caEmployerAccountMasked: maskId(r.ca_employer_account),
-    cdtfaPermitMasked: maskId(r.cdtfa_permit),
+    ftbEntityIdMasked: maskTaxId(r, 'ftb_entity_id'),
+    caEmployerAccountMasked: maskTaxId(r, 'ca_employer_account'),
+    cdtfaPermitMasked: maskTaxId(r, 'cdtfa_permit'),
     registeredAgentName: r.registered_agent_name,
     registeredAgentAddress: r.registered_agent_address,
     dbaName: r.dba_name,

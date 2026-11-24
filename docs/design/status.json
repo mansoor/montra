@@ -870,7 +870,7 @@
   ],
   "BIZ-26": [
     "partial",
-    "masked to the last four with an audit-logged Show after a recent sign-in (stored in plain text, as payroll kept the EIN); phone shows type, return form and masked EIN read-only; editing is web only; not run on a device"
+    "masked to the last four with an audit-logged Show after a recent sign-in; sealed at rest with field encryption since migration 0089 (numbers stored before it are sealed by the worker's business.seal_tax_ids job); phone shows type, return form and masked EIN read-only; editing is web only; not run on a device"
   ],
   "REC-09": [
     "done",

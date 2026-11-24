@@ -149,6 +149,11 @@ const Env = z.object({
    * approved. The rest wait for the next run.
    */
   RETENTION_BATCH: z.coerce.number().int().min(1).max(100_000).default(500),
+  /**
+   * BIZ-26 (migration 0089): how many businesses the `business.seal_tax_ids` job looks up at a time while it seals the
+   * tax account numbers still kept in plain text. Each business is sealed in its own transaction.
+   */
+  TAX_ID_SEAL_BATCH: z.coerce.number().int().min(1).max(10_000).default(200),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce

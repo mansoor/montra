@@ -7,6 +7,7 @@ import {
   fiscalYearOf,
   fiscalYearRange,
   maskId,
+  maskLast4,
   ownerEmployeeNote,
   returnFormOf,
   renewalDue,
@@ -91,5 +92,12 @@ describe('renewals and masking (BIZ-24, BIZ-26)', () => {
     expect(maskId('12345678')).toBe('••••5678');
     expect(maskId('123')).toBe('••123');
     expect(maskId(null)).toBeNull();
+  });
+  it('masks a sealed number from its last four (BIZ-26)', () => {
+    expect(maskLast4('6789', 'ein')).toBe('••-•••6789');
+    expect(maskLast4('5678')).toBe('••••5678');
+    expect(maskLast4('123')).toBe('••••123');
+    expect(maskLast4(null)).toBeNull();
+    expect(maskLast4('')).toBeNull();
   });
 });

@@ -122,6 +122,12 @@ expiry date, and the city business licence with its expiry date. Anything else i
 - **Stored in plain text.** Payroll never sealed the EIN (migration 0033: "An EIN is on every form it sends, so it isn't
   sealed"), and these are business, not personal, identifiers printed on returns, permits and invoices. So they're not
   encrypted with `FieldCrypto`, and they're in backups as text.
+  - **Amended (migration 0089, 2026-11-24): sealed at rest.** The four tax account numbers (EIN, EDD account, FTB ID,
+    CDTFA permit) are now sealed with `FieldCrypto` in `<column>_enc`, with `<column>_last4` kept for the masked
+    display. Show and the filing outputs unseal them on the server. The worker's `business.seal_tax_ids` job seals the
+    numbers stored before 0089 and clears the plain columns, which a later contract migration drops. The audit
+    trigger redacts them, and 0089 redacted the ones already in the log. Backups still hold them in full, under
+    their plain names, and a restore seals them again. The SOS file number, city licence and DBA stay as they are.
 - **Shown masked, like payroll's personal data.** The tax account numbers (EIN, EDD account, FTB ID, CDTFA permit) come
   back masked to their last four (`einMasked` and so on). `POST /businesses/:id/reveal` returns one in full after a
   recent sign-in and writes `business.revealed` to the audit log, the same pattern as a payroll person's reveal (PRL-05).

@@ -30,6 +30,8 @@ import {
   EXPORT_ONLY,
   exportedTables,
   insertOrder,
+  LAST4,
+  NOT_RESTORED,
   plainName,
   readCatalog,
   remapIds,
@@ -671,7 +673,10 @@ export class RestoreService {
       const sealed =
         typeof plain === 'string' ? await this.crypto.encrypt(trx, workspaceId, label, plain) : null;
       out[column] = sealed ? `\\x${sealed.toString('hex')}` : null;
+      const last4 = LAST4[table]?.[column];
+      if (last4) out[last4] = typeof plain === 'string' && plain ? plain.slice(-4) : null;
     }
+    for (const column of NOT_RESTORED[table] ?? []) delete out[column];
     return out;
   }
 

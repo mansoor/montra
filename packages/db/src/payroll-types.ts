@@ -296,7 +296,10 @@ export type CaDepositScheduleCol = 'quarterly' | 'monthly' | 'semiweekly';
 export interface PayrollSettingsTable {
   workspace_id: string;
   entity_id: string;
-  /** Unused since migration 0037: the EIN, EDD account and filing address are on `app.business_profile` (ADR-0037). */
+  /**
+   * Unused since migration 0037: the EIN, EDD account and filing address are on `app.business_profile` (ADR-0037).
+   * Migration 0089 cleared the EIN and EDD account; a later contract step drops these columns.
+   */
   ein: string | null;
   ca_employer_account: string | null;
   ca_ui_rate_ppm: number | null;

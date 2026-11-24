@@ -913,8 +913,8 @@ Phase 11 leftovers:
   - **Registrations**: EIN, IRS name, NAICS; state of formation, SOS entity number, formation date, FTB entity ID, EDD
     employer account, CDTFA seller's permit, registered agent; DBA (county, expiry), city licence (expiry); and any other
     registration (`app.business_registration`). Tax account numbers are masked to their last four; Show
-    (`POST /businesses/:id/reveal`) needs a recent sign-in and logs `business.revealed`. They're stored as text, as payroll
-    kept the EIN. Expiry dates get a `reminder` notification 30 days ahead from the nightly job.
+    (`POST /businesses/:id/reveal`) needs a recent sign-in and logs `business.revealed`. They were stored as text, as payroll
+    kept the EIN; since migration 0089 they're sealed at rest (BIZ-26, see the entry at the end of §7g). Expiry dates get a `reminder` notification 30 days ahead from the nightly job.
   - **One source of truth**: the EIN, EDD account and filing address moved from `payroll_settings` to `business_profile`
     with a backfill (the business's own value wins). Payroll's Employer details and Year-end → Filing details show them
     read-only with a link to Settings; the worksheets, W-4/I-9 PDFs, W-2s, 1099s and EFW2 read `employerIdentity()`.
@@ -3064,6 +3064,50 @@ Phase 11 leftovers:
     workbook's columns, account, category and amounts); e2e `traceable-numbers.spec.ts` (new: budget total, Month in
     review's money out and a category, a goal's savings, the forecast and net worth lines), `business.spec.ts`
     (revenue tile, total revenue, a customer) and `rentals.spec.ts` (the portfolio row).
+- **A business's tax account numbers sealed at rest** (BIZ-26, migration 0089; ADR-0037 §5 amended).
+  - Before: the EIN, EDD employer account, FTB entity ID and CDTFA seller's permit were masked on screen, but stored
+    in plain text on `business_profile`. Every edit also copied them into the audit log. Payroll's unused copies of
+    the EIN and EDD account (`payroll_settings`, unread since 0037) still held plain text.
+  - Now:
+    - Each number is sealed with `FieldCrypto`, like payroll's personal data: `ein_enc`, `ftb_entity_id_enc`,
+      `ca_employer_account_enc` and `cdtfa_permit_enc`. The last four sit beside each (`*_last4`) for the masked
+      display. Writes seal the number and clear the plain column in the same update.
+    - Reads show only the masked last four. A number other than an EIN now masks as "••••1234", since its length
+      isn't kept. Show (`POST /businesses/:id/reveal`) still needs a recent sign-in, unseals on the server and logs
+      `business.revealed`. The DTOs didn't change.
+    - The 941/940/DE 9/DE 9C worksheets, the W-4/I-9 PDFs, W-2s, 1099s and the EFW2 file still get the full numbers,
+      unsealed on the server (`employerIdentity()` now takes `FieldCrypto`). Payroll settings use `employerMasked()`,
+      which unseals nothing.
+    - **Backfill:** the worker's `business.seal_tax_ids` job seals the numbers stored before 0089 and clears the plain
+      columns. It's queued at every worker start. It works one business at a time, each in its own transaction, as
+      the workspace's owner (or an admin). It only looks at rows that still hold a plain number, so it is safe to stop
+      and run again. A run that hits its 2-minute budget queues the next one. `app.tax_ids_to_seal(limit)` lists
+      what's left. A business in a workspace with no active owner or admin is skipped and counted. Until a row is
+      sealed, reads and Show use its plain value, so nothing breaks in between.
+    - **Audit log:** the audit trigger now redacts these columns, plain and sealed, as it already did every `*_enc`
+      column. The migration redacted the numbers already in the log (`business_profile` and `payroll_settings`
+      entries keep the key, with "[redacted]" as the value). It also cleared `payroll_settings.ein` and
+      `ca_employer_account`.
+    - **Backups** still hold the numbers in full, under their plain names (`ein` and so on), so archives from before
+      and after 0089 look the same. A restore seals them again and fills in the last four. Payroll's old columns are
+      no longer restored.
+    - **Not changed:** `tax_form.issuer_ein`, a payer's EIN read off a W-2 or 1099. It's another business's number,
+      printed on every form that payer sends, and Montra matches forms by it (`tax-form-reading.ts`,
+      `statement-match.ts`). Sealing it would need a keyed hash for that matching. It stays as migration 0059 left it.
+    - No search, unique index or matching used the business's own numbers, so nothing else needed a hash.
+  - Settings, not code: `TAX_ID_SEAL_BATCH` (default 200), how many businesses the job looks up at a time.
+  - Follow-up: a contract migration drops `business_profile.ein`, `ftb_entity_id`, `ca_employer_account` and
+    `cdtfa_permit`, and `payroll_settings.ein` and `ca_employer_account`, once every install has run the job. Check
+    first that `select count(*) from app.tax_ids_to_seal(1000000)` is 0. That step also takes the plain-value fallback
+    out of `business/tax-ids.ts` and the backup's "plain wins" check.
+  - During a deploy, an older API task still reads the plain columns, so it shows a sealed number as blank until it
+    stops. A number it writes is sealed by the next job run.
+  - Tests: API `business-tax-ids.test.ts` (writes seal and clear, masked reads on the business and payroll, Show only
+    after a recent sign-in and audited, no full number in reads, errors or the audit log, worksheets and year-end in
+    full; the job seals plain rows, keeps a newer plain value over an older sealed one, runs again with nothing to
+    do, stops at its budget and carries on; the migration's audit redaction and payroll clearing).
+    `data-ownership.test.ts` (the archive has the numbers in full and once in the CSV; a restore seals them).
+    `business-registration.test.ts` masks updated. Domain `business-registration.test.ts` (`maskLast4`).
 
 ---
 

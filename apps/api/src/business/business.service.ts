@@ -47,7 +47,9 @@ import {
   type Ctx,
 } from './shared.js';
 import { CONFIG, type AppConfig } from '../config.js';
+import { FieldCrypto } from '../crypto/crypto.service.js';
 import { retainUntil } from '../data/retention.js';
+import { openTaxId, sealTaxId, TAX_ID_COLUMN } from './tax-ids.js';
 
 @Injectable()
 export class BusinessService {
@@ -56,6 +58,7 @@ export class BusinessService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(FileBytes) private readonly files: FileBytes,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
   ) {}
 
   // ----- Profile -------------------------------------------------------------------------------------------
@@ -90,6 +93,14 @@ export class BusinessService {
         e = await this.setLegalSetup(trx, ctx, e, req);
       }
       const fa = req.filingAddress;
+      // BIZ-26: the tax account numbers are sealed; the plain columns are cleared (migration 0089).
+      let sealed = {};
+      for (const [field, column] of Object.entries(TAX_ID_COLUMN)) {
+        const value = req[field as keyof typeof TAX_ID_COLUMN];
+        if (value !== undefined) {
+          sealed = { ...sealed, ...(await sealTaxId(this.crypto, trx, ctx.workspaceId, column, value)) };
+        }
+      }
       const set = {
         ...(req.legalName !== undefined ? { legal_name: req.legalName } : {}),
         ...(req.address !== undefined ? { address: req.address } : {}),
@@ -105,15 +116,11 @@ export class BusinessService {
         ...(req.domain !== undefined ? { domain: req.domain } : {}),
         // ADR-0037: legal setup and registrations.
         ...(req.sCorpElectionDate !== undefined ? { s_corp_election_date: req.sCorpElectionDate } : {}),
-        ...(req.ein !== undefined ? { ein: req.ein } : {}),
         ...(req.irsName !== undefined ? { irs_name: req.irsName } : {}),
         ...(req.naicsCode !== undefined ? { naics_code: req.naicsCode } : {}),
         ...(req.formationState !== undefined ? { formation_state: req.formationState } : {}),
         ...(req.sosEntityNumber !== undefined ? { sos_entity_number: req.sosEntityNumber } : {}),
         ...(req.formationDate !== undefined ? { formation_date: req.formationDate } : {}),
-        ...(req.ftbEntityId !== undefined ? { ftb_entity_id: req.ftbEntityId } : {}),
-        ...(req.caEmployerAccount !== undefined ? { ca_employer_account: req.caEmployerAccount } : {}),
-        ...(req.cdtfaPermit !== undefined ? { cdtfa_permit: req.cdtfaPermit } : {}),
         ...(req.registeredAgentName !== undefined ? { registered_agent_name: req.registeredAgentName } : {}),
         ...(req.registeredAgentAddress !== undefined
           ? { registered_agent_address: req.registeredAgentAddress }
@@ -134,6 +141,7 @@ export class BusinessService {
               filing_zip: fa?.zip ?? null,
             }
           : {}),
+        ...sealed,
       };
       // A change to the type or fiscal year alone leaves the profile row as it is.
       if (Object.keys(set).length) {
@@ -193,12 +201,7 @@ export class BusinessService {
     return this.db.run(ctx, async (trx) => {
       await businessEntity(trx, ctx, entityId);
       const r = await this.readProfile(trx, ctx, entityId);
-      const value = {
-        ein: r.ein,
-        ftbEntityId: r.ftb_entity_id,
-        caEmployerAccount: r.ca_employer_account,
-        cdtfaPermit: r.cdtfa_permit,
-      }[req.field];
+      const value = await openTaxId(this.crypto, trx, ctx.workspaceId, r, TAX_ID_COLUMN[req.field]);
       await trx
         .insertInto('app.audit_log')
         .values({
@@ -340,6 +343,14 @@ export class BusinessService {
         filing_city: null,
         filing_state: null,
         filing_zip: null,
+        ein_enc: null,
+        ein_last4: null,
+        ftb_entity_id_enc: null,
+        ftb_entity_id_last4: null,
+        ca_employer_account_enc: null,
+        ca_employer_account_last4: null,
+        cdtfa_permit_enc: null,
+        cdtfa_permit_last4: null,
         version: 1n,
         created_at: new Date(0),
         updated_at: new Date(0),

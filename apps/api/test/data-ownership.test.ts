@@ -333,8 +333,21 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     await c
       .put(url('/ai/credentials/anthropic'), { apiKey: 'sk-secret-value-123456' })
       .catch(() => undefined);
+    // BIZ-26: a business's tax numbers are sealed, and in the archive in full, under their plain names.
+    await c.patch(url(`/businesses/${business}`), { ein: '12-3456789', cdtfaPermit: '102-345678' });
     const { bytes } = await backup();
     const zip = await readZip(bytes);
+    const profile = zip
+      .get('data/business_profile.jsonl')!
+      .toString()
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+      .find((r: any) => r.entity_id === business);
+    expect(profile).toMatchObject({ ein: '123456789', ein_last4: '6789', cdtfa_permit: '102-345678' });
+    expect(profile).not.toHaveProperty('ein_enc');
+    const csvHeader = zip.get('csv/business_profile.csv')!.toString().split('\r\n')[0]!.split(',');
+    expect(csvHeader.filter((h) => h === 'ein')).toHaveLength(1);
     const manifest = JSON.parse(zip.get('manifest.json')!.toString());
     expect(manifest).toMatchObject({ format: 1, partial: false, entityScoped: false });
     expect(manifest.workspace.name).toBe('Everything');
@@ -498,6 +511,23 @@ describe('restoring into a new workspace (BAK-06)', () => {
     const t = list.find((x: any) => x.payee === 'WHOLE FOODS');
     const edit = await c.patch(inRestored(`/transactions/${t.id}`), { amount: usd('-6000') });
     expect(edit.status).toBe(200);
+  });
+
+  it('brings back a business’s tax numbers sealed (BIZ-26)', async () => {
+    const { rows } = await admin.query(
+      `select ein, ein_enc is not null as sealed, ein_last4, cdtfa_permit, cdtfa_permit_last4
+         from app.business_profile b join app.entity e on e.id = b.entity_id
+        where b.workspace_id = $1 and e.type = 'business'`,
+      [restored],
+    );
+    expect(rows).toEqual([
+      { ein: null, sealed: true, ein_last4: '6789', cdtfa_permit: null, cdtfa_permit_last4: '5678' },
+    ]);
+    const entities = (await c.get(inRestored('/entities'))).body.data;
+    const copy = entities.find((e: any) => e.type === 'business').id;
+    expect((await c.get(inRestored(`/businesses/${copy}`))).body.registrations.einMasked).toBe('••-•••6789');
+    const shown = await c.post(inRestored(`/businesses/${copy}/reveal`), { field: 'ein' });
+    expect(shown.body.value).toBe('123456789');
   });
 
   it('copies files under keys of its own', async () => {

@@ -21,6 +21,7 @@ import { IntakeJobs } from './intakes/intake-jobs.js';
 import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { VaultJobs } from './storage/vault/vault.jobs.js';
 import { BankFeedSync } from './bank-feeds/bank-feeds.sync.js';
+import { TaxIdSealing } from './business/tax-ids.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
 const config = loadConfig();
@@ -67,6 +68,10 @@ await vault.schedule();
 const bankFeeds = app.get(BankFeedSync);
 bankFeeds.register();
 await bankFeeds.schedule();
+// BIZ-26 (migration 0089): seals any tax account numbers still kept in plain text. Finds nothing once they're done.
+const taxIds = app.get(TaxIdSealing);
+taxIds.register();
+await taxIds.schedule();
 // Nightly reconciliation of every workspace's books, and the hourly check for lapsed plans.
 const ops = app.get(OpsJobs);
 ops.register();

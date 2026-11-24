@@ -847,7 +847,7 @@ export class FormsService {
       .where('entity_id', '=', entityId)
       .executeTakeFirst();
     // ADR-0037: the employer's numbers are the business's registrations.
-    const id = await employerIdentity(trx, ctx, entityId);
+    const id = await employerIdentity(trx, ctx, entityId, this.crypto);
     return {
       name: b?.legal_name || name,
       address: b?.address ?? null,

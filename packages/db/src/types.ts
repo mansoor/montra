@@ -2180,6 +2180,19 @@ export interface BusinessProfileTable {
   filing_city: string | null;
   filing_state: string | null;
   filing_zip: string | null;
+  /**
+   * BIZ-26 (migration 0089): the tax account numbers sealed (FieldCrypto, label `business_profile.<column>`), with their
+   * last four for the masked display. The plain `ein`, `ftb_entity_id`, `ca_employer_account` and `cdtfa_permit` above
+   * are no longer written; the `business.seal_tax_ids` job seals and clears what's left in them.
+   */
+  ein_enc: Buffer | null;
+  ein_last4: string | null;
+  ftb_entity_id_enc: Buffer | null;
+  ftb_entity_id_last4: string | null;
+  ca_employer_account_enc: Buffer | null;
+  ca_employer_account_last4: string | null;
+  cdtfa_permit_enc: Buffer | null;
+  cdtfa_permit_last4: string | null;
   version: Int8Default;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
