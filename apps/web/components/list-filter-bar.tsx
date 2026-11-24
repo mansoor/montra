@@ -91,6 +91,7 @@ export function ListFilterBar({
   screen,
   workspace,
   merchantHint,
+  showText = false,
   showDirection = false,
   accounts,
   categories,
@@ -99,6 +100,8 @@ export function ListFilterBar({
   workspace: WorkspaceDto;
   /** What else the merchant words match, such as the payee and description. */
   merchantHint?: string;
+  /** Receipts: a field for words anywhere on the receipt, such as an item or an order number. */
+  showText?: boolean;
   showDirection?: boolean;
   accounts?: AccountDto[];
   categories?: CategoryDto[];
@@ -107,11 +110,13 @@ export function ListFilterBar({
   const { filters, go } = useListFilters(screen, true);
   const currency = workspace.baseCurrency;
   const [merchant, setMerchant] = useState(filters.merchant ?? '');
+  const [text, setText] = useState(filters.text ?? '');
   const [min, setMin] = useState(filters.min ?? '');
   const [max, setMax] = useState(filters.max ?? '');
 
   // The URL wins when it changes from outside (a chip removed, Back pressed).
   useEffect(() => setMerchant(sync(filters.merchant)), [filters.merchant]);
+  useEffect(() => setText(sync(filters.text)), [filters.text]);
   useEffect(() => setMin(sync(filters.min)), [filters.min]);
   useEffect(() => setMax(sync(filters.max)), [filters.max]);
 
@@ -121,16 +126,30 @@ export function ListFilterBar({
 
   useEffect(() => {
     const m = merchant.trim();
+    const w = text.trim();
     const lo = min.trim();
     const hi = max.trim();
-    if (m === (filters.merchant ?? '') && lo === (filters.min ?? '') && hi === (filters.max ?? '')) return;
+    if (
+      m === (filters.merchant ?? '') &&
+      w === (filters.text ?? '') &&
+      lo === (filters.min ?? '') &&
+      hi === (filters.max ?? '')
+    )
+      return;
     if (!minOk || !maxOk) return;
     const timer = setTimeout(
-      () => go({ ...filters, merchant: m || undefined, min: lo || undefined, max: hi || undefined }),
+      () =>
+        go({
+          ...filters,
+          merchant: m || undefined,
+          text: w || undefined,
+          min: lo || undefined,
+          max: hi || undefined,
+        }),
       DEBOUNCE_MS,
     );
     return () => clearTimeout(timer);
-  }, [merchant, min, max, minOk, maxOk, filters, go]);
+  }, [merchant, text, min, max, minOk, maxOk, filters, go]);
 
   const setRange = (range: Range) => {
     if (range === 'custom') return go({ ...filters, range });
@@ -156,6 +175,8 @@ export function ListFilterBar({
             : t('filters.chip.dates_until', { to: date(filters.to ?? '') });
       case 'merchant':
         return t('filters.chip.merchant', { value: filters.merchant ?? '' });
+      case 'text':
+        return t('filters.chip.text', { value: filters.text ?? '' });
       case 'amount':
         return filters.min && filters.max
           ? t('filters.chip.amount_between', { min: amount(filters.min), max: amount(filters.max) })
@@ -229,6 +250,19 @@ export function ListFilterBar({
             onChange={(e) => setMerchant(e.target.value)}
           />
         </label>
+        {showText && (
+          <label>
+            <span className="field-label">{t('filters.receipt_text')}</span>
+            <input
+              className="input w-48"
+              type="search"
+              maxLength={200}
+              placeholder={t('filters.receipt_text_hint')}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          </label>
+        )}
         <label>
           <span className="field-label">{t('filters.at_least')}</span>
           <input

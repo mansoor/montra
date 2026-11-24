@@ -2869,7 +2869,8 @@ Phase 11 leftovers:
     - When the filters hide everything: "No transactions match these filters", with Clear filters. Review also says
       how many items to review are older than the window. "Accept all above" takes only what the filters show.
     - Receipts: the column header **Store** is now **Merchant**, and so are the receipt's field and "Unknown merchant".
-      The search box stays and keeps the filters. Database columns and DTO fields are unchanged.
+      The search box stays and keeps the filters. Database columns and DTO fields are unchanged. (Since moved into
+      the filter row as "Words on the receipt"; see the next entries.)
     - **Load more** under each list adds the next page (200 transactions, 100 review items or receipts) with the same
       filters. Show older appears only once the window is all loaded. A refresh after an edit starts again from the
       first page.
@@ -2946,6 +2947,19 @@ Phase 11 leftovers:
     refused to a writer, in closed books and under a hold, restored unmatched, audited; no system job left queued).
     `account-delete.test.ts`, `receipts.test.ts` and `receipt-retention.test.ts` updated for the new fields and the
     personal rule. Web `trash.test.ts`, `account-delete.test.ts`.
+- **Receipts: the search joins the filters, and the tabs look like Transactions** (RCP-10, IMP-11; no migration).
+  - Before: the Receipts list had a separate search box and button above the filter row. It found words anywhere on
+    the receipt (the merchant or the text read off it), so it overlapped with the Merchant filter and was easy to
+    miss. The Inbox, Needs review, Matched, All and Trash tabs were small links on the left. The Total and Status
+    headers ran together.
+  - Now: the search is a field in the filter row, **Words on the receipt** (`text` in the URL), applied as you type
+    like the other filters, with its own chip. Merchant still matches only the merchant's name. With words and no tab
+    chosen, the list looks in All, as the search did. An old `?q=` link opens with the same words. The tabs use
+    the Transactions style on the right, with the list's name on the left. Status has room after Total.
+  - Tests: web `list-filters.test.ts` (the new filter round-trips through the URL, has its own chip, counts as a
+    filter); e2e `receipts.spec.ts` finds a receipt by a word on it through the new field. Checked in a browser on
+    the Frame check workspace: a word that matches nothing shows "No receipts match" with a chip, a matching word
+    finds the receipt, and `?q=` opens as `?text=`.
 
 ---
 

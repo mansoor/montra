@@ -47,7 +47,7 @@ export function ReceiptList({
               <th className="py-1">{t('receipts.date')}</th>
               <th className="py-1">{t('receipts.merchant')}</th>
               <th className="py-1 text-right">{t('receipts.total')}</th>
-              <th className="py-1">{t('receipts.status_col')}</th>
+              <th className="py-1 pl-4">{t('receipts.status_col')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -65,7 +65,7 @@ export function ReceiptList({
                 <td className="py-2 text-right">
                   <ReceiptAmount receipt={r} />
                 </td>
-                <td className="py-2">
+                <td className="py-2 pl-4">
                   <span className={STATUS_CHIP[r.status]}>{t(`receipts.status.${r.status}`)}</span>
                   {r.likelyDuplicates.length > 0 && (
                     <span className="chip chip-warn ml-1">{t('receipts.likely_duplicate')}</span>

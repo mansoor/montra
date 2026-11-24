@@ -20,6 +20,8 @@ export interface ListFilters {
   from?: CalendarDate;
   to?: CalendarDate;
   merchant?: string;
+  /** Receipts only: words anywhere on the receipt, the merchant or the text read off it (RCP-10). */
+  text?: string;
   /** The amounts as typed, in the workspace currency's major units ("20", "99.50"). */
   min?: string;
   max?: string;
@@ -35,6 +37,7 @@ export const FILTER_PARAMS = [
   'from',
   'to',
   'merchant',
+  'text',
   'min',
   'max',
   'dir',
@@ -75,6 +78,8 @@ export function parseListFilters(sp: Params): { filters: ListFilters; explicit: 
   }
   const merchant = get('merchant');
   if (merchant) f.merchant = merchant.slice(0, 100);
+  const text = get('text');
+  if (text) f.text = text.slice(0, 200);
   const min = get('min');
   if (min && AMOUNT.test(min)) f.min = min;
   const max = get('max');
@@ -101,6 +106,7 @@ export function listFiltersToParams(f: ListFilters, base?: URLSearchParams): URL
     if (f.to) q.set('to', f.to);
   }
   if (f.merchant) q.set('merchant', f.merchant);
+  if (f.text) q.set('text', f.text);
   if (f.min) q.set('min', f.min);
   if (f.max) q.set('max', f.max);
   if (f.dir) q.set('dir', f.dir);
@@ -194,20 +200,21 @@ export function widen(f: ListFilters): ListFilters | null {
 
 /** Whether anything beyond the window narrows the list (what "Clear all" and the chips are for). */
 export const hasFilters = (f: ListFilters): boolean =>
-  f.range === 'custom' || Boolean(f.merchant || f.min || f.max || f.dir || f.account || f.category);
+  f.range === 'custom' || Boolean(f.merchant || f.text || f.min || f.max || f.dir || f.account || f.category);
 
 /** The filters gone, keeping the window (a custom range goes back to the default). */
 export const clearFilters = (f: ListFilters): ListFilters => ({
   range: f.range === 'custom' ? DEFAULT_RANGE : f.range,
 });
 
-export type ChipKey = 'dates' | 'merchant' | 'amount' | 'dir' | 'account' | 'category';
+export type ChipKey = 'dates' | 'merchant' | 'text' | 'amount' | 'dir' | 'account' | 'category';
 
 /** The active filters, one chip each, in the order the bar shows them. */
 export function activeChips(f: ListFilters): ChipKey[] {
   const out: ChipKey[] = [];
   if (f.range === 'custom' && (f.from || f.to)) out.push('dates');
   if (f.merchant) out.push('merchant');
+  if (f.text) out.push('text');
   if (f.min || f.max) out.push('amount');
   if (f.dir) out.push('dir');
   if (f.account) out.push('account');
