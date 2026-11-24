@@ -48,6 +48,7 @@ import {
 } from './shared.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
+import { auditReveal } from '../crypto/sealed-numbers.js';
 import { retainUntil } from '../data/retention.js';
 import { openTaxId, sealTaxId, TAX_ID_COLUMN } from './tax-ids.js';
 
@@ -202,17 +203,13 @@ export class BusinessService {
       await businessEntity(trx, ctx, entityId);
       const r = await this.readProfile(trx, ctx, entityId);
       const value = await openTaxId(this.crypto, trx, ctx.workspaceId, r, TAX_ID_COLUMN[req.field]);
-      await trx
-        .insertInto('app.audit_log')
-        .values({
-          workspace_id: ctx.workspaceId,
-          actor_user_id: ctx.userId,
-          action: 'business.revealed',
-          subject_type: 'business_profile',
-          subject_id: entityId,
-          diff: JSON.stringify({ field: req.field }),
-        })
-        .execute();
+      await auditReveal(
+        trx,
+        ctx,
+        'business.revealed',
+        { type: 'business_profile', id: entityId },
+        { field: req.field },
+      );
       return { field: req.field, value };
     });
   }
