@@ -58,7 +58,7 @@
   ],
   "ACC-14": [
     "done",
-    "GET accounts/:id/deletion says what stops a delete; DELETE accounts/:id (owners and admins, recent sign-in) removes an empty account with its opening-balance entry, values that posted nothing, loan details, import mapping and statement memory in one transaction, or answers 409 with the reason (account.not_empty, account.opening_locked for closed books); audit entry account.deleted; the sync pull sends removedAccounts and the phone drops them; web Settings > Accounts has Delete beside Archive"
+    "GET accounts/:id/deletion says what stops a delete and how many transactions in the Trash go with it (trashedTransactions); DELETE accounts/:id (owners and admins, recent sign-in) removes an empty account with its opening-balance entry, values that posted nothing, loan details, import mapping and statement memory in one transaction. Its transactions in the Trash go too, for good, when they touch only it and categories; still blocking, each with its reason: a trashed transfer to another account, a trashed transaction with a receipt (a tax record), one in closed or reconciled books, and a legal hold. Otherwise 409 with the reason (account.not_empty, account.opening_locked for closed books, account.legal_hold); audit entry account.deleted with the count; the sync pull sends removedAccounts and the phone drops them; web Settings > Accounts has Delete beside Archive, and its confirm names the transactions in the Trash"
   ],
   "TXN-01": [
     "done",
@@ -566,7 +566,7 @@
   ],
   "RCP-10": [
     "done",
-    "receipts and their files kept 7 years by default (FILE_RETENTION_YEARS). Past their date they are listed for the workspace owners, who are told once; nothing is deleted until an owner approves the listed items on the web (recent sign-in) or keeps them longer. Then the job removes the receipt with its lines and extracted text, and its files; the matched transaction stays; a legal hold blocks it even after approval; the vault keeps its own copy. Search over merchant and OCR/extracted text (tsvector)"
+    "business and rental receipts and their files kept 7 years by default (FILE_RETENTION_YEARS). Personal receipts have no minimum (owner, 2026-11-23; PERSONAL_RECEIPT_RETENTION_YEARS, default 0): kept while not deleted, never listed for approval, and in the Trash for 30 days like a transaction (migration 0088 cleared the old dates). A receipt is personal when its books, its lines' books and its matched transaction's books are all personal. Past their date, business receipts are listed for the workspace owners, who are told once; nothing is deleted until an owner approves the listed items on the web (recent sign-in) or keeps them longer. Then the job removes the receipt with its lines and extracted text, and its files; the matched transaction stays; a legal hold blocks it even after approval; the vault keeps its own copy. An owner or admin can delete a matched receipt (recent sign-in): it is unlinked, its transaction stays as it is, and it comes back unmatched if restored. Search over merchant and OCR/extracted text (tsvector)"
   ],
   "RCP-11": [
     "done",
@@ -1014,7 +1014,7 @@
   ],
   "BAK-06": [
     "done",
-    "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions and tax forms for 30 days; a deleted receipt is a tax record, kept and restorable until its retention date, then an owner decides (RCP-10), and the Trash shows that date. Restore is web only. ADR-0054 PR 5b2: a file the archive didn't hold (Montra no longer had it when the archive was made) is restored as missing with the reason, listed in Review's Files to provide again, instead of pointing at nothing"
+    "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions, tax forms and personal receipts for 30 days; a business or rental receipt is a tax record, kept and restorable until its retention date, then an owner decides (RCP-10), and the Trash shows that date. Delete forever (migration 0088): owners and admins with a recent sign-in remove one item that would go after 30 days now, or Empty Trash removes all of them, with the hourly job's cleanup (files and stored bytes); refused under a legal hold and in closed or reconciled books; each is audited. Restore and Delete forever are web only (the Trash page, and a Trash tab on Receipts). ADR-0054 PR 5b2: a file the archive didn't hold (Montra no longer had it when the archive was made) is restored as missing with the reason, listed in Review's Files to provide again, instead of pointing at nothing"
   ],
   "BAK-08": [
     "partial",

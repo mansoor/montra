@@ -115,6 +115,17 @@ Several things were still open:
      - A legal hold on any active member blocks the purge, even after approval.
      - A receipt someone deletes goes to the Trash but keeps its retention date: it can be restored until then, and
        then waits for an owner's approval like any other (migration 0080). The Trash shows that date, not 30 days.
+   - **As built (2026-11-23, migration 0088), as the owner decided that day:**
+     - The 7 years, and the owner's approval, are for business and rental receipts only. A personal receipt has no
+       minimum retention (`PERSONAL_RECEIPT_RETENTION_YEARS`, default 0): it is kept while it isn't deleted, and never
+       listed for approval. Deleted, it goes 30 days later like a transaction, or at once with Delete forever.
+     - Personal means the receipt's books, its lines' books and its matched transaction's books are all personal. An
+       inbox receipt with no books named is personal. Once any part is business or rental, it gets the business date
+       from when it came in; a date only ever moves later. The migration cleared existing personal receipts' dates.
+     - An owner or admin, with a recent sign-in, can delete a matched receipt. It is unlinked and moved to the Trash;
+       the transaction keeps its amount, date, payee, splits and categories, so the books don't change. Refused in a
+       locked or reconciled period and under a legal hold. Restored, it comes back unmatched, and is not linked again
+       on its own. Other writers still unlink first.
 
 7. **API decisions made while building it** (`apps/api/src/receipts`):
    - **Line categorization:**
