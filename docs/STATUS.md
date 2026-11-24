@@ -3261,6 +3261,14 @@ Phase 11 leftovers:
     with and without the attachment, read back from the PDF; no full number anywhere). `family-vault-sending.test.ts`
     and `family-vault-no-copy.test.ts` updated for the new DTO field. db `vault.test.ts` (the new checks and functions,
     staff get none). Schema, web `vault.test.ts` and `i18n-keys.test.ts`, phone `vault.test.ts`.
+- **Wider pages on large screens, and a roomier receipt line table** (no requirement change; no migration).
+  - Before: every page stopped at 1200 px wide, so a large monitor left wide empty margins. On a receipt, item names
+    were cut off, the "For" picker shrank to its first letter, and the "Taxed" and "Category" headers ran together.
+  - Now: pages grow to 1760 px (`components/shell/app-shell.tsx`). The receipt's picture takes 38% instead of 42%. The
+    line table's headers have the same gap as its cells, the item fields are at least 12rem wide and "For" 8rem, and the
+    table scrolls sideways on its own when the screen is too narrow, so the page doesn't.
+  - Checked in a browser at 1920 px (content 1605 px wide, item names whole, headers apart) and on a narrow window (no
+    page overflow).
 
 ---
 
