@@ -3208,6 +3208,40 @@ Phase 11 leftovers:
     import; the split by the setting; the derived-file columns, their checks and RLS; Trash with the original; not
     queued for the vault; replace, keep and drop on undo; the job). `data-ownership.test.ts` (a rendering's link to its
     original isn't a file holder).
+- **Who a receipt line is for** (RCP-03, RCP-06, FAM-05, UP-02; owner, 2026-11-24; migration 0094).
+  - Before: a line's member ("For") came from an item rule, the same item's member on an earlier receipt (whatever set
+    it), or the AI's guess, else Household. Who added the receipt was never used. Rules couldn't check who added it or
+    the category, and couldn't set Household.
+  - Now a line's member is the first of:
+    1. a person's pick on the line;
+    2. a receipt-item rule that sets a member or Household;
+    3. the member a person picked by hand for the same item on an earlier receipt (never one from a default, a rule
+       or the AI);
+    4. the member linked to the login that added the receipt (a scan, an upload or an order import);
+    5. Household.
+  - The AI no longer sets it. It still suggests categories. Members are still sent to it, so their names are
+    pseudonymized in item text.
+  - `receipt_line.member_reason` (0094) keeps why: `{ source, explanation, ruleId }`, with source `user`, `rule`,
+    `history`, `adder` or `household`. `ReceiptLineDto.memberReason` carries it. The web review shows it under "For"
+    (e.g. "Added by Sam", "Rule: …"), and the category's explanation under the category.
+  - Receipt-item rules can check "Added by" (`added_by`, member ids) and "Category" (`category`, category ids), and set
+    `household: true`. They run in two steps in `@montra/categorize`: `applyRules` decides the category, where a
+    category condition can't match yet; then `applyMemberRules` runs every rule again with the category known. A rule
+    that checks the category can't set the category or the books. Transaction rules refuse all three with
+    `rule.invalid`; an unknown member or category is `rule.member_invalid` / `rule.category_invalid`.
+  - The web rule editor asks "Runs on: Transactions / Receipt items" for a new rule. Receipt-item rules offer the item,
+    store, amount, books, day, "Added by" and "Category", and "For" with Household; they hide tags, rename and
+    "reviewed", and have no preview. The list marks them and shows "for …". The phone doesn't edit rules.
+  - Re-running: a line's member is decided when the line is new, or when its category is worked out again (left
+    uncategorized, or a category picked in review), unless a person picked the member. So picking Groceries in review
+    can turn a line to Household by rule. Lines stored before this keep their members; one with no member and no
+    category is filled in when its category is redone, as before.
+  - Tests: API `receipt-members.test.ts` (the adder default, a login linked to nobody gives Household, an order import;
+    a rule over a hand-picked member over the adder; a pick kept through later saves; a hand-picked Household reused;
+    a default or a pre-0094 member not reused; a pre-0094 line left alone; "Added by Mansoor and Category is Groceries"
+    gives Household, and follows a category picked in review; the fields and Household refused on transaction rules, by
+    create and by edit; the AI's member ignored, sure or not). Categorize `rules.test.ts` (validation by scope, the
+    conditions, both steps). Web `phase3.test.ts` (receipt-item drafts, Household, switching kind, describing them).
 
 ---
 

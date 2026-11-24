@@ -42,6 +42,19 @@ export const CreateReceiptRequest = z.object({
 });
 export type CreateReceiptRequest = z.output<typeof CreateReceiptRequest>;
 
+/**
+ * Why a receipt line is for its member (owner, 2026-11-24), in the order they are tried: a person's pick (`user`), a
+ * receipt-item rule (`rule`), the member picked by hand for the same item before (`history`), whoever added the receipt
+ * (`adder`), else the household (`household`).
+ */
+export const ReceiptMemberReasonDto = z.object({
+  source: z.enum(['user', 'rule', 'history', 'adder', 'household']),
+  /** E.g. "Added by Sam", "Rule: Groceries are the house's". */
+  explanation: z.string(),
+  ruleId: z.string().nullable(),
+});
+export type ReceiptMemberReasonDto = z.infer<typeof ReceiptMemberReasonDto>;
+
 export const ReceiptLineDto = z.object({
   id: Id,
   lineNo: z.number().int().positive(),
@@ -60,6 +73,8 @@ export const ReceiptLineDto = z.object({
   entityId: Id.nullable(),
   memberId: Id.nullable(),
   categorization: CategorizationDto.nullable(),
+  /** Null for lines stored before 2026-11-24. */
+  memberReason: ReceiptMemberReasonDto.nullable(),
 });
 export type ReceiptLineDto = z.infer<typeof ReceiptLineDto>;
 

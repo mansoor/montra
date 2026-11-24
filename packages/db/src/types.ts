@@ -1071,6 +1071,8 @@ export interface ReceiptLineTable {
   categorization: Json<Record<string, unknown>> | null;
   /** Normalized printed text, for item history (RCP-03/06). */
   item_key: string | null;
+  /** Why the line is for its member (0094): { source, explanation, ruleId }. Null for lines stored before. */
+  member_reason: Json<Record<string, unknown>> | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }

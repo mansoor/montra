@@ -1,5 +1,14 @@
 export * from './types.js';
-export { RuleError, validateRule, compileRule, compileRules, applyRules, type RulesResult } from './rules.js';
+export {
+  RuleError,
+  validateRule,
+  compileRule,
+  compileRules,
+  applyRules,
+  applyMemberRules,
+  type MemberRuleResult,
+  type RulesResult,
+} from './rules.js';
 export { amountBand, historySuggestion, type HistorySuggestion } from './history.js';
 export {
   REMEMBERED_CONFIDENCE,

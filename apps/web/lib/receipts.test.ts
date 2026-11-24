@@ -49,6 +49,7 @@ const receipt: ReceiptDto = {
       entityId: 'e1',
       memberId: null,
       categorization: null,
+      memberReason: null,
     },
   ],
   groups: [],

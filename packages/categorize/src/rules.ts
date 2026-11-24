@@ -9,7 +9,14 @@
  *   -42.00, so "fuel between $5 and $200" is written `between ["-200.00", "-5.00"]`.
  * - `account` and `entity` compare ids with `equals` or `in`.
  * - `date_dow` is the day of the week, 0 = Sunday … 6 = Saturday.
+ * - `added_by` and `category` are for receipt-line rules only (owner, 2026-11-24). `added_by` compares the member
+ *   linked to the login that added the receipt; `category` compares the line's category, with `equals` or `in`.
  * - Text comparison collapses whitespace and is case-insensitive unless `ci: false`.
+ *
+ * A receipt line's rules run in two steps. Step 1 (`applyRules` with no `categoryId` on the subject) decides the
+ * category: a rule with a `category` condition can't match yet. The caller then settles the category (a rule, item
+ * history or AI). Step 2 (`applyMemberRules`, with the line's category on the subject) decides the member: every rule
+ * runs again in the same order, so one that checks the category takes part like any other.
  */
 import { isoDayOfWeek, type Decimal } from '@montra/domain';
 import { RE2JS } from 're2js';
@@ -20,6 +27,7 @@ import type {
   RuleCondition,
   RuleConditions,
   RuleRecord,
+  RuleScope,
   Subject,
 } from './types.js';
 
@@ -33,6 +41,8 @@ export class RuleError extends Error {
 }
 
 const TEXT_FIELDS = new Set(['payee', 'description', 'raw_description', 'item_text']);
+/** Conditions only a receipt line has (owner, 2026-11-24). */
+const RECEIPT_LINE_FIELDS = new Set(['added_by', 'category']);
 const TEXT_OPS = new Set(['equals', 'contains', 'starts_with', 'regex', 'in']);
 const AMOUNT_OPS = new Set(['equals', 'between', 'gt', 'lt']);
 const ID_OPS = new Set(['equals', 'in']);
@@ -76,7 +86,12 @@ function conditionIssues(c: RuleCondition, path: string): Issue[] {
       }
     } else if (isArray || typeof c.value !== 'string' || !parseRuleDecimal(c.value))
       bad(`"${c.op}" needs one decimal amount, e.g. "-5.00"`);
-  } else if (c.field === 'account' || c.field === 'entity') {
+  } else if (
+    c.field === 'account' ||
+    c.field === 'entity' ||
+    c.field === 'added_by' ||
+    c.field === 'category'
+  ) {
     if (!ID_OPS.has(c.op)) bad(`"${c.op}" can't be used with ${c.field}`);
     else if (c.op === 'in' && (!isArray || (c.value as string[]).length === 0))
       bad('"in" needs a list of values');
@@ -101,8 +116,16 @@ function compareDecimals(a: Decimal, b: Decimal): number {
   return compareMinorToDecimal(a.coefficient, a.scale, b);
 }
 
-function actionIssues(a: RuleActions): Issue[] {
+function actionIssues(a: RuleActions, scope: RuleScope): Issue[] {
   const out: Issue[] = [];
+  if (a.household !== undefined) {
+    if (scope !== 'receipt_line')
+      out.push({ path: 'actions.household', message: 'Only receipt-item rules can set Household' });
+    else if (a.household !== true)
+      out.push({ path: 'actions.household', message: 'Household is set with true, or left out' });
+    else if (a.memberId)
+      out.push({ path: 'actions.household', message: 'Choose a member or Household, not both' });
+  }
   if (a.tags !== undefined) {
     if (
       !Array.isArray(a.tags) ||
@@ -117,6 +140,7 @@ function actionIssues(a: RuleActions): Issue[] {
     Boolean(a.categoryId) ||
     Boolean(a.entityId) ||
     Boolean(a.memberId) ||
+    a.household === true ||
     (a.tags?.length ?? 0) > 0 ||
     Boolean(a.renamePayee) ||
     Boolean(a.propertyId) ||
@@ -125,7 +149,38 @@ function actionIssues(a: RuleActions): Issue[] {
   return out;
 }
 
-function issues(conditions: RuleConditions, actions: RuleActions): Issue[] {
+/** Each condition with its path, groups flattened. */
+function eachCondition(conditions: RuleConditions): Array<{ c: RuleCondition; path: string }> {
+  return conditions.all.flatMap((entry, i) =>
+    'any' in entry
+      ? entry.any.map((c, j) => ({ c, path: `conditions.all[${i}].any[${j}]` }))
+      : [{ c: entry, path: `conditions.all[${i}]` }],
+  );
+}
+
+function scopeIssues(conditions: RuleConditions, actions: RuleActions, scope: RuleScope): Issue[] {
+  const out: Issue[] = [];
+  const conds = eachCondition(conditions);
+  if (scope !== 'receipt_line') {
+    for (const { c, path } of conds)
+      if (RECEIPT_LINE_FIELDS.has(c.field))
+        out.push({
+          path,
+          message: `Only receipt-item rules can check ${c.field === 'added_by' ? 'who added the receipt' : 'the category'}`,
+        });
+    return out;
+  }
+  // Step 2 decides the member once the category is known: a rule that checks the category can't also set it.
+  const checksCategory = conds.find(({ c }) => c.field === 'category');
+  if (checksCategory && (actions.categoryId || actions.entityId))
+    out.push({
+      path: checksCategory.path,
+      message: "A rule that checks the category can't set the category or the books",
+    });
+  return out;
+}
+
+function issues(conditions: RuleConditions, actions: RuleActions, scope: RuleScope): Issue[] {
   const out: Issue[] = [];
   if (!conditions || !Array.isArray(conditions.all) || conditions.all.length === 0)
     out.push({ path: 'conditions.all', message: 'A rule needs at least one condition' });
@@ -140,13 +195,22 @@ function issues(conditions: RuleConditions, actions: RuleActions): Issue[] {
         else entry.any.forEach((c, j) => out.push(...conditionIssues(c, `conditions.all[${i}].any[${j}]`)));
       } else out.push(...conditionIssues(entry, `conditions.all[${i}]`));
     });
-  out.push(...actionIssues(actions ?? {}));
+  out.push(...actionIssues(actions ?? {}, scope));
+  // Checked once the shapes are sound.
+  if (out.length === 0) out.push(...scopeIssues(conditions, actions ?? {}, scope));
   return out;
 }
 
-/** Problems with a rule, as "path: message" lines; empty when the rule is valid. */
-export function validateRule(conditions: RuleConditions, actions: RuleActions): string[] {
-  return issues(conditions, actions).map((i) => `${i.path}: ${i.message}`);
+/**
+ * Problems with a rule, as "path: message" lines; empty when the rule is valid. `scope` defaults to `transaction`,
+ * which refuses the receipt-line conditions (`added_by`, `category`) and the household action.
+ */
+export function validateRule(
+  conditions: RuleConditions,
+  actions: RuleActions,
+  scope: RuleScope = 'transaction',
+): string[] {
+  return issues(conditions, actions, scope).map((i) => `${i.path}: ${i.message}`);
 }
 
 // ----- Compilation ---------------------------------------------------------------------------------------
@@ -196,11 +260,16 @@ function compileCondition(c: RuleCondition): Predicate {
     if (c.op === 'lt') return (s) => cmp(s, d) < 0;
     return (s) => cmp(s, d) === 0;
   }
-  if (c.field === 'account' || c.field === 'entity') {
+  if (c.field === 'account' || c.field === 'entity' || c.field === 'added_by' || c.field === 'category') {
     const ids = new Set((Array.isArray(c.value) ? c.value : [c.value]).map((v) => v.toLowerCase()));
-    return c.field === 'account'
-      ? (s) => ids.has(s.accountId.toLowerCase())
-      : (s) => ids.has(s.entityId.toLowerCase());
+    if (c.field === 'account') return (s) => ids.has(s.accountId.toLowerCase());
+    if (c.field === 'entity') return (s) => ids.has(s.entityId.toLowerCase());
+    // Not known yet (the category in step 1), or none: no match.
+    const of = c.field === 'added_by' ? (s: Subject) => s.addedByMemberId : (s: Subject) => s.categoryId;
+    return (s) => {
+      const v = of(s);
+      return typeof v === 'string' && ids.has(v.toLowerCase());
+    };
   }
   // date_dow: ISO 0=Monday … 6=Sunday → 0=Sunday … 6=Saturday
   const days = new Set((Array.isArray(c.value) ? c.value : [c.value]).map(Number));
@@ -209,7 +278,7 @@ function compileCondition(c: RuleCondition): Predicate {
 
 /** Compiles one rule. Throws `RuleError` (with the path of the first problem) when the rule is invalid. */
 export function compileRule(r: RuleRecord): CompiledRule {
-  const problems = issues(r.conditions, r.actions);
+  const problems = issues(r.conditions, r.actions, r.scope ?? 'transaction');
   if (problems.length > 0) throw new RuleError(problems[0]!.message, problems[0]!.path);
   const parts: Predicate[] = r.conditions.all.map((entry) => {
     if ('any' in entry) {
@@ -252,12 +321,16 @@ export function compileRules(records: readonly RuleRecord[]): {
 }
 
 export interface RulesResult {
+  /** `memberId` or `household` (never both) come from one rule: the first to set either. */
   actions: RuleActions;
   /** The rule that set the category, or the first matching rule when none did. */
   ruleId: string | null;
   ruleName: string | null;
   /** The rule that set the property (AI-02), when one did. */
   propertyRuleName: string | null;
+  /** The rule that set the member or Household, when one did. */
+  memberRuleId: string | null;
+  memberRuleName: string | null;
   matchedRuleIds: string[];
 }
 
@@ -267,6 +340,7 @@ export function applyRules(rules: readonly CompiledRule[], s: Subject): RulesRes
   const matched: CompiledRule[] = [];
   let categoryRule: CompiledRule | null = null;
   let propertyRule: CompiledRule | null = null;
+  let memberRule: CompiledRule | null = null;
   const tags = new Set<string>();
   for (const rule of rules) {
     if (!rule.matches(s)) continue;
@@ -277,7 +351,11 @@ export function applyRules(rules: readonly CompiledRule[], s: Subject): RulesRes
       categoryRule = rule;
     }
     if (a.entityId && actions.entityId === undefined) actions.entityId = a.entityId;
-    if (a.memberId && actions.memberId === undefined) actions.memberId = a.memberId;
+    if ((a.memberId || a.household === true) && !memberRule) {
+      memberRule = rule;
+      if (a.memberId) actions.memberId = a.memberId;
+      else actions.household = true;
+    }
     if (a.renamePayee && actions.renamePayee === undefined) actions.renamePayee = a.renamePayee;
     if (a.markReviewed !== undefined && actions.markReviewed === undefined)
       actions.markReviewed = a.markReviewed;
@@ -296,6 +374,33 @@ export function applyRules(rules: readonly CompiledRule[], s: Subject): RulesRes
     ruleId: named?.record.id ?? null,
     ruleName: named?.record.name ?? null,
     propertyRuleName: propertyRule?.record.name ?? null,
+    memberRuleId: memberRule?.record.id ?? null,
+    memberRuleName: memberRule?.record.name ?? null,
     matchedRuleIds: matched.map((r) => r.record.id),
+  };
+}
+
+export interface MemberRuleResult {
+  /** Null: the household. */
+  memberId: string | null;
+  ruleId: string;
+  ruleName: string;
+}
+
+/**
+ * Step 2 of a receipt line's rules: the member, once the line's category is settled. `categoryId` on the subject is
+ * the line's category (null when it has none). Every rule runs, in order; the first to set a member or Household
+ * wins. Null when none does.
+ */
+export function applyMemberRules(
+  rules: readonly CompiledRule[],
+  s: Subject & { categoryId: string | null },
+): MemberRuleResult | null {
+  const r = applyRules(rules, s);
+  if (!r.memberRuleId) return null;
+  return {
+    memberId: r.actions.household ? null : (r.actions.memberId ?? null),
+    ruleId: r.memberRuleId,
+    ruleName: r.memberRuleName ?? '',
   };
 }

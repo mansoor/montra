@@ -8,8 +8,9 @@ import type { CreateRuleInput } from '@montra/api-client';
 
 export type RuleField = RuleCondition['field'];
 export type RuleOp = RuleCondition['op'];
+export type RuleScope = RuleDto['scope'];
 
-/** Fields offered for transaction rules (item_text applies to receipt lines, which arrive in Phase 4). */
+/** Fields offered for transaction rules. */
 export const RULE_FIELDS = [
   'payee',
   'description',
@@ -19,6 +20,26 @@ export const RULE_FIELDS = [
   'entity',
   'date_dow',
 ] as const satisfies readonly RuleField[];
+
+/**
+ * Fields offered for receipt-item rules: the item's text, the store (as the payee), its amount, the books, the day, and
+ * two only they have (owner, 2026-11-24): who added the receipt, and the line's category.
+ */
+export const RECEIPT_LINE_FIELDS = [
+  'item_text',
+  'payee',
+  'amount',
+  'entity',
+  'date_dow',
+  'added_by',
+  'category',
+] as const satisfies readonly RuleField[];
+
+export const fieldsFor = (scope: RuleScope): readonly RuleField[] =>
+  scope === 'receipt_line' ? RECEIPT_LINE_FIELDS : RULE_FIELDS;
+
+/** The member choice that means "For: Household" on a receipt-item rule (`household: true`). */
+export const HOUSEHOLD = 'household';
 
 const TEXT_OPS: RuleOp[] = ['contains', 'equals', 'starts_with', 'regex'];
 export const OPS_BY_FIELD: Record<RuleField, RuleOp[]> = {
@@ -30,10 +51,13 @@ export const OPS_BY_FIELD: Record<RuleField, RuleOp[]> = {
   account: ['in'],
   entity: ['in'],
   date_dow: ['in'],
+  added_by: ['in'],
+  category: ['in'],
 };
 
 export const isTextField = (f: RuleField) => OPS_BY_FIELD[f] === TEXT_OPS;
-export const isListField = (f: RuleField) => f === 'account' || f === 'entity' || f === 'date_dow';
+export const isListField = (f: RuleField) =>
+  f === 'account' || f === 'entity' || f === 'date_dow' || f === 'added_by' || f === 'category';
 
 export interface ConditionDraft {
   key: string;
@@ -54,6 +78,7 @@ export type ConditionItem =
 
 export interface ActionsDraft {
   categoryId: string;
+  /** A member's id, `HOUSEHOLD` (receipt-item rules), or '' to leave it. */
   memberId: string;
   tags: string;
   renamePayee: string;
@@ -61,6 +86,8 @@ export interface ActionsDraft {
 }
 
 export interface RuleDraft {
+  /** What the rule runs on; fixed once the rule is saved. */
+  scope: RuleScope;
   name: string;
   /** '' = all books. */
   entityId: string;
@@ -77,13 +104,14 @@ export function emptyCondition(field: RuleField = 'payee'): ConditionDraft {
   return { key: newKey(), field, op: OPS_BY_FIELD[field][0]!, value: '', value2: '', values: [], ci: true };
 }
 
-export function emptyDraft(): RuleDraft {
+export function emptyDraft(scope: RuleScope = 'transaction'): RuleDraft {
   return {
+    scope,
     name: '',
     entityId: '',
     priority: 100,
     enabled: true,
-    items: [{ kind: 'cond', cond: emptyCondition() }],
+    items: [{ kind: 'cond', cond: emptyCondition(fieldsFor(scope)[0]) }],
     actions: { categoryId: '', memberId: '', tags: '', renamePayee: '', markReviewed: false },
   };
 }
@@ -92,6 +120,24 @@ export function emptyDraft(): RuleDraft {
 export function withField(c: ConditionDraft, field: RuleField): ConditionDraft {
   if (c.field === field) return c;
   return { ...emptyCondition(field), key: c.key };
+}
+
+/**
+ * A new rule switched between transactions and receipt items: conditions on a field the other kind doesn't have start
+ * again on its first field, and Household (receipt items only) goes back to "don't change".
+ */
+export function withScope(d: RuleDraft, scope: RuleScope): RuleDraft {
+  if (d.scope === scope) return d;
+  const fields = fieldsFor(scope);
+  const fit = (c: ConditionDraft) => (fields.includes(c.field) ? c : withField(c, fields[0]!));
+  return {
+    ...d,
+    scope,
+    items: d.items.map((it) =>
+      it.kind === 'cond' ? { ...it, cond: fit(it.cond) } : { ...it, conds: it.conds.map(fit) },
+    ),
+    actions: { ...d.actions, memberId: d.actions.memberId === HOUSEHOLD ? '' : d.actions.memberId },
+  };
 }
 
 const DECIMAL = /^-?\d+(\.\d{1,4})?$/;
@@ -163,29 +209,48 @@ export const parseTagList = (s: string) =>
     ),
   ].slice(0, 10);
 
-export function draftActions(a: ActionsDraft): CreateRuleInput['actions'] | DraftError {
+/**
+ * The actions of a draft. A receipt-item rule sets only the category and who the line is for (a member or Household):
+ * tags, a new payee name and "reviewed" mean nothing on a receipt line, so the form doesn't offer them there.
+ */
+export function draftActions(
+  a: ActionsDraft,
+  scope: RuleScope = 'transaction',
+): CreateRuleInput['actions'] | DraftError {
   const out: CreateRuleInput['actions'] = {};
+  const receiptLine = scope === 'receipt_line';
   if (a.categoryId) out.categoryId = a.categoryId;
-  if (a.memberId) out.memberId = a.memberId;
-  const tags = parseTagList(a.tags);
-  if (tags.length) out.tags = tags;
-  if (a.renamePayee.trim()) out.renamePayee = a.renamePayee.trim();
-  if (a.markReviewed) out.markReviewed = true;
+  if (a.memberId === HOUSEHOLD) {
+    if (receiptLine) out.household = true;
+  } else if (a.memberId) out.memberId = a.memberId;
+  if (!receiptLine) {
+    const tags = parseTagList(a.tags);
+    if (tags.length) out.tags = tags;
+    if (a.renamePayee.trim()) out.renamePayee = a.renamePayee.trim();
+    if (a.markReviewed) out.markReviewed = true;
+  }
   if (Object.keys(out).length === 0) return { key: '', error: 'rules.error.no_actions' };
   return out;
 }
+
+const checksCategory = (items: ConditionItem[]): ConditionDraft | undefined =>
+  items.flatMap((it) => (it.kind === 'cond' ? [it.cond] : it.conds)).find((c) => c.field === 'category');
 
 /** The create/update body for a valid draft, or the first problem (an i18n key and the condition's key). */
 export function draftToRequest(d: RuleDraft): { ok: true; value: CreateRuleInput } | DraftError {
   if (!d.name.trim()) return { key: 'name', error: 'rules.error.name' };
   const conditions = draftConditions(d.items);
   if (!('ok' in conditions)) return conditions;
-  const actions = draftActions(d.actions);
+  const actions = draftActions(d.actions, d.scope);
   if (isError(actions)) return actions;
+  // The member is decided once the category is: a rule that checks the category can't also set it.
+  const category = checksCategory(d.items);
+  if (category && actions.categoryId) return { key: category.key, error: 'rules.error.category_loop' };
   return {
     ok: true,
     value: {
       name: d.name.trim(),
+      scope: d.scope,
       entityId: d.entityId || null,
       priority: d.priority,
       enabled: d.enabled,
@@ -208,6 +273,7 @@ export function ruleToDraft(rule: RuleDto): RuleDraft {
   const a = rule.actions as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
   return {
+    scope: rule.scope,
     name: rule.name,
     entityId: rule.entityId ?? '',
     priority: rule.priority,
@@ -219,7 +285,7 @@ export function ruleToDraft(rule: RuleDto): RuleDraft {
     ),
     actions: {
       categoryId: str(a.categoryId),
-      memberId: str(a.memberId),
+      memberId: a.household === true ? HOUSEHOLD : str(a.memberId),
       tags: Array.isArray(a.tags) ? (a.tags as string[]).join(', ') : '',
       renamePayee: str(a.renamePayee),
       markReviewed: a.markReviewed === true,
@@ -252,6 +318,18 @@ export function describeConditions(
   return conditions.all
     .map((x) => ('any' in x ? `(${x.any.map(one).join(` ${t('rules.or')} `)})` : one(x)))
     .join(` ${t('rules.and')} `);
+}
+
+/** "For: Household" or "For: Sam" for a rule that says who a line is for; '' for one that doesn't. */
+export function describeFor(
+  actions: Record<string, unknown>,
+  t: T,
+  memberName: (id: string) => string = (id) => id,
+): string {
+  if (actions.household === true) return t('rules.describe.for', { name: t('receipts.household') });
+  if (typeof actions.memberId === 'string' && actions.memberId)
+    return t('rules.describe.for', { name: memberName(actions.memberId) });
+  return '';
 }
 
 export const ORIGIN_KEYS: Record<RuleDto['origin'], string> = {

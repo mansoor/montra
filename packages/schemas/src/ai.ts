@@ -230,6 +230,10 @@ export const RuleField = z.enum([
   'entity',
   'date_dow',
   'item_text',
+  /** Receipt-item rules only: the member linked to the login that added the receipt (owner, 2026-11-24). */
+  'added_by',
+  /** Receipt-item rules only: the line's category, once known. A rule that checks it can only set the member. */
+  'category',
 ]);
 export const RuleOp = z.enum(['equals', 'contains', 'starts_with', 'regex', 'between', 'gt', 'lt', 'in']);
 
@@ -256,6 +260,8 @@ export const RuleActions = z
     categoryId: Id.nullable(),
     entityId: Id.nullable(),
     memberId: Id.nullable(),
+    /** Receipt-item rules only: the line is for the household (no member). Not with `memberId`. */
+    household: z.literal(true),
     tags: z.array(z.string().max(50)).max(10),
     renamePayee: z.string().max(200).nullable(),
     markReviewed: z.boolean(),

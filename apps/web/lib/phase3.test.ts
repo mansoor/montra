@@ -44,13 +44,18 @@ import {
 } from './review';
 import {
   describeConditions,
+  describeFor,
+  draftActions,
   draftConditions,
   draftToRequest,
   emptyCondition,
   emptyDraft,
+  fieldsFor,
+  HOUSEHOLD,
   ruleToDraft,
   sortRules,
   withField,
+  withScope,
   type RuleDraft,
 } from './rules';
 
@@ -79,6 +84,7 @@ describe('rule drafts (UP-02)', () => {
       ok: true,
       value: {
         name: 'Shell → Fuel',
+        scope: 'transaction',
         entityId: null,
         priority: 100,
         enabled: true,
@@ -169,6 +175,86 @@ describe('rule drafts (UP-02)', () => {
     });
   });
 
+  it('builds a receipt-item rule: "added by", category, and Household (owner, 2026-11-24)', () => {
+    const base = emptyDraft('receipt_line');
+    expect(base.items[0]).toMatchObject({ kind: 'cond', cond: { field: 'item_text' } });
+    const addedBy = { ...emptyCondition('added_by'), values: ['m1'] };
+    const category = { ...emptyCondition('category'), values: ['c-groceries'] };
+    const d: RuleDraft = {
+      ...base,
+      name: 'Mansoor’s groceries',
+      items: [
+        { kind: 'cond', cond: addedBy },
+        { kind: 'cond', cond: category },
+      ],
+      // Tags and the rest mean nothing on a receipt line and are left out.
+      actions: { categoryId: '', memberId: HOUSEHOLD, tags: 'x', renamePayee: 'y', markReviewed: true },
+    };
+    expect(draftToRequest(d)).toEqual({
+      ok: true,
+      value: {
+        name: 'Mansoor’s groceries',
+        scope: 'receipt_line',
+        entityId: null,
+        priority: 100,
+        enabled: true,
+        conditions: {
+          all: [
+            { field: 'added_by', op: 'in', value: ['m1'] },
+            { field: 'category', op: 'in', value: ['c-groceries'] },
+          ],
+        },
+        actions: { household: true },
+      },
+    });
+    // A rule that checks the category can't set it.
+    expect(draftToRequest({ ...d, actions: { ...d.actions, categoryId: 'c-gifts' } })).toEqual({
+      key: category.key,
+      error: 'rules.error.category_loop',
+    });
+    // Round trip: Household comes back as the Household choice.
+    const rule = {
+      id: 'r2',
+      name: 'x',
+      entityId: null,
+      scope: 'receipt_line',
+      priority: 100,
+      conditions: { all: [{ field: 'category', op: 'in', value: ['c1'] }] },
+      actions: { household: true },
+      origin: 'user',
+      enabled: true,
+      hitCount: 0,
+      lastHitAt: null,
+      version: '1',
+      createdAt: '2026-11-24T00:00:00Z',
+    } satisfies RuleDto;
+    expect(ruleToDraft(rule)).toMatchObject({ scope: 'receipt_line', actions: { memberId: HOUSEHOLD } });
+    expect(draftToRequest(ruleToDraft(rule))).toMatchObject({
+      ok: true,
+      value: { actions: { household: true } },
+    });
+  });
+
+  it('switching a new rule to transactions drops what only receipt items have', () => {
+    const d: RuleDraft = {
+      ...emptyDraft('receipt_line'),
+      items: [
+        { kind: 'cond', cond: { ...emptyCondition('item_text'), value: 'milk' } },
+        { kind: 'any', key: 'g', conds: [{ ...emptyCondition('added_by'), values: ['m1'] }] },
+      ],
+      actions: { categoryId: '', memberId: HOUSEHOLD, tags: '', renamePayee: '', markReviewed: false },
+    };
+    const next = withScope(d, 'transaction');
+    expect(next.scope).toBe('transaction');
+    expect(next.items[0]).toMatchObject({ kind: 'cond', cond: { field: 'payee', value: '' } });
+    expect(next.items[1]).toMatchObject({ kind: 'any', conds: [{ field: 'payee', values: [] }] });
+    expect(next.actions.memberId).toBe('');
+    expect(fieldsFor('transaction')).not.toContain('added_by');
+    expect(fieldsFor('receipt_line')).toEqual(expect.arrayContaining(['added_by', 'category', 'item_text']));
+    // Household is never sent for a transaction rule.
+    expect(draftActions({ ...d.actions, categoryId: 'c1' }, 'transaction')).toEqual({ categoryId: 'c1' });
+  });
+
   it('describes conditions in plain language and sorts by priority then age', () => {
     const text = describeConditions(
       {
@@ -186,6 +272,21 @@ describe('rule drafts (UP-02)', () => {
       (_f, id) => (id === 'a1' ? 'Amex' : id),
     );
     expect(text).toBe('Payee contains “shell” and (Account is Amex or Day of week is Saturday)');
+    expect(
+      describeConditions(
+        {
+          all: [
+            { field: 'added_by', op: 'in', value: ['m1'] },
+            { field: 'category', op: 'in', value: ['c1'] },
+          ],
+        },
+        t,
+        (f, id) => (f === 'added_by' ? 'Mansoor' : f === 'category' ? 'Groceries' : id),
+      ),
+    ).toBe('Added by is Mansoor and Category is Groceries');
+    expect(describeFor({ household: true }, t)).toBe('for Household');
+    expect(describeFor({ memberId: 'm1' }, t, () => 'Sam')).toBe('for Sam');
+    expect(describeFor({ categoryId: 'c1' }, t)).toBe('');
     const r = (id: string, priority: number, createdAt: string) => ({ id, priority, createdAt }) as RuleDto;
     expect(
       sortRules([r('b', 5, '2026-02'), r('a', 5, '2026-01'), r('c', 1, '2026-03')]).map((x) => x.id),
