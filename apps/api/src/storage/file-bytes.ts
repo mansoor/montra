@@ -33,6 +33,7 @@ import { MISSING_WORDS, MissingFiles } from './missing-files.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from './storage.js';
 import { StorageDestinationsService, type DestinationRow } from './storage-destinations.service.js';
 import { configOf, scheduleVault, VaultService } from './vault/vault.service.js';
+import { pdfAttachments } from '../renditions/pdf-attachments.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -139,6 +140,18 @@ export class FileBytes {
       }
       return got;
     }
+    if (copies?.userId && copies.vaultId && copies.vaultStatus === 'converted') {
+      // ADR-0057 §7: a file the vault doesn't keep is there inside the PDF Montra sent with it attached.
+      if (opts.vault === false) return notAvailable('in_vault');
+      const actor = { workspaceId: ctx.workspaceId, userId: copies.userId };
+      const got = await this.fromPdf(actor, copies.vaultId, file);
+      if (got) {
+        if (!got.ok && got.reason === 'vault_refused' && !file.storage_key) {
+          await this.missing.mark(actor, [file.id], MISSING_WORDS.refused);
+        }
+        return got;
+      }
+    }
     if (copies?.userId && copies.vaultStatus === 'out_of_reach' && !file.storage_key) {
       // §9: the vault says Montra may no longer see it, and nothing else holds it: missing (§5a).
       await this.missing.mark(
@@ -244,7 +257,8 @@ export class FileBytes {
           .set({ remove_at: new Date(Date.now() + REMOVE_AGAIN_MS) })
           .where('workspace_id', '=', ctx.workspaceId)
           .where('file_id', '=', f.id)
-          .where('status', '=', 'filed')
+          // ADR-0057 §7: an original whose copy went once the PDF carrying it was filed goes again too.
+          .where('status', 'in', ['filed', 'converted'])
           .where('source_removed_at', 'is not', null)
           .executeTakeFirst();
         if (Number(r.numUpdatedRows)) await scheduleVault(trx, new Date(Date.now() + REMOVE_AGAIN_MS));
@@ -311,6 +325,38 @@ export class FileBytes {
     } finally {
       remote?.close();
     }
+  }
+
+  /**
+   * ADR-0057 §7: an original read back from the PDF the vault filed with it attached: the PDF is read as any file is
+   * (Montra's copy, the owner's storage, then the vault, each hash-checked), and the attachment must be the original
+   * byte for byte. Null when no such PDF is filed.
+   */
+  private async fromPdf(actor: Ctx, destinationId: string, file: HeldFile): Promise<FileBytesResult | null> {
+    const pdf = await this.db.run(actor, async (trx) => {
+      const { rows } = await sql<{ id: string }>`
+        select r.id from app.file r
+          join app.vault_item ri on ri.workspace_id = r.workspace_id and ri.file_id = r.id
+                                and ri.destination_id = ${destinationId}::uuid
+         where r.workspace_id = ${actor.workspaceId}::uuid and r.derived_from_file_id = ${file.id}::uuid
+           and r.rendition is not null and ri.carries_original and ri.status = 'filed'
+         order by ri.filed_at desc
+         limit 1`.execute(trx);
+      return rows[0] ? heldFile(trx, actor.workspaceId, rows[0].id) : undefined;
+    });
+    if (!pdf) return null;
+    const got = await this.read(actor, pdf);
+    if (!got.ok) return got;
+    try {
+      const inside = (await pdfAttachments(got.bytes)).find((a) => sha256(a.bytes) === file.sha256);
+      if (inside) {
+        this.logger.log(`File ${file.id}: read back from the PDF it is attached to`);
+        return { ok: true, bytes: inside.bytes, from: got.from };
+      }
+    } catch (e) {
+      this.logger.warn(`File ${file.id}: the PDF it is attached to couldn't be read: ${(e as Error).name}`);
+    }
+    return notAvailable('vault_refused');
   }
 
   /**

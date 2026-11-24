@@ -12,10 +12,13 @@ import type {
 import {
   isSentMode,
   VAULT_GROUP_MODES_OFFERED,
+  VAULT_RENDERED_GROUPS,
   VAULT_RESTRICTED_GROUPS,
   vaultSuggestKind,
+  vaultUnkeptOffered,
   type VaultGroup,
   type VaultGroupMode,
+  type VaultUnkeptChoice,
 } from '@montra/schemas';
 
 /** Owners and admins see the card, when the plan has the vault (D4, D11). Only an owner changes anything. */
@@ -177,6 +180,9 @@ export interface VaultGroupRow {
   /** The modes this person may choose here. */
   modes: readonly VaultGroupMode[];
   editable: boolean;
+  /** ADR-0057 §1: "Files the vault doesn't keep", and the choices this person may make (an owner, where Montra renders). */
+  unkept: VaultUnkeptChoice;
+  unkeptChoices: readonly VaultUnkeptChoice[];
 }
 
 /**
@@ -204,8 +210,26 @@ export function vaultGroupRows(
       restricted,
       modes,
       editable: owner || adminMayTurnOff,
+      unkept: g.unkept,
+      unkeptChoices: owner ? vaultUnkeptOffered(g.group) : [g.unkept],
     };
   });
+}
+
+/**
+ * ADR-0057 §7: what Settings says about the originals of a group Montra converts, when it is sent with no local copy.
+ * A PDF with the original attached lets the original go once the vault has filed it; without, the original stays, and
+ * Settings says why. Null for any other group or mode.
+ */
+export function vaultOriginalsNote(g: {
+  group: VaultGroup;
+  mode: VaultGroupMode;
+  unkept: VaultUnkeptChoice;
+}): string | null {
+  if (g.mode !== 'sent_no_copy' || !VAULT_RENDERED_GROUPS.includes(g.group)) return null;
+  if (g.unkept === 'convert_attach') return 'vault.originals_go';
+  if (g.unkept === 'convert') return 'vault.originals_stay';
+  return null;
 }
 
 /**
@@ -215,25 +239,30 @@ export function vaultGroupRows(
  */
 export function vaultGroupChanges(
   d: VaultConnectionDto,
-  draft: readonly { group: VaultGroup; mode: VaultGroupMode; vaultKind: string | null }[],
+  draft: readonly {
+    group: VaultGroup;
+    mode: VaultGroupMode;
+    vaultKind: string | null;
+    unkept?: VaultUnkeptChoice;
+  }[],
 ): {
-  groups: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null }[];
+  groups: GroupChange[];
   warn: VaultGroup[];
   noCopy: VaultGroup[];
 } {
-  const groups: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null }[] = [];
+  const groups: GroupChange[] = [];
   const warn: VaultGroup[] = [];
   const noCopy: VaultGroup[] = [];
   for (const next of draft) {
     const saved = d.groups.find((g) => g.group === next.group);
     if (!saved) continue;
-    const change: { group: VaultGroup; mode?: VaultGroupMode; vaultKind?: string | null } = {
-      group: next.group,
-    };
+    const change: GroupChange = { group: next.group };
     if (next.mode !== saved.mode) change.mode = next.mode;
     const kind = isSentMode(next.mode) ? next.vaultKind : saved.vaultKind;
     if (kind !== saved.vaultKind) change.vaultKind = kind;
-    if (change.mode !== undefined || change.vaultKind !== undefined) groups.push(change);
+    if (next.unkept !== undefined && next.unkept !== saved.unkept) change.unkept = next.unkept;
+    if (change.mode !== undefined || change.vaultKind !== undefined || change.unkept !== undefined)
+      groups.push(change);
     if (VAULT_RESTRICTED_GROUPS.includes(next.group) && isSentMode(next.mode) && !isSentMode(saved.mode)) {
       warn.push(next.group);
     }
@@ -241,6 +270,13 @@ export function vaultGroupChanges(
   }
   return { groups, warn, noCopy };
 }
+
+type GroupChange = {
+  group: VaultGroup;
+  mode?: VaultGroupMode;
+  vaultKind?: string | null;
+  unkept?: VaultUnkeptChoice;
+};
 
 /**
  * §1, §13: a group sent with no local copy whose kinds the owner's own S3/WebDAV storage copies: Settings says that
@@ -269,6 +305,7 @@ export function vaultCounts(d: VaultConnectionDto): { key: string; n: number }[]
     { key: 'vault.count_not_kept', n: i.notKept },
     { key: 'vault.count_failed', n: i.failed },
     { key: 'vault.count_out_of_reach', n: i.outOfReach },
+    { key: 'vault.count_converted', n: i.converted },
     { key: 'vault.count_only_in_vault', n: d.files.onlyInVault },
     { key: 'vault.count_missing', n: d.files.missing },
   ].filter((c) => c.n > 0);
@@ -333,9 +370,38 @@ export function vaultBadge(
       return { key: 'vault.badge_failed', tone: 'bad', title: null };
     case 'out_of_reach':
       return { key: 'vault.badge_out_of_reach', tone: 'muted', title: null };
+    case 'converted':
+      return convertedBadge(v);
     default:
       return null;
   }
+}
+
+/**
+ * ADR-0057 §1, §4: the badge on a file the vault doesn't keep, which Montra sends as PDFs instead: being converted,
+ * how far its PDFs got, couldn't be converted (with why), or its import was undone (a PDF the vault has stays there).
+ */
+function convertedBadge(v: NonNullable<FileStorageStateDto['vault']>): {
+  key: string;
+  tone: 'good' | 'muted' | 'bad';
+  title: string | null;
+} {
+  const c = v.converted;
+  if (!c || c.state === 'rendering') return { key: 'vault.badge_converting', tone: 'muted', title: null };
+  if (c.state === 'not_converted')
+    return { key: 'vault.badge_not_converted', tone: 'muted', title: v.notKeptReason };
+  if (c.state === 'import_undone') return { key: 'vault.badge_import_undone', tone: 'muted', title: null };
+  if (c.failed > 0) return { key: 'vault.badge_failed', tone: 'bad', title: null };
+  if (c.waiting > 0 || c.parts === 0)
+    return { key: 'vault.badge_converted_sending', tone: 'muted', title: null };
+  if (c.notKept === c.parts) return { key: 'vault.badge_not_kept', tone: 'muted', title: null };
+  if (c.filed === c.parts) return { key: 'vault.badge_converted_filed', tone: 'good', title: null };
+  return { key: 'vault.badge_converted_sent', tone: 'good', title: null };
+}
+
+/** ADR-0057 §4: the files whose PDFs the vault has, which owners and admins may send again as new ones. */
+export function vaultSendAgainIds(states: readonly FileStorageStateDto[]): string[] {
+  return states.filter((s) => s.vault?.converted?.canSendAgain).map((s) => s.fileId);
 }
 
 /**

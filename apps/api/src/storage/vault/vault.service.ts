@@ -24,7 +24,12 @@ import {
   VaultGroupMode,
   VaultKindDto,
   VaultStage,
+  VaultCoverNumber,
+  VaultUnkeptChoice,
+  VAULT_RENDERED_GROUPS,
   vaultEffectiveModes,
+  vaultUnkeptDefault,
+  vaultUnkeptOffered,
   vaultFileKinds,
   vaultGroupModes,
   vaultGroupOf,
@@ -60,6 +65,8 @@ import { backoffMs } from '../backoff.js';
 import { assertKeyShape, readConnectionString, VaultConnection } from './connection.js';
 import { sealedKey, VaultSecret, type VaultKey } from './keys.js';
 import { assertVaultAddress, VAULT_TRANSPORT, type VaultTransport } from './transport.js';
+import { TYPE_NOT_KEPT_WORDS } from './vault.conversions.js';
+import { auditReveal } from '../../crypto/sealed-numbers.js';
 
 type Ctx = { workspaceId: string; userId: string };
 type Row = Selectable<StorageDestinationTable>;
@@ -119,9 +126,19 @@ const VaultConfig = z.object({
   mayRead: z.boolean().default(false),
   mayOpen: z.boolean().default(false),
   groups: z
-    .array(z.object({ group: VaultGroup, mode: VaultGroupMode, vaultKind: z.string().nullable() }))
+    .array(
+      z.object({
+        group: VaultGroup,
+        mode: VaultGroupMode,
+        vaultKind: z.string().nullable(),
+        /** ADR-0057 §1: "Files the vault doesn't keep"; absent means the group's default (`vaultUnkeptDefault`). */
+        unkept: VaultUnkeptChoice.optional(),
+      }),
+    )
     .default([]),
   describeMore: z.boolean().default(false),
+  /** ADR-0057 §3: the account number on a rendered PDF's cover, with `describeMore` on. The setting, never a number. */
+  coverNumber: VaultCoverNumber.default('last4'),
   /** The hints the vault takes (§3); null until a check has said, so the job checks first. */
   hints: z.array(z.string()).nullable().default(null),
   /** The vault's sending limits as of the last check (§12). */
@@ -746,6 +763,11 @@ export class VaultService {
    * "sent, no local copy" needs a recent sign-in too: from then on, Montra removes its copy of each of the group's files
    * the vault files (§5); files the vault had already filed keep their copy until a move. A group no longer sent keeps
    * nothing waiting: what hasn't reached the vault stays in Montra only; what has stays there.
+   *
+   * ADR-0057 (VLT-12), owner only: each group's "Files the vault doesn't keep" (only statements can be converted), and
+   * "Account number on the cover", where Full needs a recent sign-in and is in the security log. A change to either, or
+   * to the detail switch, has the job look at every converted file again: PDFs not sent yet are made again; ones the
+   * vault has stay as they are.
    */
   async update(
     ctx: Ctx,
@@ -757,7 +779,10 @@ export class VaultService {
     const owner = role === 'owner';
     if (
       !owner &&
-      (req.describeMore !== undefined || req.deleteWithMontra !== undefined || req.paused !== undefined)
+      (req.describeMore !== undefined ||
+        req.deleteWithMontra !== undefined ||
+        req.paused !== undefined ||
+        req.coverNumber !== undefined)
     ) {
       throw ownerOnly();
     }
@@ -775,13 +800,31 @@ export class VaultService {
         group,
         mode: modes[group],
         vaultKind: config.groups.find((g) => g.group === group)?.vaultKind ?? null,
+        unkept: unkeptOf(config, group),
       }));
-      const changed: { group: VaultGroup; mode: VaultGroupMode; vaultKind: string | null }[] = [];
+      const changed: {
+        group: VaultGroup;
+        mode: VaultGroupMode;
+        vaultKind: string | null;
+        unkept: VaultUnkeptChoice;
+      }[] = [];
       const restricted: { group: VaultGroup; sent: boolean }[] = [];
       for (const g of req.groups ?? []) {
         const cur = groups.find((x) => x.group === g.group)!;
         const mode = g.mode ?? cur.mode;
         const vaultKind = g.vaultKind === undefined ? cur.vaultKind : g.vaultKind;
+        const unkept = g.unkept ?? cur.unkept;
+        if (unkept !== cur.unkept) {
+          // ADR-0057 §1: an owner's choice, and only where Montra has a renderer.
+          if (!owner) throw ownerOnly();
+          if (!vaultUnkeptOffered(g.group).includes(unkept)) {
+            throw new AppError(
+              422,
+              'vault.unkept_not_offered',
+              'Montra can convert only statements to PDF. Other files the vault doesn’t keep stay in Montra.',
+            );
+          }
+        }
         if (
           vaultKind !== null &&
           vaultKind !== cur.vaultKind &&
@@ -812,12 +855,21 @@ export class VaultService {
         if (isRestricted && isSentMode(mode) !== isSentMode(cur.mode)) {
           restricted.push({ group: g.group, sent: isSentMode(mode) });
         }
-        if (mode !== cur.mode || vaultKind !== cur.vaultKind)
-          changed.push({ group: g.group, mode, vaultKind });
+        if (mode !== cur.mode || vaultKind !== cur.vaultKind || unkept !== cur.unkept)
+          changed.push({ group: g.group, mode, vaultKind, unkept });
         cur.mode = mode;
         cur.vaultKind = vaultKind;
+        cur.unkept = unkept;
       }
-      const next: VaultConfig = { ...config, groups, describeMore: req.describeMore ?? config.describeMore };
+      // ADR-0057 §3: the full account number on a cover goes to the vault, where the vault decides who sees it.
+      const coverNumber = req.coverNumber ?? config.coverNumber;
+      if (coverNumber === 'full' && config.coverNumber !== 'full') assertRecent();
+      const next: VaultConfig = {
+        ...config,
+        groups,
+        describeMore: req.describeMore ?? config.describeMore,
+        coverNumber,
+      };
       const status =
         req.paused === undefined
           ? row.status
@@ -864,6 +916,7 @@ export class VaultService {
           )
           .execute();
       }
+      await this.conversionsChanged(trx, ctx, row.id, config, next);
       // Unpaused: look at the connection again before sending, whatever it was before the pause.
       if (row.status === 'paused' && status !== 'paused') {
         await trx
@@ -882,10 +935,16 @@ export class VaultService {
       if (req.deleteWithMontra !== undefined && req.deleteWithMontra !== row.delete_with_montra) {
         detail.deleteWithMontra = req.deleteWithMontra;
       }
+      // The choice only, never a number.
+      if (coverNumber !== config.coverNumber) detail.coverNumber = coverNumber;
       if (status !== row.status && (status === 'paused' || row.status === 'paused')) {
         detail.paused = status === 'paused';
       }
       if (Object.keys(detail).length) await this.security(trx, ctx, 'vault_changed', detail);
+      // ADR-0057 §3, ACC-16: choosing to put full account numbers on covers is audited as a reveal is (never a number).
+      if (coverNumber === 'full' && config.coverNumber !== 'full') {
+        await auditReveal(trx, ctx, 'vault.cover_number_full', { type: 'storage_destination', id: row.id });
+      }
       if (status !== 'paused') await scheduleVault(trx);
       return this.dto(trx, saved);
     });
@@ -996,10 +1055,106 @@ export class VaultService {
             .execute();
           retried += again.length;
         }
+        retried += await this.sendConvertedAgain(trx, ctx, row.id, req.fileIds);
       }
       if (retried) await scheduleVault(trx);
       return { retried };
     });
+  }
+
+  /**
+   * ADR-0057 §4 "Send again" for a file the vault doesn't keep: the vault has its PDFs, so they are not made again on
+   * their own. Asked, the ones it has are set aside (`superseded_at`: they stay in the vault, and in Montra with their
+   * original), and the job makes new ones with today's settings, sent as new documents. Answers how many files.
+   */
+  private async sendConvertedAgain(
+    trx: Trx,
+    ctx: Ctx,
+    destinationId: string,
+    fileIds: readonly string[],
+  ): Promise<number> {
+    const { rows } = await sql<{ file_id: string }>`
+      select i.file_id from app.vault_item i
+       where i.workspace_id = ${ctx.workspaceId}::uuid and i.destination_id = ${destinationId}::uuid
+         and i.status = 'converted' and i.render_state = 'rendered' and i.file_id = any (${[...fileIds]}::uuid[])
+         and exists (select 1 from app.file r
+                       join app.vault_item ri on ri.workspace_id = r.workspace_id and ri.file_id = r.id
+                                             and ri.destination_id = i.destination_id
+                      where r.workspace_id = i.workspace_id and r.derived_from_file_id = i.file_id
+                        and r.rendition is not null and r.superseded_at is null and ri.status <> 'queued')`.execute(
+      trx,
+    );
+    if (!rows.length) return 0;
+    const ids = rows.map((r) => r.file_id);
+    // Only the ones the vault has had: one not sent yet is replaced by the new rendering anyway.
+    await sql`
+      update app.file r set superseded_at = now()
+       where r.workspace_id = ${ctx.workspaceId}::uuid and r.derived_from_file_id = any (${ids}::uuid[])
+         and r.rendition is not null and r.superseded_at is null
+         and exists (select 1 from app.vault_item ri
+                      where ri.workspace_id = r.workspace_id and ri.file_id = r.id
+                        and ri.destination_id = ${destinationId}::uuid and ri.status <> 'queued')`.execute(
+      trx,
+    );
+    await trx
+      .updateTable('app.vault_item')
+      .set({
+        render_state: 'rendering',
+        render_options: null,
+        next_attempt_at: sql`now()`,
+        updated_at: new Date(),
+      })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', destinationId)
+      .where('file_id', 'in', ids)
+      .execute();
+    return ids.length;
+  }
+
+  /**
+   * ADR-0057 §4: the conversion settings changed (a group's "Files the vault doesn't keep", the detail switch, the
+   * cover's account number). The job looks at every converted file again: PDFs not sent yet are made again, or dropped
+   * when the group no longer converts; ones the vault has stay. Statements kept in Montra as "not a type the vault
+   * keeps" go back in line when their group starts converting.
+   */
+  private async conversionsChanged(
+    trx: Trx,
+    ctx: Ctx,
+    destinationId: string,
+    before: VaultConfig,
+    after: VaultConfig,
+  ): Promise<void> {
+    const settings = (c: VaultConfig) =>
+      JSON.stringify([VAULT_RENDERED_GROUPS.map((g) => unkeptOf(c, g)), c.describeMore, c.coverNumber]);
+    if (settings(before) === settings(after)) return;
+    const now = new Date();
+    await trx
+      .updateTable('app.vault_item')
+      .set({ next_attempt_at: sql`now()`, updated_at: now })
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('destination_id', '=', destinationId)
+      .where('status', '=', 'converted')
+      .execute();
+    const starting = VAULT_RENDERED_GROUPS.filter(
+      (g) => unkeptOf(before, g) === 'dont_send' && unkeptOf(after, g) !== 'dont_send',
+    ).flatMap((g) => [...VAULT_GROUP_KINDS[g]]);
+    if (starting.length) {
+      await trx
+        .updateTable('app.vault_item')
+        .set({ status: 'queued', not_kept_reason: null, next_attempt_at: sql`now()`, updated_at: now })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('destination_id', '=', destinationId)
+        .where('status', '=', 'not_kept')
+        .where('not_kept_reason', '=', TYPE_NOT_KEPT_WORDS)
+        .where('file_id', 'in', (eb) =>
+          eb
+            .selectFrom('app.file')
+            .select('id')
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('kind', 'in', starting),
+        )
+        .execute();
+    }
   }
 
   /** Settings' lists (§13): the files in one status, most recently changed first. */
@@ -1079,6 +1234,20 @@ export class VaultService {
         vault_meta: Record<string, unknown> | null;
       }>`select * from app.vault_file_states(${files.map((f) => f.id)}::uuid[])`.execute(trx);
       const byFile = new Map(rows.map((r) => [r.file_id, r]));
+      // ADR-0057 §1, §4: how a file the vault doesn't keep was converted, and how far its PDFs got, in counts.
+      const { rows: conv } = await sql<{
+        file_id: string;
+        render_state: 'rendering' | 'rendered' | 'not_converted' | 'import_undone';
+        attached: boolean;
+        parts: number;
+        waiting: number;
+        received: number;
+        filed: number;
+        not_kept: number;
+        failed: number;
+        earlier: number;
+      }>`select * from app.vault_file_conversions(${files.map((f) => f.id)}::uuid[])`.execute(trx);
+      const converted = new Map(conv.map((r) => [r.file_id, r]));
       return {
         data: files.map((f) => {
           const v = byFile.get(f.id);
@@ -1104,6 +1273,7 @@ export class VaultService {
                     v.status === 'filed' &&
                     meta !== null &&
                     typeof meta.documentId === 'string',
+                  converted: conversionOf(converted.get(f.id), disconnected),
                 }
               : null,
           };
@@ -1135,6 +1305,8 @@ export class VaultService {
       .where('f.deleted_at', 'is', null)
       .where('f.sealed', '=', false)
       .where('f.kind', 'in', kinds)
+      // ADR-0057 §1: a PDF Montra rendered goes only with its original's conversion, never on its own.
+      .where('f.rendition', 'is', null)
       .where((eb) =>
         eb.not(
           eb.exists(
@@ -1152,9 +1324,14 @@ export class VaultService {
       .execute();
     const max = config.limits?.maxUploadBytes ?? Number.POSITIVE_INFINITY;
     return files
-      .filter((f) => vaultTypeKept({ mime: f.mime, fileName: f.file_name }, config.mediaTypes))
-      .filter((f) => Number(f.bytes) <= max)
-      .map((f) => ({ id: f.id, group: vaultGroupOf({ kind: f.kind, sealed: false }) as VaultGroup }));
+      .map((f) => ({ ...f, group: vaultGroupOf({ kind: f.kind, sealed: false }) as VaultGroup }))
+      .filter((f) =>
+        vaultTypeKept({ mime: f.mime, fileName: f.file_name }, config.mediaTypes)
+          ? Number(f.bytes) <= max
+          : // ADR-0057 §1: a statement the vault doesn't keep goes as a PDF when its group converts it.
+            unkeptOf(config, f.group) !== 'dont_send',
+      )
+      .map((f) => ({ id: f.id, group: f.group }));
   }
 
   // ----- Disconnecting and bringing back (§10) ------------------------------------------------------------------------
@@ -1405,9 +1582,12 @@ export class VaultService {
       .select(['f.id', 'f.kind'])
       .where('i.workspace_id', '=', ctx.workspaceId)
       .where('i.destination_id', '=', row.id)
-      .where('i.status', '=', 'filed')
       .where('i.remove_at', 'is', null)
-      .where((eb) => eb.or([eb('i.vault_sha256', 'is', null), eb('i.vault_sha256', '=', eb.ref('f.sha256'))]))
+      // A filed document whose copy is Montra's, or (ADR-0057 §7) an original the vault has inside a filed PDF.
+      .where(
+        sql<boolean>`((i.status = 'filed' and (i.vault_sha256 is null or i.vault_sha256 = f.sha256))
+          or (i.status = 'converted' and ${carriedSql()}))`,
+      )
       .where('f.location', '=', 'montra')
       .where('f.deleted_at', 'is', null)
       .where('f.sealed', '=', false)
@@ -1553,9 +1733,11 @@ export class VaultService {
         group,
         mode: modes[group],
         vaultKind: config.groups.find((g) => g.group === group)?.vaultKind ?? null,
+        unkept: unkeptOf(config, group),
       })),
       vaultKinds: config.sendKinds,
       describeMore: config.describeMore,
+      coverNumber: config.coverNumber,
       deleteWithMontra: row.delete_with_montra,
       canDelete: row.can_delete,
       items: {
@@ -1566,6 +1748,7 @@ export class VaultService {
         notKept: n('not_kept'),
         failed: n('failed'),
         outOfReach: n('out_of_reach'),
+        converted: n('converted'),
       },
       heldUntil: {
         sending:
@@ -1692,6 +1875,58 @@ async function onlyInVault(trx: Trx, workspaceId: string): Promise<number> {
     .where('location', '=', 'vault')
     .executeTakeFirst();
   return Number(r?.n ?? 0);
+}
+
+/** ADR-0057 §1: a group's "Files the vault doesn't keep", its default when not chosen, and never one not offered. */
+export function unkeptOf(config: VaultConfig, group: VaultGroup): VaultUnkeptChoice {
+  const set = config.groups.find((g) => g.group === group)?.unkept;
+  return set && vaultUnkeptOffered(group).includes(set) ? set : vaultUnkeptDefault(group);
+}
+
+/**
+ * ADR-0057 §7, as SQL over `app.vault_item i` and its original `app.file f`: the vault has filed a PDF rendered from
+ * `f` with `f` attached inside it, and holds the PDF Montra sent.
+ */
+export function carriedSql() {
+  return sql<boolean>`exists (
+    select 1 from app.file r
+      join app.vault_item ri on ri.workspace_id = r.workspace_id and ri.file_id = r.id
+                            and ri.destination_id = i.destination_id
+     where r.workspace_id = f.workspace_id and r.derived_from_file_id = f.id and r.rendition is not null
+       and ri.carries_original and ri.status = 'filed'
+       and (ri.vault_sha256 is null or ri.vault_sha256 = r.sha256))`;
+}
+
+/** The badge's view of a conversion (ADR-0057 §4), from `app.vault_file_conversions`. */
+function conversionOf(
+  c:
+    | {
+        render_state: 'rendering' | 'rendered' | 'not_converted' | 'import_undone';
+        attached: boolean;
+        parts: number;
+        waiting: number;
+        received: number;
+        filed: number;
+        not_kept: number;
+        failed: number;
+        earlier: number;
+      }
+    | undefined,
+  disconnected: boolean,
+): NonNullable<FileStorageStatesResponse['data'][number]['vault']>['converted'] {
+  if (!c) return null;
+  return {
+    state: c.render_state,
+    attached: c.attached,
+    parts: c.parts,
+    waiting: c.waiting,
+    received: c.received,
+    filed: c.filed,
+    notKept: c.not_kept,
+    failed: c.failed,
+    earlier: c.earlier,
+    canSendAgain: !disconnected && c.render_state === 'rendered' && c.parts > c.waiting,
+  };
 }
 
 function modesOf(config: VaultConfig): Record<VaultGroup, VaultGroupMode> {

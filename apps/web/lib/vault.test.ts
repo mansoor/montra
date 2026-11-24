@@ -3,6 +3,7 @@ import {
   VaultConnectionDto as VaultConnectionSchema,
   VAULT_GROUP_DEFAULTS,
   VAULT_GROUPS,
+  vaultUnkeptDefault,
 } from '@montra/schemas';
 import type { FileStorageStateDto, VaultConnectionDto } from '@montra/api-client';
 import {
@@ -36,6 +37,8 @@ import {
   vaultOpenProblemKey,
   vaultDisconnectChoice,
   vaultMoveQuestion,
+  vaultOriginalsNote,
+  vaultSendAgainIds,
   VAULT_OPEN_PROBLEMS,
 } from './vault';
 import { catalogs } from '@montra/i18n';
@@ -60,12 +63,18 @@ const connection = (over: Partial<VaultConnectionDto> = {}): VaultConnectionDto 
   keyProblem: null,
   actsAs: 'app',
   actingAs: 'Montra',
-  groups: VAULT_GROUPS.map((group) => ({ group, mode: VAULT_GROUP_DEFAULTS[group], vaultKind: null })),
+  groups: VAULT_GROUPS.map((group) => ({
+    group,
+    mode: VAULT_GROUP_DEFAULTS[group],
+    vaultKind: null,
+    unkept: vaultUnkeptDefault(group),
+  })),
   vaultKinds: [{ key: 'utility_bill', name: 'Utility / bill' }],
   describeMore: false,
+  coverNumber: 'last4',
   deleteWithMontra: false,
   canDelete: false,
-  items: { queued: 0, pending: 0, received: 0, filed: 0, notKept: 0, failed: 0, outOfReach: 0 },
+  items: { queued: 0, pending: 0, received: 0, filed: 0, notKept: 0, failed: 0, outOfReach: 0, converted: 0 },
   heldUntil: { sending: null, reading: null },
   dailyLimit: { files: 100, filesToday: 4 },
   feedReadAt: '2026-11-17T10:05:00.000Z',
@@ -271,6 +280,7 @@ describe('Send these to the vault', () => {
         group,
         mode: group === 'payslips' ? 'sent_keep_copy' : VAULT_GROUP_DEFAULTS[group],
         vaultKind: group === 'payslips' ? 'pay_statement' : null,
+        unkept: vaultUnkeptDefault(group),
       })),
     });
     const rows = vaultGroupRows(d, 'admin');
@@ -337,6 +347,7 @@ describe('Send these to the vault', () => {
         group,
         mode: VAULT_GROUP_DEFAULTS[group],
         vaultKind: VAULT_GROUP_DEFAULTS[group] === 'not_sent' ? null : 'utility_bill',
+        unkept: vaultUnkeptDefault(group),
       })),
     });
     expect(vaultUnmapped(mapped)).toEqual([]);
@@ -349,7 +360,16 @@ describe('how sending is going', () => {
     expect(
       vaultCounts(
         connection({
-          items: { queued: 2, pending: 1, received: 4, filed: 9, notKept: 1, failed: 0, outOfReach: 0 },
+          items: {
+            queued: 2,
+            pending: 1,
+            received: 4,
+            filed: 9,
+            notKept: 1,
+            failed: 0,
+            outOfReach: 0,
+            converted: 0,
+          },
         }),
       ),
     ).toEqual([
@@ -390,6 +410,7 @@ describe('how sending is going', () => {
         newerVersion: false,
         notKeptReason: null,
         canOpen: false,
+        converted: null,
         ...more,
       },
     });
@@ -443,6 +464,7 @@ describe('what the vault calls a document, and opening it', () => {
       newerVersion: false,
       notKeptReason: null,
       canOpen: true,
+      converted: null,
       ...more,
     },
   });
@@ -558,6 +580,7 @@ describe('a file kept only in the vault', () => {
       newerVersion: false,
       notKeptReason: null,
       canOpen: true,
+      converted: null,
     },
     ...more,
   });
@@ -650,5 +673,118 @@ describe('the vault as the record, the rest (ADR-0054 §5, §10; PR 5b2)', () =>
     ];
     expect(keys.filter((k) => !(k in en))).toEqual([]);
     expect(en['vault.move_offer']).toContain('{count}');
+  });
+});
+
+describe('statements the vault doesn’t keep, sent as PDFs (ADR-0057)', () => {
+  const converted = (
+    more: Partial<NonNullable<NonNullable<FileStorageStateDto['vault']>['converted']>>,
+    reason: string | null = null,
+  ): FileStorageStateDto => ({
+    fileId: '00000000-0000-4000-8000-0000000000cc',
+    location: 'montra',
+    missing: null,
+    vault: {
+      status: 'converted',
+      title: null,
+      kind: null,
+      newerVersion: false,
+      notKeptReason: reason,
+      canOpen: false,
+      converted: {
+        state: 'rendered',
+        attached: true,
+        parts: 1,
+        waiting: 0,
+        received: 0,
+        filed: 0,
+        notKept: 0,
+        failed: 0,
+        earlier: 0,
+        canSendAgain: true,
+        ...more,
+      },
+    },
+  });
+
+  it('offers the three choices to an owner for statements only, and shows the choice to others', () => {
+    const d = connection();
+    const owner = vaultGroupRows(d, 'owner');
+    expect(owner.find((r) => r.group === 'statements')).toMatchObject({
+      unkept: 'convert_attach',
+      unkeptChoices: ['dont_send', 'convert', 'convert_attach'],
+    });
+    expect(owner.find((r) => r.group === 'receipts')).toMatchObject({
+      unkept: 'dont_send',
+      unkeptChoices: ['dont_send'],
+    });
+    expect(vaultGroupRows(d, 'admin').find((r) => r.group === 'statements')!.unkeptChoices).toEqual([
+      'convert_attach',
+    ]);
+  });
+
+  it('saves a changed choice, and says what happens to originals sent with no local copy', () => {
+    const d = connection();
+    const draft = d.groups.map((g) => ({ ...g, unkept: g.group === 'statements' ? 'convert' : g.unkept }));
+    expect(vaultGroupChanges(d, draft as never).groups).toEqual([{ group: 'statements', unkept: 'convert' }]);
+    expect(vaultOriginalsNote({ group: 'statements', mode: 'sent_no_copy', unkept: 'convert_attach' })).toBe(
+      'vault.originals_go',
+    );
+    expect(vaultOriginalsNote({ group: 'statements', mode: 'sent_no_copy', unkept: 'convert' })).toBe(
+      'vault.originals_stay',
+    );
+    expect(vaultOriginalsNote({ group: 'statements', mode: 'sent_keep_copy', unkept: 'convert' })).toBeNull();
+    expect(vaultOriginalsNote({ group: 'receipts', mode: 'sent_no_copy', unkept: 'dont_send' })).toBeNull();
+  });
+
+  it('badges a converted file: converting, sent, filed, couldn’t be converted, import undone', () => {
+    expect(vaultBadge(converted({ state: 'rendering', parts: 0 }))?.key).toBe('vault.badge_converting');
+    expect(vaultBadge(converted({ waiting: 1 }))?.key).toBe('vault.badge_converted_sending');
+    expect(vaultBadge(converted({ received: 1 }))).toMatchObject({
+      key: 'vault.badge_converted_sent',
+      tone: 'good',
+    });
+    expect(vaultBadge(converted({ filed: 1 }))?.key).toBe('vault.badge_converted_filed');
+    expect(vaultBadge(converted({ failed: 1 }))?.key).toBe('vault.badge_failed');
+    expect(vaultBadge(converted({ state: 'not_converted', parts: 0 }, 'why'))).toEqual({
+      key: 'vault.badge_not_converted',
+      tone: 'muted',
+      title: 'why',
+    });
+    expect(vaultBadge(converted({ state: 'import_undone', received: 1 }))?.key).toBe(
+      'vault.badge_import_undone',
+    );
+    expect(vaultCounts(connection({ items: { ...connection().items, converted: 3 } }))).toEqual([
+      { key: 'vault.count_converted', n: 3 },
+    ]);
+  });
+
+  it('offers “Send again” only for a file whose PDFs the vault has', () => {
+    const a = converted({ received: 1 });
+    const b = { ...converted({ waiting: 1, canSendAgain: false }), fileId: 'other' };
+    expect(vaultSendAgainIds([a, b])).toEqual([a.fileId]);
+  });
+
+  it('has words for every new key', () => {
+    for (const key of [
+      'vault.badge_converted_filed',
+      'vault.badge_converted_sending',
+      'vault.badge_converted_sent',
+      'vault.badge_converting',
+      'vault.badge_import_undone',
+      'vault.badge_not_converted',
+      'vault.count_converted',
+      'vault.cover.full',
+      'vault.cover.last4',
+      'vault.cover.none',
+      'vault.cover_full_warning',
+      'vault.originals_go',
+      'vault.originals_stay',
+      'vault.unkept.convert',
+      'vault.unkept.convert_attach',
+      'vault.unkept.dont_send',
+    ]) {
+      expect(en[key], key).toBeTruthy();
+    }
   });
 });

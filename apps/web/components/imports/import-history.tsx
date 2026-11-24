@@ -1,7 +1,9 @@
 import Link from 'next/link';
-import type { AccountDto, ImportBatchDto } from '@montra/api-client';
+import type { AccountDto, FileStorageStateDto, ImportBatchDto, WorkspaceDto } from '@montra/api-client';
 import { getI18n } from '@/lib/i18n-server';
 import { BATCH_TONE, canDiscard, canUndo, historyBatches } from '@/lib/imports';
+import { serverApi } from '@/lib/server-api';
+import { VaultBadges } from '../vault-badges';
 import { DiscardButton } from './discard-button';
 import { UndoButton } from './undo-button';
 
@@ -9,18 +11,24 @@ import { UndoButton } from './undo-button';
  * Import history (IMP-09): every batch with its outcome, undo while it's allowed, and discard for one never committed
  * (discarded ones leave the list). Shown on the Statements screen
  * and on `/imports` (one account's, from its page), so there's one list.
+ *
+ * Each statement file shows where it is with the household's vault (ADR-0054 §13): for a CSV, XLS or OFX export, the
+ * PDF Montra sends in its place (ADR-0057 §4), with "Send again" for owners and admins.
  */
 export async function ImportHistory({
   workspaceId,
   batches: all,
   accounts,
   title,
+  role,
 }: {
   workspaceId: string;
   batches: ImportBatchDto[];
   accounts: AccountDto[];
   /** The table's caption; also its heading when given. */
   title: string;
+  /** The person's role: owners and admins may send a converted statement's PDF again. */
+  role?: WorkspaceDto['role'];
 }) {
   const { t, date, locale } = await getI18n();
   const names = new Map(accounts.map((a) => [a.id, a.name]));
@@ -28,6 +36,12 @@ export async function ImportHistory({
   const base = `/w/${workspaceId}`;
   const batches = historyBatches(all);
   if (batches.length === 0) return <p className="card text-sm text-muted">{t('imports.history.empty')}</p>;
+  const fileIds = [...new Set(batches.map((b) => b.fileId).filter((f): f is string => !!f))].slice(0, 100);
+  // The badges never stand in the way of the list: none when they can't be loaded.
+  const states: FileStorageStateDto[] = fileIds.length
+    ? await (await serverApi()).getFileStorageStates(workspaceId, fileIds).catch(() => [])
+    : [];
+  const admin = role === 'owner' || role === 'admin';
   return (
     <div className="card overflow-x-auto p-0">
       <table className="tbl min-w-[40rem] text-sm">
@@ -65,6 +79,14 @@ export async function ImportHistory({
                   <span className="block text-xs text-muted">
                     {t('imports.date_range', { from: date(b.minDate), to: date(b.maxDate) })}
                   </span>
+                )}
+                {b.fileId && (
+                  <VaultBadges
+                    workspaceId={workspaceId}
+                    fileIds={[b.fileId]}
+                    states={states.filter((s) => s.fileId === b.fileId)}
+                    canSendAgain={admin}
+                  />
                 )}
               </td>
               <td className="px-4 py-2">{names.get(b.accountId) ?? '—'}</td>

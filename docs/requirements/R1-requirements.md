@@ -686,9 +686,10 @@ Vault as a per-workspace storage provider. Documents go one way, from Montra to 
 | VLT-09 | The vault's daily limits and waits are respected without counting as failures; problems are shown in words, and owners are told once when the vault needs a person. | S |
 | VLT-10 | The phone shows the vault status and badges, opens vault-held documents, and uploads missing files again. | C |
 | VLT-11 | When Montra needs a file it no longer holds, it asks the vault; a file the vault doesn't return is listed in Review to be provided again, and backups and tax packages list any file still missing. | M |
+| VLT-12 | For each group sent to the vault, the owner chooses what happens to files the vault doesn't keep: not sent, converted to PDF and sent, or converted with the original attached inside the PDF. | S |
 | VLT-13 | A statement converted for the vault is drawn from its imported rows, with a cover page summarising the account, holders, period and balances, limited by the detail switch. | S |
 
-VLT-13 was added on 2026-11-24 with ADR-0057 (statements the vault doesn't keep, sent as PDFs with a cover page).
+VLT-12 and VLT-13 were added on 2026-11-24 with ADR-0057 (statements the vault doesn't keep, sent as PDFs with a cover page).
 
 ### 13.7 Bank feeds
 

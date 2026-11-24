@@ -4,8 +4,10 @@
  * The entry point is `render(ctx, fileId, options)`: it renders an uploaded statement from its committed import's rows
  * and stores each part as a new `app.file` linked to the original (`derived_from_file_id`, `rendition`), through the
  * same storage and quota as any upload (BAK-08). `enqueue` queues the same work as the worker's `statement.render`
- * job. Sending a rendering to the vault, and the per-group settings that decide the options, are ADR-0057 §1 (VLT-12):
- * nothing here sends anything, and a rendering is not queued for the vault when it is stored (migration 0092).
+ * job. Sending is the vault's (ADR-0057 §1, VLT-12): a rendering is not queued for the vault by the trigger that queues
+ * uploads (migration 0092), but when the vault's job asked for it (the original's outbox row is `converted`), the
+ * transaction that stores it queues each part in the vault's outbox (`queueRenditions`), and the job's outcome is
+ * recorded on the original's row (`recordConversion`).
  *
  * - A rendering the vault already has is kept, never redone; one not yet sent is replaced by the new one.
  * - An import that was undone drops the renderings not yet sent; one the vault has stays (documents go one way).
@@ -34,6 +36,8 @@ import {
   type StatementSummary,
 } from './document-summary.js';
 import { renderStatementPdf, type DrawTrace } from './statement-pdf.js';
+import { queueRenditions, recordConversion } from '../storage/vault/vault.conversions.js';
+import { auditReveal } from '../crypto/sealed-numbers.js';
 
 type Ctx = { workspaceId: string; userId: string };
 type Batch = Selectable<ImportBatchTable>;
@@ -115,11 +119,10 @@ export class StatementRenditions {
         throw new PermanentJobError('statement.no_context', 'A rendering job needs a workspace and a user');
       const p = job.payload as { fileId?: string; options?: RenderOptions };
       if (!p.fileId || !p.options) throw new PermanentJobError('statement.bad_payload', 'Nothing to render');
-      const r = await this.render(
-        { workspaceId: job.workspace_id, userId: job.created_by },
-        p.fileId,
-        p.options,
-      );
+      const ctx = { workspaceId: job.workspace_id, userId: job.created_by };
+      const r = await this.render(ctx, p.fileId, p.options);
+      // ADR-0057 §4: what became of a conversion the vault asked for (nothing, for any other).
+      await this.db.run(ctx, (trx) => recordConversion(trx, ctx, p.fileId!, p.options!, r));
       // Ids and counts only.
       return 'files' in r ? { status: r.status, files: r.files.map((f) => f.fileId) } : { ...r };
     });
@@ -274,6 +277,18 @@ export class StatementRenditions {
             })),
           )
           .execute();
+        // ADR-0057 §1: each part goes to the vault in this transaction, when the vault asked for it.
+        await queueRenditions(
+          trx,
+          ctx,
+          fileId,
+          options,
+          made.map((m) => ({ fileId: m.id, attached: m.attached })),
+        );
+        // ACC-16: a cover made with the full account number is audited as a reveal is: who and which file, no number.
+        if (options.detail && options.accountNumber === 'full') {
+          await auditReveal(trx, ctx, 'statement.full_number_on_cover', { type: 'file', id: fileId });
+        }
         return { outcome: 'stored' as const, replaced: existing };
       });
     } catch (e) {
@@ -310,17 +325,22 @@ export class StatementRenditions {
 
   /**
    * Drops the renderings of a file not yet sent, when none of its imports is committed any more (an undone import,
-   * ADR-0057 §4). One the vault already has stays, for PR 3 to mark "import undone". Returns the dropped files' ids.
+   * ADR-0057 §4), or whatever its imports (`always`: its group no longer converts). One the vault already has stays,
+   * and the vault's job marks it "import undone". Returns the dropped files' ids.
    */
-  async dropUnsent(ctx: Ctx, fileId: string): Promise<string[]> {
+  async dropUnsent(ctx: Ctx, fileId: string, opts: { always?: boolean } = {}): Promise<string[]> {
     const dropped = await this.db.run(ctx, async (trx) => {
-      const committed = await trx
-        .selectFrom('app.import_batch')
-        .select('id')
-        .where('workspace_id', '=', ctx.workspaceId)
-        .where('file_id', '=', fileId)
-        .where('status', '=', 'committed')
-        .executeTakeFirst();
+      // ADR-0057 §4: the vault's job looks at the file's conversion again (an undone import).
+      if (!opts.always) await sql`select app.vault_conversion_due(${fileId}::uuid)`.execute(trx);
+      const committed = opts.always
+        ? null
+        : await trx
+            .selectFrom('app.import_batch')
+            .select('id')
+            .where('workspace_id', '=', ctx.workspaceId)
+            .where('file_id', '=', fileId)
+            .where('status', '=', 'committed')
+            .executeTakeFirst();
       if (committed) return [];
       const unsent = (await this.renditionsOf(trx, ctx, fileId)).filter((e) => !e.sent);
       if (unsent.length)
@@ -340,7 +360,10 @@ export class StatementRenditions {
     return dropped.map((d) => d.id);
   }
 
-  /** A file's renderings, each with whether the vault has had it (any state past `queued`). */
+  /**
+   * A file's current renderings, each with whether the vault has had it (any state past `queued`). Renderings "Send
+   * again" replaced (`superseded_at`, ADR-0057 §4) aren't current: they stay in the vault, and a new one is made.
+   */
   async renditionsOf(trx: Trx, ctx: Ctx, fileId: string): Promise<Existing[]> {
     const rows = await trx
       .selectFrom('app.file')
@@ -348,6 +371,7 @@ export class StatementRenditions {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('derived_from_file_id', '=', fileId)
       .where('rendition', '=', 'statement_pdf')
+      .where('superseded_at', 'is', null)
       .execute();
     if (!rows.length) return [];
     // Parts in order: "part 2 of 12" before "part 10 of 12".

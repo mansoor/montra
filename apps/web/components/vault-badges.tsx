@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { FileStorageStateDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
-import { vaultBadge, vaultName, vaultOpenHref } from '@/lib/vault';
+import { vaultBadge, vaultName, vaultOpenHref, vaultSendAgainIds } from '@/lib/vault';
 import { useI18n } from './i18n';
 
 /**
@@ -12,20 +12,28 @@ import { useI18n } from './i18n';
  * vault calls it and "Open in the vault" (§9), a plain link to a route that makes a single-use link only when clicked.
  * Nothing for files that aren't sent, and nothing at all when the badges can't be loaded: they never stand in the way of
  * the document itself.
+ *
+ * ADR-0057 §4: a statement the vault doesn't keep is sent as PDFs: converted and sent, couldn't be converted, or its
+ * import undone; owners and admins (`canSendAgain`) may "Send again" one whose PDFs the vault has, as a new PDF.
  */
 export function VaultBadges({
   workspaceId,
   fileIds,
   states: given,
+  canSendAgain = false,
 }: {
   workspaceId: string;
   fileIds: readonly string[];
   /** Already loaded by the page (`useFileStorageStates`), so they aren't asked for twice. */
   states?: readonly FileStorageStateDto[];
+  /** The person is an owner or admin, who may send a converted file's PDF again. */
+  canSendAgain?: boolean;
 }) {
   const { t } = useI18n();
   const loaded = useFileStorageStates(workspaceId, given ? [] : fileIds);
   const states = given ?? loaded;
+  const [again, setAgain] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle');
+  const resend = canSendAgain ? vaultSendAgainIds(states) : [];
 
   const badges = new Map<string, NonNullable<ReturnType<typeof vaultBadge>>>();
   for (const s of states) {
@@ -66,6 +74,26 @@ export function VaultBadges({
           {openable.length > 1 ? t('vault.open_in_vault_n', { n: i + 1 }) : t('vault.open_in_vault')}
         </a>
       ))}
+      {resend.length > 0 && again !== 'done' && (
+        <button
+          type="button"
+          className="text-xs underline"
+          disabled={again === 'busy'}
+          data-testid="vault-send-again"
+          onClick={() => {
+            if (!window.confirm(t('vault.send_again_pdf_confirm'))) return;
+            setAgain('busy');
+            browserApi
+              .retryVaultItems(workspaceId, { fileIds: resend })
+              .then(() => setAgain('done'))
+              .catch(() => setAgain('failed'));
+          }}
+        >
+          {t('vault.send_again')}
+        </button>
+      )}
+      {again === 'done' && <span className="text-xs text-muted">{t('vault.send_again_pdf_done')}</span>}
+      {again === 'failed' && <span className="text-xs text-bad">{t('vault.send_again_failed')}</span>}
     </span>
   );
 }

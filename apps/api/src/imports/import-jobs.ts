@@ -1046,6 +1046,9 @@ export class ImportJobs {
         // IMP-11: receipts waiting in the inbox are re-tried after every import.
         if (added > 0)
           await this.queue.enqueue(trx, { ...ctx, queue: 'ai', type: 'receipt.match', payload: {} });
+        // ADR-0057 §1, §4: a statement the vault doesn't keep can be converted to PDF now (a definer: the outbox is
+        // for owners and admins); one whose import was undone and is committed again is looked at again.
+        if (batch.file_id) await sql`select app.vault_conversion_due(${batch.file_id}::uuid)`.execute(trx);
         return { added, matched, skipped, failed, transfers: transferred };
       });
       // BIZ-05, BIZ-06: a new statement may hold the payment of an open invoice or bill. A failure here isn't the import's.

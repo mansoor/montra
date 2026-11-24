@@ -113,7 +113,7 @@ export function ReceiptReview({
 
   if (receipt.status === 'processing') {
     return (
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,38%)]">
         <div className="space-y-3">
           <p role="status" className="card text-sm text-muted">
             {t('receipts.reading')}
@@ -146,7 +146,7 @@ export function ReceiptReview({
       total: g.total,
     }));
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]">
+    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,38%)]">
       <section className="space-y-4" aria-label={t('receipts.details')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className={STATUS_CHIP[receipt.status]}>{t(`receipts.status.${receipt.status}`)}</span>
@@ -254,164 +254,166 @@ export function ReceiptReview({
           </label>
         </div>
 
-        <table className="w-full text-sm">
-          <caption className="sr-only">{t('receipts.lines')}</caption>
-          <thead className="text-left text-muted">
-            <tr>
-              <th className="py-1">{t('receipts.item')}</th>
-              <th className="py-1">{t('receipts.qty')}</th>
-              <th className="py-1">{t('receipts.unit_price')}</th>
-              <th className="py-1">{t('receipts.amount')}</th>
-              <th className="py-1">{t('receipts.taxable')}</th>
-              <th className="py-1">{t('receipts.category')}</th>
-              <th className="py-1">{t('receipts.member')}</th>
-              <th className="py-1">
-                <span className="sr-only">{t('receipts.remove_line')}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {lines.map((l, i) => {
-              const saved = receipt.lines.find((x) => x.id === l.id);
-              const suggested = saved?.categorization?.suggested?.categoryId;
-              // Why the line is for its member, while the pick is still the saved one (owner, 2026-11-24).
-              const memberWhy =
-                saved?.memberReason && (saved.memberId ?? '') === l.memberId
-                  ? saved.memberReason.explanation
-                  : null;
-              return (
-                <tr key={l.id ?? `new-${i}`} data-testid="receipt-line">
-                  <td className="py-1 pr-2">
-                    <input
-                      className="input"
-                      aria-label={t('receipts.item')}
-                      aria-invalid={errors[`rawText.${i}`] ? 'true' : undefined}
-                      value={l.rawText}
-                      onChange={(e) => setLine(i, { rawText: e.target.value })}
-                    />
-                    <input
-                      className="input mt-1 text-xs"
-                      aria-label={t('receipts.expanded_name')}
-                      placeholder={t('receipts.expanded_name')}
-                      value={l.expandedName}
-                      onChange={(e) => setLine(i, { expandedName: e.target.value })}
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      className="input num w-16"
-                      inputMode="decimal"
-                      aria-label={t('receipts.qty_for', { item: l.rawText })}
-                      aria-invalid={errors[`qty.${i}`] ? 'true' : undefined}
-                      value={l.qty}
-                      onChange={(e) => editAmount(i, { qty: e.target.value }, 'qty')}
-                      data-testid="receipt-line-qty"
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      className="input num w-24"
-                      inputMode="decimal"
-                      aria-label={t('receipts.unit_price_for', { item: l.rawText })}
-                      aria-invalid={errors[`unitPrice.${i}`] ? 'true' : undefined}
-                      value={l.unitPrice}
-                      onChange={(e) => editAmount(i, { unitPrice: e.target.value }, 'unitPrice')}
-                      data-testid="receipt-line-unit-price"
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      className="input num w-24"
-                      inputMode="decimal"
-                      aria-label={t('receipts.amount')}
-                      aria-invalid={errors[`lineTotal.${i}`] ? 'true' : undefined}
-                      value={l.lineTotal}
-                      onChange={(e) => editAmount(i, { lineTotal: e.target.value }, 'lineTotal')}
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <input
-                      type="checkbox"
-                      aria-label={t('receipts.taxable')}
-                      checked={l.taxable}
-                      onChange={(e) => setLine(i, { taxable: e.target.checked })}
-                    />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <select
-                      className="input"
-                      aria-label={t('receipts.category_for', { item: l.rawText })}
-                      value={l.categoryId}
-                      onChange={(e) => setLine(i, { categoryId: e.target.value })}
-                    >
-                      <option value="">{t('receipts.uncategorized')}</option>
-                      {byEntity.map(({ entity, options }) =>
-                        options.length ? (
-                          <optgroup key={entity.id} label={entity.name}>
-                            {options.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ) : null,
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <caption className="sr-only">{t('receipts.lines')}</caption>
+            <thead className="text-left text-muted">
+              <tr>
+                <th className="py-1 pr-2">{t('receipts.item')}</th>
+                <th className="py-1 pr-2">{t('receipts.qty')}</th>
+                <th className="py-1 pr-2">{t('receipts.unit_price')}</th>
+                <th className="py-1 pr-2">{t('receipts.amount')}</th>
+                <th className="py-1 pr-2">{t('receipts.taxable')}</th>
+                <th className="py-1 pr-2">{t('receipts.category')}</th>
+                <th className="py-1 pr-2">{t('receipts.member')}</th>
+                <th className="py-1">
+                  <span className="sr-only">{t('receipts.remove_line')}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {lines.map((l, i) => {
+                const saved = receipt.lines.find((x) => x.id === l.id);
+                const suggested = saved?.categorization?.suggested?.categoryId;
+                // Why the line is for its member, while the pick is still the saved one (owner, 2026-11-24).
+                const memberWhy =
+                  saved?.memberReason && (saved.memberId ?? '') === l.memberId
+                    ? saved.memberReason.explanation
+                    : null;
+                return (
+                  <tr key={l.id ?? `new-${i}`} data-testid="receipt-line">
+                    <td className="py-1 pr-2">
+                      <input
+                        className="input w-full min-w-48"
+                        aria-label={t('receipts.item')}
+                        aria-invalid={errors[`rawText.${i}`] ? 'true' : undefined}
+                        value={l.rawText}
+                        onChange={(e) => setLine(i, { rawText: e.target.value })}
+                      />
+                      <input
+                        className="input mt-1 w-full min-w-48 text-xs"
+                        aria-label={t('receipts.expanded_name')}
+                        placeholder={t('receipts.expanded_name')}
+                        value={l.expandedName}
+                        onChange={(e) => setLine(i, { expandedName: e.target.value })}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        className="input num w-16"
+                        inputMode="decimal"
+                        aria-label={t('receipts.qty_for', { item: l.rawText })}
+                        aria-invalid={errors[`qty.${i}`] ? 'true' : undefined}
+                        value={l.qty}
+                        onChange={(e) => editAmount(i, { qty: e.target.value }, 'qty')}
+                        data-testid="receipt-line-qty"
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        className="input num w-24"
+                        inputMode="decimal"
+                        aria-label={t('receipts.unit_price_for', { item: l.rawText })}
+                        aria-invalid={errors[`unitPrice.${i}`] ? 'true' : undefined}
+                        value={l.unitPrice}
+                        onChange={(e) => editAmount(i, { unitPrice: e.target.value }, 'unitPrice')}
+                        data-testid="receipt-line-unit-price"
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        className="input num w-24"
+                        inputMode="decimal"
+                        aria-label={t('receipts.amount')}
+                        aria-invalid={errors[`lineTotal.${i}`] ? 'true' : undefined}
+                        value={l.lineTotal}
+                        onChange={(e) => editAmount(i, { lineTotal: e.target.value }, 'lineTotal')}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input
+                        type="checkbox"
+                        aria-label={t('receipts.taxable')}
+                        checked={l.taxable}
+                        onChange={(e) => setLine(i, { taxable: e.target.checked })}
+                      />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <select
+                        className="input"
+                        aria-label={t('receipts.category_for', { item: l.rawText })}
+                        value={l.categoryId}
+                        onChange={(e) => setLine(i, { categoryId: e.target.value })}
+                      >
+                        <option value="">{t('receipts.uncategorized')}</option>
+                        {byEntity.map(({ entity, options }) =>
+                          options.length ? (
+                            <optgroup key={entity.id} label={entity.name}>
+                              {options.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ) : null,
+                        )}
+                      </select>
+                      {!l.categoryId && suggested && (
+                        <button
+                          type="button"
+                          className="mt-1 text-xs underline"
+                          onClick={() => setLine(i, { categoryId: suggested })}
+                        >
+                          {t('receipts.use_suggestion', { name: categoryName.get(suggested) ?? '' })}
+                        </button>
                       )}
-                    </select>
-                    {!l.categoryId && suggested && (
+                      {l.categoryId && saved?.categoryId === l.categoryId && (
+                        <span className="max-w-40">
+                          <Explanation categorization={saved.categorization} />
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1 pr-2">
+                      <select
+                        className="input min-w-32"
+                        aria-label={t('receipts.member')}
+                        value={l.memberId}
+                        onChange={(e) => setLine(i, { memberId: e.target.value })}
+                      >
+                        {!l.id && <option value={AUTOMATIC_MEMBER}>{t('receipts.member_automatic')}</option>}
+                        <option value="">{t('receipts.household')}</option>
+                        {members.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      {memberWhy && (
+                        <span
+                          className="mt-1 block max-w-40 truncate text-xs text-muted"
+                          title={memberWhy}
+                          data-testid="receipt-line-member-why"
+                        >
+                          <span className="sr-only">{t('review.why')} </span>
+                          {memberWhy}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1">
                       <button
                         type="button"
-                        className="mt-1 text-xs underline"
-                        onClick={() => setLine(i, { categoryId: suggested })}
+                        className="text-xs text-muted underline"
+                        onClick={() => setLines((list) => list.filter((_, j) => j !== i))}
                       >
-                        {t('receipts.use_suggestion', { name: categoryName.get(suggested) ?? '' })}
+                        {t('receipts.remove_line')}
                       </button>
-                    )}
-                    {l.categoryId && saved?.categoryId === l.categoryId && (
-                      <span className="max-w-40">
-                        <Explanation categorization={saved.categorization} />
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-1 pr-2">
-                    <select
-                      className="input"
-                      aria-label={t('receipts.member')}
-                      value={l.memberId}
-                      onChange={(e) => setLine(i, { memberId: e.target.value })}
-                    >
-                      {!l.id && <option value={AUTOMATIC_MEMBER}>{t('receipts.member_automatic')}</option>}
-                      <option value="">{t('receipts.household')}</option>
-                      {members.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                    {memberWhy && (
-                      <span
-                        className="mt-1 block max-w-40 truncate text-xs text-muted"
-                        title={memberWhy}
-                        data-testid="receipt-line-member-why"
-                      >
-                        <span className="sr-only">{t('review.why')} </span>
-                        {memberWhy}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-1">
-                    <button
-                      type="button"
-                      className="text-xs text-muted underline"
-                      onClick={() => setLines((list) => list.filter((_, j) => j !== i))}
-                    >
-                      {t('receipts.remove_line')}
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
