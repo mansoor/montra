@@ -25,7 +25,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSegments } from 'expo-router';
+import type { DisclaimerKind } from '@montra/schemas';
 import { sparkline, thin } from '../features/planning';
+import { t } from '../i18n';
 import { haptic } from './haptics';
 import { Icon, type IconName } from './icons';
 import { useTheme } from './theme';
@@ -99,6 +101,19 @@ export function Body({ children, muted, style }: { children: ReactNode; muted?: 
 export function Small({ children, color }: { children: ReactNode; color?: string }) {
   const th = useTheme();
   return <Text style={{ color: color ?? th.muted, fontSize: th.font.small }}>{children}</Text>;
+}
+
+/**
+ * Tax and financial outputs are informational, not professional advice (AIA-12, NFR-14): one small line per screen
+ * that shows one, at the end of it, as on the web.
+ */
+export function Disclaimer({ kind }: { kind: DisclaimerKind }) {
+  const th = useTheme();
+  return (
+    <Text style={{ color: th.muted, fontSize: th.font.small }} testID={`disclaimer-${kind}`}>
+      {t(kind === 'tax' ? 'disclaimer.tax' : 'disclaimer.financial')}
+    </Text>
+  );
 }
 
 export function Card({

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { BackLink } from '@/components/ui/back-link';
+import { Disclaimer } from '@/components/ui/disclaimer';
 import { ApiError } from '@montra/api-client';
 import { load, serverApi } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -49,6 +50,7 @@ export default async function PayRunPage({
           .map((a) => ({ id: a.id, name: a.name }))}
         canWrite={canWrite}
       />
+      <Disclaimer kind="tax" />
     </div>
   );
 }

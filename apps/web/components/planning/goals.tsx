@@ -8,6 +8,7 @@ import { percentOf } from '@/lib/planning';
 import { ProgressBar } from '../charts/line-chart';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
+import { Disclaimer } from '../ui/disclaimer';
 import { StatusLine, useAction } from '../use-action';
 
 const TYPES = ['emergency_fund', 'savings', 'sinking_fund', 'debt_payoff'] as const;
@@ -57,6 +58,8 @@ export function GoalsBoard({
           ))}
         </div>
       )}
+      {/* A debt payoff plan is a projection from the user's figures, not advice (AIA-12). */}
+      {active.some((g) => g.payoff) && <Disclaimer kind="financial" />}
       {archived.length > 0 && (
         <details className="card" data-testid="archived-goals">
           <summary className="cursor-pointer text-sm font-semibold">

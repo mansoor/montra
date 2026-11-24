@@ -20,6 +20,7 @@ import {
   Body,
   Button,
   Card,
+  Disclaimer,
   Disclosure,
   Row,
   Screen,
@@ -291,6 +292,7 @@ export default function Business() {
               .map((p) => (
                 <Small key={p.quarter}>{t('mobile.business.next_tax_date', { date: fmtDate(p.due) })}</Small>
               ))}
+            <Disclaimer kind="tax" />
           </Card>
           {/* Trips are recorded by anyone who records in these books; the profile is set up (AUTH-18). */}
           {can.record && can.writes(entityId) ? (

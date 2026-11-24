@@ -29,6 +29,7 @@ import type {
 } from '@montra/schemas';
 import { notFound } from '../common/errors.js';
 import { Db } from '../db/database.js';
+import { TAX_NOTE } from '../reports/report-render.js';
 import { PropertiesService } from './properties.service.js';
 import { rentalEntity, SCH_E, todayOf, type Ctx } from './shared.js';
 
@@ -381,6 +382,8 @@ export class RentalReportsService {
     }
     for (const u of s.unmapped)
       table.push(['', '', '', safeText(`No line: ${u.name}`), dollars(u.amount), '']);
+    // The not-advice line, as the screen and the report PDF carry it (AIA-12, NFR-14).
+    table.push([], [TAX_NOTE]);
     const fileName = `schedule-e-${s.year}.${format}`;
     if (format === 'csv') {
       const text = table.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';

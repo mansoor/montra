@@ -152,7 +152,9 @@ test split as reported, 0.011 calibrated), and at 0.95 about nine in ten test ro
 
 Every call writes `ai_event` (input **hash**, not input; model; output; confidence;
 latency; cost; later the user action). The user can view and delete these entries.
-Tax and financial outputs include the disclaimer string from reference data.
+Tax and financial outputs carry the disclaimer once per screen: `disclaimer.tax` or `disclaimer.financial` in the
+messages, through one shared component on the web and one on the phone. Tax report files (Schedule C and E as CSV or
+XLSX) and the tax package say it inside (STATUS §7g).
 
 ## 9. Prompt and schema management
 

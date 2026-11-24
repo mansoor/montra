@@ -10,7 +10,18 @@ import type { MileageSummaryDto, PayrollPersonDto } from '@montra/schemas';
 import { normalizeMiles } from '../../src/features/business';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useAbilities, useSession } from '../../src/session/SessionProvider';
-import { Banner, Body, Button, Card, Field, Row, Screen, Segmented, Small } from '../../src/ui/components';
+import {
+  Banner,
+  Body,
+  Button,
+  Card,
+  Disclaimer,
+  Field,
+  Row,
+  Screen,
+  Segmented,
+  Small,
+} from '../../src/ui/components';
 import { NotAllowed } from '../../src/ui/NotAllowed';
 
 const todayLocal = (): string => {
@@ -160,6 +171,7 @@ export default function Mileage() {
               testID="mileage-trip"
             />
           ))}
+          <Disclaimer kind="tax" />
         </>
       ) : null}
     </Screen>

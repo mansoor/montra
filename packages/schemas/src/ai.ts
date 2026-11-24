@@ -569,4 +569,9 @@ export type AiTaskResultRequest = z.output<typeof AiTaskResultRequest>;
 
 // ----- Disclaimers (AIA-12, NFR-14) -----------------------------------------------------------------------
 
+/**
+ * Tax and financial outputs are informational, not professional advice. Each screen or export that shows one carries
+ * the matching line once (`disclaimer.tax` or `disclaimer.financial` in the messages).
+ */
 export const DISCLAIMER_KEYS = ['tax', 'financial'] as const;
+export type DisclaimerKind = (typeof DISCLAIMER_KEYS)[number];

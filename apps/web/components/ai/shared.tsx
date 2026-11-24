@@ -4,16 +4,6 @@ import type { CategorizationDto, MerchantDto } from '@montra/schemas';
 import { confidenceTone, percent } from '@/lib/review';
 import { useI18n } from '../i18n';
 
-/** Tax and financial outputs are informational only (AIA-12, NFR-14). */
-export function Disclaimer({ kind }: { kind: 'tax' | 'financial' }) {
-  const { t } = useI18n();
-  return (
-    <p className="text-xs text-muted" data-testid={`disclaimer-${kind}`}>
-      {t(kind === 'tax' ? 'disclaimer.tax' : 'disclaimer.financial')}
-    </p>
-  );
-}
-
 /** Calibrated confidence as a colored chip ("87%"), green at or above the review threshold. */
 export function ConfidenceChip({ confidence, threshold }: { confidence: number; threshold: number }) {
   const { t } = useI18n();

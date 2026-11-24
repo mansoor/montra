@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CalendarDateDto, CurrencyCodeDto, Id } from './common.js';
 import { MinorDto } from './budgets.js';
+import type { DisclaimerKind } from './ai.js';
 
 // ----- Recommendations (REC-01..08; design 04 §12, ADR-0015) -----------------------------------------------
 // Computed in code; AI only words them (AIA-05). Nothing applies without the user's confirmation.
@@ -20,6 +21,13 @@ export const RECOMMENDATION_TYPES = [
 ] as const;
 export const RecommendationType = z.enum(RECOMMENDATION_TYPES);
 export type RecommendationType = z.infer<typeof RecommendationType>;
+
+/** Tax set-aside (REC-09) and estimated-tax due dates (BIZ-09) are tax outputs; the rest are financial (AIA-12). */
+export const TAX_RECOMMENDATION_TYPES: readonly RecommendationType[] = ['REC-09', 'BIZ-09'];
+
+/** The one disclaimer a list of recommendations carries: the tax one when any of them is about tax. */
+export const recommendationDisclaimer = (types: readonly RecommendationType[]): DisclaimerKind =>
+  types.some((t) => TAX_RECOMMENDATION_TYPES.includes(t)) ? 'tax' : 'financial';
 
 export const RecommendationStatus = z.enum(['open', 'accepted', 'edited', 'dismissed', 'expired']);
 export type RecommendationStatus = z.infer<typeof RecommendationStatus>;
