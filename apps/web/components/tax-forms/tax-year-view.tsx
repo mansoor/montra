@@ -7,6 +7,7 @@ import { browserApi } from '@/lib/browser-api';
 import { anyReading, byPerson, resultChip } from '@/lib/tax-forms';
 import { useI18n } from '../i18n';
 import { Money } from '../money';
+import { Disclaimer } from '../ui/disclaimer';
 import { StatusLine, useAction } from '../use-action';
 import { TaxFormDropZone, useRefreshWhile } from './tax-form-drop-zone';
 import { TaxFormEditor, type AccountOption, type EmployerOption, type Option } from './tax-form-editor';
@@ -305,6 +306,7 @@ export function TaxYearView({
           )}
         </section>
       )}
+      <Disclaimer kind="tax" />
     </div>
   );
 }

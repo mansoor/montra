@@ -893,6 +893,10 @@ describe('reports (RNT-06, RNT-09, RNT-11, UP-10)', () => {
     expect(res.headers['cache-control']).toContain('no-store');
     expect(res.body).toContain('Report House,1 Report Rd,3,Rents received,2000.00,50');
     expect(res.body).toContain(`"'=HYPERLINK(""x"")"`);
+    // AIA-12, NFR-14: the file ends with the not-advice line.
+    expect(
+      res.body.endsWith('\r\n\r\n"For your records and your tax professional, not tax advice."\r\n'),
+    ).toBe(true);
     const xlsx = await h.app.inject({
       method: 'GET',
       url: url(`/exports/schedule-e?entityId=${entity}&year=${year}&format=xlsx`),

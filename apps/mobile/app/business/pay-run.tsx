@@ -9,7 +9,7 @@ import type { PayRunDto } from '@montra/schemas';
 import { hoursLabel, payslipSections, signedAmount, signedHoursLabel } from '../../src/features/payroll';
 import { fmtDate, fmtMoney, t } from '../../src/i18n';
 import { useSession } from '../../src/session/SessionProvider';
-import { Banner, Body, Card, Screen, Small, Title } from '../../src/ui/components';
+import { Banner, Body, Card, Disclaimer, Screen, Small, Title } from '../../src/ui/components';
 import { useTheme } from '../../src/ui/theme';
 
 export default function PayRun() {
@@ -92,6 +92,7 @@ export default function PayRun() {
             </Card>
           ))}
           <Small>{t('mobile.payroll.pdf_on_web')}</Small>
+          <Disclaimer kind="tax" />
         </>
       ) : null}
     </Screen>

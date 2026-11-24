@@ -99,6 +99,9 @@ test('tax forms are expected, typed in, checked against the books and reviewed',
   await expect(expected.filter({ hasText: 'W-2 · Acme Corp' })).toContainText('Not yet');
   await expect(expected.filter({ hasText: '1099-INT · High-yield savings' })).toContainText('$41.07');
   await expect(expected.filter({ hasText: '1098 · Home mortgage' })).toContainText('Not yet');
+  // AIA-12, NFR-14: once, at the end of the screen.
+  await expect(page.getByTestId('disclaimer-tax')).toHaveCount(1);
+  await expect(page.getByTestId('disclaimer-tax')).toContainText('not tax advice');
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
@@ -123,6 +126,7 @@ test('tax forms are expected, typed in, checked against the books and reviewed',
   await expect(page).toHaveURL(/\/tax-forms\/[0-9a-f-]+$/);
   await expect(page.getByRole('heading', { name: 'W-2 from Acme Corp' })).toBeVisible();
   await expect(page.getByTestId('tax-form-result').first()).toHaveText('Differs by $200.00');
+  await expect(page.getByTestId('disclaimer-tax')).toHaveCount(1);
   const box2 = page
     .getByTestId('tax-check')
     .filter({ has: page.getByRole('rowheader', { name: 'Box 2', exact: true }) });
