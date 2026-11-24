@@ -98,6 +98,8 @@ Priority key: **M** = must for R1, **S** = should for R1, **C** = could / later.
 | ACC-12 | A "Miscellaneous" spending category in personal books' Daily living group, in new books and added once to existing ones. | S |
 | ACC-13 | Personal books start with a fuller list of categories: home (improvement, maintenance, cleaning, gardener, furniture), transportation (fuel, transit and rideshare, parking, car upkeep, registration), taxes (property tax, income tax payments, preparation), kinds of insurance, kids, pets, fitness, charity apart from gifts, and more kinds of income. Existing personal books get the missing ones once. | S |
 | ACC-14 | Delete an account added by mistake, when it is empty: no transactions or entries apart from its own opening balance, and nothing else that points at it (receipts, statements, reconciliations, schedules, recurring items, rules and other links). Owners and admins only, after a recent sign-in. Its opening balance and its own setup go with it, the books stay balanced, and the audit log records it. An account with history can only be archived (ACC-06), and the reason says why. Added 2026-11-23. | S |
+| ACC-15 | An account lists its holders by name, each optionally a family member, so joint accounts show everyone the bank says owns them. Added 2026-11-24 (ADR-0057). | S |
+| ACC-16 | An account can keep its full number, sealed at rest, shown masked to its last four and in full one at a time after a recent sign-in, each view logged. Added 2026-11-24 (ADR-0057). | S |
 
 ### 3.2 Manual entry and camera capture
 
@@ -684,6 +686,9 @@ Vault as a per-workspace storage provider. Documents go one way, from Montra to 
 | VLT-09 | The vault's daily limits and waits are respected without counting as failures; problems are shown in words, and owners are told once when the vault needs a person. | S |
 | VLT-10 | The phone shows the vault status and badges, opens vault-held documents, and uploads missing files again. | C |
 | VLT-11 | When Montra needs a file it no longer holds, it asks the vault; a file the vault doesn't return is listed in Review to be provided again, and backups and tax packages list any file still missing. | M |
+| VLT-13 | A statement converted for the vault is drawn from its imported rows, with a cover page summarising the account, holders, period and balances, limited by the detail switch. | S |
+
+VLT-13 was added on 2026-11-24 with ADR-0057 (statements the vault doesn't keep, sent as PDFs with a cover page).
 
 ### 13.7 Bank feeds
 

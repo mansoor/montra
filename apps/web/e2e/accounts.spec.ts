@@ -166,7 +166,7 @@ test('each account type asks for and shows what it has', async ({ page }) => {
   await page.getByRole('button', { name: 'Add account' }).click();
 
   await expect(page.getByRole('heading', { name: 'Visa' })).toBeVisible();
-  await expect(page.getByTestId('account-about')).toHaveText('Credit card · Chase · ···· 4242');
+  await expect(page.getByTestId('account-about')).toHaveText('Credit card · Chase · ••••4242');
   await expect(page.getByTestId('fact-limit')).toContainText('$5,000.00');
   await expect(page.getByTestId('fact-available')).toContainText('$4,700.00');
   // 19.99 * 100 in floating point truncates to 19.98.

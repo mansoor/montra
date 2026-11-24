@@ -55,7 +55,10 @@ interface FkFont {
   characterSet: number[];
   glyphForCodePoint(cp: number): { id: number };
   hasGlyphForCodePoint(cp: number): boolean;
-  layout(text: string): {
+  layout(
+    text: string,
+    features?: Record<string, boolean>,
+  ): {
     glyphs: { id: number; advanceWidth: number }[];
     positions: { xAdvance: number; xOffset: number; yOffset: number }[];
   };
@@ -171,7 +174,15 @@ export class FontSet {
   private readonly embedded = new Map<string, Promise<Embedded>>();
   private chars = '?: ';
 
-  constructor(private readonly pdf: PDFDocument) {
+  /**
+   * `ligatures: false` keeps each letter its own glyph ("fi" stays f and i), so the PDF's text layer reads back as
+   * written: a rendered statement is read by the vault and searched (ADR-0057). Joining in Arabic is required
+   * shaping, not a ligature, and is kept.
+   */
+  constructor(
+    private readonly pdf: PDFDocument,
+    private readonly opts: { ligatures?: boolean } = {},
+  ) {
     pdf.registerFontkit(fontkit);
   }
 
@@ -207,7 +218,10 @@ export class FontSet {
     const out: ShapedRun[] = [];
     for (const r of fontRuns(text)) {
       const { pdf, fk, listed } = await this.embed(r.font, weight);
-      const { glyphs, positions } = fk.layout(r.text);
+      const { glyphs, positions } = fk.layout(
+        r.text,
+        this.opts.ligatures === false ? { liga: false, dlig: false } : undefined,
+      );
       const shaped = glyphs.map((g, i) => ({
         id: g.id,
         pdfWidth: listed.has(g.id) ? (g.advanceWidth * 1000) / fk.unitsPerEm : 1000,

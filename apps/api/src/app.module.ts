@@ -125,6 +125,7 @@ import { BusinessJobs } from './business/business-jobs.service.js';
 import { BusinessReportsService } from './business/business-reports.service.js';
 import { BusinessService } from './business/business.service.js';
 import { TaxIdSealing } from './business/tax-ids.js';
+import { StatementRenditions } from './renditions/statement-renditions.js';
 import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
@@ -323,6 +324,7 @@ export class AppModule {
         PayslipsService,
         BusinessService,
         TaxIdSealing,
+        StatementRenditions,
         PaymentLinks,
         InvoicesService,
         BillsService,

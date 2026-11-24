@@ -23,6 +23,7 @@ import {
 import type {
   AccountBalanceHistoryDto,
   AccountDto,
+  AccountNumberRevealDto,
   BalanceAdjustmentRequest,
   CategoryDto,
   CreateAccountRequest,
@@ -30,10 +31,20 @@ import type {
   UpdateAccountRequest,
   InterestEarnedDto,
 } from '@montra/schemas';
+import { CONFIG, type AppConfig } from '../config.js';
+import { FieldCrypto } from '../crypto/crypto.service.js';
+import { auditReveal } from '../crypto/sealed-numbers.js';
 import { Db } from '../db/database.js';
 import { FxRatesService } from '../fx/fx.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { notFound, unprocessable } from '../common/errors.js';
+import {
+  holdersOf,
+  maskAccountNumber,
+  openAccountNumber,
+  saveHolders,
+  sealAccountNumber,
+} from './account-holders.js';
 import { incomeCategory } from './income-categories.js';
 
 type Ctx = { workspaceId: string; userId: string };
@@ -44,6 +55,8 @@ export class AccountsService {
     @Inject(Db) private readonly db: Db,
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(FxRatesService) private readonly fx: FxRatesService,
+    @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
+    @Inject(CONFIG) private readonly config: AppConfig,
   ) {}
 
   /** Creates a bank/card/loan/asset account and posts its opening balance (ACC-02, ACC-05). */
@@ -301,6 +314,9 @@ export class AccountsService {
           ...(req.lowBalance !== undefined ? { low_balance_minor: req.lowBalance } : {}),
         })
         .execute();
+      if (req.holders?.length) {
+        await saveHolders(trx, ctx, id, req.holders, this.config.ACCOUNT_MAX_HOLDERS);
+      }
       if (natural !== 0n) {
         // ACC-04: a foreign-currency opening balance is valued at the opening date's reference rate.
         const rate =
@@ -348,6 +364,8 @@ export class AccountsService {
           'b.kind',
           'b.institution',
           'b.last4',
+          // ACC-16: whether a full number is kept; the sealed bytes aren't read.
+          sql<boolean>`b.account_number_enc is not null`.as('full_number_kept'),
           'b.default_member_id',
           'b.credit_limit_minor',
           'b.interest_rate_bps',
@@ -388,6 +406,11 @@ export class AccountsService {
         ctx.workspaceId,
         rows.map((r) => r.id),
       );
+      const holders = await holdersOf(
+        trx,
+        ctx.workspaceId,
+        rows.map((r) => r.id),
+      );
       return rows.map((r) => ({
         id: r.id,
         entityId: r.entity_id,
@@ -397,6 +420,9 @@ export class AccountsService {
         currency: r.currency,
         institution: r.institution,
         last4: r.last4,
+        accountNumberMasked: maskAccountNumber(r.last4),
+        fullNumberKept: r.full_number_kept,
+        holders: holders.get(r.id) ?? [],
         balance: {
           amount: naturalBalance(r.type, balances.get(r.id) ?? 0n).toString(),
           currency: asCurrencyCode(r.currency),
@@ -548,6 +574,7 @@ export class AccountsService {
       const bank = {
         ...(req.institution !== undefined ? { institution: req.institution } : {}),
         ...(req.last4 !== undefined ? { last4: req.last4 } : {}),
+        ...(await this.accountNumberChange(trx, ctx, accountId, req)),
         ...(req.defaultMemberId !== undefined ? { default_member_id: req.defaultMemberId } : {}),
         ...(req.creditLimit !== undefined ? { credit_limit_minor: req.creditLimit } : {}),
         ...(req.interestRateBps !== undefined ? { interest_rate_bps: req.interestRateBps } : {}),
@@ -648,6 +675,9 @@ export class AccountsService {
           .where('ledger_account_id', '=', accountId)
           .execute();
       }
+      if (req.holders !== undefined) {
+        await saveHolders(trx, ctx, accountId, req.holders, this.config.ACCOUNT_MAX_HOLDERS);
+      }
       if (req.hidden !== undefined) {
         await trx
           .insertInto('app.account_visibility')
@@ -666,6 +696,53 @@ export class AccountsService {
     const account = (await this.list(ctx, { includeHidden: true })).find((a) => a.id === accountId);
     if (!account) throw notFound('Account');
     return account;
+  }
+
+  /**
+   * ACC-16: what a change writes for the full number. A new number brings its last four; forgetting it keeps them. While
+   * a number is kept, its last four can't be changed on their own. The caller has checked the role.
+   */
+  private async accountNumberChange(
+    trx: Trx,
+    ctx: Ctx,
+    accountId: string,
+    req: UpdateAccountRequest,
+  ): Promise<{ account_number_enc?: Buffer | null; last4?: string }> {
+    if (req.accountNumber === undefined && req.last4 === undefined) return {};
+    const mismatch = () =>
+      unprocessable(
+        'account.number_last4',
+        'The last four come from the full account number: change the number, or remove it first',
+      );
+    if (req.accountNumber) {
+      if (req.last4 !== undefined && req.last4 !== req.accountNumber.slice(-4)) throw mismatch();
+      return sealAccountNumber(this.crypto, trx, ctx.workspaceId, req.accountNumber);
+    }
+    if (req.accountNumber === null) return { account_number_enc: null };
+    const now = await trx
+      .selectFrom('app.bank_account')
+      .select([sql<boolean>`account_number_enc is not null`.as('kept'), 'last4'])
+      .where('workspace_id', '=', ctx.workspaceId)
+      .where('ledger_account_id', '=', accountId)
+      .executeTakeFirst();
+    if (now?.kept && req.last4 !== now.last4) throw mismatch();
+    return {};
+  }
+
+  /** ACC-16: the full number, written to the audit log. The caller has checked the role and the recent sign-in. */
+  async revealNumber(ctx: Ctx, accountId: string): Promise<AccountNumberRevealDto> {
+    return this.db.run(ctx, async (trx) => {
+      const row = await trx
+        .selectFrom('app.bank_account')
+        .select('account_number_enc')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('ledger_account_id', '=', accountId)
+        .executeTakeFirst();
+      if (!row) throw notFound('Account');
+      const value = await openAccountNumber(this.crypto, trx, ctx.workspaceId, row.account_number_enc);
+      await auditReveal(trx, ctx, 'account.number_revealed', { type: 'bank_account', id: accountId });
+      return { value };
+    });
   }
 
   /**

@@ -20,6 +20,7 @@ import {
   RegisterView,
   UpdateAccountRequest,
   type AccountBalanceHistoryDto,
+  type AccountNumberRevealDto,
   type InvestmentPerformanceDto,
   type AccountDto,
   type AccountMovePreviewDto,
@@ -120,7 +121,25 @@ export class AccountsController {
     @Param('accountId') accountId: string,
     @Body() body: unknown,
   ): Promise<AccountDto> {
-    return this.accounts.update(dbCtx(ctx), parse(z.uuid(), accountId), parse(UpdateAccountRequest, body));
+    const req = parse(UpdateAccountRequest, body);
+    // ACC-16: owners and admins type in the full number (or remove it).
+    if (req.accountNumber !== undefined) requireWorkspaceAdmin(ctx);
+    return this.accounts.update(dbCtx(ctx), parse(z.uuid(), accountId), req);
+  }
+
+  /**
+   * ACC-16: the account's full number, one account at a time. Owners and admins, after a recent sign-in; each Show is
+   * in the audit log, as a business's EIN is (BIZ-26).
+   */
+  @Post('accounts/:accountId/reveal-number')
+  @HttpCode(200)
+  revealNumber(
+    @Ctx() ctx: RequestContext,
+    @Param('accountId') accountId: string,
+  ): Promise<AccountNumberRevealDto> {
+    requireWorkspaceAdmin(ctx);
+    requireRecentAuth(ctx);
+    return this.accounts.revealNumber(dbCtx(ctx), parse(z.uuid(), accountId));
   }
 
   @Post('accounts/:accountId/balance-adjustments')

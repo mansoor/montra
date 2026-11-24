@@ -28,6 +28,12 @@ and matching them automatically (PR 3); the phone (PR 4, not run on a device yet
 the 16 February reminder (PR 5, migration 0060); see §7g. Role-based permissions (ADR-0053) are a separate proposal for
 later; tax forms use an owner-only setting for accountants instead.
 
+**Accepted 2026-11-24, being built:** [ADR-0057](design/adr/0057-vault-statement-pdfs.md), statements the
+vault doesn't keep (CSV, XLS, OFX, QIF, a bank's own layout) sent as PDFs drawn from the imported rows, with a cover
+page and, by default, the original attached inside. Each sent group chooses: don't send, convert, or convert with the
+original attached. Accounts gain holder names and a sealed full account number. Three PRs (accounts, rendering,
+sending); PDF/A and bank-feed statements are on the backlog.
+
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
@@ -294,6 +300,11 @@ finished:
     the line's total when neither is printed (see §7g).
 14. ~~**Phone receipts don't show tax and tip**~~ Done: the phone shows subtotal, discount, tax, fees, tip and total
     under the lines (see §7g).
+15. **PDF/A for documents sent to the vault.** ADR-0057 renders statements the vault doesn't keep as ordinary PDFs.
+    Making them conforming PDF/A for long-term archiving is for later (owner's answer, 2026-11-24). It may mean
+    rendering in the document worker with reportlab instead of pdf-lib.
+16. **Monthly statement PDFs for bank feeds.** A feed has no file; ADR-0057's renderer could make one per month. Not
+    now (owner's answer, 2026-11-24).
 
 ---
 
@@ -3108,6 +3119,95 @@ Phase 11 leftovers:
     do, stops at its budget and carries on; the migration's audit redaction and payroll clearing).
     `data-ownership.test.ts` (the archive has the numbers in full and once in the CSV; a restore seals them).
     `business-registration.test.ts` masks updated. Domain `business-registration.test.ts` (`maskLast4`).
+- **An account's holders and its full number, sealed** (ACC-15, ACC-16, migration 0091; ADR-0057 §5, §6, PR 1 of 3).
+  - Before: an account had a default member (whose spending it is) and the last four of its number. Nothing said who
+    the bank says owns it, and `bank_account.account_number_enc` existed (0001) but nothing wrote it.
+  - Now:
+    - **Holders:** a new table, `app.account_holder`: position, name, and an optional family member. A child table
+      rather than a jsonb list, so a member link is a foreign key bound to the workspace, each change is its own audit
+      entry and change-feed row, and backups pick it up from the catalog. RLS follows the account's books (read to see,
+      write to change). Deleting the account takes them with it.
+    - `AccountDto.holders` lists them in order. `PATCH` and `POST accounts` take the whole list (`holders`). A holder
+      with a member and no name gets the member's name. A row that stays in its place keeps its id, so the audit log
+      shows a rename as a change. A member outside the household is refused (`account.holder_member`), and the
+      database refuses it too. The default member is unchanged.
+    - **Full number:** sealed with `FieldCrypto` in `account_number_enc` (label `bank_account.account_number`), with
+      its last four in `last4`. The DTO has `accountNumberMasked` ("••••1234") and `fullNumberKept`, never the number.
+      Owners and admins set it (`accountNumber`) or remove it (`null`, which keeps the last four). Others get 403.
+      Spaces and dashes are dropped; it must be 4 to 34 letters and digits ending in four digits, and the error
+      doesn't repeat it. While it's kept, `last4` can't be changed on its own (`account.number_last4`). A check
+      (`not valid`, for old rows) makes a kept number always have its last four.
+    - **Show:** `POST accounts/:id/reveal-number`, owners and admins, after a recent sign-in. Each one is logged as
+      `account.number_revealed`, with no number in it. The audit trigger already writes "[redacted]" for `*_enc`
+      columns. Sealing and the reveal's audit entry are shared with BIZ-26 in `crypto/sealed-numbers.ts`.
+    - **Backups** hold the number in full (`account_number`, as the catalog already said) and the holders in
+      `account_holder.jsonl`. The summary workbook's Accounts sheet has a Holders column. A restore seals the number
+      again and fills in the last four. A restore now keeps an archive's `last4` when there is no full number (it used
+      to clear it), which also covers BIZ-26's columns. A one-book archive has only that book's accounts' holders.
+    - **Web:** Settings → Accounts has Holders (name, family member, add, remove) and Account number (masked, Show,
+      type in, remove; owners and admins). The account page shows "Held by …" and "••••1234"; the accounts list and
+      Home show "••••1234" instead of "••1234".
+    - **Phone:** the account screen shows the masked number and the holders, and edits holders online (owners, admins
+      and partners who can write the books). The phone has no Show.
+  - Settings, not code: `ACCOUNT_MAX_HOLDERS` (default 4), how many holders an account may list
+    (`account.holders_limit` above it).
+  - Next: PR 2 renders statements as PDFs with a cover page that uses the holders (VLT-13); PR 3 sends them (VLT-12).
+  - Tests: API `account-holders.test.ts` (new: list, rename in place, add and remove, holders on create, the limit and
+    the setting, a member from another workspace refused by the API and the database, deleted with the account, RLS
+    for another workspace and a partner without the business's books, the change feed; the number sealed with its
+    last four, owners and admins only, last four kept with it, a bad number not echoed, Show after a recent sign-in
+    and logged each time, never in reads, the sync pull or the audit log, removed keeping the last four).
+    `data-ownership.test.ts` (the archive has the number in full and the holders, the workbook's Holders column; a
+    restore brings back holders with their member remapped and the number sealed, and keeps a last four with no
+    number). `business-tax-ids.test.ts` still passes on the shared helpers. Domain `account-holders.test.ts`, web
+    `account-holders.test.ts`, phone screen test `account-holders.test.tsx` (shown, none, add a member and save, a
+    refusal shown, read-only for a viewer).
+- **Statements rendered as PDFs with a cover page** (VLT-13 partial, migration 0092; [ADR-0057](design/adr/0057-vault-statement-pdfs.md) PR 2 of 3).
+  - Before: the vault keeps documents and images, so a CSV, XLS or OFX statement stayed in Montra only, shown as "not a
+    type the vault keeps".
+  - Now:
+    - `StatementRenditions.render(ctx, fileId, { detail, accountNumber, attachOriginal })` draws a statement file as a
+      PDF from its committed import's parsed rows, never from the file. One renderer covers every format the import
+      reads. It is in `apps/api/src/renditions/`.
+    - The PDF has one cover page, then a table of date, description, money out, money in and running balance. Each
+      table page has a header with the account name, the period and "page n of m". The totals come at the end.
+    - The cover comes from a document summary model (`document-summary.ts`), so other kinds of document can have one
+      later. With the detail switch off it shows the account, institution, type, holders, currency and period only. With
+      it on, it also shows the account number, the balances, money in and out, the count, the balance check, and the
+      original file's name, format, SHA-256 and import date. The number is the last four by default, or none. Full is
+      only ever passed in by the caller.
+    - The holders are the account's holder list (ACC-15), else its default member, else the book's name. Full unseals
+      the account's kept number (ACC-16) for the cover only; with none kept, it shows the last four.
+    - The running balance is the bank's own when every row has one. Otherwise it is worked out from the opening balance,
+      or back from the closing one. Otherwise it is left blank. A file listed newest first is turned round.
+    - The original can be attached inside the PDF, related as its source, byte for byte. With several parts it goes in
+      the first part, and the other covers say so.
+    - A file the import couldn't read gives a cover-only PDF that says so, but only when the original is attached.
+      Otherwise the answer is "not converted" and no file is made. An import still open answers "not ready".
+    - Fonts are embedded (Noto, as invoices use), without ligatures, so the text layer reads back as written. The
+      metadata is set, and the same input gives the same bytes.
+    - Each part is stored as its own `app.file` of the original's kind, through the usual storage and quota (BAK-08).
+      `derived_from_file_id` links it to the original in the same workspace, and `rendition` is `statement_pdf`. A
+      trigger refuses rendering a rendering, or a different kind. A rendering goes in the Trash and comes back with its
+      original. If the original is deleted for good, the rendering keeps its row, unlinked, and retention removes it.
+    - A rendering is not queued for the vault when it is stored (`storage_file_added` skips it). The owner's own
+      S3/WebDAV copy takes it like any file. Sending is PR 3.
+    - Rendering again replaces a rendering not yet sent and removes its stored copy. One the vault has had (any state
+      past `queued`) is kept and not redone. Undoing the import drops the unsent renderings; one the vault has stays.
+    - The worker's `statement.render` job (queue `report`) runs it for a file, as the user who queued it.
+      `StatementRenditions.enqueue()` queues it. Nothing queues it yet; PR 3 will, after a commit or a backfill.
+  - Settings, not code: `STATEMENT_PDF_MAX_ROWS` (default 5,000), the most rows in one PDF. A longer statement is split
+    into parts, each titled "part n of m".
+  - Left for PR 3 (VLT-12): the per-group "Files the vault doesn't keep" and "Account number on the cover" settings,
+    sending renderings, hints, "import undone" on a sent one, and §7's rule for removing the original. A file with two
+    committed imports (one file, two accounts) renders the latest only.
+  - Tests: API `statement-pdf.test.ts` (rows and running balances, the cover at each detail level and number choice, no
+    full number unless passed in, rows and totals drawn, metadata, the same bytes twice, the attachment byte for byte,
+    the split, a cover-only file). `statement-renditions.test.ts` (CSV, XLS and OFX imports each give a PDF whose rows
+    and totals match the batch; the cover from the account; an unreadable file with and without attaching; an open
+    import; the split by the setting; the derived-file columns, their checks and RLS; Trash with the original; not
+    queued for the vault; replace, keep and drop on undo; the job). `data-ownership.test.ts` (a rendering's link to its
+    original isn't a file holder).
 
 ---
 

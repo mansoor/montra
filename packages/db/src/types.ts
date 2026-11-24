@@ -168,7 +168,9 @@ export interface BankAccountTable {
   ledger_account_id: string;
   kind: BankAccountKind;
   institution: string | null;
+  /** The last four of the account number. When the full number is kept (ACC-16), they're its last four. */
   last4: string | null;
+  /** ACC-16 (migration 0091): the full number, sealed with FieldCrypto (label `bank_account.account_number`). */
   account_number_enc: Buffer | null;
   opening_balance_minor: Int8Default;
   opening_date: CalendarDateCol | null;
@@ -191,6 +193,18 @@ export interface BankAccountTable {
   plan_type: string | null;
   employer_id: string | null;
   employer_contributions: ColumnType<boolean, boolean | undefined, boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** ACC-15 (migration 0091): who the bank says holds an account, in order; each optionally a family member. */
+export interface AccountHolderTable {
+  workspace_id: string;
+  id: Generated<string>;
+  ledger_account_id: string;
+  position: number;
+  name: string;
+  member_id: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -514,9 +528,17 @@ export interface FileTable {
   missing_reason: string | null;
   /** ADR-0054 §5a: provided again with a hash different from the original's. */
   replaced_sha256: string | null;
+  /**
+   * ADR-0057 §4 (migration 0092): the file this one was rendered from, in the same workspace. Null for an upload, and
+   * once the original is deleted for good.
+   */
+  derived_from_file_id: string | null;
+  /** ADR-0057 §4: what rendering this file is, or null for an upload. A rendering is never rendered again. */
+  rendition: FileRendition | null;
 }
 
 export type FileLocation = 'montra' | 'vault';
+export type FileRendition = 'statement_pdf';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
@@ -1988,6 +2010,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.category_group': CategoryGroupTable;
   'app.ledger_account': LedgerAccountTable;
   'app.bank_account': BankAccountTable;
+  'app.account_holder': AccountHolderTable;
   'app.payee': PayeeTable;
   'app.tag': TagTable;
   'app.transaction': TransactionTable;
@@ -2708,6 +2731,7 @@ export interface PropertyBudgetLineTable {
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
+export type AccountHolderRow = Selectable<AccountHolderTable>;
 export type NewLedgerAccount = Insertable<LedgerAccountTable>;
 export type EntityRow = Selectable<EntityTable>;
 export type TransactionRow = Selectable<TransactionTable>;
