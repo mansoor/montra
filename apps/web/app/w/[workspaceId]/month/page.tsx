@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
+import { drillHref } from '@/lib/planning';
 import { Money } from '@/components/money';
 import { PageHeader, StatTile } from '@/components/ui/page-header';
 import { MonthPicker, MonthSuggestions } from '@/components/month/month-review';
@@ -32,6 +33,15 @@ export default async function MonthPage({
   ]);
   const base = `/w/${workspaceId}`;
   const ccy = d.currency;
+  // UP-05: a category's figure for the month leads to its transactions.
+  const categoryDrill = (categoryId: string) =>
+    drillHref(base, {
+      entityId: d.entityId,
+      ...(d.memberId ? { memberId: d.memberId } : {}),
+      categoryIds: [categoryId],
+      from: d.month.start,
+      to: d.month.end,
+    });
   const label = (start: string) =>
     new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
       new Date(`${start}T00:00:00Z`),
@@ -88,11 +98,13 @@ export default async function MonthPage({
           label={t('month.money_in')}
           value={<Money amount={d.income} currency={ccy} />}
           hint={d.usual ? t('month.usual_hint', { amount: money(d.usual.income, ccy) }) : undefined}
+          href={drillHref(base, d.drill.income)}
         />
         <StatTile
           label={t('month.money_out')}
           value={<Money amount={d.spent} currency={ccy} />}
           hint={d.usual ? t('month.usual_hint', { amount: money(d.usual.spent, ccy) }) : undefined}
+          href={drillHref(base, d.drill.spent)}
         />
         <StatTile
           label={t('month.left_over')}
@@ -114,7 +126,9 @@ export default async function MonthPage({
               {[...d.changes.up, ...d.changes.down].map((c) => (
                 <li key={c.categoryId} className="flex items-center justify-between gap-2 py-1.5">
                   <span>
-                    {c.name}
+                    <Link href={categoryDrill(c.categoryId)} className="hover:underline">
+                      {c.name}
+                    </Link>
                     <span className="block text-xs text-muted">
                       <Money amount={c.spent} currency={ccy} /> · {t('month.usually')}{' '}
                       <Money amount={c.usual} currency={ccy} />
@@ -147,7 +161,11 @@ export default async function MonthPage({
               <tbody className="divide-y divide-line">
                 {d.categories.map((c) => (
                   <tr key={c.categoryId}>
-                    <td className="py-1.5">{c.name}</td>
+                    <td className="py-1.5">
+                      <Link href={categoryDrill(c.categoryId)} className="hover:underline">
+                        {c.name}
+                      </Link>
+                    </td>
                     <td className="num py-1.5 text-right">
                       <Money amount={c.spent} currency={ccy} />
                     </td>
@@ -201,7 +219,9 @@ export default async function MonthPage({
             <ul className="space-y-1 text-sm">
               {d.budget.over.map((o) => (
                 <li key={o.categoryId}>
-                  {t('month.over_by', { name: o.name })}{' '}
+                  <Link href={categoryDrill(o.categoryId)} className="hover:underline">
+                    {t('month.over_by', { name: o.name })}
+                  </Link>{' '}
                   <span className="text-bad">
                     <Money amount={o.overBy} currency={ccy} />
                   </span>

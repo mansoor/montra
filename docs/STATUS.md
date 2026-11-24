@@ -2960,6 +2960,53 @@ Phase 11 leftovers:
     filter); e2e `receipts.spec.ts` finds a receipt by a word on it through the new field. Checked in a browser on
     the Frame check workspace: a word that matches nothing shows "No receipts match" with a chip, a matching word
     finds the receipt, and `?q=` opens as `?text=`.
+- **Every number traceable, and the export readable in a spreadsheet** (UP-05; no migration).
+  - Before: UP-05 wasn't tracked. Most numbers already drilled down (FLOW-01/02, RPT-03), but some didn't: Month in
+    review's figures and categories, the budget's total spent, a goal's savings, the business tiles, totals and
+    customers, and the rental portfolio row. The forecast, net worth and 50/30/20 didn't say how they were worked
+    out. The export's workbook had amounts in cents and no account or category.
+  - The audit, web screens (→ is the drill-down; "says" is a line on how it's worked out):
+
+    | Screen | Number | How to see what's behind it |
+    | --- | --- | --- |
+    | Home | Income, Spent | → transactions (already) |
+    | Home | Left to spend, Left to assign | → Budget (already) |
+    | Home | Charts, where it went, changes, pace | → transactions (already) |
+    | Home | Net position, low balance | → Net worth, Forecast (already) |
+    | Budget | Each line's activity, unbudgeted | → transactions (already) |
+    | Budget | Total spent | → transactions in the budget's categories (**new**) |
+    | Budget | 50/30/20 | says (**new**) |
+    | Cash flow | Money flow nodes | → transactions (already) |
+    | Cash flow | Forecast | says, items listed (**new**) |
+    | Cash flow | Net worth, assets, liabilities | says (**new**); each account → its register (already) |
+    | Explore | Month cells, totals, uncategorized | → transactions (already) |
+    | Month in review | Money in, money out | → transactions (**new**, `drill` on the DTO) |
+    | Month in review | Categories, changes, over budget | → transactions (**new**) |
+    | Month in review | Largest purchases | → the transaction (already) |
+    | Reports | Rows and bars | → transactions (already, RPT-03) |
+    | Accounts | Balance | → the account's register with running balance (already) |
+    | Business | Revenue, expenses tiles | → the P&L for that month (**new**) |
+    | Business | P&L lines | → transactions (already); totals (**new**) |
+    | Business | Customers, vendors | → transactions found by name (**new**) |
+    | Business | Money in and out, cash | says (already) |
+    | Rentals | Property rows | → transactions (already); Portfolio row (**new**) |
+    | Rentals | NOI, cap rate, cash on cash | says (already) |
+    | Goals | Saved | → the linked accounts' transactions, or Budget (**new**); debts → account (**new**) |
+    | Upcoming | Scheduled items, card and loan dues | → the item or account (already) |
+
+  - The export: not plan-gated (ADR-0020 §3). Owners and admins take the workspace, partners one set of books. Every
+    table as JSON lines and CSV, plus `summary.xlsx`. That workbook's Transactions sheet now has Account and Category
+    ("Split" when there are several), and amounts as 12.34 rather than 1234. The README says the JSON and CSV
+    amounts are minor units.
+  - Left for the owner: the budget's income actual has no drill-down (the page has no income categories); the
+    "Not on a property" rentals row has no filter; Net worth over time and Receipt items report rows have none;
+    business money in and out are explained, not drillable; a customer's drill-down finds by name, as the spending
+    report's payee rows do, so a payment under another name is missed; the phone screens weren't audited; an
+    export can't be taken while an account deletion is pending (`account.deleting`).
+  - Tests: API `month-summary.test.ts` (the drills add up to money in and out), `data-ownership.test.ts` (the
+    workbook's columns, account, category and amounts); e2e `traceable-numbers.spec.ts` (new: budget total, Month in
+    review's money out and a category, a goal's savings, the forecast and net worth lines), `business.spec.ts`
+    (revenue tile, total revenue, a customer) and `rentals.spec.ts` (the portfolio row).
 
 ---
 

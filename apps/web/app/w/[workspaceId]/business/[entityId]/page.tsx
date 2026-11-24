@@ -90,6 +90,11 @@ export default async function BusinessOverviewPage({
     return next.size ? `${here}?${next}` : here;
   };
   const drill = (categoryIds: string[]) => drillHref(base, { entityId, categoryIds, from, to });
+  const pnlFor = (start: string, end: string) =>
+    `${here}?${new URLSearchParams({ ...dash, show: 'pnl', from: start, to: end }).toString()}#pnl`;
+  // UP-05: a customer's or vendor's row leads to their transactions, found by name as the spending report does.
+  const partyDrill = (name: string) =>
+    drillHref(base, { entityId, q: `"${name.replace(/"/g, '')}"`, from, to });
 
   return (
     <div className="space-y-5">
@@ -98,6 +103,7 @@ export default async function BusinessOverviewPage({
         d={dashboard}
         here={here}
         hrefFor={dashHref}
+        pnlFor={pnlFor}
         setAside={estimate.rateBps === null ? null : money(BigInt(estimate.toSetAside), ccy)}
       />
       <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} />
@@ -157,7 +163,7 @@ export default async function BusinessOverviewPage({
               />
             </section>
           )}
-          <section className="card-flush" aria-label={t('business.show_pnl')} data-testid="pnl">
+          <section id="pnl" className="card-flush" aria-label={t('business.show_pnl')} data-testid="pnl">
             <table className="tbl">
               <tbody className="divide-y divide-line">
                 <tr>
@@ -178,7 +184,15 @@ export default async function BusinessOverviewPage({
                   </tr>
                 ))}
                 <tr className="font-semibold">
-                  <td className="px-4 py-2">{t('business.total_revenue')}</td>
+                  <td className="px-4 py-2">
+                    {pnl.income.length ? (
+                      <Link href={drill(pnl.income.map((l) => l.categoryId))} className="underline">
+                        {t('business.total_revenue')}
+                      </Link>
+                    ) : (
+                      t('business.total_revenue')
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <Money amount={pnl.revenue} currency={ccy} />
                   </td>
@@ -201,7 +215,15 @@ export default async function BusinessOverviewPage({
                   </tr>
                 ))}
                 <tr className="font-semibold">
-                  <td className="px-4 py-2">{t('business.total_expenses')}</td>
+                  <td className="px-4 py-2">
+                    {pnl.expense.length ? (
+                      <Link href={drill(pnl.expense.map((l) => l.categoryId))} className="underline">
+                        {t('business.total_expenses')}
+                      </Link>
+                    ) : (
+                      t('business.total_expenses')
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <Money amount={pnl.expenses} currency={ccy} />
                   </td>
@@ -239,7 +261,15 @@ export default async function BusinessOverviewPage({
               <tbody className="divide-y divide-line">
                 {(show === 'customers' ? customers : vendors).rows.map((r) => (
                   <tr key={r.payeeKey ?? r.name}>
-                    <td className="px-4 py-1.5">{r.name || t('business.no_name')}</td>
+                    <td className="px-4 py-1.5">
+                      {r.name ? (
+                        <Link href={partyDrill(r.name)} className="underline">
+                          {r.name}
+                        </Link>
+                      ) : (
+                        t('business.no_name')
+                      )}
+                    </td>
                     <td className="num px-2 py-1.5 text-right">{r.count}</td>
                     <td className="px-4 py-1.5 text-right">
                       <Money amount={r.amount} currency={ccy} />

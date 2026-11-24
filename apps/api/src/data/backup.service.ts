@@ -14,7 +14,15 @@ import ExcelJS from 'exceljs';
 import { sql } from 'kysely';
 import yazl from 'yazl';
 import { newId, setContext, type ExportJobTable, type Trx } from '@montra/db';
-import { addDays, calendarDate, todayIn, type CalendarDate } from '@montra/domain';
+import {
+  addDays,
+  asCurrencyCode,
+  calendarDate,
+  money,
+  toDecimalString,
+  todayIn,
+  type CalendarDate,
+} from '@montra/domain';
 import {
   MIRROR_DESTINATION_KINDS,
   type BackupScheduleDto,
@@ -921,20 +929,42 @@ export class BackupService {
     });
     await this.db.run(ctx, async (trx) => {
       const transactions = wb.addWorksheet('Transactions');
-      transactions.addRow(['Date', 'Payee', 'Description', 'Amount', 'Currency', 'Status', 'Note']).commit();
+      // UP-05: the account and category each one is in, and the amount in the currency's units (12.34, not 1234), so
+      // the sheet can be summed and pivoted as it is.
+      transactions
+        .addRow([
+          'Date',
+          'Account',
+          'Payee',
+          'Description',
+          'Category',
+          'Amount',
+          'Currency',
+          'Status',
+          'Note',
+        ])
+        .commit();
       for (let offset = 0; ; offset += PAGE) {
         const { rows } = await sql<{
           d: string;
+          account: string | null;
           payee: string | null;
           description: string;
+          category: string | null;
+          splits: number;
           amount: string | null;
           currency: string | null;
           status: string;
           memo_enc: Buffer | null;
         }>`
-          select t.txn_date::text as d, t.payee_raw as payee, t.description, t.spec->>'amount' as amount,
-                 t.spec->>'currency' as currency, t.status, t.memo_enc
+          select t.txn_date::text as d, acc.name as account, t.payee_raw as payee, t.description,
+                 cat.name as category, coalesce(jsonb_array_length(t.spec->'splits'), 0)::int as splits,
+                 t.spec->>'amount' as amount, t.spec->>'currency' as currency, t.status, t.memo_enc
             from app.transaction t
+            left join app.ledger_account acc
+              on acc.workspace_id = t.workspace_id and acc.id = (t.spec->>'accountId')::uuid
+            left join app.ledger_account cat
+              on cat.workspace_id = t.workspace_id and cat.id = (t.spec->'splits'->0->>'accountId')::uuid
            where t.workspace_id = ${ctx.workspaceId}
              ${entityId ? sql`and t.primary_entity_id = ${entityId}` : sql``}
            order by t.txn_date, t.id limit ${PAGE} offset ${offset}`.execute(trx);
@@ -943,9 +973,13 @@ export class BackupService {
           transactions
             .addRow([
               r.d,
+              safe(r.account),
               safe(r.payee),
               safe(r.description),
-              r.amount ? BigInt(r.amount).toString() : null,
+              r.splits > 1 ? 'Split' : safe(r.category),
+              r.amount && r.currency
+                ? Number(toDecimalString(money(BigInt(r.amount), asCurrencyCode(r.currency))))
+                : null,
               r.currency,
               r.status,
               safe(memo),
@@ -1250,6 +1284,8 @@ data/          every table as JSON lines, which is what Montra restores from
 csv/           the same tables as CSV
 summary.xlsx   transactions and accounts, for reading
 attachments/   your receipts, statements and other documents
+
+Amounts in data/ and csv/ are whole minor units, such as cents: 1234 is 12.34. summary.xlsx shows them as 12.34.
 
 Sensitive fields such as notes are decrypted in this file, so keep it somewhere safe. If you protected it with a password,
 the file you downloaded is encrypted with AES-256-GCM and Montra can restore it with that password.

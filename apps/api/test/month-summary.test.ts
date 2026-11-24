@@ -92,6 +92,23 @@ describe('Month in review (FLOW-01, AIA-01)', () => {
     expect(d.budget).toBeNull();
   });
 
+  it('says which transactions make up money in and money out, and they add up to them (UP-05)', async () => {
+    const d = (await c.get(url('/summary/month'))).body;
+    const span = { entityId: personal, from: month(1), to: endOfMonth(month(1)) };
+    expect(d.drill.income).toMatchObject(span);
+    expect(d.drill.spent).toMatchObject(span);
+    expect(d.drill.income.categoryIds).toContain(cat('Salary'));
+    expect(d.drill.spent.categoryIds).toContain(cat('Groceries'));
+    expect(d.drill.spent.categoryIds).not.toContain(cat('Salary'));
+    const total = async (drill: any) => {
+      const q = new URLSearchParams({ ...drill, categoryIds: drill.categoryIds.join(','), limit: '200' });
+      const rows = (await c.get(url(`/transactions?${q}`))).body.data;
+      return rows.reduce((t: bigint, r: any) => t + BigInt(r.amount.amount), 0n);
+    };
+    expect(await total(d.drill.income)).toBe(BigInt(d.income));
+    expect(await total(d.drill.spent)).toBe(-BigInt(d.spent));
+  });
+
   it('suggests this month’s budget from the last three months, and words it all through the AI', async () => {
     const d = (await c.get(url('/summary/month'))).body;
     expect(d.suggestions.period).toEqual({ start: thisMonth, end: endOfMonth(thisMonth) });
