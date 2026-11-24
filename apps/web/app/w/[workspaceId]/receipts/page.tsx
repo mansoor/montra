@@ -136,7 +136,8 @@ export default async function ReceiptsPage({
           <h2 id="receipt-list" className="text-lg font-semibold">
             {t(inTrash ? 'receipts.tab.trash' : TABS[tab].label)}
           </h2>
-          <nav aria-label={t('receipts.tabs')}>
+          {/* Five tabs are wider than a 360 px phone: the strip scrolls sideways instead of the page. */}
+          <nav aria-label={t('receipts.tabs')} className="max-w-full min-w-0">
             <ul className="tabs border-b-0">
               {(Object.keys(TABS) as TabKey[]).map((k) => (
                 <li key={k}>
