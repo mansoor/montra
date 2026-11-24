@@ -450,9 +450,11 @@ export class Gateway implements AiGateway {
     const unique = [...new Set(keys)];
     const cached = new Map<string, R>();
     if (route.cacheTtlDays > 0) {
+      // One read for the whole run where the store can (an import asks for hundreds of keys), else one per key.
+      const many = ctx.store.cacheGetMany ? await ctx.store.cacheGetMany(task, unique) : null;
       await Promise.all(
         unique.map(async (k) => {
-          const hit = await ctx.store.cacheGet(task, k);
+          const hit = many ? (many.get(k) ?? null) : await ctx.store.cacheGet(task, k);
           if (hit !== null && args.isCacheable(hit)) cached.set(k, hit);
         }),
       );
@@ -571,7 +573,19 @@ export class Gateway implements AiGateway {
       for (const [k, v] of res.value) {
         fresh.set(k, v);
         answered++;
-        if (route.cacheTtlDays > 0) await ctx.store.cachePut(task, k, v, res.meta.model, route.cacheTtlDays);
+      }
+      if (route.cacheTtlDays > 0 && res.value.size > 0) {
+        // The batch's answers in one write where the store can, else one per key.
+        if (ctx.store.cachePutMany)
+          await ctx.store.cachePutMany(
+            task,
+            [...res.value].map(([keyHash, output]) => ({ keyHash, output })),
+            res.meta.model,
+            route.cacheTtlDays,
+          );
+        else
+          for (const [k, v] of res.value)
+            await ctx.store.cachePut(task, k, v, res.meta.model, route.cacheTtlDays);
       }
     });
     keys.forEach((k, i) => {
@@ -632,6 +646,13 @@ export class Gateway implements AiGateway {
       model: string;
     };
 
+    // An import's lines repeat a few hundred payees: each text is normalized once.
+    const normalized = new Map<string, string>();
+    const normalize = (text: string) => {
+      let n = normalized.get(text);
+      if (n === undefined) normalized.set(text, (n = normalizeDescription(text)));
+      return n;
+    };
     const run = await this.runBatched<CategorizeItem, Cached>({
       task: 'categorize',
       ctx,
@@ -646,7 +667,7 @@ export class Gateway implements AiGateway {
             'categorize',
             model,
             pv,
-            normalizeDescription(i.payee || i.description),
+            normalize(i.payee || i.description),
             amountBand(i.amountMinor, exponentOf(i.currency)),
             i.accountType,
             i.entityType,

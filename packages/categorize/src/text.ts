@@ -25,8 +25,17 @@ export function compareMinorToDecimal(minor: bigint, exponent: number, d: Decima
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** Compiled `hasWord` patterns by word: the pipeline checks the same keywords on every line of an import. */
+const WORD_PATTERNS = new Map<string, RegExp>();
+
 /** Word-boundary containment for lower-cased text (keywords may contain spaces). */
 export function hasWord(haystack: string, word: string): boolean {
-  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(haystack);
+  let re = WORD_PATTERNS.get(word);
+  if (!re) {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    re = new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`);
+    // The keyword lists are short and fixed; the bound only guards against a caller passing arbitrary words.
+    if (WORD_PATTERNS.size < 1000) WORD_PATTERNS.set(word, re);
+  }
+  return re.test(haystack);
 }

@@ -191,20 +191,39 @@ export function payeeKeyFor(key: string, raw: string): string {
 /** Trigram set similarity (Jaccard), the same measure Postgres pg_trgm uses, for fuzzy payee matching. */
 export function similarity(a: string, b: string): number {
   if (a === b) return 1;
-  const grams = (s: string) => {
-    const out = new Set<string>();
-    for (const word of s.toLowerCase().split(/\s+/).filter(Boolean)) {
-      const w = `  ${word} `;
-      for (let i = 0; i < w.length - 2; i++) out.add(w.slice(i, i + 3));
-    }
-    return out;
-  };
-  const ga = grams(a);
-  const gb = grams(b);
+  return gramSimilarity(trigrams(a), trigrams(b));
+}
+
+/** The trigram set `similarity` compares, for callers that compare one text with many. */
+export function trigrams(s: string): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const word of s.toLowerCase().split(/\s+/).filter(Boolean)) {
+    const w = `  ${word} `;
+    for (let i = 0; i < w.length - 2; i++) out.add(w.slice(i, i + 3));
+  }
+  return out;
+}
+
+/** `similarity` of two texts from their `trigrams` (equal texts aside, which are 1). */
+export function gramSimilarity(ga: ReadonlySet<string>, gb: ReadonlySet<string>): number {
   if (ga.size === 0 || gb.size === 0) return 0;
   let common = 0;
   for (const g of ga) if (gb.has(g)) common++;
   return common / (ga.size + gb.size - common);
+}
+
+/**
+ * `similarity(a, b)`, remembering each text's trigrams: for comparing many rows with many candidates (an import's
+ * dedupe and matching) without rebuilding the same sets for every pair.
+ */
+export function similarityCache(): (a: string, b: string) => number {
+  const grams = new Map<string, ReadonlySet<string>>();
+  const of = (s: string) => {
+    let g = grams.get(s);
+    if (!g) grams.set(s, (g = trigrams(s)));
+    return g;
+  };
+  return (a, b) => (a === b ? 1 : gramSimilarity(of(a), of(b)));
 }
 
 export interface MerchantRef {
@@ -214,6 +233,9 @@ export interface MerchantRef {
   categoryHint?: string | null;
 }
 
+/** Each merchant's match key with its trigrams, built once per merchant object rather than once per row. */
+const merchantGrams = new WeakMap<MerchantRef, { key: string; grams: ReadonlySet<string> }>();
+
 /** Best reference merchant for a normalized key: prefix match first, then trigram ≥ 0.6 (design 04 §3.4). */
 export function matchMerchant(key: string, merchants: readonly MerchantRef[]): MerchantRef | null {
   if (!key) return null;
@@ -221,10 +243,14 @@ export function matchMerchant(key: string, merchants: readonly MerchantRef[]): M
     .filter((m) => key === m.matchKey || key.startsWith(`${m.matchKey} `))
     .sort((a, b) => b.matchKey.length - a.matchKey.length)[0];
   if (prefix) return prefix;
+  const keyGrams = trigrams(key);
   let best: MerchantRef | null = null;
   let bestScore = 0.6;
   for (const m of merchants) {
-    const s = similarity(key, m.matchKey);
+    let g = merchantGrams.get(m);
+    if (!g || g.key !== m.matchKey)
+      merchantGrams.set(m, (g = { key: m.matchKey, grams: trigrams(m.matchKey) }));
+    const s = key === m.matchKey ? 1 : gramSimilarity(keyGrams, g.grams);
     if (s > bestScore) {
       best = m;
       bestScore = s;

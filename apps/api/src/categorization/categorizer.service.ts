@@ -394,6 +394,14 @@ export class Categorizer {
     });
     // The other bank and card accounts, for a payment whose other side isn't in yet (named by its last 4 digits).
     const others = await this.otherAccounts(trx, ctx, account.id);
+    // A pair needs the opposite amount: grouped by amount (in their order), each item looks at a handful of candidates
+    // instead of every posting on the other accounts.
+    const byAmount = new Map<bigint, TransferCandidate[]>();
+    for (const c of candidates) {
+      const same = byAmount.get(c.amountMinor);
+      if (same) same.push(c);
+      else byAmount.set(c.amountMinor, [c]);
+    }
     let aiUsed = false;
     const ai =
       opts.useAi && runtime.available
@@ -471,11 +479,8 @@ export class Categorizer {
       history: (key) =>
         (history.get(key) ?? []).filter((h) => !prepared.archivedCategoryIds.has(h.categoryId)),
       transferCandidates: (item) => [
-        ...candidates.filter(
-          (c) =>
-            c.amountMinor === -item.amountMinor &&
-            Math.abs(daysBetween(c.date, item.date)) <= 3 &&
-            c.accountId !== item.accountId,
+        ...(byAmount.get(-item.amountMinor) ?? []).filter(
+          (c) => Math.abs(daysBetween(c.date, item.date)) <= 3 && c.accountId !== item.accountId,
         ),
         ...others.map((a) => ({
           transactionId: null,
