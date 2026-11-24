@@ -99,8 +99,17 @@ export default async function SettingsPage({
       />
     );
   } else if (tab === 'accounts') {
-    const accounts = await load((api) => api.listAccounts(workspaceId, { include: 'all' }));
-    body = <AccountSettings workspace={workspace} accounts={accounts} today={todayIn(workspace.timeZone)} />;
+    const [accounts, members] = await load((api) =>
+      Promise.all([api.listAccounts(workspaceId, { include: 'all' }), api.listFamilyMembers(workspaceId)]),
+    );
+    body = (
+      <AccountSettings
+        workspace={workspace}
+        accounts={accounts}
+        members={members}
+        today={todayIn(workspace.timeZone)}
+      />
+    );
   } else if (tab === 'categories') {
     const entities = await load((api) => api.listEntities(workspaceId));
     const has = (type: string) => entities.some((e) => e.type === type);

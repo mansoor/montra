@@ -537,6 +537,9 @@ export function createApi(opts: ApiOptions) {
       request<ArrearsDto>('GET', `${ws(w)}/arrears?entityId=${entityId}`),
     accountList: async (w: string) =>
       (await request<{ data: AccountDto[] }>('GET', `${ws(w)}/accounts`)).data,
+    /** ACC-15: an account's holders, the whole list in order. Needs a connection; the sync pull brings it back. */
+    setAccountHolders: (w: string, id: string, holders: { name?: string; memberId: string | null }[]) =>
+      request<AccountDto>('PATCH', `${ws(w)}/accounts/${id}`, { holders }),
     recordRent: (w: string, leaseId: string, input: RentPaymentRequest) =>
       request<LeaseDto>('POST', `${ws(w)}/leases/${leaseId}/payments`, input),
     /** RNT-22: read-only on the phone; contacts and tenants are edited on the web. */

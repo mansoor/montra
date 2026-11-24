@@ -314,7 +314,7 @@ export default async function HomePage({
                       <span className="block font-medium">{a.name}</span>
                       <span className="text-xs text-muted">
                         {t(`account.kind.${a.kind}`)}
-                        {a.last4 ? ` ••${a.last4}` : ''}
+                        {a.accountNumberMasked ? ` ${a.accountNumberMasked}` : ''}
                       </span>
                     </span>
                     <span className="text-right">

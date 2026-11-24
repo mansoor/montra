@@ -3119,6 +3119,49 @@ Phase 11 leftovers:
     do, stops at its budget and carries on; the migration's audit redaction and payroll clearing).
     `data-ownership.test.ts` (the archive has the numbers in full and once in the CSV; a restore seals them).
     `business-registration.test.ts` masks updated. Domain `business-registration.test.ts` (`maskLast4`).
+- **An account's holders and its full number, sealed** (ACC-15, ACC-16, migration 0091; ADR-0057 §5, §6, PR 1 of 3).
+  - Before: an account had a default member (whose spending it is) and the last four of its number. Nothing said who
+    the bank says owns it, and `bank_account.account_number_enc` existed (0001) but nothing wrote it.
+  - Now:
+    - **Holders:** a new table, `app.account_holder`: position, name, and an optional family member. A child table
+      rather than a jsonb list, so a member link is a foreign key bound to the workspace, each change is its own audit
+      entry and change-feed row, and backups pick it up from the catalog. RLS follows the account's books (read to see,
+      write to change). Deleting the account takes them with it.
+    - `AccountDto.holders` lists them in order. `PATCH` and `POST accounts` take the whole list (`holders`). A holder
+      with a member and no name gets the member's name. A row that stays in its place keeps its id, so the audit log
+      shows a rename as a change. A member outside the household is refused (`account.holder_member`), and the
+      database refuses it too. The default member is unchanged.
+    - **Full number:** sealed with `FieldCrypto` in `account_number_enc` (label `bank_account.account_number`), with
+      its last four in `last4`. The DTO has `accountNumberMasked` ("••••1234") and `fullNumberKept`, never the number.
+      Owners and admins set it (`accountNumber`) or remove it (`null`, which keeps the last four). Others get 403.
+      Spaces and dashes are dropped; it must be 4 to 34 letters and digits ending in four digits, and the error
+      doesn't repeat it. While it's kept, `last4` can't be changed on its own (`account.number_last4`). A check
+      (`not valid`, for old rows) makes a kept number always have its last four.
+    - **Show:** `POST accounts/:id/reveal-number`, owners and admins, after a recent sign-in. Each one is logged as
+      `account.number_revealed`, with no number in it. The audit trigger already writes "[redacted]" for `*_enc`
+      columns. Sealing and the reveal's audit entry are shared with BIZ-26 in `crypto/sealed-numbers.ts`.
+    - **Backups** hold the number in full (`account_number`, as the catalog already said) and the holders in
+      `account_holder.jsonl`. The summary workbook's Accounts sheet has a Holders column. A restore seals the number
+      again and fills in the last four. A restore now keeps an archive's `last4` when there is no full number (it used
+      to clear it), which also covers BIZ-26's columns. A one-book archive has only that book's accounts' holders.
+    - **Web:** Settings → Accounts has Holders (name, family member, add, remove) and Account number (masked, Show,
+      type in, remove; owners and admins). The account page shows "Held by …" and "••••1234"; the accounts list and
+      Home show "••••1234" instead of "••1234".
+    - **Phone:** the account screen shows the masked number and the holders, and edits holders online (owners, admins
+      and partners who can write the books). The phone has no Show.
+  - Settings, not code: `ACCOUNT_MAX_HOLDERS` (default 4), how many holders an account may list
+    (`account.holders_limit` above it).
+  - Next: PR 2 renders statements as PDFs with a cover page that uses the holders (VLT-13); PR 3 sends them (VLT-12).
+  - Tests: API `account-holders.test.ts` (new: list, rename in place, add and remove, holders on create, the limit and
+    the setting, a member from another workspace refused by the API and the database, deleted with the account, RLS
+    for another workspace and a partner without the business's books, the change feed; the number sealed with its
+    last four, owners and admins only, last four kept with it, a bad number not echoed, Show after a recent sign-in
+    and logged each time, never in reads, the sync pull or the audit log, removed keeping the last four).
+    `data-ownership.test.ts` (the archive has the number in full and the holders, the workbook's Holders column; a
+    restore brings back holders with their member remapped and the number sealed, and keeps a last four with no
+    number). `business-tax-ids.test.ts` still passes on the shared helpers. Domain `account-holders.test.ts`, web
+    `account-holders.test.ts`, phone screen test `account-holders.test.tsx` (shown, none, add a member and save, a
+    refusal shown, read-only for a viewer).
 
 ---
 

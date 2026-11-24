@@ -60,6 +60,14 @@
     "done",
     "GET accounts/:id/deletion says what stops a delete and how many transactions in the Trash go with it (trashedTransactions); DELETE accounts/:id (owners and admins, recent sign-in) removes an empty account with its opening-balance entry, values that posted nothing, loan details, import mapping and statement memory in one transaction. Its transactions in the Trash go too, for good, when they touch only it and categories; still blocking, each with its reason: a trashed transfer to another account, a trashed transaction with a receipt (a tax record), one in closed or reconciled books, and a legal hold. Otherwise 409 with the reason (account.not_empty, account.opening_locked for closed books, account.legal_hold); audit entry account.deleted with the count; the sync pull sends removedAccounts and the phone drops them; web Settings > Accounts has Delete beside Archive, and its confirm names the transactions in the Trash"
   ],
+  "ACC-15": [
+    "done",
+    "Migration 0091 adds app.account_holder (position, name, optional family member; RLS through the account's books; audited; in the change feed). AccountDto.holders; PATCH and POST accounts take the whole list in order, and a member with no name gives their name. At most ACCOUNT_MAX_HOLDERS (setting, default 4; 422 account.holders_limit); a member outside the household is refused (422 account.holder_member, and a workspace-bound foreign key). The default member is unchanged. Web: Settings > Accounts edits them, the account page shows Held by. Phone: the account screen shows them and edits them online. Backups, the summary workbook and restores carry them; a one-book archive has only its own accounts' holders"
+  ],
+  "ACC-16": [
+    "done",
+    "The full number is sealed in bank_account.account_number_enc (FieldCrypto, label bank_account.account_number) with its last four in last4. AccountDto has accountNumberMasked (\"••••1234\") and fullNumberKept, never the number. Owners and admins set or remove it with PATCH accounts (accountNumber; 403 for others; spaces and dashes dropped, must end in four digits). While it is kept, last4 can't be changed on its own (422 account.number_last4). POST accounts/:id/reveal-number shows it to owners and admins after a recent sign-in and logs account.number_revealed. The audit trigger redacts it as for every *_enc column; errors don't repeat it; nothing sends it to AI. Backups hold it in full and restores seal it again and fill in the last four. Shares sealing and reveal logging with BIZ-26 (crypto/sealed-numbers.ts). The phone shows the masked number only"
+  ],
   "TXN-01": [
     "done",
     "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"
