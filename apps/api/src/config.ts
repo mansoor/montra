@@ -154,6 +154,11 @@ const Env = z.object({
    * tax account numbers still kept in plain text. Each business is sealed in its own transaction.
    */
   TAX_ID_SEAL_BATCH: z.coerce.number().int().min(1).max(10_000).default(200),
+  /**
+   * VLT-13 (ADR-0057 §2): the most statement rows one rendered PDF holds. A longer statement is split into parts, each
+   * its own PDF titled "part n of m".
+   */
+  STATEMENT_PDF_MAX_ROWS: z.coerce.number().int().min(1).max(100_000).default(5000),
   /** Maximum upload size in bytes (IMP-01: statements and receipts). */
   /** A backup being restored (BAK-06). */
   MAX_RESTORE_BYTES: z.coerce

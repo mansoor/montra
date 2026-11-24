@@ -319,7 +319,8 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     for (const r of rows) add(r.table_name, r.column_name);
     for (const t of catalog.values()) {
       for (const fk of t.fks) {
-        if (fk.refTable !== 'file') continue;
+        // A rendered file's link to its original (ADR-0057 §4) is a file pointing at a file, not a row holding one.
+        if (fk.refTable !== 'file' || t.name === 'file') continue;
         for (const c of fk.columns.filter((c) => c !== 'workspace_id')) add(t.name, c);
       }
     }

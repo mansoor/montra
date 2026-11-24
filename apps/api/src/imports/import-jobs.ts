@@ -41,6 +41,7 @@ import { effectiveDecision } from './imports.service.js';
 import { Categorizer, type StoredCategorization } from '../categorization/categorizer.service.js';
 import { MerchantDirectory } from '../categorization/merchants.js';
 import { AI_PROBLEM_TEXT, AiService } from '../ai/ai.service.js';
+import { StatementRenditions } from '../renditions/statement-renditions.js';
 
 /** What parse stores in `import_row.suggestion`: the pipeline decision plus what commit needs. */
 export interface RowSuggestion extends StoredCategorization {
@@ -108,6 +109,7 @@ export class ImportJobs {
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(BusinessJobs) private readonly business: BusinessJobs,
     @Inject(RentalJobs) private readonly rentals: RentalJobs,
+    @Inject(StatementRenditions) private readonly renditions: StatementRenditions,
   ) {}
 
   register(): void {
@@ -1282,7 +1284,7 @@ export class ImportJobs {
   async undo(job: Job): Promise<Record<string, unknown>> {
     const ctx = this.ctxOf(job);
     const { batchId } = job.payload as { batchId: string };
-    return this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
+    const { fileId, ...result } = await this.db.run({ ...ctx, actorType: 'worker' }, async (trx) => {
       // Transfers this import made on its own are taken apart first: their other sides come back out of the trash with
       // their statement lines, and this import's lines are plain again, to be removed below. One that can't be (changed
       // since, reconciled, closed) stays a transfer and is kept below, as one made by hand is.
@@ -1423,7 +1425,7 @@ export class ImportJobs {
       // ADR-0055 §5: an undone bank feed batch's days are asked for again on the next sync, so its rows come back.
       const fed = await trx
         .selectFrom('app.import_batch')
-        .select(['source', 'bank_feed_account_id', 'min_date'])
+        .select(['source', 'bank_feed_account_id', 'min_date', 'file_id'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', batchId)
         .executeTakeFirst();
@@ -1441,8 +1443,14 @@ export class ImportJobs {
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', batchId)
         .execute();
-      return { voided, restored, unlearned, transfers, kept };
+      return { voided, restored, unlearned, transfers, kept, fileId: fed?.file_id ?? null };
     });
+    // ADR-0057 §4: a PDF rendered from this import and not yet sent goes with it (one the vault has stays).
+    if (fileId)
+      await this.renditions.dropUnsent(ctx, fileId).catch((e: Error) => {
+        this.logger.warn(`Couldn't drop the PDF renderings of an undone import: ${e.message}`);
+      });
+    return result;
   }
 
   // ------------------------------------------------------------------------------------------------------
