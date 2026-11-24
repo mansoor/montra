@@ -112,12 +112,14 @@ function actionIssues(a: RuleActions): Issue[] {
   }
   if (a.renamePayee !== undefined && a.renamePayee !== null && a.renamePayee.trim() === '')
     out.push({ path: 'actions.renamePayee', message: 'The new payee name is empty' });
+  if (a.unitId && !a.propertyId) out.push({ path: 'actions.unitId', message: 'A unit needs its property' });
   const any =
     Boolean(a.categoryId) ||
     Boolean(a.entityId) ||
     Boolean(a.memberId) ||
     (a.tags?.length ?? 0) > 0 ||
     Boolean(a.renamePayee) ||
+    Boolean(a.propertyId) ||
     a.markReviewed === true;
   if (!any) out.push({ path: 'actions', message: 'A rule needs at least one action' });
   return out;
@@ -254,6 +256,8 @@ export interface RulesResult {
   /** The rule that set the category, or the first matching rule when none did. */
   ruleId: string | null;
   ruleName: string | null;
+  /** The rule that set the property (AI-02), when one did. */
+  propertyRuleName: string | null;
   matchedRuleIds: string[];
 }
 
@@ -262,6 +266,7 @@ export function applyRules(rules: readonly CompiledRule[], s: Subject): RulesRes
   const actions: RuleActions = {};
   const matched: CompiledRule[] = [];
   let categoryRule: CompiledRule | null = null;
+  let propertyRule: CompiledRule | null = null;
   const tags = new Set<string>();
   for (const rule of rules) {
     if (!rule.matches(s)) continue;
@@ -276,6 +281,12 @@ export function applyRules(rules: readonly CompiledRule[], s: Subject): RulesRes
     if (a.renamePayee && actions.renamePayee === undefined) actions.renamePayee = a.renamePayee;
     if (a.markReviewed !== undefined && actions.markReviewed === undefined)
       actions.markReviewed = a.markReviewed;
+    // The property and its unit come from the same rule.
+    if (a.propertyId && actions.propertyId === undefined) {
+      actions.propertyId = a.propertyId;
+      actions.unitId = a.unitId ?? null;
+      propertyRule = rule;
+    }
     for (const t of a.tags ?? []) tags.add(t);
   }
   if (tags.size > 0) actions.tags = [...tags];
@@ -284,6 +295,7 @@ export function applyRules(rules: readonly CompiledRule[], s: Subject): RulesRes
     actions,
     ruleId: named?.record.id ?? null,
     ruleName: named?.record.name ?? null,
+    propertyRuleName: propertyRule?.record.name ?? null,
     matchedRuleIds: matched.map((r) => r.record.id),
   };
 }

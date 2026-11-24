@@ -133,8 +133,10 @@ export class TransactionsService {
       const payeeKey = payeeKeyOf(req.payee, req.description);
       let categoryId = req.categoryId;
       let memberId = req.memberId;
+      let propertyId = req.propertyId;
+      let unitId = req.unitId;
       let categorization: StoredCategorization | null = null;
-      let reviewState: 'auto_applied' | 'reviewed' | undefined;
+      let reviewState: 'auto_applied' | 'needs_review' | 'reviewed' | undefined;
       const tags = [...(req.tags ?? [])];
       if (!categoryId && !req.splits?.length) {
         // AI-01: the pipeline runs on manual entries too. Confident results are applied; the rest are
@@ -146,6 +148,8 @@ export class TransactionsService {
           description: req.description ?? '',
           amountMinor: BigInt(req.amount.amount),
           date: calendarDate(req.date),
+          // AI-02: a property given with the entry stays; the pipeline doesn't suggest another.
+          keepProperty: Boolean(req.propertyId || req.unitId),
         });
         const { decisions } = await this.categorizer.categorize(trx, ctx, account, [item], { useAi: true });
         const d = decisions[0];
@@ -156,6 +160,13 @@ export class TransactionsService {
             reviewState = 'auto_applied';
             if (memberId === undefined && d.memberId) memberId = d.memberId;
             for (const t of d.tags) if (!tags.includes(t)) tags.push(t);
+          }
+          if (d.property?.autoApply) {
+            propertyId = d.property.propertyId;
+            unitId = d.property.unitId;
+          } else if (d.property && reviewState === 'auto_applied') {
+            // The category is applied but the property is only suggested: Review offers it.
+            reviewState = 'needs_review';
           }
         }
       } else {
@@ -176,8 +187,8 @@ export class TransactionsService {
         categoryId,
         splits: req.splits,
         memberId,
-        propertyId: req.propertyId,
-        unitId: req.unitId,
+        propertyId,
+        unitId,
         memo: req.memo,
         tags,
         source: 'manual',
@@ -200,7 +211,14 @@ export class TransactionsService {
           previous: null,
           previousCategoryId: null,
         });
-        await this.setCategorization(trx, ctx, txnId, { ...categorization, learned });
+        // AI-02: a property chosen with the entry is learned for the payee too.
+        const learnedProperty = req.propertyId
+          ? await this.categorizer.learnProperty(trx, ctx, payeeKey, null, {
+              propertyId: req.propertyId,
+              unitId: req.unitId ?? null,
+            })
+          : null;
+        await this.setCategorization(trx, ctx, txnId, { ...categorization, learned, learnedProperty });
       }
       return txnId;
     }
@@ -968,6 +986,49 @@ export class TransactionsService {
           ruleId: accepted ? (categorization?.ruleId ?? null) : null,
           suggested: categorization?.suggested ?? null,
           learned: res.learned,
+          ...(categorization?.property ? { property: categorization.property } : {}),
+          ...(categorization?.learnedProperty ? { learnedProperty: categorization.learnedProperty } : {}),
+        };
+      }
+      // AI-02: a property someone chose, or accepted with the line in Review, is learned for the payee. Clearing one
+      // takes back what this transaction counted.
+      const propertyAfter = singleProperty(next);
+      const propertyChosen = req.propertyId !== undefined || req.unitId !== undefined;
+      const confirmed = row.review_state !== 'reviewed' && reviewState === 'reviewed';
+      if (
+        !opts.categorization &&
+        opts.learn !== false &&
+        !managed &&
+        next.type === 'standard' &&
+        (propertyChosen || (confirmed && propertyAfter))
+      ) {
+        const learnedProperty = await this.categorizer.learnProperty(
+          trx,
+          ctx,
+          payeeKey,
+          categorization?.learnedProperty ?? null,
+          propertyAfter,
+        );
+        const suggested = categorization?.property;
+        categorization = {
+          ...(categorization ?? {
+            step: 'user',
+            confidence: 1,
+            explanation: 'Chosen by you',
+            ruleId: null,
+            suggested: null,
+          }),
+          ...(suggested
+            ? {
+                property: {
+                  ...suggested,
+                  applied:
+                    propertyAfter?.propertyId === suggested.propertyId &&
+                    propertyAfter.unitId === suggested.unitId,
+                },
+              }
+            : {}),
+          learnedProperty,
         };
       }
       await trx
@@ -1247,6 +1308,9 @@ export class TransactionsService {
           ),
           amount: categorized,
           memberId,
+          // AI-02: a property found (or given) for a line still waiting for its category stays on it, so choosing
+          // the category in Review keeps it.
+          ...(input.propertyId ? { propertyId: input.propertyId, unitId: input.unitId ?? null } : {}),
         },
       ];
       uncategorized = true;
@@ -1749,6 +1813,17 @@ function foreignAmount(t: TransactionRow): TransactionDto['foreign'] {
 }
 
 /** The single category (and member) of a one-split standard transaction; nulls otherwise. */
+/** AI-02: the one property (and unit) every split of a standard transaction is tagged with, or null. */
+export function singleProperty(spec: TransactionSpec): { propertyId: string; unitId: string | null } | null {
+  if (spec.type !== 'standard' || spec.splits.length === 0) return null;
+  const first = spec.splits[0]!;
+  if (!first.propertyId) return null;
+  const same = spec.splits.every(
+    (s) => s.propertyId === first.propertyId && (s.unitId ?? null) === (first.unitId ?? null),
+  );
+  return same ? { propertyId: first.propertyId, unitId: first.unitId ?? null } : null;
+}
+
 function singleCategory(spec: TransactionSpec): { categoryId: string | null; memberId: string | null } {
   if (spec.type !== 'standard' || spec.splits.length !== 1) return { categoryId: null, memberId: null };
   const split = spec.splits[0]!;

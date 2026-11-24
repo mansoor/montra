@@ -221,6 +221,7 @@ describe('compileRules and applyRules', () => {
       },
       ruleId: cat.id,
       ruleName: 'Shell → Fuel',
+      propertyRuleName: null,
       matchedRuleIds: [tagger.id, cat.id, later.id],
     });
   });
@@ -237,6 +238,7 @@ describe('compileRules and applyRules', () => {
       actions: {},
       ruleId: null,
       ruleName: null,
+      propertyRuleName: null,
       matchedRuleIds: [],
     });
   });

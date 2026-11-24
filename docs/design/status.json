@@ -397,8 +397,8 @@
     "pipeline on every import row and manual entry"
   ],
   "AI-02": [
-    "partial",
-    "category, entity (via category) and member. Property and unit are tagged by hand, or by rent, mortgage and capital improvement links; AI does not suggest them yet"
+    "done",
+    "category, entity (via category) and member; in rental books also the property and unit, by rule, payee history, an address or unit in the text, then AI. Applied at the property threshold (a setting), otherwise offered in Review; accepted and chosen ones are learned. Links and properties set by hand are never replaced"
   ],
   "AI-03": [
     "done",

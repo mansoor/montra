@@ -27,6 +27,9 @@ export interface RuleActions {
   tags?: string[];
   renamePayee?: string | null;
   markReviewed?: boolean;
+  /** AI-02: the rental property (and unit) the line belongs to. A unit needs its property. */
+  propertyId?: string | null;
+  unitId?: string | null;
 }
 export interface RuleRecord {
   id: string;
@@ -68,6 +71,8 @@ export interface PipelineItem extends Subject {
   fileCategoryName?: string | null;
   /** Reference-merchant match from payee normalization (Phase 2). */
   merchant?: { id: string; name: string; categoryId: string | null } | null;
+  /** AI-02: someone already set a property (or a link did); the pipeline leaves it alone. */
+  keepProperty?: boolean;
 }
 
 export interface HistoryEntry {
@@ -108,6 +113,59 @@ export interface AiSuggestion {
   explanation: string;
 }
 
+// ----- Rental property and unit (AI-02) ---------------------------------------------------------------------
+
+export interface UnitOption {
+  id: string;
+  label: string;
+}
+
+/** An active property in a set of rental books, with its active units. */
+export interface PropertyOption {
+  id: string;
+  entityId: string;
+  /** The owner's name for it: a nickname or the street address. */
+  name: string;
+  /** Matched in code only (step 3); never sent to AI. */
+  address: string | null;
+  units: readonly UnitOption[];
+}
+
+/** How often a payee's lines went to a property and unit (or no unit). */
+export interface PropertyHistoryEntry {
+  propertyId: string;
+  unitId: string | null;
+  count: number;
+}
+
+export type PropertyStep = 'rule' | 'history' | 'text' | 'ai';
+
+export interface AiPropertySuggestion {
+  propertyId: string | null;
+  unitId: string | null;
+  confidence: number;
+  explanation: string;
+}
+
+/** What the AI step for properties is asked about: an open line, the books it lands in and its category. */
+export interface PropertyQuestion {
+  item: PipelineItem;
+  entityId: string;
+  categoryId: string | null;
+}
+
+export interface PropertyDecision {
+  propertyId: string;
+  unitId: string | null;
+  /** The property's name, and the unit's label after a comma ("Elm duplex, 2B"). */
+  label: string;
+  step: PropertyStep;
+  confidence: number;
+  explanation: string;
+  /** At or above the property threshold, and the line's split can carry it: apply it. Otherwise it is suggested. */
+  autoApply: boolean;
+}
+
 export interface PipelineDeps {
   rules: readonly CompiledRule[];
   /** History for a payee key (all bands); the pipeline picks the band. */
@@ -127,6 +185,14 @@ export interface PipelineDeps {
   aiThreshold?: number;
   /** The category an entity's category id belongs to, to fill `entityId` on decisions. */
   entityOfCategory: (categoryId: string) => string | null;
+  /** AI-02: the active properties of a set of books; empty (or absent) for books that aren't rental. */
+  properties?: (entityId: string) => readonly PropertyOption[];
+  /** AI-02: where a payee's lines went before. */
+  propertyHistory?: (payeeKey: string) => readonly PropertyHistoryEntry[];
+  /** AI-02, step 4: called once with every line whose property is still open; returns suggestions by item id. */
+  aiProperty?: (open: readonly PropertyQuestion[]) => Promise<ReadonlyMap<string, AiPropertySuggestion>>;
+  /** AI-02: the confidence a property must reach to be applied (defaults to `threshold`). AI also needs `aiThreshold`. */
+  propertyThreshold?: number;
 }
 
 export interface Decision {
@@ -146,6 +212,8 @@ export interface Decision {
   matchedRuleIds: string[];
   /** confidence ≥ threshold, or a rule with markReviewed. */
   autoApply: boolean;
+  /** AI-02: the property and unit, for lines in rental books (null when none is known or one was set already). */
+  property: PropertyDecision | null;
 }
 
 /** A rule compiled once (regexes built with RE2 semantics, amounts parsed). Opaque to callers. */

@@ -15,6 +15,16 @@ export function swipeOutcome(dx: number, vx: number, width: number): SwipeOutcom
 export const hasSuggestion = (t: LocalTransaction): boolean =>
   Boolean(t.suggestedCategoryId || t.suggestedTransferAccountId);
 
+/**
+ * AI-02: the rental property (and unit) offered for the line, while none is on it: "Elm duplex, 2B". Accepting puts
+ * it on with the category, on the server; one set by hand or by a lease stays.
+ */
+export function suggestedProperty(t: LocalTransaction): string | null {
+  const p = t.server?.categorization?.property;
+  if (!p || p.applied) return null;
+  return (t.server?.splits ?? []).some((s) => s.propertyId) ? null : p.label;
+}
+
 /** Accept needs a suggestion; without one a right swipe opens the picker instead. */
 export const effectiveOutcome = (o: SwipeOutcome, t: LocalTransaction): SwipeOutcome =>
   o === 'accept' && !hasSuggestion(t) ? 'edit' : o;

@@ -52,6 +52,7 @@ export function AiSettings({
   });
   const [threshold, setThreshold] = useState(percent(initial.threshold));
   const [aiThreshold, setAiThreshold] = useState(percent(initial.aiThreshold));
+  const [propertyThreshold, setPropertyThreshold] = useState(percent(initial.propertyThreshold));
   // TXN-04: import makes sure transfer pairs transfers on its own; off leaves every pair in Review.
   const [transferOn, setTransferOn] = useState(initial.transferThreshold !== null);
   const [transferThreshold, setTransferThreshold] = useState(percent(initial.transferThreshold ?? 0.95));
@@ -105,6 +106,7 @@ export function AiSettings({
       models: { small: models.small || null, vision: models.vision || null, large: models.large || null },
       threshold: thresholdFromPercent(threshold),
       aiThreshold: thresholdFromPercent(aiThreshold),
+      propertyThreshold: thresholdFromPercent(propertyThreshold),
       transferThreshold: transferOn ? thresholdFromPercent(transferThreshold) : null,
       monthlyBudgetUsd: b.value,
       allowDocumentsToLlm: allowDocs,
@@ -325,6 +327,21 @@ export function AiSettings({
             className="w-full"
           />
           <p className="mt-1 text-xs text-muted">{t('ai.ai_threshold_hint')}</p>
+        </div>
+        <div>
+          <label htmlFor="ai-property-threshold" className="field-label">
+            {t('ai.property_threshold', { percent: propertyThreshold })}
+          </label>
+          <input
+            id="ai-property-threshold"
+            type="range"
+            min={50}
+            max={99}
+            value={propertyThreshold}
+            onChange={(e) => setPropertyThreshold(Number(e.target.value))}
+            className="w-full"
+          />
+          <p className="mt-1 text-xs text-muted">{t('ai.property_threshold_hint')}</p>
         </div>
         <div className="space-y-2 sm:col-span-2">
           <label className="flex items-start gap-2 text-sm">

@@ -782,6 +782,17 @@ export interface PayeeTransferTable {
   last_used_at: Generated<Date>;
 }
 
+/** The rental property (and unit) a payee's lines went to, learned for AI-02 (0082). */
+export interface PayeePropertyTable {
+  workspace_id: string;
+  id: Generated<string>;
+  payee_key: string;
+  property_id: string;
+  unit_id: string | null;
+  count: Generated<number>;
+  last_used_at: Generated<Date>;
+}
+
 export interface CorrectionTable {
   workspace_id: string;
   id: Generated<string>;
@@ -2009,6 +2020,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.rule': RuleTable;
   'app.payee_history': PayeeHistoryTable;
   'app.payee_transfer': PayeeTransferTable;
+  'app.payee_property': PayeePropertyTable;
   'app.correction': CorrectionTable;
   'app.rule_suggestion': RuleSuggestionTable;
   'app.ai_cache': AiCacheTable;
