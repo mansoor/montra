@@ -25,6 +25,8 @@ import {
   TRASH_KINDS,
   TRASH_REMOVALS,
   VAULT_GROUP_MODES,
+  VAULT_UNKEPT_CHOICES,
+  VAULT_COVER_NUMBERS,
   VAULT_GROUPS,
 } from '@montra/schemas';
 import { MONEY_BOXES, READING_STAGES } from './tax-forms';
@@ -140,6 +142,9 @@ const DYNAMIC: Record<string, readonly string[]> = {
   // ADR-0054 §6: the Family Document Vault's groups and modes.
   'vault.group.': VAULT_GROUPS,
   'vault.mode.': VAULT_GROUP_MODES,
+  // ADR-0057: "Files the vault doesn't keep" and "Account number on the cover".
+  'vault.unkept.': VAULT_UNKEPT_CHOICES,
+  'vault.cover.': VAULT_COVER_NUMBERS,
   'auth.password_strength_': ['0', '1', '2', '3', '4'],
   'sharing.mfa_': ['standard', 'everyone'],
   'account.kind.': [

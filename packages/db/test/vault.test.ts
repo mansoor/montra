@@ -339,6 +339,13 @@ describe('who sees the vault’s tables (ADR-0054 §11)', () => {
           /permission denied/,
         );
         await expect(c.query(`select app.vault_disconnected()`)).rejects.toThrow(/permission denied/);
+        // ADR-0057 (migration 0093).
+        await expect(
+          c.query(`select * from app.vault_file_conversions(array[gen_random_uuid()])`),
+        ).rejects.toThrow(/permission denied/);
+        await expect(c.query(`select app.vault_conversion_due(gen_random_uuid())`)).rejects.toThrow(
+          /permission denied/,
+        );
       });
     }
   });
@@ -578,6 +585,73 @@ describe('the job’s functions (ADR-0054 §12)', () => {
     expect(await states(a, memberId)).toEqual([{ file_id: id, status: 'queued' }]);
     expect(await states(b, b.ownerId)).toEqual([]);
     await admin.query(`delete from app.file where id = $1`, [id]);
+  });
+
+  it('converts a file the vault doesn’t keep: its state, its PDFs in counts, and a nudge from its import (migration 0093)', async () => {
+    const original = await file(a.workspaceId, 'statement');
+    // Converted needs a state, and only a converted row has one.
+    await expect(
+      admin.query(`update app.vault_item set status = 'converted', vault_ref = 'm1-c' where file_id = $1`, [
+        original,
+      ]),
+    ).rejects.toThrow(/vault_item_converted/);
+    await admin.query(
+      `update app.vault_item set status = 'converted', vault_ref = 'm1-c', render_state = 'rendered',
+              render_options = '{"attachOriginal": true}', next_attempt_at = 'infinity' where file_id = $1`,
+      [original],
+    );
+    const pdfs = [newId(), newId(), newId()];
+    for (const [i, id] of pdfs.entries()) {
+      await admin.query(
+        `insert into app.file (workspace_id, id, kind, storage_key, file_name, mime, bytes, sha256,
+                               derived_from_file_id, rendition, superseded_at)
+         values ($1, $2, 'statement', $3, $4, 'application/pdf', 1, $5, $6, 'statement_pdf', $7)`,
+        [
+          a.workspaceId,
+          id,
+          `k/${id}`,
+          `x (PDF, part ${i + 1} of 2).pdf`,
+          'a'.repeat(64),
+          original,
+          i === 2 ? new Date() : null,
+        ],
+      );
+    }
+    await admin.query(
+      `insert into app.vault_item (workspace_id, destination_id, file_id, status, next_attempt_at, carries_original)
+       values ($1, $2, $3, 'pending', 'infinity', true)`,
+      [a.workspaceId, vault, pdfs[0]],
+    );
+    await expect(
+      admin.query(`update app.file set superseded_at = now() where id = $1`, [original]),
+    ).rejects.toThrow(/file_superseded_rendition/);
+    const conversions = (userId: string, f: Fixture = a) =>
+      as(f, userId, async (trx) => {
+        const { rows } = await sql<Record<string, unknown>>`
+          select * from app.vault_file_conversions(array[${original}::uuid])`.execute(trx);
+        return rows;
+      });
+    // Anyone who can see the file sees the counts; nobody in another workspace.
+    expect(await conversions(memberId)).toEqual([
+      {
+        file_id: original,
+        render_state: 'rendered',
+        attached: true,
+        parts: 2,
+        waiting: 2,
+        received: 0,
+        filed: 0,
+        not_kept: 0,
+        failed: 0,
+        earlier: 1,
+      },
+    ]);
+    expect(await conversions(b.ownerId, b)).toEqual([]);
+    // An import committed or undone by a member has the job look again, through the definer.
+    expect(await due()).toEqual([]);
+    await as(a, memberId, (trx) => sql`select app.vault_conversion_due(${original}::uuid)`.execute(trx));
+    expect(await due()).toEqual([{ destination_id: vault, user_id: a.ownerId }]);
+    for (const id of [...pdfs, original]) await admin.query(`delete from app.file where id = $1`, [id]);
   });
 
   it('is due when its changes feed is, while active, and never because of it while it needs a person (migration 0065)', async () => {

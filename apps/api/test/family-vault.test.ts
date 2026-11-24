@@ -498,12 +498,12 @@ describe('connecting with an API key (ADR-0054 §2; VLT-01, VLT-08)', () => {
     expect(days).toBeGreaterThan(89);
     expect(days).toBeLessThan(91);
     expect(res.body.groups).toEqual([
-      { group: 'receipts', mode: 'sent_keep_copy', vaultKind: null },
-      { group: 'statements', mode: 'sent_keep_copy', vaultKind: null },
-      { group: 'bills', mode: 'sent_keep_copy', vaultKind: null },
-      { group: 'payslips', mode: 'not_sent', vaultKind: null },
-      { group: 'tax_documents', mode: 'not_sent', vaultKind: null },
-      { group: 'other', mode: 'not_sent', vaultKind: null },
+      { group: 'receipts', mode: 'sent_keep_copy', vaultKind: null, unkept: 'dont_send' },
+      { group: 'statements', mode: 'sent_keep_copy', vaultKind: null, unkept: 'convert_attach' },
+      { group: 'bills', mode: 'sent_keep_copy', vaultKind: null, unkept: 'dont_send' },
+      { group: 'payslips', mode: 'not_sent', vaultKind: null, unkept: 'dont_send' },
+      { group: 'tax_documents', mode: 'not_sent', vaultKind: null, unkept: 'dont_send' },
+      { group: 'other', mode: 'not_sent', vaultKind: null, unkept: 'dont_send' },
     ]);
     expect(res.body).not.toHaveProperty('publicKey');
     expect(res.body).not.toHaveProperty('fingerprint');

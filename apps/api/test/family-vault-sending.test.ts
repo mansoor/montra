@@ -277,6 +277,7 @@ describe('each group’s mode (ADR-0054 §6; VLT-02, VLT-07)', () => {
       group: 'receipts',
       mode: 'sent_keep_copy',
       vaultKind: 'utility_bill',
+      unkept: 'dont_send',
     });
     expect((await vaultRow()).file_kinds).toEqual(['statement', 'receipt']);
   });
@@ -443,6 +444,8 @@ describe('sending (ADR-0054 §3, §4; VLT-03)', () => {
   });
 
   it('keeps statement exports and types the vault doesn’t take in Montra, and never sends sealed copies (D8, §6)', async () => {
+    // ADR-0057 §1: "Don't send" keeps a statement export in Montra, as before (family-vault-converted.test.ts converts).
+    expect((await patch({ groups: [{ group: 'statements', unkept: 'dont_send' }] })).status).toBe(200);
     const csv = await file('statement', 'checking.csv', {
       mime: 'text/csv',
       bytes: Buffer.from('date,amount\n'),
@@ -961,6 +964,7 @@ describe('badges and pausing (ADR-0054 §13)', () => {
           newerVersion: false,
           notKeptReason: null,
           canOpen: false,
+          converted: null,
         },
       },
     ]);
