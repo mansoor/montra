@@ -28,7 +28,7 @@ and matching them automatically (PR 3); the phone (PR 4, not run on a device yet
 the 16 February reminder (PR 5, migration 0060); see §7g. Role-based permissions (ADR-0053) are a separate proposal for
 later; tax forms use an owner-only setting for accountants instead.
 
-**Proposed, to be built after the owner approves it:** [ADR-0057](design/adr/0057-vault-statement-pdfs.md), statements the
+**Accepted 2026-11-24, being built:** [ADR-0057](design/adr/0057-vault-statement-pdfs.md), statements the
 vault doesn't keep (CSV, XLS, OFX, QIF, a bank's own layout) sent as PDFs drawn from the imported rows, with a cover
 page and, by default, the original attached inside. Each sent group chooses: don't send, convert, or convert with the
 original attached. Accounts gain holder names and a sealed full account number. Three PRs (accounts, rendering,

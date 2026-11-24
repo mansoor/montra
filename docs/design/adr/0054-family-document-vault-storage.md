@@ -10,7 +10,7 @@
 - Amends: ADR-0031 §1 ("mirror, don't move") for this one kind of destination, and ADR-0031 §3 (one connection per
   workspace)
 - Requirements: BAK-03, BAK-05, BAK-08, BAK-09, RCP-10, NFR-03; adds VLT-01..11 (§14)
-- Amended by: ADR-0057 (proposed, 2026-11-24) for §3 "File types" and §5: statements the vault doesn't keep can be
+- Amended by: ADR-0057 (accepted, 2026-11-24) for §3 "File types" and §5: statements the vault doesn't keep can be
   sent as PDFs
 
 ## Context

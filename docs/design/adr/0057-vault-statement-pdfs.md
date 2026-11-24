@@ -1,6 +1,6 @@
 # ADR-0057: Statements the vault doesn't keep, sent as PDFs with a cover page
 
-- Status: proposed (the owner's answers of 2026-11-24 are in "Owner's answers"; accepted once the owner approves this text)
+- Status: accepted (2026-11-24; the owner's answers are in "Owner's answers")
 - Date: 2026-11-24
 - Builds on: ADR-0054 (the Family Document Vault as a storage provider: groups, modes, the outbox, hints, the
   "Describe documents in more detail" switch), ADR-0031 (the destination port and the outbox), ADR-0006 and the import
