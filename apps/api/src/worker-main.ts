@@ -22,6 +22,7 @@ import { StorageMirrorJobs } from './storage/storage-mirror.jobs.js';
 import { VaultJobs } from './storage/vault/vault.jobs.js';
 import { BankFeedSync } from './bank-feeds/bank-feeds.sync.js';
 import { TaxIdSealing } from './business/tax-ids.js';
+import { StatementRenditions } from './renditions/statement-renditions.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
 const config = loadConfig();
@@ -37,6 +38,8 @@ app.get(PayslipJobs).register();
 app.get(ScanJobs).register();
 app.get(TaxFormReading).register();
 app.get(IntakeJobs).register();
+// VLT-13 (ADR-0057 §2): statements rendered as PDFs, a file at a time, when sending to the vault asks for one.
+app.get(StatementRenditions).register();
 const planning = app.get(RecommendationsService);
 planning.register();
 const notifications = app.get(NotificationJobs);

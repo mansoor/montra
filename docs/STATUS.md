@@ -3162,6 +3162,52 @@ Phase 11 leftovers:
     number). `business-tax-ids.test.ts` still passes on the shared helpers. Domain `account-holders.test.ts`, web
     `account-holders.test.ts`, phone screen test `account-holders.test.tsx` (shown, none, add a member and save, a
     refusal shown, read-only for a viewer).
+- **Statements rendered as PDFs with a cover page** (VLT-13 partial, migration 0092; [ADR-0057](design/adr/0057-vault-statement-pdfs.md) PR 2 of 3).
+  - Before: the vault keeps documents and images, so a CSV, XLS or OFX statement stayed in Montra only, shown as "not a
+    type the vault keeps".
+  - Now:
+    - `StatementRenditions.render(ctx, fileId, { detail, accountNumber, attachOriginal })` draws a statement file as a
+      PDF from its committed import's parsed rows, never from the file. One renderer covers every format the import
+      reads. It is in `apps/api/src/renditions/`.
+    - The PDF has one cover page, then a table of date, description, money out, money in and running balance. Each
+      table page has a header with the account name, the period and "page n of m". The totals come at the end.
+    - The cover comes from a document summary model (`document-summary.ts`), so other kinds of document can have one
+      later. With the detail switch off it shows the account, institution, type, holders, currency and period only. With
+      it on, it also shows the account number, the balances, money in and out, the count, the balance check, and the
+      original file's name, format, SHA-256 and import date. The number is the last four by default, or none. Full is
+      only ever passed in by the caller.
+    - The holders are the account's holder list (ACC-15), else its default member, else the book's name. Full unseals
+      the account's kept number (ACC-16) for the cover only; with none kept, it shows the last four.
+    - The running balance is the bank's own when every row has one. Otherwise it is worked out from the opening balance,
+      or back from the closing one. Otherwise it is left blank. A file listed newest first is turned round.
+    - The original can be attached inside the PDF, related as its source, byte for byte. With several parts it goes in
+      the first part, and the other covers say so.
+    - A file the import couldn't read gives a cover-only PDF that says so, but only when the original is attached.
+      Otherwise the answer is "not converted" and no file is made. An import still open answers "not ready".
+    - Fonts are embedded (Noto, as invoices use), without ligatures, so the text layer reads back as written. The
+      metadata is set, and the same input gives the same bytes.
+    - Each part is stored as its own `app.file` of the original's kind, through the usual storage and quota (BAK-08).
+      `derived_from_file_id` links it to the original in the same workspace, and `rendition` is `statement_pdf`. A
+      trigger refuses rendering a rendering, or a different kind. A rendering goes in the Trash and comes back with its
+      original. If the original is deleted for good, the rendering keeps its row, unlinked, and retention removes it.
+    - A rendering is not queued for the vault when it is stored (`storage_file_added` skips it). The owner's own
+      S3/WebDAV copy takes it like any file. Sending is PR 3.
+    - Rendering again replaces a rendering not yet sent and removes its stored copy. One the vault has had (any state
+      past `queued`) is kept and not redone. Undoing the import drops the unsent renderings; one the vault has stays.
+    - The worker's `statement.render` job (queue `report`) runs it for a file, as the user who queued it.
+      `StatementRenditions.enqueue()` queues it. Nothing queues it yet; PR 3 will, after a commit or a backfill.
+  - Settings, not code: `STATEMENT_PDF_MAX_ROWS` (default 5,000), the most rows in one PDF. A longer statement is split
+    into parts, each titled "part n of m".
+  - Left for PR 3 (VLT-12): the per-group "Files the vault doesn't keep" and "Account number on the cover" settings,
+    sending renderings, hints, "import undone" on a sent one, and §7's rule for removing the original. A file with two
+    committed imports (one file, two accounts) renders the latest only.
+  - Tests: API `statement-pdf.test.ts` (rows and running balances, the cover at each detail level and number choice, no
+    full number unless passed in, rows and totals drawn, metadata, the same bytes twice, the attachment byte for byte,
+    the split, a cover-only file). `statement-renditions.test.ts` (CSV, XLS and OFX imports each give a PDF whose rows
+    and totals match the batch; the cover from the account; an unreadable file with and without attaching; an open
+    import; the split by the setting; the derived-file columns, their checks and RLS; Trash with the original; not
+    queued for the vault; replace, keep and drop on undo; the job). `data-ownership.test.ts` (a rendering's link to its
+    original isn't a file holder).
 
 ---
 

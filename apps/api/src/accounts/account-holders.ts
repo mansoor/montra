@@ -36,7 +36,10 @@ export async function sealAccountNumber(
     : { account_number_enc: null };
 }
 
-/** The full number, for Show only. Never log it, put it in an error or send it anywhere else. */
+/**
+ * The full number, for Show and for a statement cover the owner set to "Full" (ADR-0057 §3). Never log it, put it in
+ * an error or send it anywhere else.
+ */
 export function openAccountNumber(
   crypto: FieldCrypto,
   trx: Trx,

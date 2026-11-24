@@ -528,9 +528,17 @@ export interface FileTable {
   missing_reason: string | null;
   /** ADR-0054 §5a: provided again with a hash different from the original's. */
   replaced_sha256: string | null;
+  /**
+   * ADR-0057 §4 (migration 0092): the file this one was rendered from, in the same workspace. Null for an upload, and
+   * once the original is deleted for good.
+   */
+  derived_from_file_id: string | null;
+  /** ADR-0057 §4: what rendering this file is, or null for an upload. A rendering is never rendered again. */
+  rendition: FileRendition | null;
 }
 
 export type FileLocation = 'montra' | 'vault';
+export type FileRendition = 'statement_pdf';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
