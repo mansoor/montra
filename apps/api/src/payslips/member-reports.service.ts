@@ -8,14 +8,22 @@ import {
   addMonths,
   asCurrencyCode,
   calendarDate,
+  EDUCATION_EXPENSE_TYPES,
   endOfMonth,
   startOfMonth,
   todayIn,
   withholdingSummary,
   type CalendarDate,
+  type EducationExpenseType,
   type PayslipSection,
 } from '@montra/domain';
-import type { MemberReportDto, PayslipSummaryDto, WithholdingDto } from '@montra/schemas';
+import type {
+  EducationStudentDto,
+  EducationSummaryDto,
+  MemberReportDto,
+  PayslipSummaryDto,
+  WithholdingDto,
+} from '@montra/schemas';
 import { AppError, notFound } from '../common/errors.js';
 import { Db } from '../db/database.js';
 
@@ -199,6 +207,131 @@ export class MemberReportsService {
         ytd: summarize(thisYear),
         priorYear: summarize(prior),
         byTax: [...byCode.entries()].map(([code, c]) => ({ code, label: c.label, amount: String(c.amount) })),
+      };
+    });
+  }
+
+  /**
+   * FAM-10: per student and calendar tax year, spending in categories marked as education expenses and money out of
+   * 529 plans. The student is the member on each posting; a 529 posting with no member counts for the plan's default
+   * member. Informational only: it shows what may matter and decides nothing. RLS limits it to what this login reads.
+   */
+  async education(ctx: Ctx, year?: number): Promise<EducationSummaryDto> {
+    return this.db.run(ctx, async (trx) => {
+      const ws = await trx
+        .selectFrom('app.workspace')
+        .select(['base_currency', 'time_zone'])
+        .where('id', '=', ctx.workspaceId)
+        .executeTakeFirstOrThrow();
+      const y = year ?? Number(todayIn(ws.time_zone).slice(0, 4));
+      const from = calendarDate(`${y}-01-01`);
+      const to = calendarDate(`${y}-12-31`);
+      const categories = await trx
+        .selectFrom('app.ledger_account')
+        .select(['id', 'name', 'education_expense_type'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('education_expense_type', 'is not', null)
+        .orderBy('name')
+        .execute();
+      const { rows: expenses } = await sql<{
+        member_id: string | null;
+        type: EducationExpenseType;
+        amount: string;
+      }>`
+        select p.member_id, a.education_expense_type as type, sum(p.functional_amount_minor)::text as amount
+          from app.posting p
+          join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
+         where p.workspace_id = ${ctx.workspaceId} and a.education_expense_type is not null
+           and p.entry_date between ${from} and ${to}
+         group by p.member_id, a.education_expense_type`.execute(trx);
+      const plans = await trx
+        .selectFrom('app.bank_account')
+        .select('ledger_account_id')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('plan_type', '=', '529')
+        .execute();
+      // Money out: not contributions, market value changes or opening balances, and not an entry that was reversed.
+      const { rows: withdrawals } = plans.length
+        ? await sql<{ member_id: string | null; account_id: string; name: string; amount: string }>`
+            select coalesce(p.member_id, b.default_member_id) as member_id, a.id as account_id, a.name,
+                   (-sum(p.functional_amount_minor))::text as amount
+              from app.posting p
+              join app.bank_account b on b.workspace_id = p.workspace_id and b.ledger_account_id = p.ledger_account_id
+              join app.ledger_account a on a.workspace_id = p.workspace_id and a.id = p.ledger_account_id
+              join app.journal_entry je on je.workspace_id = p.workspace_id and je.id = p.journal_entry_id
+             where p.workspace_id = ${ctx.workspaceId} and b.plan_type = '529' and p.amount_minor < 0
+               and p.entry_date between ${from} and ${to}
+               and je.kind not in ('valuation', 'opening_balance', 'fx_revaluation', 'closing', 'reversal')
+               and not exists (select 1 from app.journal_entry r
+                                where r.workspace_id = je.workspace_id and r.reverses_entry_id = je.id)
+             group by 1, a.id, a.name`.execute(trx)
+        : { rows: [] };
+      const family = await trx
+        .selectFrom('app.family_member')
+        .select(['id', 'name', 'relationship', 'is_dependent', 'birth_date'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .execute();
+      const people = new Map(family.map((f) => [f.id, f]));
+
+      interface Totals {
+        expenses: Map<EducationExpenseType, bigint>;
+        plans: Map<string, { name: string; amount: bigint }>;
+      }
+      const totals = new Map<string, Totals>();
+      const of = (memberId: string | null): Totals => {
+        const key = memberId ?? ZERO;
+        const t = totals.get(key) ?? { expenses: new Map(), plans: new Map() };
+        totals.set(key, t);
+        return t;
+      };
+      for (const r of expenses) {
+        const t = of(r.member_id);
+        t.expenses.set(r.type, (t.expenses.get(r.type) ?? 0n) + BigInt(r.amount));
+      }
+      for (const r of withdrawals) {
+        const t = of(r.member_id);
+        const p = t.plans.get(r.account_id) ?? { name: r.name, amount: 0n };
+        p.amount += BigInt(r.amount);
+        t.plans.set(r.account_id, p);
+      }
+      const students: EducationStudentDto[] = [...totals.entries()]
+        .map(([key, t]) => {
+          const f = key === ZERO ? undefined : people.get(key);
+          const expenseTotal = [...t.expenses.values()].reduce((a, b) => a + b, 0n);
+          const withdrawn = [...t.plans.values()].reduce((a, b) => a + b.amount, 0n);
+          return {
+            memberId: key === ZERO ? null : key,
+            name: key === ZERO ? 'Household' : (f?.name ?? 'Unknown'),
+            relationship: f?.relationship ?? null,
+            isDependent: f?.is_dependent ?? false,
+            birthDate: f?.birth_date ? calendarDate(f.birth_date) : null,
+            expenses: EDUCATION_EXPENSE_TYPES.map((type) => ({
+              type,
+              amount: String(t.expenses.get(type) ?? 0n),
+            })),
+            expenseTotal: String(expenseTotal),
+            withdrawals529: String(withdrawn),
+            plans: [...t.plans.entries()].map(([accountId, p]) => ({
+              accountId,
+              name: p.name,
+              amount: String(p.amount),
+            })),
+          };
+        })
+        // Members by name, then what has no member.
+        .sort((a, b) => (a.memberId === null ? 1 : b.memberId === null ? -1 : a.name.localeCompare(b.name)));
+      return {
+        year: y,
+        from,
+        to,
+        currency: asCurrencyCode(ws.base_currency),
+        categories: categories.map((c) => ({
+          categoryId: c.id,
+          name: c.name,
+          type: c.education_expense_type!,
+        })),
+        has529: plans.length > 0,
+        students,
       };
     });
   }

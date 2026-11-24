@@ -139,6 +139,8 @@ export interface LedgerAccountTable {
   is_category: Generated<boolean>;
   category_group_id: string | null;
   tax_line_code: string | null;
+  /** FAM-10: the kind of education expense this spending category holds (migration 0090). */
+  education_expense_type: 'tuition_fees' | 'books_supplies' | 'room_board' | 'computer' | null;
   system_role: string | null;
   counterparty_entity_id: string | null;
   tracks_account_id: string | null;
