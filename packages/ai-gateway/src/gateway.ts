@@ -40,6 +40,7 @@ import * as proposeV1 from './tasks/propose-categories/v1.js';
 import * as taxLinesV1 from './tasks/map-tax-lines/v1.js';
 import * as separationV1 from './tasks/flag-separation/v1.js';
 import * as capitalV1 from './tasks/flag-capital/v1.js';
+import * as propertyV1 from './tasks/suggest-property/v1.js';
 import * as questionV1 from './tasks/answer-question/v1.js';
 import * as monthV1 from './tasks/summarize-month/v1.js';
 import * as summaryV1 from './tasks/word-summary/v1.js';
@@ -67,6 +68,9 @@ import type {
   ImagePart,
   MemberOption,
   PayeeNormalization,
+  PropertyChoice,
+  PropertyItem,
+  PropertyOutput,
   ProviderAdapter,
   ProviderConfig,
   ProviderId,
@@ -168,6 +172,14 @@ function mergeMeta(into: AiMeta, add: AiMeta): void {
   into.costMicroUsd += add.costMicroUsd;
   into.failedOver ||= add.failedOver;
 }
+
+const noProperty = (item: { id: string }): PropertyOutput => ({
+  id: item.id,
+  propertyId: null,
+  unitId: null,
+  confidence: 0,
+  explanation: '',
+});
 
 function exponentOf(currency: string): number {
   return isCurrencyCode(currency) ? minorUnits(asCurrencyCode(currency)) : 2;
@@ -438,9 +450,11 @@ export class Gateway implements AiGateway {
     const unique = [...new Set(keys)];
     const cached = new Map<string, R>();
     if (route.cacheTtlDays > 0) {
+      // One read for the whole run where the store can (an import asks for hundreds of keys), else one per key.
+      const many = ctx.store.cacheGetMany ? await ctx.store.cacheGetMany(task, unique) : null;
       await Promise.all(
         unique.map(async (k) => {
-          const hit = await ctx.store.cacheGet(task, k);
+          const hit = many ? (many.get(k) ?? null) : await ctx.store.cacheGet(task, k);
           if (hit !== null && args.isCacheable(hit)) cached.set(k, hit);
         }),
       );
@@ -559,7 +573,19 @@ export class Gateway implements AiGateway {
       for (const [k, v] of res.value) {
         fresh.set(k, v);
         answered++;
-        if (route.cacheTtlDays > 0) await ctx.store.cachePut(task, k, v, res.meta.model, route.cacheTtlDays);
+      }
+      if (route.cacheTtlDays > 0 && res.value.size > 0) {
+        // The batch's answers in one write where the store can, else one per key.
+        if (ctx.store.cachePutMany)
+          await ctx.store.cachePutMany(
+            task,
+            [...res.value].map(([keyHash, output]) => ({ keyHash, output })),
+            res.meta.model,
+            route.cacheTtlDays,
+          );
+        else
+          for (const [k, v] of res.value)
+            await ctx.store.cachePut(task, k, v, res.meta.model, route.cacheTtlDays);
       }
     });
     keys.forEach((k, i) => {
@@ -620,6 +646,13 @@ export class Gateway implements AiGateway {
       model: string;
     };
 
+    // An import's lines repeat a few hundred payees: each text is normalized once.
+    const normalized = new Map<string, string>();
+    const normalize = (text: string) => {
+      let n = normalized.get(text);
+      if (n === undefined) normalized.set(text, (n = normalizeDescription(text)));
+      return n;
+    };
     const run = await this.runBatched<CategorizeItem, Cached>({
       task: 'categorize',
       ctx,
@@ -634,7 +667,7 @@ export class Gateway implements AiGateway {
             'categorize',
             model,
             pv,
-            normalizeDescription(i.payee || i.description),
+            normalize(i.payee || i.description),
             amountBand(i.amountMinor, exponentOf(i.currency)),
             i.accountType,
             i.entityType,
@@ -1289,6 +1322,109 @@ export class Gateway implements AiGateway {
       ctx,
       { spent: 0n },
     );
+  }
+
+  // ----- suggest_property (AI-02) ---------------------------------------------------------------------------
+
+  /**
+   * The rental property and unit for each line. Minimized like categorize: masked payee and description, a rounded
+   * amount, the category's name. Properties go as short ids with the owner's name for each (masked, so a street number
+   * becomes "#") and unit labels; never an address. The score is the model's own: there is no benchmark to calibrate
+   * it on, so the caller holds it to the AI threshold.
+   */
+  async suggestProperty(
+    items: readonly PropertyItem[],
+    properties: readonly PropertyChoice[],
+    ctx: AiContext,
+  ): Promise<TaskResult<PropertyOutput[]>> {
+    const pv = propertyV1.PROMPT_VERSION;
+    if (this.isOff(ctx)) return { ok: false, reason: 'off' };
+    if (items.length === 0 || properties.length === 0)
+      return { ok: true, value: items.map(noProperty), meta: emptyMeta('suggest_property', ctx, '', pv) };
+    const sorted = [...properties].sort((a, b) => `${a.name}|${a.id}`.localeCompare(`${b.name}|${b.id}`));
+    const propShort = new Map(sorted.map((p, i) => [`p${i + 1}`, p]));
+    const unitShort = new Map<string, { propertyId: string; id: string; label: string }>();
+    let n = 0;
+    const listed = sorted.map((p, i) => ({
+      id: `p${i + 1}`,
+      name: minimizeText(p.name, ctx.pseudonyms),
+      units: p.units.map((u) => {
+        const id = `u${++n}`;
+        unitShort.set(id, { propertyId: p.id, id: u.id, label: u.label });
+        return { id, label: minimizeText(u.label, ctx.pseudonyms) };
+      }),
+    }));
+    const byId = new Map(sorted.map((p) => [p.id, p]));
+    const listHash = sha256(
+      stableJson(sorted.map((p) => [p.id, p.name, p.units.map((u) => [u.id, u.label])])),
+    );
+
+    type Cached = {
+      propertyId: string | null;
+      unitId: string | null;
+      raw: number;
+      reason: string;
+    };
+    const run = await this.runBatched<PropertyItem, Cached>({
+      task: 'suggest_property',
+      ctx,
+      items,
+      system: propertyV1.SYSTEM,
+      promptVersion: pv,
+      context: JSON.stringify({ properties: listed }),
+      schema: propertyV1.Output,
+      keyOf: (i, model) =>
+        sha256(
+          [
+            'suggest_property',
+            model,
+            pv,
+            normalizeDescription(`${i.payee ?? ''} ${i.description}`),
+            amountBand(i.amountMinor, exponentOf(i.currency)),
+            i.category ?? '',
+            listHash,
+          ].join('|'),
+        ),
+      toWire: (i, id) => ({
+        id,
+        payee: i.payee ? minimizeText(i.payee, ctx.pseudonyms) : null,
+        description: minimizeText(i.description, ctx.pseudonyms),
+        amount: roundedAmount(i.amountMinor, exponentOf(i.currency)),
+        currency: i.currency,
+        category: i.category,
+      }),
+      resultsOf: (p: propertyV1.Output) => p.results,
+      fromWire: (r: propertyV1.Output['results'][number]) => {
+        const property = r.property ? propShort.get(r.property) : undefined;
+        const unit = r.unit ? unitShort.get(r.unit) : undefined;
+        return {
+          propertyId: property?.id ?? null,
+          unitId: property && unit?.propertyId === property.id ? unit.id : null,
+          raw: round3(clamp01(r.confidence)),
+          reason: oneLine(unpseudonymize(r.reason, ctx.pseudonyms), 100),
+        };
+      },
+      isCacheable: (v): v is Cached =>
+        !!v &&
+        typeof v === 'object' &&
+        'raw' in v &&
+        ((v as Cached).propertyId === null || byId.has((v as Cached).propertyId!)),
+    });
+    if (run.failure) return run.failure;
+    const value = items.map((item, i): PropertyOutput => {
+      const r = run.results[i];
+      const p = r?.propertyId ? byId.get(r.propertyId) : undefined;
+      if (!r || !p) return noProperty(item);
+      const u = r.unitId ? p.units.find((x) => x.id === r.unitId) : undefined;
+      return {
+        id: item.id,
+        propertyId: p.id,
+        unitId: u?.id ?? null,
+        confidence: r.raw,
+        explanation: oneLine(`AI: ${r.reason} → ${u ? `${p.name}, ${u.label}` : p.name}`),
+      };
+    });
+    return { ok: true, value, meta: run.meta };
   }
 
   // ----- extract_payslip (PAY-03) ---------------------------------------------------------------------------

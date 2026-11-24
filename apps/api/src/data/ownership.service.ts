@@ -7,6 +7,7 @@ import { sql } from 'kysely';
 import { asCurrencyCode, addDays, type CalendarDate } from '@montra/domain';
 import type {
   DeletionStatusDto,
+  EmptyTrashResultDto,
   RetentionItemRef,
   RetentionResultDto,
   RetentionReviewDto,
@@ -14,7 +15,7 @@ import type {
   StorageUsageDto,
   TrashItemDto,
 } from '@montra/schemas';
-import { notFound } from '../common/errors.js';
+import { AppError, notFound } from '../common/errors.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
 import { Worker } from '../jobs/queue.js';
@@ -26,6 +27,8 @@ import { BackupService } from './backup.service.js';
 type Ctx = { workspaceId: string; userId: string };
 
 const TRASH_DAYS = 30;
+/** A transaction still in the Trash this long past its 30 days was tried by the hourly job: something still uses it. */
+const IN_USE_AFTER_HOURS = 2;
 /** NFR-06 promises the data is gone within 30 days, so it falls due early enough for the hourly job to get there in time. */
 const DELETION_WINDOW_MS = 30 * 86_400_000 - 2 * 3_600_000;
 const RETENTION_EVERY_MS = 60 * 60_000;
@@ -80,40 +83,63 @@ export class OwnershipService {
 
   // ----- Trash (BAK-06) ---------------------------------------------------------------------------------------------
 
+  /**
+   * What is in the Trash, and how and when each leaves it. Transactions, tax forms and personal receipts go 30 days
+   * after they were deleted. A business or rental receipt is a tax record: it stays until its retention date, then
+   * waits for an owner's approval like any other receipt (RCP-10). Each can be restored meanwhile.
+   */
   async trash(ctx: Ctx): Promise<TrashItemDto[]> {
     return this.db.run(ctx, async (trx) => {
       const { rows } = await sql<{
         kind: TrashItemDto['kind'];
         id: string;
         title: string;
+        date: CalendarDate | null;
         deleted_at: Date;
+        retain_until: CalendarDate | null;
+        past_retention: boolean;
+        in_use: boolean;
         amount: string | null;
         currency: string | null;
       }>`
         select 'transaction' as kind, t.id, coalesce(t.payee_raw, nullif(t.description, ''), 'Transaction') as title,
-               t.deleted_at, t.spec->>'amount' as amount, t.spec->>'currency' as currency
+               t.txn_date::text as date, t.deleted_at, null::date as retain_until, false as past_retention,
+               -- Still here after its 30 days and the hourly job's next run: another record refers to it.
+               t.deleted_at < now() - ${`${TRASH_DAYS} days ${IN_USE_AFTER_HOURS} hours`}::interval as in_use,
+               t.spec->>'amount' as amount, t.spec->>'currency' as currency
           from app.transaction t
          where t.workspace_id = ${ctx.workspaceId} and t.deleted_at is not null
            and not exists (select 1 from app.journal_entry e where e.workspace_id = t.workspace_id and e.transaction_id = t.id)
         union all
-        select 'receipt', r.id, coalesce(r.merchant, r.merchant_raw, 'Receipt'), r.deleted_at, r.total_minor::text, r.currency
+        select 'receipt', r.id, coalesce(r.merchant, r.merchant_raw, 'Receipt'), r.receipt_date::text, r.deleted_at,
+               r.retain_until,
+               r.retain_until < current_date, false, r.total_minor::text, r.currency
           from app.receipt r
          where r.workspace_id = ${ctx.workspaceId} and r.deleted_at is not null
         union all
-        select 'tax_form', f.id, coalesce(f.issuer_name, 'Tax form'), f.deleted_at, null, null
+        select 'tax_form', f.id, coalesce(f.issuer_name, 'Tax form'), null, f.deleted_at, null, false, false, null,
+               null
           from app.tax_form f
          where f.workspace_id = ${ctx.workspaceId} and f.deleted_at is not null
          order by deleted_at desc
          limit 500`.execute(trx);
-      return rows.map((r) => ({
-        kind: r.kind,
-        id: r.id,
-        title: r.title,
-        deletedAt: r.deleted_at.toISOString(),
-        purgeOn: addDays(r.deleted_at.toISOString().slice(0, 10) as CalendarDate, TRASH_DAYS),
-        amount: r.amount,
-        currency: r.currency ? asCurrencyCode(r.currency) : null,
-      }));
+      return rows.map((r) => {
+        const trashEnds = addDays(r.deleted_at.toISOString().slice(0, 10) as CalendarDate, TRASH_DAYS);
+        const [removal, until]: [TrashItemDto['removal'], CalendarDate] = r.retain_until
+          ? [r.past_retention ? 'owner_approval' : 'retention', r.retain_until]
+          : [r.in_use ? 'in_use' : 'trash', trashEnds];
+        return {
+          kind: r.kind,
+          id: r.id,
+          title: r.title,
+          date: r.date,
+          deletedAt: r.deleted_at.toISOString(),
+          removal,
+          until,
+          amount: r.amount,
+          currency: r.currency ? asCurrencyCode(r.currency) : null,
+        };
+      });
     });
   }
 
@@ -145,6 +171,56 @@ export class OwnershipService {
         .executeTakeFirst();
       if (!res.numUpdatedRows) throw notFound('Receipt');
     });
+  }
+
+  /**
+   * "Delete forever": one Trash item that would go after 30 days goes now, with the hourly job's cleanup (its files and
+   * their stored bytes for a tax form or a personal receipt). Owners and admins with a recent sign-in (the controller
+   * checks). Refused under a legal hold, in closed or reconciled books, and for a receipt kept as a tax record. The
+   * database writes the audit entry: who, what and when.
+   */
+  async deleteForever(ctx: Ctx, kind: TrashItemDto['kind'], id: string): Promise<void> {
+    const res = await this.purgeOne(ctx, kind, id);
+    if (res.outcome !== 'deleted') throw purgeRefused(res.outcome, kind);
+    await this.removeStored(res.keys, `${kind} ${id}`);
+  }
+
+  /** "Empty Trash": every item that goes after 30 days, deleted forever now. Those that must stay are counted. */
+  async emptyTrash(ctx: Ctx): Promise<EmptyTrashResultDto> {
+    const held = await this.db.run(ctx, (trx) =>
+      sql<{ held: boolean }>`select app.current_workspace_on_legal_hold() as held`.execute(trx),
+    );
+    if (held.rows[0]?.held) throw purgeRefused('legal_hold', 'transaction');
+    const items = (await this.trash(ctx)).filter((i) => i.removal === 'trash');
+    let deleted = 0;
+    for (const i of items) {
+      const res = await this.purgeOne(ctx, i.kind, i.id);
+      if (res.outcome !== 'deleted') continue;
+      deleted++;
+      await this.removeStored(res.keys, `${i.kind} ${i.id}`);
+    }
+    return { deleted, kept: items.length - deleted };
+  }
+
+  private async purgeOne(
+    ctx: Ctx,
+    kind: TrashItemDto['kind'],
+    id: string,
+  ): Promise<{ outcome: TrashPurgeOutcome; keys: string[] }> {
+    return this.db.run(ctx, async (trx) => {
+      const { rows } = await sql<{ outcome: TrashPurgeOutcome; storage_keys: string[] | null }>`
+        select * from app.purge_trash_item(${kind}, ${id}::uuid)`.execute(trx);
+      return { outcome: rows[0]?.outcome ?? 'not_found', keys: rows[0]?.storage_keys ?? [] };
+    });
+  }
+
+  /** The row is gone already: a stored copy that can't be removed now is only logged, as the retention job does. */
+  private async removeStored(keys: readonly string[], what: string): Promise<void> {
+    for (const k of keys) {
+      await this.storage.delete(k).catch((e: Error) => {
+        this.logger.warn(`${what}: its stored copy couldn't be removed: ${e.message}`);
+      });
+    }
   }
 
   // ----- Storage (BAK-08) -------------------------------------------------------------------------------------------
@@ -240,10 +316,10 @@ export class OwnershipService {
       restores: 0,
       found: 0,
       receipts: 0,
-
       files: 0,
       workspaces: 0,
       users: 0,
+      held: 0,
       trash: 0,
       backups: 0,
     };
@@ -252,6 +328,7 @@ export class OwnershipService {
       sql<{ n: number }>`select app.purge_trash() as n`.execute(trx),
     );
     done.trash = Number(trash.rows[0]?.n ?? 0);
+    done.held = await this.holdPurges();
     const { rows } = await this.db.run({}, (trx) =>
       sql<{ kind: string; workspace_id: string | null; id: string; storage_key: string | null }>`
         select * from app.retention_due()`.execute(trx),
@@ -274,6 +351,28 @@ export class OwnershipService {
       );
     }
     return done;
+  }
+
+  /**
+   * ADR-0049 §4: a closing account under a legal hold, or a closing workspace with an active member under one, stays
+   * as it is: `retention_due()` leaves it out, and the purge functions refuse it. Each is logged once when first held
+   * back, and again when the hold goes; the next run then purges it. The staff console shows since when.
+   */
+  private async holdPurges(): Promise<number> {
+    const { rows } = await this.db.run({}, (trx) =>
+      sql<{ kind: 'workspace' | 'user'; id: string; change: 'held' | 'released' }>`
+        select * from app.retention_hold_purges()`.execute(trx),
+    );
+    for (const r of rows) {
+      if (r.change === 'held') {
+        this.logger.warn(
+          `Held back by a legal hold: the closing ${r.kind} ${r.id} stays until the hold is lifted`,
+        );
+      } else {
+        this.logger.log(`No longer held back: the closing ${r.kind} ${r.id} goes when its date has passed`);
+      }
+    }
+    return rows.filter((r) => r.change === 'held').length;
   }
 
   private async tryRetainOne(
@@ -469,5 +568,42 @@ export class OwnershipService {
       await this.db.run({}, (trx) => sql`select app.purge_user(${r.id}::uuid)`.execute(trx));
       done.users!++;
     }
+  }
+}
+
+type TrashPurgeOutcome =
+  'deleted' | 'not_found' | 'legal_hold' | 'closed_period' | 'receipt' | 'retention' | 'in_use';
+
+/** Why a Trash item stays, as the error the person sees. */
+function purgeRefused(outcome: Exclude<TrashPurgeOutcome, 'deleted'>, kind: TrashItemDto['kind']): AppError {
+  switch (outcome) {
+    case 'not_found':
+      return notFound(kind === 'tax_form' ? 'Tax form' : kind === 'receipt' ? 'Receipt' : 'Transaction');
+    case 'legal_hold':
+      return new AppError(
+        409,
+        'trash.legal_hold',
+        'A legal hold keeps everything in this workspace as it is. Nothing can be deleted for good until it is lifted.',
+      );
+    case 'closed_period':
+      return new AppError(
+        409,
+        'trash.closed_period',
+        'It is dated in closed or reconciled books, so it stays. Reopen them to delete it for good.',
+      );
+    case 'receipt':
+      return new AppError(
+        409,
+        'trash.has_receipt',
+        'It has a receipt, a tax record kept until its retention date, so it stays in the Trash for now.',
+      );
+    case 'retention':
+      return new AppError(
+        409,
+        'trash.retention',
+        'Receipts in business or rental books are tax records. They stay until their retention date, then an owner approves deleting them in Settings, Data.',
+      );
+    case 'in_use':
+      return new AppError(409, 'trash.in_use', 'Another record still uses it, so it stays in the Trash.');
   }
 }

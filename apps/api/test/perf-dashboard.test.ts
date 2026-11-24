@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { addDays, todayIn } from '@montra/domain';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
@@ -79,6 +80,18 @@ describe(`dashboard with ${COUNT} transactions (NFR-07)`, () => {
       ['workspace', w.url('')],
       ['accounts', w.url('/accounts')],
       ['transactions', w.url('/transactions?limit=10')],
+      // The web lists' filters (date window, merchant words, amount without sign, direction) on the full list.
+      [
+        'txns 90d+filters',
+        w.url(
+          `/transactions?limit=200&from=${addDays(todayIn('UTC'), -89)}&merchant=payee%2037&amountMin=1000&amountMax=50000`,
+        ),
+      ],
+      ['txns all+filters', w.url('/transactions?limit=200&merchant=payee%2037&amountMin=1000&direction=out')],
+      [
+        'review 90d+filters',
+        w.url(`/review?limit=100&from=${addDays(todayIn('UTC'), -89)}&amountMin=1000&merchant=payee`),
+      ],
       ['categories', w.url('/categories')],
       ['dashboard', w.url('/dashboard')],
       ['budget period', w.url(`/budgets/${w.budgetId}/periods/current`)],
@@ -89,7 +102,7 @@ describe(`dashboard with ${COUNT} transactions (NFR-07)`, () => {
       ['net worth', w.url('/net-worth?months=12')],
     ] as const) {
       const m = await measure(8, () => c.get(path));
-      report(`${name.padEnd(14)} p95 ${m.p95.toFixed(0).padStart(5)} ms`);
+      report(`${name.padEnd(18)} p95 ${m.p95.toFixed(0).padStart(5)} ms`);
       // No screen may be slow enough to break the page budget on its own.
       expect(m.p95, name).toBeLessThan(2000);
     }

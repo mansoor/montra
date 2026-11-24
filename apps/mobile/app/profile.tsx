@@ -1,9 +1,11 @@
 /**
  * Your profile (OPS-13, TZ-01): your name and your own time zone, as on the web's Settings → Profile (`PATCH /v1/me`).
  * The language, date format and first day of the week stay on the web: the phone writes dates and amounts the way the
- * phone's own settings do, so changing them here would change nothing here.
+ * phone's own settings do, so changing them here would change nothing here. Keeping original photos (BAK-08) is the
+ * same choice as on the web, saved as soon as it's switched.
  */
 import { useEffect, useState } from 'react';
+import { Switch, View } from 'react-native';
 import type { MeDto } from '@montra/schemas';
 import { deviceTimeZone, errorText, profileRequest } from '../src/features/settings-edit';
 import { t } from '../src/i18n';
@@ -20,6 +22,7 @@ export default function Profile() {
   const [zone, setZone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savingPhotos, setSavingPhotos] = useState(false);
   const here = deviceTimeZone();
 
   useEffect(() => {
@@ -53,6 +56,20 @@ export default function Profile() {
       setError(errorText(err, t));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const setKeepOriginal = async (keepOriginalPhotos: boolean) => {
+    setSavingPhotos(true);
+    setError(null);
+    try {
+      setMe(await api.updateMe({ keepOriginalPhotos }));
+      haptic.success();
+      void session.refresh();
+    } catch (err) {
+      setError(errorText(err, t));
+    } finally {
+      setSavingPhotos(false);
     }
   };
 
@@ -96,6 +113,23 @@ export default function Profile() {
             testID="profile-save"
           />
           <Body muted>{t('mobile.settings.profile_on_web')}</Body>
+        </Card>
+      ) : null}
+      {me ? (
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1 }}>
+              <Body>{t('profile.keep_original_photos')}</Body>
+            </View>
+            <Switch
+              value={me.keepOriginalPhotos}
+              disabled={savingPhotos}
+              onValueChange={(v) => void setKeepOriginal(v)}
+              accessibilityLabel={t('profile.keep_original_photos')}
+              testID="profile-keep-original-photos"
+            />
+          </View>
+          <Small>{t('profile.keep_original_photos_hint')}</Small>
         </Card>
       ) : null}
     </Screen>

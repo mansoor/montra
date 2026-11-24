@@ -62,6 +62,18 @@ describe('tenant isolation (NFR-03, design 03 §11)', () => {
     expect(none).toEqual([]);
   });
 
+  it('finds list-filter candidates only in the workspace of a member (migration 0087)', async () => {
+    const ids = (workspaceId: string, userId: string) =>
+      withContext(db, { workspaceId, userId }, async (trx) => {
+        const { rows } = await sql<{ ids: string[] }>`select app.transaction_filter_ids(
+            '2026-10-01', '2026-10-01', null, null, null, null, 'USD', 2, 100) as ids`.execute(trx);
+        return rows[0]!.ids;
+      });
+    expect(await ids(a.workspaceId, a.ownerId)).toHaveLength(2);
+    expect(await ids(a.workspaceId, b.ownerId)).toEqual([]);
+    expect(await ids(b.workspaceId, b.ownerId)).toEqual([]);
+  });
+
   it('prevents writing rows into another workspace', async () => {
     await expect(
       withContext(db, { workspaceId: b.workspaceId, userId: b.ownerId }, (trx) =>

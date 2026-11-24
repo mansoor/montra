@@ -20,6 +20,7 @@ import {
   CreateRuleRequest,
   ParseQuickAddRequest,
   ResolveReviewRequest,
+  ReviewListQuery,
   RulePreviewRequest,
   SuggestRequest,
   UpdateRuleRequest,
@@ -145,23 +146,10 @@ export class CategorizationController {
   // ----- Review queue (AI-03/04) --------------------------------------------------------------------------
 
   @Get('review')
-  reviewList(
-    @Ctx() ctx: RequestContext,
-    @Query('entityId') entityId?: string,
-    @Query('minConfidence') minConfidence?: string,
-    @Query('cursor') cursor?: string,
-    @Query('limit') limit?: string,
-  ) {
+  reviewList(@Ctx() ctx: RequestContext, @Query() query: unknown) {
     const c = dbCtx(ctx);
-    return this.db.run(c, (trx) =>
-      this.review.list(trx, c, {
-        entityId: entityId ? uuid(entityId) : undefined,
-        minConfidence:
-          minConfidence !== undefined ? parse(z.coerce.number().min(0).max(1), minConfidence) : undefined,
-        cursor,
-        limit: limit ? parse(z.coerce.number().int().min(1).max(500), limit) : undefined,
-      }),
-    );
+    const q = parse(ReviewListQuery, query);
+    return this.db.run(c, (trx) => this.review.list(trx, c, q));
   }
 
   @Post('review/accept')

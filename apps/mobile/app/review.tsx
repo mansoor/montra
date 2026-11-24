@@ -13,7 +13,13 @@ import { fmtDate, fmtMoney, t } from '../src/i18n';
 import { canChangeOn } from '../src/features/roles';
 import { useAbilities } from '../src/session/SessionProvider';
 import { useLocal, useSync } from '../src/sync/SyncProvider';
-import { confidenceLabel, effectiveOutcome, reviewQueue, swipeOutcome } from '../src/features/review';
+import {
+  confidenceLabel,
+  effectiveOutcome,
+  reviewQueue,
+  suggestedProperty,
+  swipeOutcome,
+} from '../src/features/review';
 import { CategoryPicker } from '../src/ui/CategoryPicker';
 import { IntakeReview } from '../src/ui/IntakeReview';
 import { MissingFilesReview } from '../src/ui/MissingFiles';
@@ -96,6 +102,7 @@ export default function Review() {
 
   const suggested = current.suggestedCategoryId ? byId.get(current.suggestedCategoryId) : undefined;
   const transfer = !suggested && Boolean(current.suggestedTransferAccountId);
+  const property = transfer ? null : suggestedProperty(current);
   const conf = current.confidence !== null ? ` · ${confidenceLabel(current.confidence)}` : '';
   const rotate = x.interpolate({ inputRange: [-width, 0, width], outputRange: ['-12deg', '0deg', '12deg'] });
 
@@ -131,6 +138,7 @@ export default function Review() {
                   : t('mobile.review.no_suggestion')}
             </Body>
             {current.explanation ? <Small>{current.explanation}</Small> : null}
+            {property ? <Body>{t('mobile.review.property', { property })}</Body> : null}
           </Card>
         </Animated.View>
       </View>

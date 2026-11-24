@@ -13,7 +13,12 @@ import {
   type ReactNode,
 } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import type { MeDto, WorkspaceDto } from '@montra/schemas';
+import {
+  photoUploadSettings,
+  type MeDto,
+  type PhotoUploadSettings,
+  type WorkspaceDto,
+} from '@montra/schemas';
 import { AppState, Platform } from 'react-native';
 import { config } from '../config';
 import { createApi, type Api } from '../api/client';
@@ -84,6 +89,13 @@ export function useSession(): SessionApi {
   const v = useContext(Ctx);
   if (!v) throw new Error('useSession outside SessionProvider');
   return v;
+}
+
+/** BAK-08: how photos are compressed before upload, and whether this person keeps originals (works offline). */
+export function usePhotoSettings(): PhotoUploadSettings {
+  const { state } = useSession();
+  const me = state.status === 'signed_in' ? state.me : null;
+  return useMemo(() => photoUploadSettings(me), [me]);
 }
 
 /** What the signed-in login may change in the open workspace (AUTH-18); nothing until signed in. */

@@ -26,6 +26,7 @@ export type TaskName =
   | 'map_tax_lines'
   | 'flag_separation'
   | 'flag_capital'
+  | 'suggest_property'
   | 'answer_question'
   | 'word_summary'
   | 'summarize_month';
@@ -126,6 +127,15 @@ export interface AiEventRecord {
 export interface GatewayStore {
   cacheGet(task: TaskName, keyHash: string): Promise<unknown | null>;
   cachePut(task: TaskName, keyHash: string, output: unknown, model: string, ttlDays: number): Promise<void>;
+  /** Optional: many `cacheGet`s in one read. Keys without a live entry are left out of the map. */
+  cacheGetMany?(task: TaskName, keyHashes: readonly string[]): Promise<ReadonlyMap<string, unknown>>;
+  /** Optional: many `cachePut`s of one model's answers in one write (each key once). */
+  cachePutMany?(
+    task: TaskName,
+    entries: ReadonlyArray<{ keyHash: string; output: unknown }>,
+    model: string,
+    ttlDays: number,
+  ): Promise<void>;
   recordEvent(e: AiEventRecord): Promise<void>;
   /** Adds to this month's spend (kept apart from the deletable audit log). */
   addUsage(costMicroUsd: bigint, calls: number): Promise<void>;
@@ -220,6 +230,34 @@ export interface CategorizeOutput {
   explanation: string;
   /** Clean merchant name and MCC when the model knows the merchant (AI-07). */
   merchant: { name: string; mcc: string | null } | null;
+}
+
+/** AI-02: a rental property the AI may choose for a line. Only its name and unit labels are sent, never an address. */
+export interface PropertyChoice {
+  id: string;
+  /** The owner's name for it; masked like any text (a street number becomes "#"). */
+  name: string;
+  units: ReadonlyArray<{ id: string; label: string }>;
+}
+
+export interface PropertyItem {
+  id: string;
+  payee: string | null;
+  description: string;
+  amountMinor: bigint;
+  currency: string;
+  /** The category's name, when one is known (helps tell a repair from a mortgage payment). */
+  category: string | null;
+}
+
+export interface PropertyOutput {
+  id: string;
+  propertyId: string | null;
+  unitId: string | null;
+  /** The model's own score, 0..1 (not calibrated: there is no benchmark for properties yet). */
+  confidence: number;
+  /** One line, e.g. "AI: 'Elm' in the description → Elm duplex". */
+  explanation: string;
 }
 
 export interface PayeeNormalization {
@@ -538,6 +576,12 @@ export interface AiGateway {
   flagSeparation(input: SeparationInput, ctx: AiContext): Promise<TaskResult<SeparationFlag[]>>;
   /** RNT-09: spending filed as repairs that may be a capital improvement. */
   flagCapital(input: CapitalInput, ctx: AiContext): Promise<TaskResult<CapitalFlag[]>>;
+  /** AI-02: the rental property (and unit) each line belongs to, from one set of books' properties. */
+  suggestProperty(
+    items: readonly PropertyItem[],
+    properties: readonly PropertyChoice[],
+    ctx: AiContext,
+  ): Promise<TaskResult<PropertyOutput[]>>;
   /** RPT-06: a question as a plan. The numbers come from queries, not from here. */
   answerQuestion(input: QuestionInput, ctx: AiContext): Promise<TaskResult<QuestionPlan>>;
   wordSummary(input: SummaryInput, ctx: AiContext): Promise<TaskResult<string>>;

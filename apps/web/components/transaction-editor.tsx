@@ -112,6 +112,26 @@ export function TransactionEditor({
     }
   }
 
+  // A transfer made from a plain line (by an import or by hand) can be taken apart: both sides come back as they were.
+  const madeBy = transaction.entries.some((e) => e.kind === 'transfer')
+    ? (transaction.categorization?.transfer?.made ?? null)
+    : null;
+  const canUndoTransfer = madeBy !== null && transaction.status === 'posted' && !transaction.reconciled;
+
+  async function onUndoTransfer() {
+    setBusy(true);
+    setErrors({ fields: {} });
+    try {
+      await browserApi.undoTransfer(workspace.id, transaction.id);
+      setNotice(t('editor.transfer_undone'));
+      router.refresh();
+    } catch (err) {
+      setErrors({ form: friendlyMessage(err, t), fields: {}, action: errorAction(err, t) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onDelete() {
     if (!window.confirm(t('editor.confirm_delete'))) return;
     setBusy(true);
@@ -183,6 +203,11 @@ export function TransactionEditor({
           <p className="text-sm" data-testid="editor-categorization">
             <span className="text-muted">{t('editor.categorized_by')}</span>{' '}
             <Explanation categorization={transaction.categorization} />
+          </p>
+        )}
+        {madeBy === 'import' && (
+          <p className="text-sm" data-testid="editor-transfer-by-import">
+            {t('editor.transfer_by_import')}
           </p>
         )}
         {!initial.ledgerEditable && <p className="text-sm text-muted">{t('editor.transfer_hint')}</p>}
@@ -410,6 +435,18 @@ export function TransactionEditor({
               onClick={() => setTransferOpen(true)}
             >
               {t('editor.make_transfer')}
+            </button>
+          )}
+          {canUndoTransfer && (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy}
+              title={t('editor.undo_transfer_hint')}
+              data-testid="editor-undo-transfer"
+              onClick={() => void onUndoTransfer()}
+            >
+              {t('editor.undo_transfer')}
             </button>
           )}
           {transaction.status === 'scheduled' && (

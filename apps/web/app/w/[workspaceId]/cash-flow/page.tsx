@@ -151,6 +151,8 @@ export default async function CashFlowPage({
     const n = await load((api) => api.getNetWorth(workspaceId, { months: 12, entityId: sp.entityId }));
     // CUR-06: shown only when some account is in a currency other than its books'.
     const fx = n.accounts.some((a) => a.unrealizedFx !== null);
+    // ADR-0010 §7: shown only when some account's books are in a currency other than the base.
+    const cta = n.accounts.some((a) => a.translationAdjustment !== null);
     body = (
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
@@ -163,6 +165,12 @@ export default async function CashFlowPage({
               <div className="mt-1 text-xs text-muted" data-testid="net-worth-unrealized-fx">
                 <span title={t('flow.unrealized_fx_hint')}>{t('flow.unrealized_fx')}</span>{' '}
                 <Money amount={n.unrealizedFx} currency={n.currency} signed />
+              </div>
+            )}
+            {cta && (
+              <div className="mt-1 text-xs text-muted" data-testid="net-worth-translation-adjustment">
+                <span title={t('flow.translation_adjustment_hint')}>{t('flow.translation_adjustment')}</span>{' '}
+                <Money amount={n.translationAdjustment} currency={n.currency} signed />
               </div>
             )}
           </div>
@@ -209,6 +217,15 @@ export default async function CashFlowPage({
                     {t('flow.unrealized_fx')}
                   </th>
                 )}
+                {cta && (
+                  <th
+                    scope="col"
+                    className="px-4 py-2 text-right"
+                    title={t('flow.translation_adjustment_hint')}
+                  >
+                    {t('flow.translation_adjustment')}
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -235,6 +252,15 @@ export default async function CashFlowPage({
                       )}
                     </td>
                   )}
+                  {cta && (
+                    <td className="px-4 py-2 text-right">
+                      {a.translationAdjustment === null ? (
+                        <span className="text-muted">—</span>
+                      ) : (
+                        <Money amount={a.translationAdjustment} currency={n.currency} signed />
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
               {n.properties.map((p) => (
@@ -253,6 +279,7 @@ export default async function CashFlowPage({
                     <Money amount={p.value} currency={n.currency} />
                   </td>
                   {fx && <td className="px-4 py-2" />}
+                  {cta && <td className="px-4 py-2" />}
                 </tr>
               ))}
             </tbody>

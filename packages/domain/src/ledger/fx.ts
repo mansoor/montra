@@ -2,6 +2,7 @@
  * FX valuation rules for foreign-currency accounts (ADR-0010, design 04 §2.2, CUR-06/07/08). Pure bigint
  * arithmetic in minor units; the builders in `builder.ts` apply it to postings.
  */
+import type { CalendarDate } from '../calendar-date.js';
 import { minorUnits, type CurrencyCode } from '../currency.js';
 import type { Decimal } from '../decimal.js';
 import { convert, type Money } from '../money.js';
@@ -80,6 +81,110 @@ export function unrealizedFxIn(
   if (functionalCurrency === reportCurrency) return gain;
   if (!toReport) return null;
   return convert({ amount: gain, currency: functionalCurrency }, reportCurrency, toReport).amount;
+}
+
+/** A change in a set of books' net assets, in its functional currency, with the rate to the report currency that day. */
+export interface TranslatedMovement {
+  readonly amount: bigint;
+  /** Report-currency units per one functional unit on the movement's date; null when there is none. */
+  readonly rate: Decimal | null;
+}
+
+/**
+ * Translation adjustment (ADR-0010 §7; IAS 21 ¶39–41, ASC 830-30): what translating a set of books kept in another
+ * functional currency produces, in the report currency, beyond its own figures.
+ *
+ * Net assets are translated at the closing rate; what was there at the start counts at `opening.translated`, and each
+ * movement since (income, expense, money in or out) at its own date's rate. The adjustment is
+ *
+ *   closing-rate net assets − (opening translated net assets + movements at their rates)
+ *
+ * With `opening.translated` the opening net assets at the opening closing rate, this is the period's adjustment
+ * (other comprehensive income). With the opening at zero and every movement since the books began, or with
+ * `opening.translated` the opening net assets at their own historical rates, it is the cumulative adjustment shown on
+ * a balance sheet. It is shown, never posted.
+ *
+ * Zero when the books are in the report currency. Null when a rate it needs is missing (a movement or opening of
+ * zero needs none), so the caller leaves it out instead of guessing.
+ */
+export function translationAdjustment(
+  functionalCurrency: CurrencyCode,
+  reportCurrency: CurrencyCode,
+  opening: { readonly netAssets: bigint; readonly translated: bigint },
+  movements: readonly TranslatedMovement[],
+  closingRate: Decimal | null,
+): bigint | null {
+  if (functionalCurrency === reportCurrency) return 0n;
+  const atRates = translateMovements(functionalCurrency, reportCurrency, movements);
+  if (atRates === null) return null;
+  const netAssets = movements.reduce((t, m) => t + m.amount, opening.netAssets);
+  const translated = opening.translated + atRates;
+  if (netAssets === 0n) return -translated;
+  if (!closingRate) return null;
+  return (
+    convert({ amount: netAssets, currency: functionalCurrency }, reportCurrency, closingRate).amount -
+    translated
+  );
+}
+
+/** Movements each translated at their own date's rate and summed; null when one that isn't zero has no rate. */
+function translateMovements(
+  functionalCurrency: CurrencyCode,
+  reportCurrency: CurrencyCode,
+  movements: readonly TranslatedMovement[],
+): bigint | null {
+  let total = 0n;
+  for (const m of movements) {
+    if (m.amount === 0n) continue;
+    if (!m.rate) return null;
+    total += convert({ amount: m.amount, currency: functionalCurrency }, reportCurrency, m.rate).amount;
+  }
+  return total;
+}
+
+/**
+ * The cumulative translation adjustment at each of `dates` (ADR-0010 §7), for one set of books or one account in
+ * them: `movements` are its net changes in the functional currency since it began (one per day is enough), `rate`
+ * the functional → report rate on a day. Walks the history once, rolling each date's adjustment forward from the one
+ * before with `translationAdjustment`, the opening counted at its historical rates. A date after a movement without
+ * a rate is null, and so is a date without a closing rate while anything is held.
+ */
+export function translationAdjustments(
+  functionalCurrency: CurrencyCode,
+  reportCurrency: CurrencyCode,
+  movements: readonly { readonly date: CalendarDate; readonly amount: bigint }[],
+  dates: readonly CalendarDate[],
+  rate: (date: CalendarDate) => Decimal | null,
+): Map<CalendarDate, bigint | null> {
+  const out = new Map<CalendarDate, bigint | null>();
+  const sorted = [...movements].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let i = 0;
+  let netAssets = 0n;
+  let translated: bigint | null = 0n;
+  for (const d of [...new Set(dates)].sort()) {
+    const period: TranslatedMovement[] = [];
+    for (; i < sorted.length && sorted[i]!.date <= d; i++) {
+      const m = sorted[i]!;
+      if (m.amount !== 0n) period.push({ amount: m.amount, rate: rate(m.date) });
+    }
+    out.set(
+      d,
+      translated === null
+        ? null
+        : translationAdjustment(
+            functionalCurrency,
+            reportCurrency,
+            { netAssets, translated },
+            period,
+            rate(d),
+          ),
+    );
+    const atRates: bigint | null =
+      translated === null ? null : translateMovements(functionalCurrency, reportCurrency, period);
+    translated = translated === null || atRates === null ? null : translated + atRates;
+    netAssets = period.reduce((t, m) => t + m.amount, netAssets);
+  }
+  return out;
 }
 
 /**

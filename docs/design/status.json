@@ -56,6 +56,10 @@
     "done",
     "Personal template in chart-templates.ts (Health, Home, Transportation and Taxes groups, insurance split, more income); migration 0042 (replaced in 0046 for the Health group) adds the missing groups and categories once to existing personal books and renames Fuel & transport and Gifts & donations (app.add_personal_categories)"
   ],
+  "ACC-14": [
+    "done",
+    "GET accounts/:id/deletion says what stops a delete and how many transactions in the Trash go with it (trashedTransactions); DELETE accounts/:id (owners and admins, recent sign-in) removes an empty account with its opening-balance entry, values that posted nothing, loan details, import mapping and statement memory in one transaction. Its transactions in the Trash go too, for good, when they touch only it and categories; still blocking, each with its reason: a trashed transfer to another account, a trashed transaction with a receipt (a tax record), one in closed or reconciled books, and a legal hold. Otherwise 409 with the reason (account.not_empty, account.opening_locked for closed books, account.legal_hold); audit entry account.deleted with the count; the sync pull sends removedAccounts and the phone drops them; web Settings > Accounts has Delete beside Archive, and its confirm names the transactions in the Trash"
+  ],
   "TXN-01": [
     "done",
     "web and mobile quick add; the pipeline (rules, history, AI) suggests or applies the category"
@@ -70,7 +74,7 @@
   ],
   "TXN-04": [
     "done",
-    ""
+    "transfers post as one entry; a detected pair is made one in Review, by hand, or by the import itself when it's sure enough (a workspace setting, default 95%, can be off); each can be undone from the transaction"
   ],
   "TXN-05": [
     "done",
@@ -158,7 +162,7 @@
   ],
   "CUR-01": [
     "done",
-    "entity functional currency"
+    "entity functional currency. Net worth translates books in another currency at each date's rate and shows the translation adjustment (ADR-0010 §7) in total, per account and on the net worth report; it is not booked"
   ],
   "CUR-02": [
     "done",
@@ -342,7 +346,7 @@
   ],
   "NFR-07": [
     "partial",
-    "dashboard p95 1.0 s on 50k transactions in a local browser, and a CI budget on the API. k6 scripts exist; a 5,000-row parse took 5.7 to 9.0 s locally, close to the 10 s limit. Not measured on real infrastructure"
+    "dashboard p95 1.0 s on 50k transactions in a local browser, and a CI budget on the API. k6 scripts exist. A realistic 5,000-row parse now takes 3.6 to 6.0 s locally (it took 9.0 to 10.7 s), with the 10 s limit checked in CI by perf-parse. Not measured on real infrastructure"
   ],
   "AIA-01": [
     "done",
@@ -393,12 +397,12 @@
     "pipeline on every import row and manual entry"
   ],
   "AI-02": [
-    "partial",
-    "category, entity (via category) and member. Property and unit are tagged by hand, or by rent, mortgage and capital improvement links; AI does not suggest them yet"
+    "done",
+    "category, entity (via category) and member; in rental books also the property and unit, by rule, payee history, an address or unit in the text, then AI. Applied at the property threshold (a setting), otherwise offered in Review; accepted and chosen ones are learned. Links and properties set by hand are never replaced"
   ],
   "AI-03": [
     "done",
-    "thresholds on calibrated confidence (review 80%, AI 95%); auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
+    "thresholds on calibrated confidence (review 80%, AI 95%, transfer pairs made at import 95%); auto-apply vs review queue; statements and bills that can't be filed automatically wait in Review on web and phone (ADR-0051)"
   ],
   "AI-04": [
     "done",
@@ -562,7 +566,7 @@
   ],
   "RCP-10": [
     "done",
-    "receipts and their files kept 7 years by default (FILE_RETENTION_YEARS). Past their date they are listed for the workspace owners, who are told once; nothing is deleted until an owner approves the listed items on the web (recent sign-in) or keeps them longer. Then the job removes the receipt with its lines and extracted text, and its files; the matched transaction stays; a legal hold blocks it even after approval; the vault keeps its own copy. Search over merchant and OCR/extracted text (tsvector)"
+    "business and rental receipts and their files kept 7 years by default (FILE_RETENTION_YEARS). Personal receipts have no minimum (owner, 2026-11-23; PERSONAL_RECEIPT_RETENTION_YEARS, default 0): kept while not deleted, never listed for approval, and in the Trash for 30 days like a transaction (migration 0088 cleared the old dates). A receipt is personal when its books, its lines' books and its matched transaction's books are all personal. Past their date, business receipts are listed for the workspace owners, who are told once; nothing is deleted until an owner approves the listed items on the web (recent sign-in) or keeps them longer. Then the job removes the receipt with its lines and extracted text, and its files; the matched transaction stays; a legal hold blocks it even after approval; the vault keeps its own copy. An owner or admin can delete a matched receipt (recent sign-in): it is unlinked, its transaction stays as it is, and it comes back unmatched if restored. Search over merchant and OCR/extracted text (tsvector)"
   ],
   "RCP-11": [
     "done",
@@ -966,7 +970,7 @@
   ],
   "RPT-05": [
     "done",
-    "payees, descriptions, notes, amounts, tags and receipt OCR text. Notes are decrypted in the API, for the latest 5,000 with a note. Receipts are left out when a query has an amount or tag"
+    "payees, descriptions, notes, amounts, tags and receipt OCR text. Notes are decrypted in the API, for the latest 5,000 with a note. Receipts are left out when a query has an amount or tag. The web Transactions, Review and Receipts lists open on the last 90 days and filter by merchant, amount range, money in or out, account and category, kept in the URL. The phone lists have no filters yet"
   ],
   "RPT-06": [
     "done",
@@ -998,7 +1002,7 @@
   ],
   "NFR-06": [
     "done",
-    "backup with JSON, CSV, Excel and files at any time; a deleted account is purged inside 30 days by an hourly job"
+    "backup with JSON, CSV, Excel and files at any time; a deleted account is purged inside 30 days by an hourly job. A legal hold keeps it, and its workspaces, until the hold is lifted: logged once and shown in the staff console"
   ],
   "BAK-04": [
     "done",
@@ -1010,15 +1014,15 @@
   ],
   "BAK-06": [
     "done",
-    "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions and receipts for 30 days. Restore is web only. ADR-0054 PR 5b2: a file the archive didn't hold (Montra no longer had it when the archive was made) is restored as missing with the reason, listed in Review's Files to provide again, instead of pointing at nothing"
+    "preview then confirm, into a new workspace or as added books in an existing one, in one transaction with a balance check; trash keeps transactions, tax forms and personal receipts for 30 days; a business or rental receipt is a tax record, kept and restorable until its retention date, then an owner decides (RCP-10), and the Trash shows that date. Delete forever (migration 0088): owners and admins with a recent sign-in remove one item that would go after 30 days now, or Empty Trash removes all of them, with the hourly job's cleanup (files and stored bytes); refused under a legal hold and in closed or reconciled books; each is audited. Restore and Delete forever are web only (the Trash page, and a Trash tab on Receipts). ADR-0054 PR 5b2: a file the archive didn't hold (Montra no longer had it when the archive was made) is restored as missing with the reason, listed in Review's Files to provide again, instead of pointing at nothing"
   ],
   "BAK-08": [
     "partial",
-    "quota per plan, 5 or 50 GB, with a usage meter. The phone compresses receipt photos; web uploads aren’t compressed and there’s no choice to keep an original. A file held only in the household's Family Document Vault (ADR-0054 §5) doesn't count against the quota or the meter; provided again, it does"
+    "quota per plan, 5 or 50 GB, with a usage meter that counts the bytes stored. Photos are compressed before upload on the web and the phone, the same way: JPEG, long edge 2,000 px, quality 80 stepping down to 60 while over about 1 MB. The limits are API settings (PHOTO_*). PDFs and other files are never re-encoded. Keeping originals is a per-person choice in Profile, off by default; the web's receipt upload also asks each time. Re-encoding applies the EXIF orientation and drops location. Not yet tried on a real phone or in a real browser, only in unit tests. A file held only in the household's Family Document Vault (ADR-0054 §5) doesn't count against the quota or the meter; provided again, it does"
   ],
   "BAK-09": [
     "partial",
-    "purge job for deleted accounts, trash and retention dates, receipts included once an owner approves (RCP-10). Ageing out of backups is in Terraform, and BAK-01’s 12-month snapshots conflict with it"
+    "purge job for deleted accounts, trash and retention dates, receipts included once an owner approves (RCP-10). A legal hold keeps a closing account and its workspaces. Ageing out of backups is in Terraform, and BAK-01’s 12-month snapshots conflict with it"
   ],
   "OPS-10": [
     "partial",

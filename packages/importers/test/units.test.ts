@@ -18,6 +18,8 @@ import {
   payeeKeyFor,
   parseDate,
   readXlsx,
+  similarity,
+  similarityCache,
   type DedupeInputRow,
 } from '../src/index.js';
 
@@ -117,6 +119,17 @@ describe('payees (IMP-10)', () => {
     expect(matchMerchant('BLUE BOTTLE', refs)?.id).toBe('bluebottle');
     expect(matchMerchant('TRADER JOE', refs)?.id).toBe('tj');
     expect(matchMerchant('WALGREENS', refs)).toBeNull();
+    // Each merchant's trigrams are kept between calls, and rebuilt when its key changes.
+    refs[1]!.matchKey = 'WALGREENZ';
+    expect(matchMerchant('WALGREENS', refs)?.id).toBe('tj');
+    expect(matchMerchant('TRADER JOE', refs)).toBeNull();
+  });
+
+  it('compares texts the same way with remembered trigrams', () => {
+    const word = fc.stringMatching(/^[A-Z&]{1,8}$/);
+    const text = fc.array(word, { maxLength: 4 }).map((w) => w.join(' '));
+    const cached = similarityCache();
+    fc.assert(fc.property(text, text, (a, b) => cached(a, b) === similarity(a, b)));
   });
 
   // Payment and transfer lines lose their meaning in the key ("ONLINE PAYMENT TO CARD XXXX4321" → "TO"), so the

@@ -209,6 +209,11 @@ export function ImportWizard({
               </div>
             ))}
           </dl>
+          {batch.status === 'committed' && batch.counts.transfers > 0 && (
+            <p className="text-sm" data-testid="summary-transfers">
+              {t('imports.summary.transfers', { count: batch.counts.transfers })}
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <Link href={`${base}/accounts/${batch.accountId}`} className="btn-primary">
               {t('imports.summary.view_transactions')}
@@ -236,6 +241,11 @@ export function ImportWizard({
                 <p className="text-sm">
                   {t('imports.undo.result', { voided: undo.voided, restored: undo.restored })}
                 </p>
+                {(undo.transfers ?? 0) > 0 && (
+                  <p className="text-sm" data-testid="undo-transfers">
+                    {t('imports.undo.transfers', { count: undo.transfers ?? 0 })}
+                  </p>
+                )}
                 {undo.kept.length > 0 && (
                   <ul className="list-disc space-y-1 pl-5 text-sm">
                     {undo.kept.map((k) => (

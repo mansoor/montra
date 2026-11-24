@@ -8,6 +8,16 @@ export {
   type TransferSuggestion,
 } from './transfers.js';
 export { runPipeline } from './pipeline.js';
+export {
+  ADDRESS_CONFIDENCE,
+  NAME_CONFIDENCE,
+  UNIT_ONLY_CONFIDENCE,
+  addressKey,
+  propertyFromText,
+  propertyHistorySuggestion,
+  unitFromText,
+  type PropertyHint,
+} from './property.js';
 export { proposeRuleFromCorrections } from './learning.js';
 export { detectRecurring } from './recurring.js';
 export { detectAnomalies, type AnomalyInput, type AnomalyTxn } from './anomalies.js';

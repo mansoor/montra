@@ -4,10 +4,15 @@ import type { ReceiptListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { STATUS_CHIP, stalledReasons } from '@/lib/receipts';
+import { isAdminRole } from '@/lib/settings';
+import { receiptsInTrash } from '@/lib/trash';
+import { TrashList } from '@/components/trash-list';
 import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 import { ReceiptRecommendations } from '@/components/receipts/recommendations';
 import { OrderImport } from '@/components/receipts/order-import';
-import { ReceiptAmount, ReceiptDate } from '@/components/receipts/receipt-cells';
+import { ReceiptList } from '@/components/receipts/receipt-list';
+import { ListFilterBar } from '@/components/list-filter-bar';
+import { FILTER_PARAMS, listApiQuery, parseListFilters } from '@/lib/list-filters';
 
 export const metadata: Metadata = { title: 'Receipts' };
 export const dynamic = 'force-dynamic';
@@ -26,22 +31,41 @@ export default async function ReceiptsPage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ tab?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const { workspaceId } = await params;
   const sp = await searchParams;
   const tab: TabKey = sp.tab && sp.tab in TABS ? (sp.tab as TabKey) : sp.q ? 'all' : 'inbox';
+  // Deleted receipts: restore, or delete a personal one for good (BAK-06, RCP-10).
+  const inTrash = sp.tab === 'trash';
   const q = sp.q?.trim() || undefined;
-  const [page, recommended, reading] = await load((api) =>
+  const { filters } = parseListFilters(sp);
+  const { t, locale } = await getI18n();
+  const workspace = await load((api) => api.getWorkspace(workspaceId));
+  // Receipts have no money in or out: a return is a negative total on the same kind of receipt.
+  const narrow = listApiQuery(
+    { ...filters, dir: undefined },
+    {
+      timeZone: workspace.timeZone,
+      currency: workspace.baseCurrency,
+      locale,
+    },
+  );
+  // What every page of the list is asked for with; "Load more" sends it again with the cursor.
+  const query: ReceiptListOptions = { ...TABS[tab].query, ...(q ? { q } : {}), ...narrow, limit: 100 };
+  const [page, recommended, reading, trash] = await load((api) =>
     Promise.all([
-      api.listReceipts(workspaceId, { ...TABS[tab].query, ...(q ? { q } : {}), limit: 100 }),
+      api.listReceipts(workspaceId, query),
       api.listReceiptRecommendations(workspaceId),
       // Receipts still being read aren't in any tab but All, so they're listed above the tabs.
       api.listReceipts(workspaceId, { status: 'processing', limit: 100 }),
+      inTrash ? api.listTrash(workspaceId) : Promise.resolve(null),
     ]),
   );
-  const { t } = await getI18n();
   const base = `/w/${workspaceId}/receipts`;
+  // The tabs and the search keep the filters.
+  const kept: Record<string, string> = {};
+  for (const k of FILTER_PARAMS) if (sp[k]) kept[k] = sp[k];
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -104,15 +128,27 @@ export default async function ReceiptsPage({
             {(Object.keys(TABS) as TabKey[]).map((k) => (
               <Link
                 key={k}
-                href={`${base}?tab=${k}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
-                aria-current={k === tab ? 'page' : undefined}
-                className={`rounded-md px-2 py-1 text-sm ${k === tab ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
+                href={`${base}?${new URLSearchParams({ ...kept, tab: k, ...(q ? { q } : {}) }).toString()}`}
+                aria-current={k === tab && !inTrash ? 'page' : undefined}
+                className={`rounded-md px-2 py-1 text-sm ${k === tab && !inTrash ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
               >
                 {t(TABS[k].label)}
               </Link>
             ))}
+            <Link
+              href={`${base}?tab=trash`}
+              aria-current={inTrash ? 'page' : undefined}
+              className={`rounded-md px-2 py-1 text-sm ${inTrash ? 'bg-brand-50 font-medium text-brand-700' : 'text-muted'}`}
+              data-testid="receipts-trash-tab"
+            >
+              {t('receipts.tab.trash')}
+            </Link>
           </nav>
           <form action={base} className="ml-auto flex gap-2" role="search">
+            {/* The search keeps the tab and the filters. */}
+            {Object.entries({ ...kept, ...(sp.tab ? { tab } : {}) }).map(([k, v]) => (
+              <input key={k} type="hidden" name={k} value={v} />
+            ))}
             <input
               className="input"
               type="search"
@@ -126,43 +162,24 @@ export default async function ReceiptsPage({
             </button>
           </form>
         </div>
-        {page.data.length === 0 ? (
-          <p className="text-sm text-muted">{t('receipts.empty')}</p>
+        {trash ? (
+          <TrashList
+            workspaceId={workspaceId}
+            items={receiptsInTrash(trash)}
+            canDelete={isAdminRole(workspace.role)}
+            showDate
+            showEmpty={false}
+          />
         ) : (
-          <table className="tbl text-sm">
-            <thead className="text-left text-muted">
-              <tr>
-                <th className="py-1">{t('receipts.date')}</th>
-                <th className="py-1">{t('receipts.merchant')}</th>
-                <th className="py-1 text-right">{t('receipts.total')}</th>
-                <th className="py-1">{t('receipts.status_col')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {page.data.map((r) => (
-                <tr key={r.id} data-testid="receipt-row">
-                  <td className="py-2">
-                    <ReceiptDate receipt={r} />
-                  </td>
-                  <td className="py-2">
-                    <Link href={`${base}/${r.id}`} className="font-medium underline">
-                      {r.merchant ?? t('receipts.unknown_merchant')}
-                    </Link>
-                    {r.orderRef && <span className="ml-2 text-xs text-muted">{r.orderRef}</span>}
-                  </td>
-                  <td className="py-2 text-right">
-                    <ReceiptAmount receipt={r} />
-                  </td>
-                  <td className="py-2">
-                    <span className={STATUS_CHIP[r.status]}>{t(`receipts.status.${r.status}`)}</span>
-                    {r.likelyDuplicates.length > 0 && (
-                      <span className="chip chip-warn ml-1">{t('receipts.likely_duplicate')}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <ListFilterBar screen="receipts" workspace={workspace} />
+            <ReceiptList
+              workspaceId={workspaceId}
+              first={page.data}
+              nextCursor={page.nextCursor}
+              query={query}
+            />
+          </>
         )}
       </section>
     </div>

@@ -241,6 +241,7 @@ import type {
   TransferFxQuery,
   MakeTransferDto,
   MakeTransferRequest,
+  UndoTransferDto,
   CreateWorkspaceRequest,
   EntityGrant,
   FamilyMemberDto,
@@ -359,6 +360,7 @@ import type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  EmptyTrashResultDto,
   RetentionItemDto,
   RetentionItemRef,
   RetentionItemsRequest,
@@ -366,6 +368,7 @@ import type {
   RetentionReviewDto,
   UpdateNotificationPrefsRequest,
   AccountMovePreviewDto,
+  AccountDeletionDto,
   BusinessDashboardDto,
   BusinessLogoDto,
   ConnectStorageRequest,
@@ -703,10 +706,21 @@ export type UpdateEmployerInput = z.input<typeof UpdateEmployerRequest>;
 export type CreatePayslipInput = z.input<typeof CreatePayslipRequest>;
 export type UpdatePayslipInput = z.input<typeof UpdatePayslipRequest>;
 export type ConfirmPayslipInput = z.input<typeof ConfirmPayslipRequest>;
-export interface ReceiptListOptions {
+/**
+ * The filters the web lists share: words of the merchant or payee, and an amount range in minor units of the workspace
+ * currency, compared without the sign.
+ */
+export interface ListFilterOptions {
+  merchant?: string;
+  amountMin?: string;
+  amountMax?: string;
+}
+
+export interface ReceiptListOptions extends ListFilterOptions {
   status?: ReceiptDto['status'];
   /** RCP-10: search merchant and receipt text. */
   q?: string;
+  /** The receipt's date, or the day it arrived while it has none. */
   from?: string;
   to?: string;
   cursor?: string;
@@ -714,7 +728,11 @@ export interface ReceiptListOptions {
 }
 export type TripInputValue = z.input<typeof TripInput>;
 
-export interface ReviewListOptions {
+export interface ReviewListOptions extends ListFilterOptions {
+  from?: string;
+  to?: string;
+  /** Money in or out; transfers are neither. */
+  direction?: 'in' | 'out';
   entityId?: string;
   minConfidence?: number;
   cursor?: string;
@@ -842,7 +860,9 @@ export interface ChangesResponse {
   hasMore: boolean;
 }
 
-export interface TransactionListOptions {
+export interface TransactionListOptions extends ListFilterOptions {
+  /** Money in or out; transfers are neither. */
+  direction?: 'in' | 'out';
   from?: string;
   to?: string;
   limit?: number;
@@ -863,6 +883,8 @@ export interface TransactionListOptions {
   accountIds?: string[];
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
   trash?: boolean;
+  /** The next page: `nextCursor` from the page before, with the same filters. */
+  cursor?: string;
 }
 
 // ----- Planning (Phase 6) inputs ----------------------------------------------------------------------------
@@ -1350,6 +1372,17 @@ export class ApiClient {
   updateAccount(workspaceId: string, accountId: string, input: UpdateAccountInput) {
     return this.request<AccountDto>('PATCH', this.ws(workspaceId, `/accounts/${enc(accountId)}`), input);
   }
+  /** ACC-14: whether an account added by mistake can be deleted, and what stops it. */
+  accountDeletion(workspaceId: string, accountId: string) {
+    return this.request<AccountDeletionDto>(
+      'GET',
+      this.ws(workspaceId, `/accounts/${enc(accountId)}/deletion`),
+    );
+  }
+  /** ACC-14: deletes an empty account. 409 with the reason when it has history; 403 reauth.required for step-up. */
+  deleteAccount(workspaceId: string, accountId: string) {
+    return this.request<AccountDeletionDto>('DELETE', this.ws(workspaceId, `/accounts/${enc(accountId)}`));
+  }
   /** ADR-0033: what moving the account to other books would do; nothing changes. */
   previewAccountMove(workspaceId: string, accountId: string, entityId: string) {
     return this.request<AccountMovePreviewDto>(
@@ -1452,7 +1485,11 @@ export class ApiClient {
 
   // ----- Transactions --------------------------------------------------------------------------------------
   listTransactions(workspaceId: string, opts: TransactionListOptions = {}) {
-    return this.request<{ data: TransactionDto[] }>(
+    return this.listTransactionsPage(workspaceId, opts).then((r) => r.data);
+  }
+  /** One page, newest first; pass `nextCursor` back as `cursor`, with the same filters, for the next. */
+  listTransactionsPage(workspaceId: string, opts: TransactionListOptions = {}) {
+    return this.request<{ data: TransactionDto[]; nextCursor: string | null }>(
       'GET',
       this.ws(
         workspaceId,
@@ -1463,7 +1500,7 @@ export class ApiClient {
           trash: opts.trash ? 'true' : undefined,
         })}`,
       ),
-    ).then((r) => r.data);
+    ).then((r) => ({ data: r.data, nextCursor: r.nextCursor ?? null }));
   }
   getTransaction(workspaceId: string, id: string) {
     return this.request<TransactionDto>('GET', this.ws(workspaceId, `/transactions/${enc(id)}`));
@@ -1488,6 +1525,13 @@ export class ApiClient {
       'POST',
       this.ws(workspaceId, `/transactions/${enc(id)}/make-transfer`),
       input,
+    );
+  }
+  /** Takes a transfer made from a plain transaction apart again: both sides come back as they were. */
+  undoTransfer(workspaceId: string, id: string) {
+    return this.request<UndoTransferDto>(
+      'POST',
+      this.ws(workspaceId, `/transactions/${enc(id)}/undo-transfer`),
     );
   }
   /** Edits with optimistic concurrency; a stale `version` fails with ApiError code `version.mismatch` (412). */
@@ -2630,6 +2674,14 @@ export class ApiClient {
   restoreFromTrash(workspaceId: string, kind: TrashItemDto['kind'], id: string) {
     return this.request<void>('POST', this.ws(workspaceId, `/trash/${enc(kind)}/${enc(id)}/restore`));
   }
+  /** Deletes one Trash item for good, now (owners and admins, recent sign-in). Receipts kept as tax records can't. */
+  deleteFromTrash(workspaceId: string, kind: TrashItemDto['kind'], id: string) {
+    return this.request<void>('DELETE', this.ws(workspaceId, `/trash/${enc(kind)}/${enc(id)}`));
+  }
+  /** Deletes for good everything in the Trash that would go after 30 days. */
+  emptyTrash(workspaceId: string) {
+    return this.request<EmptyTrashResultDto>('POST', this.ws(workspaceId, '/trash/empty'));
+  }
   getStorageUsage(workspaceId: string) {
     return this.request<StorageUsageDto>('GET', this.ws(workspaceId, '/storage'));
   }
@@ -2948,8 +3000,15 @@ export class ApiClient {
   rejectReceipt(workspaceId: string, id: string) {
     return this.request<ReceiptDto>('POST', this.ws(workspaceId, `/receipts/${enc(id)}/reject`));
   }
-  deleteReceipt(workspaceId: string, id: string) {
-    return this.request<void>('DELETE', this.ws(workspaceId, `/receipts/${enc(id)}`));
+  /**
+   * To the Trash. A matched receipt needs `unlink` (owners and admins, recent sign-in): it is unlinked first and its
+   * transaction stays exactly as it is.
+   */
+  deleteReceipt(workspaceId: string, id: string, opts: { unlink?: boolean } = {}) {
+    return this.request<void>(
+      'DELETE',
+      this.ws(workspaceId, `/receipts/${enc(id)}${opts.unlink ? '?unlink=true' : ''}`),
+    );
   }
 
   // ----- Budgets, goals and money flow (Phase 6) ------------------------------------------------------------
@@ -3665,6 +3724,7 @@ export type {
   SecurityEventDto,
   StorageUsageDto,
   TrashItemDto,
+  EmptyTrashResultDto,
   RetentionItemDto,
   RetentionItemRef,
   RetentionItemsRequest,
@@ -3700,6 +3760,7 @@ export type {
   TenantLeaseDto,
   BillDto,
   AccountMovePreviewDto,
+  AccountDeletionDto,
   BusinessDashboardDto,
   BusinessLogoDto,
   BusinessProfileDto,

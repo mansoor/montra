@@ -191,8 +191,8 @@ describe('the Walmart receipt (Phase 5 exit criterion 1, requirements §3.5)', (
     expect((await c.get(url(`/transactions/${other.id}`))).body.receipt).toBeNull();
   });
 
-  it('keeps the image 7 years and serves it to the review screen (RCP-06, RCP-10)', async () => {
-    expect(receipt.retainUntil.slice(0, 4)).toBe(String(new Date().getUTCFullYear() + 7));
+  it('keeps a personal receipt with no minimum date and serves its image to the review screen (RCP-06, RCP-10)', async () => {
+    expect(receipt.retainUntil).toBeNull(); // owner, 2026-11-23: personal receipts have no minimum retention
     const res = await h.app.inject({
       method: 'GET',
       url: url(`/receipts/${receipt.id}/files/${receipt.fileIds[0]}`),

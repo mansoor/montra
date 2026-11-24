@@ -4,6 +4,7 @@ import type {
   AccountDto,
   AiTaskDto,
   InsightDto,
+  PropertyDto,
   QuickAddDraftDto,
   ReviewItemDto,
   RuleDto,
@@ -29,8 +30,12 @@ import {
   countAtOrAbove,
   goSequence,
   madeTransferMessage,
+  parsePropertyPick,
   reviewBadgeTotal,
   percent,
+  propertyLabel,
+  propertyOptions,
+  proposedProperty,
   removeItems,
   reviewCommand,
   suggestedCategoryId,
@@ -200,6 +205,8 @@ const item = (id: string, confidence: number | null, categoryId: string | null =
   entityId: 'e1',
   categoryId: 'uncat',
   memberId: null,
+  propertyId: null,
+  unitId: null,
   categorization:
     confidence === null
       ? null
@@ -298,10 +305,67 @@ describe('review queue (AI-03/04, PLT-10)', () => {
     expect(reviewCommand({ key: 'a' })).toBe('accept');
     expect(reviewCommand({ key: 'A', shiftKey: true })).toBe('acceptAbove');
     expect(reviewCommand({ key: 'c' })).toBe('category');
+    expect(reviewCommand({ key: 'p' })).toBe('property');
     expect(reviewCommand({ key: '?' })).toBe('help');
     expect(reviewCommand({ key: 'a', editable: true })).toBeNull();
     expect(reviewCommand({ key: 'a', metaKey: true })).toBeNull();
     expect(reviewCommand({ key: 'Escape', editable: true })).toBe('close');
+  });
+
+  it('offers a suggested property only while none is on the line (AI-02)', () => {
+    const elm = {
+      id: 'p-elm',
+      entityId: 'e1',
+      name: 'Elm duplex',
+      archived: false,
+      units: [
+        { id: 'u-1a', label: '1A' },
+        { id: 'u-2b', label: '2B' },
+      ],
+    } as unknown as PropertyDto;
+    const oak = {
+      id: 'p-oak',
+      entityId: 'e1',
+      name: 'Oak',
+      archived: false,
+      units: [{ id: 'u-m', label: 'Main' }],
+    };
+    const other = { ...oak, id: 'p-x', entityId: 'e2', name: 'Elsewhere' };
+    const properties = [elm, oak, other] as unknown as PropertyDto[];
+    const base = item('1', 0.9);
+    const offered: ReviewItemDto = {
+      ...base,
+      categorization: {
+        ...base.categorization!,
+        property: {
+          propertyId: 'p-elm',
+          unitId: 'u-2b',
+          label: 'Elm duplex, 2B',
+          step: 'history',
+          confidence: 0.6,
+          explanation: 'Like 3 past transactions at Elm duplex, 2B',
+          applied: false,
+        },
+      },
+    };
+    expect(proposedProperty(offered)?.propertyId).toBe('p-elm');
+    expect(propertyLabel(offered, properties)).toBe('Elm duplex, 2B');
+    // On the line already (by hand or a lease): that one shows, nothing is offered.
+    const tagged = { ...offered, propertyId: 'p-oak', unitId: null };
+    expect(proposedProperty(tagged)).toBeNull();
+    expect(propertyLabel(tagged, properties)).toBe('Oak');
+    expect(propertyLabel(base, properties)).toBeNull();
+
+    expect(propertyOptions(properties, 'e1', 'No property').map((o) => [o.id, o.label])).toEqual([
+      ['', 'No property'],
+      ['p-elm', 'Elm duplex'],
+      ['p-elm/u-1a', 'Elm duplex, 1A'],
+      ['p-elm/u-2b', 'Elm duplex, 2B'],
+      ['p-oak', 'Oak'],
+    ]);
+    expect(parsePropertyPick('p-elm/u-2b')).toEqual({ propertyId: 'p-elm', unitId: 'u-2b' });
+    expect(parsePropertyPick('p-oak')).toEqual({ propertyId: 'p-oak', unitId: null });
+    expect(parsePropertyPick('')).toEqual({ propertyId: null, unitId: null });
   });
 
   it('keeps the cursor on the row that takes the handled one’s place', () => {

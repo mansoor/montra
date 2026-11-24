@@ -8,25 +8,28 @@ import { useState } from 'react';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Print from 'expo-print';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import type { TaxFormUploadDto } from '@montra/schemas';
+import type { PhotoUploadLimits, TaxFormUploadDto } from '@montra/schemas';
 import { t } from '../../src/i18n';
 import type { CapturedPage } from '../../src/features/scanner';
 import { localDay } from '../../src/features/statements';
 import { defaultTaxYear, scanUploads, showsTaxForms, uploadOutcome } from '../../src/features/tax-forms';
 import { useTaxFormsToCheck } from '../../src/features/use-tax-forms';
 import { removePage } from '../../src/receipts/files';
-import { useAbilities, useSession } from '../../src/session/SessionProvider';
+import { useAbilities, usePhotoSettings, useSession } from '../../src/session/SessionProvider';
 import { useSync } from '../../src/sync/SyncProvider';
 import { DocumentCapture } from '../../src/ui/DocumentCapture';
 import { NotAllowed } from '../../src/ui/NotAllowed';
 import { Banner, Body, Button, Card, Screen, Small } from '../../src/ui/components';
 
-/** The pages as one PDF: sized for OCR, as a statement's scan is. */
-async function combine(pages: readonly CapturedPage[]): Promise<string | null> {
+/** The pages as one PDF, each page at the width and quality photos upload at (BAK-08's settings). */
+async function combine(
+  pages: readonly CapturedPage[],
+  limits: Pick<PhotoUploadLimits, 'maxEdgePx' | 'quality'>,
+): Promise<string | null> {
   const images: string[] = [];
   for (const p of pages) {
-    const small = await ImageManipulator.manipulateAsync(p.uri, [{ resize: { width: 1800 } }], {
-      compress: 0.8,
+    const small = await ImageManipulator.manipulateAsync(p.uri, [{ resize: { width: limits.maxEdgePx } }], {
+      compress: limits.quality / 100,
       format: ImageManipulator.SaveFormat.JPEG,
       base64: true,
     });
@@ -44,6 +47,7 @@ export default function ScanTaxForm() {
   const { state: session, api } = useSession();
   const { state: sync } = useSync();
   const can = useAbilities();
+  const photos = usePhotoSettings();
   const badge = useTaxFormsToCheck();
   const ws = session.status === 'signed_in' ? session.workspace : null;
   const params = useLocalSearchParams<{ year?: string }>();
@@ -65,7 +69,7 @@ export default function ScanTaxForm() {
     const results: TaxFormUploadDto['files'] = [];
     let pdf: string | null = null;
     try {
-      pdf = plan.images.length ? await combine(plan.images) : null;
+      pdf = plan.images.length ? await combine(plan.images, photos) : null;
       if (pdf) {
         const up = await api.uploadTaxFormFile(
           ws.id,
