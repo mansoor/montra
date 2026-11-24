@@ -433,6 +433,8 @@ export const MonthSummaryDto = z.object({
   spent: MinorDto,
   /** income − spent. */
   left: MinorDto,
+  /** UP-05: the transactions behind money in and money out, as on Home. */
+  drill: z.object({ income: DrillDto, spent: DrillDto }),
   /** Share of income kept, whole percent; null without income. */
   keptPercent: z.number().int().nullable(),
   previous: z.object({ income: MinorDto, spent: MinorDto }).nullable(),

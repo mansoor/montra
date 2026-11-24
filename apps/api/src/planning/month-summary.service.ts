@@ -62,6 +62,7 @@ export class MonthSummaryService {
       const spend = cats.filter((c) => c.type === 'expense' && c.kind !== 'system');
       const names = new Map(cats.map((c) => [c.id, c.name]));
       const filter = memberId ? { memberId } : {};
+      const memberDrill = memberId ? { memberId } : {};
       const periods = [...before, month];
       const act = await this.data.activity(trx, ctx, entityId, periods, filter);
       const withheld = await this.data.payslipWithheld(trx, ctx, entityId, periods, filter);
@@ -185,6 +186,16 @@ export class MonthSummaryService {
         income: s(income),
         spent: s(spent),
         left: s(income - spent),
+        drill: {
+          income: { entityId, ...memberDrill, categoryIds: incomeIds, from: month.start, to: month.end },
+          spent: {
+            entityId,
+            ...memberDrill,
+            categoryIds: spend.map((c) => c.id),
+            from: month.start,
+            to: month.end,
+          },
+        },
         keptPercent: keptPercent(income, spent),
         previous: previous ? { income: s(previous.income), spent: s(previous.spent) } : null,
         usual: usual ? { income: s(usual.income), spent: s(usual.spent), months: usual.months } : null,

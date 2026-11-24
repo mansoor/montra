@@ -272,6 +272,10 @@
     "done",
     ""
   ],
+  "UP-05": [
+    "partial",
+    "On the web, the numbers on Home, Budget, Cash flow, Explore, Month in review, Reports, accounts, business and rental overviews and Goals lead to the transactions behind them, or say how they are worked out (forecast, net worth, 50/30/20, business money in and out, rental ratios). The full export is not plan-gated: every table as JSON lines and CSV, plus a workbook of transactions (with account, category and amounts in currency units) and accounts. Left: the budget's income actual, the rentals row for money on no property, and the net worth over time and receipt items reports have no drill-down; the phone screens weren't audited; and an export can't be taken while an account deletion is pending"
+  ],
   "UP-08": [
     "done",
     ""

@@ -149,7 +149,20 @@ export function BudgetView({
         <div className="card">
           <div className="text-xs font-semibold text-muted">{t('budget.spent')}</div>
           <div className="mt-1 font-display text-2xl font-semibold">
-            <Money amount={p.activity} currency={ccy} />
+            {/* UP-05: the transactions behind it, in every category of the budget. */}
+            <Link
+              href={drillHref(base, {
+                entityId: b.entityId,
+                ...(b.memberId ? { memberId: b.memberId } : {}),
+                categoryIds: allLines.map((l) => l.categoryId),
+                from: p.start,
+                to: p.end,
+              })}
+              className="hover:underline"
+              data-testid="budget-spent-drill"
+            >
+              <Money amount={p.activity} currency={ccy} />
+            </Link>
           </div>
           <div className="mt-0.5 text-xs text-muted">
             {t('budget.available')} <Money amount={p.available} currency={ccy} />
@@ -448,6 +461,7 @@ export function BudgetView({
             </div>
           ))}
         </div>
+        <p className="mt-3 text-xs text-muted">{t('budget.split_hint')}</p>
       </section>
       <p className="text-xs text-muted">
         <button type="button" className="underline" onClick={() => router.refresh()}>
