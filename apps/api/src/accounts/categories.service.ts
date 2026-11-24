@@ -120,6 +120,7 @@ export class CategoriesService {
         category_group_id?: string;
         sort_order?: number;
         archived_at?: Date | null;
+        education_expense_type?: CategoryDto['educationExpenseType'];
       } = {};
       if (req.name !== undefined && req.name !== current.name) {
         await this.checkName(trx, ctx, current.entityId, type, req.name, id);
@@ -136,6 +137,16 @@ export class CategoriesService {
         if (!req.archived)
           await this.checkName(trx, ctx, current.entityId, type, patch.name ?? current.name, id);
         patch.archived_at = req.archived ? new Date() : null;
+      }
+      // FAM-10: only spending can be an education expense.
+      const education = req.educationExpenseType;
+      if (education !== undefined && education !== (current.educationExpenseType ?? null)) {
+        if (education !== null && type !== 'expense')
+          throw unprocessable(
+            'category.education_type',
+            'Only a spending category can be marked as an education expense',
+          );
+        patch.education_expense_type = education;
       }
       if (Object.keys(patch).length === 0) return current;
       const res = await trx
@@ -162,6 +173,7 @@ export class CategoriesService {
         'a.name',
         'a.type',
         'a.tax_line_code',
+        'a.education_expense_type',
         'a.category_group_id',
         'a.archived_at',
         'a.system_role',
@@ -289,6 +301,7 @@ function toDto(r: {
   name: string;
   type: string;
   tax_line_code: string | null;
+  education_expense_type: CategoryDto['educationExpenseType'];
   category_group_id: string | null;
   archived_at: Date | null;
   system_role: string | null;
@@ -304,5 +317,6 @@ function toDto(r: {
     groupId: r.category_group_id,
     archived: r.archived_at !== null,
     fixed: r.system_role !== null,
+    educationExpenseType: r.education_expense_type ?? null,
   };
 }
