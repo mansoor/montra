@@ -389,8 +389,8 @@
     "ai_event log with input hash only; list and delete"
   ],
   "AIA-12": [
-    "partial",
-    "disclaimer component and strings; attached to tax outputs when those ship"
+    "done",
+    "every tax and money-advice output carries a not-advice line once: tax forms, Schedule C and E, business taxes and set-aside, mileage, assets, payroll, suggestions, month in review, debt payoff, insights; on the phone too; the tax package and tax report files say it inside"
   ],
   "AI-01": [
     "done",
@@ -465,8 +465,8 @@
     "provider failover in the gateway, metrics, alert rules and CloudWatch alarms as files. Never run, and no on-call yet"
   ],
   "NFR-14": [
-    "partial",
-    "disclaimer mechanism; tax helpers later"
+    "done",
+    "tax helpers carry the not-advice line on the web, the phone and in exported files; AI prompts and investment figures give no investment advice"
   ],
   "PLT-02": [
     "partial",

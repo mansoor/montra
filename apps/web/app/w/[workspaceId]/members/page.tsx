@@ -6,7 +6,7 @@ import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { educationView } from '@/lib/education';
 import { drillHref } from '@/lib/planning';
-import { Disclaimer } from '@/components/ai/shared';
+import { Disclaimer } from '@/components/ui/disclaimer';
 import { LineChart, ProgressBar } from '@/components/charts/line-chart';
 import { DateText } from '@/components/i18n';
 import { Money } from '@/components/money';

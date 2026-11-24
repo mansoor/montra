@@ -787,7 +787,10 @@ describe('the tax package (RPT-04, UP-10)', () => {
     );
     expect(names).not.toContain('reports/schedule-e.pdf');
     expect(zip.get('reports/pnl.pdf')!.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(zip.get('README.txt')!.toString()).toContain('tax advice');
+    // AIA-12, NFR-14: the package says it isn't tax advice, and so does Schedule C on its own.
+    expect(zip.get('README.txt')!.toString()).toContain("It isn't tax advice");
+    expect(zip.get('reports/schedule-c.csv')!.toString()).toContain('not tax advice');
+    expect(zip.get('reports/pnl.csv')!.toString()).not.toContain('tax advice');
     expect(zip.get('receipts.csv')!.toString()).toContain('Print Shop');
     const slip = names.find((n) => n.startsWith('receipts/') && n.endsWith('.png'))!;
     expect(zip.get(slip)!.equals(PNG)).toBe(true);

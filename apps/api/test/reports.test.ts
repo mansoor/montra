@@ -330,6 +330,16 @@ describe('exports (RPT-04)', () => {
     );
   });
 
+  it('ends a tax report file with the not-advice line, and only a tax report (AIA-12, NFR-14)', async () => {
+    const sc = await file('schedule-c', `to=${today}&entityId=${business}&format=csv`);
+    expect(sc.statusCode).toBe(200);
+    expect(
+      sc.body.endsWith('\r\n\r\n"For your records and your tax professional, not tax advice."\r\n'),
+    ).toBe(true);
+    const pnl = await file('pnl', `from=${lastMonth}&to=${today}&entityId=${personal}&format=csv`);
+    expect(pnl.body).not.toContain('tax advice');
+  });
+
   it('writes XLSX and PDF', async () => {
     const xlsx = await file('pnl', `from=${lastMonth}&to=${today}&entityId=${personal}&format=xlsx`);
     expect(xlsx.statusCode).toBe(200);

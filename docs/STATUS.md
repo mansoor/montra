@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10 · `v0.12.0-dev.1` Phase 11, then one `v0.12.0-dev.N` per merge since (latest `v0.12.0-dev.140`) |
 | **Pull requests**      | #1–#17 Phases 1–10, #18 Phase 11, then the work in §7g, up to #193. Each merged into `develop` with green CI                                                                                                                                                                                                                                                                        |
-| **Requirements**       | 350 IDs in total: **281 done, 55 partial**, 14 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
+| **Requirements**       | 350 IDs in total: **283 done, 53 partial**, 14 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
 | **Next**               | The owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                                                                                                 |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
@@ -244,7 +244,7 @@ finished:
 
 - **Finished by a later phase, as planned:**
   - AIA-01: a monthly summary and a budget recommendation by AI.
-  - AIA-12 and NFR-14: tax outputs, in Phase 8.
+  - ~~AIA-12 and NFR-14: tax outputs, in Phase 8.~~ Done: every tax and money-advice output carries the line (see §7g).
   - ~~AI-02: AI doesn't suggest a property or unit.~~ Done: the pipeline suggests the rental property and unit (see §7g).
   - PLT-03 and UP-07: mobile screens arrive with each feature phase.
   - AI-07: logos, via reference data.
@@ -2960,6 +2960,36 @@ Phase 11 leftovers:
     filter); e2e `receipts.spec.ts` finds a receipt by a word on it through the new field. Checked in a browser on
     the Frame check workspace: a word that matches nothing shows "No receipts match" with a chip, a matching word
     finds the receipt, and `?q=` opens as `?text=`.
+- **Not-advice lines on every tax and money-advice output** (AIA-12, NFR-14; no migration).
+  - Before: the shared line ("Informational only — not tax advice…") showed only on Insights and AI settings. Some
+    tax screens had their own notes, but the tax forms screens, the business and rental set-aside, mileage, pay runs,
+    suggestions, the month in review, debt payoff plans and every phone screen had none. A Schedule C or E downloaded
+    as CSV or XLSX didn't say it either.
+  - Now: one web component (`components/ui/disclaimer.tsx`) and one phone component (`Disclaimer` in
+    `src/ui/components.tsx`), with the two existing keys `disclaimer.tax` and `disclaimer.financial`. Each screen shows
+    it once, small, at the end. `recommendationDisclaimer` in `@montra/schemas` picks the tax line for a list of
+    suggestions with a tax set-aside or tax due date (REC-09, BIZ-09), and the financial one otherwise.
+  - Newly added, web: Tax forms (the year and one form); the business page, once for its set-aside and suggestions;
+    rental settings, under the set-aside; every suggestions list (home, Suggestions, business and rental pages);
+    Month in review; Goals, when a debt payoff plan shows; Mileage; a pay run; an asset.
+  - Newly added, phone: Tax forms (the year and one form); the business screen's tax card; Suggestions; Month in
+    review; Goals, with a payoff plan; Mileage; a pay run.
+  - Newly added, files: a Schedule C or E report as CSV or XLSX ends with "For your records and your tax professional,
+    not tax advice." after a blank row, from the reports page and inside the tax package. The rental Schedule E export
+    does the same.
+  - Already there, kept: Insights and AI settings (the shared line); Schedule C and E reports on screen and as PDF (their
+    note); the Schedule E page; Business taxes; assets and the depreciation helper; payroll people, pay runs, taxes,
+    year-end and onboarding forms (their own notices); the investment panel ("Figures, not advice"); the tax package
+    README and `tax-forms-check.pdf`; the payslip PDF.
+  - Left out on purpose: the W-2, W-3, 1099-NEC and 1096 PDFs and the EFW2 file (official forms and a filing format,
+    given to employees or agencies; the screen that makes them has the notice); W-4, DE 4 and W-9 forms; the accountant
+    journal export (QuickBooks and Xero import it); the cash-flow forecast, Explore and Ask (they report your own
+    figures and suggest nothing); the phone's AI settings and payroll list (no tax or money-advice figure on them).
+  - Tests: web `disclaimer.test.tsx` (the two lines, which one a list of suggestions gets, once per list, off when the
+    page shows its own); e2e `tax-forms.spec.ts` (once on the year and on a form); API `reports.test.ts` (a Schedule C
+    CSV ends with the line, a P&L doesn't), `rentals.test.ts` (the Schedule E export ends with it),
+    `data-ownership.test.ts` (the tax package's README and its Schedule C CSV say it, its P&L doesn't); phone
+    `disclaimers.test.tsx` (tax forms once; suggestions with the financial or the tax line; none with no suggestions).
 - **Education tax helpers** (FAM-10; migration 0090).
   - Before: a family member could be marked as a dependent and a 529 plan was a plan type, but nothing tied
     education spending or 529 withdrawals to a student, so nothing showed what might matter for the education credits.

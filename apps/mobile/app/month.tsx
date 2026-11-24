@@ -8,7 +8,7 @@ import type { MonthSummaryDto } from '@montra/schemas';
 import { useCached } from '../src/features/use-cached';
 import { currentLocale, fmtMoney, t } from '../src/i18n';
 import { useAbilities, useSession } from '../src/session/SessionProvider';
-import { Body, Button, Card, Row, Screen, Small, useToast } from '../src/ui/components';
+import { Body, Button, Card, Disclaimer, Row, Screen, Small, useToast } from '../src/ui/components';
 import { haptic } from '../src/ui/haptics';
 import { Icon } from '../src/ui/icons';
 import { SidePanel } from '../src/ui/SidePanel';
@@ -230,6 +230,7 @@ export default function MonthReview() {
           ))}
         </Card>
       ) : null}
+      <Disclaimer kind="financial" />
 
       <SidePanel
         visible={picking}

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { Money } from '@/components/money';
+import { Disclaimer } from '@/components/ui/disclaimer';
 import { PageHeader, StatTile } from '@/components/ui/page-header';
 import { MonthPicker, MonthSuggestions } from '@/components/month/month-review';
 
@@ -225,6 +226,7 @@ export default async function MonthPage({
           lines={d.suggestions.lines}
         />
       )}
+      <Disclaimer kind="financial" />
     </div>
   );
 }
