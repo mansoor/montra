@@ -1,7 +1,12 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { calendarDate } from '@montra/domain';
 import { catalogs, createTranslator, formatCalendarDate, weekdayName } from '../src/index.js';
 import { pluralRules } from '../src/messages.js';
+
+const MESSAGES = join(dirname(fileURLToPath(import.meta.url)), '../messages');
 
 describe('messages (TZ-06)', () => {
   const t = createTranslator('en-US', { ...catalogs, de: { 'common.save': 'Speichern' } });
@@ -43,6 +48,18 @@ describe('messages (TZ-06)', () => {
   it('keeps every English message parseable', () => {
     for (const key of Object.keys(catalogs.en!))
       expect(() => t.t(key, { count: 2, amount: '$1', email: 'x' })).not.toThrow();
+  });
+
+  it('has no key twice in a message file, where the last copy would win unseen', () => {
+    for (const name of readdirSync(MESSAGES).filter((f) => f.endsWith('.json'))) {
+      const keys = [...readFileSync(join(MESSAGES, name), 'utf8').matchAll(/^ {2}"([^"]+)":/gm)].map(
+        (m) => m[1],
+      );
+      expect(
+        keys.filter((k, i) => keys.indexOf(k) !== i),
+        name,
+      ).toEqual([]);
+    }
   });
 });
 
