@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test responses are untyped JSON */
+import ExcelJS from 'exceljs';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import yauzl from 'yauzl';
@@ -367,6 +368,32 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     // A file holds what it needs to prove itself.
     const hash = createHash('sha256').update(zip.get('data/posting.jsonl')!).digest('hex');
     expect(manifest.tables.posting.sha256).toBe(hash);
+  });
+
+  it('has a summary workbook with each transaction’s account, category and amount in currency units (UP-05)', async () => {
+    const { bytes } = await backup();
+    const zip = await readZip(bytes);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(zip.get('summary.xlsx')! as unknown as ArrayBuffer);
+    const sheet = wb.getWorksheet('Transactions')!;
+    const rows: unknown[][] = [];
+    sheet.eachRow((r) => rows.push((r.values as unknown[]).slice(1)));
+    expect(rows[0]).toEqual([
+      'Date',
+      'Account',
+      'Payee',
+      'Description',
+      'Category',
+      'Amount',
+      'Currency',
+      'Status',
+      'Note',
+    ]);
+    const groceries = rows.find((r) => r[2] === 'WHOLE FOODS')!;
+    expect(groceries.slice(1, 7)).toEqual(['Joint', 'WHOLE FOODS', groceries[3], 'Groceries', -50, 'USD']);
+    expect(groceries[8]).toBe('A private note about a gift');
+    expect(rows.find((r) => r[2] === 'ACME PAYROLL')!.slice(4, 6)).toEqual(['Salary', 3000]);
+    expect(zip.get('README.txt')!.toString()).toContain('1234 is 12.34');
   });
 
   it('lets a partner take only books they can read, and not the workspace', async () => {
@@ -817,7 +844,10 @@ describe('the tax package (RPT-04, UP-10)', () => {
     );
     expect(names).not.toContain('reports/schedule-e.pdf');
     expect(zip.get('reports/pnl.pdf')!.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(zip.get('README.txt')!.toString()).toContain('tax advice');
+    // AIA-12, NFR-14: the package says it isn't tax advice, and so does Schedule C on its own.
+    expect(zip.get('README.txt')!.toString()).toContain("It isn't tax advice");
+    expect(zip.get('reports/schedule-c.csv')!.toString()).toContain('not tax advice');
+    expect(zip.get('reports/pnl.csv')!.toString()).not.toContain('tax advice');
     expect(zip.get('receipts.csv')!.toString()).toContain('Print Shop');
     const slip = names.find((n) => n.startsWith('receipts/') && n.endsWith('.png'))!;
     expect(zip.get(slip)!.equals(PNG)).toBe(true);

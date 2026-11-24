@@ -272,6 +272,10 @@
     "done",
     ""
   ],
+  "UP-05": [
+    "partial",
+    "On the web, the numbers on Home, Budget, Cash flow, Explore, Month in review, Reports, accounts, business and rental overviews and Goals lead to the transactions behind them, or say how they are worked out (forecast, net worth, 50/30/20, business money in and out, rental ratios). The full export is not plan-gated: every table as JSON lines and CSV, plus a workbook of transactions (with account, category and amounts in currency units) and accounts. Left: the budget's income actual, the rentals row for money on no property, and the net worth over time and receipt items reports have no drill-down; the phone screens weren't audited; and an export can't be taken while an account deletion is pending"
+  ],
   "UP-08": [
     "done",
     ""
@@ -389,8 +393,8 @@
     "ai_event log with input hash only; list and delete"
   ],
   "AIA-12": [
-    "partial",
-    "disclaimer component and strings; attached to tax outputs when those ship"
+    "done",
+    "every tax and money-advice output carries a not-advice line once: tax forms, Schedule C and E, business taxes and set-aside, mileage, assets, payroll, suggestions, month in review, debt payoff, insights; on the phone too; the tax package and tax report files say it inside"
   ],
   "AI-01": [
     "done",
@@ -465,8 +469,8 @@
     "provider failover in the gateway, metrics, alert rules and CloudWatch alarms as files. Never run, and no on-call yet"
   ],
   "NFR-14": [
-    "partial",
-    "disclaimer mechanism; tax helpers later"
+    "done",
+    "tax helpers carry the not-advice line on the web, the phone and in exported files; AI prompts and investment figures give no investment advice"
   ],
   "PLT-02": [
     "partial",
@@ -731,6 +735,10 @@
   "FAM-09": [
     "done",
     "Home filter by member; every member total drills to its transactions, Household included"
+  ],
+  "FAM-10": [
+    "done",
+    "dependents are the family member's Dependent flag; a personal spending category can be marked as tuition and fees, books and supplies, room and board, or computers; By member shows each student's marked expenses and 529 withdrawals for the tax year, with may-matter notes and the tax disclaimer. Informational only: no credit or taxable amount is worked out. Not on the phone or in the tax package"
   ],
   "PAY-01": [
     "done",

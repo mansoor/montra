@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { CalendarDateDto, CurrencyCodeDto, Id } from './common.js';
 import { MinorDto } from './budgets.js';
-import { Cadence } from './ledger.js';
+import { EducationExpenseTypeDto } from './accounts.js';
+import { Cadence, FamilyRelationship } from './ledger.js';
 
 // ----- Employers and payslips (PAY-01..09; design 03 §8, 04 §14, ADR-0016) ----------------------------------
 
@@ -255,3 +256,40 @@ export const PayslipSummaryDto = z.object({
   byTax: z.array(z.object({ code: z.string(), label: z.string(), amount: MinorDto })),
 });
 export type PayslipSummaryDto = z.infer<typeof PayslipSummaryDto>;
+
+// ----- Education tax helpers (FAM-10) -----------------------------------------------------------------------
+
+/**
+ * One student in a tax year: spending in categories marked as education expenses, by kind, and money out of 529 plans,
+ * for the member on the postings. A 529 withdrawal with no member counts for the plan's default member (its
+ * beneficiary). memberId null holds what has no member, so it can be assigned. Functional amounts. Informational only:
+ * no eligibility and no tax is worked out.
+ */
+export const EducationStudentDto = z.object({
+  memberId: Id.nullable(),
+  name: z.string(),
+  relationship: FamilyRelationship.nullable(),
+  isDependent: z.boolean(),
+  birthDate: CalendarDateDto.nullable(),
+  /** Every kind, in a fixed order, zero included. */
+  expenses: z.array(z.object({ type: EducationExpenseTypeDto, amount: MinorDto })),
+  expenseTotal: MinorDto,
+  /** Money out of 529 plans: contributions, market value changes and reversed entries are left out. */
+  withdrawals529: MinorDto,
+  plans: z.array(z.object({ accountId: Id, name: z.string(), amount: MinorDto })),
+});
+export type EducationStudentDto = z.infer<typeof EducationStudentDto>;
+
+/** `GET reports/education?year=`: the calendar tax year, in the workspace's time zone by default. */
+export const EducationSummaryDto = z.object({
+  year: z.number().int(),
+  from: CalendarDateDto,
+  to: CalendarDateDto,
+  currency: CurrencyCodeDto,
+  /** The categories marked as education expenses, so the page can say how to mark one when there are none. */
+  categories: z.array(z.object({ categoryId: Id, name: z.string(), type: EducationExpenseTypeDto })),
+  /** Whether the workspace has a 529 plan account (ACC plan type 529). */
+  has529: z.boolean(),
+  students: z.array(EducationStudentDto),
+});
+export type EducationSummaryDto = z.infer<typeof EducationSummaryDto>;

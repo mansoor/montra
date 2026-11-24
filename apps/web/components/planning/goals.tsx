@@ -1,13 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { useRef, useState, type ReactNode } from 'react';
 import type { AccountDto, FamilyMemberDto, GoalDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { minorToInput, parseAmountInput } from '@/lib/money';
-import { percentOf } from '@/lib/planning';
+import { drillHref, percentOf } from '@/lib/planning';
 import { ProgressBar } from '../charts/line-chart';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
+import { Disclaimer } from '../ui/disclaimer';
 import { StatusLine, useAction } from '../use-action';
 
 const TYPES = ['emergency_fund', 'savings', 'sinking_fund', 'debt_payoff'] as const;
@@ -57,6 +59,8 @@ export function GoalsBoard({
           ))}
         </div>
       )}
+      {/* A debt payoff plan is a projection from the user's figures, not advice (AIA-12). */}
+      {active.some((g) => g.payoff) && <Disclaimer kind="financial" />}
       {archived.length > 0 && (
         <details className="card" data-testid="archived-goals">
           <summary className="cursor-pointer text-sm font-semibold">
@@ -112,6 +116,11 @@ function GoalCard({
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
+  const base = `/w/${options.workspace.id}`;
+  // UP-05: saved so far is the linked accounts' balances (their transactions), or the funding category's available.
+  const savedHref = g.linkedAccountIds.length
+    ? drillHref(base, { entityId: g.entityId, accountIds: g.linkedAccountIds })
+    : `${base}/budget`;
   if (editing)
     return (
       <GoalForm
@@ -151,8 +160,10 @@ function GoalCard({
         <>
           <div className="flex items-baseline justify-between text-sm">
             <span>
-              <Money amount={g.progress.saved} currency={g.currency} className="font-semibold" /> /{' '}
-              <Money amount={g.target} currency={g.currency} />
+              <Link href={savedHref} className="hover:underline" data-testid="goal-saved">
+                <Money amount={g.progress.saved} currency={g.currency} className="font-semibold" />
+              </Link>{' '}
+              / <Money amount={g.target} currency={g.currency} />
             </span>
             <span className="num text-muted">{g.progress.percent ?? 0}%</span>
           </div>
@@ -231,7 +242,11 @@ function GoalCard({
             <tbody>
               {g.payoff.debts.map((d) => (
                 <tr key={d.accountId}>
-                  <td className="px-2 py-1">{d.name}</td>
+                  <td className="px-2 py-1">
+                    <Link href={`${base}/accounts/${d.accountId}`} className="hover:underline">
+                      {d.name}
+                    </Link>
+                  </td>
                   <td className="px-2 py-1 text-right">
                     <Money amount={d.balance} currency={g.currency} />
                   </td>

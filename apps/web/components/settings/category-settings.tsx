@@ -1,7 +1,14 @@
 'use client';
 
 import { useMemo, useState, type FormEvent } from 'react';
-import type { CategoryDto, CategoryGroupDto, EntityDetailDto, TaxLineDto } from '@montra/api-client';
+import { EDUCATION_EXPENSE_TYPES } from '@montra/domain';
+import type {
+  CategoryDto,
+  CategoryGroupDto,
+  EducationExpenseTypeDto,
+  EntityDetailDto,
+  TaxLineDto,
+} from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { StatusLine, useAction } from '../use-action';
 
@@ -155,6 +162,7 @@ export function CategorySettings({
                       category={c}
                       groups={groupsFor(c.type)}
                       taxLines={lines}
+                      education={entity?.type === 'personal' && c.type === 'expense'}
                     />
                   ))}
                 </ul>
@@ -213,11 +221,14 @@ function CategoryRow({
   category,
   groups,
   taxLines,
+  education,
 }: {
   workspaceId: string;
   category: CategoryDto;
   groups: CategoryGroupDto[];
   taxLines: TaxLineDto[];
+  /** FAM-10: personal spending can be marked as a kind of education expense. */
+  education: boolean;
 }) {
   const { busy, message, run, t } = useAction();
   const [name, setName] = useState(category.name);
@@ -303,6 +314,35 @@ function CategoryRow({
             {lineOptions.map((l) => (
               <option key={l.code} value={l.code}>
                 {t('categories.tax_line', { line: l.line, label: l.label })}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {education && (
+        <div>
+          <label htmlFor={`cat-e-${category.id}`} className="sr-only">
+            {t('categories.education_of', { name: category.name })}
+          </label>
+          <select
+            id={`cat-e-${category.id}`}
+            className="input max-w-64"
+            value={category.educationExpenseType ?? ''}
+            disabled={busy}
+            onChange={(e) =>
+              run(
+                () =>
+                  browserApi.updateCategory(workspaceId, category.id, {
+                    educationExpenseType: (e.target.value || null) as EducationExpenseTypeDto | null,
+                  }),
+                t('categories.education_set', { name: category.name }),
+              )
+            }
+          >
+            <option value="">{t('categories.no_education')}</option>
+            {EDUCATION_EXPENSE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {t(`education.type_${type}`)}
               </option>
             ))}
           </select>

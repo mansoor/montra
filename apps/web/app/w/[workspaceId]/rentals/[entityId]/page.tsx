@@ -121,7 +121,10 @@ export default async function RentalsOverviewPage({
                 <tr key={p.propertyId ?? (isTotal ? 'total' : 'untagged')} data-testid="property-report-row">
                   <td className="px-4 py-2 font-medium">
                     {isTotal ? (
-                      t('rentals.portfolio_total')
+                      // UP-05: the whole portfolio is every transaction in these books for the period.
+                      <Link className="underline" href={drillHref(base, { entityId, from, to })}>
+                        {t('rentals.portfolio_total')}
+                      </Link>
                     ) : p.propertyId ? (
                       <Link
                         className="underline"

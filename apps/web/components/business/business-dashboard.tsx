@@ -15,12 +15,15 @@ export async function BusinessDashboard({
   d,
   here,
   hrefFor,
+  pnlFor,
   setAside,
 }: {
   d: BusinessDashboardDto;
   here: string;
   /** This page with the dashboard's choices changed and the rest of the query kept. */
   hrefFor: (q: { months?: number; month?: string | null }) => string;
+  /** UP-05: the P&L for these dates, where each category leads to its transactions. */
+  pnlFor: (from: string, to: string) => string;
   /** The tax to set aside, shown under profit. */
   setAside: string | null;
 }) {
@@ -75,8 +78,16 @@ export async function BusinessDashboard({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="business-tiles">
-        <StatTile label={t('business.revenue')} value={<Money amount={m.revenue} currency={ccy} />} />
-        <StatTile label={t('business.expenses')} value={<Money amount={m.expenses} currency={ccy} />} />
+        <StatTile
+          label={t('business.revenue')}
+          value={<Money amount={m.revenue} currency={ccy} />}
+          href={pnlFor(m.start, m.end)}
+        />
+        <StatTile
+          label={t('business.expenses')}
+          value={<Money amount={m.expenses} currency={ccy} />}
+          href={pnlFor(m.start, m.end)}
+        />
         <StatTile
           label={t('business.profit')}
           value={<Money amount={m.profit} currency={ccy} />}

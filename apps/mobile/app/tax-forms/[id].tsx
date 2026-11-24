@@ -38,6 +38,7 @@ import {
   Button,
   Card,
   CheckRow,
+  Disclaimer,
   Disclosure,
   Field,
   Row,
@@ -434,6 +435,7 @@ export default function TaxFormScreen() {
         </Card>
       ) : null}
       <Small>{t('mobile.tax_forms.edit_on_web')}</Small>
+      <Disclaimer kind="tax" />
     </Screen>
   );
 }

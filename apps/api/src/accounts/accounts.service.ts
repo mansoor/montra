@@ -443,6 +443,7 @@ export class AccountsService {
           'a.name',
           'a.type',
           'a.tax_line_code',
+          'a.education_expense_type',
           'a.category_group_id',
           'a.system_role',
           'g.name as group_name',
@@ -464,6 +465,7 @@ export class AccountsService {
         groupId: r.category_group_id,
         archived: false,
         fixed: r.system_role !== null,
+        educationExpenseType: r.education_expense_type,
       }));
     });
   }

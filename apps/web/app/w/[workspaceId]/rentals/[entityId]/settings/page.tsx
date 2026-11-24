@@ -4,6 +4,7 @@ import { getI18n } from '@/lib/i18n-server';
 import { TaxRateForm } from '@/components/business/tax-tools';
 import { Money } from '@/components/money';
 import { AllocationRules, RentalTaxAccounts } from '@/components/rentals/rental-ops';
+import { Disclaimer } from '@/components/ui/disclaimer';
 
 export const metadata: Metadata = { title: 'Rental settings' };
 export const dynamic = 'force-dynamic';
@@ -39,9 +40,12 @@ export default async function RentalSettingsPage({
           accounts={accounts.filter((a) => a.entityId === entityId)}
         />
         {estimate.rateBps !== null && (
-          <p className="text-sm" data-testid="rental-tax-estimate">
-            {t('taxes.to_set_aside')}: <Money amount={estimate.toSetAside} currency={estimate.currency} />
-          </p>
+          <>
+            <p className="text-sm" data-testid="rental-tax-estimate">
+              {t('taxes.to_set_aside')}: <Money amount={estimate.toSetAside} currency={estimate.currency} />
+            </p>
+            <Disclaimer kind="tax" />
+          </>
         )}
       </section>
       <AllocationRules workspaceId={workspaceId} entityId={entityId} properties={properties} rules={rules} />

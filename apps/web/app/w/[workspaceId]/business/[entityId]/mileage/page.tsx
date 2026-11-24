@@ -6,6 +6,7 @@ import { getI18n } from '@/lib/i18n-server';
 import { MileageLog } from '@/components/business/mileage-log';
 import { Money } from '@/components/money';
 import { StatTile } from '@/components/ui/page-header';
+import { Disclaimer } from '@/components/ui/disclaimer';
 
 export const metadata: Metadata = { title: 'Mileage' };
 export const dynamic = 'force-dynamic';
@@ -52,6 +53,7 @@ export default async function MileagePage({
         today={today}
         people={people.map((p) => ({ id: p.id, name: p.displayName }))}
       />
+      <Disclaimer kind="tax" />
     </div>
   );
 }

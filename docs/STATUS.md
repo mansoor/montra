@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10 · `v0.12.0-dev.1` Phase 11, then one `v0.12.0-dev.N` per merge since (latest `v0.12.0-dev.140`) |
 | **Pull requests**      | #1–#17 Phases 1–10, #18 Phase 11, then the work in §7g, up to #193. Each merged into `develop` with green CI                                                                                                                                                                                                                                                                        |
-| **Requirements**       | 350 IDs in total: **281 done, 55 partial**, 14 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
+| **Requirements**       | 350 IDs in total: **283 done, 53 partial**, 14 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
 | **Next**               | The owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                                                                                                 |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
@@ -244,7 +244,7 @@ finished:
 
 - **Finished by a later phase, as planned:**
   - AIA-01: a monthly summary and a budget recommendation by AI.
-  - AIA-12 and NFR-14: tax outputs, in Phase 8.
+  - ~~AIA-12 and NFR-14: tax outputs, in Phase 8.~~ Done: every tax and money-advice output carries the line (see §7g).
   - ~~AI-02: AI doesn't suggest a property or unit.~~ Done: the pipeline suggests the rental property and unit (see §7g).
   - PLT-03 and UP-07: mobile screens arrive with each feature phase.
   - AI-07: logos, via reference data.
@@ -614,7 +614,7 @@ Rules the code depends on (don't undo these):
 
 Phase 7 leftovers, not blocking:
 
-- FAM-10 (could-have) isn't started: marking education expenses for credits or 529 withdrawals.
+- ~~FAM-10 (could-have) isn't started: marking education expenses for credits or 529 withdrawals.~~ Done (see §7g).
 - **`extract_payslip` hasn't been run against the real provider or a real payslip.** Tests use the fake provider. Measure
   this before relying on the drafts; the user checks every draft against the file regardless.
 - Mobile: no prefill from the last payslip and no amount edits (both on the web). No device run yet.
@@ -2960,6 +2960,110 @@ Phase 11 leftovers:
     filter); e2e `receipts.spec.ts` finds a receipt by a word on it through the new field. Checked in a browser on
     the Frame check workspace: a word that matches nothing shows "No receipts match" with a chip, a matching word
     finds the receipt, and `?q=` opens as `?text=`.
+- **Not-advice lines on every tax and money-advice output** (AIA-12, NFR-14; no migration).
+  - Before: the shared line ("Informational only — not tax advice…") showed only on Insights and AI settings. Some
+    tax screens had their own notes, but the tax forms screens, the business and rental set-aside, mileage, pay runs,
+    suggestions, the month in review, debt payoff plans and every phone screen had none. A Schedule C or E downloaded
+    as CSV or XLSX didn't say it either.
+  - Now: one web component (`components/ui/disclaimer.tsx`) and one phone component (`Disclaimer` in
+    `src/ui/components.tsx`), with the two existing keys `disclaimer.tax` and `disclaimer.financial`. Each screen shows
+    it once, small, at the end. `recommendationDisclaimer` in `@montra/schemas` picks the tax line for a list of
+    suggestions with a tax set-aside or tax due date (REC-09, BIZ-09), and the financial one otherwise.
+  - Newly added, web: Tax forms (the year and one form); the business page, once for its set-aside and suggestions;
+    rental settings, under the set-aside; every suggestions list (home, Suggestions, business and rental pages);
+    Month in review; Goals, when a debt payoff plan shows; Mileage; a pay run; an asset.
+  - Newly added, phone: Tax forms (the year and one form); the business screen's tax card; Suggestions; Month in
+    review; Goals, with a payoff plan; Mileage; a pay run.
+  - Newly added, files: a Schedule C or E report as CSV or XLSX ends with "For your records and your tax professional,
+    not tax advice." after a blank row, from the reports page and inside the tax package. The rental Schedule E export
+    does the same.
+  - Already there, kept: Insights and AI settings (the shared line); Schedule C and E reports on screen and as PDF (their
+    note); the Schedule E page; Business taxes; assets and the depreciation helper; payroll people, pay runs, taxes,
+    year-end and onboarding forms (their own notices); the investment panel ("Figures, not advice"); the tax package
+    README and `tax-forms-check.pdf`; the payslip PDF.
+  - Left out on purpose: the W-2, W-3, 1099-NEC and 1096 PDFs and the EFW2 file (official forms and a filing format,
+    given to employees or agencies; the screen that makes them has the notice); W-4, DE 4 and W-9 forms; the accountant
+    journal export (QuickBooks and Xero import it); the cash-flow forecast, Explore and Ask (they report your own
+    figures and suggest nothing); the phone's AI settings and payroll list (no tax or money-advice figure on them).
+  - Tests: web `disclaimer.test.tsx` (the two lines, which one a list of suggestions gets, once per list, off when the
+    page shows its own); e2e `tax-forms.spec.ts` (once on the year and on a form); API `reports.test.ts` (a Schedule C
+    CSV ends with the line, a P&L doesn't), `rentals.test.ts` (the Schedule E export ends with it),
+    `data-ownership.test.ts` (the tax package's README and its Schedule C CSV say it, its P&L doesn't); phone
+    `disclaimers.test.tsx` (tax forms once; suggestions with the financial or the tax line; none with no suggestions).
+- **Education tax helpers** (FAM-10; migration 0090).
+  - Before: a family member could be marked as a dependent and a 529 plan was a plan type, but nothing tied
+    education spending or 529 withdrawals to a student, so nothing showed what might matter for the education credits.
+  - Now, a personal spending category can be marked as one kind of education expense: tuition and fees, books and
+    supplies, room and board, or computers (`ledger_account.education_expense_type`, the one new column).
+    - Settings → Categories has the choice on each personal spending category. `PATCH categories/:id` takes
+      `educationExpenseType` (null clears it). Income is refused (`category.education_type`).
+    - The student is the family member on each transaction, as for every member report. The Dependent flag is the
+      member's existing one. No student flag or school year was added.
+    - Why a category and not a per-transaction mark or a tag: categories already say what money was for, rules and
+      the AI already set them, and the member is already on each posting. One nullable column covers it.
+  - `GET reports/education?year=` gives, per student and calendar tax year (this year in the workspace time zone by
+    default), the marked spending by kind and the money out of 529 plans (`plan_type = '529'`). A 529 posting with no
+    member counts for the plan's default member. Contributions, market value changes, opening balances and reversed
+    entries aren't withdrawals. What has no member is its own row, so it can be assigned.
+  - The By member page shows it for this year (last year with the Last year tab), with notes on what may matter: the
+    American Opportunity and Lifetime Learning credits, room and board counting for a 529 but not the credits, 529
+    withdrawals above the expenses marked, and not using the same expenses twice. Then the existing tax disclaimer.
+    Nothing works out a credit, eligibility or a taxable amount. With nothing marked and no 529 plan, it is one line
+    pointing to Settings → Categories.
+  - Not done: the phone and the tax package export don't show it. No category is marked out of the box.
+  - Tests: API `education.test.ts` (marking and clearing, income, unknown kinds and a viewer refused; expenses by kind
+    and member with a refund; a 529 transfer counted for the plan's member and tuition paid from the plan for the
+    member on it; contributions, a valuation drop, a deleted withdrawal and opening balances left out; 31 December
+    and 1 January in their own years; the default year in a +14 time zone; a viewer reads it, another workspace sees
+    none of it). Web `education.test.ts` (kinds shown, each note, no member, netting to nothing) and the i18n key
+    coverage for the new dynamic keys.
+- **Every number traceable, and the export readable in a spreadsheet** (UP-05; no migration).
+  - Before: UP-05 wasn't tracked. Most numbers already drilled down (FLOW-01/02, RPT-03), but some didn't: Month in
+    review's figures and categories, the budget's total spent, a goal's savings, the business tiles, totals and
+    customers, and the rental portfolio row. The forecast, net worth and 50/30/20 didn't say how they were worked
+    out. The export's workbook had amounts in cents and no account or category.
+  - The audit, web screens (→ is the drill-down; "says" is a line on how it's worked out):
+
+    | Screen | Number | How to see what's behind it |
+    | --- | --- | --- |
+    | Home | Income, Spent | → transactions (already) |
+    | Home | Left to spend, Left to assign | → Budget (already) |
+    | Home | Charts, where it went, changes, pace | → transactions (already) |
+    | Home | Net position, low balance | → Net worth, Forecast (already) |
+    | Budget | Each line's activity, unbudgeted | → transactions (already) |
+    | Budget | Total spent | → transactions in the budget's categories (**new**) |
+    | Budget | 50/30/20 | says (**new**) |
+    | Cash flow | Money flow nodes | → transactions (already) |
+    | Cash flow | Forecast | says, items listed (**new**) |
+    | Cash flow | Net worth, assets, liabilities | says (**new**); each account → its register (already) |
+    | Explore | Month cells, totals, uncategorized | → transactions (already) |
+    | Month in review | Money in, money out | → transactions (**new**, `drill` on the DTO) |
+    | Month in review | Categories, changes, over budget | → transactions (**new**) |
+    | Month in review | Largest purchases | → the transaction (already) |
+    | Reports | Rows and bars | → transactions (already, RPT-03) |
+    | Accounts | Balance | → the account's register with running balance (already) |
+    | Business | Revenue, expenses tiles | → the P&L for that month (**new**) |
+    | Business | P&L lines | → transactions (already); totals (**new**) |
+    | Business | Customers, vendors | → transactions found by name (**new**) |
+    | Business | Money in and out, cash | says (already) |
+    | Rentals | Property rows | → transactions (already); Portfolio row (**new**) |
+    | Rentals | NOI, cap rate, cash on cash | says (already) |
+    | Goals | Saved | → the linked accounts' transactions, or Budget (**new**); debts → account (**new**) |
+    | Upcoming | Scheduled items, card and loan dues | → the item or account (already) |
+
+  - The export: not plan-gated (ADR-0020 §3). Owners and admins take the workspace, partners one set of books. Every
+    table as JSON lines and CSV, plus `summary.xlsx`. That workbook's Transactions sheet now has Account and Category
+    ("Split" when there are several), and amounts as 12.34 rather than 1234. The README says the JSON and CSV
+    amounts are minor units.
+  - Left for the owner: the budget's income actual has no drill-down (the page has no income categories); the
+    "Not on a property" rentals row has no filter; Net worth over time and Receipt items report rows have none;
+    business money in and out are explained, not drillable; a customer's drill-down finds by name, as the spending
+    report's payee rows do, so a payment under another name is missed; the phone screens weren't audited; an
+    export can't be taken while an account deletion is pending (`account.deleting`).
+  - Tests: API `month-summary.test.ts` (the drills add up to money in and out), `data-ownership.test.ts` (the
+    workbook's columns, account, category and amounts); e2e `traceable-numbers.spec.ts` (new: budget total, Month in
+    review's money out and a category, a goal's savings, the forecast and net worth lines), `business.spec.ts`
+    (revenue tile, total revenue, a customer) and `rentals.spec.ts` (the portfolio row).
 - **A business's tax account numbers sealed at rest** (BIZ-26, migration 0089; ADR-0037 §5 amended).
   - Before: the EIN, EDD employer account, FTB entity ID and CDTFA seller's permit were masked on screen, but stored
     in plain text on `business_profile`. Every edit also copied them into the audit log. Payroll's unused copies of

@@ -160,6 +160,13 @@ test('a lease, rent, a deposit and a mortgage reach the reports and Schedule E',
   await expect(reportRow).toContainText('$900.00');
   await expect(reportRow).toContainText('$1,199.10');
   await expect(reportRow).toContainText('-$299.10');
+  // UP-05: the portfolio's totals lead to the books' transactions for the period.
+  await expect(
+    page
+      .getByTestId('property-report-row')
+      .filter({ hasText: 'Portfolio' })
+      .getByRole('link', { name: 'Portfolio' }),
+  ).toHaveAttribute('href', new RegExp(`/transactions\\?entityId=${entityId}&from=${year}-01-01&to=`));
 
   // Schedule E, your half of the net, and a file for the accountant (UP-10).
   await sections.getByRole('link', { name: 'Schedule E' }).click();
