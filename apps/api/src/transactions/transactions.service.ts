@@ -31,7 +31,14 @@ import {
   type TransactionSpec,
 } from './poster.js';
 import { searchFilter } from './search-filter.js';
-import { transactionConditions, type TransactionListFilters } from '../common/list-filters.js';
+import {
+  afterCursor,
+  decodeCursor,
+  encodeCursor,
+  endBefore,
+  transactionConditions,
+  type TransactionListFilters,
+} from '../common/list-filters.js';
 import { loadExpenseDetails } from '../business/expense-details.js';
 import {
   Categorizer,
@@ -1150,17 +1157,21 @@ export class TransactionsService {
       categoryIds?: string[];
       accountIds?: string[];
       trash?: boolean;
+      /** Where the page starts: `nextCursor` from the page before. */
+      cursor?: string;
     } & TransactionListFilters,
-  ): Promise<TransactionDto[]> {
+  ): Promise<{ data: TransactionDto[]; nextCursor: string | null }> {
+    const after = opts.cursor ? decodeCursor(opts.cursor) : null;
     return this.db.run(ctx, async (trx) => {
       let q = trx
         .selectFrom('app.transaction as t')
-        .select('t.id')
+        .select(['t.id', 't.txn_date'])
         .where('t.workspace_id', '=', ctx.workspaceId)
         .where('t.deleted_at', opts.trash ? 'is not' : 'is', null)
         .orderBy('t.txn_date', 'desc')
         .orderBy('t.id', 'desc')
-        .limit(opts.limit);
+        .limit(opts.limit + 1);
+      if (after) q = q.where(afterCursor(after));
       if (opts.from) q = q.where('t.txn_date', '>=', opts.from);
       if (opts.to) q = q.where('t.txn_date', '<=', opts.to);
       if (opts.status) q = q.where('t.status', '=', opts.status as 'posted');
@@ -1218,13 +1229,23 @@ export class TransactionsService {
         const { where } = await searchFilter(trx, ctx, this.crypto, opts.q);
         q = q.where(where);
       }
-      for (const c of await transactionConditions(trx, ctx.workspaceId, opts)) q = q.where(c);
-      const ids = await q.execute();
-      return this.load(
-        trx,
-        ctx,
-        ids.map((r) => r.id),
-      );
+      // The filters' candidates need look no later than the day this page starts on.
+      const narrow = await transactionConditions(trx, ctx.workspaceId, {
+        ...opts,
+        to: endBefore(opts.to, after),
+      });
+      for (const c of narrow) q = q.where(c);
+      const rows = await q.execute();
+      const page = rows.slice(0, opts.limit);
+      const last = rows.length > opts.limit ? page.at(-1)! : null;
+      return {
+        data: await this.load(
+          trx,
+          ctx,
+          page.map((r) => r.id),
+        ),
+        nextCursor: last ? encodeCursor(last.txn_date, last.id) : null,
+      };
     });
   }
 

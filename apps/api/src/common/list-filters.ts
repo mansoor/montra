@@ -4,13 +4,41 @@
  */
 import { sql, type RawBuilder } from 'kysely';
 import type { Trx } from '@montra/db';
-import { asCurrencyCode, CURRENCY_CODES, minorUnits } from '@montra/domain';
+import { asCurrencyCode, CURRENCY_CODES, isCalendarDate, minorUnits } from '@montra/domain';
 import type { ListFilterQuery, MoneyDirection } from '@montra/schemas';
 import { tsQueryOf } from '../transactions/search-filter.js';
+import { badRequest } from './errors.js';
 
 export interface TransactionListFilters extends ListFilterQuery {
   direction?: MoneyDirection;
 }
+
+// ----- Keyset paging on (date desc, id desc), as the transaction lists are ordered -------------------------------------
+
+/** Where the next page starts: after this row. Opaque to clients. */
+export const encodeCursor = (date: string, id: string): string =>
+  Buffer.from(`${date}|${id}`).toString('base64url');
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function decodeCursor(cursor: string): { date: string; id: string } {
+  const [date, id, extra] = Buffer.from(cursor, 'base64url').toString().split('|');
+  if (!date || !id || extra !== undefined || !isCalendarDate(date) || !UUID.test(id)) {
+    throw badRequest('cursor.invalid', 'This page link is not valid. Load the list again.');
+  }
+  return { date, id };
+}
+
+/**
+ * Rows after the cursor on `app.transaction as t`. A row comparison of a date and a uuid is leakproof, so it bounds the
+ * date index scan before row-level security runs, and rows sharing a date are split by id, never repeated or skipped.
+ */
+export const afterCursor = (c: { date: string; id: string }): RawBuilder<boolean> =>
+  sql<boolean>`(t.txn_date, t.id) < (${c.date}::date, ${c.id}::uuid)`;
+
+/** The earlier of an optional end date and the cursor's date: no row past the cursor can be on a later day. */
+export const endBefore = (to: string | undefined, c: { date: string } | null): string | undefined =>
+  c && (!to || c.date < to) ? c.date : to;
 
 /** The workspace currency's minor units, which the amount bounds are in. */
 export async function baseCurrency(trx: Trx, workspaceId: string): Promise<{ code: string; exp: number }> {
@@ -62,9 +90,10 @@ export const hasAmount = (f: Pick<ListFilterQuery, 'amountMin' | 'amountMax'>) =
 
 /**
  * Past this many candidates a filter isn't narrow enough to be worth looking up first: the list walks the date index and
- * stops at its page, so the access check runs on about a page of rows anyway.
+ * stops at its page, so the access check runs on about a page of rows anyway. An internal performance limit, like
+ * `NOTE_SEARCH_LIMIT`; tests lower `max` to take the other path.
  */
-export const PREFILTER_MAX = 5000;
+export const PREFILTER = { max: 5000 };
 
 /**
  * Conditions on `app.transaction as t`. The merchant matches the start of words in the payee or description through the
@@ -95,9 +124,10 @@ export async function transactionConditions(
       ${f.from ?? null}::date, ${f.to ?? null}::date,
       ${words ? sql`to_tsquery('simple', ${words})` : sql`null::tsquery`},
       ${f.amountMin ?? null}::numeric, ${f.amountMax ?? null}::numeric, ${f.direction ?? null}::text,
-      ${base.code}::text, ${base.exp}::int, ${PREFILTER_MAX + 1}::int) as ids`
+      ${base.code}::text, ${base.exp}::int, ${PREFILTER.max + 1}::int) as ids`
     .execute(trx)
     .then((r) => r.rows[0]!);
-  if (ids.length <= PREFILTER_MAX) out.unshift(sql<boolean>`t.id = any(${ids}::uuid[])`);
+  // Each page asks again, so a page decides on its own whether the candidates are few enough to use.
+  if (ids.length <= PREFILTER.max) out.unshift(sql<boolean>`t.id = any(${ids}::uuid[])`);
   return out;
 }

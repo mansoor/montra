@@ -6,8 +6,11 @@
 --
 -- This finds the candidates without that check: the ids of the current workspace's transactions that match, up to a
 -- cap. The API then asks for those ids (uuid equality is leakproof, so the access check runs only on them) and applies
--- the same filters again under RLS, so what a person sees is exactly what they could see before. It returns ids only,
--- never data, and only for the workspace the request is in, to a member of it.
+-- the same filters again under RLS, so what a person sees is exactly what they could see before.
+--
+-- Why SECURITY DEFINER is safe here: it returns ids only, never data; only from the current workspace
+-- (`app.current_workspace_id()`); only to an active member of it (`app.current_member_role()`); and every caller must
+-- read the rows through RLS again, which drops any the member may not read. Only `montra_app` may call it.
 --
 -- An amount counts without its sign. One in another currency counts by its face value in the workspace currency's
 -- minor units, as the search's `>20` does. Money out is a negative standard transaction, money in a positive one;
@@ -61,3 +64,6 @@ revoke all on function app.transaction_filter_ids(date, date, tsquery, numeric, 
   from public;
 grant execute on function app.transaction_filter_ids(date, date, tsquery, numeric, numeric, text, text, integer, integer)
   to montra_app;
+comment on function app.transaction_filter_ids(date, date, tsquery, numeric, numeric, text, text, integer, integer) is
+  'Web list filters: ids of matching transactions in the current workspace, for an active member, up to p_limit. '
+  'Ids only, never data; callers read the rows again under RLS, which drops any the member may not read.';

@@ -29,6 +29,7 @@ import {
   transferTargets,
 } from '@/lib/review';
 import { hasFilters, listApiQuery, parseListFilters } from '@/lib/list-filters';
+import { listFooter } from '@/lib/paging';
 import { groupCategories } from '@/lib/view-models';
 import { ConfidenceChip, Explanation, MerchantMark } from '../ai/shared';
 import { DateText, useI18n } from '../i18n';
@@ -621,10 +622,13 @@ export function ReviewQueue({
           {t('common.loading')}
         </p>
       )}
-      <ListWindowFooter
-        screen="review"
-        note={older > 0 ? t('filters.older_to_review', { count: older }) : undefined}
-      />
+      {/* Show older only once the window is all loaded. */}
+      {listFooter(nextCursor) === 'window' && (
+        <ListWindowFooter
+          screen="review"
+          note={older > 0 ? t('filters.older_to_review', { count: older }) : undefined}
+        />
+      )}
 
       <PickerDialog
         open={picker === 'category'}

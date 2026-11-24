@@ -882,6 +882,8 @@ export interface TransactionListOptions extends ListFilterOptions {
   accountIds?: string[];
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
   trash?: boolean;
+  /** The next page: `nextCursor` from the page before, with the same filters. */
+  cursor?: string;
 }
 
 // ----- Planning (Phase 6) inputs ----------------------------------------------------------------------------
@@ -1482,7 +1484,11 @@ export class ApiClient {
 
   // ----- Transactions --------------------------------------------------------------------------------------
   listTransactions(workspaceId: string, opts: TransactionListOptions = {}) {
-    return this.request<{ data: TransactionDto[] }>(
+    return this.listTransactionsPage(workspaceId, opts).then((r) => r.data);
+  }
+  /** One page, newest first; pass `nextCursor` back as `cursor`, with the same filters, for the next. */
+  listTransactionsPage(workspaceId: string, opts: TransactionListOptions = {}) {
+    return this.request<{ data: TransactionDto[]; nextCursor: string | null }>(
       'GET',
       this.ws(
         workspaceId,
@@ -1493,7 +1499,7 @@ export class ApiClient {
           trash: opts.trash ? 'true' : undefined,
         })}`,
       ),
-    ).then((r) => r.data);
+    ).then((r) => ({ data: r.data, nextCursor: r.nextCursor ?? null }));
   }
   getTransaction(workspaceId: string, id: string) {
     return this.request<TransactionDto>('GET', this.ws(workspaceId, `/transactions/${enc(id)}`));

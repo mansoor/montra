@@ -2824,22 +2824,28 @@ Phase 11 leftovers:
       how many items to review are older than the window. "Accept all above" takes only what the filters show.
     - Receipts: the column header **Store** is now **Merchant**, and so are the receipt's field and "Unknown merchant".
       The search box stays and keeps the filters. Database columns and DTO fields are unchanged.
-  - API: `GET /transactions` gains `merchant`, `amountMin`, `amountMax` (unsigned minor units) and `direction`.
+    - **Load more** under each list adds the next page (200 transactions, 100 review items or receipts) with the same
+      filters. Show older appears only once the window is all loaded. A refresh after an edit starts again from the
+      first page.
+  - API: `GET /transactions` gains `merchant`, `amountMin`, `amountMax` (unsigned minor units) and `direction`, and
+    keyset paging: `cursor` in, `nextCursor` out, by date then id, so rows sharing a date are neither repeated nor
+    skipped. `listTransactions` in the API client still returns the rows; `listTransactionsPage` returns the page.
     `GET /review` and `POST /review/accept` gain those and `from`/`to`. `GET /receipts` gains `merchant` and the amount
     range; its `from`/`to` now count a receipt without a date by the day it arrived. `q` works as before, with them.
   - Speed: row-level security checks entity access on every row before a condition like `@@` or a cast out of
     `spec`, so a narrow filter over all time took about 3 s on 50,000 transactions. Migration 0087 adds
     `app.transaction_filter_ids`, which finds the matching ids in the current workspace without that check (ids only,
     to a member). The API then asks for those ids and applies the same filters under RLS. With more than 5,000
-    candidates it skips that step, since the date order then finds a page quickly. The perf test now times three
-    filtered lists.
-  - Not done: the phone's lists don't have these filters yet. Transactions still shows at most 200 rows, and says so
-    when it does.
+    candidates it skips that step, since the date order then finds a page quickly. Each page decides this again, and
+    looks only up to the day the page starts on. The perf test now times three filtered lists.
+  - Not done: the phone's lists don't have these filters yet.
   - Tests: API `list-filters.test.ts` (the amount range with both signs, money in and out, merchant words, dates, the
     filters combined, `q` with them, bad values; the review queue and "accept all above" with filters; receipts by
-    merchant, dates, an undated receipt and totals in other currencies); db `rls.test.ts` (the ids only for a member);
-    `perf-dashboard.test.ts` (three filtered lists); web `list-filters.test.ts` (presets, month ends, leap days, the
-    workspace time zone, the URL round trip, amounts, widening and chips). The e2e specs for review, AI settings and
+    merchant, dates, an undated receipt and totals in other currencies; 250 filtered rows over 25 shared dates paged
+    40 at a time, each once and in order, with and without the id lookup and with it on some pages only; the review
+    queue paged the same way); db `rls.test.ts` (the ids only for a member); `perf-dashboard.test.ts` (three filtered
+    lists); web `list-filters.test.ts` (presets, month ends, leap days, the workspace time zone, the URL round trip,
+    amounts, widening and chips) and `paging.test.ts` (Load more and when Show older appears). The e2e specs for review, AI settings and
     the happy path now date their transactions in the last few days, and the receipts spec searches over all time.
 
 ---

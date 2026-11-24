@@ -1860,7 +1860,7 @@
   "filters.direction.out": "Money out",
   "filters.in_or_out": "In or out",
   "filters.label": "Filters",
-  "filters.limit_reached": "Showing the newest {count}. Narrow the filters to see the rest.",
+  "filters.load_more": "Load more",
   "filters.merchant": "Merchant",
   "filters.merchant_hint": "Payee or description",
   "filters.no_match.receipts": "No receipts match these filters.",

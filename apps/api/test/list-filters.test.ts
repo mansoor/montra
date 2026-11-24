@@ -3,6 +3,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_URL } from './env.js';
 import { startHarness, type Client, type Harness } from './harness.js';
+import { PREFILTER } from '../src/common/list-filters.js';
 
 // The web lists' filters (Transactions, Review, Receipts): a date window, merchant words, an amount range compared
 // without the sign, and money in or out. Each narrows what the others leave.
@@ -200,5 +201,108 @@ describe('receipts', () => {
     expect(await receipts('merchant=walmart&amountMin=2000')).toEqual(['Walmart Supercenter']);
     expect(await receipts('merchant=walmart&from=2026-11-05')).toEqual(['Walmart']);
     expect(await receipts('q=walmart&amountMax=2000&status=inbox')).toEqual(['Walmart']);
+  });
+});
+
+describe('paging through a filtered list', () => {
+  let page: (p: string) => string;
+  /** The 250 that match, newest first, then by id: the order the list pages in. */
+  let expected: string[];
+
+  beforeAll(async () => {
+    const ws = (
+      await c.post('/v1/workspaces', { name: 'Paging', baseCurrency: 'USD', template: 'household' })
+    ).body;
+    page = (p) => `/v1/workspaces/${ws.id}${p}`;
+    const account = (await c.post(page('/accounts'), { name: 'Checking', kind: 'checking' })).body.id;
+    const entity = (
+      await admin.query(`select id from app.entity where workspace_id = $1 and type = 'personal'`, [ws.id])
+    ).rows[0].id;
+    // 25 days with 10 matching rows each, so most rows share their date with others, plus rows the filters leave out:
+    // too small, money in, and another payee. Written straight to the table: 325 posts take minutes on a busy machine,
+    // and the list reads only the transaction rows.
+    const { rows: made } = await admin.query<{ id: string; date: string; match: boolean }>(
+      `with spec (n, amount, payee, match) as (
+         select n, -(1000 + n), 'Corner Grocer', true from generate_series(0, 9) n
+         union all values (10, -100, 'Corner Grocer', false), (11, 2000, 'Corner Grocer refund', false),
+                          (12, -3000, 'Fuel Stop', false)),
+       rows as (
+         select gen_random_uuid() as id, ('2026-09-01'::date + d) as date, s.*
+           from generate_series(0, 24) d cross join spec s)
+       insert into app.transaction (workspace_id, id, primary_entity_id, txn_date, description, payee_raw, status,
+                                    review_state, source, posted_at, spec)
+       select $1, r.id, $2, r.date, r.payee, r.payee, 'posted', 'reviewed', 'import', now(),
+              jsonb_build_object('type', 'standard', 'accountId', $3::uuid, 'amount', r.amount::text,
+                                 'currency', 'USD', 'description', r.payee, 'memberId', null,
+                                 'uncategorized', true, 'splits', '[]'::jsonb)
+         from rows r
+       returning id, txn_date::text as date,
+                 (payee_raw = 'Corner Grocer' and (spec ->> 'amount')::int <= -1000) as match`,
+      [ws.id, entity, account],
+    );
+    expected = made
+      .filter((m) => m.match)
+      .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : a.id < b.id ? 1 : -1))
+      .map((m) => m.id);
+    expect(expected).toHaveLength(250);
+  }, 120_000);
+
+  const FILTERS = 'merchant=corner%20grocer&amountMin=500&direction=out&from=2026-09-01&to=2026-09-30';
+  const pageThrough = async (path: string, rows: (body: any) => string[]) => {
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const r: any = await c.get(
+        page(`${path}?${FILTERS}&limit=40${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
+      );
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      seen.push(...rows(r.body));
+      cursor = r.body.nextCursor;
+      pages++;
+    } while (cursor && pages < 20);
+    return { seen, pages };
+  };
+  const transactions = () => pageThrough('/transactions', (b) => b.data.map((t: any) => t.id));
+
+  it('returns every matching row exactly once, in order, across pages', async () => {
+    const { seen, pages } = await transactions();
+    expect(pages).toBe(7);
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen).toEqual(expected);
+  });
+
+  it('pages the same with too many candidates to look them up first, on every page or on some', async () => {
+    const before = PREFILTER.max;
+    try {
+      // Never looked up first: every page reads the filters under RLS.
+      PREFILTER.max = 10;
+      expect((await transactions()).seen).toEqual(expected);
+      // The first pages have too many candidates; later ones, ending on the cursor's day, few enough.
+      PREFILTER.max = 100;
+      expect((await transactions()).seen).toEqual(expected);
+    } finally {
+      PREFILTER.max = before;
+    }
+  });
+
+  it('gives no cursor on the last page, and refuses a cursor it did not make', async () => {
+    const one = await c.get(page('/transactions?merchant=fuel&limit=200'));
+    expect(one.body.data).toHaveLength(25);
+    expect(one.body.nextCursor).toBeNull();
+    expect((await c.get(page(`/transactions?${FILTERS}&cursor=${'x'.repeat(10)}`))).status).toBe(400);
+  });
+
+  it('pages the review queue the same way, with the filtered total on every page', async () => {
+    await admin.query(
+      `update app.transaction set review_state = 'needs_review'
+        where workspace_id = (select workspace_id from app.transaction where id = $1)`,
+      [expected[0]],
+    );
+    const { seen } = await pageThrough('/review', (b) => {
+      expect(b.total).toBe(250);
+      return b.items.map((i: any) => i.transactionId);
+    });
+    expect(seen).toEqual(expected);
   });
 });

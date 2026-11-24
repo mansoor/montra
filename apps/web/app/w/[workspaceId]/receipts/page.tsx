@@ -7,8 +7,8 @@ import { STATUS_CHIP, stalledReasons } from '@/lib/receipts';
 import { ReceiptUpload } from '@/components/receipts/receipt-upload';
 import { ReceiptRecommendations } from '@/components/receipts/recommendations';
 import { OrderImport } from '@/components/receipts/order-import';
-import { ReceiptAmount, ReceiptDate } from '@/components/receipts/receipt-cells';
-import { ListEmpty, ListFilterBar, ListWindowFooter } from '@/components/list-filter-bar';
+import { ReceiptList } from '@/components/receipts/receipt-list';
+import { ListFilterBar } from '@/components/list-filter-bar';
 import { FILTER_PARAMS, listApiQuery, parseListFilters } from '@/lib/list-filters';
 
 export const metadata: Metadata = { title: 'Receipts' };
@@ -46,9 +46,11 @@ export default async function ReceiptsPage({
       locale,
     },
   );
+  // What every page of the list is asked for with; "Load more" sends it again with the cursor.
+  const query: ReceiptListOptions = { ...TABS[tab].query, ...(q ? { q } : {}), ...narrow, limit: 100 };
   const [page, recommended, reading] = await load((api) =>
     Promise.all([
-      api.listReceipts(workspaceId, { ...TABS[tab].query, ...(q ? { q } : {}), ...narrow, limit: 100 }),
+      api.listReceipts(workspaceId, query),
       api.listReceiptRecommendations(workspaceId),
       // Receipts still being read aren't in any tab but All, so they're listed above the tabs.
       api.listReceipts(workspaceId, { status: 'processing', limit: 100 }),
@@ -147,45 +149,7 @@ export default async function ReceiptsPage({
           </form>
         </div>
         <ListFilterBar screen="receipts" workspace={workspace} />
-        {page.data.length === 0 ? (
-          <ListEmpty screen="receipts" fallback={t('receipts.empty')} />
-        ) : (
-          <table className="tbl text-sm">
-            <thead className="text-left text-muted">
-              <tr>
-                <th className="py-1">{t('receipts.date')}</th>
-                <th className="py-1">{t('receipts.merchant')}</th>
-                <th className="py-1 text-right">{t('receipts.total')}</th>
-                <th className="py-1">{t('receipts.status_col')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {page.data.map((r) => (
-                <tr key={r.id} data-testid="receipt-row">
-                  <td className="py-2">
-                    <ReceiptDate receipt={r} />
-                  </td>
-                  <td className="py-2">
-                    <Link href={`${base}/${r.id}`} className="font-medium underline">
-                      {r.merchant ?? t('receipts.unknown_merchant')}
-                    </Link>
-                    {r.orderRef && <span className="ml-2 text-xs text-muted">{r.orderRef}</span>}
-                  </td>
-                  <td className="py-2 text-right">
-                    <ReceiptAmount receipt={r} />
-                  </td>
-                  <td className="py-2">
-                    <span className={STATUS_CHIP[r.status]}>{t(`receipts.status.${r.status}`)}</span>
-                    {r.likelyDuplicates.length > 0 && (
-                      <span className="chip chip-warn ml-1">{t('receipts.likely_duplicate')}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <ListWindowFooter screen="receipts" />
+        <ReceiptList workspaceId={workspaceId} first={page.data} nextCursor={page.nextCursor} query={query} />
       </section>
     </div>
   );

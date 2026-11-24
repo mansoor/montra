@@ -5,11 +5,10 @@ import type { TransactionListOptions } from '@montra/api-client';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
 import { FILTER_PARAMS, listApiQuery, parseListFilters } from '@/lib/list-filters';
-import { accountMap, toTransactionRow } from '@/lib/view-models';
-import { ListEmpty, ListFilterBar, ListWindowFooter } from '@/components/list-filter-bar';
+import { ListEmpty, ListFilterBar } from '@/components/list-filter-bar';
+import { PagedTransactions } from '@/components/paged-transactions';
 import { QuickAdd } from '@/components/quick-add';
 import { TransferForm } from '@/components/transfer-form';
-import { TransactionsTable } from '@/components/transactions-table';
 
 export const metadata: Metadata = { title: 'Transactions' };
 export const dynamic = 'force-dynamic';
@@ -22,8 +21,8 @@ const FILTERS = {
 } satisfies Record<string, { label: string; query: TransactionListOptions }>;
 type FilterKey = keyof typeof FILTERS;
 
-/** The most the list shows at once; the filters narrow it. */
-const LIMIT = 200;
+/** Rows per page; "Load more" adds the next page. */
+const PAGE = 200;
 
 export default async function TransactionsPage({
   params,
@@ -56,24 +55,27 @@ export default async function TransactionsPage({
     currency: workspace.baseCurrency,
     locale,
   });
+  // What every page of the list is asked for with; "Load more" sends it again with the cursor.
+  const query: TransactionListOptions = JSON.parse(
+    JSON.stringify({
+      limit: PAGE,
+      ...FILTERS[filter].query,
+      ...drill,
+      ...narrow,
+      ...(filters.account ? { accountId: filters.account } : {}),
+      ...(filters.category ? { categoryIds: [filters.category] } : {}),
+    }),
+  );
   const [accounts, categories, members, transactions] = await load((api) =>
     Promise.all([
       api.listAccounts(workspaceId),
       api.listCategories(workspaceId),
       api.listFamilyMembers(workspaceId),
-      api.listTransactions(workspaceId, {
-        limit: LIMIT,
-        ...FILTERS[filter].query,
-        ...drill,
-        ...narrow,
-        ...(filters.account ? { accountId: filters.account } : {}),
-        ...(filters.category ? { categoryIds: [filters.category] } : {}),
-      }),
+      api.listTransactionsPage(workspaceId, query),
     ]),
   );
   const open = accounts.filter((a) => !a.archived);
   const today = todayIn(workspace.timeZone);
-  const names = accountMap(accounts);
   const base = `/w/${workspace.id}`;
   // The tabs keep the filters.
   const tabHref = (k: FilterKey) => {
@@ -138,9 +140,12 @@ export default async function TransactionsPage({
           accounts={open}
           categories={categories}
         />
-        <TransactionsTable
+        <PagedTransactions
           workspace={workspace}
-          rows={transactions.map((t) => toTransactionRow(t, names))}
+          first={transactions.data}
+          nextCursor={transactions.nextCursor}
+          query={query}
+          accounts={accounts}
           categories={categories}
           members={members}
           trash={filter === 'trash'}
@@ -151,10 +156,6 @@ export default async function TransactionsPage({
             />
           }
         />
-        {transactions.length >= LIMIT && (
-          <p className="text-sm text-muted">{t('filters.limit_reached', { count: LIMIT })}</p>
-        )}
-        <ListWindowFooter screen="transactions" />
       </section>
     </div>
   );

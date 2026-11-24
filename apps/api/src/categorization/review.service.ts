@@ -19,7 +19,7 @@ import type {
   SuggestRequest,
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
-import { transactionConditions } from '../common/list-filters.js';
+import { afterCursor, decodeCursor, encodeCursor, transactionConditions } from '../common/list-filters.js';
 import { AiService } from '../ai/ai.service.js';
 import { ownerOf, TransactionPoster, type TransactionSpec } from '../transactions/poster.js';
 import { singleProperty, TransactionsService } from '../transactions/transactions.service.js';
@@ -50,6 +50,7 @@ export class ReviewService {
 
   async list(trx: Trx, ctx: Ctx, q: ReviewListQuery): Promise<ReviewListResponse> {
     const PAGE = q.limit ?? DEFAULT_PAGE;
+    const after = q.cursor ? decodeCursor(q.cursor) : null;
     const narrow = await this.filters(trx, ctx, q);
     const base = () => {
       let b = trx
@@ -88,12 +89,7 @@ export class ReviewService {
       .orderBy('t.txn_date', 'desc')
       .orderBy('t.id', 'desc')
       .limit(PAGE + 1);
-    if (q.cursor) {
-      const [d, id] = Buffer.from(q.cursor, 'base64url').toString().split('|');
-      page = page.where((eb) =>
-        eb.or([eb('t.txn_date', '<', d!), eb.and([eb('t.txn_date', '=', d!), eb('t.id', '<', id!)])]),
-      );
-    }
+    if (after) page = page.where(afterCursor(after));
     const rows = await page.execute();
     const merchants = await this.merchants.load(trx);
     const items = rows.slice(0, PAGE).map((r): ReviewItemDto => {
@@ -122,7 +118,7 @@ export class ReviewService {
     return {
       items,
       total,
-      nextCursor: last ? Buffer.from(`${last.txn_date}|${last.id}`).toString('base64url') : null,
+      nextCursor: last ? encodeCursor(last.txn_date, last.id) : null,
     };
   }
 
