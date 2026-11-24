@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  vaultUnkeptDefault,
+  vaultUnkeptOffered,
+  VAULT_RENDERED_GROUPS,
+  VAULT_COVER_NUMBERS,
   DisconnectVaultRequest,
   FILE_KINDS,
   MoveToVaultRequest,
@@ -166,12 +170,27 @@ describe('vault connection DTOs (ADR-0054 §11)', () => {
     keyProblem: null,
     actsAs: 'app',
     actingAs: 'Montra',
-    groups: VAULT_GROUPS.map((group) => ({ group, mode: VAULT_GROUP_DEFAULTS[group], vaultKind: null })),
+    groups: VAULT_GROUPS.map((group) => ({
+      group,
+      mode: VAULT_GROUP_DEFAULTS[group],
+      vaultKind: null,
+      unkept: vaultUnkeptDefault(group),
+    })),
     vaultKinds: [{ key: 'receipt', name: 'Receipt' }],
     describeMore: false,
+    coverNumber: 'last4',
     deleteWithMontra: false,
     canDelete: true,
-    items: { queued: 0, pending: 1, received: 2, filed: 3, notKept: 0, failed: 0, outOfReach: 0 },
+    items: {
+      queued: 0,
+      pending: 1,
+      received: 2,
+      filed: 3,
+      notKept: 0,
+      failed: 0,
+      outOfReach: 0,
+      converted: 0,
+    },
     heldUntil: { sending: null, reading: null },
     dailyLimit: { files: 100, filesToday: 3 },
     feedReadAt: null,
@@ -343,6 +362,7 @@ describe('files held in the vault, and missing files (ADR-0054 §5a, §9)', () =
         newerVersion: false,
         notKeptReason: null,
         canOpen: true,
+        converted: null,
       },
     });
     expect(state.vault?.title).toBe('Bank statement, October 2026');
@@ -436,5 +456,32 @@ describe('opening from the phone (ADR-0054 §9, As built: PR 6)', () => {
     expect(() => VaultOpenLinkDto.parse({ url: 'not a link', mode: 'view' })).toThrow();
     expect(() => VaultOpenLinkDto.parse({ ...answer, mode: 'print' })).toThrow();
     expect(VaultOpenQuery.parse({})).toEqual({ mode: 'view' });
+  });
+});
+
+describe('files the vault doesn’t keep (ADR-0057 §1, §3)', () => {
+  it('offers converting only where Montra renders, statements by default with the original attached', () => {
+    expect(VAULT_RENDERED_GROUPS).toEqual(['statements']);
+    expect(vaultUnkeptOffered('statements')).toEqual(['dont_send', 'convert', 'convert_attach']);
+    expect(vaultUnkeptDefault('statements')).toBe('convert_attach');
+    for (const g of VAULT_GROUPS.filter((x) => x !== 'statements')) {
+      expect(vaultUnkeptOffered(g)).toEqual(['dont_send']);
+      expect(vaultUnkeptDefault(g)).toBe('dont_send');
+    }
+  });
+
+  it('takes the choices and the cover number in a change, and nothing else', () => {
+    expect(
+      UpdateVaultConnectionRequest.parse({
+        version: 1,
+        groups: [{ group: 'statements', unkept: 'convert' }],
+        coverNumber: 'full',
+      }),
+    ).toMatchObject({ groups: [{ unkept: 'convert' }], coverNumber: 'full' });
+    expect(() => UpdateVaultConnectionRequest.parse({ version: 1, coverNumber: '1234' })).toThrow();
+    expect(() =>
+      UpdateVaultConnectionRequest.parse({ version: 1, groups: [{ group: 'statements', unkept: 'pdf' }] }),
+    ).toThrow();
+    expect(VAULT_COVER_NUMBERS).toEqual(['last4', 'full', 'none']);
   });
 });

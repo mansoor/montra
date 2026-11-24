@@ -210,6 +210,7 @@ export function vaultCounts(d: Pick<VaultConnectionDto, 'items' | 'files'>): { k
     { key: 'vault.count_not_kept', n: i.notKept },
     { key: 'vault.count_failed', n: i.failed },
     { key: 'vault.count_out_of_reach', n: i.outOfReach },
+    { key: 'vault.count_converted', n: i.converted },
     { key: 'vault.count_only_in_vault', n: d.files.onlyInVault },
     { key: 'vault.count_missing', n: d.files.missing },
   ].filter((c) => c.n > 0);
@@ -246,6 +247,20 @@ export function vaultBadge(s: FileStorageStateDto | undefined): VaultBadge | nul
       return { key: 'vault.badge_failed', tone: 'bad', detail: null };
     case 'out_of_reach':
       return { key: 'vault.badge_out_of_reach', tone: 'muted', detail: null };
+    case 'converted': {
+      // ADR-0057: a statement the vault doesn't keep, sent as PDFs (the phone shows no statements' files yet).
+      const c = v.converted;
+      if (!c || c.state === 'rendering')
+        return { key: 'vault.badge_converting', tone: 'muted', detail: null };
+      if (c.state === 'not_converted')
+        return { key: 'vault.badge_not_converted', tone: 'muted', detail: v.notKeptReason };
+      if (c.state === 'import_undone')
+        return { key: 'vault.badge_import_undone', tone: 'muted', detail: null };
+      if (c.failed > 0) return { key: 'vault.badge_failed', tone: 'bad', detail: null };
+      if (c.waiting > 0 || c.parts === 0)
+        return { key: 'vault.badge_converted_sending', tone: 'muted', detail: null };
+      return { key: 'vault.badge_converted_sent', tone: 'good', detail: null };
+    }
     default:
       return null;
   }

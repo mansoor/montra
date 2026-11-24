@@ -50,12 +50,21 @@ import type { VaultConnection } from './connection.js';
 import { FEED_MS, VaultFeed } from './vault.feed.js';
 import {
   configOf,
+  unkeptOf,
   VAULT_FAILING_AFTER,
   VAULT_LABEL,
   VaultService,
   expiresSoon,
   type VaultConfig,
 } from './vault.service.js';
+import { StatementRenditions } from '../../renditions/statement-renditions.js';
+import {
+  conversionOptions,
+  RENDER_WAIT_MS,
+  sameOptions,
+  TYPE_NOT_KEPT_WORDS,
+  type ConversionOptions,
+} from './vault.conversions.js';
 
 type Ctx = { workspaceId: string; userId: string };
 type Row = Selectable<StorageDestinationTable>;
@@ -90,7 +99,7 @@ const BRING_BACK_WAIT_MS = 15 * MINUTE;
 
 /** In Montra's words, for Settings and the badges (§4.5, D8). Never a file name, never the vault's own words. */
 export const NOT_KEPT_WORDS = {
-  type: 'Not a type the vault keeps. It stays in Montra.',
+  type: TYPE_NOT_KEPT_WORDS,
   size: 'Too large for the vault. It stays in Montra.',
   kind: 'The vault doesn’t let Montra send this kind of document. It stays in Montra.',
   refused: 'The vault turned it down. It stays in Montra.',
@@ -140,6 +149,7 @@ export class VaultJobs {
     @Inject(VaultFeed) private readonly feed: VaultFeed,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(MissingFiles) private readonly missing: MissingFiles,
+    @Inject(StatementRenditions) private readonly renditions: StatementRenditions,
   ) {}
 
   register(): void {
@@ -266,24 +276,20 @@ export class VaultJobs {
     const settle = opts.settleMs ?? SETTLE_MS;
     const modes = vaultEffectiveModes(config.groups);
     const { rows } = await this.db.run(ctx, (trx) =>
-      sql<{
-        file_id: string;
-        created_at: Date;
-        kind: FileKind | null;
-        sealed: boolean | null;
-        mime: string | null;
-        file_name: string | null;
-        bytes: string | null;
-        deleted_at: Date | null;
-        file_created_at: Date | null;
-        busy: boolean | null;
-      }>`
-        select i.file_id, i.created_at, f.kind, f.sealed, f.mime, f.file_name, f.bytes::text as bytes, f.deleted_at,
-               f.created_at as file_created_at, app.vault_file_busy(i.file_id) as busy
+      sql<Ready>`
+        select i.file_id, i.created_at, i.status, i.render_state, i.render_options, f.kind, f.sealed, f.mime,
+               f.file_name, f.bytes::text as bytes, f.deleted_at, f.rendition, f.created_at as file_created_at,
+               app.vault_file_busy(i.file_id) as busy,
+               exists (select 1 from app.import_batch b
+                        where b.workspace_id = i.workspace_id and b.file_id = i.file_id
+                          and b.status = 'committed') as committed,
+               exists (select 1 from app.import_batch b
+                        where b.workspace_id = i.workspace_id and b.file_id = i.file_id
+                          and b.status = 'undone') as undone
           from app.vault_item i
           left join app.file f on f.workspace_id = i.workspace_id and f.id = i.file_id
          where i.workspace_id = ${ctx.workspaceId}::uuid and i.destination_id = ${row.id}::uuid
-           and i.status = 'queued' and i.next_attempt_at <= now()
+           and i.status in ('queued', 'converted') and i.next_attempt_at <= now()
          order by i.created_at, i.file_id
          limit 500`.execute(trx),
     );
@@ -296,7 +302,8 @@ export class VaultJobs {
       }
       const group = vaultGroupOf({ kind: r.kind, sealed: r.sealed ?? false });
       if (group === 'never' || !isSentMode(modes[group])) {
-        // Its group isn't sent any more (or never was): it stays in Montra only.
+        // Its group isn't sent any more (or never was): it stays in Montra only, with no PDF waiting to go.
+        if (r.status === 'converted') await this.renditions.dropUnsent(ctx, r.file_id, { always: true });
         await this.dropItem(ctx, key);
         continue;
       }
@@ -304,11 +311,18 @@ export class VaultJobs {
         await this.setItem(ctx, key, { next_attempt_at: new Date(now + TRASHED_MS) });
         continue;
       }
-      if (!vaultTypeKept({ mime: r.mime ?? '', fileName: r.file_name ?? '' }, config.mediaTypes)) {
+      if (r.status === 'converted') {
+        await this.reconvert(ctx, config, key, r, group);
+        continue;
+      }
+      const kept = vaultTypeKept({ mime: r.mime ?? '', fileName: r.file_name ?? '' }, config.mediaTypes);
+      // ADR-0057 §1: a file the vault doesn't keep stays in Montra, or goes as a PDF when its group converts it.
+      const choice = kept || r.rendition ? 'dont_send' : unkeptOf(config, group);
+      if (!kept && choice === 'dont_send') {
         await this.notKeptHere(ctx, key, r.created_at, NOT_KEPT_WORDS.type);
         continue;
       }
-      if (config.limits && Number(r.bytes ?? 0) > config.limits.maxUploadBytes) {
+      if (kept && config.limits && Number(r.bytes ?? 0) > config.limits.maxUploadBytes) {
         await this.notKeptHere(ctx, key, r.created_at, NOT_KEPT_WORDS.size);
         continue;
       }
@@ -324,8 +338,106 @@ export class VaultJobs {
         await this.setItem(ctx, key, { next_attempt_at: new Date(now + NOT_READY_MS) });
         continue;
       }
+      if (!kept && choice !== 'dont_send') {
+        await this.convert(
+          ctx,
+          key,
+          r.created_at,
+          conversionOptions(choice, config.describeMore, config.coverNumber),
+        );
+        continue;
+      }
       await this.setItem(ctx, key, { status: 'pending', next_attempt_at: sql`now()`, last_error: null });
     }
+  }
+
+  /**
+   * ADR-0057 §1: a statement the vault doesn't keep, its import done: its row becomes `converted` (it is never sent
+   * itself) and its PDF is rendered by the worker as this owner. The rendering queues each part in the outbox.
+   */
+  private async convert(ctx: Ctx, key: ItemKey, createdAt: Date, options: ConversionOptions) {
+    await this.db.run(ctx, async (trx) => {
+      await trx
+        .updateTable('app.vault_item')
+        .set({
+          status: 'converted',
+          vault_ref: sql`coalesce(vault_ref, ${vaultRef(key.workspace_id, key.file_id, createdAt)})`,
+          render_state: 'rendering',
+          render_options: JSON.stringify(options),
+          not_kept_reason: null,
+          resend_allowed: false,
+          last_error: null,
+          // Asked for again if nothing is heard of it by then.
+          next_attempt_at: new Date(Date.now() + RENDER_WAIT_MS),
+          updated_at: new Date(),
+        } as never)
+        .where('workspace_id', '=', key.workspace_id)
+        .where('destination_id', '=', key.destination_id)
+        .where('file_id', '=', key.file_id)
+        .execute();
+      await this.renditions.enqueue(trx, ctx, key.file_id, options);
+    });
+  }
+
+  /**
+   * ADR-0057 §4: a converted file due again: its settings changed, its import was committed or undone, "Send again" was
+   * pressed, or a rendering is overdue. PDFs not sent yet are made again with today's settings; ones the vault has are
+   * kept (the rendering says so). A group that no longer converts drops the unsent ones, and the file is "not a type
+   * the vault keeps" again, unless the vault has its PDFs already.
+   */
+  private async reconvert(ctx: Ctx, config: VaultConfig, key: ItemKey, r: Ready, group: VaultGroup) {
+    const never = sql<Date>`'infinity'::timestamptz`;
+    const choice = unkeptOf(config, group);
+    if (choice === 'dont_send') {
+      const current = await this.db.run(ctx, (trx) => this.renditions.renditionsOf(trx, ctx, r.file_id));
+      if (current.some((c) => c.sent)) {
+        await this.setItem(ctx, key, { next_attempt_at: never });
+        return;
+      }
+      await this.renditions.dropUnsent(ctx, r.file_id, { always: true });
+      await this.setItem(ctx, key, {
+        status: 'not_kept',
+        not_kept_reason: NOT_KEPT_WORDS.type,
+        resend_allowed: false,
+        render_state: null,
+        render_options: null,
+        next_attempt_at: sql`now()`,
+      });
+      return;
+    }
+    // §4: its import was undone. PDFs not sent went with it; one the vault has stays there, marked "import undone".
+    const undone = r.committed !== true && r.undone === true;
+    if (undone && r.render_state !== 'import_undone') {
+      const current = await this.db.run(ctx, (trx) => this.renditions.renditionsOf(trx, ctx, r.file_id));
+      if (current.some((c) => c.sent)) {
+        await this.setItem(ctx, key, { render_state: 'import_undone', next_attempt_at: never });
+        return;
+      }
+    }
+    const options = conversionOptions(choice, config.describeMore, config.coverNumber);
+    const settled =
+      sameOptions(r.render_options, options) &&
+      (r.render_state === 'rendered' ? !undone : r.render_state !== 'rendering' && r.committed !== true);
+    if (settled) {
+      // Nothing that changes the PDFs: the same settings, and the same import (or still none).
+      await this.setItem(ctx, key, { next_attempt_at: never });
+      return;
+    }
+    await this.db.run(ctx, async (trx) => {
+      await trx
+        .updateTable('app.vault_item')
+        .set({
+          render_state: 'rendering',
+          render_options: JSON.stringify(options),
+          next_attempt_at: new Date(Date.now() + RENDER_WAIT_MS),
+          updated_at: new Date(),
+        })
+        .where('workspace_id', '=', key.workspace_id)
+        .where('destination_id', '=', key.destination_id)
+        .where('file_id', '=', key.file_id)
+        .execute();
+      await this.renditions.enqueue(trx, ctx, key.file_id, options);
+    });
   }
 
   /** A file Montra keeps to itself (a type or size the vault doesn't keep), shown with the words why. */
@@ -409,7 +521,18 @@ export class VaultJobs {
     const file = await this.db.run(ctx, (trx) =>
       trx
         .selectFrom('app.file')
-        .select(['id', 'kind', 'file_name', 'mime', 'bytes', 'sha256', 'storage_key', 'deleted_at', 'sealed'])
+        .select([
+          'id',
+          'kind',
+          'file_name',
+          'mime',
+          'bytes',
+          'sha256',
+          'storage_key',
+          'deleted_at',
+          'sealed',
+          'derived_from_file_id',
+        ])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', item.file_id)
         .executeTakeFirst(),
@@ -460,6 +583,7 @@ export class VaultJobs {
         mime: file.mime,
         bytes: bytes.length,
         sha256: file.sha256,
+        derivedFrom: file.derived_from_file_id,
       });
       const answer = await conn.send(doc, bytes);
       done.sent++;
@@ -613,16 +737,43 @@ export class VaultJobs {
    * rental's name), its date, and whom it belongs to when Montra knows (the person hint, by name, as the household
    * knows them; the vault decides whose Inbox). Amounts and an account's last four only with "Describe documents in
    * more detail". Only the hints the vault takes.
+   *
+   * ADR-0057 §4: a PDF Montra rendered from a statement says what its original would (its record is the original's),
+   * titled "<original's name> (PDF)", with "part n of m" when the statement was split, and dated the statement's end.
    */
   private async describe(
     ctx: Ctx,
     config: VaultConfig,
     group: VaultGroup,
-    f: { ref: string; fileId: string; fileName: string; mime: string; bytes: number; sha256: string },
+    f: {
+      ref: string;
+      fileId: string;
+      fileName: string;
+      mime: string;
+      bytes: number;
+      sha256: string;
+      derivedFrom: string | null;
+    },
   ): Promise<VaultDocument> {
-    const about = await this.db.run(ctx, (trx) => aboutFile(trx, ctx.workspaceId, f.fileId, group));
+    const { about, base } = await this.db.run(ctx, async (trx) => {
+      if (!f.derivedFrom) {
+        return {
+          about: await aboutFile(trx, ctx.workspaceId, f.fileId, group),
+          base: f.fileName.replace(/\.[A-Za-z0-9]{1,8}$/, '').trim() || f.fileName,
+        };
+      }
+      const original = await trx
+        .selectFrom('app.file')
+        .select('file_name')
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', f.derivedFrom)
+        .executeTakeFirst();
+      return {
+        about: await aboutFile(trx, ctx.workspaceId, f.derivedFrom, group, { statementEnd: true }),
+        base: renditionTitle(original?.file_name ?? null, f.fileName),
+      };
+    });
     const takes = new Set(config.hints ?? []);
-    const base = f.fileName.replace(/\.[A-Za-z0-9]{1,8}$/, '').trim() || f.fileName;
     const title = about.entity ? `${base} · ${about.entity}` : base;
     const doc: VaultDocument = {
       ref: f.ref,
@@ -917,7 +1068,7 @@ export class VaultJobs {
         update app.vault_item i set remove_at = now()
           from app.file f
          where i.workspace_id = ${ctx.workspaceId}::uuid and i.destination_id = ${row.id}::uuid
-           and i.status = 'filed' and i.remove_at is null and i.source_removed_at is not null
+           and i.status in ('filed', 'converted') and i.remove_at is null and i.source_removed_at is not null
            and f.workspace_id = i.workspace_id and f.id = i.file_id and f.location = 'montra'
            and f.deleted_at is null and not f.sealed and f.kind = any (${kinds}::text[])`.execute(trx),
     );
@@ -974,6 +1125,19 @@ export class VaultJobs {
         }
       }
       for (const item of items) await this.moveOne(ctx, row.id, kinds, item, done);
+      // ADR-0057 §7: the vault filed a PDF with its original inside: the original is looked at too.
+      const carriers = items.filter((i) => i.carries_original && i.status === 'filed').map((i) => i.file_id);
+      if (carriers.length) {
+        await this.db.run(ctx, (trx) =>
+          sql`
+            update app.vault_item o set remove_at = now()
+              from app.file r
+             where r.workspace_id = ${ctx.workspaceId}::uuid and r.id = any (${carriers}::uuid[])
+               and o.workspace_id = r.workspace_id and o.destination_id = ${row.id}::uuid
+               and o.file_id = r.derived_from_file_id and o.status = 'converted'
+               and o.remove_at is null and o.source_key is null`.execute(trx),
+        );
+      }
     }
     return 'ok';
   }
@@ -1025,11 +1189,30 @@ export class VaultJobs {
         !(kinds as readonly string[]).includes(f.kind)
       )
         return not(null);
-      // 1. Filed, and what the vault holds is the file Montra holds.
-      if (i.status !== 'filed' || !i.filed_at) return not(null);
-      if (i.vault_sha256 && i.vault_sha256 !== f.sha256) return not(null);
-      // 2. The vault could give it back.
-      if (i.content_available !== true) return later();
+      let carrier: string | null = null;
+      if (i.status === 'converted') {
+        // ADR-0057 §7: an original the vault doesn't keep goes only once the vault has filed the PDF it travels
+        // inside, as Montra sent it. A PDF without it attached loses its exact content: then the original stays.
+        const { rows: carried } = await sql<{ file_id: string; content_available: boolean | null }>`
+          select r.id as file_id, ri.content_available from app.file r
+            join app.vault_item ri on ri.workspace_id = r.workspace_id and ri.file_id = r.id
+                                  and ri.destination_id = ${destinationId}::uuid
+           where r.workspace_id = ${ctx.workspaceId}::uuid and r.derived_from_file_id = ${f.id}::uuid
+             and r.rendition is not null and ri.carries_original and ri.status = 'filed'
+             and (ri.vault_sha256 is null or ri.vault_sha256 = r.sha256)
+           order by ri.content_available desc nulls last, ri.filed_at
+           limit 1`.execute(trx);
+        if (!carried[0]) return not(null);
+        // 2. The vault could give that PDF back.
+        if (carried[0].content_available !== true) return later();
+        carrier = carried[0].file_id;
+      } else {
+        // 1. Filed, and what the vault holds is the file Montra holds.
+        if (i.status !== 'filed' || !i.filed_at) return not(null);
+        if (i.vault_sha256 && i.vault_sha256 !== f.sha256) return not(null);
+        // 2. The vault could give it back.
+        if (i.content_available !== true) return later();
+      }
       // 3. The owner's own storage, when it copies this kind, has it.
       const mirror = await sql<{ done: boolean }>`
         select exists (select 1 from app.storage_mirror_item mi
@@ -1067,7 +1250,11 @@ export class VaultJobs {
           action: 'file.moved_to_vault',
           subject_type: 'file',
           subject_id: f.id,
-          diff: JSON.stringify({ destinationId, vaultDocumentId: i.vault_document_id }),
+          diff: JSON.stringify(
+            carrier
+              ? { destinationId, insidePdf: carrier }
+              : { destinationId, vaultDocumentId: i.vault_document_id },
+          ),
         })
         .execute();
       return f.storage_key;
@@ -1482,6 +1669,26 @@ export class VaultJobs {
 
 type ItemKey = { workspace_id: string; destination_id: string; file_id: string };
 
+/** A queued or converted row the job looks at (§3, ADR-0057 §1), with its file and whether its import is committed. */
+interface Ready {
+  file_id: string;
+  created_at: Date;
+  status: 'queued' | 'converted';
+  render_state: string | null;
+  render_options: unknown;
+  kind: FileKind | null;
+  sealed: boolean | null;
+  mime: string | null;
+  file_name: string | null;
+  bytes: string | null;
+  deleted_at: Date | null;
+  rendition: string | null;
+  file_created_at: Date | null;
+  busy: boolean | null;
+  committed: boolean | null;
+  undone: boolean | null;
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -1495,7 +1702,23 @@ interface About {
   accountLast4: string | null;
 }
 
-async function aboutFile(trx: Trx, workspaceId: string, fileId: string, group: VaultGroup): Promise<About> {
+/**
+ * ADR-0057 §4: a rendered PDF's title: "<original's name> (PDF)", and ", part n of m" for a split statement (its own
+ * name says which part, `renditionName`). Without the original (deleted for good), its own name.
+ */
+export function renditionTitle(originalName: string | null, ownName: string): string {
+  const part = /\(PDF, part (\d+) of (\d+)\)\.pdf$/.exec(ownName);
+  const base = originalName ?? ownName.replace(/ \(PDF(, part \d+ of \d+)?\)\.pdf$/, '');
+  return `${base} (PDF)${part ? `, part ${part[1]} of ${part[2]}` : ''}`;
+}
+
+async function aboutFile(
+  trx: Trx,
+  workspaceId: string,
+  fileId: string,
+  group: VaultGroup,
+  opts: { statementEnd?: boolean } = {},
+): Promise<About> {
   const none: About = {
     date: null,
     person: null,
@@ -1547,7 +1770,19 @@ async function aboutFile(trx: Trx, workspaceId: string, fileId: string, group: V
          order by t.created_at desc limit 1`;
       break;
     case 'statements':
-      q = sql<R>`
+      // ADR-0057 §4: a rendered PDF is dated the statement's end, its own when the file said it, from the committed
+      // import its rows came from.
+      q = opts.statementEnd
+        ? sql<R>`
+        select coalesce(case when b.analysis -> 'statement' ->> 'periodEnd' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                             then b.analysis -> 'statement' ->> 'periodEnd' end,
+                        b.max_date::text) as date,
+               null::text as person, e.name as entity, e.type as entity_type,
+               null::int as tax_year, null::text as amount, null::text as currency, null::text as last4
+          from app.import_batch b join app.entity e on e.workspace_id = b.workspace_id and e.id = b.entity_id
+         where b.workspace_id = ${workspaceId}::uuid and b.file_id = ${fileId}::uuid
+         order by (b.status = 'committed') desc, b.created_at desc limit 1`
+        : sql<R>`
         select b.max_date::text as date, null::text as person, e.name as entity, e.type as entity_type,
                null::int as tax_year, null::text as amount, null::text as currency, null::text as last4
           from app.import_batch b join app.entity e on e.workspace_id = b.workspace_id and e.id = b.entity_id
