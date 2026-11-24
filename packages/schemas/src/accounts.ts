@@ -356,13 +356,22 @@ export type AccountMovePreviewDto = z.infer<typeof AccountMovePreviewDto>;
 
 /**
  * Why an account can't be deleted: it has history, or something else points at it. Only its own opening balance, its
- * values that posted nothing, its loan details and its saved import mapping go with it.
+ * values that posted nothing, its loan details, its saved import mapping and its transactions in the Trash that touch
+ * nothing else go with it.
  */
 export const AccountDeleteBlocker = z.enum([
   /** Transactions on it, posted or scheduled. */
   'transactions',
-  /** Transactions on it in the trash: they could be restored. */
+  /** No longer reported: transactions in the Trash go with the account unless one below stops them. */
   'trashed',
+  /** Transfers in the Trash that also touch another account: deleting them would change that account. */
+  'trashed_transfers',
+  /** Transactions in the Trash with a receipt, a tax record kept until its retention date (RCP-10). */
+  'trashed_receipts',
+  /** Transactions in the Trash dated in closed books, or with entries reversed or reconciled there (DE-10). */
+  'trashed_closed',
+  /** A legal hold keeps the workspace as it is, so its transactions in the Trash can't go. */
+  'legal_hold',
   /** Balance adjustments and journals written by hand. */
   'entries',
   /** Values that changed the balance (ADR-0025). */
@@ -395,6 +404,8 @@ export const AccountDeletionDto = z.object({
   blockers: z.array(z.object({ code: AccountDeleteBlocker, count: z.number().int() })),
   /** What stops it, in a sentence; null when nothing does. */
   reason: z.string().nullable(),
+  /** Its transactions in the Trash that are deleted for good with it. */
+  trashedTransactions: z.number().int(),
   deleted: z.boolean(),
 });
 export type AccountDeletionDto = z.infer<typeof AccountDeletionDto>;

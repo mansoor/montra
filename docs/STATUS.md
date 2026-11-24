@@ -2619,9 +2619,11 @@ Phase 11 leftovers:
   - Settings, not code: `FILE_RETENTION_YEARS` (default 7) dates each new receipt and each file uploaded with a
     receipt, payslip, bill, invoice or payroll form. Dates already set don't change. `RETENTION_EXTEND_YEARS`
     (default 1) is what "Keep for longer" adds. `RETENTION_BATCH` (default 500) caps what one run lists, and what it
-    removes. Tax forms keep their own date (tax year + 7, ADR-0052 §8.5).
+    removes. Tax forms keep their own date (tax year + 7, ADR-0052 §8.5). Since migration 0088 this is for business
+    and rental receipts only: personal receipts have no minimum (`PERSONAL_RECEIPT_RETENTION_YEARS`, default 0; see
+    "Delete forever" at the end of §7g).
   - A receipt in the trash still waits for its retention date. The Trash showed a purge date 30 days out; it shows the
-    retention date now (next entry).
+    retention date now (next entry). A personal receipt has none since migration 0088, and goes after 30 days.
   - Tests: API `receipt-retention.test.ts` (nothing goes without an approval; listed and told once; owners only;
     approving needs a recent sign-in; approval covers only the items listed; then the receipt goes with its lines,
     image and bytes while its locked transaction keeps its splits; the audit entries; keep for longer; a legal hold
@@ -2658,9 +2660,10 @@ Phase 11 leftovers:
     days after it was deleted. And the hourly job purged a closed account, and the workspaces that went with it, after
     its 30 days, under a legal hold too. `purge_user` even deleted the hold.
   - Now the Trash says how and when each item goes. `TrashItemDto` has `removal` and `until` in place of `purgeOn`:
-    - `trash`: transactions and tax forms, removed for good 30 days after they were deleted (as before).
-    - `retention`: a receipt. It is a tax record, so it is kept until its retention date, and can be restored until
-      then. Deleting it doesn't shorten that.
+    - `trash`: transactions and tax forms, removed for good 30 days after they were deleted (as before). Personal
+      receipts too since migration 0088, and an owner or admin can delete any of these forever now.
+    - `retention`: a receipt (a business or rental one since migration 0088). It is a tax record, so it is kept until
+      its retention date, and can be restored until then. Deleting it doesn't shorten that.
     - `owner_approval`: a receipt past its retention date. It is listed for the owners in Settings › Data like any
       other, and goes only once one approves.
     - `in_use`: a transaction still there 2 hours after its 30 days. The hourly job couldn't delete it because another
@@ -2748,7 +2751,8 @@ Phase 11 leftovers:
   - Now `DELETE /accounts/:id` deletes an empty account. `GET /accounts/:id/deletion` says first what stops it.
     - Owners and admins only, as for moving an account to other books, and only after a recent sign-in
       (`reauth.required`).
-    - Empty means no transactions (posted, scheduled or in the trash), receipts on them, balance adjustments, journals,
+    - Empty means no transactions (posted, scheduled or in the trash; since migration 0088 those in the trash go with
+      it when they touch nothing else, see the next entry), receipts on them, balance adjustments, journals,
       values that changed the balance, statement imports or statements waiting for it in Review, reconciliations, loan
       payments, other loans, cards or assets that use it, recurring items, rules or pending rule suggestions. Every other
       table that points at it counts too: employers and payslips, payroll, business and rental settings, invoices and
@@ -2889,6 +2893,59 @@ Phase 11 leftovers:
     lists); web `list-filters.test.ts` (presets, month ends, leap days, the workspace time zone, the URL round trip,
     amounts, widening and chips) and `paging.test.ts` (Load more and when Show older appears). The e2e specs for review, AI settings and
     the happy path now date their transactions in the last few days, and the receipts spec searches over all time.
+
+- **Delete forever, personal receipts with no minimum, and deleting a matched receipt** (BAK-06, ACC-14, RCP-10;
+  migration 0088).
+  - Before: nothing left the Trash early. An account added by mistake couldn't be deleted while one of its transactions
+    sat in the Trash. Every receipt was kept 7 years, personal ones too. A matched receipt couldn't be deleted at all.
+  - Now, deleting an empty account (ACC-14) also deletes its transactions in the Trash, in the same database
+    transaction, with any entries they still have; the books stay balanced.
+    - Only those that touch nothing else: every posting is on this account, categories or system accounts.
+    - Still blocking, each with its reason: a trashed transfer to another account (`trashed_transfers`), a trashed
+      transaction with a receipt (`trashed_receipts`), one in closed or reconciled books (`trashed_closed`), and a
+      legal hold (`legal_hold`, 409 `account.legal_hold`).
+    - `GET /accounts/:id/deletion` has `trashedTransactions`. The web confirm says "Delete “Auto Loan” and 1
+      transaction in the Trash? This can’t be undone." The audit entry `account.deleted` has the count.
+  - **Delete forever** (BAK-06): `DELETE /trash/:kind/:id` removes one item that would go after 30 days, now.
+    `POST /trash/empty` (**Empty Trash**) removes all of them and says how many stayed.
+    - Owners and admins only, with a recent sign-in. The web asks to confirm, then shows the step-up link if needed.
+    - The same cleanup as the 30-day job (`app.purge_trash_item`): a transaction with what cascades from it; a tax form
+      with its files and their stored bytes; a personal receipt with its lines, OCR text, files and bytes.
+    - Refused under a legal hold (`trash.legal_hold`), in closed or reconciled books (`trash.closed_period`), for a
+      transaction with a receipt (`trash.has_receipt`), for a business or rental receipt (`trash.retention`), and when
+      another record still uses it (`trash.in_use`).
+    - Audited with who and when: `transaction.purged`, `tax_form.purged`, `receipt.purged`, `file.purged`.
+    - The web Trash page has the buttons. The Receipts screen has a Trash tab with the deleted receipts, their date,
+      merchant, amount and when they go, with Restore and Delete forever. The phone has no Trash screen.
+  - **Personal receipts have no minimum retention** (RCP-10, owner's decision, 2026-11-23).
+    - A receipt is personal when its books, its lines' books and its matched transaction's books are all personal. An
+      inbox receipt with no books named counts as personal.
+    - It gets no retention date. It is kept while it isn't deleted and is never listed for an owner's approval. Deleted,
+      it is in the Trash for 30 days like a transaction (`removal: 'trash'`), then `purge_trash` removes it.
+    - Once a business or rental part shows up (a line, or a match to a business transaction), it gets the business date
+      from when it came in. A date only ever moves later.
+    - Business and rental receipts keep `FILE_RETENTION_YEARS` and the owner-approval rule.
+    - The migration cleared the dates of existing personal receipts, and took them off the owners' approval list.
+  - **Deleting a matched receipt**: `DELETE /receipts/:id?unlink=true`, owners and admins with a recent sign-in.
+    - The receipt is unlinked and moved to the Trash. Its transaction stays exactly as it is: amount, date, payee, and
+      the splits, memos and categories the receipt gave it. So the books don't change.
+    - Refused in closed or reconciled books (`receipt.closed_period`) and under a legal hold (`receipt.legal_hold`).
+    - Restored, it comes back unmatched, in Review. Matching never links a receipt in Review on its own.
+    - Audited as `receipt.deleted_matched` with the transaction it was linked to.
+    - Other writers, and the phone, keep the old rule: unlink first (`receipt.matched`). The web review screen has
+      Delete; for a matched receipt only owners and admins see it, and the confirm explains the effect.
+  - Also: `purge_trash` now skips a workspace under a legal hold (as retention has since migration 0079), and a
+    transaction it can't delete stays in the Trash instead of stopping the run.
+  - Settings, not code: `PERSONAL_RECEIPT_RETENTION_YEARS` (default 0, no minimum).
+  - Not checked in a real browser: the shared dev database isn't migrated to 0088.
+  - Tests: API `trash-delete-forever.test.ts` (the owner's Auto Loan case with balanced books; a trashed transfer, a
+    receipt in retention, a legal hold and closed books still block; Delete forever for a transaction, a tax form and
+    its file, and a personal receipt; refused for a partner, without step-up, under a legal hold, in a locked period,
+    and for a business receipt; Empty Trash; a personal receipt has no date and goes 30 days after deletion; the
+    migration clears only personal dates; a matched receipt deleted by the owner with its transaction unchanged,
+    refused to a writer, in closed books and under a hold, restored unmatched, audited; no system job left queued).
+    `account-delete.test.ts`, `receipts.test.ts` and `receipt-retention.test.ts` updated for the new fields and the
+    personal rule. Web `trash.test.ts`, `account-delete.test.ts`.
 
 ---
 

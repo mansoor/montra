@@ -40,6 +40,7 @@ import {
 } from '../auth/auth.js';
 import { AppError } from '../common/errors.js';
 import { IdempotencyInterceptor } from '../common/idempotency.interceptor.js';
+import { requireWorkspaceAdmin } from '../common/roles.js';
 import { parse } from '../common/zod.js';
 import { CONFIG, type AppConfig } from '../config.js';
 import { BackupService } from './backup.service.js';
@@ -127,6 +128,28 @@ export class DataController {
     @Param('id') id: string,
   ): Promise<void> {
     await this.ownership.restoreFromTrash(dbCtx(ctx), parse(z.enum(TRASH_KINDS), kind), parse(Id, id));
+  }
+
+  /** "Delete forever": owners and admins, with a recent sign-in, like deleting an account (BAK-06). */
+  @Delete('trash/:kind/:id')
+  @HttpCode(204)
+  async deleteForever(
+    @Ctx() ctx: RequestContext,
+    @Param('kind') kind: string,
+    @Param('id') id: string,
+  ): Promise<void> {
+    requireWorkspaceAdmin(ctx);
+    requireRecentAuth(ctx);
+    await this.ownership.deleteForever(dbCtx(ctx), parse(z.enum(TRASH_KINDS), kind), parse(Id, id));
+  }
+
+  /** "Empty Trash": everything that would go after 30 days, deleted forever now. */
+  @Post('trash/empty')
+  @HttpCode(200)
+  emptyTrash(@Ctx() ctx: RequestContext) {
+    requireWorkspaceAdmin(ctx);
+    requireRecentAuth(ctx);
+    return this.ownership.emptyTrash(dbCtx(ctx));
   }
 
   @Get('storage')

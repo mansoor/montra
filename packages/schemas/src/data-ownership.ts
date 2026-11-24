@@ -157,8 +157,10 @@ export type ConfirmRestoreRequest = z.output<typeof ConfirmRestoreRequest>;
 export const TRASH_KINDS = ['transaction', 'receipt', 'tax_form'] as const;
 /**
  * How an item leaves the Trash, with `until`. It can be restored meanwhile, in every case.
- * - `trash`: removed for good on `until`, 30 days after it was deleted.
- * - `retention`: a receipt. It is a tax record, so it is kept until its retention date, `until` (RCP-10).
+ * - `trash`: removed for good on `until`, 30 days after it was deleted: transactions, tax forms and personal receipts.
+ *   An owner or admin can also delete it forever now (DELETE /trash/:kind/:id).
+ * - `retention`: a business or rental receipt. It is a tax record, so it is kept until its retention date, `until`
+ *   (RCP-10).
  * - `owner_approval`: a receipt past its retention date, `until`. It goes only once an owner approves (Settings, Data).
  * - `in_use`: its 30 days ended on `until`, but another record still uses it, so it stays until that changes.
  */
@@ -168,12 +170,21 @@ export const TrashItemDto = z.object({
   id: Id,
   title: z.string(),
   deletedAt: z.string(),
+  /** The transaction's or receipt's own date; null for a tax form. */
+  date: CalendarDateDto.nullable(),
   removal: z.enum(TRASH_REMOVALS),
   until: CalendarDateDto,
   amount: z.string().nullable(),
   currency: z.string().nullable(),
 });
 export type TrashItemDto = z.infer<typeof TrashItemDto>;
+
+/** POST /trash/empty: every item that goes after 30 days, deleted forever now. Those that must stay are counted. */
+export const EmptyTrashResultDto = z.object({
+  deleted: z.number().int(),
+  kept: z.number().int(),
+});
+export type EmptyTrashResultDto = z.infer<typeof EmptyTrashResultDto>;
 
 // ----- Past their retention date (RCP-10, BAK-09; migration 0079) ----------------------------------------------------
 

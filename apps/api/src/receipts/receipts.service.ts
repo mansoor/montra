@@ -250,13 +250,14 @@ export class ReceiptsService {
           attachment_ids: req.fileIds,
           status: 'processing',
           trip_id: await tripOn(trx, ctx.workspaceId, await this.today(trx, ctx)),
-          retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
+          retain_until: null,
           created_by: ctx.userId,
           ...(req.transactionId
             ? { match_candidates: JSON.stringify([{ transactionId: req.transactionId }]) }
             : {}),
         })
         .execute();
+      await this.keepRetention(trx, ctx, id);
       await this.startExtraction(trx, ctx, id, req.transactionId ?? null);
     });
     return this.get(ctx, id);
@@ -679,6 +680,7 @@ export class ReceiptsService {
       .where('id', '=', receiptId)
       .execute();
     await this.replaceLines(trx, ctx, receiptId, categorized);
+    await this.keepRetention(trx, ctx, receiptId);
     return this.row(trx, ctx, receiptId);
   }
 
@@ -1111,18 +1113,85 @@ export class ReceiptsService {
     });
   }
 
-  /** Soft delete: the files stay until their retention date (RCP-10). Linked receipts are unlinked first. */
-  async remove(ctx: Ctx, id: string): Promise<void> {
+  /**
+   * To the Trash: a business or rental receipt stays there until its retention date (RCP-10), a personal one 30 days.
+   * A matched receipt is refused unless `unlink` is asked for (owners and admins with a recent sign-in, checked by the
+   * controller): then it is unlinked first. Its transaction stays exactly as it is, the splits, memos and categories the
+   * receipt gave it included, so the books don't change. It comes back from the Trash unmatched, in Review, where it
+   * is never linked again on its own. Refused in closed or reconciled books (DE-10) and under a legal hold.
+   */
+  async remove(ctx: Ctx, id: string, opts: { unlink?: boolean } = {}): Promise<void> {
     await this.db.run(ctx, async (trx) => {
       const r = await this.row(trx, ctx, id);
-      if (r.status === 'matched') {
+      if (r.status !== 'matched' || !r.transaction_id) {
+        await trx
+          .updateTable('app.receipt')
+          .set({ deleted_at: new Date() })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', id)
+          .execute();
+        return;
+      }
+      if (!opts.unlink) {
         throw unprocessable('receipt.matched', 'Unlink the receipt from its transaction before deleting it');
+      }
+      const held = await sql<{ held: boolean }>`select app.current_workspace_on_legal_hold() as held`.execute(
+        trx,
+      );
+      if (held.rows[0]?.held) {
+        throw new AppError(
+          409,
+          'receipt.legal_hold',
+          'A legal hold keeps everything in this workspace as it is, so this receipt stays linked.',
+        );
+      }
+      const transactionId = r.transaction_id;
+      const protection = await this.poster.protection(trx, ctx, transactionId);
+      const t = await trx
+        .selectFrom('app.transaction')
+        .select(['txn_date', 'primary_entity_id'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', transactionId)
+        .executeTakeFirst();
+      const lock = t
+        ? (
+            await sql<{ d: string | null }>`
+              select app.locked_through(${ctx.workspaceId}::uuid, ${t.primary_entity_id}::uuid)::text as d`.execute(
+              trx,
+            )
+          ).rows[0]?.d
+        : null;
+      if (protection !== 'none' || (t && lock && calendarDate(t.txn_date) <= lock)) {
+        throw new AppError(
+          409,
+          'receipt.closed_period',
+          protection === 'reconciled'
+            ? 'Its transaction is reconciled, so the receipt stays linked. Unreconcile it first.'
+            : 'Its transaction is in closed books, so the receipt stays linked. Reopen them first.',
+        );
       }
       await trx
         .updateTable('app.receipt')
-        .set({ deleted_at: new Date() })
+        .set({
+          deleted_at: new Date(),
+          status: 'needs_review',
+          transaction_id: null,
+          match_score: null,
+          fx_rate: null,
+        })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', id)
+        .execute();
+      await trx
+        .insertInto('app.audit_log')
+        .values({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: ctx.userId,
+          action: 'receipt.deleted_matched',
+          subject_type: 'receipt',
+          subject_id: id,
+          diff: JSON.stringify({ transactionId, unlinked: true, transactionUnchanged: true }),
+        })
         .execute();
     });
   }
@@ -1460,6 +1529,29 @@ export class ReceiptsService {
       .where('workspace_id', '=', ctx.workspaceId)
       .where('id', '=', r.id)
       .execute();
+    // A business or rental purchase makes it a business record.
+    await this.keepRetention(trx, ctx, r.id);
+  }
+
+  /**
+   * RCP-10 (owner, 2026-11-23): a personal receipt has no minimum retention, unless PERSONAL_RECEIPT_RETENTION_YEARS
+   * gives one. Once any part of it is business or rental (its books, a line, its matched transaction), it is a business
+   * record kept FILE_RETENTION_YEARS from when it came in. A date only ever moves later: one an owner extended stays,
+   * and a receipt that was once a business record keeps its date.
+   */
+  async keepRetention(trx: Trx, ctx: Ctx, receiptId: string): Promise<void> {
+    const business = this.config.FILE_RETENTION_YEARS;
+    const personal = this.config.PERSONAL_RECEIPT_RETENTION_YEARS;
+    await sql`
+      update app.receipt r
+         set retain_until = x.until
+        from (select case when app.receipt_is_personal(${ctx.workspaceId}::uuid, ${receiptId}::uuid)
+                          then case when ${personal}::int > 0
+                                    then (c.created_at::date + make_interval(years => ${personal}::int))::date end
+                          else (c.created_at::date + make_interval(years => ${business}::int))::date end as until
+                from app.receipt c where c.workspace_id = ${ctx.workspaceId} and c.id = ${receiptId}) x
+       where r.workspace_id = ${ctx.workspaceId} and r.id = ${receiptId}
+         and x.until is not null and (r.retain_until is null or r.retain_until < x.until)`.execute(trx);
   }
 
   // ----- RCP-11: receipt recommended ----------------------------------------------------------------------
@@ -1661,10 +1753,11 @@ export class ReceiptsService {
             status: 'processing',
             order_ref: o.orderRef,
             merchant: 'Amazon',
-            retain_until: retainUntil(this.config.FILE_RETENTION_YEARS),
+            retain_until: null,
             created_by: ctx.userId,
           })
           .execute();
+        await this.keepRetention(trx, ctx, id);
         await this.store(
           trx,
           ctx,

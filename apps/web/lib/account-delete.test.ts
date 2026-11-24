@@ -12,7 +12,15 @@ describe('deleting an account', () => {
   });
 
   it('asks to confirm an empty account, and shows why one with history stays', () => {
-    expect(deleteStep({ blockers: [], reason: null })).toEqual({ kind: 'confirm' });
+    expect(deleteStep({ blockers: [], reason: null, trashedTransactions: 0 })).toEqual({
+      kind: 'confirm',
+      trashedTransactions: 0,
+    });
+    // The owner's Auto Loan: its one transaction in the Trash goes with it, and the confirm says so.
+    expect(deleteStep({ blockers: [], reason: null, trashedTransactions: 1 })).toEqual({
+      kind: 'confirm',
+      trashedTransactions: 1,
+    });
     const reason = 'This account has 12 transactions. Archive it instead, or remove them first.';
     expect(deleteStep({ blockers: [{ code: 'transactions', count: 12 }], reason })).toEqual({
       kind: 'blocked',

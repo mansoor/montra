@@ -95,6 +95,7 @@ describe('an empty account', () => {
       name: 'Opened by mistake',
       blockers: [],
       reason: null,
+      trashedTransactions: 0,
       deleted: false,
     });
   });

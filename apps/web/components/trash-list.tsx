@@ -2,15 +2,32 @@
 
 import type { TrashItemDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { canDeleteForever } from '@/lib/trash';
 import { DateText } from './i18n';
 import { Money } from './money';
 import { StatusLine, useAction } from './use-action';
 
 /**
- * BAK-06: what's been deleted, and how and when it goes. Everything can come back until then; a receipt, a tax record,
- * stays until its retention date (RCP-10).
+ * BAK-06: what's been deleted, and how and when it goes. Everything can come back until then; a business or rental
+ * receipt, a tax record, stays until its retention date (RCP-10). Owners and admins can delete for good now what would
+ * go after 30 days, one item or all of them; a recent sign-in is asked for (step-up comes back as a link).
  */
-export function TrashList({ workspaceId, items }: { workspaceId: string; items: TrashItemDto[] }) {
+export function TrashList({
+  workspaceId,
+  items,
+  canDelete,
+  showDate = false,
+  showEmpty = true,
+}: {
+  workspaceId: string;
+  items: TrashItemDto[];
+  /** Owners and admins. */
+  canDelete: boolean;
+  /** Each item's own date (the Receipts screen's Trash). */
+  showDate?: boolean;
+  /** The "Empty Trash" button. */
+  showEmpty?: boolean;
+}) {
   const { run, busy, message, t } = useAction();
   // Restoring the last item empties the list; the confirmation stays on screen with the empty state.
   if (items.length === 0) {
@@ -21,8 +38,28 @@ export function TrashList({ workspaceId, items }: { workspaceId: string; items: 
       </div>
     );
   }
+  const goes = items.filter(canDeleteForever);
   return (
     <section className="card-flush" aria-label={t('trash.title')}>
+      {canDelete && showEmpty && goes.length > 0 && (
+        <div className="flex justify-end px-4 pt-3">
+          <button
+            type="button"
+            className="btn-secondary text-bad"
+            disabled={busy}
+            data-testid="trash-empty"
+            onClick={() => {
+              if (!window.confirm(t('trash.empty_confirm', { count: goes.length }))) return;
+              void run(
+                () => browserApi.emptyTrash(workspaceId),
+                (r) => t('trash.emptied', { deleted: r.deleted, kept: r.kept }),
+              );
+            }}
+          >
+            {t('trash.empty_action')}
+          </button>
+        </div>
+      )}
       <ul className="divide-y divide-line">
         {items.map((i) => (
           <li
@@ -32,6 +69,12 @@ export function TrashList({ workspaceId, items }: { workspaceId: string; items: 
           >
             <div className="min-w-0">
               <p className="text-sm font-medium">
+                {showDate && i.date && (
+                  <>
+                    <DateText date={i.date} />
+                    {' · '}
+                  </>
+                )}
                 {i.title}
                 {i.amount && i.currency && (
                   <>
@@ -44,20 +87,39 @@ export function TrashList({ workspaceId, items }: { workspaceId: string; items: 
                 {t(`trash.kind_${i.kind}`)} · {t(`trash.removal.${i.removal}`)} <DateText date={i.until} />
               </p>
             </div>
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={busy}
-              aria-label={t('trash.restore_named', { name: i.title })}
-              onClick={() =>
-                run(
-                  () => browserApi.restoreFromTrash(workspaceId, i.kind, i.id),
-                  t('trash.restored', { name: i.title }),
-                )
-              }
-            >
-              {t('trash.restore')}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                aria-label={t('trash.restore_named', { name: i.title })}
+                onClick={() =>
+                  run(
+                    () => browserApi.restoreFromTrash(workspaceId, i.kind, i.id),
+                    t('trash.restored', { name: i.title }),
+                  )
+                }
+              >
+                {t('trash.restore')}
+              </button>
+              {canDelete && canDeleteForever(i) && (
+                <button
+                  type="button"
+                  className="btn-secondary text-bad"
+                  disabled={busy}
+                  aria-label={t('trash.delete_forever_named', { name: i.title })}
+                  onClick={() => {
+                    if (!window.confirm(t('trash.delete_forever_confirm', { name: i.title }))) return;
+                    void run(
+                      () => browserApi.deleteFromTrash(workspaceId, i.kind, i.id),
+                      t('trash.deleted_forever', { name: i.title }),
+                    );
+                  }}
+                >
+                  {t('trash.delete_forever')}
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>
