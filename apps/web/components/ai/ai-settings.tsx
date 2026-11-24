@@ -22,7 +22,7 @@ import {
 import { percent } from '@/lib/review';
 import { Field, FormError } from '../field';
 import { useI18n } from '../i18n';
-import { Disclaimer } from './shared';
+import { Disclaimer } from '../ui/disclaimer';
 import { localRunnerStatus, useLocalRunnerStatus } from './local-ai-runner';
 
 /**

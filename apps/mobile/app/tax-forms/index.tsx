@@ -27,6 +27,7 @@ import {
   Body,
   Button,
   Card,
+  Disclaimer,
   Row,
   Screen,
   SectionLabel,
@@ -108,6 +109,7 @@ export default function TaxForms() {
         <YearList data={data} names={members} onOpen={(f) => router.push(`/tax-forms/${f.id}`)} />
       ) : null}
       {data ? <Small>{t('mobile.tax_forms.more_on_web')}</Small> : null}
+      {data ? <Disclaimer kind="tax" /> : null}
       {!data && !cached.stale && !cached.error ? <Body muted>…</Body> : null}
       <View style={{ height: th.space(2) }} />
     </Screen>

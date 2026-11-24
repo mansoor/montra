@@ -4,9 +4,11 @@ import { RefreshCw, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { RecommendationDto } from '@montra/api-client';
+import { recommendationDisclaimer } from '@montra/schemas';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
 import { Money } from '../money';
+import { Disclaimer } from '../ui/disclaimer';
 import { StatusLine, useAction } from '../use-action';
 
 /**
@@ -19,6 +21,7 @@ export function RecommendationList({
   categoryNames,
   compact = false,
   empty,
+  disclaimer = true,
 }: {
   workspaceId: string;
   items: RecommendationDto[];
@@ -26,6 +29,8 @@ export function RecommendationList({
   compact?: boolean;
   /** Shown here rather than instead of the list: the list has to stay, to say what happened to the last item. */
   empty?: ReactNode;
+  /** The not-advice line under the list (AIA-12); off when the page shows its own once for everything on it. */
+  disclaimer?: boolean;
 }) {
   const { t } = useI18n();
   const { run, busy, message } = useAction();
@@ -155,6 +160,9 @@ export function RecommendationList({
         </article>
       ))}
       <StatusLine message={message} />
+      {disclaimer && items.length > 0 && (
+        <Disclaimer kind={recommendationDisclaimer(items.map((r) => r.type))} />
+      )}
     </div>
   );
 }

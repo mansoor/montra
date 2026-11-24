@@ -8,7 +8,7 @@ import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import { groupInsights } from '@/lib/ai';
 import { groupCategories } from '@/lib/view-models';
-import { Disclaimer } from './ai/shared';
+import { Disclaimer } from './ui/disclaimer';
 import { useI18n } from './i18n';
 
 /**

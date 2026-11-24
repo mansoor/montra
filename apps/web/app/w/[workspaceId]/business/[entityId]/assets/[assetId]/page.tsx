@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { BackLink } from '@/components/ui/back-link';
+import { Disclaimer } from '@/components/ui/disclaimer';
 import { todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
@@ -41,6 +42,7 @@ export default async function AssetPage({
           )
           .map((a) => ({ id: a.id, name: a.name }))}
       />
+      <Disclaimer kind="tax" />
     </div>
   );
 }

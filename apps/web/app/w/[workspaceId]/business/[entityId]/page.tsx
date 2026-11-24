@@ -11,8 +11,9 @@ import { Money } from '@/components/money';
 import { BusinessDashboard } from '@/components/business/business-dashboard';
 import { EntityTypeLine } from '@/components/business/entity-type-line';
 import { RecommendationList } from '@/components/planning/recommendations';
+import { Disclaimer } from '@/components/ui/disclaimer';
 import { LinkTabs } from '@/components/ui/page-header';
-import { BUSINESS_CHART_MONTHS } from '@montra/schemas';
+import { BUSINESS_CHART_MONTHS, recommendationDisclaimer } from '@montra/schemas';
 import { isCalendarDate } from '@montra/domain';
 
 export const metadata: Metadata = { title: 'Business' };
@@ -106,7 +107,7 @@ export default async function BusinessOverviewPage({
         pnlFor={pnlFor}
         setAside={estimate.rateBps === null ? null : money(BigInt(estimate.toSetAside), ccy)}
       />
-      <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} />
+      <RecommendationList workspaceId={workspaceId} items={notes} categoryNames={{}} disclaimer={false} />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <LinkTabs
@@ -280,6 +281,12 @@ export default async function BusinessOverviewPage({
             </table>
           )}
         </section>
+      )}
+      {/* Once for the page: the tax set-aside under profit and the suggestions above (AIA-12). */}
+      {(estimate.rateBps !== null || notes.length > 0) && (
+        <Disclaimer
+          kind={estimate.rateBps !== null ? 'tax' : recommendationDisclaimer(notes.map((r) => r.type))}
+        />
       )}
     </div>
   );

@@ -161,4 +161,11 @@ export class PayslipsController {
     );
     return this.reports.payslipSummary(dbCtx(ctx), memberId, year);
   }
+
+  /** FAM-10: education expenses and 529 withdrawals per student for a tax year (informational only). */
+  @Get('reports/education')
+  education(@Ctx() ctx: RequestContext, @Query() q: unknown) {
+    const { year } = parse(z.object({ year: z.coerce.number().int().min(2000).max(2100).optional() }), q);
+    return this.reports.education(dbCtx(ctx), year);
+  }
 }

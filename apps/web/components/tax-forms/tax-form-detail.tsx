@@ -8,6 +8,7 @@ import { browserApi } from '@/lib/browser-api';
 import { acceptable, checkChip } from '@/lib/tax-forms';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
+import { Disclaimer } from '../ui/disclaimer';
 import { StatusLine, useAction } from '../use-action';
 import { TaxFormEditor, type AccountOption, type EmployerOption, type Option } from './tax-form-editor';
 import { TaxFormReadingPanel } from './tax-form-reading';
@@ -310,6 +311,7 @@ export function TaxFormDetail({
             </button>
           </div>
         ))}
+      <Disclaimer kind="tax" />
     </div>
   );
 }

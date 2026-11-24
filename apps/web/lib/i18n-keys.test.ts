@@ -7,6 +7,7 @@ import {
   BALANCE_RANGES,
   BOOK_PALETTE,
   BUSINESS_TYPES,
+  EDUCATION_EXPENSE_TYPES,
   LEGACY_BUSINESS_TYPES,
   PAY_RULES,
   PLAN_TYPES,
@@ -28,6 +29,7 @@ import {
 } from '@montra/schemas';
 import { MONEY_BOXES, READING_STAGES } from './tax-forms';
 import { ITEM_PERIODS } from './receipts';
+import { EDUCATION_NOTES } from './education';
 import { AUDIT_ACTIONS, AUDIT_OPS, AUDIT_SUBJECT_TYPES, STAFF_ACTIONS } from './audit-log';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -237,6 +239,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'employers.type_': ['employer', 'freelance', 'pension', 'benefits', 'other'],
   'employers.frequency_': ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'yearly'],
   'members_report.range_': ['month', 'ytd', 'last_year'],
+  'education.type_': EDUCATION_EXPENSE_TYPES,
+  'education.note_': EDUCATION_NOTES,
   'imports.kept_reason.': [
     'asset',
     'bill',
