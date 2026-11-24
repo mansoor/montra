@@ -13,7 +13,13 @@ const TTL_MS = 10 * 60_000;
 /** Reference merchants (OPS-05) cached in memory for enrichment (AI-07) and category hints. */
 @Injectable()
 export class MerchantDirectory {
-  private cache: { at: number; list: Entry[]; byKey: Map<string, MerchantDto | null> } | null = null;
+  private cache: {
+    at: number;
+    list: Entry[];
+    byKey: Map<string, MerchantDto | null>;
+    /** `match` results by key: an import asks for the same few hundred payees thousands of times. */
+    matched: Map<string, Entry | null>;
+  } | null = null;
 
   async load(trx: Trx) {
     if (!this.cache || Date.now() - this.cache.at > TTL_MS) {
@@ -32,12 +38,19 @@ export class MerchantDirectory {
           logoUrl: m.logo_url,
         })),
         byKey: new Map(),
+        matched: new Map(),
       };
     }
     const c = this.cache;
     return {
       list: c.list as readonly MerchantRef[],
-      match: (key: string): Entry | null => (key ? (matchMerchant(key, c.list) as Entry | null) : null),
+      match: (key: string): Entry | null => {
+        if (!key) return null;
+        if (c.matched.has(key)) return c.matched.get(key)!;
+        const m = matchMerchant(key, c.list) as Entry | null;
+        if (c.matched.size < 50_000) c.matched.set(key, m);
+        return m;
+      },
       lookup: (key: string): MerchantDto | null => {
         if (c.byKey.has(key)) return c.byKey.get(key)!;
         const m = matchMerchant(key, c.list) as Entry | null;

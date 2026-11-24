@@ -57,6 +57,7 @@ import type {
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
+import { amountRange, baseCurrency, hasAmount } from '../common/list-filters.js';
 import { JOB_STALL_MS, JobQueue } from '../jobs/queue.js';
 import { FileBytes } from '../storage/file-bytes.js';
 import { findDuplicate } from '../storage/duplicates.js';
@@ -349,8 +350,25 @@ export class ReceiptsService {
           ]),
         );
       }
-      if (q.from) query = query.where('receipt_date', '>=', q.from);
-      if (q.to) query = query.where('receipt_date', '<=', q.to);
+      if (q.from || q.to) {
+        // A receipt not read yet has no date: it counts by the day it arrived, in the workspace's time zone.
+        const { time_zone } = await trx
+          .selectFrom('app.workspace')
+          .select('time_zone')
+          .where('id', '=', ctx.workspaceId)
+          .executeTakeFirstOrThrow();
+        const day = sql`coalesce(receipt_date, (created_at at time zone ${time_zone})::date)`;
+        if (q.from) query = query.where(sql<boolean>`${day} >= ${q.from}::date`);
+        if (q.to) query = query.where(sql<boolean>`${day} <= ${q.to}::date`);
+      }
+      if (q.merchant) {
+        const like = `%${q.merchant.replace(/[%_\\]/g, '\\$&')}%`;
+        query = query.where('merchant', 'ilike', like);
+      }
+      if (hasAmount(q)) {
+        const base = await baseCurrency(trx, ctx.workspaceId);
+        for (const c of amountRange(q, sql`total_minor`, sql`currency`, base)) query = query.where(c);
+      }
       if (q.cursor) {
         const [at, id] = Buffer.from(q.cursor, 'base64url').toString().split('|');
         if (at && id) {

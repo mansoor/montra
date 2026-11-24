@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccountDto, CategoryDto, FamilyMemberDto, WorkspaceDto } from '@montra/api-client';
 import type { PropertyDto, ReviewItemDto, RuleSuggestionDto } from '@montra/schemas';
@@ -27,9 +28,12 @@ import {
   transferOptions,
   transferTargets,
 } from '@/lib/review';
+import { hasFilters, listApiQuery, parseListFilters } from '@/lib/list-filters';
+import { listFooter } from '@/lib/paging';
 import { groupCategories } from '@/lib/view-models';
 import { ConfidenceChip, Explanation, MerchantMark } from '../ai/shared';
 import { DateText, useI18n } from '../i18n';
+import { ListEmpty, ListFilterBar, ListWindowFooter } from '../list-filter-bar';
 import { Money } from '../money';
 import { PickerDialog, type PickerOption } from './picker-dialog';
 import { RuleOffer } from './rule-offer';
@@ -57,7 +61,15 @@ export function ReviewQueue({
   /** AI-02: the rental properties, to show and change a line's property. */
   properties?: PropertyDto[];
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  // The filter bar's date window, merchant, amount and direction, from the URL.
+  const searchKey = useSearchParams().toString();
+  const filters = useMemo(() => parseListFilters(new URLSearchParams(searchKey)).filters, [searchKey]);
+  const narrow = useMemo(
+    () => listApiQuery(filters, { timeZone: workspace.timeZone, currency: workspace.baseCurrency, locale }),
+    [filters, workspace.timeZone, workspace.baseCurrency, locale],
+  );
+  const [older, setOlder] = useState(0);
   const [items, setItems] = useState<ReviewItemDto[]>([]);
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -97,20 +109,38 @@ export function ReviewQueue({
     async (after: string | null) => {
       setLoading(true);
       try {
-        const page = await browserApi.listReview(workspace.id, { cursor: after ?? undefined, limit: PAGE });
+        const page = await browserApi.listReview(workspace.id, {
+          ...narrow,
+          cursor: after ?? undefined,
+          limit: PAGE,
+        });
         setItems((prev) => (after ? [...prev, ...page.items] : page.items));
         setTotal(page.total);
         setNextCursor(page.nextCursor);
+        // What the window leaves out still waits for review: say how much.
+        if (!after) {
+          const { from, ...rest } = narrow;
+          setOlder(
+            from
+              ? Math.max(
+                  0,
+                  (await browserApi.listReview(workspace.id, { ...rest, limit: 1 })).total - page.total,
+                )
+              : 0,
+          );
+        }
       } catch (err) {
         setError(friendlyMessage(err, t));
       } finally {
         setLoading(false);
       }
     },
-    [workspace.id, t],
+    [workspace.id, t, narrow],
   );
 
   useEffect(() => {
+    setCursor(0);
+    setSelected(new Set());
     void load(null);
   }, [load]);
 
@@ -231,7 +261,7 @@ export function ReviewQueue({
     setAboveOpen(false);
     setError(null);
     try {
-      const r = await browserApi.acceptReview(workspace.id, { minConfidence: above / 100 });
+      const r = await browserApi.acceptReview(workspace.id, { minConfidence: above / 100, ...narrow });
       setAnnounce(acceptedMessage(r));
       setCursor(0);
       setSelected(new Set());
@@ -377,7 +407,16 @@ export function ReviewQueue({
         </section>
       )}
 
-      {items.length === 0 && !loading ? (
+      <ListFilterBar
+        screen="review"
+        workspace={workspace}
+        merchantHint={t('filters.merchant_hint')}
+        showDirection
+      />
+
+      {items.length === 0 && !loading && hasFilters(filters) ? (
+        <ListEmpty screen="review" fallback={t('review.empty')} />
+      ) : items.length === 0 && !loading ? (
         <div className="card space-y-2 text-sm">
           <p className="font-medium">{t('review.empty')}</p>
           <p className="text-muted">
@@ -582,6 +621,13 @@ export function ReviewQueue({
         <p role="status" className="text-xs text-muted">
           {t('common.loading')}
         </p>
+      )}
+      {/* Show older only once the window is all loaded. */}
+      {listFooter(nextCursor) === 'window' && (
+        <ListWindowFooter
+          screen="review"
+          note={older > 0 ? t('filters.older_to_review', { count: older }) : undefined}
+        />
       )}
 
       <PickerDialog

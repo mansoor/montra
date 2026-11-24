@@ -844,7 +844,9 @@ Phase 11 leftovers:
 - **A lapsed plan** stops new books and uploads over quota. Business and rental features on existing books stay on.
 - **Profile, family and entities** are edited on the phone too now (OPS-13, see 7g).
 - **The zero-downtime claim** rests on the migration check and blue/green config, neither exercised by a real deploy.
-- Import parse p95 was 5.7 to 9.0 s locally for 5,000 rows, close to the 10 s limit, and worth watching.
+- Import parse: a realistic 5,000-row statement now takes 3.6 to 6.0 s locally, from 9.0 to 10.7 s, against the 10 s
+  limit, and `perf-parse` holds it to that in CI (§7g). The transfer candidate query still grows with the workspace's
+  size. Not measured on real infrastructure.
 
 ---
 
@@ -2807,6 +2809,90 @@ Phase 11 leftovers:
     fake provider, what is sent, ids, failures, the cache); API `property-suggestions.test.ts` (two properties: a
     learned payee, a unit from the text, AI, an import, a set property and a lease win, a correction learned, the
     setting); web `phase3.test.ts`; mobile `models.test.ts`.
+- **Import parsing is faster, with the same results** (NFR-07; migration 0085, an index only).
+  - Before: a realistic 5,000-row statement took 9.0 to 10.7 s to parse on this machine, at the 10 s limit. Most of
+    the time went to work done again for every row:
+    - each row was compared with every reference merchant, and both sides' trigrams were rebuilt for each pair;
+    - the pipeline compiled 17 keyword patterns for each row;
+    - each row was checked against every transfer, dedupe and match candidate, whatever its amount;
+    - each AI cache key was read in its own transaction, and each answer written in its own.
+  - Now:
+    - a payee key is matched to the merchants once per import (`MerchantDirectory.match` remembers it), and each
+      merchant's trigrams are built once;
+    - keyword patterns are compiled once (`hasWord`);
+    - transfer, dedupe and match candidates are grouped by amount, and a row looks only at those with its amount (or
+      the opposite one for a transfer), in the same order as before. Each text's trigrams are built once
+      (`similarityCache`);
+    - the gateway reads the AI cache for a whole run in one query and writes each batch's answers in one statement,
+      when the store offers it (`cacheGetMany`, `cachePutMany`; the API's store does);
+    - migration 0085 adds an index on `transaction_source (workspace_id, import_row_id)`. Deleting an import's rows (a
+      parse run again after a mapping change, a discarded import) looked up each row's statement-line records by
+      reading all of the workspace's. 5,000 rows took 7.2 s with 5,000 such records, and 0.28 s with the index.
+  - Rows, statuses, scores, categories, confidences, explanations and transfer candidates come out the same. The new
+    perf test's dump (`PERF_PARSE_DUMP`) matched line for line before and after, at 1,000 and 5,000 rows.
+  - Measured on this machine, which was busy with other work, so the numbers move by a second or so between runs.
+    Before is develop's parse code with the same tests:
+
+    | Test (`@montra/api test:perf`)                    | 1,000 rows        | 5,000 rows         |
+    | ------------------------------------------------- | ----------------- | ------------------ |
+    | `perf-parse` (realistic statement, 10k txns)      | 4.1 s → 2.1 s     | 10.7 s → 3.6 s     |
+    | `perf-commit` (five payees, empty workspace)      | 1.8 s → 1.2 s     | 5.5 s → 2.3 s      |
+
+    An earlier pair of runs of `perf-parse` at 5,000 rows gave 9.0 s → 6.0 s.
+  - Still the largest costs, and left as they are: inserting the rows (about 0.3 ms a row, mostly the row-level
+    security check), and two candidate queries whose time grows with the workspace, not the file. The transfer
+    candidate query reads every posting of the other accounts, not only those in the file's dates, and returns them in
+    no fixed order. Making it read by date would change which candidate wins a tie, so it needs a decision first.
+  - Tests: `perf-parse.test.ts`, new in `@montra/api test:perf`: 5,000 lines with many payees, card payments and
+    rules, into a workspace with 10,000 transactions on other accounts, an earlier import over the last month and a
+    card named by its last 4 digits. Budget: the requirement's 10 s for 5,000 rows. `perf-commit.test.ts` now uses
+    the fake AI provider, as the app would, and its 30 ms a row commit budget is unchanged. Gateway
+    `gateway.test.ts` (the bulk cache gives the same answers in one read and one write per batch), importers
+    `units.test.ts` (remembered trigrams compare the same; a merchant's changed key is used).
+
+- **A date window and filters on the Transactions, Review and Receipts lists** (RPT-05, nearest ID; migration 0087).
+  - Before: Transactions had only the All, Needs review, Scheduled and Trash tabs, and showed the newest 200 of all
+    time. Review showed the whole queue. Receipts had tabs and a text search. The receipt list's column said "Store".
+  - Now each list opens on the **last 90 days**, with a filter bar above it (`components/list-filter-bar.tsx`):
+    - **Period:** the last 7, 30, 60 or 90 days, 6 months, a year, all time, or custom dates open on either side.
+      "Today" is the workspace's (TZ-01). A preset has no end, so scheduled items still show. The choice is
+      remembered per list in this browser (localStorage, as the theme is). Under the list, "Showing the last 90
+      days. Show older" widens it one step, up to all time.
+    - **Merchant:** words of the payee or description on Transactions and Review ("star" finds Starbucks, through the
+      search index); anywhere in the store's name on Receipts.
+    - **At least / at most:** in the workspace currency, compared without the sign, so "20 to 100" finds spending and
+      income alike. "In or out" narrows to money out (spending) or money in; transfers are neither. Not on Receipts.
+    - **Account and category** on Transactions. The tabs keep the filters.
+    - Active filters show as chips with a remove button, and "Clear all". Everything is in the URL (`range`, `from`,
+      `to`, `merchant`, `min`, `max`, `dir`, `account`, `category`), so a filtered list can be bookmarked and shared,
+      and Back undoes a change. A report's drill-down dates open as a custom range.
+    - When the filters hide everything: "No transactions match these filters", with Clear filters. Review also says
+      how many items to review are older than the window. "Accept all above" takes only what the filters show.
+    - Receipts: the column header **Store** is now **Merchant**, and so are the receipt's field and "Unknown merchant".
+      The search box stays and keeps the filters. Database columns and DTO fields are unchanged.
+    - **Load more** under each list adds the next page (200 transactions, 100 review items or receipts) with the same
+      filters. Show older appears only once the window is all loaded. A refresh after an edit starts again from the
+      first page.
+  - API: `GET /transactions` gains `merchant`, `amountMin`, `amountMax` (unsigned minor units) and `direction`, and
+    keyset paging: `cursor` in, `nextCursor` out, by date then id, so rows sharing a date are neither repeated nor
+    skipped. `listTransactions` in the API client still returns the rows; `listTransactionsPage` returns the page.
+    `GET /review` and `POST /review/accept` gain those and `from`/`to`. `GET /receipts` gains `merchant` and the amount
+    range; its `from`/`to` now count a receipt without a date by the day it arrived. `q` works as before, with them.
+  - Speed: row-level security checks entity access on every row before a condition like `@@` or a cast out of
+    `spec`, so a narrow filter over all time took about 3 s on 50,000 transactions. Migration 0087 adds
+    `app.transaction_filter_ids`, which finds the matching ids in the current workspace without that check (ids only,
+    to a member). The API then asks for those ids and applies the same filters under RLS. With more than 5,000
+    candidates it skips that step, since the date order then finds a page quickly. Each page decides this again, and
+    looks only up to the day the page starts on. The perf test now times three filtered lists.
+  - Not done: the phone's lists don't have these filters yet.
+  - Tests: API `list-filters.test.ts` (the amount range with both signs, money in and out, merchant words, dates, the
+    filters combined, `q` with them, bad values; the review queue and "accept all above" with filters; receipts by
+    merchant, dates, an undated receipt and totals in other currencies; 250 filtered rows over 25 shared dates paged
+    40 at a time, each once and in order, with and without the id lookup and with it on some pages only; the review
+    queue paged the same way); db `rls.test.ts` (the ids only for a member); `perf-dashboard.test.ts` (three filtered
+    lists); web `list-filters.test.ts` (presets, month ends, leap days, the workspace time zone, the URL round trip,
+    amounts, widening and chips) and `paging.test.ts` (Load more and when Show older appears). The e2e specs for review, AI settings and
+    the happy path now date their transactions in the last few days, and the receipts spec searches over all time.
 
 - **Delete forever, personal receipts with no minimum, and deleting a matched receipt** (BAK-06, ACC-14, RCP-10;
   migration 0088).

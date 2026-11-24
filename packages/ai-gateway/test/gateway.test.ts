@@ -161,6 +161,58 @@ describe('categorize', () => {
     expect(fake.calls).toHaveLength(4);
   });
 
+  it('reads and writes the cache in bulk when the store can, with the same answers', async () => {
+    /** A store with the bulk methods, counting the calls of each kind. */
+    class BulkStore extends MemoryStore {
+      readonly counts = { get: 0, put: 0, getMany: 0, putMany: 0 };
+      override async cacheGet(task: Parameters<MemoryStore['cacheGet']>[0], keyHash: string) {
+        this.counts.get++;
+        return super.cacheGet(task, keyHash);
+      }
+      override async cachePut(...a: Parameters<MemoryStore['cachePut']>) {
+        this.counts.put++;
+        return super.cachePut(...a);
+      }
+      async cacheGetMany(task: Parameters<MemoryStore['cacheGet']>[0], keys: readonly string[]) {
+        this.counts.getMany++;
+        const out = new Map<string, unknown>();
+        for (const k of keys) {
+          const hit = await super.cacheGet(task, k);
+          if (hit !== null) out.set(k, hit);
+        }
+        return out;
+      }
+      async cachePutMany(
+        task: Parameters<MemoryStore['cacheGet']>[0],
+        entries: ReadonlyArray<{ keyHash: string; output: unknown }>,
+        model: string,
+        ttlDays: number,
+      ) {
+        this.counts.putMany++;
+        for (const e of entries) await super.cachePut(task, e.keyHash, e.output, model, ttlDays);
+      }
+    }
+    const opts = { categories: CATS, members: [] };
+    const rows = (prefix: string) =>
+      Array.from({ length: 250 }, (_, i) =>
+        item(`${prefix}${i}`, `SHOP ${String.fromCharCode(65 + (i % 26))}`, -480n - BigInt(i * 1000)),
+      );
+    const plain = new MemoryStore();
+    const bulk = new BulkStore();
+    const gw = createGateway();
+    const a = await gw.categorize(rows('a'), opts, ctxOf(plain));
+    const b = await gw.categorize(rows('a'), opts, ctxOf(bulk));
+    expect(a.ok && b.ok && b.value).toEqual(a.ok && a.value);
+    const batches = Math.ceil(plain.cache.size / 100);
+    expect(batches).toBeGreaterThan(1);
+    expect(bulk.counts).toEqual({ get: 0, put: 0, getMany: 1, putMany: batches });
+    expect([...bulk.cache.keys()].sort()).toEqual([...plain.cache.keys()].sort());
+    // The second run is served from the cache, read in one call.
+    const again = await gw.categorize(rows('b'), opts, ctxOf(bulk));
+    expect(again.ok && again.meta.cachedItems).toBe(250);
+    expect(bulk.counts).toEqual({ get: 0, put: 0, getMany: 2, putMany: batches });
+  });
+
   it('batches by 100, at most 8 in flight, and keeps input order', async () => {
     let inFlight = 0;
     let maxInFlight = 0;

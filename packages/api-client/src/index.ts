@@ -706,10 +706,21 @@ export type UpdateEmployerInput = z.input<typeof UpdateEmployerRequest>;
 export type CreatePayslipInput = z.input<typeof CreatePayslipRequest>;
 export type UpdatePayslipInput = z.input<typeof UpdatePayslipRequest>;
 export type ConfirmPayslipInput = z.input<typeof ConfirmPayslipRequest>;
-export interface ReceiptListOptions {
+/**
+ * The filters the web lists share: words of the merchant or payee, and an amount range in minor units of the workspace
+ * currency, compared without the sign.
+ */
+export interface ListFilterOptions {
+  merchant?: string;
+  amountMin?: string;
+  amountMax?: string;
+}
+
+export interface ReceiptListOptions extends ListFilterOptions {
   status?: ReceiptDto['status'];
   /** RCP-10: search merchant and receipt text. */
   q?: string;
+  /** The receipt's date, or the day it arrived while it has none. */
   from?: string;
   to?: string;
   cursor?: string;
@@ -717,7 +728,11 @@ export interface ReceiptListOptions {
 }
 export type TripInputValue = z.input<typeof TripInput>;
 
-export interface ReviewListOptions {
+export interface ReviewListOptions extends ListFilterOptions {
+  from?: string;
+  to?: string;
+  /** Money in or out; transfers are neither. */
+  direction?: 'in' | 'out';
   entityId?: string;
   minConfidence?: number;
   cursor?: string;
@@ -845,7 +860,9 @@ export interface ChangesResponse {
   hasMore: boolean;
 }
 
-export interface TransactionListOptions {
+export interface TransactionListOptions extends ListFilterOptions {
+  /** Money in or out; transfers are neither. */
+  direction?: 'in' | 'out';
   from?: string;
   to?: string;
   limit?: number;
@@ -866,6 +883,8 @@ export interface TransactionListOptions {
   accountIds?: string[];
   /** List the trash (voided and deleted) instead of active transactions (BAK-06). */
   trash?: boolean;
+  /** The next page: `nextCursor` from the page before, with the same filters. */
+  cursor?: string;
 }
 
 // ----- Planning (Phase 6) inputs ----------------------------------------------------------------------------
@@ -1466,7 +1485,11 @@ export class ApiClient {
 
   // ----- Transactions --------------------------------------------------------------------------------------
   listTransactions(workspaceId: string, opts: TransactionListOptions = {}) {
-    return this.request<{ data: TransactionDto[] }>(
+    return this.listTransactionsPage(workspaceId, opts).then((r) => r.data);
+  }
+  /** One page, newest first; pass `nextCursor` back as `cursor`, with the same filters, for the next. */
+  listTransactionsPage(workspaceId: string, opts: TransactionListOptions = {}) {
+    return this.request<{ data: TransactionDto[]; nextCursor: string | null }>(
       'GET',
       this.ws(
         workspaceId,
@@ -1477,7 +1500,7 @@ export class ApiClient {
           trash: opts.trash ? 'true' : undefined,
         })}`,
       ),
-    ).then((r) => r.data);
+    ).then((r) => ({ data: r.data, nextCursor: r.nextCursor ?? null }));
   }
   getTransaction(workspaceId: string, id: string) {
     return this.request<TransactionDto>('GET', this.ws(workspaceId, `/transactions/${enc(id)}`));

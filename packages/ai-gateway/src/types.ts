@@ -127,6 +127,15 @@ export interface AiEventRecord {
 export interface GatewayStore {
   cacheGet(task: TaskName, keyHash: string): Promise<unknown | null>;
   cachePut(task: TaskName, keyHash: string, output: unknown, model: string, ttlDays: number): Promise<void>;
+  /** Optional: many `cacheGet`s in one read. Keys without a live entry are left out of the map. */
+  cacheGetMany?(task: TaskName, keyHashes: readonly string[]): Promise<ReadonlyMap<string, unknown>>;
+  /** Optional: many `cachePut`s of one model's answers in one write (each key once). */
+  cachePutMany?(
+    task: TaskName,
+    entries: ReadonlyArray<{ keyHash: string; output: unknown }>,
+    model: string,
+    ttlDays: number,
+  ): Promise<void>;
   recordEvent(e: AiEventRecord): Promise<void>;
   /** Adds to this month's spend (kept apart from the deletable audit log). */
   addUsage(costMicroUsd: bigint, calls: number): Promise<void>;
