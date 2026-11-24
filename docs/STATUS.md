@@ -3208,6 +3208,14 @@ Phase 11 leftovers:
     import; the split by the setting; the derived-file columns, their checks and RLS; Trash with the original; not
     queued for the vault; replace, keep and drop on undo; the job). `data-ownership.test.ts` (a rendering's link to its
     original isn't a file holder).
+- **Wider pages on large screens, and a roomier receipt line table** (no requirement change; no migration).
+  - Before: every page stopped at 1200 px wide, so a large monitor left wide empty margins. On a receipt, item names
+    were cut off, the "For" picker shrank to its first letter, and the "Taxed" and "Category" headers ran together.
+  - Now: pages grow to 1760 px (`components/shell/app-shell.tsx`). The receipt's picture takes 38% instead of 42%. The
+    line table's headers have the same gap as its cells, the item fields are at least 12rem wide and "For" 8rem, and the
+    table scrolls sideways on its own when the screen is too narrow, so the page doesn't.
+  - Checked in a browser at 1920 px (content 1605 px wide, item names whole, headers apart) and on a narrow window (no
+    page overflow).
 
 ---
 
