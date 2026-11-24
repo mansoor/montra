@@ -190,3 +190,38 @@ Each PR has tests against the package's fake vault (ADR-0054 §15). Tests check:
 6. For now, a cover page only on rendered files (§3).
 7. The suggested defaults are taken: Statements are converted with the original attached, covers on rendered files,
    and the account number on the cover is the last four.
+
+## As built: PRs 2 and 3 (2026-11-24)
+
+PR 1 (accounts: holders and the sealed full number, migration 0091) is described in `docs/STATUS.md` §7g. Where PRs 2
+and 3 differ from or add to the text above, and why:
+
+- **Rendering (PR 2, migration 0092).** `apps/api/src/renditions/`: the document summary (`document-summary.ts`), the
+  renderer (`statement-pdf.ts`, pdf-lib with embedded Noto fonts, the same bytes for the same input) and
+  `StatementRenditions` (render, store, the `statement.render` job). The original is attached to part 1 only; the
+  other parts' covers say so. A rendering is never queued for the vault by the trigger that queues uploads: the vault
+  asks for it (below). A file with two committed imports renders the latest.
+- **The settings live in the vault connection's `config`** (`groups[].unkept`, `coverNumber`), not in a column, as the
+  groups' modes do. That keeps them with the destination (§1): a later S3/WebDAV copy can read the same shape. A group
+  without a renderer takes only "Don't send"; the API refuses the others for it.
+- **Full on the cover** needs an owner and a recent sign-in, and is in the security log (`vault_changed`, the choice
+  only). As ACC-16 audits a reveal, it is also in the audit log (`vault.cover_number_full`), as is each cover made with
+  it (`statement.full_number_on_cover`). With the detail switch off the number is `none` whatever the setting, so
+  changing it then remakes nothing.
+- **The original's outbox row becomes `converted`** (migration 0093) once its import is committed. It is never sent
+  itself. It keeps how far the conversion got (`render_state`: rendering, rendered, not converted, import undone) and
+  what the PDFs were made with (`render_options`). Each PDF gets an outbox row of its own in the transaction that
+  stores it, so the vault's id, hash check, retries and not-kept states (ADR-0054 §4) hold unchanged. An import
+  committed or undone nudges the row through a definer (`app.vault_conversion_due`): imports run as whoever made them,
+  and the outbox is for owners and admins.
+- **"Send again"** marks the PDFs the vault has `app.file.superseded_at`. They stay in the vault, and in Montra with
+  their original (Trash, retention), but are no longer its current rendering, so a new one is made with today's
+  settings and sent as a new document. The vault's client offers Montra no way to add a version to an existing
+  document, so "a new version" is a new document.
+- **§7.** The original goes only once the vault has filed the PDF marked `carries_original`, under ADR-0054 §5's other
+  conditions. Reading it back reads that PDF as any file and takes the attachment whose SHA-256 is the original's.
+- **Where it shows.** The web's import history (Statements and Imports) shows each statement file's vault state from
+  `FileVaultSummaryDto.converted`, with Send again for owners and admins. The phone lists no statement files, so it only
+  knows the new status and count.
+- **Not done:** the holder member as the "belongs to" hint (statements send no person hint yet), and remaking an unsent
+  PDF when only the holders or the account change (the next settings change or import does).
