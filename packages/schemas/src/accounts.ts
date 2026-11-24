@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import {
+  ACCOUNT_NUMBER_PATTERN,
+  normalizeAccountNumber,
   ACCOUNT_KINDS,
   BALANCE_RANGES,
   EDUCATION_EXPENSE_TYPES,
@@ -17,6 +19,47 @@ export type EducationExpenseTypeDto = z.infer<typeof EducationExpenseTypeDto>;
 const DayOfMonth = z.number().int().min(1).max(31);
 export type BankAccountKind = z.infer<typeof BankAccountKind>;
 
+/**
+ * ACC-15: one of an account's holders, as the bank names them, optionally a family member. With a member and no name,
+ * the API uses the member's name.
+ */
+export const AccountHolderInput = z
+  .object({
+    name: z.string().trim().max(100).optional(),
+    memberId: Id.nullable().optional(),
+  })
+  .refine((h) => Boolean(h.name) || Boolean(h.memberId), {
+    message: 'A holder needs a name or a family member',
+    path: ['name'],
+  });
+export type AccountHolderInput = z.output<typeof AccountHolderInput>;
+/**
+ * The whole list, in order; it replaces the account's holders. The API's ACCOUNT_MAX_HOLDERS setting (default 4) is the
+ * real limit; this only bounds the request.
+ */
+export const AccountHoldersInput = z.array(AccountHolderInput).max(50);
+
+export const AccountHolderDto = z.object({ name: z.string(), memberId: z.string().nullable() });
+export type AccountHolderDto = z.infer<typeof AccountHolderDto>;
+
+/**
+ * ACC-16: a full account number as typed. Spaces and dashes are dropped and letters upper-cased (an IBAN); it must end
+ * in four digits, which are shown. The message never repeats what was typed.
+ */
+export const AccountNumberInput = z
+  .string()
+  .max(100)
+  .transform(normalizeAccountNumber)
+  .pipe(
+    z
+      .string()
+      .regex(ACCOUNT_NUMBER_PATTERN, { message: 'Enter 4 to 34 letters and digits, ending in 4 digits' }),
+  );
+
+/** ACC-16: the full number, after a recent sign-in. Each one shown is in the audit log. */
+export const AccountNumberRevealDto = z.object({ value: z.string().nullable() });
+export type AccountNumberRevealDto = z.infer<typeof AccountNumberRevealDto>;
+
 export const CreateAccountRequest = z.object({
   /** Defaults to the Personal entity (ACC-03: each account has a default entity). */
   entityId: Id.optional(),
@@ -32,6 +75,8 @@ export const CreateAccountRequest = z.object({
   openingBalance: MoneyDto.optional(),
   openingDate: CalendarDateDto.optional(),
   defaultMemberId: Id.optional(),
+  /** ACC-15: who the bank says holds it, in order. */
+  holders: AccountHoldersInput.optional(),
   /** The optional facts its type can hold (ADR-0023). Minor units in the account currency. */
   creditLimit: z
     .string()
@@ -81,6 +126,12 @@ export const AccountDto = z.object({
   currency: z.string(),
   institution: z.string().nullable(),
   last4: z.string().nullable(),
+  /** ACC-16: "••••1234" from the last four; null when there are none. Never the full number. */
+  accountNumberMasked: z.string().nullable(),
+  /** ACC-16: the full number is kept, sealed. Owners and admins can show it after a recent sign-in. */
+  fullNumberKept: z.boolean(),
+  /** ACC-15: who the bank says holds it, in order. Empty when none are listed. */
+  holders: z.array(AccountHolderDto),
   /** Natural balance (held for assets, owed for liabilities). */
   balance: MoneyDto,
   archived: z.boolean(),

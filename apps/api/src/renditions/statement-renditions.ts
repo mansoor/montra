@@ -21,6 +21,7 @@ import type { CalendarDate } from '@montra/domain';
 import type { Selectable } from 'kysely';
 import { CONFIG, type AppConfig } from '../config.js';
 import { Db } from '../db/database.js';
+import { FieldCrypto } from '../crypto/crypto.service.js';
 import { JobQueue, PermanentJobError, Worker, type Job } from '../jobs/queue.js';
 import { FileBytes } from '../storage/file-bytes.js';
 import { sha256, STORAGE_PORT, storageKey, type StoragePort } from '../storage/storage.js';
@@ -105,6 +106,7 @@ export class StatementRenditions {
     @Inject(Worker) private readonly worker: Worker,
     @Inject(JobQueue) private readonly queue: JobQueue,
     @Inject(CONFIG) private readonly config: AppConfig,
+    @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
   ) {}
 
   register(): void {
@@ -190,6 +192,7 @@ export class StatementRenditions {
         committed ?? batches[0] ?? null,
         drawn ? { moneyIn: drawn.moneyIn, moneyOut: drawn.moneyOut, count: drawn.lines.length } : null,
         options.accountNumber,
+        this.crypto,
       );
       return { file, summary, lines: drawn?.lines ?? null, at: committed?.committed_at ?? file.created_at };
     });

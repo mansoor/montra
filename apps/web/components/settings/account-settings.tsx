@@ -1,24 +1,28 @@
 'use client';
 
 import { useState } from 'react';
-import type { AccountDto, WorkspaceDto } from '@montra/api-client';
+import type { AccountDto, FamilyMemberDto, WorkspaceDto } from '@montra/api-client';
 import { canDeleteAccounts, deleteStep } from '@/lib/account-delete';
+import { canManageAccountNumber } from '@/lib/account-holders';
 import { browserApi } from '@/lib/browser-api';
 import { errorAction, friendlyMessage } from '@/lib/errors';
 import { minorToInput, parseAmountInput } from '@/lib/money';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { useI18n } from '../i18n';
+import { AccountHoldersEditor, AccountNumberPanel } from './account-holders';
 import { AccountPlanning } from './account-planning';
 
 /** Rename, archive, hide, delete when empty, and adjust balances with an audit note (ACC-05, ACC-06, ACC-14, UP-04). */
 export function AccountSettings({
   workspace,
   accounts,
+  members,
   today,
 }: {
   workspace: WorkspaceDto;
   accounts: AccountDto[];
+  members: FamilyMemberDto[];
   today: string;
 }) {
   const { t } = useI18n();
@@ -34,6 +38,8 @@ export function AccountSettings({
           entity={entityName.get(a.entityId) ?? ''}
           today={today}
           canDelete={canDeleteAccounts(workspace.role)}
+          canManageNumber={canManageAccountNumber(workspace.role)}
+          members={members}
         />
       ))}
     </ul>
@@ -46,12 +52,16 @@ function AccountCard({
   entity,
   today,
   canDelete,
+  canManageNumber,
+  members,
 }: {
   workspaceId: string;
   account: AccountDto;
   entity: string;
   today: string;
   canDelete: boolean;
+  canManageNumber: boolean;
+  members: FamilyMemberDto[];
 }) {
   const { busy, message, setMessage, run, t } = useAction();
   const { locale } = useI18n();
@@ -210,6 +220,8 @@ function AccountCard({
           </button>
         </div>
       </details>
+      <AccountHoldersEditor workspaceId={workspaceId} account={account} members={members} />
+      <AccountNumberPanel workspaceId={workspaceId} account={account} canManage={canManageNumber} />
       <AccountPlanning workspaceId={workspaceId} account={account} />
       <StatusLine message={message} />
     </li>

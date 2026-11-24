@@ -93,6 +93,8 @@ export const ENCRYPTED: Readonly<Record<string, Readonly<Record<string, string>>
 
 /** Sealed columns that keep their last four beside them for display: filled in on restore from the archive's text. */
 export const LAST4: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  // An account's full number (ACC-16, migration 0091).
+  bank_account: { account_number_enc: 'last4' },
   business_profile: {
     ein_enc: 'ein_last4',
     ftb_entity_id_enc: 'ftb_entity_id_last4',

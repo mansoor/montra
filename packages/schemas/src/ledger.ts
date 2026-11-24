@@ -9,6 +9,7 @@ import {
   MemberRole,
   MoneyDto,
 } from './common.js';
+import { AccountHoldersInput, AccountNumberInput } from './accounts.js';
 import { ForeignAmountInput, RateDto } from './fx.js';
 import { PhotoUploadLimits } from './photo-uploads.js';
 import { SplitInput } from './transactions.js';
@@ -138,7 +139,14 @@ export const UpdateAccountRequest = z
       .string()
       .regex(/^\d{4}$/)
       .nullable(),
+    /**
+     * ACC-16: the full number, sealed on the server; its last four replace `last4`. Null forgets it and keeps the
+     * last four. Owners and admins only.
+     */
+    accountNumber: AccountNumberInput.nullable(),
     defaultMemberId: Id.nullable(),
+    /** ACC-15: the whole list of holders, in order; it replaces the one there. */
+    holders: AccountHoldersInput,
     archived: z.boolean(),
     hidden: z.boolean(),
     /** Planning inputs (Phase 6): card limit, APR in basis points, minimum payment, low-balance warning. */

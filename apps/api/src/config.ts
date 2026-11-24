@@ -154,6 +154,8 @@ const Env = z.object({
    * tax account numbers still kept in plain text. Each business is sealed in its own transaction.
    */
   TAX_ID_SEAL_BATCH: z.coerce.number().int().min(1).max(10_000).default(200),
+  /** ACC-15 (ADR-0057 §5): how many holders an account may list. Joint accounts usually have two. */
+  ACCOUNT_MAX_HOLDERS: z.coerce.number().int().min(1).max(50).default(4),
   /**
    * VLT-13 (ADR-0057 §2): the most statement rows one rendered PDF holds. A longer statement is split into parts, each
    * its own PDF titled "part n of m".

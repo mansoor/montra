@@ -168,7 +168,9 @@ export interface BankAccountTable {
   ledger_account_id: string;
   kind: BankAccountKind;
   institution: string | null;
+  /** The last four of the account number. When the full number is kept (ACC-16), they're its last four. */
   last4: string | null;
+  /** ACC-16 (migration 0091): the full number, sealed with FieldCrypto (label `bank_account.account_number`). */
   account_number_enc: Buffer | null;
   opening_balance_minor: Int8Default;
   opening_date: CalendarDateCol | null;
@@ -191,6 +193,18 @@ export interface BankAccountTable {
   plan_type: string | null;
   employer_id: string | null;
   employer_contributions: ColumnType<boolean, boolean | undefined, boolean>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+/** ACC-15 (migration 0091): who the bank says holds an account, in order; each optionally a family member. */
+export interface AccountHolderTable {
+  workspace_id: string;
+  id: Generated<string>;
+  ledger_account_id: string;
+  position: number;
+  name: string;
+  member_id: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -1996,6 +2010,7 @@ export interface Database extends PayrollDatabase, AssetDatabase {
   'app.category_group': CategoryGroupTable;
   'app.ledger_account': LedgerAccountTable;
   'app.bank_account': BankAccountTable;
+  'app.account_holder': AccountHolderTable;
   'app.payee': PayeeTable;
   'app.tag': TagTable;
   'app.transaction': TransactionTable;
@@ -2716,6 +2731,7 @@ export interface PropertyBudgetLineTable {
 }
 
 export type LedgerAccountRow = Selectable<LedgerAccountTable>;
+export type AccountHolderRow = Selectable<AccountHolderTable>;
 export type NewLedgerAccount = Insertable<LedgerAccountTable>;
 export type EntityRow = Selectable<EntityTable>;
 export type TransactionRow = Selectable<TransactionTable>;

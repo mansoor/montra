@@ -333,9 +333,29 @@ describe('the cover follows the detail switch and the number setting (ADR-0057 �
     expect(coverText(drawn)).toContain('$9.99');
     await render(fileId, { detail: true, accountNumber: 'last4', attachOriginal: false });
     expect(coverText(drawn)).toContain('••••4321');
-    // No full number is kept yet (ADR-0057 §6 arrives with PR 1): Full still shows only the last four.
+    // With no full number kept, Full still shows only the last four.
     await render(fileId, { detail: true, accountNumber: 'full', attachOriginal: false });
     expect(coverText(drawn)).toContain('••••4321');
+  });
+
+  it('lists the account’s holders, and shows a kept full number only for Full (ACC-15, ACC-16)', async () => {
+    const set = await c.patch(url(`/accounts/${checking}`), {
+      holders: [{ name: 'Sam Rivera' }, { name: 'Alex Rivera' }],
+      accountNumber: '9876004321',
+    });
+    expect(set.status).toBe(200);
+    try {
+      await render(fileId, { detail: false, accountNumber: 'full', attachOriginal: false });
+      expect(coverText(drawn)).toContain('Alex Rivera');
+      expect(coverText(drawn)).not.toMatch(/4321/);
+      await render(fileId, { detail: true, accountNumber: 'last4', attachOriginal: false });
+      expect(coverText(drawn)).toContain('••••4321');
+      expect(coverText(drawn)).not.toContain('9876004321');
+      await render(fileId, { detail: true, accountNumber: 'full', attachOriginal: false });
+      expect(coverText(drawn)).toContain('9876004321');
+    } finally {
+      await c.patch(url(`/accounts/${checking}`), { holders: [], accountNumber: null });
+    }
   });
 });
 

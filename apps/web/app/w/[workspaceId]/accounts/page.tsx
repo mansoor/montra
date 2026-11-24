@@ -96,7 +96,7 @@ export default async function AccountsPage({ params }: { params: Promise<{ works
                   <span className="min-w-0">
                     <span className="block truncate font-medium">{a.name}</span>
                     <span className="block truncate text-xs text-muted">
-                      {[a.institution, a.last4 ? `••${a.last4}` : null, books?.get(a.entityId)]
+                      {[a.institution, a.accountNumberMasked, books?.get(a.entityId)]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>

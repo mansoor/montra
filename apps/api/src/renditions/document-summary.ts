@@ -8,6 +8,8 @@ import type { BankAccountKind, ImportBatchTable, Trx } from '@montra/db';
 import { maskLast4, type CalendarDate } from '@montra/domain';
 import type { Selectable } from 'kysely';
 import { fileTypeOf } from '../imports/imports.service.js';
+import { holdersOf, openAccountNumber } from '../accounts/account-holders.js';
+import type { FieldCrypto } from '../crypto/crypto.service.js';
 
 /** "Account number on the cover" (ADR-0057 §3). Full is only ever passed in by the caller, never chosen here. */
 export type AccountNumberChoice = 'last4' | 'full' | 'none';
@@ -163,6 +165,7 @@ export async function statementFacts(
   batch: Batch | null,
   lines: { moneyIn: bigint; moneyOut: bigint; count: number } | null,
   choice: AccountNumberChoice,
+  crypto: FieldCrypto,
 ): Promise<StatementSummary> {
   const account = batch
     ? await trx
@@ -183,6 +186,7 @@ export async function statementFacts(
           'b.kind',
           'b.institution',
           'b.last4',
+          'b.account_number_enc',
           'm.name as member',
         ])
         .where('a.workspace_id', '=', workspaceId)
@@ -190,14 +194,21 @@ export async function statementFacts(
         .executeTakeFirst()
     : undefined;
 
-  // ADR-0057 §5/§6, until the account holders and the sealed full number exist (ADR-0057 plan, PR 1): the holders are
-  // the account's default member, else its book's name; the number is the last four only. PR 1 replaces this block:
-  // holders from the account's holder list (default member, then book, only when it has none), and, when the caller
-  // passed `full`, the full number unsealed here (never logged). Nothing else in rendering changes.
-  const holders = account ? [account.member ?? account.book] : [];
-  const fullNumber: string | null = null;
+  // ADR-0057 §5/§6: the account's holders in order (ACC-15), else its default member, else its book's name. The full
+  // number (ACC-16) is unsealed only when the owner chose `full`; it goes on the cover and nowhere else (never logged).
+  const listed = account
+    ? ((await holdersOf(trx, workspaceId, [batch!.ledger_account_id])).get(batch!.ledger_account_id) ?? [])
+    : [];
+  const holders = account
+    ? listed.length
+      ? listed.map((h) => h.name)
+      : [account.member ?? account.book]
+    : [];
+  const fullNumber =
+    account && choice === 'full'
+      ? await openAccountNumber(crypto, trx, workspaceId, account.account_number_enc)
+      : null;
   const accountNumber = account ? accountNumberDisplay(choice, account.last4, fullNumber) : null;
-  // End of ADR-0057 §5/§6.
 
   const statement = (batch?.analysis as { statement?: { periodStart?: string; periodEnd?: string } } | null)
     ?.statement;

@@ -9,6 +9,7 @@ import { AssetPanel, CashCount, DebtPanel } from '@/components/accounts/other-pa
 import { LoanPanel } from '@/components/accounts/loan-panel';
 import { MoveBooks } from '@/components/accounts/move-books';
 import { TrackLoanForm } from '@/components/accounts/loan-tracking';
+import { holdersLine } from '@/lib/account-holders';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
 import { DateText } from '@/components/i18n';
@@ -71,7 +72,7 @@ export default async function RegisterPage({
   const about = [
     t(`account.kind.${account.kind}`),
     type.holder ? account.institution : null,
-    type.hasNumber && account.last4 ? `···· ${account.last4}` : null,
+    type.hasNumber ? account.accountNumberMasked : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -92,6 +93,11 @@ export default async function RegisterPage({
           <p className="text-sm text-muted" data-testid="account-about">
             {about}
           </p>
+          {account.holders.length > 0 && (
+            <p className="text-sm text-muted" data-testid="account-holders">
+              {t('accounts.held_by', { names: holdersLine(account.holders, t('accounts.holders_and')) })}
+            </p>
+          )}
           <p className="text-sm text-muted">
             {t(`register.${type.balanceWord}`)}:{' '}
             <Money

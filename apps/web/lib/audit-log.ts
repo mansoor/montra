@@ -9,6 +9,7 @@ type T = (key: string, vars?: Record<string, string | number>) => string;
 
 /** Every table the audit triggers watch, plus the record types the services name. Each has `audit.subject.<type>`. */
 export const AUDIT_SUBJECT_TYPES = [
+  'account_holder',
   'account_move',
   'account_valuation',
   'allocation_rule',
@@ -94,6 +95,7 @@ type AuditOp = (typeof AUDIT_OPS)[number];
 /** Actions the services write by name, each with `audit.action.<action>`. */
 export const AUDIT_ACTIONS = [
   'account.deleted',
+  'account.number_revealed',
   'bank_feed.account_ignored',
   'bank_feed.account_linked',
   'bank_feed.account_unlinked',
