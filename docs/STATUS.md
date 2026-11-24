@@ -28,6 +28,12 @@ and matching them automatically (PR 3); the phone (PR 4, not run on a device yet
 the 16 February reminder (PR 5, migration 0060); see §7g. Role-based permissions (ADR-0053) are a separate proposal for
 later; tax forms use an owner-only setting for accountants instead.
 
+**Proposed, to be built after the owner approves it:** [ADR-0057](design/adr/0057-vault-statement-pdfs.md), statements the
+vault doesn't keep (CSV, XLS, OFX, QIF, a bank's own layout) sent as PDFs drawn from the imported rows, with a cover
+page and, by default, the original attached inside. Each sent group chooses: don't send, convert, or convert with the
+original attached. Accounts gain holder names and a sealed full account number. Three PRs (accounts, rendering,
+sending); PDF/A and bank-feed statements are on the backlog.
+
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
 accountant setting is what it would replace.
@@ -294,6 +300,11 @@ finished:
     the line's total when neither is printed (see §7g).
 14. ~~**Phone receipts don't show tax and tip**~~ Done: the phone shows subtotal, discount, tax, fees, tip and total
     under the lines (see §7g).
+15. **PDF/A for documents sent to the vault.** ADR-0057 renders statements the vault doesn't keep as ordinary PDFs.
+    Making them conforming PDF/A for long-term archiving is for later (owner's answer, 2026-11-24). It may mean
+    rendering in the document worker with reportlab instead of pdf-lib.
+16. **Monthly statement PDFs for bank feeds.** A feed has no file; ADR-0057's renderer could make one per month. Not
+    now (owner's answer, 2026-11-24).
 
 ---
 
