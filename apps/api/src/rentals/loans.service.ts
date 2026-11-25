@@ -12,7 +12,15 @@ import {
   asCurrencyCode,
   calendarDate,
   compareDates,
+  dailyInterest,
   diffDays,
+  inLoanMatchWindow,
+  interestDays,
+  LOAN_MATCH_DAYS_BEFORE,
+  loanLateFee,
+  loanMatchDaysAfter,
+  loanPaymentDate,
+  loanPaymentLate,
   monthlyPayment,
   paymentsOnOrBefore,
   projectLoan,
@@ -48,6 +56,47 @@ const paymentOf = (r: LoanRow): bigint =>
   r.payment_minor !== null ? BigInt(r.payment_minor) : monthlyPayment(termsOf(r));
 
 const escrowOf = (r: LoanRow): bigint => BigInt(r.escrow_taxes_minor) + BigInt(r.escrow_insurance_minor);
+
+/** The schedule from the terms alone: a daily loan's accrues from its start date (ADR-0024 §13). */
+const byTermsOf = (r: LoanRow) =>
+  amortize(
+    termsOf(r),
+    iso(r.first_payment_date),
+    r.interest_method === 'daily' && r.start_date ? { startDate: iso(r.start_date) } : undefined,
+  );
+
+/** A daily loan needs the date interest starts, on or before its first payment (ADR-0024 §13). */
+function checkDailyStart(start: CalendarDate | null, firstPayment: CalendarDate): void {
+  if (start === null) {
+    throw unprocessable('loan.start_date', 'Daily interest needs the date interest starts');
+  }
+  if (compareDates(start, firstPayment) > 0) {
+    throw unprocessable('loan.start_date', 'Interest must start on or before the first payment');
+  }
+}
+
+/** The late fee the loan's terms set on a scheduled payment (ADR-0024 §14). */
+const lateFeeOf = (r: LoanRow, scheduled: bigint): bigint =>
+  loanLateFee(
+    {
+      graceDays: r.grace_days,
+      flat: r.late_fee_minor === null ? null : BigInt(r.late_fee_minor),
+      bps: r.late_fee_bps,
+    },
+    scheduled,
+  );
+
+/**
+ * Where a daily loan's interest runs from for the next payment (ADR-0024 §13): the latest recorded payment's date, else the
+ * last payment already in the balance when tracking began, else the start date.
+ */
+function accruesFrom(r: LoanRow, paidOn: readonly (string | null)[]): CalendarDate {
+  const dates = paidOn.filter((d): d is string => d !== null).map(iso);
+  if (dates.length > 0) return dates.reduce((a, b) => (compareDates(b, a) > 0 ? b : a));
+  const first = iso(r.first_payment_date);
+  if (r.payments_before > 0) return loanPaymentDate(first, r.payments_before);
+  return r.start_date ? iso(r.start_date) : loanPaymentDate(first, 0);
+}
 
 /** Categories for a loan outside a rental portfolio, preferred names first, then anything that says what it is. */
 const INTEREST_NAMES: Record<string, string[]> = {
@@ -156,6 +205,8 @@ export class LoansService {
   async create(ctx: Ctx, req: CreateLoanRequest): Promise<LoanDto> {
     return this.db.run(ctx, async (trx) => {
       const property = req.propertyId ? await this.properties.row(trx, ctx, req.propertyId) : null;
+      const daily = req.interestMethod === 'daily';
+      if (daily) checkDailyStart(req.startDate ?? null, req.firstPaymentDate);
       const asOf = req.balanceAsOf ?? (await this.today(trx, ctx));
       const before = req.balanceAsOf
         ? paymentsOnOrBefore(req.firstPaymentDate, req.termMonths, req.balanceAsOf)
@@ -180,6 +231,7 @@ export class LoansService {
                 payment: level,
                 firstPayment: req.firstPaymentDate,
                 termMonths: req.termMonths,
+                ...(daily ? { method: 'daily' as const, accruesFrom: req.startDate } : {}),
               })[before - 1]?.balance ?? 0n);
         const owed = req.newAccount.owed !== undefined ? BigInt(req.newAccount.owed) : estimate;
         if (owed <= 0n) throw unprocessable('loan.paid_off', 'By these terms this loan is already paid off');
@@ -248,6 +300,10 @@ export class LoansService {
         payment_minor: req.paymentAmount ?? null,
         payments_before: before,
         auto_record: req.autoRecord,
+        interest_method: req.interestMethod,
+        grace_days: req.graceDays,
+        late_fee_minor: req.lateFee ?? null,
+        late_fee_bps: req.lateFeeBps ?? null,
       };
       // Tracking the same account again picks its recorded payments back up.
       const row = existing
@@ -300,6 +356,20 @@ export class LoansService {
           'Choose the account it’s paid from to record it automatically',
         );
       }
+      // The first payment's date moves only while nothing is recorded: recorded payments are numbered from it.
+      const firstPayment = req.firstPaymentDate ?? iso(r.first_payment_date);
+      if (req.firstPaymentDate !== undefined && req.firstPaymentDate !== iso(r.first_payment_date)) {
+        if ((await this.paymentsOf(trx, ctx, r.id)).length > 0) {
+          throw unprocessable(
+            'loan.first_payment_locked',
+            'The first payment’s date can’t change once a payment is recorded',
+          );
+        }
+      }
+      // Daily interest runs from the start date (ADR-0024 §13). Recorded payments keep their parts either way.
+      const method = req.interestMethod ?? r.interest_method;
+      const start = req.startDate !== undefined ? req.startDate : r.start_date ? iso(r.start_date) : null;
+      if (method === 'daily') checkDailyStart(start, firstPayment);
       // A new rate re-levels what's owed over the time left, unless the lender's figure comes with it.
       let payment: bigint | null | undefined =
         req.paymentAmount === null || req.paymentAmount === undefined
@@ -325,6 +395,12 @@ export class LoansService {
           ...(payment !== undefined ? { payment_minor: payment } : {}),
           ...(req.payingAccountId !== undefined ? { paying_account_id: req.payingAccountId } : {}),
           ...(req.autoRecord !== undefined ? { auto_record: req.autoRecord } : {}),
+          ...(req.startDate !== undefined ? { start_date: req.startDate } : {}),
+          ...(req.interestMethod !== undefined ? { interest_method: req.interestMethod } : {}),
+          ...(req.firstPaymentDate !== undefined ? { first_payment_date: req.firstPaymentDate } : {}),
+          ...(req.graceDays !== undefined ? { grace_days: req.graceDays } : {}),
+          ...(req.lateFee !== undefined ? { late_fee_minor: req.lateFee } : {}),
+          ...(req.lateFeeBps !== undefined ? { late_fee_bps: req.lateFeeBps } : {}),
         })
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', id)
@@ -335,12 +411,17 @@ export class LoansService {
     });
   }
 
+  /** Recorded payments, each with the date of its transaction: when it was paid. */
   private async paymentsOf(trx: Trx, ctx: Ctx, loanId: string) {
     return trx
-      .selectFrom('app.loan_payment')
-      .selectAll()
-      .where('workspace_id', '=', ctx.workspaceId)
-      .where('loan_id', '=', loanId)
+      .selectFrom('app.loan_payment as p')
+      .leftJoin('app.transaction as t', (j) =>
+        j.onRef('t.workspace_id', '=', 'p.workspace_id').onRef('t.id', '=', 'p.transaction_id'),
+      )
+      .selectAll('p')
+      .select('t.txn_date as paid_on')
+      .where('p.workspace_id', '=', ctx.workspaceId)
+      .where('p.loan_id', '=', loanId)
       .execute();
   }
 
@@ -361,6 +442,16 @@ export class LoansService {
       termMonths: r.term_months,
       before: r.payments_before,
       recorded: new Set(paid.map((p) => p.number)),
+      // Daily: from the real balance and the last recorded payment's date (ADR-0024 §13).
+      ...(r.interest_method === 'daily'
+        ? {
+            method: 'daily' as const,
+            accruesFrom: accruesFrom(
+              r,
+              paid.map((p) => p.paid_on),
+            ),
+          }
+        : {}),
     });
     return { paid, balance, rows };
   }
@@ -371,9 +462,8 @@ export class LoansService {
     const payment = paymentOf(r);
     const escrow = escrowOf(r);
     const next = rows[0];
-    const byTerms = paid.some((p) => p.interest_minor === null)
-      ? amortize(termsOf(r), iso(r.first_payment_date))
-      : [];
+    const today = next ? await this.today(trx, ctx) : null;
+    const byTerms = paid.some((p) => p.interest_minor === null) ? byTermsOf(r) : [];
     const interestOf = (p: (typeof paid)[number]) =>
       p.interest_minor !== null
         ? BigInt(p.interest_minor)
@@ -385,6 +475,7 @@ export class LoansService {
       loanAccountId: r.loan_account_id,
       name: r.name,
       startDate: r.start_date ? iso(r.start_date) : null,
+      interestMethod: r.interest_method,
       principal: String(r.principal_minor),
       rateBps: r.rate_bps,
       termMonths: r.term_months,
@@ -397,6 +488,9 @@ export class LoansService {
       paymentsMade: paid.length,
       payingAccountId: r.paying_account_id,
       autoRecord: r.auto_record,
+      graceDays: r.grace_days,
+      lateFee: r.late_fee_minor === null ? null : String(r.late_fee_minor),
+      lateFeeBps: r.late_fee_bps,
       next: next
         ? {
             number: next.number,
@@ -405,6 +499,9 @@ export class LoansService {
             interest: String(next.interest),
             principal: String(next.principal),
             escrow: String(escrow),
+            late: loanPaymentLate(next.date, today!, r.grace_days),
+            lateFee: String(lateFeeOf(r, next.payment + escrow)),
+            accruesFrom: next.from ?? null,
           }
         : null,
       payoffDate: rows[rows.length - 1]?.date ?? null,
@@ -420,20 +517,23 @@ export class LoansService {
       const r = await this.row(trx, ctx, id);
       const { paid, rows } = await this.state(trx, ctx, r);
       const escrow = escrowOf(r);
-      const byTerms = amortize(termsOf(r), iso(r.first_payment_date));
+      const byTerms = byTermsOf(r);
+      const daily = r.interest_method === 'daily';
       const recorded = paid.map((p): AmortizationRowDto => {
         const terms = byTerms.find((x) => x.number === p.number);
         const interest = p.interest_minor !== null ? BigInt(p.interest_minor) : (terms?.interest ?? 0n);
         const principal = p.principal_minor !== null ? BigInt(p.principal_minor) : (terms?.principal ?? 0n);
         return {
           number: p.number,
-          date: terms?.date ?? iso(r.first_payment_date),
+          // A daily loan's interest ran to the day it was paid, so that's the date it shows.
+          date: daily && p.paid_on ? iso(p.paid_on) : (terms?.date ?? iso(r.first_payment_date)),
           payment: String(interest + principal),
           interest: String(interest),
           principal: String(principal),
           escrow: String(p.escrow_minor !== null ? BigInt(p.escrow_minor) : escrow),
           balance: String(terms?.balance ?? 0n),
           transactionId: p.transaction_id,
+          lateFee: String(p.late_fee_minor ?? 0n),
         };
       });
       // Walking back from the first unrecorded balance gives each recorded row what really followed it.
@@ -452,6 +552,7 @@ export class LoansService {
         escrow: String(escrow),
         balance: String(row.balance),
         transactionId: null,
+        lateFee: '0',
       }));
       return [...recorded, ...upcoming].sort((a, b) => a.number - b.number);
     });
@@ -530,6 +631,7 @@ export class LoansService {
     r: LoanRow,
     interest: bigint,
     principal: bigint,
+    lateFee = 0n,
   ): Promise<SplitSpec[]> {
     const tags = { memberId: null, propertyId: r.property_id };
     const categories = await this.categoriesFor(trx, ctx, r);
@@ -551,13 +653,23 @@ export class LoansService {
         ...tags,
       });
     }
+    // A late fee is a charge, not interest: the books' Bank fees, which every entity has (ADR-0024 §14).
+    if (lateFee > 0n) {
+      const resolver = await this.ledger.resolver(trx, ctx.workspaceId);
+      splits.push({
+        accountId: resolver.systemAccount(r.entity_id, 'bank_fees').id,
+        amount: String(-lateFee),
+        ...tags,
+      });
+    }
     return splits;
   }
 
   /**
    * "Make transfer" to a loan account (ADR-0028): the tracked loan on that account, and its scheduled payment a bank line
    * pays, if one does. Null when the account's payments aren't tracked. `number` is null when no unrecorded payment
-   * matches: money out, in the loan's books and currency, the scheduled amount with escrow, within 5 days (ADR-0024 §8).
+   * matches: money out, in the loan's books and currency, the scheduled amount with escrow, from 5 days before it's due to
+   * max(5, grace days) after (ADR-0024 §8, §14). A late line can also carry the loan's late fee.
    */
   async paymentForLine(
     trx: Trx,
@@ -580,8 +692,14 @@ export class LoansService {
     const total = -line.amount;
     const escrow = escrowOf(r);
     const gap = (d: CalendarDate) => Math.abs(diffDays(d, line.date));
+    const pays = (x: AmortizationRow) => {
+      const due = x.payment + escrow;
+      if (due === total) return true;
+      const fee = lateFeeOf(r, due);
+      return fee > 0n && due + fee === total && loanPaymentLate(x.date, line.date, r.grace_days);
+    };
     const hit = rows
-      .filter((x) => x.payment + escrow === total && gap(x.date) <= 5)
+      .filter((x) => pays(x) && inLoanMatchWindow(x.date, line.date, r.grace_days))
       .sort((a, b) => gap(a.date) - gap(b.date) || a.number - b.number)[0];
     return { ...found, number: hit?.number ?? null };
   }
@@ -610,33 +728,80 @@ export class LoansService {
     if (!row) throw unprocessable('loan.number', 'There is no such payment on this schedule');
     const owedBefore = row.balance + row.principal;
     const escrow = escrowOf(r);
+    const daily = r.interest_method === 'daily';
+    // The lender's own split, from their statement, wins over the calculated one (ADR-0024 §13).
+    const lender =
+      req.interest !== undefined && req.principal !== undefined
+        ? { interest: BigInt(req.interest), principal: BigInt(req.principal) }
+        : null;
+    if (lender && lender.principal > owedBefore) {
+      throw unprocessable('loan.split', 'The principal is more than is owed on the loan');
+    }
+    if (lender && lender.interest + lender.principal === 0n) {
+      throw unprocessable('loan.split', 'Enter the interest and principal the lender charged');
+    }
+    // Daily: interest runs from the previous payment (or the start date) to the day this one is paid.
+    const accrued = (paidOn: CalendarDate) =>
+      dailyInterest(owedBefore, r.rate_bps, interestDays(row.from ?? paidOn, paidOn));
+    let interest = row.interest;
     let principal = row.principal;
+    let lateFee = 0n;
     let transactionId: string;
     let depositSpec: unknown = null;
     if ('transactionId' in req) {
       const t = await trx
         .selectFrom('app.transaction')
-        .select('spec')
+        .select(['spec', 'txn_date'])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', req.transactionId)
         .executeTakeFirst();
       if (!t) throw notFound('Transaction');
+      const paidOn = iso(t.txn_date);
       const line = -BigInt((t.spec as { amount?: string } | null)?.amount ?? '0');
-      if (line !== row.payment + escrow) {
+      // A late line for the payment plus the loan's own fee is both (ADR-0024 §14).
+      const termsFee = lateFeeOf(r, row.payment + escrow);
+      const late = loanPaymentLate(row.date, paidOn, r.grace_days);
+      if (req.lateFee !== undefined) lateFee = BigInt(req.lateFee);
+      else if (late && termsFee > 0n && line === row.payment + escrow + termsFee) lateFee = termsFee;
+      const owing = line - lateFee;
+      if (lender) {
+        if (lender.interest + lender.principal + escrow !== owing) {
+          throw unprocessable(
+            'loan.split',
+            'Interest, principal, escrow and any late fee must add up to the payment',
+          );
+        }
+        interest = lender.interest;
+        principal = lender.principal;
+      } else if (daily) {
+        if (owing !== row.payment + escrow && !req.adjustPrincipal) {
+          throw unprocessable(
+            'loan.amount',
+            'The payment must be the amount on the schedule, escrow included',
+          );
+        }
+        interest = accrued(paidOn);
+        principal = owing - interest - escrow;
+        if (principal < 0n) {
+          throw unprocessable('loan.amount', 'This doesn’t cover the interest and escrow due');
+        }
+        if (principal > owedBefore)
+          throw unprocessable('loan.amount', 'This is more than is owed on the loan');
+      } else if (owing !== row.payment + escrow) {
         if (!req.adjustPrincipal) {
           throw unprocessable(
             'loan.amount',
             'The payment must be the amount on the schedule, escrow included',
           );
         }
-        principal = line - row.interest - escrow;
+        principal = owing - row.interest - escrow;
         if (principal < 0n) {
           throw unprocessable('loan.amount', 'This doesn’t cover the interest and escrow due');
         }
         if (principal > owedBefore)
           throw unprocessable('loan.amount', 'This is more than is owed on the loan');
       }
-      const splits = await this.splitsFor(trx, ctx, r, row.interest, principal);
+      const splits = await this.splitsFor(trx, ctx, r, interest, principal, lateFee);
       const taken = await this.links.takeOver(trx, ctx, req.transactionId, { loanId: id }, splits, {
         sign: -1,
         currency: e.functional_currency,
@@ -644,14 +809,28 @@ export class LoansService {
       transactionId = req.transactionId;
       depositSpec = taken.previous;
     } else {
-      principal += BigInt(req.extraPrincipal ?? '0');
-      if (principal > owedBefore) throw unprocessable('loan.extra', 'This is more than is owed on the loan');
-      const splits = await this.splitsFor(trx, ctx, r, row.interest, principal);
+      lateFee = BigInt(req.lateFee ?? '0');
+      if (lender) {
+        interest = lender.interest;
+        principal = lender.principal;
+      } else {
+        if (daily) {
+          // The payment stays level; the last one clears what's left.
+          interest = accrued(req.date);
+          principal = row.balance === 0n ? owedBefore : row.payment - interest;
+          if (principal < 0n) principal = 0n;
+          if (principal > owedBefore) principal = owedBefore;
+        }
+        principal += BigInt(req.extraPrincipal ?? '0');
+        if (principal > owedBefore)
+          throw unprocessable('loan.extra', 'This is more than is owed on the loan');
+      }
+      const splits = await this.splitsFor(trx, ctx, r, interest, principal, lateFee);
       transactionId = await this.links.create(trx, ctx, {
         entityId: r.entity_id,
         accountId: req.accountId,
         date: req.date,
-        amount: -(row.interest + principal + escrow),
+        amount: -(interest + principal + escrow + lateFee),
         currency: e.functional_currency,
         payee: r.name,
         payeeKey: null,
@@ -672,9 +851,10 @@ export class LoansService {
         transaction_id: transactionId,
         source,
         deposit_spec: depositSpec ? JSON.stringify(depositSpec) : null,
-        interest_minor: row.interest,
+        interest_minor: interest,
         principal_minor: principal,
         escrow_minor: escrow,
+        late_fee_minor: lateFee > 0n ? lateFee : null,
       })
       .execute();
   }
@@ -758,7 +938,7 @@ export class LoansService {
            where t.workspace_id = ${ctx.workspaceId} and t.primary_entity_id = ${r.entity_id}
              and t.status = 'posted' and t.deleted_at is null and t.spec->>'type' = 'standard'
              and (t.spec->>'amount')::bigint = ${String(-total)}::bigint
-             and abs(t.txn_date - ${next.date}::date) <= 5
+             and (t.txn_date - ${next.date}::date) between ${-LOAN_MATCH_DAYS_BEFORE}::int and ${loanMatchDaysAfter(r.grace_days)}::int
              and (${r.paying_account_id}::text is null or t.spec->>'accountId' = ${r.paying_account_id}::text)
              and ${NOT_OWNED}
            limit 2`.execute(trx);
@@ -768,15 +948,21 @@ export class LoansService {
     });
     let linked = 0;
     for (const p of plan) {
-      await this.db.run(ctx, (trx) =>
-        this.recordPaymentIn(
-          trx,
-          ctx,
-          p.loanId,
-          { number: p.number, transactionId: p.transactionId },
-          'auto',
-        ),
-      );
+      try {
+        await this.db.run(ctx, (trx) =>
+          this.recordPaymentIn(
+            trx,
+            ctx,
+            p.loanId,
+            { number: p.number, transactionId: p.transactionId },
+            'auto',
+          ),
+        );
+      } catch (err) {
+        // A daily loan's last payment can come to more than is owed once interest runs to the real date: left for a person.
+        if (err instanceof AppError && err.status === 422) continue;
+        throw err;
+      }
       linked++;
     }
     return linked;
