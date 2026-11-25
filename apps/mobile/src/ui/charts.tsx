@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Svg, { Line, Polyline, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 import { asCurrencyCode, barShares, minorUnits, sharePercent } from '@montra/domain';
 import { labelIndexes, linePoints, valueRange } from '../features/chart-geometry';
 import { currentLocale, fmtMoney, t } from '../i18n';
@@ -149,6 +149,177 @@ export function MiniLineChart({
           ))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+export interface StackedBar {
+  key: string;
+  /** Minor units, one per colour, stacked bottom up. */
+  values: readonly bigint[];
+  /** Drawn lighter: still to come. */
+  faded: boolean;
+  /** Under the axis; blank for none. */
+  label: string;
+}
+
+/**
+ * Stacked bars, one per period, with a labelled line before bar `marker.index` (such as "Today"). Tapping a bar
+ * selects it, and the screen shows its figures; screen readers get `summary`. Amounts are numbers for drawing only.
+ */
+export function StackedBarChart({
+  bars,
+  colors,
+  currency,
+  title,
+  summary,
+  marker,
+  selected,
+  onSelect,
+  height = 150,
+}: {
+  bars: readonly StackedBar[];
+  colors: readonly string[];
+  currency: string;
+  title: string;
+  summary: string;
+  marker?: { index: number; label: string } | null;
+  selected: number | null;
+  onSelect: (index: number) => void;
+  height?: number;
+}) {
+  const th = useTheme();
+  const [width, setWidth] = useState(0);
+  const totals = bars.map((b) => b.values.reduce((s, v) => s + (v > 0n ? v : 0n), 0n));
+  const range = valueRange(
+    totals.map((v) => Number(v)),
+    true,
+  );
+  const box = { left: 52, right: 6, top: 16, bottom: 18 };
+  const plotW = Math.max(0, width - box.left - box.right);
+  const band = bars.length > 0 ? plotW / bars.length : 0;
+  const barW = Math.max(1, Math.min(16, band - 2));
+  const y = (v: number) =>
+    box.top + (1 - (v - range.min) / (range.max - range.min)) * (height - box.top - box.bottom);
+  // A few of the labelled bars, evenly spaced.
+  const labelled = bars.flatMap((b, i) => (b.label ? [i] : []));
+  const shown = labelIndexes(labelled.length, 4).map((j) => labelled[j]!);
+  return (
+    <View>
+      <Small>{title}</Small>
+      <View
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={`${title}. ${summary}`}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        style={{ height }}
+      >
+        {width > 0 ? (
+          <Svg width={width} height={height}>
+            {[range.max, range.max / 2, 0].map((v, i) => (
+              <Line
+                key={`g${i}`}
+                x1={box.left}
+                x2={width - box.right}
+                y1={y(v)}
+                y2={y(v)}
+                stroke={th.border}
+              />
+            ))}
+            {[range.max, range.max / 2].map((v, i) => (
+              <SvgText
+                key={`t${i}`}
+                x={box.left - 4}
+                y={y(v) + 4}
+                fontSize="10"
+                fill={th.muted}
+                textAnchor="end"
+              >
+                {axisMoney(v, currency)}
+              </SvgText>
+            ))}
+            {bars.map((b, i) => {
+              const x = box.left + i * band + (band - barW) / 2;
+              let base = 0;
+              const parts = b.values
+                .map((v, s) => ({ v: Number(v > 0n ? v : 0n), s }))
+                .filter((p) => p.v > 0);
+              return (
+                <G key={b.key} opacity={b.faded && selected !== i ? 0.45 : 1}>
+                  {selected === i ? (
+                    <Rect
+                      x={box.left + i * band}
+                      y={box.top}
+                      width={band}
+                      height={height - box.top - box.bottom}
+                      fill={th.surfaceAlt}
+                    />
+                  ) : null}
+                  {parts.map((p, pi) => {
+                    const y0 = y(base);
+                    base += p.v;
+                    const last = pi === parts.length - 1;
+                    // A 2px gap of the surface between segments.
+                    const top = y(base) + (last ? 0 : 2);
+                    return (
+                      <Rect
+                        key={p.s}
+                        x={x}
+                        y={top}
+                        width={barW}
+                        height={Math.max(0, y0 - top)}
+                        fill={colors[p.s % colors.length]}
+                      />
+                    );
+                  })}
+                  {/* The whole band is the tap target, not just the painted bar. */}
+                  <Rect
+                    x={box.left + i * band}
+                    y={box.top}
+                    width={band}
+                    height={height - box.top}
+                    fill="transparent"
+                    onPress={() => onSelect(i)}
+                  />
+                </G>
+              );
+            })}
+            {marker ? (
+              <G>
+                <Line
+                  x1={box.left + marker.index * band}
+                  x2={box.left + marker.index * band}
+                  y1={box.top - 4}
+                  y2={y(0)}
+                  stroke={th.text}
+                  strokeOpacity={0.6}
+                />
+                <SvgText
+                  x={box.left + marker.index * band}
+                  y={box.top - 6}
+                  fontSize="10"
+                  fill={th.text}
+                  textAnchor={marker.index === 0 ? 'start' : marker.index >= bars.length ? 'end' : 'middle'}
+                >
+                  {marker.label}
+                </SvgText>
+              </G>
+            ) : null}
+            {shown.map((i) => (
+              <SvgText
+                key={`l${i}`}
+                x={box.left + i * band + band / 2}
+                y={height - 4}
+                fontSize="10"
+                fill={th.muted}
+                textAnchor="middle"
+              >
+                {bars[i]!.label}
+              </SvgText>
+            ))}
+          </Svg>
+        ) : null}
+      </View>
     </View>
   );
 }

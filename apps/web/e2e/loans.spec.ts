@@ -48,6 +48,30 @@ test('a tracked mortgage works out its payments and follows the balance', async 
   await expect(page.getByTestId('loan-schedule-table').getByTestId('loan-row-upcoming')).toHaveCount(12);
   await expect(page.getByText('Show the other 348 payments')).toBeVisible();
 
+  // Nothing paid yet, of the original amount and of the interest it will cost.
+  await expect(page.getByTestId('loan-paid-principal')).toContainText('Principal paid $0.00 of $200,000.00');
+  await expect(page.getByTestId('loan-paid-interest')).toContainText('Interest paid $0.00 of about');
+  // A brand-new loan has no history to draw, so the amount owed runs on to payoff along the schedule.
+  const owedOverTime = page.getByTestId('balance-history');
+  await expect(owedOverTime.getByRole('link', { name: 'To payoff' })).toHaveAttribute('aria-current', 'true');
+  await expect(owedOverTime.getByTestId('chart-projected')).toBeVisible();
+  await expect(owedOverTime.getByTestId('chart-end-label')).toContainText(/^Paid off \w{3,4} \d{4}$/);
+
+  // The schedule as a chart: 360 payments are drawn a year to a bar, and the choice is remembered.
+  const schedule = page.getByTestId('loan-schedule');
+  await expect(schedule.getByRole('button', { name: 'Table' })).toHaveAttribute('aria-pressed', 'true');
+  await schedule.getByRole('button', { name: 'Chart' }).click();
+  await expect(schedule.getByRole('button', { name: 'Chart' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    schedule.getByRole('img', { name: /Principal and interest in each payment on Home mortgage/ }),
+  ).toBeVisible();
+  await expect(schedule).toContainText('One bar per year, as there are more than 120 payments.');
+  await expect(page.getByTestId('loan-schedule-table')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId('loan-schedule-chart')).toBeVisible();
+  await schedule.getByRole('button', { name: 'Table' }).click();
+  await expect(page.getByTestId('loan-schedule-table')).toBeVisible();
+
   const accountPath = new URL(page.url()).pathname;
 
   // The schedule scrolls on a phone. The page doesn't.

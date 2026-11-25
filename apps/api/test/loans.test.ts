@@ -76,6 +76,9 @@ describe('adding a tracked loan', () => {
       payingAccountId: checking,
       autoRecord: false,
       interestPaid: '0',
+      // Nothing repaid yet, and nothing was in the balance before tracking.
+      principalPaid: '0',
+      paymentsBefore: 0,
     });
     expect(loan.next).toMatchObject({
       number: 1,
@@ -98,6 +101,8 @@ describe('adding a tracked loan', () => {
     // The first payment, and one each month for 24 months up to today, are already in the balance.
     expect(loan.next.number).toBe(26);
     expect(loan.next.date > today).toBe(true);
+    // How far along it is counts what was repaid before tracking; the interest on those payments isn't known.
+    expect(loan).toMatchObject({ paymentsBefore: 25, principalPaid: '1000000', interestPaid: '0' });
     expect(await owed(loan.loanAccountId)).toBe('19000000');
     // Interest follows what's owed, not the original amount.
     expect(loan.next.interest).toBe('95000');
@@ -188,7 +193,7 @@ describe('recording payments', () => {
       date: today,
     });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ paymentsMade: 1, interestPaid: '100000' });
+    expect(res.body).toMatchObject({ paymentsMade: 1, interestPaid: '100000', principalPaid: '19910' });
     expect(await owed(loan.loanAccountId)).toBe(String(20000000n - 19910n));
     expect(BigInt((await accountOf(checking)).balance.amount)).toBe(before - 119910n);
     expect(res.body.next.number).toBe(2);

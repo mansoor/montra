@@ -12,7 +12,7 @@ import {
   type CalendarDate,
   type SummarizableAccount,
 } from '@montra/domain';
-import type { AccountDto, LoanDto, NetWorthDto } from '@montra/schemas';
+import type { AccountDto, AmortizationRowDto, LoanDto, NetWorthDto } from '@montra/schemas';
 
 /** Which sections an account's screen shows, from its type and what's been set up on it. */
 export interface AccountSections {
@@ -105,6 +105,63 @@ export function loanSuggestedLateFee(
   return loanPaymentLate(next.date as CalendarDate, date as CalendarDate, loan.graceDays)
     ? BigInt(next.lateFee)
     : 0n;
+}
+
+/**
+ * Past this many payments the phone's schedule chart shows a bar per calendar year: a phone is narrower than the web,
+ * which waits until 120. A display choice, not a limit on loans.
+ */
+export const LOAN_CHART_BY_YEAR_ABOVE = 36;
+
+/** One bar of the phone's schedule chart: a payment, or a year's payments that are all recorded or all to come. */
+export interface LoanChartBar {
+  key: string;
+  date: string;
+  year: number | null;
+  count: number;
+  recorded: boolean;
+  principal: bigint;
+  interest: bigint;
+  /** Owed after the bar's last payment. */
+  owedAfter: bigint;
+}
+
+/**
+ * The schedule's rows as principal-and-interest bars, in order: as they are, or summed by calendar year past
+ * `threshold`, a year with both recorded payments and ones to come split in two. Grouping and summing only; every
+ * figure is the server's.
+ */
+export function loanChartBars(
+  rows: readonly AmortizationRowDto[],
+  threshold: number = LOAN_CHART_BY_YEAR_ABOVE,
+): { byYear: boolean; bars: LoanChartBar[] } {
+  const sorted = [...rows].sort((a, b) => a.number - b.number);
+  const one = (r: AmortizationRowDto): LoanChartBar => ({
+    key: `p${r.number}`,
+    date: r.date,
+    year: null,
+    count: 1,
+    recorded: r.transactionId !== null,
+    principal: BigInt(r.principal),
+    interest: BigInt(r.interest),
+    owedAfter: BigInt(r.balance),
+  });
+  if (sorted.length <= threshold) return { byYear: false, bars: sorted.map(one) };
+  const bars: LoanChartBar[] = [];
+  for (const r of sorted) {
+    const row = one(r);
+    const year = Number(r.date.slice(0, 4));
+    const last = bars[bars.length - 1];
+    if (last && last.year === year && last.recorded === row.recorded) {
+      last.count += 1;
+      last.principal += row.principal;
+      last.interest += row.interest;
+      last.owedAfter = row.owedAfter;
+    } else {
+      bars.push({ ...row, key: `y${year}${row.recorded ? 'r' : 'u'}`, year });
+    }
+  }
+  return { byYear: true, bars };
 }
 
 /** Past its date with something still owed. */

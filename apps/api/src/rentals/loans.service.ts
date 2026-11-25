@@ -461,6 +461,8 @@ export class LoansService {
     const { paid, balance, rows } = await this.state(trx, ctx, r);
     const payment = paymentOf(r);
     const escrow = escrowOf(r);
+    const owedNow = balance > 0n ? balance : 0n;
+    const principal = BigInt(r.principal_minor);
     const next = rows[0];
     const today = next ? await this.today(trx, ctx) : null;
     const byTerms = paid.some((p) => p.interest_minor === null) ? byTermsOf(r) : [];
@@ -484,8 +486,9 @@ export class LoansService {
       escrowInsurance: String(r.escrow_insurance_minor),
       payment: String(payment),
       totalPayment: String(payment + escrow),
-      scheduledBalance: String(balance > 0n ? balance : 0n),
+      scheduledBalance: String(owedNow),
       paymentsMade: paid.length,
+      paymentsBefore: r.payments_before,
       payingAccountId: r.paying_account_id,
       autoRecord: r.auto_record,
       graceDays: r.grace_days,
@@ -507,6 +510,7 @@ export class LoansService {
       payoffDate: rows[rows.length - 1]?.date ?? null,
       interestRemaining: String(rows.reduce((t, x) => t + x.interest, 0n)),
       interestPaid: String(paid.reduce((t, p) => t + interestOf(p), 0n)),
+      principalPaid: String(principal > owedNow ? principal - owedNow : 0n),
       currency: asCurrencyCode(e.functional_currency),
       version: Number(r.version),
     };
