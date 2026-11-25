@@ -1,7 +1,7 @@
 # ADR-0024: Tracking loan payments from the real balance
 
 - Status: accepted
-- Date: 2026-11-07
+- Date: 2026-11-07 (amended 2026-11-24: §13 daily simple interest and the lender's split, §14 grace periods and late fees)
 
 ## Context
 
@@ -30,7 +30,8 @@ that payments shouldn't post by themselves by default.
    no table of rate periods, because recorded payments already hold what was charged.
 7. **The payment can be overridden.** Lenders round differently, so `payment_minor` holds their figure. Null means calculated.
 8. **Payments don't post by themselves unless asked (owner's decision).** A payment links to a statement line of the exact
-   amount, within 5 days, on the paying account if one is set, or takes one click to record. Auto-record is a per-loan option,
+   amount, within 5 days (after the due date, up to the grace period when that's longer: §14), on the paying account if one is
+   set, or takes one click to record. Auto-record is a per-loan option,
    runs after matching, and warns that importing that account as well could count a payment twice. A line for a different amount
    needs an explicit `adjustPrincipal`, and principal takes the difference.
 9. **Upcoming payments aren't recurring templates.** A template holds a fixed amount, and this one changes with the balance.
@@ -42,6 +43,37 @@ that payments shouldn't post by themselves by default.
     loan in a foreign currency, or paid from another entity, stays balance-only for now.
 12. **Categories.** A rental portfolio's are found by Schedule E line, as before. Elsewhere they're found by name, then by what
     the name contains ("interest", "tax", "insurance"). If nothing fits, recording says which category to add.
+13. **Daily simple interest (amended 2026-11-24, owner's decision; migration 0095).** Each loan has an interest method:
+    - `monthly`, the default and what every loan tracked before 0095 stays on: interest is the balance × rate ÷ 12 each
+      payment, whatever day it's paid. Mortgages work this way. This path is unchanged.
+    - `daily`, for auto and personal loans (a real example: Chrysler Capital): interest accrues each day on the balance, from
+      the previous payment's date (for payment 1, the loan's start date, which a daily loan must have, on or before the first
+      payment) to the day this payment is paid. Day count actual/365: interest = balance × rate (bps) × days ÷ (10,000 × 365),
+      rounded half up to the cent with the domain's bigint `divRound`.
+    - A recorded payment's day is the date of its transaction. Projected payments use their due dates, and the projection
+      after recorded payments starts from what's owed in the ledger and the latest recorded payment's date (or, on a loan
+      already under way, the last due date already in the balance).
+    - The payment stays level (`monthlyPayment`, or the lender's figure in `payment_minor`), so principal takes what the
+      interest leaves; paid late, more goes to interest. The last payment clears what's left, as before.
+    - A new loan on an account of kind `loan` starts on daily in the web form, a `mortgage` on monthly; the API's default stays
+      monthly. The method, the start date and (while no payment is recorded, `loan.first_payment_locked` otherwise) the first
+      payment's date can be changed later; a change applies from the next payment.
+    - **The lender's split.** When a payment is recorded, the lender's own interest and principal (both or neither) can be
+      entered from their statement. They're stored on `loan_payment` and posted instead of Montra's. Principal can't be more
+      than is owed, and interest + principal + escrow (+ any late fee) must be the bank line, or becomes the new transaction's
+      amount. Lenders round and count days in their own ways ($93.20 where actual/365 half up gives $93.21), so a recorded
+      payment always keeps what was entered.
+14. **Grace periods and late fees (amended 2026-11-24, owner's decision; migration 0095).** A loan can have a grace period
+    (0–60 days, default 0) and a late fee: a fixed amount, a percent of the scheduled payment (escrow included), or the greater
+    of the two when both are set, the percent rounded half up to the cent.
+    - A payment made more than the grace days after its due date is late. The loan screens say so, with the fee that may
+      apply, and the record form fills in the fee when the chosen date is past the grace period. A payment that isn't late has
+      no fee unless one is entered.
+    - The fee is its own split, to the books' **Bank fees** system account (`bank_fees`, which every entity has), not to
+      interest, and is stored on `loan_payment.late_fee_minor`.
+    - A late bank line for the scheduled payment plus the loan's fee is taken as both when linked by hand.
+    - §8's matching window becomes 5 days before the due date to **max(5, grace days)** after it, for linking by itself and
+      for "Make transfer". Automatic linking still needs the exact scheduled amount.
 
 ## Consequences
 
@@ -53,6 +85,11 @@ that payments shouldn't post by themselves by default.
 - **A recurring template for the same payment still doubles** on the calendar and forecast. Nothing removes one the user made.
 - Line-of-credit accounts can still hold a schedule through the rental screen (ADR-0023), but aren't offered it: they're
   revolving, and get their own handling with cards.
+- A daily loan's last scheduled payment, linked automatically to a line dated before its due date, can come to more than is
+  owed once interest runs to the real date. Automatic linking skips it and leaves it for a person (who can enter the lender's
+  split).
+- The percent late fee is of the scheduled payment with escrow. Lenders that charge it on principal and interest only can be
+  matched with a fixed fee, or by editing the fee when recording.
 - Loans aren't in the phone's offline store. The phone reads a tracked loan live (kept for offline viewing) and records a payment only when online.
 
 ## Alternatives

@@ -3311,6 +3311,45 @@ Phase 11 leftovers:
     (validation by scope, the conditions, both steps). Web `phase3.test.ts` (receipt-item drafts, Household, switching
     kind, describing them, no "Apply to existing"), `receipts.test.ts` (Automatic leaves the member out, Household
     sends null).
+- **Daily simple interest, the lender's split, editable loan dates, grace periods and late fees** (RNT-08, DE-04; owner,
+  2026-11-24; migration 0095; [ADR-0024](design/adr/0024-loan-tracking.md) §13, §14).
+  - Before: every loan charged balance × rate ÷ 12 each payment, as mortgages do. An auto loan ($15,000 at 7.56%, financed
+    28 Sep, first due 27 Oct, $301) showed $94.50 interest on payment 1 where the lender charged $93.20. There was no way
+    to enter the lender's own split, and the start date couldn't change after the loan was added.
+  - `loan_schedule.interest_method` (`monthly` default, so every existing loan stays as it was; `daily`). Daily: interest =
+    balance × rate × days ÷ 365, half up to the cent (`dailyInterest`, `interestDays` in `@montra/domain`), from the
+    previous payment's date (payment 1: the start date, required, on or before the first payment) to the day it's paid. A
+    recorded payment uses its transaction's date; projected ones their due dates; the projection after recorded payments
+    starts from the ledger balance and the latest recorded payment's date. The payment stays level and the last clears what's
+    left. The monthly path is unchanged. `LoanDto` gains `interestMethod` and `next.accruesFrom`.
+  - Recording a payment takes optional `interest` and `principal` (both or neither) from the lender's statement: stored and
+    posted instead of Montra's; principal ≤ owed, and with escrow and any late fee they must make up the bank line or the new
+    transaction (`loan.split`). Without them a daily loan's interest runs to the payment's real date (e.g. $93.21 paid on day
+    30, actual/365 half up; the lender's $93.20 can be entered).
+  - `PATCH loans/:id` takes `startDate`, `interestMethod`, and `firstPaymentDate` only while nothing is recorded
+    (`loan.first_payment_locked`); daily without a start date is `loan.start_date`. Recorded payments keep their parts.
+  - Grace period and late fee per loan (`grace_days` 0–60, `late_fee_minor`, `late_fee_bps`: fixed, percent of the
+    scheduled payment with escrow, or the greater of the two; `loanLateFee`, half up). Late = paid after due + grace
+    (`next.late`, `next.lateFee` on `LoanDto`). A payment's `lateFee` (stored on `loan_payment.late_fee_minor`) is its own
+    split to the books' Bank fees system account. A late line for payment + escrow + the loan's fee is taken as both. Bank
+    lines now match from 5 days before the due date to max(5, grace) after (`inLoanMatchWindow`), automatically and through
+    "Make transfer". Automatic linking skips a payment that can't be recorded (a daily loan's last one overpaid) instead of
+    failing the job.
+  - Web: the loan form offers "Monthly (mortgages)" or "Daily simple interest (auto and personal loans)", daily by default
+    for a `loan` account and monthly for a mortgage, plus grace period and late fee (amount and/or percent). The loan panel
+    shows "Due the 27th, grace period 10 days", the method and fee, "Late — a fee of $X may apply" past the grace period,
+    and the record form has a late fee (filled in once the date is past the grace) and "Enter the lender's split" with
+    principal and interest filled in with Montra's figures for the chosen date. Settings edit the method, start date, first
+    payment date (locked once one is recorded), grace and fee. The rental mortgage form stays monthly.
+  - Phone: the loan card shows the method, grace period, late fee and the late note; recording a payment takes a late fee
+    (filled in once late) and optional lender principal and interest. Not run on a device.
+  - Tests: domain `rental.test.ts` (29 days 90.10, 30 days 93.21, half-cent rounding, February and 31-day months, the
+    fallback date, level payments and the last clearing, the monthly path unchanged, a property test; late/grace, fixed,
+    percent, greater-of and half-up fees, the matching window). API `loans-daily.test.ts` (payment 1 from the start date, a
+    payment a day late and the next from its date, start date rules, an old client's loan stays monthly, the lender's split
+    by both paths and its refusals, switching to daily keeps recorded parts, moving the first payment and its lock, fee terms
+    and editing them, a late line with its fee to Bank fees, an entered fee, the grace window in matching). Web
+    `loans.test.ts`; mobile `accounts.test.ts`.
 
 ---
 

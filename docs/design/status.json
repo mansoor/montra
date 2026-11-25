@@ -106,7 +106,7 @@
   ],
   "DE-04": [
     "done",
-    "split to principal, interest and escrow from an amortization schedule"
+    "split to principal, interest and escrow from an amortization schedule; daily simple interest for auto and personal loans, the lender's own split when recording, and a late fee to Bank fees (ADR-0024 §13, §14)"
   ],
   "DE-05": [
     "done",
@@ -918,7 +918,7 @@
   ],
   "RNT-08": [
     "done",
-    "the schedule follows what's owed, so extra payments and rate changes show by themselves; a payment posts principal, interest and escrow, and an exact bank line links by itself (ADR-0024). Escrow counts when paid in, not paid out (ADR-0018 §6)"
+    "the schedule follows what's owed, so extra payments and rate changes show by themselves; a payment posts principal, interest and escrow, and an exact bank line links by itself (ADR-0024), up to the grace period after it was due. Monthly or daily simple interest per loan (actual/365, to the day it was paid), with the lender's split when recording, editable start and first-payment dates, and grace periods and late fees (ADR-0024 §13, §14). Escrow counts when paid in, not paid out (ADR-0018 §6)"
   ],
   "RNT-09": [
     "done",
