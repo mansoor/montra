@@ -577,6 +577,8 @@ export const LoanDto = z.object({
   /** What's owed now, from the ledger. */
   scheduledBalance: MinorDto,
   paymentsMade: z.number().int(),
+  /** Payments already in the balance when tracking began (ADR-0024 §5): their interest isn't known here. */
+  paymentsBefore: z.number().int(),
   /** Where the payment comes from, and whether it records itself on its due date. */
   payingAccountId: Id.nullable(),
   autoRecord: z.boolean(),
@@ -607,6 +609,11 @@ export const LoanDto = z.object({
   interestRemaining: MinorDto,
   /** Recorded here. Payments made before tracking began aren't known. */
   interestPaid: MinorDto,
+  /**
+   * The original amount less what's owed now, never below 0: principal repaid since the loan began, including payments
+   * made before tracking. With `principal`, how far along the loan is.
+   */
+  principalPaid: MinorDto,
   currency: CurrencyCodeDto,
   version: z.number().int(),
 });
