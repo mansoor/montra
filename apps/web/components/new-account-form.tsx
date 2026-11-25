@@ -98,8 +98,9 @@ export function NewAccountForm({
         startDate: read.value.startDate as never,
         firstPaymentDate: read.value.firstPaymentDate as never,
       });
+      // No router.refresh(): the account's page is rendered fresh anyway, and a second navigation straight after this one
+      // can land late in WebKit and cut off whatever navigation comes next.
       router.push(`/w/${workspace.id}/accounts/${loan.loanAccountId}`);
-      router.refresh();
     } catch (err) {
       setErrors(
         toFormErrors(err, {
@@ -175,7 +176,6 @@ export function NewAccountForm({
         ...(workplace && employerId ? { employerId, employerContributions: contributions } : {}),
       });
       router.push(`/w/${workspace.id}/accounts/${account.id}`);
-      router.refresh();
     } catch (err) {
       setErrors(
         toFormErrors(err, {
