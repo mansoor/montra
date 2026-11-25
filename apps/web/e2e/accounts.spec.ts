@@ -189,12 +189,13 @@ test('each account type asks for and shows what it has', async ({ page }) => {
   await page.getByTestId('account-facts').getByRole('link', { name: 'Edit details' }).click();
   const planning = page.locator('details', { hasText: 'APR %' });
   await planning.locator('summary').click();
-  await planning.getByLabel('APR %').fill('18.99');
+  await planning.getByLabel('APR %').fill('18.875');
   await planning.getByRole('button', { name: 'Save' }).click();
   await expect(planning.getByText('Saved')).toBeVisible();
   await page.goBack();
   await page.reload();
-  await expect(page.getByTestId('fact-rate')).toContainText('18.99%');
+  // Four decimals of a percent (migration 0096).
+  await expect(page.getByTestId('fact-rate')).toContainText('18.875%');
 
   // A new account has nothing to draw yet, and says so rather than showing an empty chart.
   await page.goto(`/w/${workspaceId}/accounts/new`);
