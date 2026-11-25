@@ -3350,6 +3350,35 @@ Phase 11 leftovers:
     by both paths and its refusals, switching to daily keeps recorded parts, moving the first payment and its lock, fee terms
     and editing them, a late line with its fee to Bank fees, an entered fee, the grace window in matching). Web
     `loans.test.ts`; mobile `accounts.test.ts`.
+- **Loan charts: the schedule as a chart, the amount owed to payoff, and paid so far** (ACC-02, RNT-08,
+  [ADR-0024](design/adr/0024-loan-tracking.md); no migration). Owner-approved; in-house SVG, no chart library.
+  - Payment schedule: a "Table | Chart" switch (buttons with `aria-pressed`) at the right of its header, remembered per
+    browser (`localStorage` `montra.loan-schedule-view`), Table by default. The chart draws the table's own rows: one
+    stacked bar per payment, principal (`--chart-3`) under interest (`--chart-2`), and a recorded late fee on top
+    (`--chart-5`); recorded payments solid, the rest lighter, a "Today" line between them. Past
+    `SCHEDULE_BARS_BY_YEAR_ABOVE` (120 payments, a display choice) it sums by calendar year, a year with both recorded and
+    upcoming payments split in two, and the caption says so. Hover or tap a bar (its whole band), or focus the chart and
+    use the arrow keys, for its date, payment, interest, principal, escrow, late fee and owed after, announced politely;
+    the SVG is `role="img"` with a summary, and the table stays the full fallback.
+  - Amount owed over time: on a tracked loan, a "To payoff" range after 3M/6M/1Y/All draws the whole history solid and,
+    dashed, today's `scheduledBalance` along each upcoming row's "owed after" to zero, labelled "Paid off Sep 2031", with a
+    Today line and a crosshair readout. A loan with under two days of history shows this instead of "This chart fills in
+    once…", with To payoff selected. The x axis is days, so weekly history and monthly payments share a scale. Other
+    accounts, and a paid-off loan, are unchanged.
+  - Paid so far, above the schedule: "Principal paid $X of $Y" (the original amount) and "Interest paid $X of about $Z
+    total" (interest recorded here plus `interestRemaining`), slim bars in the chart's colours. `LoanDto` gains
+    `principalPaid` (original amount less what's owed now, never below 0, so it counts payments before tracking) and
+    `paymentsBefore`; when that's above 0 a note says interest from before tracking isn't included.
+  - Phone: the schedule card has the principal/interest chart (react-native-svg, already a dependency), by year past
+    `LOAN_CHART_BY_YEAR_ABOVE` = 36 payments; tapping a bar shows its figures. A Paid so far card too. The phone's account
+    screen has no balance chart, so it has no payoff line. Not run on a device.
+  - Tests: web `loan-charts.test.ts` (bars from the table's rows, the 120/121 threshold and exact year sums, a part-paid
+    year split, Today's place, the projection from today with an overdue payment, paid-so-far totals, the stored view,
+    axis steps) and `loan-charts-view.test.tsx` (Table first, the chart's name, legend, faded bars and Today, the by-year
+    caption, the dashed line and payoff label, no history, paid-so-far text and bars); API `loans.test.ts` (`principalPaid`
+    and `paymentsBefore` new, after a payment and on a loan years in); mobile `accounts.test.ts` (bars and the phone's
+    threshold); e2e `loans.spec.ts` (a new mortgage shows To payoff with "Paid off …", the switch shows the chart by year
+    and is remembered across a reload, Paid so far).
 
 ---
 

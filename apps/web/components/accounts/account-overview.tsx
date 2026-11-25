@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { accountProfile, bpsToPercent } from '@montra/domain';
-import type { AccountBalanceHistoryDto, AccountDto } from '@montra/api-client';
+import type { AccountBalanceHistoryDto, AccountDto, AmortizationRowDto, LoanDto } from '@montra/api-client';
 import { LineChart } from '@/components/charts/line-chart';
+import { LoanOwedChart } from '@/components/accounts/loan-charts';
+import { PAYOFF_RANGE } from '@/lib/loan-charts';
 import { Money } from '@/components/money';
 import type { getI18n } from '@/lib/i18n-server';
 
@@ -79,21 +81,36 @@ export function AccountFacts({
 }
 
 const RANGES = ['3m', '6m', '1y', 'all'] as const;
+type Range = (typeof RANGES)[number] | typeof PAYOFF_RANGE;
 
-/** The account's balance over time. Hidden until there's more than one day to draw. */
+/**
+ * The account's balance over time. Hidden until there's more than one day to draw, except on a tracked loan, which can
+ * also run on to payoff along its schedule ("To payoff"), and does when there's no history to draw yet.
+ */
 export function BalanceHistory({
   account,
   history,
   href,
   t,
+  payoff,
 }: {
   account: AccountDto;
   history: AccountBalanceHistoryDto;
   /** The page's address with this range selected. */
-  href: (range: (typeof RANGES)[number]) => string;
+  href: (range: Range) => string;
   t: T;
+  /** A tracked loan's schedule, and whether "To payoff" was asked for. */
+  payoff?: {
+    loan: LoanDto;
+    rows: readonly AmortizationRowDto[];
+    today: string;
+    selected: boolean;
+  } | null;
 }) {
   const word = accountProfile(account.kind).balanceWord;
+  // A loan that's paid off has nothing to project.
+  const projecting = payoff && payoff.rows.some((r) => r.transactionId === null) ? payoff : null;
+  const toPayoff = projecting !== null && (projecting.selected || history.points.length < 2);
   return (
     <section className="card space-y-3" data-testid="balance-history">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -103,15 +120,29 @@ export function BalanceHistory({
             <Link
               key={r}
               href={href(r)}
-              aria-current={history.range === r ? 'true' : undefined}
+              aria-current={!toPayoff && history.range === r ? 'true' : undefined}
               scroll={false}
             >
               {t(`account.history.range_${r}`)}
             </Link>
           ))}
+          {projecting && (
+            <Link href={href(PAYOFF_RANGE)} aria-current={toPayoff ? 'true' : undefined} scroll={false}>
+              {t('account.history.range_payoff')}
+            </Link>
+          )}
         </nav>
       </div>
-      {history.points.length > 1 ? (
+      {toPayoff ? (
+        <LoanOwedChart
+          loan={projecting.loan}
+          rows={projecting.rows}
+          // The whole history when "To payoff" was asked for: the page reads it with the "all" range.
+          history={history.points}
+          today={projecting.today}
+          name={account.name}
+        />
+      ) : history.points.length > 1 ? (
         <LineChart
           title={t(`account.history.title_${word}`, { name: account.name })}
           series={[{ label: account.name, values: history.points.map((p) => p.balance) }]}

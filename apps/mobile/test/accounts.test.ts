@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calendarDate } from '@montra/domain';
-import type { AccountDto, NetWorthDto } from '@montra/schemas';
+import type { AccountDto, AmortizationRowDto, NetWorthDto } from '@montra/schemas';
 import { createApi } from '../src/api/client';
 import {
   accountSections,
@@ -8,6 +8,8 @@ import {
   assetFigures,
   countedProperties,
   isOverdue,
+  LOAN_CHART_BY_YEAR_ABOVE,
+  loanChartBars,
   loanPayingAccounts,
   loanPaymentDate,
   loanSuggestedLateFee,
@@ -176,5 +178,51 @@ describe('account detail calls', () => {
       'POST /loans/l/payments',
     ]);
     expect(JSON.parse(calls.at(-1)!.body!)).toEqual({ number: 3, accountId: 'c', date: '2026-11-07' });
+  });
+});
+
+describe('the loan schedule chart', () => {
+  /** `count` monthly rows from January 2027, the first `paid` of them recorded. */
+  const rows = (count: number, paid: number) =>
+    Array.from(
+      { length: count },
+      (_, i) =>
+        ({
+          number: i + 1,
+          date: `${2027 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`,
+          payment: '10000',
+          interest: String(1000 - i),
+          principal: String(9000 + i),
+          escrow: '0',
+          balance: String((count - i - 1) * 9000),
+          transactionId: i < paid ? `t${i}` : null,
+          lateFee: '0',
+        }) as AmortizationRowDto,
+    );
+
+  it('draws a bar per payment on a short loan, with the server’s figures', () => {
+    const { byYear, bars } = loanChartBars(rows(3, 1));
+    expect(byYear).toBe(false);
+    expect(bars.map((b) => [b.recorded, b.principal, b.interest, b.owedAfter])).toEqual([
+      [true, 9000n, 1000n, 18000n],
+      [false, 9001n, 999n, 9000n],
+      [false, 9002n, 998n, 0n],
+    ]);
+  });
+
+  it('sums a long loan by year on the phone past 36 payments, splitting the year that’s part paid', () => {
+    expect(LOAN_CHART_BY_YEAR_ABOVE).toBe(36);
+    expect(loanChartBars(rows(36, 0)).byYear).toBe(false);
+    const { byYear, bars } = loanChartBars(rows(40, 14));
+    expect(byYear).toBe(true);
+    expect(bars.map((b) => [b.year, b.count, b.recorded])).toEqual([
+      [2027, 12, true],
+      [2028, 2, true],
+      [2028, 10, false],
+      [2029, 12, false],
+      [2030, 4, false],
+    ]);
+    expect(bars[0]!.interest).toBe(11934n);
+    expect(bars[4]!.owedAfter).toBe(0n);
   });
 });

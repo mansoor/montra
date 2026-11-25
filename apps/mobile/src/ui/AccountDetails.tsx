@@ -5,7 +5,7 @@
  */
 import { useState } from 'react';
 import { View } from 'react-native';
-import { bpsToPercent, calendarDate, type CalendarDate } from '@montra/domain';
+import { bpsToPercent, calendarDate, sharePercent, type CalendarDate } from '@montra/domain';
 import type {
   AccountDto,
   AmortizationRowDto,
@@ -19,11 +19,15 @@ import { useAbilities } from '../session/SessionProvider';
 import {
   assetFigures,
   isOverdue,
+  LOAN_CHART_BY_YEAR_ABOVE,
+  loanChartBars,
   loanPayingAccounts,
   loanPaymentDate,
   loanSuggestedLateFee,
   type AccountSections,
+  type LoanChartBar,
 } from '../features/accounts';
+import { StackedBarChart } from './charts';
 import { assignedInput, parseAssigned } from '../features/planning';
 import { fmtDate, fmtMoney, t } from '../i18n';
 import { Banner, Body, Button, Card, Field, Row, Segmented, Small, Title, useToast } from './components';
@@ -505,9 +509,12 @@ function LoanCard({
         </Card>
       ) : null}
 
-      {upcoming.length > 0 ? (
+      <LoanPaidSoFar loan={loan} />
+
+      {schedule.length > 0 ? (
         <Card testID="account-loan-schedule">
           <Title>{t('account.loan.schedule')}</Title>
+          <LoanScheduleChart loan={loan} schedule={schedule} />
           {upcoming.map((r) => (
             <Row
               key={r.number}
@@ -519,5 +526,128 @@ function LoanCard({
         </Card>
       ) : null}
     </>
+  );
+}
+
+/** "Principal paid $X of $Y" and "Interest paid $X of about $Z total", each with a slim bar, as on the web. */
+function LoanPaidSoFar({ loan }: { loan: LoanDto }) {
+  const th = useTheme();
+  const ccy = loan.currency;
+  const interestPaid = BigInt(loan.interestPaid);
+  const interestTotal = interestPaid + BigInt(loan.interestRemaining);
+  const rows = [
+    {
+      key: 'principal',
+      text: t('account.loan.principal_paid_of', {
+        paid: fmtMoney(loan.principalPaid, ccy),
+        total: fmtMoney(loan.principal, ccy),
+      }),
+      percent: sharePercent(BigInt(loan.principalPaid), BigInt(loan.principal)),
+      color: th.chart3,
+    },
+    {
+      key: 'interest',
+      text: t('account.loan.interest_paid_of', {
+        paid: fmtMoney(interestPaid, ccy),
+        total: fmtMoney(interestTotal, ccy),
+      }),
+      percent: sharePercent(interestPaid, interestTotal),
+      color: th.chart2,
+    },
+  ];
+  return (
+    <Card testID="account-loan-paid">
+      <Title>{t('account.loan.paid_so_far')}</Title>
+      {rows.map((r) => (
+        <View
+          key={r.key}
+          testID={`account-loan-paid-${r.key}`}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={r.text}
+          accessibilityValue={{ min: 0, max: 100, now: Math.min(100, r.percent) }}
+          style={{ gap: 4 }}
+        >
+          <Body>{r.text}</Body>
+          <View style={{ height: 6, borderRadius: 3, backgroundColor: th.surfaceAlt, overflow: 'hidden' }}>
+            <View
+              style={{
+                height: 6,
+                borderRadius: 3,
+                width: `${Math.min(100, Math.max(0, r.percent))}%`,
+                backgroundColor: r.color,
+              }}
+            />
+          </View>
+        </View>
+      ))}
+      {loan.paymentsBefore > 0 ? <Small>{t('account.loan.interest_before_tracking')}</Small> : null}
+    </Card>
+  );
+}
+
+/** Principal and interest in each payment (or each year, on a long loan), recorded ones solid and the rest lighter. */
+function LoanScheduleChart({ loan, schedule }: { loan: LoanDto; schedule: readonly AmortizationRowDto[] }) {
+  const th = useTheme();
+  const ccy = loan.currency;
+  const [selected, setSelected] = useState<number | null>(null);
+  const { byYear, bars } = loanChartBars(schedule);
+  const paid = schedule.filter((r) => r.transactionId !== null).length;
+  // Today falls after the last recorded bar.
+  const today = bars.reduce((at, b, i) => (b.recorded ? i + 1 : at), 0);
+  let lastYear = '';
+  const chartBars = bars.map((b) => {
+    const year = b.date.slice(0, 4);
+    const label = byYear || year !== lastYear ? year : '';
+    lastYear = year;
+    return { key: b.key, values: [b.principal, b.interest], faded: !b.recorded, label };
+  });
+  const pick = selected === null ? null : (bars[selected] ?? null);
+  const when = (b: LoanChartBar) =>
+    b.year !== null ? t('account.loan.chart_year', { year: b.year, count: b.count }) : fmtDate(b.date);
+  return (
+    <View testID="account-loan-chart" style={{ gap: th.space(2) }}>
+      <StackedBarChart
+        bars={chartBars}
+        colors={[th.chart3, th.chart2]}
+        currency={ccy}
+        title={t('account.loan.view_chart')}
+        summary={t('account.loan.chart_title', { name: loan.name, paid, left: schedule.length - paid })}
+        marker={{ index: today, label: t('account.loan.today') }}
+        selected={selected}
+        onSelect={setSelected}
+      />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: th.space(3) }}>
+        {[
+          { label: t('account.loan.principal'), color: th.chart3 },
+          { label: t('account.loan.interest'), color: th.chart2 },
+        ].map((s) => (
+          <View key={s.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: s.color }} />
+            <Small>{s.label}</Small>
+          </View>
+        ))}
+      </View>
+      {pick ? (
+        <View testID="account-loan-chart-pick" accessibilityLiveRegion="polite">
+          <Body style={{ fontWeight: '600' }}>
+            {`${when(pick)} · ${t(pick.recorded ? 'account.loan.paid' : 'account.loan.to_come')}`}
+          </Body>
+          <Small>
+            {`${t('account.loan.principal')} ${fmtMoney(pick.principal, ccy)} · ${t('account.loan.interest')} ${fmtMoney(pick.interest, ccy)} · ${t('account.loan.owed_after')} ${fmtMoney(pick.owedAfter, ccy)}`}
+          </Small>
+        </View>
+      ) : (
+        <Small>{t('mobile.account.chart_tap')}</Small>
+      )}
+      <Small>
+        {[
+          byYear ? t('account.loan.chart_by_year', { count: LOAN_CHART_BY_YEAR_ABOVE }) : null,
+          bars.some((b) => !b.recorded) ? t('account.loan.chart_faded') : null,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      </Small>
+    </View>
   );
 }
