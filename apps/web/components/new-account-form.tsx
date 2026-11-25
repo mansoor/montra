@@ -107,6 +107,7 @@ export function NewAccountForm({
           'newAccount.last4': 'last4',
           rateBps: 'rate',
           termMonths: 'term',
+          lateFeeBps: 'lateFeePercent',
         }),
       );
       setBusy(false);

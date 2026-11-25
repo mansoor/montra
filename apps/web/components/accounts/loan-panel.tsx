@@ -5,7 +5,10 @@ import { useState } from 'react';
 import { bpsToPercent, percentToBps, accountProfile } from '@montra/domain';
 import type { AccountDto, AmortizationRowDto, LoanDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
+import { expectedSplit, ordinalCategory, suggestedLateFee, type InterestMethod } from '@/lib/loans';
 import { minorToInput, parseAmountInput } from '@/lib/money';
+import { LateFeeFields, readGraceDays, readLateFeeBps } from './loan-tracking';
+import { Field } from '../field';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
@@ -27,7 +30,7 @@ export function LoanPanel({
   accounts: readonly AccountDto[];
   today: string;
 }) {
-  const { t, locale } = useI18n();
+  const { t, locale, money: moneyText } = useI18n();
   const { run, busy, message, setMessage } = useAction();
   const paying = accounts.filter(
     (a) =>
@@ -44,7 +47,20 @@ export function LoanPanel({
   const [dateInput, setDateInput] = useState<string | null>(null);
   const date = dateInput ?? (next && next.date < today ? next.date : today);
   const [extra, setExtra] = useState('');
+  // The lender's split, prefilled with Montra's figures for the date until edited (ADR-0024 §13).
+  const [splitOn, setSplitOn] = useState(false);
+  const [splitPrincipal, setSplitPrincipal] = useState<string | null>(null);
+  const [splitInterest, setSplitInterest] = useState<string | null>(null);
+  // The late fee, prefilled once the date is past the grace period, until edited (ADR-0024 §14).
+  const [feeInput, setFeeInput] = useState<string | null>(null);
+  const ours = next ? expectedSplit(loan, next, date) : null;
+  const principalValue = splitPrincipal ?? (ours ? minorToInput(ours.principal, ccy) : '');
+  const interestValue = splitInterest ?? (ours ? minorToInput(ours.interest, ccy) : '');
+  const suggestedFee = next ? suggestedLateFee(loan, next, date) : 0n;
+  const feeValue = feeInput ?? (suggestedFee > 0n ? minorToInput(suggestedFee, ccy) : '');
   const paidFrom = accounts.find((a) => a.id === loan.payingAccountId);
+  const dueDay = Number(loan.firstPaymentDate.slice(8, 10));
+  const dueOn = t(`account.loan.ordinal_${ordinalCategory(dueDay, locale)}`, { n: dueDay });
 
   const recorded = rows.filter((r) => r.transactionId);
   const upcoming = rows.filter((r) => !r.transactionId);
@@ -67,6 +83,11 @@ export function LoanPanel({
             <Link href={`/w/${workspaceId}/transactions/${r.transactionId}`} className="underline">
               {t('account.loan.paid')}
             </Link>
+            {BigInt(r.lateFee) > 0n && (
+              <span className="ml-2 text-muted">
+                {t('account.loan.late_fee_paid', { amount: moneyText(BigInt(r.lateFee), ccy) })}
+              </span>
+            )}
             {r.number === lastRecorded && (
               <button
                 type="button"
@@ -143,6 +164,18 @@ export function LoanPanel({
                 <DateText date={next.date} />
                 {paidFrom ? ` · ${t('account.loan.from_account', { name: paidFrom.name })}` : ''}
               </p>
+              <p className="text-sm text-muted" data-testid="loan-due-day">
+                {loan.graceDays > 0
+                  ? t('account.loan.due_day_grace', { day: dueOn, days: loan.graceDays })
+                  : t('account.loan.due_day', { day: dueOn })}
+              </p>
+              {next.late && (
+                <p className="text-sm font-medium text-bad" data-testid="loan-late">
+                  {BigInt(next.lateFee) > 0n
+                    ? t('account.loan.late_fee_note', { amount: moneyText(BigInt(next.lateFee), ccy) })
+                    : t('account.loan.late_note')}
+                </p>
+              )}
               <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
                 <div data-testid="loan-next-principal">
                   <dt className="text-muted">{t('account.loan.principal')}</dt>
@@ -168,13 +201,24 @@ export function LoanPanel({
                 aria-label={t('account.loan.record')}
                 onSubmit={(e) => {
                   e.preventDefault();
-                  let extraPrincipal: string | undefined;
-                  if (extra.trim()) {
-                    const parsed = parseAmountInput(extra, ccy, locale);
-                    if (!parsed.ok || parsed.minor < 0n) {
-                      return setMessage({ tone: 'bad', text: t('budget.amount_invalid') });
-                    }
-                    extraPrincipal = parsed.minor.toString();
+                  // Blank is none; anything else must be an amount of zero or more.
+                  const amount = (raw: string): bigint | null | undefined => {
+                    if (!raw.trim()) return undefined;
+                    const parsed = parseAmountInput(raw, ccy, locale);
+                    return parsed.ok && parsed.minor >= 0n ? parsed.minor : null;
+                  };
+                  const extraPrincipal = splitOn ? undefined : amount(extra);
+                  const lateFee = amount(feeValue);
+                  const principal = splitOn ? amount(principalValue) : undefined;
+                  const interest = splitOn ? amount(interestValue) : undefined;
+                  if (
+                    extraPrincipal === null ||
+                    lateFee === null ||
+                    principal === null ||
+                    interest === null ||
+                    (splitOn && (principal === undefined || interest === undefined))
+                  ) {
+                    return setMessage({ tone: 'bad', text: t('budget.amount_invalid') });
                   }
                   void run(
                     () =>
@@ -182,12 +226,20 @@ export function LoanPanel({
                         number: next.number,
                         accountId: from,
                         date: date as never,
-                        ...(extraPrincipal ? { extraPrincipal } : {}),
+                        ...(extraPrincipal ? { extraPrincipal: extraPrincipal.toString() } : {}),
+                        ...(lateFee ? { lateFee: lateFee.toString() } : {}),
+                        ...(splitOn && principal !== undefined && interest !== undefined
+                          ? { principal: principal.toString(), interest: interest.toString() }
+                          : {}),
                       }),
                     t('account.loan.recorded'),
                   ).then(() => {
                     setExtra('');
                     setDateInput(null);
+                    setSplitOn(false);
+                    setSplitPrincipal(null);
+                    setSplitInterest(null);
+                    setFeeInput(null);
                   });
                 }}
               >
@@ -210,15 +262,60 @@ export function LoanPanel({
                     onChange={(e) => setDateInput(e.target.value)}
                   />
                 </label>
+                {!splitOn && (
+                  <label>
+                    <span className="field-label">{t('account.loan.extra')}</span>
+                    <input
+                      className="input num w-28"
+                      inputMode="decimal"
+                      value={extra}
+                      onChange={(e) => setExtra(e.target.value)}
+                    />
+                  </label>
+                )}
                 <label>
-                  <span className="field-label">{t('account.loan.extra')}</span>
+                  <span className="field-label">{t('account.loan.late_fee')}</span>
                   <input
-                    className="input num w-28"
+                    className="input num w-24"
                     inputMode="decimal"
-                    value={extra}
-                    onChange={(e) => setExtra(e.target.value)}
+                    data-testid="loan-record-late-fee"
+                    value={feeValue}
+                    onChange={(e) => setFeeInput(e.target.value)}
                   />
                 </label>
+                <label className="flex w-full items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={splitOn}
+                    data-testid="loan-lender-split-toggle"
+                    onChange={(e) => setSplitOn(e.target.checked)}
+                  />
+                  <span>{t('account.loan.lender_split')}</span>
+                </label>
+                {splitOn && (
+                  <fieldset className="flex w-full flex-wrap items-end gap-3" data-testid="loan-lender-split">
+                    <legend className="sr-only">{t('account.loan.lender_split')}</legend>
+                    <label>
+                      <span className="field-label">{t('account.loan.principal')}</span>
+                      <input
+                        className="input num w-28"
+                        inputMode="decimal"
+                        value={principalValue}
+                        onChange={(e) => setSplitPrincipal(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span className="field-label">{t('account.loan.interest')}</span>
+                      <input
+                        className="input num w-28"
+                        inputMode="decimal"
+                        value={interestValue}
+                        onChange={(e) => setSplitInterest(e.target.value)}
+                      />
+                    </label>
+                    <p className="w-full text-xs text-muted">{t('account.loan.lender_split_hint')}</p>
+                  </fieldset>
+                )}
                 <button type="submit" className="btn-primary" disabled={busy}>
                   {t('account.loan.record')}
                 </button>
@@ -243,6 +340,29 @@ export function LoanPanel({
             <dt className="text-muted">{t('account.loan.monthly')}</dt>
             <dd className="font-medium">{money(loan.totalPayment)}</dd>
           </div>
+          <div data-testid="loan-method">
+            <dt className="text-muted">{t('account.loan.interest_method')}</dt>
+            <dd className="font-medium">
+              {loan.interestMethod === 'daily'
+                ? t('account.loan.method_daily_short')
+                : t('account.loan.method_monthly_short')}
+            </dd>
+          </div>
+          {(loan.lateFee !== null || loan.lateFeeBps !== null) && (
+            <div data-testid="loan-late-fee-terms">
+              <dt className="text-muted">{t('account.loan.late_fee')}</dt>
+              <dd className="font-medium">
+                {loan.lateFee !== null && loan.lateFeeBps !== null
+                  ? t('account.loan.late_fee_greater', {
+                      amount: moneyText(BigInt(loan.lateFee), ccy),
+                      percent: bpsToPercent(loan.lateFeeBps),
+                    })
+                  : loan.lateFee !== null
+                    ? moneyText(BigInt(loan.lateFee), ccy)
+                    : t('account.loan.late_fee_percent_of', { percent: bpsToPercent(loan.lateFeeBps!) })}
+              </dd>
+            </div>
+          )}
           {loan.payoffDate && (
             <div data-testid="loan-payoff">
               <dt className="text-muted">{t('account.loan.payoff')}</dt>
@@ -300,6 +420,17 @@ function LoanSettings({
   const [payment, setPayment] = useState(minorToInput(BigInt(loan.payment), ccy));
   const [from, setFrom] = useState(loan.payingAccountId ?? '');
   const [auto, setAuto] = useState(loan.autoRecord);
+  const [method, setMethod] = useState<InterestMethod>(loan.interestMethod);
+  const [start, setStart] = useState<string>(loan.startDate ?? '');
+  const [first, setFirst] = useState<string>(loan.firstPaymentDate);
+  const [fees, setFees] = useState({
+    graceDays: loan.graceDays > 0 ? String(loan.graceDays) : '',
+    lateFee: loan.lateFee !== null ? minorToInput(BigInt(loan.lateFee), ccy) : '',
+    lateFeePercent: loan.lateFeeBps !== null ? bpsToPercent(loan.lateFeeBps) : '',
+  });
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  // Payments are numbered from the first one, so its date is fixed once one is recorded.
+  const firstLocked = loan.paymentsMade > 0;
   return (
     <details className="card" data-testid="loan-settings">
       <summary className="cursor-pointer text-sm font-semibold">{t('account.loan.settings')}</summary>
@@ -315,6 +446,22 @@ function LoanSettings({
           if (!parsed.ok || parsed.minor <= 0n)
             return setMessage({ tone: 'bad', text: t('budget.amount_invalid') });
           const paymentChanged = parsed.minor !== BigInt(loan.payment);
+          const fieldErrors: Record<string, string> = {};
+          if (method === 'daily' && !start) fieldErrors.loanStartEdit = t('account.loan.start_required');
+          else if (method === 'daily' && start > first)
+            fieldErrors.loanStartEdit = t('account.loan.start_after_first');
+          const graceDays = readGraceDays(fees.graceDays);
+          if (graceDays === null) fieldErrors.graceDays = t('account.loan.grace_invalid');
+          let lateFee: string | null = null;
+          if (fees.lateFee.trim()) {
+            const fee = parseAmountInput(fees.lateFee, ccy, locale);
+            if (!fee.ok || fee.minor < 0n) fieldErrors.lateFee = t('budget.amount_invalid');
+            else lateFee = fee.minor.toString();
+          }
+          const lateFeeBps = readLateFeeBps(fees.lateFeePercent);
+          if (lateFeeBps === null) fieldErrors.lateFeePercent = t('account.loan.late_fee_percent_invalid');
+          setErrors(fieldErrors);
+          if (Object.keys(fieldErrors).length) return;
           void run(
             () =>
               browserApi.updateLoan(workspaceId, loan.id, {
@@ -324,6 +471,14 @@ function LoanSettings({
                 ...(paymentChanged ? { paymentAmount: parsed.minor.toString() } : {}),
                 payingAccountId: from || null,
                 autoRecord: auto,
+                interestMethod: method,
+                startDate: (start || null) as never,
+                ...(!firstLocked && first !== loan.firstPaymentDate
+                  ? { firstPaymentDate: first as never }
+                  : {}),
+                graceDays: graceDays!,
+                lateFee,
+                lateFeeBps: lateFeeBps ?? null,
               }),
             t('common.saved'),
           );
@@ -360,6 +515,65 @@ function LoanSettings({
             </select>
           </label>
         </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field
+            id="loanMethodEdit"
+            label={t('account.loan.interest_method')}
+            hint={
+              method === 'daily' ? t('account.loan.method_daily_hint') : t('account.loan.method_monthly_hint')
+            }
+          >
+            {(p) => (
+              <select
+                {...p}
+                className="input"
+                value={method}
+                onChange={(e) => setMethod(e.target.value as InterestMethod)}
+              >
+                <option value="monthly">{t('account.loan.method_monthly')}</option>
+                <option value="daily">{t('account.loan.method_daily')}</option>
+              </select>
+            )}
+          </Field>
+          <Field
+            id="loanStartEdit"
+            label={t('account.loan.start')}
+            error={errors.loanStartEdit}
+            hint={method === 'daily' ? t('account.loan.start_daily_hint') : undefined}
+          >
+            {(p) => (
+              <input
+                {...p}
+                type="date"
+                className="input"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+              />
+            )}
+          </Field>
+          <Field
+            id="loanFirstEdit"
+            label={t('account.loan.first_payment')}
+            hint={firstLocked ? t('account.loan.first_payment_locked') : t('account.loan.first_payment_hint')}
+          >
+            {(p) => (
+              <input
+                {...p}
+                type="date"
+                className="input"
+                value={first}
+                disabled={firstLocked}
+                onChange={(e) => setFirst(e.target.value)}
+              />
+            )}
+          </Field>
+        </div>
+        <LateFeeFields
+          value={fees}
+          onChange={(patch) => setFees({ ...fees, ...patch })}
+          errors={errors}
+          currency={ccy}
+        />
         <label className="flex items-start gap-2 text-sm">
           <input
             type="checkbox"

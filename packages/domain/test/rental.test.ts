@@ -10,6 +10,12 @@ import {
   calendarDate,
   capRateBps,
   cashOnCashBps,
+  dailyInterest,
+  inLoanMatchWindow,
+  interestDays,
+  loanLateFee,
+  loanMatchDaysAfter,
+  loanPaymentLate,
   depreciationForYear,
   lateFee,
   leaseExpiryWindow,
@@ -436,6 +442,140 @@ describe('projectLoan (ADR-0024)', () => {
       ),
       { numRuns: 200 },
     );
+  });
+});
+
+describe('daily simple interest (ADR-0024 §13)', () => {
+  // $15,000 at 7.56%, financed 28 Sep, first due 27 Oct, $301 a month (a real auto loan).
+  const start = d('2025-09-28');
+  const first = d('2025-10-27');
+  const daily = {
+    balance: 1500000n,
+    rateBps: 756,
+    payment: 30100n,
+    firstPayment: first,
+    termMonths: 60,
+    method: 'daily' as const,
+    accruesFrom: start,
+  };
+
+  it('counts actual days, none backwards', () => {
+    expect(interestDays(start, first)).toBe(29);
+    expect(interestDays(start, d('2025-10-28'))).toBe(30);
+    expect(interestDays(first, start)).toBe(0);
+  });
+
+  it('charges balance × rate × days ÷ 365, half up to the cent', () => {
+    // 29 days: 9,009.86 cents; 30 days: 9,320.55 cents.
+    expect(dailyInterest(1500000n, 756, 29)).toBe(9010n);
+    expect(dailyInterest(1500000n, 756, 30)).toBe(9321n);
+    expect(dailyInterest(1500000n, 756, 0)).toBe(0n);
+    expect(dailyInterest(0n, 756, 30)).toBe(0n);
+    // Exactly half a cent rounds up: 365 × 10,000 ÷ 2 at 1 bps for one day.
+    expect(dailyInterest(1825000n, 1, 1)).toBe(1n);
+    expect(dailyInterest(1824999n, 1, 1)).toBe(0n);
+  });
+
+  it('runs the first payment from the start date to its due date', () => {
+    const [one] = projectLoan(daily);
+    expect(one).toMatchObject({
+      number: 1,
+      date: '2025-10-27',
+      interest: 9010n,
+      principal: 21090n,
+      from: start,
+    });
+    expect(one!.balance).toBe(1500000n - 21090n);
+  });
+
+  it('runs each later payment from the one before, across February and 31-day months', () => {
+    const rows = projectLoan({ ...daily, accruesFrom: d('2025-12-27'), before: 3 });
+    // 27 Dec → 27 Jan: 31 days; 27 Jan → 27 Feb: 31 days; 27 Feb → 27 Mar: 28 days.
+    const [jan, feb, mar] = rows;
+    expect(jan).toMatchObject({ number: 4, date: '2026-01-27', from: '2025-12-27' });
+    expect(jan!.interest).toBe(dailyInterest(1500000n, 756, 31));
+    expect(feb!.from).toBe('2026-01-27');
+    expect(feb!.interest).toBe(dailyInterest(jan!.balance, 756, 31));
+    expect(mar!.from).toBe('2026-02-27');
+    expect(mar!.interest).toBe(dailyInterest(feb!.balance, 756, 28));
+    expect(mar!.interest).toBeLessThan(feb!.interest);
+  });
+
+  it('falls back to the due date before when nothing says where interest runs from', () => {
+    const [row] = projectLoan({ ...daily, accruesFrom: undefined, before: 5 });
+    expect(row).toMatchObject({ number: 6, from: '2026-02-27', date: '2026-03-27' });
+    expect(row!.interest).toBe(dailyInterest(1500000n, 756, 28));
+  });
+
+  it('keeps the payment level, and the last one clears what’s left', () => {
+    const rows = amortize({ principal: 1500000n, rateBps: 756, termMonths: 60 }, first, { startDate: start });
+    expect(rows).toHaveLength(60);
+    expect(rows.slice(0, -1).every((r) => r.payment === rows[0]!.payment)).toBe(true);
+    expect(rows[59]!.balance).toBe(0n);
+    expect(rows.reduce((t, r) => t + r.principal, 0n)).toBe(1500000n);
+  });
+
+  it('leaves the monthly path as it was', () => {
+    const monthly = { ...daily, method: undefined, accruesFrom: undefined };
+    const rows = projectLoan(monthly);
+    expect(rows).toEqual(projectLoan({ ...monthly, method: 'monthly' }));
+    expect(rows[0]!.interest).toBe(9450n); // 15,000 × 7.56% ÷ 12
+    expect('from' in rows[0]!).toBe(false);
+  });
+
+  it('always pays exactly what’s owed, and ends', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 1n, max: 10n ** 12n }),
+        fc.integer({ min: 0, max: 5000 }),
+        fc.integer({ min: 1, max: 600 }),
+        fc.bigInt({ min: 1n, max: 10n ** 11n }),
+        fc.integer({ min: 0, max: 700 }),
+        (balance, rateBps, termMonths, payment, before) => {
+          const rows = projectLoan({ ...daily, balance, rateBps, payment, termMonths, before });
+          expect(rows.reduce((t, r) => t + r.principal, 0n)).toBe(balance);
+          expect(rows[rows.length - 1]!.balance).toBe(0n);
+          expect(rows.every((r) => r.principal >= 0n && r.interest >= 0n)).toBe(true);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+});
+
+describe('loan grace periods and late fees (ADR-0024 §14)', () => {
+  const due = d('2025-10-27');
+
+  it('is late only after the grace days', () => {
+    expect(loanPaymentLate(due, d('2025-11-06'), 10)).toBe(false);
+    expect(loanPaymentLate(due, d('2025-11-07'), 10)).toBe(true);
+    expect(loanPaymentLate(due, d('2025-10-27'), 0)).toBe(false);
+    expect(loanPaymentLate(due, d('2025-10-28'), 0)).toBe(true);
+  });
+
+  it('charges the fixed fee, the percent, or the greater of the two', () => {
+    expect(loanLateFee({ graceDays: 10, flat: 1500n, bps: null }, 30100n)).toBe(1500n);
+    expect(loanLateFee({ graceDays: 10, flat: null, bps: 500 }, 30100n)).toBe(1505n);
+    expect(loanLateFee({ graceDays: 10, flat: 1500n, bps: 500 }, 30100n)).toBe(1505n);
+    expect(loanLateFee({ graceDays: 10, flat: 2500n, bps: 500 }, 30100n)).toBe(2500n);
+    expect(loanLateFee({ graceDays: 10, flat: null, bps: null }, 30100n)).toBe(0n);
+  });
+
+  it('rounds a percent fee half up to the cent', () => {
+    // 5% of $301.10 is 1,505.5 cents; of $301.09, 1,505.45.
+    expect(loanLateFee({ graceDays: 0, flat: null, bps: 500 }, 30110n)).toBe(1506n);
+    expect(loanLateFee({ graceDays: 0, flat: null, bps: 500 }, 30109n)).toBe(1505n);
+  });
+
+  it('matches a bank line from 5 days before to max(5, grace) days after', () => {
+    expect(loanMatchDaysAfter(0)).toBe(5);
+    expect(loanMatchDaysAfter(10)).toBe(10);
+    expect(inLoanMatchWindow(due, d('2025-10-22'), 10)).toBe(true);
+    expect(inLoanMatchWindow(due, d('2025-10-21'), 10)).toBe(false);
+    expect(inLoanMatchWindow(due, d('2025-11-06'), 10)).toBe(true);
+    expect(inLoanMatchWindow(due, d('2025-11-07'), 10)).toBe(false);
+    expect(inLoanMatchWindow(due, d('2025-11-01'), 0)).toBe(true);
+    expect(inLoanMatchWindow(due, d('2025-11-02'), 0)).toBe(false);
   });
 });
 

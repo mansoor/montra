@@ -542,13 +542,27 @@ export type AllocateTransactionRequest = z.output<typeof AllocateTransactionRequ
 
 // ----- Mortgages (RNT-08) ------------------------------------------------------------------------------------
 
+/**
+ * How a loan charges interest (ADR-0024 §13). `monthly`: balance × rate ÷ 12 each payment (mortgages). `daily`: simple
+ * interest for each day from the previous payment, or the start date, to the day it's paid (auto and personal loans).
+ */
+export const LoanInterestMethod = z.enum(['monthly', 'daily']);
+export type LoanInterestMethod = z.infer<typeof LoanInterestMethod>;
+
+/** Days after the due date before a payment is late (ADR-0024 §14). */
+const GraceDays = z.number().int().min(0).max(60);
+/** A late fee as a percent of the scheduled payment, in basis points. */
+const LateFeeBps = z.number().int().min(0).max(10000);
+
 export const LoanDto = z.object({
   id: Id,
   entityId: Id,
   propertyId: Id.nullable(),
   loanAccountId: Id,
   name: z.string(),
+  /** When interest starts. A daily loan always has one. */
   startDate: CalendarDateDto.nullable(),
+  interestMethod: LoanInterestMethod,
   /** The original amount. */
   principal: MinorDto,
   rateBps: z.number().int(),
@@ -566,6 +580,11 @@ export const LoanDto = z.object({
   /** Where the payment comes from, and whether it records itself on its due date. */
   payingAccountId: Id.nullable(),
   autoRecord: z.boolean(),
+  /** Days after the due date before a payment is late (ADR-0024 §14). */
+  graceDays: z.number().int(),
+  /** The late fee: fixed, a percent of the scheduled payment, or the greater of the two. Null: none of that kind. */
+  lateFee: MinorDto.nullable(),
+  lateFeeBps: z.number().int().nullable(),
   /** The next unrecorded payment, null once it's paid off. */
   next: z
     .object({
@@ -575,6 +594,12 @@ export const LoanDto = z.object({
       interest: MinorDto,
       principal: MinorDto,
       escrow: MinorDto,
+      /** Past its due date and the grace period today, unrecorded. */
+      late: z.boolean(),
+      /** The fee the loan's terms set for paying it late; 0 without one. */
+      lateFee: MinorDto,
+      /** Daily loans: the date its interest runs from (the last payment, or the start date). Null when monthly. */
+      accruesFrom: CalendarDateDto.nullable(),
     })
     .nullable(),
   /** When it's paid off at this rate and payment. */
@@ -620,10 +645,19 @@ export const CreateLoanRequest = z
     /** The lender's principal and interest, when it differs from the calculated one. */
     paymentAmount: PositiveMinor.optional(),
     autoRecord: z.boolean().default(false),
+    /** Monthly unless said otherwise, as before 0095. Daily needs `startDate`. */
+    interestMethod: LoanInterestMethod.default('monthly'),
+    graceDays: GraceDays.default(0),
+    lateFee: NonNegativeMinor.optional(),
+    lateFeeBps: LateFeeBps.optional(),
   })
   .refine((r) => (r.loanAccountId === undefined) !== (r.newAccount === undefined), {
     message: 'Choose a loan account, or add a new one',
     path: ['loanAccountId'],
+  })
+  .refine((r) => r.interestMethod !== 'daily' || r.startDate !== undefined, {
+    message: 'Daily interest needs the date interest starts',
+    path: ['startDate'],
   });
 export type CreateLoanRequest = z.output<typeof CreateLoanRequest>;
 
@@ -639,6 +673,16 @@ export const UpdateLoanRequest = z
     paymentAmount: PositiveMinor.nullable(),
     payingAccountId: Id.nullable(),
     autoRecord: z.boolean(),
+    /** When interest starts. Null clears it, which a daily loan refuses. */
+    startDate: CalendarDateDto.nullable(),
+    /** Applies from the next payment; recorded payments keep their parts. Daily needs a start date. */
+    interestMethod: LoanInterestMethod,
+    /** Only while no payment is recorded (`loan.first_payment_locked` otherwise). */
+    firstPaymentDate: CalendarDateDto,
+    graceDays: GraceDays,
+    /** Null: no fee of that kind. */
+    lateFee: NonNegativeMinor.nullable(),
+    lateFeeBps: LateFeeBps.nullable(),
   })
   .partial()
   .extend({ version: Version });
@@ -654,23 +698,49 @@ export const AmortizationRowDto = z.object({
   balance: MinorDto,
   /** The bank line it was linked to. */
   transactionId: Id.nullable(),
+  /** A recorded payment's late fee; 0 for none, and on rows still to come. */
+  lateFee: MinorDto,
 });
 export type AmortizationRowDto = z.infer<typeof AmortizationRowDto>;
 
+/**
+ * The lender's own split of a payment, from their statement: both or neither. With it, interest and principal are what's
+ * stored and posted, and with escrow (and any late fee) they must make up the payment. `lateFee` is paid with it, to the
+ * books' Bank fees (ADR-0024 §14).
+ */
+const LenderSplit = {
+  interest: NonNegativeMinor.optional(),
+  principal: NonNegativeMinor.optional(),
+  lateFee: NonNegativeMinor.optional(),
+};
+const bothOrNeither = (r: { interest?: string; principal?: string }) =>
+  (r.interest === undefined) === (r.principal === undefined);
+const splitMessage = { message: 'Give both interest and principal, or neither', path: ['interest'] };
+
 export const LoanPaymentRequest = z.union([
-  z.object({
-    number: z.number().int().positive(),
-    transactionId: Id,
-    /** Accept a line for a different amount: principal takes the difference. */
-    adjustPrincipal: z.boolean().optional(),
-  }),
-  z.object({
-    number: z.number().int().positive(),
-    accountId: Id,
-    date: CalendarDateDto,
-    /** Paid on top of the scheduled payment, all of it to principal. */
-    extraPrincipal: NonNegativeMinor.optional(),
-  }),
+  z
+    .object({
+      number: z.number().int().positive(),
+      transactionId: Id,
+      /** Accept a line for a different amount: principal takes the difference. */
+      adjustPrincipal: z.boolean().optional(),
+      ...LenderSplit,
+    })
+    .refine(bothOrNeither, splitMessage),
+  z
+    .object({
+      number: z.number().int().positive(),
+      accountId: Id,
+      date: CalendarDateDto,
+      /** Paid on top of the scheduled payment, all of it to principal. With the lender's split, it's in their principal. */
+      extraPrincipal: NonNegativeMinor.optional(),
+      ...LenderSplit,
+    })
+    .refine(bothOrNeither, splitMessage)
+    .refine((r) => r.interest === undefined || r.extraPrincipal === undefined, {
+      message: 'With the lender’s split, put any extra in its principal',
+      path: ['extraPrincipal'],
+    }),
 ]);
 export type LoanPaymentRequest = z.output<typeof LoanPaymentRequest>;
 

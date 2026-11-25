@@ -13,6 +13,7 @@ import {
 import type { AccountDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { toFormErrors, type FormErrors } from '@/lib/errors';
+import { defaultInterestMethod, type InterestMethod } from '@/lib/loans';
 import { parseAmountInput } from '@/lib/money';
 import { Field, FormError } from '../field';
 import { useI18n } from '../i18n';
@@ -30,11 +31,21 @@ export interface LoanTermsState {
   taxes: string;
   insurance: string;
   autoRecord: boolean;
+  /** How interest is charged (ADR-0024 §13). */
+  method: InterestMethod;
+  /** The grace period and late fee (ADR-0024 §14). */
+  graceDays: string;
+  lateFee: string;
+  lateFeePercent: string;
 }
 
 const dayAfterMonth = (date: string): string => addMonths(calendarDate(date), 1);
 
 export const initialLoanTerms = (kind: AccountKind, today: string): LoanTermsState => ({
+  method: defaultInterestMethod(kind),
+  graceDays: '',
+  lateFee: '',
+  lateFeePercent: '',
   start: today,
   first: dayAfterMonth(today),
   firstEdited: false,
@@ -60,6 +71,24 @@ export interface LoanTermsInput {
   escrowTaxes: string;
   escrowInsurance: string;
   autoRecord: boolean;
+  interestMethod: InterestMethod;
+  graceDays: number;
+  lateFee?: string;
+  lateFeeBps?: number;
+}
+
+/** A grace period from 0 to 60 days; blank is none. */
+export function readGraceDays(raw: string): number | null {
+  if (!raw.trim()) return 0;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 60 ? n : null;
+}
+
+/** A late fee as a percent of the payment, 0 to 100 with up to two decimals; blank is none. */
+export function readLateFeeBps(raw: string): number | undefined | null {
+  if (!raw.trim()) return undefined;
+  const bps = percentToBps(raw);
+  return bps === null || bps > 10000 ? null : bps;
 }
 
 /** The form's terms as an API request, or what's wrong with them, by field. */
@@ -93,6 +122,16 @@ export function readLoanTerms(
   if (!Number.isInteger(termMonths) || termMonths < 1 || termMonths > 600)
     fields.term = t('account.loan.term_invalid');
   if (!s.first) fields.firstPaymentDate = t('account.loan.required');
+  // Daily interest runs from the start date, so it's needed, and can't be after the first payment.
+  if (s.method === 'daily') {
+    if (!s.start) fields.startDate = t('account.loan.start_required');
+    else if (s.first && s.start > s.first) fields.startDate = t('account.loan.start_after_first');
+  }
+  const graceDays = readGraceDays(s.graceDays);
+  if (graceDays === null) fields.graceDays = t('account.loan.grace_invalid');
+  const lateFee = minor('lateFee', s.lateFee);
+  const lateFeeBps = readLateFeeBps(s.lateFeePercent);
+  if (lateFeeBps === null) fields.lateFeePercent = t('account.loan.late_fee_percent_invalid');
   if (s.autoRecord && !s.paying) fields.payingAccountId = t('account.loan.auto_needs_account');
   if (Object.keys(fields).length) return { ok: false, fields };
   return {
@@ -108,6 +147,10 @@ export function readLoanTerms(
       escrowTaxes: escrowTaxes ?? '0',
       escrowInsurance: escrowInsurance ?? '0',
       autoRecord: s.autoRecord,
+      interestMethod: s.method,
+      graceDays: graceDays!,
+      ...(lateFee !== undefined ? { lateFee } : {}),
+      ...(lateFeeBps !== undefined && lateFeeBps !== null ? { lateFeeBps } : {}),
     },
   };
 }
@@ -186,8 +229,35 @@ export function LoanTermsFields({
           )}
         </Field>
       </div>
+      <Field
+        id="interestMethod"
+        label={t('account.loan.interest_method')}
+        error={errors.interestMethod}
+        hint={
+          value.method === 'daily'
+            ? t('account.loan.method_daily_hint')
+            : t('account.loan.method_monthly_hint')
+        }
+      >
+        {(p) => (
+          <select
+            {...p}
+            className="input"
+            value={value.method}
+            onChange={(e) => set({ method: e.target.value as InterestMethod })}
+          >
+            <option value="monthly">{t('account.loan.method_monthly')}</option>
+            <option value="daily">{t('account.loan.method_daily')}</option>
+          </select>
+        )}
+      </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="loanStart" label={t('account.loan.start')} error={errors.startDate}>
+        <Field
+          id="loanStart"
+          label={t('account.loan.start')}
+          error={errors.startDate}
+          hint={value.method === 'daily' ? t('account.loan.start_daily_hint') : undefined}
+        >
           {(p) => (
             <input
               {...p}
@@ -220,6 +290,7 @@ export function LoanTermsFields({
           )}
         </Field>
       </div>
+      <LateFeeFields value={value} onChange={(patch) => set(patch)} errors={errors} currency={currency} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           id="payingAccountId"
@@ -315,9 +386,72 @@ export function LoanTermsFields({
   );
 }
 
+/** The grace period and late fee: a fixed amount, a percent of the payment, or the greater of the two (ADR-0024 §14). */
+export function LateFeeFields({
+  value,
+  onChange,
+  errors,
+  currency,
+}: {
+  value: Pick<LoanTermsState, 'graceDays' | 'lateFee' | 'lateFeePercent'>;
+  onChange: (patch: Partial<Pick<LoanTermsState, 'graceDays' | 'lateFee' | 'lateFeePercent'>>) => void;
+  errors: Record<string, string | undefined>;
+  currency: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="grid gap-4 sm:grid-cols-3" data-testid="loan-late-fee">
+      <Field
+        id="graceDays"
+        label={t('account.loan.grace_days')}
+        error={errors.graceDays}
+        hint={t('account.loan.grace_hint')}
+      >
+        {(p) => (
+          <input
+            {...p}
+            className="input num"
+            inputMode="numeric"
+            value={value.graceDays}
+            onChange={(e) => onChange({ graceDays: e.target.value })}
+          />
+        )}
+      </Field>
+      <Field id="lateFee" label={t('account.loan.late_fee_amount', { currency })} error={errors.lateFee}>
+        {(p) => (
+          <input
+            {...p}
+            className="input num"
+            inputMode="decimal"
+            value={value.lateFee}
+            onChange={(e) => onChange({ lateFee: e.target.value })}
+          />
+        )}
+      </Field>
+      <Field
+        id="lateFeePercent"
+        label={t('account.loan.late_fee_percent')}
+        error={errors.lateFeePercent}
+        hint={t('account.loan.late_fee_hint')}
+      >
+        {(p) => (
+          <input
+            {...p}
+            className="input num"
+            inputMode="decimal"
+            value={value.lateFeePercent}
+            onChange={(e) => onChange({ lateFeePercent: e.target.value })}
+          />
+        )}
+      </Field>
+    </div>
+  );
+}
+
 const LOAN_FIELDS: Record<string, string> = {
   rateBps: 'rate',
   termMonths: 'term',
+  lateFeeBps: 'lateFeePercent',
 };
 
 /** Starts tracking an account that so far only had a balance. */
