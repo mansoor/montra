@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import { jsonSchemaOf } from '../src/schema.js';
-import * as answerQuestion from '../src/tasks/answer-question/v1.js';
+import * as answerQuestion from '../src/tasks/answer-question/v2.js';
 import * as categorize from '../src/tasks/categorize/v1.js';
 import * as extractPayslip from '../src/tasks/extract-payslip/v2.js';
 import * as extractBill from '../src/tasks/extract-bill/v1.js';

@@ -639,17 +639,56 @@ function fakeCapital(input: Json) {
   };
 }
 
-/** Enough of a reader for tests: category names it can see, quarters, "last month", otherwise this month. */
+/** What a question about one account asks, by its words, first match wins (ADR-0058). */
+const ACCOUNT_TOPICS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bnext payment\b|\bpayment due\b|\bnext due\b/, 'next_payment'],
+  [/\binterest\b/, 'interest_paid'],
+  [/\bpaid off\b|\bpay (it )?off\b|\bpayoff\b|\bfinish|\bbe done\b|\bpayments? (are )?left\b/, 'payoff'],
+  [/\bowe\b|\bowed\b|\bowing\b/, 'owed'],
+  [/\bbalance\b|\bworth\b|\bvalue\b|\bhow much (is|do i have) in\b/, 'balance'],
+];
+/** Where the account's name ends: "my Skylark home loan| will…", "my Checking| balance". */
+const PHRASE_END = String.raw`(?=\s+(?:will|be|is|was|finish\w*|get|this|last|since|so|balance|due)\b|[?.!,]|$)`;
+const AFTER_MY = new RegExp(String.raw`\bmy\s+(.+?)${PHRASE_END}`, 'i');
+const AFTER_ON = new RegExp(String.raw`\b(?:on|of|in|for)\s+(?:the\s+)?(.+?)${PHRASE_END}`, 'i');
+
+/**
+ * Enough of a reader for tests: category names it can see, quarters, "last month", otherwise this month. A question about
+ * one account ("When will my Skylark home loan finish?") gives the words after "my" as the account, and "this year" or
+ * "last year" as the period for interest.
+ */
 function fakeQuestion(input: Json) {
-  const question = String(input.question ?? '').toLowerCase();
+  const raw = String(input.question ?? '');
+  const question = raw.toLowerCase();
   const today = String(input.today ?? '2026-01-15');
   const year = Number(today.slice(0, 4));
   const categories = ((input.categories as string[] | undefined) ?? []).filter((c) =>
     question.includes(c.toLowerCase()),
   );
-  if (!/how much|what did|spent|spend|earn|income|left/.test(question)) {
-    return { understood: false, metric: null, categories: [], payee: null, periods: [] };
+  const none = {
+    understood: false,
+    kind: 'amount',
+    metric: null,
+    categories: [],
+    payee: null,
+    account: null,
+    topic: null,
+    periods: [],
+  };
+  const topic = ACCOUNT_TOPICS.find(([re]) => re.test(question))?.[1];
+  const phrase = (AFTER_MY.exec(raw) ?? AFTER_ON.exec(raw))?.[1]?.trim();
+  if (topic && phrase && !/spen[dt]|earn|income|left over/.test(question)) {
+    const periods =
+      topic !== 'interest_paid'
+        ? []
+        : /\bthis year\b/.test(question)
+          ? [{ label: 'this year', from: `${year}-01-01`, to: today }]
+          : /\blast year\b/.test(question)
+            ? [{ label: 'last year', from: `${year - 1}-01-01`, to: `${year - 1}-12-31` }]
+            : [];
+    return { ...none, understood: true, kind: 'account', account: phrase, topic, periods };
   }
+  if (!/how much|what did|spent|spend|earn|income|left/.test(question)) return none;
   const QUARTERS: Record<string, [string, string]> = {
     q1: ['01-01', '03-31'],
     q2: ['04-01', '06-30'],
@@ -665,10 +704,10 @@ function fakeQuestion(input: Json) {
       }))
     : [{ label: 'this month', from: `${today.slice(0, 7)}-01`, to: today }];
   return {
+    ...none,
     understood: true,
     metric: /earn|income/.test(question) ? 'income' : /left/.test(question) ? 'net' : 'spending',
     categories,
-    payee: null,
     periods,
   };
 }

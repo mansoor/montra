@@ -1,25 +1,32 @@
 /**
- * Global search (RPT-05) and ask-your-data (RPT-06; ADR-0019 §3, §4). Search reads under the caller's RLS. For a question, AI turns the
- * words into a plan, which is checked; every number then comes from a query here, and no figure goes to the provider.
+ * Global search (RPT-05) and ask-your-data (RPT-06; ADR-0019 §3, §4, ADR-0058). Search reads under the caller's RLS. For a question,
+ * AI turns the words into a plan, which is checked; every number then comes from a query here, and no figure goes to the provider.
+ * A question about one account names it in the asker's words; it's matched to account names here, and the provider never
+ * sees one.
  */
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
+import type { QuestionPlan } from '@montra/ai-gateway';
 import {
+  accountProfile,
   asCurrencyCode,
   calendarDate,
   convert,
+  matchAccount,
   matchSnippet,
   money,
   parseDecimal,
   todayIn,
   type CalendarDate,
 } from '@montra/domain';
-import type { AskAnswerDto, SearchResultsDto } from '@montra/schemas';
+import type { AccountDto, AskAccountDto, AskAnswerDto, SearchResultsDto } from '@montra/schemas';
+import { AccountsService } from '../accounts/accounts.service.js';
 import { AI_PROBLEM_TEXT, AiService } from '../ai/ai.service.js';
 import { AppError } from '../common/errors.js';
 import { FieldCrypto } from '../crypto/crypto.service.js';
 import { Db } from '../db/database.js';
 import { FxRatesService } from '../fx/fx.service.js';
+import { LoansService } from '../rentals/loans.service.js';
 import { searchFilter, tsQueryOf } from '../transactions/search-filter.js';
 
 type Ctx = { workspaceId: string; userId: string };
@@ -34,6 +41,8 @@ export class SearchService {
     @Inject(FieldCrypto) private readonly crypto: FieldCrypto,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(FxRatesService) private readonly fx: FxRatesService,
+    @Inject(AccountsService) private readonly accounts: AccountsService,
+    @Inject(LoansService) private readonly loans: LoansService,
   ) {}
 
   async search(ctx: Ctx, q: string): Promise<SearchResultsDto> {
@@ -115,7 +124,8 @@ export class SearchService {
 
   // ----- Ask-your-data ---------------------------------------------------------------------------------------
 
-  async ask(ctx: Ctx, question: string): Promise<AskAnswerDto> {
+  /** `accountId` is the account picked when several fit (ADR-0058); it's used only for a question about one account. */
+  async ask(ctx: Ctx, question: string, accountId?: string): Promise<AskAnswerDto> {
     const plan = await this.db.run(ctx, async (trx) => {
       const ws = await trx
         .selectFrom('app.workspace')
@@ -157,9 +167,13 @@ export class SearchService {
       return { value: res.value, categories };
     });
     const p = plan.value;
+    if (p.understood && p.kind === 'account' && p.account) {
+      return this.answerAccount(ctx, question, p.account, p.periods, accountId);
+    }
     if (!p.understood || p.periods.length === 0) {
       return {
         question,
+        kind: 'amount',
         understood: false,
         metric: null,
         categories: [],
@@ -256,6 +270,7 @@ export class SearchService {
          order by t.txn_date desc, t.id desc limit ${ASK_TRANSACTIONS}`.execute(trx);
       return {
         question,
+        kind: 'amount',
         understood: true,
         metric: p.metric,
         categories: plan.categories
@@ -275,6 +290,117 @@ export class SearchService {
           matchedNote: null,
         })),
       };
+    });
+  }
+
+  /**
+   * A question about one account (ADR-0058). The phrase is matched to the accounts the asker sees; a tie comes back as
+   * choices, and nothing matching names nothing. The figures are the account page's own: the account list's balance, and for
+   * a tracked loan its summary and schedule from LoansService, so Ask and the page can't disagree.
+   */
+  private async answerAccount(
+    ctx: Ctx,
+    question: string,
+    asked: NonNullable<QuestionPlan['account']>,
+    periods: QuestionPlan['periods'],
+    accountId: string | undefined,
+  ): Promise<AskAnswerDto> {
+    const { phrase, topic } = asked;
+    const wrap = (account: AskAccountDto): AskAnswerDto => ({
+      question,
+      kind: 'account',
+      account,
+      understood: true,
+      metric: null,
+      categories: [],
+      payee: null,
+      currency: account.currency,
+      periods: [],
+      transactions: [],
+    });
+    const empty: AskAccountDto = {
+      phrase,
+      topic,
+      outcome: 'no_match',
+      account: null,
+      choices: [],
+      currency: null,
+      balance: null,
+      payoffDate: null,
+      paymentsLeft: null,
+      interestRemaining: null,
+      next: null,
+      interestPaid: null,
+      interestPeriods: [],
+      paymentsBefore: null,
+    };
+    const ref = (a: AccountDto) => ({ id: a.id, name: a.name, kind: a.kind });
+
+    // The accounts the asker sees: hidden and archived ones are left out, as on the accounts list.
+    const accounts = await this.accounts.list(ctx);
+    let chosen: AccountDto | undefined;
+    if (accountId) {
+      chosen = accounts.find((a) => a.id === accountId);
+    } else {
+      const match = matchAccount(phrase, accounts);
+      if (match.status === 'several') {
+        return wrap({ ...empty, outcome: 'choose', choices: match.accounts.map(ref) });
+      }
+      if (match.status === 'one') chosen = match.account;
+    }
+    if (!chosen) return wrap(empty);
+
+    const held: AskAccountDto = {
+      ...empty,
+      outcome: 'answered',
+      account: ref(chosen),
+      currency: chosen.balance.currency,
+      balance: chosen.balance.amount,
+    };
+    const aboutBalance = topic === 'owed' || topic === 'balance';
+    if (!chosen.loanId) {
+      if (aboutBalance) return wrap(held);
+      // Payoff, the next payment and interest need a schedule: a loan kept as just its balance can have one turned on.
+      return wrap({
+        ...held,
+        outcome: accountProfile(chosen.kind).installment ? 'needs_tracking' : 'not_applicable',
+      });
+    }
+
+    const { loan, schedule } = await this.loans.facts(ctx, chosen.loanId);
+    const tracked: AskAccountDto = { ...held, currency: loan.currency, balance: loan.scheduledBalance };
+    if (aboutBalance) return wrap(tracked);
+    if (topic === 'payoff') {
+      const upcoming = schedule.filter((r) => r.transactionId === null);
+      if (!loan.payoffDate || upcoming.length === 0) return wrap({ ...tracked, outcome: 'paid_off' });
+      return wrap({
+        ...tracked,
+        payoffDate: loan.payoffDate,
+        paymentsLeft: upcoming.length,
+        interestRemaining: loan.interestRemaining,
+      });
+    }
+    if (topic === 'next_payment') {
+      if (!loan.next) return wrap({ ...tracked, outcome: 'paid_off' });
+      const { date, total, principal, interest, escrow } = loan.next;
+      return wrap({ ...tracked, next: { date, total, principal, interest, escrow } });
+    }
+    // Interest paid: since tracking began, as the page says, and within each period by the recorded payments' dates.
+    const recorded = schedule.filter((r) => r.transactionId !== null);
+    return wrap({
+      ...tracked,
+      interestPaid: loan.interestPaid,
+      paymentsBefore: loan.paymentsBefore,
+      interestPeriods: periods.map((p) => ({
+        label: p.label,
+        from: p.from as CalendarDate,
+        to: p.to as CalendarDate,
+        amount: String(
+          recorded
+            .filter((r) => r.date >= p.from && r.date <= p.to)
+            .reduce((sum, r) => sum + BigInt(r.interest), 0n),
+        ),
+      })),
     });
   }
 }

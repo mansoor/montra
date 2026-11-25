@@ -525,49 +525,61 @@ export class LoansService {
   }
 
   async schedule(ctx: Ctx, id: string): Promise<AmortizationRowDto[]> {
+    return this.db.run(ctx, async (trx) => this.scheduleOf(trx, ctx, await this.row(trx, ctx, id)));
+  }
+
+  /**
+   * A loan as its account page shows it: the summary and the schedule, recorded payments then the ones to come. Ask reads
+   * this so its answers and the page always agree (ADR-0058).
+   */
+  async facts(ctx: Ctx, id: string): Promise<{ loan: LoanDto; schedule: AmortizationRowDto[] }> {
     return this.db.run(ctx, async (trx) => {
       const r = await this.row(trx, ctx, id);
-      const { paid, rows } = await this.state(trx, ctx, r);
-      const escrow = escrowOf(r);
-      const byTerms = byTermsOf(r);
-      const daily = r.interest_method === 'daily';
-      const recorded = paid.map((p): AmortizationRowDto => {
-        const terms = byTerms.find((x) => x.number === p.number);
-        const interest = p.interest_minor !== null ? BigInt(p.interest_minor) : (terms?.interest ?? 0n);
-        const principal = p.principal_minor !== null ? BigInt(p.principal_minor) : (terms?.principal ?? 0n);
-        return {
-          number: p.number,
-          // A daily loan's interest ran to the day it was paid, so that's the date it shows.
-          date: daily && p.paid_on ? iso(p.paid_on) : (terms?.date ?? iso(r.first_payment_date)),
-          payment: String(interest + principal),
-          interest: String(interest),
-          principal: String(principal),
-          escrow: String(p.escrow_minor !== null ? BigInt(p.escrow_minor) : escrow),
-          balance: String(terms?.balance ?? 0n),
-          transactionId: p.transaction_id,
-          lateFee: String(p.late_fee_minor ?? 0n),
-        };
-      });
-      // Walking back from the first unrecorded balance gives each recorded row what really followed it.
-      recorded.sort((a, b) => a.number - b.number);
-      let after = rows[0] ? rows[0].balance + rows[0].principal : 0n;
-      for (let i = recorded.length - 1; i >= 0; i--) {
-        recorded[i]!.balance = String(after);
-        after += BigInt(recorded[i]!.principal);
-      }
-      const upcoming = rows.map((row): AmortizationRowDto => ({
-        number: row.number,
-        date: row.date,
-        payment: String(row.payment),
-        interest: String(row.interest),
-        principal: String(row.principal),
-        escrow: String(escrow),
-        balance: String(row.balance),
-        transactionId: null,
-        lateFee: '0',
-      }));
-      return [...recorded, ...upcoming].sort((a, b) => a.number - b.number);
+      return { loan: await this.dto(trx, ctx, r), schedule: await this.scheduleOf(trx, ctx, r) };
     });
+  }
+
+  private async scheduleOf(trx: Trx, ctx: Ctx, r: LoanRow): Promise<AmortizationRowDto[]> {
+    const { paid, rows } = await this.state(trx, ctx, r);
+    const escrow = escrowOf(r);
+    const byTerms = byTermsOf(r);
+    const daily = r.interest_method === 'daily';
+    const recorded = paid.map((p): AmortizationRowDto => {
+      const terms = byTerms.find((x) => x.number === p.number);
+      const interest = p.interest_minor !== null ? BigInt(p.interest_minor) : (terms?.interest ?? 0n);
+      const principal = p.principal_minor !== null ? BigInt(p.principal_minor) : (terms?.principal ?? 0n);
+      return {
+        number: p.number,
+        // A daily loan's interest ran to the day it was paid, so that's the date it shows.
+        date: daily && p.paid_on ? iso(p.paid_on) : (terms?.date ?? iso(r.first_payment_date)),
+        payment: String(interest + principal),
+        interest: String(interest),
+        principal: String(principal),
+        escrow: String(p.escrow_minor !== null ? BigInt(p.escrow_minor) : escrow),
+        balance: String(terms?.balance ?? 0n),
+        transactionId: p.transaction_id,
+        lateFee: String(p.late_fee_minor ?? 0n),
+      };
+    });
+    // Walking back from the first unrecorded balance gives each recorded row what really followed it.
+    recorded.sort((a, b) => a.number - b.number);
+    let after = rows[0] ? rows[0].balance + rows[0].principal : 0n;
+    for (let i = recorded.length - 1; i >= 0; i--) {
+      recorded[i]!.balance = String(after);
+      after += BigInt(recorded[i]!.principal);
+    }
+    const upcoming = rows.map((row): AmortizationRowDto => ({
+      number: row.number,
+      date: row.date,
+      payment: String(row.payment),
+      interest: String(row.interest),
+      principal: String(row.principal),
+      escrow: String(escrow),
+      balance: String(row.balance),
+      transactionId: null,
+      lateFee: '0',
+    }));
+    return [...recorded, ...upcoming].sort((a, b) => a.number - b.number);
   }
 
   private async categoryLike(
