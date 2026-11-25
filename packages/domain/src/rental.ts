@@ -290,7 +290,24 @@ export interface LoanTerms {
   termMonths: number;
 }
 
+/**
+ * How a loan charges interest (ADR-0024 §13). `monthly`: the balance times the rate over 12, each payment, as mortgages do.
+ * `daily`: simple interest for each day since the previous payment (or the start date), as auto and personal loans do.
+ */
+export type LoanInterestMethod = 'monthly' | 'daily';
+
 const RATE_DENOMINATOR = 120_000n; // bps per year → per month
+const DAILY_DENOMINATOR = 3_650_000n; // bps per year → per day: 10,000 × 365 (actual/365)
+
+/** Days of interest from `from` to `to`: actual days, none if `to` isn't after `from`. */
+export const interestDays = (from: CalendarDate, to: CalendarDate): number =>
+  Math.max(0, daysBetween(from, to));
+
+/** Daily simple interest, actual/365: balance × rate × days ÷ 365, half up to the cent. */
+export function dailyInterest(balance: bigint, rateBps: number, days: number): bigint {
+  if (balance <= 0n || days <= 0) return 0n;
+  return divRound(balance * BigInt(rateBps) * BigInt(days), DAILY_DENOMINATOR);
+}
 
 /** The level payment: P·r / (1 − (1+r)^−n), computed with integers, half up. Zero rate: principal over the term. */
 export function monthlyPayment(l: LoanTerms): bigint {
@@ -309,6 +326,8 @@ export interface AmortizationRow {
   interest: bigint;
   principal: bigint;
   balance: bigint;
+  /** Daily loans only: the date this payment's interest runs from, the previous payment's date or the start date. */
+  from?: CalendarDate;
 }
 
 /** The payment date in month `n` of the loan, keeping the first payment's day where the month has it. */
@@ -320,14 +339,22 @@ export function loanPaymentDate(first: CalendarDate, n: number): CalendarDate {
   return day(year, month, Math.min(d, daysInMonth(year, month)));
 }
 
-/** The schedule from the terms alone. The last payment clears whatever rounding has left. */
-export function amortize(l: LoanTerms, firstPayment: CalendarDate): AmortizationRow[] {
+/**
+ * The schedule from the terms alone. The last payment clears whatever rounding has left. A daily loan accrues from its start
+ * date to each due date.
+ */
+export function amortize(
+  l: LoanTerms,
+  firstPayment: CalendarDate,
+  daily?: { startDate: CalendarDate },
+): AmortizationRow[] {
   return projectLoan({
     balance: l.principal,
     rateBps: l.rateBps,
     payment: monthlyPayment(l),
     firstPayment,
     termMonths: l.termMonths,
+    ...(daily ? { method: 'daily' as const, accruesFrom: daily.startDate } : {}),
   });
 }
 
@@ -343,6 +370,13 @@ export interface LoanProjection {
   before?: number;
   /** Payment numbers already recorded, so they're skipped. */
   recorded?: ReadonlySet<number>;
+  /** Monthly unless said otherwise. */
+  method?: LoanInterestMethod;
+  /**
+   * Daily only: the date interest has run from for the first payment listed, the last recorded payment's date or the start
+   * date. Left out, it's the due date before that payment.
+   */
+  accruesFrom?: CalendarDate;
 }
 
 /**
@@ -351,6 +385,7 @@ export interface LoanProjection {
  * what's left. A payment too small to cover the interest repays nothing until then.
  */
 export function projectLoan(l: LoanProjection): AmortizationRow[] {
+  if (l.method === 'daily') return projectDailyLoan(l);
   const rows: AmortizationRow[] = [];
   let balance = l.balance;
   for (let n = (l.before ?? 0) + 1; balance > 0n; n++) {
@@ -371,6 +406,62 @@ export function projectLoan(l: LoanProjection): AmortizationRow[] {
   }
   return rows;
 }
+
+/**
+ * The daily-interest version of `projectLoan` (ADR-0024 §13): each payment's interest runs from the previous payment's date
+ * to its own due date, actual/365. The payment stays level, so principal takes what the interest leaves.
+ */
+function projectDailyLoan(l: LoanProjection): AmortizationRow[] {
+  const rows: AmortizationRow[] = [];
+  let balance = l.balance;
+  let from: CalendarDate | undefined = l.accruesFrom;
+  for (let n = (l.before ?? 0) + 1; balance > 0n; n++) {
+    if (l.recorded?.has(n)) continue;
+    const date = loanPaymentDate(l.firstPayment, n);
+    const since = from ?? loanPaymentDate(l.firstPayment, n - 1);
+    const interest = dailyInterest(balance, l.rateBps, interestDays(since, date));
+    let principal = l.payment - interest;
+    if (principal < 0n) principal = 0n;
+    if (principal > balance || n >= l.termMonths) principal = balance;
+    balance -= principal;
+    rows.push({ number: n, date, payment: principal + interest, interest, principal, balance, from: since });
+    from = date;
+  }
+  return rows;
+}
+
+// ----- Grace periods and late fees (ADR-0024 §14) ---------------------------------------------------------------
+
+export interface LoanLateFeeRule {
+  graceDays: number;
+  /** A fixed fee; null for none. */
+  flat: bigint | null;
+  /** A percent of the scheduled payment, in basis points; null for none. */
+  bps: number | null;
+}
+
+/** A payment made more than the grace days after its due date. */
+export const loanPaymentLate = (due: CalendarDate, paidOn: CalendarDate, graceDays: number): boolean =>
+  compareDates(paidOn, addDays(due, graceDays)) > 0;
+
+/** The fee for a late payment: the fixed amount, the percent of the scheduled payment (half up), or the greater of the two. */
+export function loanLateFee(rule: LoanLateFeeRule, scheduled: bigint): bigint {
+  const flat = rule.flat ?? 0n;
+  const percent = rule.bps === null ? 0n : divRound(scheduled * BigInt(rule.bps), 10_000n);
+  return flat > percent ? flat : percent;
+}
+
+/** Days before a due date that a bank line can pay it (ADR-0024 §8). */
+export const LOAN_MATCH_DAYS_BEFORE = 5;
+
+/** Days after a due date that a bank line can pay it: 5, or the grace period when that's longer (ADR-0024 §14). */
+export const loanMatchDaysAfter = (graceDays: number): number => Math.max(5, graceDays);
+
+/** Whether a bank line on `date` falls in the window for a payment due on `due`. */
+export const inLoanMatchWindow = (due: CalendarDate, date: CalendarDate, graceDays: number): boolean => {
+  const gap = daysBetween(due, date);
+  return gap >= -LOAN_MATCH_DAYS_BEFORE && gap <= loanMatchDaysAfter(graceDays);
+};
 
 /** How many scheduled payments fall on or before a date, up to the term: these are already in a balance as of that date. */
 export function paymentsOnOrBefore(first: CalendarDate, termMonths: number, date: CalendarDate): number {
