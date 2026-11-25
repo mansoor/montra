@@ -8,6 +8,7 @@ import { browserApi } from '@/lib/browser-api';
 import { errorAction, friendlyMessage } from '@/lib/errors';
 import { minorToInput, parseAmountInput } from '@/lib/money';
 import { Money } from '../money';
+import { useConfirm } from '../ui/confirm-dialog';
 import { StatusLine, useAction } from '../use-action';
 import { useI18n } from '../i18n';
 import { AccountHoldersEditor, AccountNumberPanel } from './account-holders';
@@ -65,6 +66,7 @@ function AccountCard({
 }) {
   const { busy, message, setMessage, run, t } = useAction();
   const { locale } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const [name, setName] = useState(account.name);
   const [balance, setBalance] = useState(minorToInput(BigInt(account.balance.amount), account.currency));
   const [date, setDate] = useState(today);
@@ -100,8 +102,13 @@ function AccountCard({
     const question = step.trashedTransactions
       ? t('accounts.delete_confirm_trash', { name: account.name, count: step.trashedTransactions })
       : t('accounts.delete_confirm', { name: account.name });
-    if (!window.confirm(question)) return;
-    await run(() => browserApi.deleteAccount(workspaceId, id), t('accounts.deleted'));
+    await confirm({
+      title: t('accounts.delete_title'),
+      body: <p>{question}</p>,
+      confirmLabel: t('accounts.delete_button'),
+      danger: true,
+      action: () => run(() => browserApi.deleteAccount(workspaceId, id), t('accounts.deleted')),
+    });
   }
 
   return (
@@ -224,6 +231,7 @@ function AccountCard({
       <AccountNumberPanel workspaceId={workspaceId} account={account} canManage={canManageNumber} />
       <AccountPlanning workspaceId={workspaceId} account={account} />
       <StatusLine message={message} />
+      {dialog}
     </li>
   );
 }

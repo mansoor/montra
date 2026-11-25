@@ -354,7 +354,13 @@ const account = (id: string, kind: AccountDto['kind'], over: Partial<AccountDto>
   loanAccountId: null,
   dueDate: null,
   cycle: { statementDay: null, dueDay: null, payFromAccountId: null, payRule: null, payFixed: null },
-  planning: { creditLimit: null, interestRateBps: null, minPayment: null, lowBalance: '0' },
+  planning: {
+    creditLimit: null,
+    interestRateBps: null,
+    interestRatePpm: null,
+    minPayment: null,
+    lowBalance: '0',
+  },
   ...over,
 });
 

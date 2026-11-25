@@ -24,8 +24,17 @@ export async function onboardHousehold(page: Page, email: string, account: strin
   await page.getByRole('button', { name: 'Add account' }).click();
   await expect(page).toHaveURL(/\/accounts\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name: account })).toBeVisible();
-  // The form goes to the account and then refreshes it. Let that settle, or WebKit can commit it late and cut off the
-  // caller's next page.goto ("interrupted by another navigation").
+  // The form goes to the account and then refreshes it, and WebKit can commit that refresh late enough to cut off the
+  // caller's next page.goto ("interrupted by another navigation"). Load the account's page afresh, again if a late
+  // navigation cuts that off too, so nothing from the form is left to land.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.goto(page.url());
+      break;
+    } catch (err) {
+      if (attempt === 3 || !String(err).includes('interrupted by another navigation')) throw err;
+    }
+  }
   await page.waitForLoadState('networkidle');
 }
 

@@ -553,6 +553,10 @@ export type LoanInterestMethod = z.infer<typeof LoanInterestMethod>;
 const GraceDays = z.number().int().min(0).max(60);
 /** A late fee as a percent of the scheduled payment, in basis points. */
 const LateFeeBps = z.number().int().min(0).max(10000);
+/** A loan's yearly rate, 0 to 50%, in whole basis points: what clients sent before migration 0096. */
+const LoanRateBps = z.number().int().min(0).max(5000);
+/** A loan's yearly rate, 0 to 50%, in parts per million (1 = 0.0001%; 5.625% = 56,250). Wins over `rateBps`. */
+const LoanRatePpm = z.number().int().min(0).max(500_000);
 
 export const LoanDto = z.object({
   id: Id,
@@ -565,7 +569,10 @@ export const LoanDto = z.object({
   interestMethod: LoanInterestMethod,
   /** The original amount. */
   principal: MinorDto,
+  /** Rounded half up to whole basis points, for older clients. Read `ratePpm`. */
   rateBps: z.number().int(),
+  /** The yearly rate in parts per million (1 = 0.0001%), exact (migration 0096). */
+  ratePpm: z.number().int(),
   termMonths: z.number().int(),
   firstPaymentDate: CalendarDateDto,
   escrowTaxes: MinorDto,
@@ -641,7 +648,9 @@ export const CreateLoanRequest = z
     name: Text(200).min(1),
     startDate: CalendarDateDto.optional(),
     principal: PositiveMinor,
-    rateBps: z.number().int().min(0).max(5000),
+    /** One of the two is required; `ratePpm` wins when both are sent. */
+    rateBps: LoanRateBps.optional(),
+    ratePpm: LoanRatePpm.optional(),
     termMonths: z.number().int().min(1).max(600),
     firstPaymentDate: CalendarDateDto,
     escrowTaxes: NonNegativeMinor.default('0'),
@@ -665,6 +674,10 @@ export const CreateLoanRequest = z
   .refine((r) => r.interestMethod !== 'daily' || r.startDate !== undefined, {
     message: 'Daily interest needs the date interest starts',
     path: ['startDate'],
+  })
+  .refine((r) => r.ratePpm !== undefined || r.rateBps !== undefined, {
+    message: 'Enter the interest rate',
+    path: ['ratePpm'],
   });
 export type CreateLoanRequest = z.output<typeof CreateLoanRequest>;
 
@@ -675,7 +688,9 @@ export const UpdateLoanRequest = z
     escrowInsurance: NonNegativeMinor,
     archived: z.boolean(),
     /** Applies from the next payment. The payment is recalculated over the time left, unless `paymentAmount` says otherwise. */
-    rateBps: z.number().int().min(0).max(5000),
+    rateBps: LoanRateBps,
+    /** The same, in parts per million; wins over `rateBps` when both are sent. */
+    ratePpm: LoanRatePpm,
     /** Null goes back to the calculated payment. */
     paymentAmount: PositiveMinor.nullable(),
     payingAccountId: Id.nullable(),

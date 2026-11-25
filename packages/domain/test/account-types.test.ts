@@ -8,11 +8,16 @@ import {
   balanceRangeStart,
   balancesOn,
   bpsToPercent,
+  bpsToPpm,
   calendarDate,
   canSpendFrom,
   kindsWhere,
   receiptAccountId,
   percentToBps,
+  percentToPpm,
+  ppmToBps,
+  ppmToPercent,
+  ratePpmOf,
 } from '../src/index.js';
 
 const d = calendarDate;
@@ -116,6 +121,58 @@ describe('percentToBps', () => {
         expect(percentToBps(bpsToPercent(bps))).toBe(bps);
       }),
     );
+  });
+});
+
+describe('percentToPpm and ppmToPercent', () => {
+  it('reads up to four decimals exactly, as text', () => {
+    expect(percentToPpm('5.625')).toBe(56_250);
+    expect(percentToPpm('6.4375')).toBe(64_375);
+    expect(percentToPpm('7.56')).toBe(75_600);
+    expect(percentToPpm('6')).toBe(60_000);
+    expect(percentToPpm('0.0001')).toBe(1);
+    expect(percentToPpm(' 5,125 ')).toBe(51_250);
+    expect(percentToPpm('100')).toBe(1_000_000);
+    expect(percentToPpm('50', 50)).toBe(500_000);
+    // 19.99 × 10,000 in floating point is 199899.99…
+    expect(percentToPpm('19.99')).toBe(199_900);
+  });
+
+  it('refuses what isn’t a percentage within the limit', () => {
+    for (const bad of ['', 'abc', '-1', '100.0001', '101', '1.23456', '1e2', '.5']) {
+      expect(percentToPpm(bad)).toBeNull();
+    }
+    expect(percentToPpm('50.0001', 50)).toBeNull();
+  });
+
+  it('shows as many decimals as the rate has', () => {
+    expect(ppmToPercent(56_250)).toBe('5.625');
+    expect(ppmToPercent(75_600)).toBe('7.56');
+    expect(ppmToPercent(64_375)).toBe('6.4375');
+    expect(ppmToPercent(60_000)).toBe('6');
+    expect(ppmToPercent(1)).toBe('0.0001');
+    expect(ppmToPercent(0)).toBe('0');
+  });
+
+  it('round-trips every rate', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 1_000_000 }), (ppm) => {
+        expect(percentToPpm(ppmToPercent(ppm))).toBe(ppm);
+      }),
+    );
+  });
+
+  it('rounds to whole basis points half up for older code, and reads bps when ppm is missing', () => {
+    expect(ppmToBps(56_250)).toBe(563);
+    expect(ppmToBps(56_249)).toBe(562);
+    expect(ppmToBps(64_375)).toBe(644);
+    expect(ppmToBps(75_600)).toBe(756);
+    expect(ppmToBps(0)).toBe(0);
+    expect(bpsToPpm(756)).toBe(75_600);
+    expect(ratePpmOf(56_250, 563)).toBe(56_250);
+    expect(ratePpmOf(null, 563)).toBe(56_300);
+    expect(ratePpmOf(undefined, undefined)).toBeNull();
+    expect(ratePpmOf(null, null)).toBeNull();
   });
 });
 

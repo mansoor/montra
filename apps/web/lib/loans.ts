@@ -27,7 +27,7 @@ type NextPayment = NonNullable<LoanDto['next']>;
  * interest runs to that date, and the level payment's rest is principal; the last payment clears what's owed.
  */
 export function expectedSplit(
-  loan: Pick<LoanDto, 'interestMethod' | 'rateBps' | 'payment' | 'scheduledBalance'>,
+  loan: Pick<LoanDto, 'interestMethod' | 'ratePpm' | 'payment' | 'scheduledBalance'>,
   next: Pick<NextPayment, 'interest' | 'principal' | 'accruesFrom'>,
   date: string,
 ): { interest: bigint; principal: bigint } {
@@ -35,7 +35,7 @@ export function expectedSplit(
     return { interest: BigInt(next.interest), principal: BigInt(next.principal) };
   }
   const owed = BigInt(loan.scheduledBalance);
-  const interest = dailyInterest(owed, loan.rateBps, interestDays(next.accruesFrom, date as CalendarDate));
+  const interest = dailyInterest(owed, loan.ratePpm, interestDays(next.accruesFrom, date as CalendarDate));
   if (BigInt(next.principal) >= owed) return { interest, principal: owed };
   let principal = BigInt(loan.payment) - interest;
   if (principal < 0n) principal = 0n;

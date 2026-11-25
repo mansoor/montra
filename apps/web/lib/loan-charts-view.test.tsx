@@ -19,6 +19,7 @@ const loan = {
   interestMethod: 'monthly',
   principal: '20000000',
   rateBps: 600,
+  ratePpm: 60000,
   termMonths: 360,
   firstPaymentDate: '2026-10-27',
   escrowTaxes: '0',

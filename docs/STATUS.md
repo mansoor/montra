@@ -3379,6 +3379,47 @@ Phase 11 leftovers:
     and `paymentsBefore` new, after a payment and on a loan years in); mobile `accounts.test.ts` (bars and the phone's
     threshold); e2e `loans.spec.ts` (a new mortgage shows To payoff with "Paid off …", the switch shows the chart by year
     and is remembered across a reload, Paid so far).
+- **Interest rates to four decimals: 5.625%, 6.4375%** (ACC-02, RNT-08, BUD-08,
+  [ADR-0024](design/adr/0024-loan-tracking.md) §15, migration 0096). The owner couldn't enter a mortgage at 5.625%: rates
+  were whole basis points.
+  - Storage, expand only: `app.loan_schedule.rate_ppm` and `app.bank_account.interest_rate_ppm`, parts per million of the
+    yearly rate (5.625% = 56,250; 0–500,000 and 0–1,000,000 checks), backfilled from bps × 100. The bps columns stay and
+    are still written, rounded half up, for older API tasks and phone builds; new code reads ppm (bps × 100 when null). A
+    trigger on each table sets ppm from bps when an older task writes only bps.
+  - **Contract step, not done:** once no running API task or supported phone build reads or writes them, drop the
+    `loan_schedule_rate_ppm` and `bank_account_rate_ppm` triggers and functions, then `loan_schedule.rate_bps` and
+    `bank_account.interest_rate_bps` (each line marked `-- contract:`), and set `loan_schedule.rate_ppm` not null.
+  - Domain: `monthlyPayment`, `projectLoan`, `amortize`, `dailyInterest` and debt payoff (`simulatePayoff`,
+    `rec03Allocate`) take `ratePpm`; monthly ÷ 12,000,000, daily ÷ 365,000,000, bigint half up. Whole-bp rates give
+    identical results. `percentToPpm`, `ppmToPercent`, `ppmToBps`, `bpsToPpm`, `ratePpmOf` in `account-types.ts`.
+  - API: `ratePpm` beside `rateBps` on loan create, update and `LoanDto`; `interestRatePpm` beside `interestRateBps` on
+    account create, update and `planning`; `ratePpm` on debt payoff rows. Requests take either (ppm wins); responses give
+    both, so installed phones keep working.
+  - Web: the new-account form (loan, mortgage, card, line of credit, savings), loan settings, Track payments, the
+    account's planning inputs and the rental mortgage form take up to four decimals and send ppm ("up to four decimals,
+    such as 5.625"); the loan summary, account facts, rental mortgages and debt payoff show the exact rate (5.625%, 7.56%,
+    6%). Phone: the loan card shows the exact rate (bps × 100 for a loan kept offline from before); it has no rate input.
+  - Out of scope, still basis points: late-fee percents, the "high interest" threshold, ownership shares and sales tax.
+    `invoice_line.tax_rate_bps` and `business_profile.tax_rate_bps` can't hold 8.625% (862.5 bp); on the backlog.
+  - Tests: domain `rental.test.ts` (the 7.56% car loan's $301.00, $90.10 and $93.21 unchanged, a property test that every
+    whole-bp rate matches the old bps math, the 5.625% 30-year $941,000 mortgage against the exact formula, a sixteenth by
+    the day), `account-types.test.ts` (parsing, display, round trip, half-up bps), `budget.test.ts`; API
+    `rate-precision.test.ts` (ppm in and out, old clients' bps, ppm winning, re-levelling, the trigger for old writers, a
+    null ppm, accounts, debt payoff); web `loans.test.ts`, `rentals.test.ts`; e2e `loans.spec.ts` (a rate change to
+    6.875%).
+- **The app's own confirmation dialog, for deleting an account** (ACC-14, ACC-16; no migration). Owner's request.
+  - `ConfirmDialog` in `apps/web/components/ui/confirm-dialog.tsx`: a native `<dialog>` opened with `showModal()`
+    (`role="alertdialog"`, labelled by its title and described by its body), so the browser traps focus and Esc cancels.
+    Props: title, body, confirm and cancel labels, `danger` (a red `btn-danger` confirm, and focus starts on Cancel so
+    Enter can't confirm by accident) and `busy` (both buttons disabled, Esc ignored). Focus goes back to whatever opened
+    it. `useConfirm()` gives `confirm({...}) => Promise<boolean>` plus the element to render, so a `window.confirm` call
+    site switches with a one-line change; with `action`, the dialog stays open and busy while it runs.
+  - Used for deleting an account (Settings → Accounts: "Delete this account?", the existing wording as the body, a red
+    "Delete account") and for removing the full account number. The other `window.confirm` calls (about 32, in
+    transactions, trash, rules, receipts, payroll, the vault, sharing and more) are unchanged, for the owner to decide.
+  - Tests: web `confirm-dialog.test.tsx` (jsdom, now a web dev dependency: focus on Cancel, cancel, confirm, Esc, busy,
+    focus returned, the promise helper and its action); e2e `accounts.spec.ts` (Enter on the default Cancel keeps the
+    account, Esc, 360 px, axe in light and dark, then the red button deletes it).
 
 ---
 

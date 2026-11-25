@@ -118,7 +118,7 @@ describe('daily simple interest', () => {
     expect(res.body.next).toMatchObject({
       number: 2,
       date: due2,
-      interest: String(dailyInterest(left, 756, interestDays(paidOn, due2))),
+      interest: String(dailyInterest(left, 75600, interestDays(paidOn, due2))),
     });
     const t = (await c.get(url(`/transactions/${one.transactionId}`))).body;
     expect(totalOf(t)).toBe(-30100n);
@@ -238,7 +238,7 @@ describe('editing the dates and method', () => {
     expect(ok.body).toMatchObject({ interestMethod: 'daily', startDate: start });
     const due2 = loanPaymentDate(first, 2);
     const left = 1500000n - (30100n - 9450n);
-    expect(ok.body.next.interest).toBe(String(dailyInterest(left, 756, interestDays(first, due2))));
+    expect(ok.body.next.interest).toBe(String(dailyInterest(left, 75600, interestDays(first, due2))));
     // Payment 1 keeps what it was charged.
     expect((await scheduleOf(loan.id))[0]).toMatchObject({ interest: '9450', principal: '20650' });
     // The first payment's date is fixed once one is recorded.
@@ -283,7 +283,7 @@ describe('grace periods and late fees', () => {
     const res = await pay(loan.id, { number: 1, transactionId: id });
     expect(res.status).toBe(201);
     const [one] = await scheduleOf(loan.id);
-    const interest = dailyInterest(1500000n, 756, interestDays(start, paidOn));
+    const interest = dailyInterest(1500000n, 75600, interestDays(start, paidOn));
     expect(one).toMatchObject({
       lateFee: '1505',
       interest: String(interest),

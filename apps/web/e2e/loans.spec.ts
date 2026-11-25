@@ -43,7 +43,7 @@ test('a tracked mortgage works out its payments and follows the balance', async 
   await expect(page.getByTestId('loan-next-principal')).toContainText('$199.10');
   await expect(page.getByTestId('loan-next-interest')).toContainText('$1,000.00');
   await expect(page.getByTestId('loan-next-escrow')).toContainText('$100.00');
-  await expect(page.getByTestId('loan-rate')).toContainText('6.00%');
+  await expect(page.getByTestId('loan-rate')).toContainText('6%');
   // The next year shows, and the rest are there if wanted.
   await expect(page.getByTestId('loan-schedule-table').getByTestId('loan-row-upcoming')).toHaveCount(12);
   await expect(page.getByText('Show the other 348 payments')).toBeVisible();
@@ -104,15 +104,16 @@ test('a tracked mortgage works out its payments and follows the balance', async 
   await expect(page.getByTestId('loan-next-interest')).toContainText('$994.00');
   await expect(page.getByTestId('loan-row-paid').first()).toContainText('$1,199.10');
 
-  // A new rate applies from here on.
+  // A new rate applies from here on, in eighths of a percent as mortgages are quoted (migration 0096).
   const settings = page.getByTestId('loan-settings');
   await settings.locator('summary').click();
-  await settings.getByLabel('Interest rate %').fill('7');
+  await settings.getByLabel('Interest rate %').fill('6.875');
   await settings.getByRole('button', { name: 'Save' }).click();
   await expect(settings.getByText('Saved')).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId('loan-rate')).toContainText('7.00%');
-  await expect(page.getByTestId('loan-next-interest')).toContainText('$1,159.67');
+  await expect(page.getByTestId('loan-rate')).toContainText('6.875%');
+  // $198,800.90 × 6.875% ÷ 12 = $1,138.963…
+  await expect(page.getByTestId('loan-next-interest')).toContainText('$1,138.96');
   await expect(page.getByTestId('loan-row-paid').first()).toContainText('$1,000.00');
 
   // Undoing puts it back.

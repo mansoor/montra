@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { accountProfile, bpsToPercent } from '@montra/domain';
+import { accountProfile, ppmToPercent } from '@montra/domain';
 import type { AccountBalanceHistoryDto, AccountDto, AmortizationRowDto, LoanDto } from '@montra/api-client';
 import { LineChart } from '@/components/charts/line-chart';
 import { LoanOwedChart } from '@/components/accounts/loan-charts';
@@ -26,7 +26,7 @@ export function AccountFacts({
 }) {
   const details = accountProfile(account.kind).details.filter((d) => PLANNING.has(d));
   if (details.length === 0) return null;
-  const { creditLimit, interestRateBps, minPayment, lowBalance } = account.planning;
+  const { creditLimit, interestRatePpm, minPayment, lowBalance } = account.planning;
   const money = (amount: string) => <Money amount={amount} currency={account.currency} />;
   const facts: { label: string; value: React.ReactNode; testId: string }[] = [];
   if (details.includes('creditLimit') && creditLimit !== null) {
@@ -37,10 +37,10 @@ export function AccountFacts({
       testId: 'fact-available',
     });
   }
-  if (details.includes('interestRate') && interestRateBps !== null) {
+  if (details.includes('interestRate') && interestRatePpm !== null) {
     facts.push({
       label: t(account.kind === 'credit_card' ? 'account.apr' : 'account.interest_rate'),
-      value: `${bpsToPercent(interestRateBps)}%`,
+      value: `${ppmToPercent(interestRatePpm)}%`,
       testId: 'fact-rate',
     });
   }

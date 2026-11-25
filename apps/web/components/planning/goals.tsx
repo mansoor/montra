@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRef, useState, type ReactNode } from 'react';
+import { ppmToPercent } from '@montra/domain';
 import type { AccountDto, FamilyMemberDto, GoalDto, WorkspaceDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { minorToInput, parseAmountInput } from '@/lib/money';
@@ -250,7 +251,7 @@ function GoalCard({
                   <td className="px-2 py-1 text-right">
                     <Money amount={d.balance} currency={g.currency} />
                   </td>
-                  <td className="num px-2 py-1 text-right">{(d.rateBps / 100).toFixed(2)}%</td>
+                  <td className="num px-2 py-1 text-right">{ppmToPercent(d.ratePpm)}%</td>
                   <td className="px-2 py-1 text-right">
                     {d.payoffDate ? <DateText date={d.payoffDate} /> : '—'}
                   </td>
