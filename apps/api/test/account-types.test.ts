@@ -40,6 +40,7 @@ describe('details when adding an account', () => {
     expect(res.body.planning).toEqual({
       creditLimit: '500000',
       interestRateBps: 1999,
+      interestRatePpm: 199_900,
       minPayment: '3500',
       lowBalance: '0',
     });
@@ -50,6 +51,7 @@ describe('details when adding an account', () => {
     expect(res.body.planning).toEqual({
       creditLimit: null,
       interestRateBps: null,
+      interestRatePpm: null,
       minPayment: null,
       lowBalance: '-5000',
     });

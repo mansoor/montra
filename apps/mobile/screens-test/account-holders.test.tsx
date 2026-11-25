@@ -51,7 +51,13 @@ const joint = {
   loanAccountId: null,
   dueDate: null,
   reconciledThrough: null,
-  planning: { creditLimit: null, interestRateBps: null, minPayment: null, lowBalance: '0' },
+  planning: {
+    creditLimit: null,
+    interestRateBps: null,
+    interestRatePpm: null,
+    minPayment: null,
+    lowBalance: '0',
+  },
 } as AccountDto;
 
 async function open(account: AccountDto) {

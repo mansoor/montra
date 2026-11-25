@@ -18,8 +18,8 @@ import {
   ALLOCATION_BASES,
   MAINTENANCE_CHIP,
   MAINTENANCE_STATUSES,
+  loanRatePpm,
   maintenanceVendor,
-  optionalBps,
   optionalMinor,
   percentTotal,
   positiveMinor,
@@ -69,8 +69,8 @@ export function NewLoanForm({
             e.preventDefault();
             const p = positiveMinor(principal, currency, t);
             if (!p.ok) return setMessage({ tone: 'bad', text: p.error });
-            const bps = optionalBps(rate, t);
-            if (!bps.ok) return setMessage({ tone: 'bad', text: bps.error });
+            const ratePpm = loanRatePpm(rate, t);
+            if (!ratePpm.ok) return setMessage({ tone: 'bad', text: ratePpm.error });
             const et = optionalMinor(taxes, currency, t);
             if (!et.ok) return setMessage({ tone: 'bad', text: et.error });
             const ei = optionalMinor(insurance, currency, t);
@@ -82,7 +82,7 @@ export function NewLoanForm({
                   loanAccountId,
                   name: name.trim(),
                   principal: p.value,
-                  rateBps: bps.value ?? 0,
+                  ratePpm: ratePpm.value,
                   termMonths: Number(term),
                   firstPaymentDate: first as never,
                   escrowTaxes: et.value ?? '0',

@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
-import { todayIn } from '@montra/domain';
+import { ppmToPercent, todayIn } from '@montra/domain';
 import { load } from '@/lib/server-api';
 import { getI18n } from '@/lib/i18n-server';
-import { percentLabel } from '@/lib/rentals';
 import { Money } from '@/components/money';
 import { LoanSchedule, NewLoanForm } from '@/components/rentals/rental-ops';
 
@@ -50,7 +49,7 @@ export default async function MortgagesPage({
           <h2 className="text-lg font-semibold">{loan.name}</h2>
           <p className="text-sm text-muted">
             {t('rentals.loan_terms', {
-              rate: percentLabel(loan.rateBps),
+              rate: `${ppmToPercent(loan.ratePpm)}%`,
               months: loan.termMonths,
             })}{' '}
             · {t('rentals.monthly_payment')}: <Money amount={loan.totalPayment} currency={loan.currency} /> ·{' '}

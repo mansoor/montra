@@ -1,7 +1,7 @@
 # ADR-0024: Tracking loan payments from the real balance
 
 - Status: accepted
-- Date: 2026-11-07 (amended 2026-11-24: §13 daily simple interest and the lender's split, §14 grace periods and late fees)
+- Date: 2026-11-07 (amended 2026-11-24: §13 daily simple interest and the lender's split, §14 grace periods and late fees; §15 rate precision)
 
 ## Context
 
@@ -74,6 +74,21 @@ that payments shouldn't post by themselves by default.
     - A late bank line for the scheduled payment plus the loan's fee is taken as both when linked by hand.
     - §8's matching window becomes 5 days before the due date to **max(5, grace days)** after it, for linking by itself and
       for "Make transfer". Automatic linking still needs the exact scheduled amount.
+15. **Rate precision (amended 2026-11-24; migration 0096).** Rates were whole basis points (0.01%), so a mortgage at 5.625%
+    (quoted in eighths) or an ARM at 6.4375% (sixteenths) couldn't be entered. Every interest rate now has four decimals of
+    a percent, stored in **parts per million** of the yearly rate (1 ppm = 0.0001%; 5.625% = 56,250 ppm):
+    `loan_schedule.rate_ppm` and `bank_account.interest_rate_ppm`.
+    - Monthly interest is balance × ppm ÷ 12,000,000; daily is balance × ppm × days ÷ 365,000,000; the level payment uses
+      r = ppm ÷ 12,000,000. All bigint, half up with `divRound`. A whole-bp rate is ppm = bps × 100, which scales numerator
+      and denominator alike, so every result for a rate that was storable before is identical (domain tests prove it).
+    - Expand only. The bps columns stay and new code keeps writing them, rounded half up (5.625% → 563 bp), so an older API
+      task or phone build still sees a near rate. New code reads ppm, or bps × 100 where it's null. A trigger keeps ppm in
+      step with an older task that writes only bps (an insert without ppm, or an update that changes bps but not ppm).
+    - The API takes `ratePpm` / `interestRatePpm` or the old `rateBps` / `interestRateBps` (ppm wins when both come) and
+      returns both. Screens take up to four decimals and show as many as the rate has (5.625%, 7.56%, 6%).
+    - Contract step, later: once nothing reads or writes them, drop the triggers and the bps columns, and make
+      `loan_schedule.rate_ppm` not null.
+    - Other percents (late fees, sales tax, ownership shares, the planning "high interest" threshold) stay in basis points.
 
 ## Consequences
 

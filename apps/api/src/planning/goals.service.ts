@@ -5,7 +5,9 @@ import {
   addDays,
   addMonths,
   calendarDate,
+  ppmToBps,
   projectGoal,
+  ratePpmOf,
   simulatePayoff,
   sinkingFundMonthly,
   startOfMonth,
@@ -278,7 +280,7 @@ export class GoalsService {
       ? await trx
           .selectFrom('app.ledger_account as a')
           .innerJoin('app.bank_account as b', 'b.ledger_account_id', 'a.id')
-          .select(['a.id', 'a.name', 'b.interest_rate_bps', 'b.min_payment_minor'])
+          .select(['a.id', 'a.name', 'b.interest_rate_bps', 'b.interest_rate_ppm', 'b.min_payment_minor'])
           .where('a.workspace_id', '=', ctx.workspaceId)
           .where('a.id', 'in', accountIds)
           .execute()
@@ -360,6 +362,7 @@ export class GoalsService {
         id: string;
         name: string;
         interest_rate_bps: number | null;
+        interest_rate_ppm: number | null;
         min_payment_minor: string | bigint | null;
       }
     >,
@@ -378,7 +381,7 @@ export class GoalsService {
         id,
         name: i?.name ?? id,
         balance: owed > 0n ? owed : 0n,
-        rateBps: i?.interest_rate_bps ?? 0,
+        ratePpm: ratePpmOf(i?.interest_rate_ppm, i?.interest_rate_bps) ?? 0,
         minPayment: min,
       };
     });
@@ -400,7 +403,8 @@ export class GoalsService {
           accountId: d.id,
           name: d.name,
           balance: String(d.balance),
-          rateBps: d.rateBps,
+          rateBps: ppmToBps(d.ratePpm),
+          ratePpm: d.ratePpm,
           minPayment: String(d.minPayment),
           payoffDate: dateAfter(r.months),
           interest: r.months !== null ? String(r.interest) : null,

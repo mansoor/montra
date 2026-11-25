@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { accountProfile, bpsToPercent, percentToBps } from '@montra/domain';
+import { accountProfile, percentToPpm, ppmToPercent } from '@montra/domain';
 import type { AccountDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { minorToInput, parseAmountInput } from '@/lib/money';
@@ -16,7 +16,7 @@ export function AccountPlanning({ workspaceId, account }: { workspaceId: string;
   const ccy = account.currency;
   const show = (v: string | null) => (v === null ? '' : minorToInput(BigInt(v), ccy));
   const [limit, setLimit] = useState(show(p.creditLimit));
-  const [apr, setApr] = useState(p.interestRateBps === null ? '' : bpsToPercent(p.interestRateBps));
+  const [apr, setApr] = useState(p.interestRatePpm === null ? '' : ppmToPercent(p.interestRatePpm));
   const [minPay, setMinPay] = useState(show(p.minPayment));
   const [low, setLow] = useState(show(p.lowBalance));
   const { details } = accountProfile(account.kind);
@@ -39,13 +39,12 @@ export function AccountPlanning({ workspaceId, account }: { workspaceId: string;
           const creditLimit = amount(limit);
           const minPayment = amount(minPay);
           const lowBalance = amount(low, true);
-          const bps = apr.trim() === '' ? null : percentToBps(apr);
-          if (
-            creditLimit === undefined ||
-            minPayment === undefined ||
-            lowBalance === undefined ||
-            (apr.trim() !== '' && bps === null)
-          ) {
+          const ppm = apr.trim() === '' ? null : percentToPpm(apr);
+          if (apr.trim() !== '' && ppm === null) {
+            setMessage({ tone: 'bad', text: t('account.rate_invalid') });
+            return;
+          }
+          if (creditLimit === undefined || minPayment === undefined || lowBalance === undefined) {
             setMessage({ tone: 'bad', text: t('budget.amount_invalid') });
             return;
           }
@@ -53,7 +52,7 @@ export function AccountPlanning({ workspaceId, account }: { workspaceId: string;
             () =>
               browserApi.updateAccount(workspaceId, account.id, {
                 ...(details.includes('creditLimit') ? { creditLimit } : {}),
-                ...(details.includes('interestRate') ? { interestRateBps: bps } : {}),
+                ...(details.includes('interestRate') ? { interestRatePpm: ppm } : {}),
                 ...(details.includes('minPayment') ? { minPayment } : {}),
                 ...(details.includes('lowBalance') ? { lowBalance: lowBalance ?? '0' } : {}),
               }),

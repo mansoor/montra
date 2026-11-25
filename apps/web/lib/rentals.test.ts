@@ -10,6 +10,7 @@ import {
   contactsToLink,
   emptyContact,
   emptyPerson,
+  loanRatePpm,
   maintenanceVendor,
   mailtoHref,
   maskedDateOfBirth,
@@ -64,6 +65,15 @@ describe('percentages', () => {
     expect(optionalBps('')).toEqual({ ok: true, value: null });
     expect(optionalBps('100.01').ok).toBe(false);
     expect(optionalBps('1.234').ok).toBe(false);
+  });
+
+  it('reads a mortgage rate to four decimals, refusing over 50 (migration 0096)', () => {
+    expect(loanRatePpm('5.625')).toEqual({ ok: true, value: 56_250 });
+    expect(loanRatePpm('6.4375')).toEqual({ ok: true, value: 64_375 });
+    expect(loanRatePpm('6')).toEqual({ ok: true, value: 60_000 });
+    expect(loanRatePpm('50.0001').ok).toBe(false);
+    expect(loanRatePpm('5.12345').ok).toBe(false);
+    expect(loanRatePpm('').ok).toBe(false);
   });
 
   it('labels a missing ratio with a dash', () => {

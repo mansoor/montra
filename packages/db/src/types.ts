@@ -176,7 +176,10 @@ export interface BankAccountTable {
   opening_date: CalendarDateCol | null;
   default_member_id: string | null;
   credit_limit_minor: Int8 | null;
+  /** Kept for older code (0096): the rate rounded half up to whole basis points. Read `interest_rate_ppm`. */
   interest_rate_bps: number | null;
+  /** 0096: the yearly rate in parts per million (1 = 0.0001%). Null with no rate; a trigger fills it from bps for old writers. */
+  interest_rate_ppm: number | null;
   statement_day: number | null;
   due_day: number | null;
   pay_from_account_id: string | null;
@@ -2653,7 +2656,10 @@ export interface LoanScheduleTable {
   loan_account_id: string;
   name: string;
   principal_minor: Int8;
+  /** Kept for older code (0096): the rate rounded half up to whole basis points. Read `rate_ppm`. */
   rate_bps: number;
+  /** 0096: the yearly rate in parts per million (1 = 0.0001%; 5.625% = 56250). Null only if written before 0096's backfill. */
+  rate_ppm: ColumnType<number | null, number | null | undefined, number | null>;
   term_months: number;
   first_payment_date: string;
   escrow_taxes_minor: Int8Default;

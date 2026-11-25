@@ -9,11 +9,14 @@ import {
   balanceHistoryDates,
   balanceRangeStart,
   balancesOn,
+  bpsToPpm,
   buildOpeningBalanceEntry,
   calendarDate,
   convert,
   decimalToString,
   naturalBalance,
+  ppmToBps,
+  ratePpmOf,
   todayIn,
   valueAtCarrying,
   type BalanceRange,
@@ -48,6 +51,28 @@ import {
 import { incomeCategory } from './income-categories.js';
 
 type Ctx = { workspaceId: string; userId: string };
+
+/**
+ * The rate's columns (migration 0096): ppm, read by new code, and bps rounded half up, still read by older API tasks and phone
+ * builds. Null clears both.
+ */
+export const rateColumns = (ppm: number | null) => ({
+  interest_rate_ppm: ppm,
+  interest_rate_bps: ppm === null ? null : ppmToBps(ppm),
+});
+
+/** The rate as the DTO gives it: exact in ppm, and rounded to bps for older clients. */
+const rateFields = (ppm: number | null) => ({
+  interestRateBps: ppm === null ? null : ppmToBps(ppm),
+  interestRatePpm: ppm,
+});
+
+/** The rate an update asks for, in ppm: undefined leaves it, null clears it. ppm wins over bps when both are sent. */
+function requestedRatePpm(req: UpdateAccountRequest): number | null | undefined {
+  if (req.interestRatePpm !== undefined) return req.interestRatePpm;
+  if (req.interestRateBps === undefined) return undefined;
+  return req.interestRateBps === null ? null : bpsToPpm(req.interestRateBps);
+}
 
 @Injectable()
 export class AccountsService {
@@ -309,7 +334,7 @@ export class AccountsService {
           employer_id: req.employerId ?? null,
           employer_contributions: req.employerContributions ?? false,
           credit_limit_minor: req.creditLimit ?? null,
-          interest_rate_bps: req.interestRateBps ?? null,
+          ...rateColumns(ratePpmOf(req.interestRatePpm, req.interestRateBps)),
           min_payment_minor: req.minPayment ?? null,
           ...(req.lowBalance !== undefined ? { low_balance_minor: req.lowBalance } : {}),
         })
@@ -369,6 +394,7 @@ export class AccountsService {
           'b.default_member_id',
           'b.credit_limit_minor',
           'b.interest_rate_bps',
+          'b.interest_rate_ppm',
           'b.min_payment_minor',
           'b.low_balance_minor',
           'b.plan_type',
@@ -450,7 +476,7 @@ export class AccountsService {
         },
         planning: {
           creditLimit: r.credit_limit_minor !== null ? String(r.credit_limit_minor) : null,
-          interestRateBps: r.interest_rate_bps,
+          ...rateFields(ratePpmOf(r.interest_rate_ppm, r.interest_rate_bps)),
           minPayment: r.min_payment_minor !== null ? String(r.min_payment_minor) : null,
           lowBalance: String(r.low_balance_minor),
         },
@@ -545,7 +571,8 @@ export class AccountsService {
   async update(ctx: Ctx, accountId: string, req: UpdateAccountRequest): Promise<AccountDto> {
     await this.db.run(ctx, async (trx) => {
       await this.ledger.accountRef(trx, ctx.workspaceId, accountId);
-      if (req.interestRateBps !== undefined || req.minPayment !== undefined) {
+      const ratePpm = requestedRatePpm(req);
+      if (ratePpm !== undefined || req.minPayment !== undefined) {
         const tracked = await trx
           .selectFrom('app.loan_schedule')
           .select('id')
@@ -577,7 +604,7 @@ export class AccountsService {
         ...(await this.accountNumberChange(trx, ctx, accountId, req)),
         ...(req.defaultMemberId !== undefined ? { default_member_id: req.defaultMemberId } : {}),
         ...(req.creditLimit !== undefined ? { credit_limit_minor: req.creditLimit } : {}),
-        ...(req.interestRateBps !== undefined ? { interest_rate_bps: req.interestRateBps } : {}),
+        ...(ratePpm !== undefined ? rateColumns(ratePpm) : {}),
         ...(req.minPayment !== undefined ? { min_payment_minor: req.minPayment } : {}),
         ...(req.lowBalance !== undefined ? { low_balance_minor: req.lowBalance } : {}),
         ...(req.planType !== undefined ? { plan_type: req.planType } : {}),

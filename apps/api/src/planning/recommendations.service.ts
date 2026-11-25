@@ -406,7 +406,7 @@ export class RecommendationsService {
               goalId: g.id,
               categoryId: g.categoryId,
               accountId: d.accountId,
-              rateBps: d.rateBps,
+              ratePpm: d.ratePpm,
               balance: BigInt(d.balance),
             })),
           ),

@@ -123,7 +123,13 @@ describe('view models', () => {
     loanAccountId: null,
     dueDate: null,
     cycle: { statementDay: null, dueDay: null, payFromAccountId: null, payRule: null, payFixed: null },
-    planning: { creditLimit: null, interestRateBps: null, minPayment: null, lowBalance: '0' },
+    planning: {
+      creditLimit: null,
+      interestRateBps: null,
+      interestRatePpm: null,
+      minPayment: null,
+      lowBalance: '0',
+    },
   });
 
   it('computes net position per currency (assets minus liabilities)', () => {

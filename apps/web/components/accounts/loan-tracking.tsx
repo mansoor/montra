@@ -8,6 +8,7 @@ import {
   calendarDate,
   monthlyPayment,
   percentToBps,
+  percentToPpm,
   type AccountKind,
 } from '@montra/domain';
 import type { AccountDto } from '@montra/api-client';
@@ -64,7 +65,8 @@ export interface LoanTermsInput {
   startDate: string;
   firstPaymentDate: string;
   principal: string;
-  rateBps: number;
+  /** The yearly rate in parts per million: up to four decimals of a percent (migration 0096). */
+  ratePpm: number;
   termMonths: number;
   payingAccountId?: string;
   paymentAmount?: string;
@@ -115,8 +117,8 @@ export function readLoanTerms(
   const paymentAmount = minor('paymentAmount', s.payment);
   const escrowTaxes = minor('escrowTaxes', s.taxes);
   const escrowInsurance = minor('escrowInsurance', s.insurance);
-  const rateBps = percentToBps(s.rate);
-  if (rateBps === null || rateBps > 5000) fields.rate = t('account.loan.rate_invalid');
+  const ratePpm = percentToPpm(s.rate, 50);
+  if (ratePpm === null) fields.rate = t('account.loan.rate_invalid');
   const term = Number(s.termValue);
   const termMonths = s.termUnit === 'years' ? term * 12 : term;
   if (!Number.isInteger(termMonths) || termMonths < 1 || termMonths > 600)
@@ -140,7 +142,7 @@ export function readLoanTerms(
       startDate: s.start,
       firstPaymentDate: s.first,
       principal: principal!,
-      rateBps: rateBps!,
+      ratePpm: ratePpm!,
       termMonths,
       payingAccountId: s.paying || undefined,
       paymentAmount,
@@ -175,11 +177,11 @@ export function LoanTermsFields({
   const set = (patch: Partial<LoanTermsState>) => onChange({ ...value, ...patch });
   const preview = (() => {
     const principal = parseAmountInput(value.principal, currency, locale);
-    const bps = percentToBps(value.rate);
+    const ppm = percentToPpm(value.rate, 50);
     const term = Number(value.termValue) * (value.termUnit === 'years' ? 12 : 1);
-    if (!principal.ok || principal.minor <= 0n || bps === null || bps > 5000) return null;
+    if (!principal.ok || principal.minor <= 0n || ppm === null) return null;
     if (!Number.isInteger(term) || term < 1 || term > 600) return null;
-    return monthlyPayment({ principal: principal.minor, rateBps: bps, termMonths: term });
+    return monthlyPayment({ principal: principal.minor, ratePpm: ppm, termMonths: term });
   })();
   return (
     <div className="space-y-4" data-testid="loan-terms">
@@ -450,6 +452,7 @@ export function LateFeeFields({
 
 const LOAN_FIELDS: Record<string, string> = {
   rateBps: 'rate',
+  ratePpm: 'rate',
   termMonths: 'term',
   lateFeeBps: 'lateFeePercent',
 };

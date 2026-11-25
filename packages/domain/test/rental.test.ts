@@ -11,6 +11,7 @@ import {
   capRateBps,
   cashOnCashBps,
   dailyInterest,
+  divRound,
   inLoanMatchWindow,
   interestDays,
   loanLateFee,
@@ -256,13 +257,13 @@ describe('allocateShared', () => {
 });
 
 describe('monthlyPayment and amortize', () => {
-  const loan = { principal: 20000000n, rateBps: 600, termMonths: 360 };
+  const loan = { principal: 20000000n, ratePpm: 60000, termMonths: 360 };
 
   it('matches the published payment for a 30-year loan', () => {
     // $200,000 at 6% over 30 years is $1,199.10 a month.
     expect(monthlyPayment(loan)).toBe(119910n);
     // $100,000 at 4.5% over 15 years is $764.99.
-    expect(monthlyPayment({ principal: 10000000n, rateBps: 450, termMonths: 180 })).toBe(76499n);
+    expect(monthlyPayment({ principal: 10000000n, ratePpm: 45000, termMonths: 180 })).toBe(76499n);
   });
 
   it('splits the first payment into interest and principal', () => {
@@ -274,8 +275,8 @@ describe('monthlyPayment and amortize', () => {
   it('pays off exactly, however the rounding fell', () => {
     for (const l of [
       loan,
-      { principal: 12345678n, rateBps: 725, termMonths: 240 },
-      { principal: 100n, rateBps: 300, termMonths: 7 },
+      { principal: 12345678n, ratePpm: 72500, termMonths: 240 },
+      { principal: 100n, ratePpm: 30000, termMonths: 7 },
     ]) {
       const rows = amortize(l, d('2026-01-31'));
       expect(rows.reduce((t, r) => t + r.principal, 0n)).toBe(l.principal);
@@ -285,7 +286,7 @@ describe('monthlyPayment and amortize', () => {
   });
 
   it('handles a zero rate', () => {
-    const rows = amortize({ principal: 1000n, rateBps: 0, termMonths: 3 }, d('2026-01-01'));
+    const rows = amortize({ principal: 1000n, ratePpm: 0, termMonths: 3 }, d('2026-01-01'));
     expect(rows.map((r) => r.principal)).toEqual([334n, 334n, 332n]);
     expect(rows.every((r) => r.interest === 0n)).toBe(true);
   });
@@ -378,10 +379,10 @@ describe('leaseExpiryWindow', () => {
 
 describe('projectLoan (ADR-0024)', () => {
   const first = '2026-01-15' as CalendarDate;
-  const terms = { principal: 20000000n, rateBps: 600, termMonths: 360 };
+  const terms = { principal: 20000000n, ratePpm: 60000, termMonths: 360 };
   const base = {
     balance: terms.principal,
-    rateBps: 600,
+    ratePpm: 60000,
     payment: monthlyPayment(terms),
     firstPayment: first,
     termMonths: 360,
@@ -429,12 +430,12 @@ describe('projectLoan (ADR-0024)', () => {
     fc.assert(
       fc.property(
         fc.bigInt({ min: 1n, max: 10n ** 12n }),
-        fc.integer({ min: 0, max: 5000 }),
+        fc.integer({ min: 0, max: 500_000 }),
         fc.integer({ min: 1, max: 600 }),
         fc.bigInt({ min: 1n, max: 10n ** 11n }),
         fc.integer({ min: 0, max: 700 }),
-        (balance, rateBps, termMonths, payment, before) => {
-          const rows = projectLoan({ balance, rateBps, payment, firstPayment: first, termMonths, before });
+        (balance, ratePpm, termMonths, payment, before) => {
+          const rows = projectLoan({ balance, ratePpm, payment, firstPayment: first, termMonths, before });
           expect(rows.reduce((t, r) => t + r.principal, 0n)).toBe(balance);
           expect(rows[rows.length - 1]!.balance).toBe(0n);
           expect(rows.every((r) => r.principal >= 0n && r.interest >= 0n)).toBe(true);
@@ -451,7 +452,7 @@ describe('daily simple interest (ADR-0024 §13)', () => {
   const first = d('2025-10-27');
   const daily = {
     balance: 1500000n,
-    rateBps: 756,
+    ratePpm: 75600,
     payment: 30100n,
     firstPayment: first,
     termMonths: 60,
@@ -467,13 +468,13 @@ describe('daily simple interest (ADR-0024 §13)', () => {
 
   it('charges balance × rate × days ÷ 365, half up to the cent', () => {
     // 29 days: 9,009.86 cents; 30 days: 9,320.55 cents.
-    expect(dailyInterest(1500000n, 756, 29)).toBe(9010n);
-    expect(dailyInterest(1500000n, 756, 30)).toBe(9321n);
-    expect(dailyInterest(1500000n, 756, 0)).toBe(0n);
-    expect(dailyInterest(0n, 756, 30)).toBe(0n);
-    // Exactly half a cent rounds up: 365 × 10,000 ÷ 2 at 1 bps for one day.
-    expect(dailyInterest(1825000n, 1, 1)).toBe(1n);
-    expect(dailyInterest(1824999n, 1, 1)).toBe(0n);
+    expect(dailyInterest(1500000n, 75600, 29)).toBe(9010n);
+    expect(dailyInterest(1500000n, 75600, 30)).toBe(9321n);
+    expect(dailyInterest(1500000n, 75600, 0)).toBe(0n);
+    expect(dailyInterest(0n, 75600, 30)).toBe(0n);
+    // Exactly half a cent rounds up: 365 × 10,000 ÷ 2 at 1 bps (100 ppm) for one day.
+    expect(dailyInterest(1825000n, 100, 1)).toBe(1n);
+    expect(dailyInterest(1824999n, 100, 1)).toBe(0n);
   });
 
   it('runs the first payment from the start date to its due date', () => {
@@ -493,22 +494,24 @@ describe('daily simple interest (ADR-0024 §13)', () => {
     // 27 Dec → 27 Jan: 31 days; 27 Jan → 27 Feb: 31 days; 27 Feb → 27 Mar: 28 days.
     const [jan, feb, mar] = rows;
     expect(jan).toMatchObject({ number: 4, date: '2026-01-27', from: '2025-12-27' });
-    expect(jan!.interest).toBe(dailyInterest(1500000n, 756, 31));
+    expect(jan!.interest).toBe(dailyInterest(1500000n, 75600, 31));
     expect(feb!.from).toBe('2026-01-27');
-    expect(feb!.interest).toBe(dailyInterest(jan!.balance, 756, 31));
+    expect(feb!.interest).toBe(dailyInterest(jan!.balance, 75600, 31));
     expect(mar!.from).toBe('2026-02-27');
-    expect(mar!.interest).toBe(dailyInterest(feb!.balance, 756, 28));
+    expect(mar!.interest).toBe(dailyInterest(feb!.balance, 75600, 28));
     expect(mar!.interest).toBeLessThan(feb!.interest);
   });
 
   it('falls back to the due date before when nothing says where interest runs from', () => {
     const [row] = projectLoan({ ...daily, accruesFrom: undefined, before: 5 });
     expect(row).toMatchObject({ number: 6, from: '2026-02-27', date: '2026-03-27' });
-    expect(row!.interest).toBe(dailyInterest(1500000n, 756, 28));
+    expect(row!.interest).toBe(dailyInterest(1500000n, 75600, 28));
   });
 
   it('keeps the payment level, and the last one clears what’s left', () => {
-    const rows = amortize({ principal: 1500000n, rateBps: 756, termMonths: 60 }, first, { startDate: start });
+    const rows = amortize({ principal: 1500000n, ratePpm: 75600, termMonths: 60 }, first, {
+      startDate: start,
+    });
     expect(rows).toHaveLength(60);
     expect(rows.slice(0, -1).every((r) => r.payment === rows[0]!.payment)).toBe(true);
     expect(rows[59]!.balance).toBe(0n);
@@ -527,12 +530,12 @@ describe('daily simple interest (ADR-0024 §13)', () => {
     fc.assert(
       fc.property(
         fc.bigInt({ min: 1n, max: 10n ** 12n }),
-        fc.integer({ min: 0, max: 5000 }),
+        fc.integer({ min: 0, max: 500_000 }),
         fc.integer({ min: 1, max: 600 }),
         fc.bigInt({ min: 1n, max: 10n ** 11n }),
         fc.integer({ min: 0, max: 700 }),
-        (balance, rateBps, termMonths, payment, before) => {
-          const rows = projectLoan({ ...daily, balance, rateBps, payment, termMonths, before });
+        (balance, ratePpm, termMonths, payment, before) => {
+          const rows = projectLoan({ ...daily, balance, ratePpm, payment, termMonths, before });
           expect(rows.reduce((t, r) => t + r.principal, 0n)).toBe(balance);
           expect(rows[rows.length - 1]!.balance).toBe(0n);
           expect(rows.every((r) => r.principal >= 0n && r.interest >= 0n)).toBe(true);
@@ -540,6 +543,78 @@ describe('daily simple interest (ADR-0024 §13)', () => {
       ),
       { numRuns: 200 },
     );
+  });
+});
+
+describe('rates to a ten-thousandth of a percent (migration 0096)', () => {
+  // What the math was in basis points before 0096, kept here to prove whole-bp rates come out the same.
+  const bpsPayment = (principal: bigint, bps: number, termMonths: number): bigint => {
+    const n = BigInt(termMonths);
+    if (bps === 0) return divRound(principal, n, 'ceil');
+    const growth = (120_000n + BigInt(bps)) ** n;
+    return divRound(principal * BigInt(bps) * growth, 120_000n * (growth - 120_000n ** n));
+  };
+  const bpsDaily = (balance: bigint, bps: number, days: number): bigint =>
+    balance <= 0n || days <= 0 ? 0n : divRound(balance * BigInt(bps) * BigInt(days), 3_650_000n);
+  const bpsMonthlyInterest = (balance: bigint, bps: number): bigint =>
+    divRound(balance * BigInt(bps), 120_000n);
+
+  it('gives the 7.56% car loan exactly what it gave in basis points', () => {
+    const car = { principal: 1500000n, ratePpm: 75600, termMonths: 60 };
+    // 300.9949… a month, half up to $301.00.
+    expect(monthlyPayment(car)).toBe(30100n);
+    expect(monthlyPayment(car)).toBe(bpsPayment(1500000n, 756, 60));
+    // 28 Sep → 27 Oct is 29 days: $90.10; 30 days: $93.21.
+    expect(dailyInterest(1500000n, 75600, 29)).toBe(9010n);
+    expect(dailyInterest(1500000n, 75600, 30)).toBe(9321n);
+  });
+
+  it('matches the basis-point math for every whole-bp rate', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 1n, max: 10n ** 12n }),
+        fc.integer({ min: 0, max: 5000 }),
+        fc.integer({ min: 1, max: 600 }),
+        fc.integer({ min: 0, max: 400 }),
+        (principal, bps, termMonths, days) => {
+          const ppm = bps * 100;
+          expect(monthlyPayment({ principal, ratePpm: ppm, termMonths })).toBe(
+            bpsPayment(principal, bps, termMonths),
+          );
+          expect(dailyInterest(principal, ppm, days)).toBe(bpsDaily(principal, bps, days));
+          const [row] = projectLoan({
+            balance: principal,
+            ratePpm: ppm,
+            payment: principal,
+            firstPayment: d('2026-01-01'),
+            termMonths,
+          });
+          expect(row!.interest).toBe(bpsMonthlyInterest(principal, bps));
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('prices a 5.625% 30-year $941,000 mortgage by the standard formula', () => {
+    // r = 5.625% ÷ 12 = 3/640 a month, so P·r·(1+r)^n / ((1+r)^n − 1) = P·3·643^n / (640·(643^n − 640^n)), half up.
+    const principal = 94_100_000n;
+    const num = principal * 3n * 643n ** 360n;
+    const den = 640n * (643n ** 360n - 640n ** 360n);
+    const expected = (2n * num + den) / (2n * den);
+    const payment = monthlyPayment({ principal, ratePpm: 56_250, termMonths: 360 });
+    expect(payment).toBe(expected);
+    expect(payment > 541_690n && payment < 541_700n).toBe(true); // about $5,416.9x
+    const rows = amortize({ principal, ratePpm: 56_250, termMonths: 360 }, d('2027-01-01'));
+    // The first month's interest: 941,000 × 5.625% ÷ 12 = 4,410.9375, half up.
+    expect(rows[0]!.interest).toBe(441094n);
+    expect(rows).toHaveLength(360);
+    expect(rows.at(-1)!.balance).toBe(0n);
+  });
+
+  it('accrues a sixteenth-of-a-percent rate by the day', () => {
+    // $10,000 at 6.4375% for 30 days: 10,000 × 0.064375 × 30 ÷ 365 = 52.9109…
+    expect(dailyInterest(1_000_000n, 64_375, 30)).toBe(5291n);
   });
 });
 
