@@ -3407,6 +3407,19 @@ Phase 11 leftovers:
     `rate-precision.test.ts` (ppm in and out, old clients' bps, ppm winning, re-levelling, the trigger for old writers, a
     null ppm, accounts, debt payoff); web `loans.test.ts`, `rentals.test.ts`; e2e `loans.spec.ts` (a rate change to
     6.875%).
+- **The app's own confirmation dialog, for deleting an account** (ACC-14, ACC-16; no migration). Owner's request.
+  - `ConfirmDialog` in `apps/web/components/ui/confirm-dialog.tsx`: a native `<dialog>` opened with `showModal()`
+    (`role="alertdialog"`, labelled by its title and described by its body), so the browser traps focus and Esc cancels.
+    Props: title, body, confirm and cancel labels, `danger` (a red `btn-danger` confirm, and focus starts on Cancel so
+    Enter can't confirm by accident) and `busy` (both buttons disabled, Esc ignored). Focus goes back to whatever opened
+    it. `useConfirm()` gives `confirm({...}) => Promise<boolean>` plus the element to render, so a `window.confirm` call
+    site switches with a one-line change; with `action`, the dialog stays open and busy while it runs.
+  - Used for deleting an account (Settings → Accounts: "Delete this account?", the existing wording as the body, a red
+    "Delete account") and for removing the full account number. The other `window.confirm` calls (about 32, in
+    transactions, trash, rules, receipts, payroll, the vault, sharing and more) are unchanged, for the owner to decide.
+  - Tests: web `confirm-dialog.test.tsx` (jsdom, now a web dev dependency: focus on Cancel, cancel, confirm, Esc, busy,
+    focus returned, the promise helper and its action); e2e `accounts.spec.ts` (Enter on the default Cancel keeps the
+    account, Esc, 360 px, axe in light and dark, then the red button deletes it).
 
 ---
 

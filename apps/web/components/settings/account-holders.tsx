@@ -11,6 +11,7 @@ import {
 } from '@/lib/account-holders';
 import { browserApi } from '@/lib/browser-api';
 import { RevealValue } from '../payroll/reveal';
+import { useConfirm } from '../ui/confirm-dialog';
 import { StatusLine, useAction } from '../use-action';
 
 /**
@@ -127,6 +128,7 @@ export function AccountNumberPanel({
   canManage: boolean;
 }) {
   const { busy, message, setMessage, run, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const [typed, setTyped] = useState('');
   const id = account.id;
 
@@ -182,13 +184,19 @@ export function AccountNumberPanel({
                 type="button"
                 className="btn-secondary"
                 disabled={busy}
-                onClick={() => {
-                  if (!window.confirm(t('accounts.number_remove_confirm'))) return;
-                  void run(
-                    () => browserApi.updateAccount(workspaceId, id, { accountNumber: null }),
-                    t('accounts.number_removed'),
-                  );
-                }}
+                onClick={() =>
+                  void confirm({
+                    title: t('accounts.number_remove_title'),
+                    body: <p>{t('accounts.number_remove_confirm')}</p>,
+                    confirmLabel: t('accounts.number_remove'),
+                    danger: true,
+                    action: () =>
+                      run(
+                        () => browserApi.updateAccount(workspaceId, id, { accountNumber: null }),
+                        t('accounts.number_removed'),
+                      ),
+                  })
+                }
               >
                 {t('accounts.number_remove')}
               </button>
@@ -197,6 +205,7 @@ export function AccountNumberPanel({
         )}
         <StatusLine message={message} />
       </div>
+      {dialog}
     </details>
   );
 }

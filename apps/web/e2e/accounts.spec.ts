@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import pg from 'pg';
 import { nav, onboardHousehold } from './phase3-helpers';
@@ -203,4 +204,58 @@ test('each account type asks for and shows what it has', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Wallet' })).toBeVisible();
   await expect(page.getByTestId('balance-history')).toContainText('more than one day of history');
   await expect(page.getByTestId('account-facts')).toContainText('low-balance warning');
+});
+
+/** ACC-14: deleting an account asks first, in the app's own dialog rather than the browser's. */
+test('deleting an account asks in a dialog that defaults to Cancel', async ({ page }) => {
+  test.setTimeout(90_000);
+  await onboardHousehold(page, `account-delete-${Date.now()}@example.com`, 'Joint checking');
+  const workspaceId = new URL(page.url()).pathname.split('/')[2]!;
+  const res = await page.request.post(`/api/v1/workspaces/${workspaceId}/accounts`, {
+    data: { name: 'Spare wallet', kind: 'cash' },
+  });
+  expect(res.status()).toBe(201);
+  await page.goto(`/w/${workspaceId}/settings?tab=accounts`);
+  const card = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('heading', { name: 'Spare wallet' }) });
+  const remove = card.getByRole('button', { name: 'Delete', exact: true });
+  const dialog = page.getByRole('alertdialog', { name: 'Delete this account?' });
+
+  // Focus starts on Cancel, so Enter keeps the account, and focus goes back to the button.
+  await remove.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Delete “Spare wallet”? Its opening balance and settings go with it.');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect(remove).toBeFocused();
+
+  // Esc cancels too.
+  await remove.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(card).toBeVisible();
+
+  // It fits a phone and passes the automated WCAG checks in both themes.
+  await page.setViewportSize({ width: 360, height: 760 });
+  await remove.click();
+  const box = (await dialog.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(360);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    const { violations } = await new AxeBuilder({ page })
+      .include('dialog')
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+      .analyze();
+    expect(violations.map((v) => `${colorScheme}: ${v.id}`)).toEqual([]);
+  }
+
+  // The red button deletes it.
+  await expect(dialog.getByRole('button', { name: 'Delete account' })).toHaveClass(/btn-danger/);
+  await dialog.getByRole('button', { name: 'Delete account' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Spare wallet' })).toHaveCount(0);
 });
