@@ -21,9 +21,10 @@ import {
   isOverdue,
   loanPayingAccounts,
   loanPaymentDate,
+  loanSuggestedLateFee,
   type AccountSections,
 } from '../features/accounts';
-import { parseAssigned } from '../features/planning';
+import { assignedInput, parseAssigned } from '../features/planning';
 import { fmtDate, fmtMoney, t } from '../i18n';
 import { Banner, Body, Button, Card, Field, Row, Segmented, Small, Title, useToast } from './components';
 import { useTheme } from './theme';
@@ -311,10 +312,16 @@ function LoanCard({
   const [from, setFrom] = useState('');
   const [dateInput, setDateInput] = useState<string | null>(null);
   const [extra, setExtra] = useState('');
+  // The lender's own split (blank: Montra's), and a late fee suggested once past the grace period (ADR-0024 §13, §14).
+  const [lenderPrincipal, setLenderPrincipal] = useState('');
+  const [lenderInterest, setLenderInterest] = useState('');
+  const [feeInput, setFeeInput] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const accountId = from || paying[0]?.id || '';
   const date = dateInput ?? (next ? loanPaymentDate(next, today) : today);
+  const suggestedFee = next ? loanSuggestedLateFee(loan, next, date.trim()) : 0n;
+  const fee = feeInput ?? (suggestedFee > 0n ? assignedInput(String(suggestedFee), ccy) : '');
   const upcoming = schedule.filter((r) => !r.transactionId).slice(0, UPCOMING_SHOWN);
   const overdue = next !== null && next.date < today;
 
@@ -327,7 +334,17 @@ function LoanCard({
       return setError(t('mobile.account.date_invalid'));
     }
     const extraMinor = parseAssigned(extra, ccy);
-    if (extraMinor === null) return setError(t('budget.amount_invalid'));
+    const feeMinor = parseAssigned(fee, ccy);
+    const split = lenderPrincipal.trim() !== '' || lenderInterest.trim() !== '';
+    const principalMinor = parseAssigned(lenderPrincipal, ccy);
+    const interestMinor = parseAssigned(lenderInterest, ccy);
+    if (
+      extraMinor === null ||
+      feeMinor === null ||
+      (split && (principalMinor === null || interestMinor === null))
+    ) {
+      return setError(t('budget.amount_invalid'));
+    }
     setBusy(true);
     setError(null);
     try {
@@ -335,9 +352,18 @@ function LoanCard({
         number: next.number,
         accountId,
         date: day,
-        ...(BigInt(extraMinor) > 0n ? { extraPrincipal: extraMinor } : {}),
+        // The lender's principal already holds any extra.
+        ...(split
+          ? { principal: principalMinor!, interest: interestMinor! }
+          : BigInt(extraMinor) > 0n
+            ? { extraPrincipal: extraMinor }
+            : {}),
+        ...(BigInt(feeMinor) > 0n ? { lateFee: feeMinor } : {}),
       });
       setExtra('');
+      setLenderPrincipal('');
+      setLenderInterest('');
+      setFeeInput(null);
       setDateInput(null);
       toast.show(t('account.loan.recorded'));
       onChanged();
@@ -366,12 +392,51 @@ function LoanCard({
               {`${t('account.loan.principal')} ${fmtMoney(next.principal, ccy)} · ${t('account.loan.interest')} ${fmtMoney(next.interest, ccy)}`}
               {BigInt(next.escrow) > 0n ? ` · ${t('account.loan.escrow')} ${fmtMoney(next.escrow, ccy)}` : ''}
             </Small>
+            {next.late ? (
+              <Small color={th.danger}>
+                {BigInt(next.lateFee) > 0n
+                  ? t('account.loan.late_fee_note', { amount: fmtMoney(next.lateFee, ccy) })
+                  : t('account.loan.late_note')}
+              </Small>
+            ) : null}
           </>
         ) : (
           <Body style={{ fontWeight: '600' }}>{t('account.loan.paid_off')}</Body>
         )}
         <Fact label={t('account.interest_rate')} value={`${bpsToPercent(loan.rateBps)}%`} />
         <Fact label={t('account.loan.monthly')} value={fmtMoney(loan.totalPayment, ccy)} />
+        <Fact
+          label={t('account.loan.interest_method')}
+          value={
+            loan.interestMethod === 'daily'
+              ? t('account.loan.method_daily_short')
+              : t('account.loan.method_monthly_short')
+          }
+          testID="account-loan-method"
+        />
+        {loan.graceDays > 0 ? (
+          <Fact
+            label={t('account.loan.grace_days')}
+            value={String(loan.graceDays)}
+            testID="account-loan-grace"
+          />
+        ) : null}
+        {loan.lateFee !== null || loan.lateFeeBps !== null ? (
+          <Fact
+            label={t('account.loan.late_fee')}
+            value={
+              loan.lateFee !== null && loan.lateFeeBps !== null
+                ? t('account.loan.late_fee_greater', {
+                    amount: fmtMoney(loan.lateFee, ccy),
+                    percent: bpsToPercent(loan.lateFeeBps),
+                  })
+                : loan.lateFee !== null
+                  ? fmtMoney(loan.lateFee, ccy)
+                  : t('account.loan.late_fee_percent_of', { percent: bpsToPercent(loan.lateFeeBps!) })
+            }
+            testID="account-loan-late-fee"
+          />
+        ) : null}
         {loan.payoffDate ? (
           <Fact label={t('account.loan.payoff')} value={fmtDate(loan.payoffDate)} testID="account-payoff" />
         ) : null}
@@ -405,6 +470,27 @@ function LoanCard({
                 label={t('account.loan.extra')}
                 value={extra}
                 onChangeText={setExtra}
+                keyboardType="decimal-pad"
+              />
+              <Field
+                label={t('account.loan.late_fee')}
+                value={fee}
+                onChangeText={setFeeInput}
+                keyboardType="decimal-pad"
+              />
+              <Small>{t('account.loan.lender_split_hint')}</Small>
+              <Field
+                label={`${t('account.loan.lender_split')}: ${t('account.loan.principal')}`}
+                value={lenderPrincipal}
+                onChangeText={setLenderPrincipal}
+                placeholder={assignedInput(next.principal, ccy)}
+                keyboardType="decimal-pad"
+              />
+              <Field
+                label={`${t('account.loan.lender_split')}: ${t('account.loan.interest')}`}
+                value={lenderInterest}
+                onChangeText={setLenderInterest}
+                placeholder={assignedInput(next.interest, ccy)}
                 keyboardType="decimal-pad"
               />
               <Button
