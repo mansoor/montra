@@ -10,6 +10,7 @@ import { LoanPanel } from '@/components/accounts/loan-panel';
 import { MoveBooks } from '@/components/accounts/move-books';
 import { TrackLoanForm } from '@/components/accounts/loan-tracking';
 import { holdersLine } from '@/lib/account-holders';
+import { PAYOFF_RANGE } from '@/lib/loan-charts';
 import { load } from '@/lib/server-api';
 import { Money } from '@/components/money';
 import { DateText } from '@/components/i18n';
@@ -27,9 +28,13 @@ export default async function RegisterPage({
   const { workspaceId, accountId } = await params;
   const query = await searchParams;
   const view = query.view === 'simple' ? 'simple' : 'ledger';
-  const range = (BALANCE_RANGES as readonly string[]).includes(query.range ?? '')
-    ? (query.range as BalanceRange)
-    : '1y';
+  // A tracked loan's "To payoff" draws the whole history, then the schedule on to payoff.
+  const toPayoff = query.range === PAYOFF_RANGE;
+  const range: BalanceRange = toPayoff
+    ? 'all'
+    : (BALANCE_RANGES as readonly string[]).includes(query.range ?? '')
+      ? (query.range as BalanceRange)
+      : '1y';
   const [[workspace, accounts, register, history], { t, date }] = await Promise.all([
     load((api) =>
       Promise.all([
@@ -135,7 +140,7 @@ export default async function RegisterPage({
           {(['ledger', 'simple'] as const).map((v) => (
             <Link
               key={v}
-              href={`${base}?view=${v}&range=${range}`}
+              href={`${base}?view=${v}&range=${toPayoff ? PAYOFF_RANGE : range}`}
               aria-current={view === v ? 'true' : undefined}
             >
               {v === 'ledger' ? t('register.view_ledger') : t('register.view_simple')}
@@ -176,6 +181,7 @@ export default async function RegisterPage({
           history={history}
           href={(r) => `${base}?view=${view}&range=${r}`}
           t={t}
+          payoff={loan ? { loan, rows: schedule, today, selected: toPayoff } : null}
         />
       )}
       {valued && (

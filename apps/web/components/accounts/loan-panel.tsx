@@ -8,6 +8,7 @@ import { browserApi } from '@/lib/browser-api';
 import { expectedSplit, ordinalCategory, suggestedLateFee, type InterestMethod } from '@/lib/loans';
 import { minorToInput, parseAmountInput } from '@/lib/money';
 import { LateFeeFields, readGraceDays, readLateFeeBps } from './loan-tracking';
+import { PaidSoFar, ScheduleSection } from './loan-charts';
 import { Field } from '../field';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
@@ -384,19 +385,26 @@ export function LoanPanel({
         </dl>
       </section>
 
+      <PaidSoFar loan={loan} />
+
       {rows.length > 0 && (
-        <section className="card space-y-3 p-0" data-testid="loan-schedule">
-          <h2 className="px-4 pt-4 text-sm font-semibold">{t('account.loan.schedule')}</h2>
-          {table([...recorded, ...upcoming.slice(0, UPCOMING_SHOWN)], 'loan-schedule-table')}
-          {upcoming.length > UPCOMING_SHOWN && (
-            <details className="px-4 pb-4">
-              <summary className="cursor-pointer text-sm underline">
-                {t('account.loan.show_all', { count: upcoming.length - UPCOMING_SHOWN })}
-              </summary>
-              <div className="mt-2">{table(upcoming.slice(UPCOMING_SHOWN), 'loan-schedule-rest')}</div>
-            </details>
-          )}
-        </section>
+        <ScheduleSection
+          loan={loan}
+          rows={rows}
+          table={
+            <>
+              {table([...recorded, ...upcoming.slice(0, UPCOMING_SHOWN)], 'loan-schedule-table')}
+              {upcoming.length > UPCOMING_SHOWN && (
+                <details className="px-4 pb-4">
+                  <summary className="cursor-pointer text-sm underline">
+                    {t('account.loan.show_all', { count: upcoming.length - UPCOMING_SHOWN })}
+                  </summary>
+                  <div className="mt-2">{table(upcoming.slice(UPCOMING_SHOWN), 'loan-schedule-rest')}</div>
+                </details>
+              )}
+            </>
+          }
+        />
       )}
 
       <LoanSettings workspaceId={workspaceId} loan={loan} paying={paying} />
