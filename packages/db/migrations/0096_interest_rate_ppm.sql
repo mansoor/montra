@@ -45,6 +45,8 @@ begin
 end;
 $$;
 
+revoke all on function app.loan_schedule_rate_ppm() from public;
+
 create trigger loan_schedule_rate_ppm before insert or update on app.loan_schedule
   for each row execute function app.loan_schedule_rate_ppm();
 
@@ -62,6 +64,8 @@ begin
   return new;
 end;
 $$;
+
+revoke all on function app.bank_account_rate_ppm() from public;
 
 create trigger bank_account_rate_ppm before insert or update on app.bank_account
   for each row execute function app.bank_account_rate_ppm();
