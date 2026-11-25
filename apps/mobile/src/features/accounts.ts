@@ -5,6 +5,7 @@
  */
 import {
   accountProfile,
+  loanPaymentLate,
   summarizeAccounts,
   withOtherAssets,
   type AccountsSummary,
@@ -90,6 +91,21 @@ export const loanPaymentDate = (
   next: Pick<NonNullable<LoanDto['next']>, 'date'>,
   today: CalendarDate,
 ): string => (next.date < today ? next.date : today);
+
+/**
+ * The late fee to suggest for paying the next payment on `date` (ADR-0024 §14): the fee the server worked out from the
+ * loan's terms, once the date is past the grace period; 0 before.
+ */
+export function loanSuggestedLateFee(
+  loan: Pick<LoanDto, 'graceDays'>,
+  next: Pick<NonNullable<LoanDto['next']>, 'date' | 'lateFee'>,
+  date: string,
+): bigint {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 0n;
+  return loanPaymentLate(next.date as CalendarDate, date as CalendarDate, loan.graceDays)
+    ? BigInt(next.lateFee)
+    : 0n;
+}
 
 /** Past its date with something still owed. */
 export const isOverdue = (date: string | null, owed: string | bigint, today: CalendarDate): boolean =>

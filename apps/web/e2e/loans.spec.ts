@@ -121,6 +121,9 @@ test('a balance-only loan stays as it was, and can start tracking later', async 
 
   const track = page.getByTestId('track-loan');
   await track.locator('summary').click();
+  // A loan account starts on daily simple interest (ADR-0024 §13); this one is charged monthly.
+  await expect(track.getByLabel('How interest is charged')).toHaveValue('daily');
+  await track.getByLabel('How interest is charged').selectOption('monthly');
   await track.getByLabel('Original loan amount').fill('20000');
   await track.getByLabel('Interest rate %').fill('5');
   await track.getByLabel('First payment date').fill(inDays(5));

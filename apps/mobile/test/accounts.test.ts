@@ -10,6 +10,7 @@ import {
   isOverdue,
   loanPayingAccounts,
   loanPaymentDate,
+  loanSuggestedLateFee,
 } from '../src/features/accounts';
 
 const account = (over: Partial<AccountDto>): AccountDto =>
@@ -96,6 +97,13 @@ describe('dates', () => {
   it('dates a payment today unless it’s overdue', () => {
     expect(loanPaymentDate({ date: '2026-11-15' as never }, today)).toBe('2026-11-07');
     expect(loanPaymentDate({ date: '2026-11-01' as never }, today)).toBe('2026-11-01');
+  });
+
+  it('suggests a late fee only past the grace period', () => {
+    const next = { date: '2026-11-01', lateFee: '1505' } as never;
+    expect(loanSuggestedLateFee({ graceDays: 10 }, next, '2026-11-11')).toBe(0n);
+    expect(loanSuggestedLateFee({ graceDays: 10 }, next, '2026-11-12')).toBe(1505n);
+    expect(loanSuggestedLateFee({ graceDays: 10 }, next, 'soon')).toBe(0n);
   });
 
   it('is overdue only past its date with something owed', () => {

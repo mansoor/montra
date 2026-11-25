@@ -164,6 +164,8 @@ const DYNAMIC: Record<string, readonly string[]> = {
   'account.kind_help.': ACCOUNT_KINDS,
   'account.kind_example.': ACCOUNT_KINDS,
   'account.holder.': ['bank', 'issuer', 'lender', 'provider', 'creditor'],
+  // ADR-0024 §14: "Due the 27th".
+  'account.loan.ordinal_': ['one', 'two', 'few', 'other'],
   'account.plan.': PLAN_TYPES,
   'card.rule_': PAY_RULES,
   'card.choice_': ['due', 'minimum', 'other'],

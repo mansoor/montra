@@ -2663,6 +2663,13 @@ export interface LoanScheduleTable {
   payment_minor: Int8 | null;
   payments_before: ColumnType<number, number | undefined, number>;
   auto_record: ColumnType<boolean, boolean | undefined, boolean>;
+  /** 0095: how interest is charged (ADR-0024 §13). */
+  interest_method: ColumnType<'monthly' | 'daily', 'monthly' | 'daily' | undefined, 'monthly' | 'daily'>;
+  /** 0095: a payment more than this many days after its due date is late (ADR-0024 §14). */
+  grace_days: ColumnType<number, number | undefined, number>;
+  /** 0095: the late fee, fixed and as a percent of the scheduled payment; the greater of the two when both are set. */
+  late_fee_minor: Int8 | null;
+  late_fee_bps: number | null;
   archived_at: Date | null;
   version: Int8Default;
   created_at: Generated<Date>;
@@ -2681,6 +2688,8 @@ export interface LoanPaymentTable {
   interest_minor: Int8 | null;
   principal_minor: Int8 | null;
   escrow_minor: Int8 | null;
+  /** 0095: the late fee paid with this payment. */
+  late_fee_minor: Int8 | null;
   created_at: Generated<Date>;
 }
 
