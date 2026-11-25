@@ -199,6 +199,41 @@ export function percentToBps(input: string): number | null {
 export const bpsToPercent = (bps: number): string =>
   `${String((bps - (bps % 100)) / 100)}.${String(bps % 100).padStart(2, '0')}`;
 
+// ----- Interest rates to a ten-thousandth of a percent (ADR-0024 "Rate precision", migration 0096) -----------------
+
+/** Parts per million in one percent: 1 ppm = 0.0001%, so 5.625% = 56,250 ppm. */
+export const PPM_PER_PERCENT = 10_000;
+
+/**
+ * "5.625" to 56250 parts per million of the yearly rate. Parsed as text, never through a float. Returns null for anything that
+ * isn't a percentage from 0 to `maxPercent` (100 by default) with at most four decimals.
+ */
+export function percentToPpm(input: string, maxPercent = 100): number | null {
+  const m = /^(\d{1,3})(?:[.,](\d{1,4}))?$/.exec(input.trim());
+  if (!m) return null;
+  const ppm = Number(m[1]) * PPM_PER_PERCENT + Number((m[2] ?? '').padEnd(4, '0'));
+  return ppm <= maxPercent * PPM_PER_PERCENT ? ppm : null;
+}
+
+/** 56250 to "5.625", 75600 to "7.56", 60000 to "6": as many decimals as the rate has, up to four. */
+export function ppmToPercent(ppm: number): string {
+  const whole = String((ppm - (ppm % PPM_PER_PERCENT)) / PPM_PER_PERCENT);
+  const frac = String(ppm % PPM_PER_PERCENT)
+    .padStart(4, '0')
+    .replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : whole;
+}
+
+/** Whole basis points to ppm: 756 to 75600. */
+export const bpsToPpm = (bps: number): number => bps * 100;
+
+/** ppm to whole basis points, half up, for the older bps columns and clients: 56250 to 563. */
+export const ppmToBps = (ppm: number): number => (ppm + 50 - ((ppm + 50) % 100)) / 100;
+
+/** The rate in ppm from a row or DTO that may only have bps (written by older code). Null when neither is set. */
+export const ratePpmOf = (ppm: number | null | undefined, bps: number | null | undefined): number | null =>
+  ppm ?? (bps === null || bps === undefined ? null : bpsToPpm(bps));
+
 export const BALANCE_RANGES = ['3m', '6m', '1y', 'all'] as const;
 export type BalanceRange = (typeof BALANCE_RANGES)[number];
 

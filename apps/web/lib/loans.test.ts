@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { calendarDate } from '@montra/domain';
+import { initialLoanTerms, readLoanTerms } from '@/components/accounts/loan-tracking';
 import { defaultInterestMethod, expectedSplit, ordinalCategory, suggestedLateFee } from './loans';
 
 // $15,000 at 7.56%, $301 a month, financed 28 Sep with the first payment due 27 Oct (ADR-0024 §13).
 const daily = {
   interestMethod: 'daily' as const,
-  rateBps: 756,
+  ratePpm: 75600,
   payment: '30100',
   scheduledBalance: '1500000',
 };
@@ -45,6 +46,22 @@ describe('loan helpers', () => {
     });
   });
 
+  it('reads a rate to four decimals and sends it in ppm (migration 0096)', () => {
+    const t = (key: string) => key;
+    const terms = (rate: string) =>
+      readLoanTerms(
+        { ...initialLoanTerms('mortgage', '2026-11-24'), principal: '941000', rate },
+        'USD',
+        'en-US',
+        t,
+      );
+    expect(terms('5.625')).toMatchObject({ ok: true, value: { ratePpm: 56_250, termMonths: 360 } });
+    expect(terms('6.4375')).toMatchObject({ ok: true, value: { ratePpm: 64_375 } });
+    expect(terms('7.56')).toMatchObject({ ok: true, value: { ratePpm: 75_600 } });
+    expect(terms('5.12345')).toEqual({ ok: false, fields: { rate: 'account.loan.rate_invalid' } });
+    expect(terms('50.5')).toEqual({ ok: false, fields: { rate: 'account.loan.rate_invalid' } });
+  });
+
   it('suggests the late fee only past the grace period', () => {
     expect(suggestedLateFee({ graceDays: 10 }, next, '2025-11-06')).toBe(0n);
     expect(suggestedLateFee({ graceDays: 10 }, next, '2025-11-07')).toBe(1505n);
@@ -67,7 +84,7 @@ describe('loan helpers', () => {
   });
 });
 
-/** Daily interest at 7.56% on a balance for some days, half up: (b × 756 × days) ÷ 3,650,000. */
+/** Daily interest at 7.56% on a balance for some days, half up: (b × 756 × days) ÷ 3,650,000, as in basis points. */
 function dailyOn(balance: bigint, days: number): bigint {
   const n = balance * 756n * BigInt(days);
   const q = n / 3_650_000n;

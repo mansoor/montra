@@ -155,6 +155,8 @@ export const UpdateAccountRequest = z
       .regex(/^\d{1,19}$/)
       .nullable(),
     interestRateBps: z.number().int().min(0).max(10_000).nullable(),
+    /** The rate in parts per million (1 = 0.0001%), migration 0096. Wins over `interestRateBps` when both are sent. */
+    interestRatePpm: z.number().int().min(0).max(1_000_000).nullable(),
     minPayment: z
       .string()
       .regex(/^\d{1,19}$/)

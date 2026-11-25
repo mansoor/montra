@@ -10,6 +10,7 @@ import {
   accountProfile,
   amortize,
   asCurrencyCode,
+  bpsToPpm,
   calendarDate,
   compareDates,
   dailyInterest,
@@ -23,6 +24,7 @@ import {
   loanPaymentLate,
   monthlyPayment,
   paymentsOnOrBefore,
+  ppmToBps,
   projectLoan,
   todayIn,
   type AmortizationRow,
@@ -35,7 +37,7 @@ import type {
   LoanPaymentRequest,
   UpdateLoanRequest,
 } from '@montra/schemas';
-import { AccountsService } from '../accounts/accounts.service.js';
+import { AccountsService, rateColumns } from '../accounts/accounts.service.js';
 import { PaymentLinks } from '../business/payment-links.service.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { Db } from '../db/database.js';
@@ -46,9 +48,12 @@ import { categoryOnLine, SCH_E, type Ctx } from './shared.js';
 
 const iso = (v: unknown): CalendarDate => calendarDate(String(v).slice(0, 10));
 
+/** The loan's yearly rate in ppm (migration 0096); a row only older code wrote has bps alone. */
+const rateOf = (r: LoanRow): number => r.rate_ppm ?? bpsToPpm(r.rate_bps);
+
 const termsOf = (r: LoanRow) => ({
   principal: BigInt(r.principal_minor),
-  rateBps: r.rate_bps,
+  ratePpm: rateOf(r),
   termMonths: r.term_months,
 });
 
@@ -212,10 +217,12 @@ export class LoansService {
         ? paymentsOnOrBefore(req.firstPaymentDate, req.termMonths, req.balanceAsOf)
         : 0;
       const principal = BigInt(req.principal);
+      // ppm wins; an older client sends whole basis points (migration 0096). The schema requires one of the two.
+      const ratePpm = req.ratePpm ?? bpsToPpm(req.rateBps!);
       const level =
         req.paymentAmount !== undefined
           ? BigInt(req.paymentAmount)
-          : monthlyPayment({ principal, rateBps: req.rateBps, termMonths: req.termMonths });
+          : monthlyPayment({ principal, ratePpm, termMonths: req.termMonths });
 
       let loanAccountId = req.loanAccountId;
       if (req.newAccount) {
@@ -227,7 +234,7 @@ export class LoansService {
             ? principal
             : (projectLoan({
                 balance: principal,
-                rateBps: req.rateBps,
+                ratePpm,
                 payment: level,
                 firstPayment: req.firstPaymentDate,
                 termMonths: req.termMonths,
@@ -291,7 +298,8 @@ export class LoansService {
         name: req.name,
         start_date: req.startDate ?? null,
         principal_minor: req.principal,
-        rate_bps: req.rateBps,
+        rate_bps: ppmToBps(ratePpm),
+        rate_ppm: ratePpm,
         term_months: req.termMonths,
         first_payment_date: req.firstPaymentDate,
         escrow_taxes_minor: req.escrowTaxes,
@@ -333,7 +341,7 @@ export class LoansService {
   private async syncPlanning(trx: Trx, ctx: Ctx, r: LoanRow): Promise<void> {
     await trx
       .updateTable('app.bank_account')
-      .set({ interest_rate_bps: r.rate_bps, min_payment_minor: paymentOf(r) })
+      .set({ ...rateColumns(rateOf(r)), min_payment_minor: paymentOf(r) })
       .where('workspace_id', '=', ctx.workspaceId)
       .where('ledger_account_id', '=', r.loan_account_id)
       .execute();
@@ -375,14 +383,13 @@ export class LoansService {
         req.paymentAmount === null || req.paymentAmount === undefined
           ? req.paymentAmount
           : BigInt(req.paymentAmount);
-      if (req.rateBps !== undefined && req.rateBps !== r.rate_bps && req.paymentAmount === undefined) {
+      // ppm wins; an older client sends whole basis points (migration 0096).
+      const ratePpm = req.ratePpm ?? (req.rateBps !== undefined ? bpsToPpm(req.rateBps) : undefined);
+      if (ratePpm !== undefined && ratePpm !== rateOf(r) && req.paymentAmount === undefined) {
         const { balance, paid } = await this.state(trx, ctx, r);
         const last = paid.reduce((m, p) => (p.number > m ? p.number : m), r.payments_before);
         const left = Math.max(1, r.term_months - last);
-        payment =
-          balance > 0n
-            ? monthlyPayment({ principal: balance, rateBps: req.rateBps, termMonths: left })
-            : null;
+        payment = balance > 0n ? monthlyPayment({ principal: balance, ratePpm, termMonths: left }) : null;
       }
       const row = await trx
         .updateTable('app.loan_schedule')
@@ -391,7 +398,7 @@ export class LoansService {
           ...(req.escrowTaxes !== undefined ? { escrow_taxes_minor: req.escrowTaxes } : {}),
           ...(req.escrowInsurance !== undefined ? { escrow_insurance_minor: req.escrowInsurance } : {}),
           ...(req.archived !== undefined ? { archived_at: req.archived ? new Date() : null } : {}),
-          ...(req.rateBps !== undefined ? { rate_bps: req.rateBps } : {}),
+          ...(ratePpm !== undefined ? { rate_bps: ppmToBps(ratePpm), rate_ppm: ratePpm } : {}),
           ...(payment !== undefined ? { payment_minor: payment } : {}),
           ...(req.payingAccountId !== undefined ? { paying_account_id: req.payingAccountId } : {}),
           ...(req.autoRecord !== undefined ? { auto_record: req.autoRecord } : {}),
@@ -436,7 +443,7 @@ export class LoansService {
     const balance = owed === 0n && paid.length === 0 ? BigInt(r.principal_minor) : owed;
     const rows = projectLoan({
       balance: balance > 0n ? balance : 0n,
-      rateBps: r.rate_bps,
+      ratePpm: rateOf(r),
       payment: paymentOf(r),
       firstPayment: iso(r.first_payment_date),
       termMonths: r.term_months,
@@ -479,7 +486,8 @@ export class LoansService {
       startDate: r.start_date ? iso(r.start_date) : null,
       interestMethod: r.interest_method,
       principal: String(r.principal_minor),
-      rateBps: r.rate_bps,
+      rateBps: ppmToBps(rateOf(r)),
+      ratePpm: rateOf(r),
       termMonths: r.term_months,
       firstPaymentDate: iso(r.first_payment_date),
       escrowTaxes: String(r.escrow_taxes_minor),
@@ -746,7 +754,7 @@ export class LoansService {
     }
     // Daily: interest runs from the previous payment (or the start date) to the day this one is paid.
     const accrued = (paidOn: CalendarDate) =>
-      dailyInterest(owedBefore, r.rate_bps, interestDays(row.from ?? paidOn, paidOn));
+      dailyInterest(owedBefore, rateOf(r), interestDays(row.from ?? paidOn, paidOn));
     let interest = row.interest;
     let principal = row.principal;
     let lateFee = 0n;

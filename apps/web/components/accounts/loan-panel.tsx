@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { bpsToPercent, percentToBps, accountProfile } from '@montra/domain';
+import { bpsToPercent, percentToPpm, ppmToPercent, accountProfile } from '@montra/domain';
 import type { AccountDto, AmortizationRowDto, LoanDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { expectedSplit, ordinalCategory, suggestedLateFee, type InterestMethod } from '@/lib/loans';
@@ -335,7 +335,7 @@ export function LoanPanel({
         >
           <div data-testid="loan-rate">
             <dt className="text-muted">{t('account.interest_rate')}</dt>
-            <dd className="font-medium">{`${bpsToPercent(loan.rateBps)}%`}</dd>
+            <dd className="font-medium">{`${ppmToPercent(loan.ratePpm)}%`}</dd>
           </div>
           <div data-testid="loan-payment">
             <dt className="text-muted">{t('account.loan.monthly')}</dt>
@@ -424,7 +424,7 @@ function LoanSettings({
   const { t, locale } = useI18n();
   const { run, busy, message, setMessage } = useAction();
   const ccy = loan.currency;
-  const [rate, setRate] = useState(bpsToPercent(loan.rateBps));
+  const [rate, setRate] = useState(ppmToPercent(loan.ratePpm));
   const [payment, setPayment] = useState(minorToInput(BigInt(loan.payment), ccy));
   const [from, setFrom] = useState(loan.payingAccountId ?? '');
   const [auto, setAuto] = useState(loan.autoRecord);
@@ -447,9 +447,8 @@ function LoanSettings({
         aria-label={t('account.loan.settings')}
         onSubmit={(e) => {
           e.preventDefault();
-          const bps = percentToBps(rate);
-          if (bps === null || bps > 5000)
-            return setMessage({ tone: 'bad', text: t('account.loan.rate_invalid') });
+          const ratePpm = percentToPpm(rate, 50);
+          if (ratePpm === null) return setMessage({ tone: 'bad', text: t('account.loan.rate_invalid') });
           const parsed = parseAmountInput(payment, ccy, locale);
           if (!parsed.ok || parsed.minor <= 0n)
             return setMessage({ tone: 'bad', text: t('budget.amount_invalid') });
@@ -474,7 +473,7 @@ function LoanSettings({
             () =>
               browserApi.updateLoan(workspaceId, loan.id, {
                 version: loan.version,
-                rateBps: bps,
+                ratePpm,
                 // A new rate re-levels the payment by itself, unless a new figure comes with it.
                 ...(paymentChanged ? { paymentAmount: parsed.minor.toString() } : {}),
                 payingAccountId: from || null,

@@ -5,7 +5,14 @@
  */
 import { useState } from 'react';
 import { View } from 'react-native';
-import { bpsToPercent, calendarDate, sharePercent, type CalendarDate } from '@montra/domain';
+import {
+  bpsToPercent,
+  calendarDate,
+  ppmToPercent,
+  ratePpmOf,
+  sharePercent,
+  type CalendarDate,
+} from '@montra/domain';
 import type {
   AccountDto,
   AmortizationRowDto,
@@ -407,7 +414,11 @@ function LoanCard({
         ) : (
           <Body style={{ fontWeight: '600' }}>{t('account.loan.paid_off')}</Body>
         )}
-        <Fact label={t('account.interest_rate')} value={`${bpsToPercent(loan.rateBps)}%`} />
+        <Fact
+          label={t('account.interest_rate')}
+          // A loan kept offline from before migration 0096 has only whole basis points.
+          value={`${ppmToPercent(ratePpmOf(loan.ratePpm, loan.rateBps) ?? 0)}%`}
+        />
         <Fact label={t('account.loan.monthly')} value={fmtMoney(loan.totalPayment, ccy)} />
         <Fact
           label={t('account.loan.interest_method')}

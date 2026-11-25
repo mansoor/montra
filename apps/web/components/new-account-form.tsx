@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { ACCOUNT_PROFILES, accountProfile, kindsWhere, percentToBps, type AccountKind } from '@montra/domain';
+import { ACCOUNT_PROFILES, accountProfile, kindsWhere, percentToPpm, type AccountKind } from '@montra/domain';
 import type { AccountDto, EmployerDto, WorkspaceDto } from '@montra/api-client';
 import { WORKPLACE_PLANS, type PlanType } from '@montra/domain';
 import { browserApi } from '@/lib/browser-api';
@@ -106,6 +106,7 @@ export function NewAccountForm({
           'newAccount.owed': 'openingBalance',
           'newAccount.last4': 'last4',
           rateBps: 'rate',
+          ratePpm: 'rate',
           termMonths: 'term',
           lateFeeBps: 'lateFeePercent',
         }),
@@ -142,8 +143,8 @@ export function NewAccountForm({
     const dayOf = (name: string) => (get(name) ? Number(get(name)) : undefined);
     const purchasePrice = minor('purchasePrice');
     const rate = get('interestRate');
-    const interestRateBps = rate ? percentToBps(rate) : undefined;
-    if (interestRateBps === null) fields.interestRate = t('account.rate_invalid');
+    const interestRatePpm = rate ? percentToPpm(rate) : undefined;
+    if (interestRatePpm === null) fields.interestRate = t('account.rate_invalid');
     if (Object.keys(fields).length) {
       setErrors({ fields });
       if (Object.keys(fields).some((name) => name !== 'openingBalance')) setDetailsOpen(true);
@@ -162,7 +163,7 @@ export function NewAccountForm({
         openingBalance: balance === undefined ? undefined : { amount: balance, currency },
         openingDate: get('openingDate') || undefined,
         creditLimit,
-        interestRateBps: interestRateBps ?? undefined,
+        interestRatePpm: interestRatePpm ?? undefined,
         minPayment,
         lowBalance,
         ...(type.statement ? { statementDay: dayOf('statementDay'), dueDay: dayOf('dueDay') } : {}),
@@ -181,6 +182,7 @@ export function NewAccountForm({
           'openingBalance.amount': 'openingBalance',
           'openingBalance.currency': 'currency',
           interestRateBps: 'interestRate',
+          interestRatePpm: 'interestRate',
         }),
       );
       setBusy(false);

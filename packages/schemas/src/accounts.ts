@@ -82,7 +82,10 @@ export const CreateAccountRequest = z.object({
     .string()
     .regex(/^\d{1,19}$/)
     .optional(),
+  /** The yearly rate in whole basis points, as older clients send it. `interestRatePpm` wins when both are sent. */
   interestRateBps: z.number().int().min(0).max(10_000).optional(),
+  /** The yearly rate in parts per million (1 = 0.0001%; 5.625% = 56,250), up to 100% (migration 0096). */
+  interestRatePpm: z.number().int().min(0).max(1_000_000).optional(),
   minPayment: z
     .string()
     .regex(/^\d{1,19}$/)
@@ -162,7 +165,10 @@ export const AccountDto = z.object({
   /** Planning inputs (Phase 6): debt payoff and forecast warnings. Minor units in the account currency. */
   planning: z.object({
     creditLimit: z.string().nullable(),
+    /** Rounded half up to whole basis points, for older clients. Read `interestRatePpm`. */
     interestRateBps: z.number().int().nullable(),
+    /** The yearly rate in parts per million (1 = 0.0001%), exact (migration 0096). */
+    interestRatePpm: z.number().int().nullable(),
     minPayment: z.string().nullable(),
     /** FLOW-03: the forecast warns below this balance. */
     lowBalance: z.string(),

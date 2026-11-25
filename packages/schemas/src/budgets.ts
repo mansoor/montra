@@ -374,7 +374,10 @@ export const DebtPayoffDto = z.object({
       accountId: Id,
       name: z.string(),
       balance: MinorDto,
+      /** Rounded half up to whole basis points, for older clients. Read `ratePpm`. */
       rateBps: z.number().int(),
+      /** The yearly rate in parts per million (1 = 0.0001%), migration 0096. */
+      ratePpm: z.number().int(),
       minPayment: MinorDto,
       payoffDate: CalendarDateDto.nullable(),
       interest: MinorDto.nullable(),

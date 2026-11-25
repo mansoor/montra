@@ -13,6 +13,7 @@ import type {
   RentChargeDto,
   UpdateTenantInput,
 } from '@montra/api-client';
+import { percentToPpm } from '@montra/domain';
 import { percentToBps } from './business';
 import { parseAmountInput } from './money';
 import { staticT } from './i18n-static';
@@ -64,6 +65,12 @@ export function optionalBps(input: string, t: T = staticT): Parsed<number | null
   const bps = percentToBps(input);
   if (bps === null || bps > 10000) return { ok: false, error: t('rentals.percent_invalid') };
   return { ok: true, value: bps };
+}
+
+/** A loan's yearly rate, 0 to 50 with up to four decimals (5.625), in parts per million (migration 0096). */
+export function loanRatePpm(input: string, t: T = staticT): Parsed<number> {
+  const ppm = percentToPpm(input, 50);
+  return ppm === null ? { ok: false, error: t('account.loan.rate_invalid') } : { ok: true, value: ppm };
 }
 
 /** Basis points shown as a percent, or a dash when there's nothing to divide by. */

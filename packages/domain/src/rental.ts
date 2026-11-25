@@ -286,7 +286,8 @@ export function allocateShared(amount: bigint, weights: readonly bigint[]): bigi
 
 export interface LoanTerms {
   principal: bigint;
-  rateBps: number;
+  /** The yearly rate in parts per million (1 = 0.0001%; 5.625% = 56,250). */
+  ratePpm: number;
   termMonths: number;
 }
 
@@ -296,27 +297,27 @@ export interface LoanTerms {
  */
 export type LoanInterestMethod = 'monthly' | 'daily';
 
-const RATE_DENOMINATOR = 120_000n; // bps per year → per month
-const DAILY_DENOMINATOR = 3_650_000n; // bps per year → per day: 10,000 × 365 (actual/365)
+const RATE_DENOMINATOR = 12_000_000n; // ppm per year → per month: 1,000,000 × 12
+const DAILY_DENOMINATOR = 365_000_000n; // ppm per year → per day: 1,000,000 × 365 (actual/365)
 
 /** Days of interest from `from` to `to`: actual days, none if `to` isn't after `from`. */
 export const interestDays = (from: CalendarDate, to: CalendarDate): number =>
   Math.max(0, daysBetween(from, to));
 
 /** Daily simple interest, actual/365: balance × rate × days ÷ 365, half up to the cent. */
-export function dailyInterest(balance: bigint, rateBps: number, days: number): bigint {
+export function dailyInterest(balance: bigint, ratePpm: number, days: number): bigint {
   if (balance <= 0n || days <= 0) return 0n;
-  return divRound(balance * BigInt(rateBps) * BigInt(days), DAILY_DENOMINATOR);
+  return divRound(balance * BigInt(ratePpm) * BigInt(days), DAILY_DENOMINATOR);
 }
 
 /** The level payment: P·r / (1 − (1+r)^−n), computed with integers, half up. Zero rate: principal over the term. */
 export function monthlyPayment(l: LoanTerms): bigint {
   const n = BigInt(l.termMonths);
-  if (l.rateBps === 0) return divRound(l.principal, n, 'ceil');
-  const num = RATE_DENOMINATOR + BigInt(l.rateBps);
+  if (l.ratePpm === 0) return divRound(l.principal, n, 'ceil');
+  const num = RATE_DENOMINATOR + BigInt(l.ratePpm);
   const growth = num ** n;
   const base = RATE_DENOMINATOR ** n;
-  return divRound(l.principal * BigInt(l.rateBps) * growth, RATE_DENOMINATOR * (growth - base));
+  return divRound(l.principal * BigInt(l.ratePpm) * growth, RATE_DENOMINATOR * (growth - base));
 }
 
 export interface AmortizationRow {
@@ -350,7 +351,7 @@ export function amortize(
 ): AmortizationRow[] {
   return projectLoan({
     balance: l.principal,
-    rateBps: l.rateBps,
+    ratePpm: l.ratePpm,
     payment: monthlyPayment(l),
     firstPayment,
     termMonths: l.termMonths,
@@ -361,7 +362,8 @@ export function amortize(
 export interface LoanProjection {
   /** What's owed now. */
   balance: bigint;
-  rateBps: number;
+  /** The yearly rate in parts per million. */
+  ratePpm: number;
   /** Principal and interest each month. */
   payment: bigint;
   firstPayment: CalendarDate;
@@ -390,7 +392,7 @@ export function projectLoan(l: LoanProjection): AmortizationRow[] {
   let balance = l.balance;
   for (let n = (l.before ?? 0) + 1; balance > 0n; n++) {
     if (l.recorded?.has(n)) continue;
-    const interest = divRound(balance * BigInt(l.rateBps), RATE_DENOMINATOR);
+    const interest = divRound(balance * BigInt(l.ratePpm), RATE_DENOMINATOR);
     let principal = l.payment - interest;
     if (principal < 0n) principal = 0n;
     if (principal > balance || n >= l.termMonths) principal = balance;
@@ -419,7 +421,7 @@ function projectDailyLoan(l: LoanProjection): AmortizationRow[] {
     if (l.recorded?.has(n)) continue;
     const date = loanPaymentDate(l.firstPayment, n);
     const since = from ?? loanPaymentDate(l.firstPayment, n - 1);
-    const interest = dailyInterest(balance, l.rateBps, interestDays(since, date));
+    const interest = dailyInterest(balance, l.ratePpm, interestDays(since, date));
     let principal = l.payment - interest;
     if (principal < 0n) principal = 0n;
     if (principal > balance || n >= l.termMonths) principal = balance;

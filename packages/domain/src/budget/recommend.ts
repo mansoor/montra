@@ -138,7 +138,8 @@ export interface SurplusTargets {
     goalId: string | null;
     categoryId: string | null;
     accountId: string;
-    rateBps: number;
+    /** The yearly rate in parts per million (1 = 0.0001%). */
+    ratePpm: number;
     balance: bigint;
   }[];
   goals?: readonly { goalId: string; categoryId: string | null; gap: bigint; due: string | null }[];
@@ -177,10 +178,10 @@ export function rec03Allocate(
   };
   if (t.emergencyFund)
     give('emergency_fund', t.emergencyFund.goalId, t.emergencyFund.categoryId, t.emergencyFund.gap);
-  const high = t.highInterestBps ?? 800;
+  const high = (t.highInterestBps ?? 800) * 100; // the setting stays in basis points; rates are ppm
   for (const d of [...(t.debts ?? [])]
-    .filter((d) => d.rateBps >= high)
-    .sort((a, b) => b.rateBps - a.rateBps || (a.balance < b.balance ? -1 : 1)))
+    .filter((d) => d.ratePpm >= high)
+    .sort((a, b) => b.ratePpm - a.ratePpm || (a.balance < b.balance ? -1 : 1)))
     give('debt', d.goalId ?? d.accountId, d.categoryId, d.balance);
   for (const g of [...(t.goals ?? [])].sort(
     (a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999') || (a.goalId < b.goalId ? -1 : 1),

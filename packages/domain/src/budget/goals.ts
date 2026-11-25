@@ -67,8 +67,8 @@ export interface Debt {
   id: string;
   /** Amount owed, positive. */
   balance: bigint;
-  /** Annual percentage rate in basis points (1999 = 19.99%). */
-  rateBps: number;
+  /** Annual percentage rate in parts per million (199,900 = 19.99%; 1 = 0.0001%). */
+  ratePpm: number;
   /** Minimum monthly payment. */
   minPayment: bigint;
 }
@@ -90,16 +90,16 @@ export interface PayoffPlan {
 }
 
 /** Order debts for extra payments: snowball = smallest balance first; avalanche = highest rate first. */
-function order<T extends { id: string; balance: bigint; rateBps: number }>(
+function order<T extends { id: string; balance: bigint; ratePpm: number }>(
   debts: T[],
   strategy: 'snowball' | 'avalanche',
 ): T[] {
   return [...debts].sort((a, b) => {
     if (strategy === 'snowball') {
       if (a.balance !== b.balance) return a.balance < b.balance ? -1 : 1;
-      if (a.rateBps !== b.rateBps) return b.rateBps - a.rateBps;
+      if (a.ratePpm !== b.ratePpm) return b.ratePpm - a.ratePpm;
     } else {
-      if (a.rateBps !== b.rateBps) return b.rateBps - a.rateBps;
+      if (a.ratePpm !== b.ratePpm) return b.ratePpm - a.ratePpm;
       if (a.balance !== b.balance) return a.balance < b.balance ? -1 : 1;
     }
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -129,7 +129,7 @@ export function simulatePayoff(
     let pool = monthlyPayment;
     for (const d of state) {
       if (d.balance <= 0n) continue;
-      const interest = divRound(d.balance * BigInt(d.rateBps), 120_000n);
+      const interest = divRound(d.balance * BigInt(d.ratePpm), 12_000_000n);
       d.balance += interest;
       d.interest += interest;
     }

@@ -273,9 +273,9 @@ describe('goals (BUD-07, BUD-08)', () => {
 
   it('simulates snowball and avalanche payoff', () => {
     const debts = [
-      { id: 'card', balance: 500_000n, rateBps: 2499, minPayment: 15_000n },
-      { id: 'car', balance: 1_200_000n, rateBps: 599, minPayment: 30_000n },
-      { id: 'store', balance: 80_000n, rateBps: 1299, minPayment: 2_500n },
+      { id: 'card', balance: 500_000n, ratePpm: 249900, minPayment: 15_000n },
+      { id: 'car', balance: 1_200_000n, ratePpm: 59900, minPayment: 30_000n },
+      { id: 'store', balance: 80_000n, ratePpm: 129900, minPayment: 2_500n },
     ];
     const snow = simulatePayoff(debts, 20_000n, 'snowball');
     const aval = simulatePayoff(debts, 20_000n, 'avalanche');
@@ -289,12 +289,23 @@ describe('goals (BUD-07, BUD-08)', () => {
     // Payments below the interest never finish.
     expect(
       simulatePayoff(
-        [{ id: 'x', balance: 1_000_000n, rateBps: 3000, minPayment: 1_000n }],
+        [{ id: 'x', balance: 1_000_000n, ratePpm: 300000, minPayment: 1_000n }],
         0n,
         'avalanche',
         120,
       ).months,
     ).toBeNull();
+  });
+
+  it('charges a rate in eighths of a percent each month (migration 0096)', () => {
+    // $10,000 at 5.625%: 10,000 × 0.05625 ÷ 12 = $46.875, half up to $46.88, then the $1,000 minimum.
+    const [one] = simulatePayoff(
+      [{ id: 'm', balance: 1_000_000n, ratePpm: 56_250, minPayment: 100_000n }],
+      0n,
+      'avalanche',
+      1,
+    ).debts;
+    expect(one!.interest).toBe(4_688n);
   });
 });
 
@@ -512,8 +523,8 @@ describe('recommendation rules (REC-01..08)', () => {
     const r = rec03Allocate(550_000n, 500_000n, {
       emergencyFund: { goalId: 'ef', categoryId: 'efc', gap: 20_000n },
       debts: [
-        { goalId: null, categoryId: 'cardc', accountId: 'card', rateBps: 2499, balance: 25_000n },
-        { goalId: null, categoryId: 'carc', accountId: 'car', rateBps: 450, balance: 900_000n },
+        { goalId: null, categoryId: 'cardc', accountId: 'card', ratePpm: 249900, balance: 25_000n },
+        { goalId: null, categoryId: 'carc', accountId: 'car', ratePpm: 45000, balance: 900_000n },
       ],
       goals: [{ goalId: 'trip', categoryId: 'tripc', gap: 100_000n, due: '2027-06-01' }],
       funCategoryId: 'fun',
