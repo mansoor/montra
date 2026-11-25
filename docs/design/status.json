@@ -990,7 +990,7 @@
   ],
   "RPT-06": [
     "done",
-    "the AI turns the question into a validated plan and SQL gives the numbers. Provider sees the question, category names and today, no amounts. Not yet tried on the real provider"
+    "the AI turns the question into a validated plan and SQL gives the numbers. Provider sees the question, category names and today, no amounts or account names. ADR-0058: questions about one account too (a loan’s payoff date and payments left, what’s owed or held, the next payment and its split, interest paid), the account matched by name on the server with ties offered as choices, and the figures from the account page’s own code. Not yet tried on the real provider"
   ],
   "RCP-09": [
     "done",
