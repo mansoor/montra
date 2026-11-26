@@ -41,7 +41,7 @@ import * as taxLinesV1 from './tasks/map-tax-lines/v1.js';
 import * as separationV1 from './tasks/flag-separation/v1.js';
 import * as capitalV1 from './tasks/flag-capital/v1.js';
 import * as propertyV1 from './tasks/suggest-property/v1.js';
-import * as questionV1 from './tasks/answer-question/v1.js';
+import * as questionV2 from './tasks/answer-question/v2.js';
 import * as monthV1 from './tasks/summarize-month/v1.js';
 import * as summaryV1 from './tasks/word-summary/v1.js';
 import type {
@@ -219,6 +219,24 @@ export function storeWebsite(s: string): string | null {
     .replace(/^https?:\/\//i, '')
     .replace(/\/+$/, '');
   return /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/[\w./-]*)?$/i.test(t) ? t.toLowerCase() : null;
+}
+
+/** A word without the punctuation around it, and its key: lower case, one kind of apostrophe. */
+const bareWord = (w: string) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+const wordKey = (w: string) => w.toLowerCase().replace(/’/g, "'");
+
+/**
+ * The words of `phrase` that the question has, as the question spells them, at most 100 characters (ADR-0058). What a
+ * provider adds that the asker didn't type is dropped, so an answer only ever repeats the asker's own words.
+ */
+export function inQuestionWords(phrase: string, question: string): string {
+  const said = new Map<string, string>();
+  for (const w of question.split(/\s+/).map(bareWord)) if (w) said.set(wordKey(w), w);
+  const kept = phrase
+    .split(/\s+/)
+    .map(bareWord)
+    .flatMap((w) => (w ? (said.get(wordKey(w)) ?? []) : []));
+  return kept.join(' ').slice(0, 100).trim();
 }
 
 export class Gateway implements AiGateway {
@@ -1241,44 +1259,68 @@ export class Gateway implements AiGateway {
 
   /**
    * A question as a query plan. Everything is checked here: only offered category names, real dates in order, at most six periods. A
-   * plan that fails comes back as not understood rather than as a guess. No amounts go in, and none can come out.
+   * plan that fails comes back as not understood rather than as a guess. No amounts go in, and none can come out. A question
+   * about one account (ADR-0058) comes back as the account in the question's own words: a word the question doesn't have is
+   * dropped, so the app never echoes anything the asker didn't type, and the provider never sees an account name.
    */
   async answerQuestion(input: QuestionInput, ctx: AiContext): Promise<TaskResult<QuestionPlan>> {
     if (this.isOff(ctx)) return { ok: false, reason: 'off' };
     const names = new Map(input.categories.map((n) => [n.trim().toLowerCase(), n]));
     const isDate = (d: string) =>
       /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+    const none: QuestionPlan = {
+      understood: false,
+      kind: 'amount',
+      metric: null,
+      categories: [],
+      payee: null,
+      account: null,
+      periods: [],
+    };
     return this.callProvider<QuestionPlan>(
       {
         task: 'answer_question',
-        system: questionV1.SYSTEM,
-        promptVersion: questionV1.PROMPT_VERSION,
+        system: questionV2.SYSTEM,
+        promptVersion: questionV2.PROMPT_VERSION,
         input: {
           question: minimizeText(input.question, ctx.pseudonyms),
           today: input.today,
           categories: input.categories,
         },
-        schema: questionV1.Output,
-        validate: (o: questionV1.Output) => {
+        schema: questionV2.Output,
+        validate: (o: questionV2.Output): QuestionPlan => {
           const periods = o.periods
             .filter((p) => isDate(p.from) && isDate(p.to) && p.from <= p.to && p.from <= input.today)
             .slice(0, 6)
             .map((p) => ({ label: oneLine(p.label, 60), from: p.from, to: p.to }));
-          if (!o.understood || !o.metric || periods.length === 0) {
-            return { understood: false, metric: null, categories: [], payee: null, periods: [] };
+          if (o.understood && o.kind === 'account') {
+            const phrase = o.account
+              ? inQuestionWords(unpseudonymize(o.account, ctx.pseudonyms), input.question)
+              : '';
+            if (!phrase || !o.topic) return none;
+            return {
+              ...none,
+              understood: true,
+              kind: 'account',
+              account: { phrase, topic: o.topic },
+              periods: o.topic === 'interest_paid' ? periods : [],
+            };
           }
+          if (!o.understood || !o.metric || periods.length === 0) return none;
           return {
             understood: true,
+            kind: 'amount',
             metric: o.metric,
             categories: o.categories.flatMap((c) => {
               const name = names.get(c.trim().toLowerCase());
               return name ? [name] : [];
             }),
             payee: o.payee ? oneLine(o.payee, 100) : null,
+            account: null,
             periods,
           };
         },
-        eventOutput: (v) => ({ understood: v.understood, periods: v.periods.length }),
+        eventOutput: (v) => ({ understood: v.understood, kind: v.kind, periods: v.periods.length }),
       },
       ctx,
       { spent: 0n },

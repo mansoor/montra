@@ -106,6 +106,12 @@ test('reports drill down and export, and search and ask find the same money', as
   await page.getByLabel('Your question').fill('What is the weather like?');
   await page.getByRole('button', { name: 'Ask', exact: true }).click();
   await expect(page.getByTestId('ask-unknown')).toBeVisible();
+  // About one account (ADR-0058): matched by name on the server, answered with the page's figure and a link to it.
+  await page.getByLabel('Your question').fill('What is my joint checking balance?');
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await expect(page.getByTestId('ask-account-balance')).toContainText('Current balance');
+  await page.getByRole('link', { name: 'Open Joint checking' }).click();
+  await expect(page).toHaveURL(/\/accounts\/[0-9a-f-]+$/);
 });
 
 /** NOT-01: the inbox and what comes by which channel. The nightly checks themselves are covered in the API tests. */

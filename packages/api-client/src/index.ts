@@ -337,6 +337,7 @@ import type {
   UpdateRentalContactRequest,
   UpdateTenantRequest,
   UpdateUnitRequest,
+  AskAccountDto,
   AskAnswerDto,
   AskRequest,
   BackupScheduleDto,
@@ -3709,6 +3710,7 @@ function toApiError(status: number, body: unknown): ApiError {
 }
 
 export type {
+  AskAccountDto,
   AskAnswerDto,
   BackupScheduleDto,
   BankFeedDto,

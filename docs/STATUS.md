@@ -1,6 +1,6 @@
 # Montra: project status and hand-off
 
-_Last updated 2026-11-23. Phase 11 is code complete and merged; launch steps remain. Keep this file current:
+_Last updated 2026-11-25. Phase 11 is code complete and merged; launch steps remain. Keep this file current:
 update it at the end of every work session and every phase._
 
 This is the hand-off for the next session, human or Claude. It covers what is done, what is left, the
@@ -3420,6 +3420,31 @@ Phase 11 leftovers:
   - Tests: web `confirm-dialog.test.tsx` (jsdom, now a web dev dependency: focus on Cancel, cancel, confirm, Esc, busy,
     focus returned, the promise helper and its action); e2e `accounts.spec.ts` (Enter on the default Cancel keeps the
     account, Esc, 360 px, axe in light and dark, then the red button deletes it).
+- **Ask about one account: a loan's payoff, what's owed, the next payment, interest paid** (RPT-06,
+  [ADR-0058](design/adr/0058-ask-about-one-account.md); no migration). The owner asked "when will my skylark home loan
+  finish?" and Ask couldn't answer.
+  - Prompt `answer_question.v2` (replaces v1): a plan is `kind` amount (as before) or account, with `account` (the account
+    as the question words it) and `topic` (`payoff`, `owed`, `balance`, `next_payment`, `interest_paid`; periods for interest
+    only, none meaning since the start). The input is unchanged and the provider still sees no amounts or account names.
+    The gateway keeps only the phrase's words that the question has (`inQuestionWords`), after mapping pseudonyms back.
+  - Matching on the server: `matchAccount` in `@montra/domain` over the accounts list the asker sees (not hidden or
+    archived). Case-insensitive; filler dropped; kind words ("loan", "mortgage", "home", "card", "checking"…) only break
+    ties and hint at kinds; an account must share a strong word, if the phrase has one; the institution counts. Exact name
+    first, then the most overlap. Ties come back as `choices` (web: buttons that ask again with `accountId`); no match
+    names only the asker's phrase.
+  - Figures from the page's code: balances from `AccountsService.list`; a tracked loan from the new
+    `LoansService.facts` (the same `LoanDto` and schedule the loan page shows): payoff date, payments left, interest left,
+    what's owed, the next payment and its split, interest paid since tracking began, or per period by the recorded
+    schedule rows' dates. A loan kept as just its balance gives what's owed and `needs_tracking` (the web links to turn
+    tracking on); other kinds give their balance and `not_applicable`; a tracked loan with nothing left is `paid_off`.
+  - Contract: optional `AskRequest.accountId`, `AskAnswerDto.kind` and `.account` (`AskAccountDto`), so older clients
+    still parse. The phone has no Ask screen, so it's unchanged. `ask.not_understood`, `ask.privacy` and the help page
+    mention accounts.
+  - Tests: domain `account-match.test.ts`; gateway `gateway.test.ts` (account plans, periods, only the asker's words,
+    prompt v2), `schema-limits.test.ts`; API `reports.test.ts` (payoff, owed and next payment agree with `/loans` and the
+    schedule, interest since the start and this year, a balance-only loan, a bank balance, a tie then a pick, no match,
+    an account the partner can't see); web `ask-box.test.tsx`; e2e `reports-data.spec.ts` (a balance question, then its
+    link). Not yet tried on the real provider.
 
 ---
 
