@@ -58,8 +58,10 @@ import {
   type VaultConfig,
 } from './vault.service.js';
 import { StatementRenditions } from '../../renditions/statement-renditions.js';
+import { fileRecord, recordPdfsOf, RecordRenditions } from '../../renditions/record-renditions.js';
 import {
   conversionOptions,
+  RECORD_OPTIONS,
   RENDER_WAIT_MS,
   sameOptions,
   TYPE_NOT_KEPT_WORDS,
@@ -96,6 +98,14 @@ const CAP_FALLBACK_MS = 60 * MINUTE;
 export const REMOVE_WAIT_MS = 30 * MINUTE;
 /** §10: bringing files back when the vault can't be asked just now: looked at again after this. */
 const BRING_BACK_WAIT_MS = 15 * MINUTE;
+/**
+ * ADR-0059 §2: a receipt's or bill's page that no record holds yet (its capture is still uploading) is looked at again
+ * this often for its first day, then every `ORPHAN_LATER_MS`. It never goes on its own.
+ */
+const ORPHAN_YOUNG_MS = 24 * 60 * MINUTE;
+const ORPHAN_LATER_MS = 6 * 60 * MINUTE;
+/** ADR-0059 §1: the groups whose records go to the vault as one PDF of their pages. */
+const RECORD_GROUPS: ReadonlySet<VaultGroup> = new Set<VaultGroup>(['receipts', 'bills']);
 
 /** In Montra's words, for Settings and the badges (§4.5, D8). Never a file name, never the vault's own words. */
 export const NOT_KEPT_WORDS = {
@@ -128,6 +138,12 @@ export interface VaultRunOptions {
   sendGapMs?: number;
   /** How long a new file waits before it can go; tests pass 0. */
   settleMs?: number;
+  /**
+   * ADR-0059 §2: how long a receipt's or bill's page that no record holds waits before it goes on its own. Never, by
+   * default: a page goes only inside its record's PDF. Tests of the outbox's own workings (retries, caps, keys) send
+   * such files alone with 0, as every file went before ADR-0059.
+   */
+  orphanWaitMs?: number;
 }
 
 type Done = Record<
@@ -150,6 +166,7 @@ export class VaultJobs {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(MissingFiles) private readonly missing: MissingFiles,
     @Inject(StatementRenditions) private readonly renditions: StatementRenditions,
+    @Inject(RecordRenditions) private readonly records: RecordRenditions,
   ) {}
 
   register(): void {
@@ -253,6 +270,7 @@ export class VaultJobs {
     }
     try {
       await this.promote(ctx, row, config, opts);
+      await this.pagesChanged(ctx, row, config);
       const held = state?.send_held_until && state.send_held_until.getTime() > Date.now();
       if (!held) {
         const out = await this.sendDue(ctx, row, config, conn, deadline, done, opts);
@@ -294,8 +312,11 @@ export class VaultJobs {
          limit 500`.execute(trx),
     );
     const now = Date.now();
+    // ADR-0059: pages whose record's PDF this pass asked for already; their rows were read before it did.
+    const asked = new Set<string>();
     for (const r of rows) {
       const key = { workspace_id: ctx.workspaceId, destination_id: row.id, file_id: r.file_id };
+      if (asked.has(r.file_id)) continue;
       if (!r.kind) {
         await this.dropItem(ctx, key);
         continue;
@@ -312,9 +333,17 @@ export class VaultJobs {
         continue;
       }
       if (r.status === 'converted') {
-        await this.reconvert(ctx, config, key, r, group);
+        if (isRecordRow(r)) await this.reconvertRecord(ctx, key, r, asked);
+        else await this.reconvert(ctx, config, key, r, group);
         continue;
       }
+      // ADR-0059 §1: a receipt's or bill's page goes only inside its record's PDF.
+      if (
+        RECORD_GROUPS.has(group) &&
+        !r.rendition &&
+        (await this.recordPage(ctx, key, r, now, settle, opts, asked))
+      )
+        continue;
       const kept = vaultTypeKept({ mime: r.mime ?? '', fileName: r.file_name ?? '' }, config.mediaTypes);
       // ADR-0057 §1: a file the vault doesn't keep stays in Montra, or goes as a PDF when its group converts it.
       const choice = kept || r.rendition ? 'dont_send' : unkeptOf(config, group);
@@ -440,6 +469,174 @@ export class VaultJobs {
     });
   }
 
+  /**
+   * ADR-0059 §1, §2: a queued page of a receipt or bill. Its record's pages, once all of them are done, are made into
+   * one PDF (its rows become `converted`: never sent themselves), and that PDF is sent. Answers false when the file
+   * goes as it is: another record holds it alone (a lease, a maintenance log, an invoice's PDF), or it is the only page
+   * of its record and a PDF already, with no PDF made of it before. A page no record holds yet waits.
+   */
+  private async recordPage(
+    ctx: Ctx,
+    key: ItemKey,
+    r: Ready,
+    now: number,
+    settle: number,
+    opts: VaultRunOptions,
+    asked: Set<string>,
+  ): Promise<boolean> {
+    const found = await this.db.run(ctx, async (trx) => {
+      const record = await fileRecord(trx, r.file_id);
+      if (!record || record.holder === 'other' || record.trashed)
+        return { record, ready: false, alone: false };
+      const { rows } = await sql<{ busy: boolean | null; newest: Date | null; pdf: boolean | null }>`
+        select bool_or(app.vault_file_busy(f.id)) as busy, max(f.created_at) as newest,
+               bool_and(f.mime = 'application/pdf') as pdf
+          from app.file f
+         where f.workspace_id = ${ctx.workspaceId}::uuid and f.id = any (${record.fileIds}::uuid[])
+           and f.deleted_at is null`.execute(trx);
+      const s = rows[0];
+      const ready = !s?.busy && !(s?.newest && s.newest.getTime() > now - settle);
+      const alone =
+        record.fileIds.length === 1 &&
+        s?.pdf === true &&
+        (await recordPdfsOf(trx, ctx, record.fileIds)).length === 0;
+      return { record, ready, alone };
+    });
+    const { record } = found;
+    if (!record) {
+      // Its capture is still being uploaded: it goes with its record, never on its own.
+      const age = now - (r.file_created_at?.getTime() ?? now);
+      if (opts.orphanWaitMs !== undefined && age >= opts.orphanWaitMs) return false;
+      await this.setItem(ctx, key, {
+        next_attempt_at: new Date(now + (age < ORPHAN_YOUNG_MS ? NOT_READY_MS : ORPHAN_LATER_MS)),
+      });
+      return true;
+    }
+    if (record.holder === 'other') return false;
+    if (record.trashed) {
+      // A receipt in the Trash waits there; restored, it goes.
+      await this.setItem(ctx, key, { next_attempt_at: new Date(now + TRASHED_MS) });
+      return true;
+    }
+    if (!found.ready) {
+      await this.setItem(ctx, key, { next_attempt_at: new Date(now + NOT_READY_MS) });
+      return true;
+    }
+    if (found.alone) return false;
+    await this.convertRecord(ctx, key.destination_id, record.fileIds, r.file_id);
+    for (const p of record.fileIds) asked.add(p);
+    return true;
+  }
+
+  /**
+   * ADR-0059 §1: a record's pages, all done: their queued rows here become `converted` (each is never sent itself), and
+   * the worker makes the record's PDF as this owner. The rendering queues the PDF in the outbox.
+   */
+  private async convertRecord(ctx: Ctx, destinationId: string, pages: readonly string[], fileId: string) {
+    await this.db.run(ctx, async (trx) => {
+      const queued = await trx
+        .selectFrom('app.vault_item')
+        .select(['file_id', 'created_at'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('destination_id', '=', destinationId)
+        .where('file_id', 'in', [...pages])
+        .where('status', '=', 'queued')
+        .forUpdate()
+        .execute();
+      for (const q of queued) {
+        await trx
+          .updateTable('app.vault_item')
+          .set({
+            status: 'converted',
+            vault_ref: sql`coalesce(vault_ref, ${vaultRef(ctx.workspaceId, q.file_id, q.created_at)})`,
+            render_state: 'rendering',
+            render_options: JSON.stringify(RECORD_OPTIONS),
+            not_kept_reason: null,
+            resend_allowed: false,
+            last_error: null,
+            // Asked for again if nothing is heard of it by then.
+            next_attempt_at: new Date(Date.now() + RENDER_WAIT_MS),
+            updated_at: new Date(),
+          } as never)
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('destination_id', '=', destinationId)
+          .where('file_id', '=', q.file_id)
+          .execute();
+      }
+      await this.records.enqueue(trx, ctx, fileId);
+    });
+  }
+
+  /**
+   * ADR-0059 §3: a page waiting for its record's PDF, due again: its pages were moved or removed, the rendering is
+   * overdue, or its record was in the Trash. The record's PDF is asked for again (the same pages are never made twice),
+   * once for all of its pages here.
+   */
+  private async reconvertRecord(ctx: Ctx, key: ItemKey, r: Ready, asked: Set<string>) {
+    await this.db.run(ctx, async (trx) => {
+      const record = await fileRecord(trx, r.file_id);
+      const pages = record && record.holder !== 'other' ? record.fileIds : [r.file_id];
+      for (const p of pages) asked.add(p);
+      await trx
+        .updateTable('app.vault_item')
+        .set({
+          render_state: 'rendering',
+          next_attempt_at: new Date(Date.now() + RENDER_WAIT_MS),
+          updated_at: new Date(),
+        })
+        .where('workspace_id', '=', key.workspace_id)
+        .where('destination_id', '=', key.destination_id)
+        .where('file_id', 'in', [...new Set([...pages, r.file_id])])
+        .where('status', '=', 'converted')
+        .execute();
+      await this.records.enqueue(trx, ctx, r.file_id);
+    });
+  }
+
+  /**
+   * ADR-0059 §3: records whose pages were moved or removed after the vault had them (or their PDF): the PDF is made
+   * again from the pages as they are now, and sent as a new document; what the vault has stays there.
+   */
+  private async pagesChanged(ctx: Ctx, row: Row, config: VaultConfig): Promise<void> {
+    const modes = vaultEffectiveModes(config.groups);
+    const { rows } = await this.db.run(ctx, (trx) =>
+      sql<{ file_id: string; kind: FileKind | null; sealed: boolean | null }>`
+        select i.file_id, f.kind, f.sealed
+          from app.vault_item i
+          left join app.file f on f.workspace_id = i.workspace_id and f.id = i.file_id
+         where i.workspace_id = ${ctx.workspaceId}::uuid and i.destination_id = ${row.id}::uuid
+           and i.pages_changed_at <= now()
+         order by i.pages_changed_at, i.file_id
+         limit 100`.execute(trx),
+    );
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (seen.has(r.file_id)) continue;
+      const group = r.kind ? vaultGroupOf({ kind: r.kind, sealed: r.sealed ?? false }) : 'never';
+      await this.db.run(ctx, async (trx) => {
+        const record =
+          group !== 'never' && isSentMode(modes[group]) ? await fileRecord(trx, r.file_id) : null;
+        const pages = record && record.holder !== 'other' && !record.trashed ? record.fileIds : [];
+        for (const p of [r.file_id, ...pages]) seen.add(p);
+        const marked = trx
+          .updateTable('app.vault_item')
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('destination_id', '=', row.id)
+          .where('pages_changed_at', 'is not', null);
+        if (!pages.length) {
+          // Not a page of a record that is sent (any more): nothing to make again.
+          await marked.where('file_id', '=', r.file_id).set({ pages_changed_at: null }).execute();
+          return;
+        }
+        await marked
+          .where('file_id', 'in', [...new Set([r.file_id, ...pages])])
+          .set({ pages_changed_at: new Date(Date.now() + RENDER_WAIT_MS) })
+          .execute();
+        await this.records.enqueue(trx, ctx, pages[0]!);
+      });
+    }
+  }
+
   /** A file Montra keeps to itself (a type or size the vault doesn't keep), shown with the words why. */
   private async notKeptHere(ctx: Ctx, key: ItemKey, createdAt: Date, words: string) {
     await this.db.run(ctx, (trx) =>
@@ -532,6 +729,7 @@ export class VaultJobs {
           'deleted_at',
           'sealed',
           'derived_from_file_id',
+          'source_file_ids',
         ])
         .where('workspace_id', '=', ctx.workspaceId)
         .where('id', '=', item.file_id)
@@ -584,6 +782,7 @@ export class VaultJobs {
         bytes: bytes.length,
         sha256: file.sha256,
         derivedFrom: file.derived_from_file_id,
+        firstPage: file.source_file_ids?.[0] ?? null,
       });
       const answer = await conn.send(doc, bytes);
       done.sent++;
@@ -753,9 +952,17 @@ export class VaultJobs {
       bytes: number;
       sha256: string;
       derivedFrom: string | null;
+      /** ADR-0059: a record's PDF says what its record would, read through its first page. */
+      firstPage?: string | null;
     },
   ): Promise<VaultDocument> {
     const { about, base } = await this.db.run(ctx, async (trx) => {
+      if (f.firstPage) {
+        return {
+          about: await aboutFile(trx, ctx.workspaceId, f.firstPage, group),
+          base: f.fileName.replace(/\.pdf$/i, '').trim() || f.fileName,
+        };
+      }
       if (!f.derivedFrom) {
         return {
           about: await aboutFile(trx, ctx.workspaceId, f.fileId, group),
@@ -1688,6 +1895,10 @@ interface Ready {
   committed: boolean | null;
   undone: boolean | null;
 }
+
+/** ADR-0059: a page waiting for its record's PDF, rather than a statement waiting for its own (ADR-0057). */
+const isRecordRow = (r: Pick<Ready, 'render_options'>) =>
+  (r.render_options as { record?: unknown } | null)?.record === true;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));

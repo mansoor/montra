@@ -42,7 +42,8 @@ let keyId: string;
 let url: (p: string) => string;
 let realFetch: VaultTransport['fetch'];
 
-const run = () => jobs.run({ sendGapMs: 0, settleMs: 0 });
+// The outbox’s own workings, with files no receipt or bill holds: each goes alone at once, as before ADR-0059 §2.
+const run = () => jobs.run({ sendGapMs: 0, settleMs: 0, orphanWaitMs: 0 });
 const vaultRow = async () =>
   (await db.query(`select * from app.storage_destination where workspace_id = $1 and kind = 'fdv'`, [wsId]))
     .rows[0];
@@ -316,7 +317,9 @@ describe('each group’s mode (ADR-0054 §6; VLT-02, VLT-07)', () => {
 
 describe('sending (ADR-0054 §3, §4; VLT-03)', () => {
   it('waits while Montra is still reading a file, then sends it with its id saved first', async () => {
-    const id = await file('receipt', 'Corner shop.png');
+    // A receipt that is one PDF goes as it is (ADR-0059 §1); photos go inside a PDF of their own, which
+    // `family-vault-record-pdfs.test.ts` covers.
+    const id = await file('receipt', 'Corner shop.pdf', { mime: 'application/pdf' });
     const entity = (
       await db.query(`select id from app.entity where workspace_id = $1 and type = 'personal'`, [wsId])
     ).rows[0].id;

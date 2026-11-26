@@ -16,9 +16,11 @@ import type {
   CreateHouseholdBillRequest,
   FiledBillDto,
   HouseholdBillDto,
+  SetHouseholdBillPagesRequest,
   UpdateHouseholdBillRequest,
 } from '@montra/schemas';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
+import { changePages } from '../renditions/record-pages.js';
 import { Db } from '../db/database.js';
 import { BillsService } from '../business/bills.service.js';
 import { detectReceiptMedia } from '../receipts/receipts.service.js';
@@ -314,6 +316,40 @@ export class HouseholdBillsService {
           'version.conflict',
           'This bill was changed by someone else; reload and try again',
         );
+      }
+      const out = await this.rows(trx, ctx).where('h.id', '=', id).executeTakeFirstOrThrow();
+      return toDto(out, await this.data.today(trx, ctx));
+    });
+  }
+
+  /**
+   * Moves the bill's pages or removes some (ADR-0059 §4): `fileIds` are the pages it keeps, in their new order. A page
+   * left out goes to the Trash. The bill isn't read again; the vault gets the new PDF if it had the bill.
+   */
+  async setPages(ctx: Ctx, id: string, req: SetHouseholdBillPagesRequest): Promise<HouseholdBillDto> {
+    return this.db.run(ctx, async (trx) => {
+      const bill = await trx
+        .selectFrom('app.household_bill')
+        .select(['attachment_ids', 'version'])
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!bill) throw notFound('Bill');
+      if (BigInt(bill.version) !== BigInt(req.version))
+        throw new AppError(
+          409,
+          'version.conflict',
+          'This bill was changed by someone else; reload and try again',
+        );
+      const { changed } = await changePages(trx, ctx, bill.attachment_ids, req.fileIds);
+      if (changed) {
+        await trx
+          .updateTable('app.household_bill')
+          .set({ attachment_ids: req.fileIds })
+          .where('workspace_id', '=', ctx.workspaceId)
+          .where('id', '=', id)
+          .execute();
       }
       const out = await this.rows(trx, ctx).where('h.id', '=', id).executeTakeFirstOrThrow();
       return toDto(out, await this.data.today(trx, ctx));

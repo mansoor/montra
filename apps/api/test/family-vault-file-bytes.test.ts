@@ -64,7 +64,8 @@ let keySecret: string;
 let url: (p: string) => string;
 let realFetch: VaultTransport['fetch'];
 
-const run = () => jobs.run({ sendGapMs: 0, settleMs: 0 });
+// The outbox’s own workings, with files no receipt or bill holds: each goes alone at once, as before ADR-0059 §2.
+const run = () => jobs.run({ sendGapMs: 0, settleMs: 0, orphanWaitMs: 0 });
 const ctx = () => ({ workspaceId: wsId, userId: ownerId });
 const vstate = () => fake.vault.state as any;
 const app = () => vstate().connectedApps.find((a: any) => a.id === appId);

@@ -4,7 +4,7 @@
  * web review screen.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Image, Linking, Platform, Pressable, View } from 'react-native';
+import { Alert, Image, Linking, Platform, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { canSpendFrom, receiptAccountId } from '@montra/domain';
 import type { CategoryDto, ReceiptDto } from '@montra/schemas';
@@ -14,7 +14,9 @@ import { useAbilities, useSession } from '../../src/session/SessionProvider';
 import { useLocal } from '../../src/sync/SyncProvider';
 import {
   lineQuantityText,
+  movePage,
   previewSplits,
+  removePage,
   receiptStatusKey,
   receiptTotals,
   reviewEdits,
@@ -123,6 +125,21 @@ export default function ReceiptReview() {
         headers: { authorization: `Bearer ${bearer}` },
       }))
     : [];
+  // ADR-0059 §4: pages in the wrong order, or one too many, are fixed here once the receipt has been read.
+  const canFixPages = can.record && receipt.status !== 'processing' && receipt.fileIds.length > 1;
+  const savePages = (next: string[] | null) => {
+    if (next)
+      void act(() => api.setReceiptPages(ws, receipt.id, { version: receipt.version, fileIds: next }));
+  };
+  const askRemove = (index: number) =>
+    Alert.alert(t('record_pages.remove_title', { n: index + 1 }), t('record_pages.remove_body'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('record_pages.remove_confirm'),
+        style: 'destructive',
+        onPress: () => savePages(removePage(receipt.fileIds, index)),
+      },
+    ]);
 
   return (
     <Screen testID="receipt-review">
@@ -189,23 +206,56 @@ export default function ReceiptReview() {
           testID="receipt-image-toggle"
         >
           <View style={{ gap: th.space(2) }}>
-            {pages.map((source, i) => (
-              <Pressable
-                key={source.uri}
-                accessibilityRole="imagebutton"
-                accessibilityLabel={t('mobile.receipts.page_n', { n: i + 1 })}
-                accessibilityHint={t('mobile.receipts.zoom_hint')}
-                onPress={() => setViewing(i)}
-                testID="receipt-page"
-              >
-                <Image
-                  source={source}
-                  style={{ height: 320, borderRadius: th.radius, backgroundColor: th.surface }}
-                  resizeMode="contain"
-                />
-              </Pressable>
-            ))}
+            {pages.map((source, i) => {
+              // Its place among all the receipt's pages, a page kept only in the vault included.
+              const at = receipt.fileIds.indexOf(shown[i]!);
+              return (
+                <View key={source.uri} style={{ gap: th.space(1) }}>
+                  <Pressable
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={t('mobile.receipts.page_n', { n: i + 1 })}
+                    accessibilityHint={t('mobile.receipts.zoom_hint')}
+                    onPress={() => setViewing(i)}
+                    testID="receipt-page"
+                  >
+                    <Image
+                      source={source}
+                      style={{ height: 320, borderRadius: th.radius, backgroundColor: th.surface }}
+                      resizeMode="contain"
+                    />
+                  </Pressable>
+                  {canFixPages ? (
+                    <View style={{ flexDirection: 'row', gap: th.space(2) }}>
+                      <Button
+                        kind="secondary"
+                        label={t('record_pages.move_up', { n: at + 1 })}
+                        disabled={busy || at === 0}
+                        onPress={() => savePages(movePage(receipt.fileIds, at, -1))}
+                        testID="receipt-page-up"
+                      />
+                      <Button
+                        kind="secondary"
+                        label={t('record_pages.move_down', { n: at + 1 })}
+                        disabled={busy || at === receipt.fileIds.length - 1}
+                        onPress={() => savePages(movePage(receipt.fileIds, at, 1))}
+                        testID="receipt-page-down"
+                      />
+                      <Button
+                        kind="danger"
+                        label={t('record_pages.remove', { n: at + 1 })}
+                        disabled={busy}
+                        onPress={() => askRemove(at)}
+                        testID="receipt-page-remove"
+                      />
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
             <Small>{t('mobile.receipts.zoom_hint')}</Small>
+            {canFixPages ? (
+              <Small>{`${t('record_pages.hint_receipt')} ${t('record_pages.vault_note')}`}</Small>
+            ) : null}
           </View>
         </Disclosure>
       ) : null}

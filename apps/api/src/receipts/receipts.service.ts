@@ -61,9 +61,11 @@ import type {
   ReceiptItemSearchQuery,
   ReceiptRecommendationDto,
   ReceiptStalledDto,
+  SetReceiptPagesRequest,
   UpdateReceiptRequest,
 } from '@montra/schemas';
 import { Db } from '../db/database.js';
+import { changePages } from '../renditions/record-pages.js';
 import { AppError, notFound, unprocessable } from '../common/errors.js';
 import { amountRange, baseCurrency, hasAmount } from '../common/list-filters.js';
 import { JOB_STALL_MS, JobQueue } from '../jobs/queue.js';
@@ -1044,6 +1046,32 @@ export class ReceiptsService {
       prepared,
       rules: withoutArchived(compileRules(ruleRows.map(ruleRecord)).rules, prepared.archivedCategoryIds),
     };
+  }
+
+  // ----- Pages (ADR-0059, VLT-15) -------------------------------------------------------------------------
+
+  /**
+   * Moves the receipt's pages or removes some (ADR-0059 §4): `fileIds` are the pages it keeps, in their new order. A
+   * page left out goes to the Trash. The receipt isn't read again; the vault gets the new PDF if it had the receipt.
+   */
+  async setPages(ctx: Ctx, id: string, req: SetReceiptPagesRequest): Promise<ReceiptDto> {
+    await this.db.run(ctx, async (trx) => {
+      const r = await this.row(trx, ctx, id);
+      if (r.version.toString() !== req.version) {
+        throw new AppError(409, 'version_mismatch', 'The receipt changed since you opened it; reload it');
+      }
+      if (r.status === 'processing')
+        throw unprocessable('receipt.processing', 'The receipt is still being read');
+      const { changed } = await changePages(trx, ctx, r.attachment_ids, req.fileIds);
+      if (!changed) return;
+      await trx
+        .updateTable('app.receipt')
+        .set({ attachment_ids: req.fileIds })
+        .where('workspace_id', '=', ctx.workspaceId)
+        .where('id', '=', id)
+        .execute();
+    });
+    return this.get(ctx, id);
   }
 
   // ----- Review edits (RCP-06) ----------------------------------------------------------------------------

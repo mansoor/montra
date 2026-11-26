@@ -126,6 +126,7 @@ import { BusinessReportsService } from './business/business-reports.service.js';
 import { BusinessService } from './business/business.service.js';
 import { TaxIdSealing } from './business/tax-ids.js';
 import { StatementRenditions } from './renditions/statement-renditions.js';
+import { RecordRenditions } from './renditions/record-renditions.js';
 import { ExportService } from './business/export.service.js';
 import { InvoicesService } from './business/invoices.service.js';
 import { MileageService } from './business/mileage.service.js';
@@ -325,6 +326,7 @@ export class AppModule {
         BusinessService,
         TaxIdSealing,
         StatementRenditions,
+        RecordRenditions,
         PaymentLinks,
         InvoicesService,
         BillsService,

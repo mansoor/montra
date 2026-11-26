@@ -94,6 +94,7 @@ import type {
   HouseholdBillDto,
   CreateHouseholdBillRequest,
   UpdateHouseholdBillRequest,
+  SetHouseholdBillPagesRequest,
   FiledBillDto,
   CreateScanRequest,
   ScanBillDetectedDto,
@@ -280,6 +281,7 @@ import type {
   TripDto,
   TripInput,
   UpdateReceiptRequest,
+  SetReceiptPagesRequest,
   ConfirmPayslipRequest,
   BillDto,
   AllocateTransactionRequest,
@@ -627,6 +629,7 @@ export type AcceptCategoryProposalsInput = z.input<typeof AcceptCategoryProposal
 export type AcceptInsightInput = z.input<typeof AcceptInsightRequest>;
 export type CreateReceiptInput = z.input<typeof CreateReceiptRequest>;
 export type UpdateReceiptInput = z.input<typeof UpdateReceiptRequest>;
+export type SetReceiptPagesInput = z.input<typeof SetReceiptPagesRequest>;
 export type ApplyReceiptInput = z.input<typeof ApplyReceiptRequest>;
 export type CreatePartyInput = z.input<typeof CreatePartyRequest>;
 export type UpdatePartyInput = z.input<typeof UpdatePartyRequest>;
@@ -908,6 +911,7 @@ export type CreateBillerInput = z.input<typeof CreateBillerRequest>;
 export type UpdateBillerInput = z.input<typeof UpdateBillerRequest>;
 export type CreateHouseholdBillInput = z.input<typeof CreateHouseholdBillRequest>;
 export type UpdateHouseholdBillInput = z.input<typeof UpdateHouseholdBillRequest>;
+export type SetHouseholdBillPagesInput = z.input<typeof SetHouseholdBillPagesRequest>;
 export type CreateScanInput = z.input<typeof CreateScanRequest>;
 export type UpdateExpectedIncomeInput = z.input<typeof UpdateExpectedIncomeRequest>;
 export type AcceptRecommendationInput = z.input<typeof AcceptRecommendationRequest>;
@@ -3009,6 +3013,10 @@ export class ApiClient {
   updateReceipt(workspaceId: string, id: string, input: UpdateReceiptInput) {
     return this.request<ReceiptDto>('PATCH', this.ws(workspaceId, `/receipts/${enc(id)}`), input);
   }
+  /** ADR-0059: the pages a receipt keeps, in their new order; a page left out goes to the Trash. */
+  setReceiptPages(workspaceId: string, id: string, input: SetReceiptPagesInput) {
+    return this.request<ReceiptDto>('PUT', this.ws(workspaceId, `/receipts/${enc(id)}/pages`), input);
+  }
   applyReceipt(workspaceId: string, id: string, input: ApplyReceiptInput) {
     return this.request<ReceiptDto>('POST', this.ws(workspaceId, `/receipts/${enc(id)}/apply`), input);
   }
@@ -3125,6 +3133,18 @@ export class ApiClient {
       this.ws(workspaceId, `/household-bills/${enc(id)}`),
       input,
     );
+  }
+  /** ADR-0059: the pages a bill keeps, in their new order; a page left out goes to the Trash. */
+  setHouseholdBillPages(workspaceId: string, id: string, input: SetHouseholdBillPagesInput) {
+    return this.request<HouseholdBillDto>(
+      'PUT',
+      this.ws(workspaceId, `/household-bills/${enc(id)}/pages`),
+      input,
+    );
+  }
+  /** Path of a bill's page (for a link or <img src>, through the same-origin proxy in the browser). */
+  householdBillFilePath(workspaceId: string, id: string, fileId: string) {
+    return this.baseUrl + this.ws(workspaceId, `/household-bills/${enc(id)}/files/${enc(fileId)}`);
   }
   /** ADR-0048 §3: a statement, payslip or bill to read before it's filed. Poll `getScan` until it isn't `reading`. */
   createScan(workspaceId: string, input: CreateScanInput) {

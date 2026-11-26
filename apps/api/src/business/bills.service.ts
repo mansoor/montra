@@ -3,6 +3,7 @@
  * calendar. A payment is the exact amount; partly paying a bill is outside R1.
  */
 import { Inject, Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { newId, type BillRow, type Trx } from '@montra/db';
 import { addDays, asCurrencyCode, BILL_MATCH_DAYS, type CalendarDate } from '@montra/domain';
 import type {
@@ -180,6 +181,16 @@ export class BillsService {
         .where('id', '=', id)
         .returningAll()
         .executeTakeFirstOrThrow();
+      // ADR-0059 §4: pages moved or removed: the vault gets the bill's new PDF if it had the bill. Pages added are new
+      // files, which go with the bill's PDF as any new page does.
+      const before = r.attachment_ids;
+      if (
+        req.fileIds !== undefined &&
+        req.fileIds.length > 0 &&
+        (req.fileIds.length !== before.length || req.fileIds.some((f, i) => f !== before[i]))
+      ) {
+        await sql`select app.vault_pages_changed(${req.fileIds}::uuid[])`.execute(trx);
+      }
       return this.dto(trx, ctx, row, todayOf(e));
     });
   }

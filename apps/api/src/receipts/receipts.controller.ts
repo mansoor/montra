@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -20,6 +21,7 @@ import {
   CreateReceiptRequest,
   ReceiptItemSearchQuery,
   ReceiptListQuery,
+  SetReceiptPagesRequest,
   UpdateReceiptRequest,
   type ReceiptItemSearchDto,
   type OrderImportResultDto,
@@ -134,6 +136,13 @@ export class ReceiptsController {
   update(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown): Promise<ReceiptDto> {
     requireRole(ctx, ...WRITERS);
     return this.receipts.update(dbCtx(ctx), parse(z.uuid(), id), parse(UpdateReceiptRequest, body));
+  }
+
+  /** ADR-0059 (VLT-15): the pages it keeps, in their new order; a page left out goes to the Trash. */
+  @Put(':id/pages')
+  setPages(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown): Promise<ReceiptDto> {
+    requireRole(ctx, ...WRITERS);
+    return this.receipts.setPages(dbCtx(ctx), parse(z.uuid(), id), parse(SetReceiptPagesRequest, body));
   }
 
   /** Link to a transaction (or create one) and split it by the receipt (04 §7 step 7). */

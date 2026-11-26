@@ -480,6 +480,9 @@ export function createApi(opts: ApiOptions) {
     matchReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/match`),
     rejectReceipt: (w: string, id: string) => request<ReceiptDto>('POST', `${ws(w)}/receipts/${id}/reject`),
     deleteReceipt: (w: string, id: string) => request<void>('DELETE', `${ws(w)}/receipts/${id}`),
+    /** ADR-0059: the pages a receipt keeps, in their new order; a page left out goes to the Trash. */
+    setReceiptPages: (w: string, id: string, input: { version: string; fileIds: string[] }) =>
+      request<ReceiptDto>('PUT', `${ws(w)}/receipts/${id}/pages`, input),
 
     // ----- Categories (ACC-08): add one from the category picker. The sync pull brings it to the store. ------
     categoryGroups: async (w: string, entityId: string) =>
