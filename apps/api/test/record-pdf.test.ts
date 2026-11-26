@@ -1,4 +1,5 @@
 import { PDFDocument } from 'pdf-lib';
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import {
   jpegOrientation,
@@ -89,11 +90,34 @@ describe('record PDFs (ADR-0059 §1)', () => {
     expect(Number(page.getWidth().toFixed(0))).toBe(288);
   });
 
-  it('refuses a page it can’t put in a PDF: a WebP photo, or a PDF it can’t open', async () => {
-    const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')]);
+  it('decodes a WebP photo and draws it upright, at its shape', async () => {
+    // 40 × 20 stored, EXIF orientation 6 (turn 90° clockwise to view): it shows 20 wide and 40 tall.
+    const webp = await sharp({ create: { width: 40, height: 20, channels: 3, background: '#c33' } })
+      .webp()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    const made = await renderRecordPdf({
+      pages: [
+        { bytes: webp, mime: 'image/webp' },
+        { bytes: jpeg({ width: 10, height: 10, note: 'after webp' }), mime: 'image/jpeg' },
+      ],
+      title: 'w',
+      at: AT,
+    });
+    expect(made.pages).toBe(2);
+    const page = (await PDFDocument.load(made.bytes)).getPage(0);
+    expect(Number(page.getWidth().toFixed(0))).toBe(612);
+    expect(Number(page.getHeight().toFixed(0))).toBe(1224);
+  });
+
+  it('refuses a page it can’t put in a PDF: another kind of image, a damaged WebP, or a PDF it can’t open', async () => {
     await expect(
-      renderRecordPdf({ pages: [{ bytes: webp, mime: 'image/webp' }], title: 'w', at: AT }),
+      renderRecordPdf({ pages: [{ bytes: Buffer.from('heic?'), mime: 'image/heic' }], title: 'h', at: AT }),
     ).rejects.toMatchObject({ reason: 'unsupported' });
+    const broken = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')]);
+    await expect(
+      renderRecordPdf({ pages: [{ bytes: broken, mime: 'image/webp' }], title: 'w', at: AT }),
+    ).rejects.toMatchObject({ reason: 'unreadable' });
     await expect(
       renderRecordPdf({
         pages: [{ bytes: Buffer.from('not a pdf'), mime: 'application/pdf' }],

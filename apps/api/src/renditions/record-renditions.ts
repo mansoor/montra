@@ -12,7 +12,7 @@
  * - A PDF made from other pages (they were moved or removed since) is replaced when the vault hasn't had it, and set
  *   aside (`superseded_at`) when it has: it stays in the vault, and the new PDF goes as a new document (the vault's
  *   client adds no version to a document).
- * - A page Montra can't put in a PDF (a damaged PDF, a WebP photo) means no PDF: the pages stay in Montra, and say why.
+ * - A page Montra can't put in a PDF (a damaged PDF or photo) means no PDF: the pages stay in Montra, and say why.
  *
  * Nothing here logs a file's name, an amount or a merchant: only ids and counts.
  */

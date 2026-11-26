@@ -38,9 +38,10 @@ Every receipt and every bill goes to the vault as **one PDF**, a single photo in
   EXIF orientation is applied by how the page draws the image, never by re-encoding it. A PNG is lossless already (pdf-lib
   keeps its pixels; a 16-bit PNG is drawn at 8 bits). A photo's page is Letter's width (8.5 inches) and as tall as its
   shape needs, up to the 200-inch page PDF readers show; the image keeps its full resolution whatever the page's size.
-- **WebP:** pdf-lib can't put a WebP photo in a PDF without decoding it, and Montra has no WebP decoder (adding one, such
-  as `sharp`, is a new native dependency the owner hasn't approved). A record with a WebP page is "not converted": its
-  pages stay in Montra and its badge says why; taking the WebP page out (§4) lets the rest go. Phones capture JPEG.
+- **WebP:** pdf-lib can't put a WebP photo in a PDF without decoding it, so the API decodes it with `sharp` (owner's
+  answer, 2026-11-25), turns it upright by its EXIF orientation and puts it in as a lossless PNG page. Any other kind of
+  image, or a page that can't be read, makes the record "not converted": its pages stay in Montra and its badge says
+  why; taking that page out (§4) lets the rest go. Phones capture JPEG.
 - **Only the PDF goes.** Montra keeps the original pages for itself and sends nothing else: no original attached (unlike
   ADR-0057's "attach the original"). The pages' own outbox rows become `converted` and are never sent.
 - **A record that is one PDF already** (a PDF invoice uploaded on its own) goes as it is: it is the record's one PDF, and
@@ -170,7 +171,7 @@ Added to `docs/requirements/R1-requirements.md`:
 - More storage: each record's PDF is a second copy of its pages (BAK-08 counts it).
 - A record whose pages change after it was sent is in the vault twice: the earlier PDF (or photos, before this ADR) and
   the new one. The vault decides what happens to the earlier one; Montra doesn't delete it.
-- A WebP page keeps its record out of the vault until it is removed or Montra can decode WebP.
+- The API depends on `sharp` (native, with prebuilt libvips) for WebP pages.
 
 ## Alternatives considered
 
@@ -201,8 +202,7 @@ Added to `docs/requirements/R1-requirements.md`:
 
 ## Open for the owner
 
-- **WebP pages** (§1): approve a WebP decoder (`sharp`, already in the lockfile through Next.js) so a WebP photo is
-  converted to a lossless PNG page, or keep such records in Montra.
+- **WebP pages** (§1): answered 2026-11-25: add `sharp` and decode WebP to a lossless PNG page.
 - **Reimbursements** (§1) are treated as receipts (one PDF per reimbursement). Say if they should go page by page as
   before.
 - **A single PDF goes as it is** (§1) rather than as a copy of its pages.

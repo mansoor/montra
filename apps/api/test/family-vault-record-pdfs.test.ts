@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
 import { PDFDocument } from 'pdf-lib';
+import sharp from 'sharp';
 import { encodeFakeReceiptImage } from '@montra/ai-gateway';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Worker } from '../src/jobs/queue.js';
@@ -250,6 +251,26 @@ describe('a receipt goes as one PDF (ADR-0059 §1)', () => {
     expect(await pageSizes(intakeBytes(pdf.vault_ref))).toEqual([[612, 1836]]);
   });
 
+  it('puts a WebP photo in the PDF, decoded and upright', async () => {
+    const before = sentCount();
+    // Stored 200 wide and 100 tall, EXIF orientation 6: a person sees it 100 wide and 200 tall.
+    const webp = await sharp({ create: { width: 200, height: 100, channels: 3, background: '#3a6' } })
+      .webp()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    const r = await receipt([
+      { bytes: webp, name: 'shot.webp' },
+      { bytes: jpeg({ width: 100, height: 100, note: 'after webp' }), name: 'next.jpg' },
+    ]);
+    await cycle();
+    expect(sentCount()).toBe(before + 1);
+    const [pdf] = await pdfsOf(r.fileIds);
+    expect(await pageSizes(intakeBytes(pdf.vault_ref))).toEqual([
+      [612, 1224],
+      [612, 612],
+    ]);
+  });
+
   it('sends a receipt that is one PDF as it is', async () => {
     const original = await pdfOf([[300, 400]]);
     const one = await receipt([{ bytes: original, name: 'order.pdf' }]);
@@ -312,13 +333,13 @@ describe('a receipt goes as one PDF (ADR-0059 §1)', () => {
       expect(await item(f)).toMatchObject({
         status: 'converted',
         render_state: 'not_converted',
-        not_kept_reason: RECORD_NOT_CONVERTED_WORDS.unsupported_page,
+        not_kept_reason: RECORD_NOT_CONVERTED_WORDS.unreadable_page,
       });
     }
     expect(await badge(r.fileIds[0]!)).toMatchObject({
       converted: { state: 'not_converted', combined: true },
     });
-    // Taking the WebP page out lets the rest go.
+    // Taking the damaged page out lets the rest go.
     const v = (await c.get(url(`/receipts/${r.id}`))).body.version;
     expect(
       (await c.put(url(`/receipts/${r.id}/pages`), { version: v, fileIds: [r.fileIds[0]] })).status,

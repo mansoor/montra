@@ -6,8 +6,9 @@
  *   the photo. Its EXIF orientation is applied by how the page draws it, never by re-encoding.
  * - **PNG** photos are lossless already; pdf-lib keeps their pixels (Flate). A 16-bit PNG is drawn at 8 bits.
  * - **PDF** pages are copied, not drawn again: text stays text.
- * - **WebP** can't go inside a PDF without decoding it, and Montra has no WebP decoder: such a record is "not converted"
- *   (`RecordPdfError('unsupported')`), and its pages stay in Montra.
+ * - **WebP** can't go inside a PDF as it is, so sharp decodes it, turns it upright by its EXIF orientation and saves it as
+ *   a lossless PNG, which goes in like any PNG. Any other kind of image is "not converted"
+ *   (`RecordPdfError('unsupported')`), and the record's pages stay in Montra.
  *
  * A photo's page is 8.5 inches wide (Letter's width) and as tall as the photo's shape needs, up to the 200-inch limit
  * PDF readers keep to; the image keeps its full resolution whatever the page's size. The same pages and date give the
@@ -21,6 +22,7 @@ import {
   pushGraphicsState,
   type PDFImage,
 } from 'pdf-lib';
+import sharp from 'sharp';
 
 export interface RecordPage {
   bytes: Uint8Array;
@@ -82,6 +84,9 @@ export async function renderRecordPdf(input: RecordPdfInput): Promise<{ bytes: U
         orientation = jpegOrientation(page.bytes);
       } else if (mime === 'image/png') {
         image = await pdf.embedPng(page.bytes);
+      } else if (mime === 'image/webp') {
+        // Upright already: sharp applies the EXIF orientation and the PNG keeps none.
+        image = await pdf.embedPng(await sharp(page.bytes).rotate().png().toBuffer());
       } else {
         throw new RecordPdfError('unsupported');
       }

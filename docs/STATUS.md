@@ -37,8 +37,8 @@ migration 0091; rendering, 0092; sending, 0093); see §7g. PDF/A and bank-feed s
 **Decided 2026-11-25, built in a draft PR:** [ADR-0059](design/adr/0059-vault-receipt-bill-pdfs.md), every receipt and
 every bill sent to the vault as one PDF of its pages, in order (a single photo included; JPEGs as they are, a PDF's
 pages copied), never a photo on its own, with pages moved or removed afterwards on the web's receipt and bill pages and
-the phone's receipt screen; the vault gets the new PDF as a new document. Migration 0097; see §7g. A WebP page keeps its
-record in Montra until a decoder is approved.
+the phone's receipt screen; the vault gets the new PDF as a new document. Migration 0097; see §7g. A WebP page is
+decoded with `sharp` into a lossless PNG page.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
@@ -311,9 +311,8 @@ finished:
     rendering in the document worker with reportlab instead of pdf-lib.
 16. **Monthly statement PDFs for bank feeds.** A feed has no file; ADR-0057's renderer could make one per month. Not
     now (owner's answer, 2026-11-24).
-17. **WebP pages in a receipt's or bill's PDF.** ADR-0059 can't put a WebP photo in a PDF without decoding it, so such a
-    record stays in Montra, "couldn't be converted". A decoder (`sharp`, already in the lockfile through Next.js) would
-    turn it into a lossless PNG page; it is a new native dependency of the API, for the owner to approve.
+17. **WebP pages in a receipt's or bill's PDF.** Done 2026-11-25: the owner approved `sharp`, which decodes a WebP page
+    into a lossless PNG page.
 18. **A version of the same vault document.** ADR-0059 sends a record's new PDF as a new document because the app
     client (`@fdv/client` 0.9.0-dev.72) can't add a version. When it can, send it as a version of the earlier PDF's
     document (`vault_document_id` on its outbox row).
@@ -3493,13 +3492,13 @@ Phase 11 leftovers:
     trigger follows a record's pages; `vault_item.pages_changed_at`; `app.vault_file_record()`,
     `app.vault_pages_changed()`; `vault_due()`/`vault_next()` count marked rows; `vault_file_conversions()` gains
     `combined`.
-  - Not done: WebP pages (no decoder; backlog 17), a version of the same vault document (backlog 18), withdrawing an
+  - Not done: a version of the same vault document (backlog 18), withdrawing an
     earlier PDF still in someone's Inbox, page controls for a business's bill and for bills on the phone. Multi-file
     payslips and tax forms, leases and maintenance logs go as before.
   - Tests: API `family-vault-record-pdfs.test.ts` (mixed JPEG, PNG and PDF pages in order with the JPEG byte for byte,
     no page sent alone, the pages kept; one photo; EXIF orientation; one PDF as it is; waiting for the capture and for
-    Review; WebP; moving and removing pages, with the refusals; a receipt sent before this left alone until its pages
-    change; a two-page scanned bill, moved); `record-pdf.test.ts` (orientation, page sizes, same bytes twice, refusals).
+    Review; a WebP page decoded, and a damaged page kept back; moving and removing pages, with the refusals; a receipt sent before this left alone until its pages
+    change; a two-page scanned bill, moved); `record-pdf.test.ts` (orientation, page sizes, WebP, same bytes twice, refusals).
     The outbox tests that send lone files (`family-vault-*.test.ts`) pass `orphanWaitMs: 0`. Web
     `record-pages.test.ts`; phone `receipts.test.ts`.
 

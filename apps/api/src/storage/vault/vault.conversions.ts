@@ -45,7 +45,7 @@ export const RECORD_NOT_CONVERTED_WORDS = {
   unreadable_page:
     'A page couldn’t be read (a damaged or password-protected PDF, say), so the PDF for the vault wasn’t made. The pages stay in Montra.',
   unsupported_page:
-    'A page is a WebP photo, which Montra can’t put in a PDF yet, so the PDF for the vault wasn’t made. The pages stay in Montra.',
+    'A page is a kind of image Montra can’t put in a PDF, so the PDF for the vault wasn’t made. The pages stay in Montra.',
   storage_full: NOT_CONVERTED_WORDS.storage_full,
 } as const;
 
