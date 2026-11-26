@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -13,7 +14,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CreateHouseholdBillRequest, UpdateHouseholdBillRequest, type FiledBillDto } from '@montra/schemas';
+import {
+  CreateHouseholdBillRequest,
+  SetHouseholdBillPagesRequest,
+  UpdateHouseholdBillRequest,
+  type FiledBillDto,
+} from '@montra/schemas';
 import { z } from 'zod';
 import { AuthGuard, Ctx, dbCtx, WorkspaceGuard, type RequestContext } from '../auth/auth.js';
 import { CONFIG, type AppConfig } from '../config.js';
@@ -84,6 +90,13 @@ export class HouseholdBillsController {
   update(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
     requireRole(ctx, ...WRITERS);
     return this.bills.update(dbCtx(ctx), parse(z.uuid(), id), parse(UpdateHouseholdBillRequest, body));
+  }
+
+  /** ADR-0059 (VLT-15): the pages it keeps, in their new order; a page left out goes to the Trash. */
+  @Put(':id/pages')
+  setPages(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: unknown) {
+    requireRole(ctx, ...WRITERS);
+    return this.bills.setPages(dbCtx(ctx), parse(z.uuid(), id), parse(SetHouseholdBillPagesRequest, body));
   }
 
   @Get(':id/files/:fileId')

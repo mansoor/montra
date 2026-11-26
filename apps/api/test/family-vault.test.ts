@@ -815,7 +815,7 @@ describe('a connection made before API keys (Ed25519, hard cutover)', () => {
     await db.query(`update app.vault_connection_state set next_check_at = now() where workspace_id = $1`, [
       wsId,
     ]);
-    await h.app.get(VaultJobs).run({ sendGapMs: 0, settleMs: 0 });
+    await h.app.get(VaultJobs).run({ sendGapMs: 0, settleMs: 0, orphanWaitMs: 0 });
     expect(await vaultRow()).toMatchObject({ status: 'needs_vault' });
     const told = await db.query(
       `select count(*)::int as n from app.notification where workspace_id = $1 and type = 'vault_attention'`,

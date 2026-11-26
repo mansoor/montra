@@ -23,6 +23,7 @@ import { VaultJobs } from './storage/vault/vault.jobs.js';
 import { BankFeedSync } from './bank-feeds/bank-feeds.sync.js';
 import { TaxIdSealing } from './business/tax-ids.js';
 import { StatementRenditions } from './renditions/statement-renditions.js';
+import { RecordRenditions } from './renditions/record-renditions.js';
 
 /** Worker entrypoint (ADR-0002): the same modules as the API, without the HTTP server. */
 const config = loadConfig();
@@ -40,6 +41,8 @@ app.get(TaxFormReading).register();
 app.get(IntakeJobs).register();
 // VLT-13 (ADR-0057 §2): statements rendered as PDFs, a file at a time, when sending to the vault asks for one.
 app.get(StatementRenditions).register();
+// VLT-14 (ADR-0059): a receipt's or bill's pages made into one PDF, a record at a time, when the vault asks for it.
+app.get(RecordRenditions).register();
 const planning = app.get(RecommendationsService);
 planning.register();
 const notifications = app.get(NotificationJobs);

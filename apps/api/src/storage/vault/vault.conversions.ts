@@ -16,6 +16,7 @@
 import { sql } from 'kysely';
 import type { Trx } from '@montra/db';
 import type { VaultUnkeptChoice, VaultCoverNumber } from '@montra/schemas';
+import type { RecordRenderResult } from '../../renditions/record-renditions.js';
 
 type Ctx = { workspaceId: string; userId: string };
 
@@ -35,6 +36,21 @@ export const NOT_CONVERTED_WORDS = {
     'Montra couldn’t read this file into rows, so it couldn’t be converted to PDF. It stays in Montra. Choose “Convert to PDF, attach the original” to send it with a cover page.',
   storage_full: 'Montra’s storage is full, so the PDF couldn’t be made. It stays in Montra for now.',
 } as const;
+
+/**
+ * ADR-0059 §1: why a receipt's or bill's pages weren't made into a PDF, in Montra's words for the badges. The pages
+ * stay in Montra; none is ever sent on its own.
+ */
+export const RECORD_NOT_CONVERTED_WORDS = {
+  unreadable_page:
+    'A page couldn’t be read (a damaged or password-protected PDF, say), so the PDF for the vault wasn’t made. The pages stay in Montra.',
+  unsupported_page:
+    'A page is a WebP photo, which Montra can’t put in a PDF yet, so the PDF for the vault wasn’t made. The pages stay in Montra.',
+  storage_full: NOT_CONVERTED_WORDS.storage_full,
+} as const;
+
+/** ADR-0059: what a page's outbox row says it waits for (`render_options`), beside a statement's options. */
+export const RECORD_OPTIONS = { record: true } as const;
 
 /** §12: a rendering not heard of in this long is asked for again (the job's run, or the worker, may have stopped). */
 export const RENDER_WAIT_MS = 30 * 60_000;
@@ -189,6 +205,110 @@ export async function recordConversion(
           updated_at: now,
         })
         .execute();
+      return;
+  }
+}
+
+/**
+ * ADR-0059 §3: a record's PDF just stored, in the same transaction. Each vault connection that has any of the record's
+ * pages in its outbox (they wait for the PDF, `converted`, or the vault had them and their pages changed) gets a queued
+ * row for the PDF, when it still sends the PDF's kind. Wakes the job once it has settled. Answers how many it queued.
+ */
+export async function queueRecordPdf(
+  trx: Trx,
+  ctx: Ctx,
+  pdfId: string,
+  kind: string,
+  pages: readonly string[],
+): Promise<number> {
+  if (!pages.length) return 0;
+  const { rows } = await sql<{ destination_id: string }>`
+    insert into app.vault_item (workspace_id, destination_id, file_id)
+    select distinct d.workspace_id, d.id, ${pdfId}::uuid
+      from app.vault_item i
+      join app.storage_destination d on d.workspace_id = i.workspace_id and d.id = i.destination_id
+     where i.workspace_id = ${ctx.workspaceId}::uuid and i.file_id = any (${[...pages]}::uuid[])
+       and d.kind = 'fdv' and d.mirror_files and d.status not in ('paused', 'disconnected')
+       and ${kind}::text = any (d.file_kinds)
+    on conflict do nothing
+    returning destination_id`.execute(trx);
+  if (rows.length) {
+    // §3: a new file waits a little (the job's settle time), as the trigger on `app.file` schedules it.
+    await sql`select app.schedule_system_job('schedule', 'storage.vault', now() + interval '2 minutes')`.execute(
+      trx,
+    );
+  }
+  return rows.length;
+}
+
+/**
+ * ADR-0059 §3: what became of a record's PDF, on its pages' outbox rows: the rows waiting for it (`converted`) and the
+ * rows whose pages changed (`pages_changed_at`). Made or kept: nothing more to do until the pages change again.
+ */
+export async function recordRecordConversion(
+  trx: Trx,
+  ctx: Ctx,
+  pages: readonly string[],
+  result: RecordRenderResult,
+): Promise<void> {
+  const ids = [...new Set(pages)];
+  if (!ids.length) return;
+  const rows = () =>
+    trx.updateTable('app.vault_item').where('workspace_id', '=', ctx.workspaceId).where('file_id', 'in', ids);
+  const now = new Date();
+  const never = sql<Date>`'infinity'::timestamptz`;
+  const later = (ms: number) => new Date(now.getTime() + ms);
+  switch (result.status) {
+    case 'rendered':
+    case 'kept':
+      await rows()
+        .where('status', '=', 'converted')
+        .set({
+          render_state: 'rendered',
+          render_options: JSON.stringify(RECORD_OPTIONS),
+          not_kept_reason: null,
+          last_error: null,
+          next_attempt_at: never,
+          updated_at: now,
+        })
+        .execute();
+      await rows().where('pages_changed_at', 'is not', null).set({ pages_changed_at: null }).execute();
+      return;
+    case 'not_ready':
+      await rows()
+        .where('status', '=', 'converted')
+        .set({ next_attempt_at: later(RENDER_NOT_READY_MS), updated_at: now })
+        .execute();
+      await rows()
+        .where('pages_changed_at', 'is not', null)
+        .set({ pages_changed_at: later(RENDER_NOT_READY_MS) })
+        .execute();
+      return;
+    case 'not_converted': {
+      const full = result.reason === 'storage_full';
+      await rows()
+        .where('status', '=', 'converted')
+        .set({
+          render_state: 'not_converted',
+          render_options: JSON.stringify(RECORD_OPTIONS),
+          not_kept_reason: RECORD_NOT_CONVERTED_WORDS[result.reason],
+          next_attempt_at: full ? later(RENDER_FULL_MS) : never,
+          updated_at: now,
+        })
+        .execute();
+      await rows()
+        .where('pages_changed_at', 'is not', null)
+        .set({ pages_changed_at: full ? later(RENDER_FULL_MS) : null })
+        .execute();
+      return;
+    }
+    case 'not_renderable':
+      // In the Trash, or no longer a page of a record: looked at again in a day (it may be restored, or filed).
+      await rows()
+        .where('status', '=', 'converted')
+        .set({ next_attempt_at: later(24 * 60 * 60_000), updated_at: now })
+        .execute();
+      await rows().where('pages_changed_at', 'is not', null).set({ pages_changed_at: null }).execute();
       return;
   }
 }

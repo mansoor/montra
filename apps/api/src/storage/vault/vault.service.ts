@@ -1246,6 +1246,7 @@ export class VaultService {
         not_kept: number;
         failed: number;
         earlier: number;
+        combined: boolean | null;
       }>`select * from app.vault_file_conversions(${files.map((f) => f.id)}::uuid[])`.execute(trx);
       const converted = new Map(conv.map((r) => [r.file_id, r]));
       return {
@@ -1910,11 +1911,27 @@ function conversionOf(
         not_kept: number;
         failed: number;
         earlier: number;
+        combined: boolean | null;
       }
     | undefined,
   disconnected: boolean,
 ): NonNullable<FileStorageStatesResponse['data'][number]['vault']>['converted'] {
   if (!c) return null;
+  // ADR-0059: a receipt's or bill's page is in its record's PDF; moving or removing pages sends a new one.
+  if (c.combined)
+    return {
+      state: c.render_state === 'import_undone' ? 'rendered' : c.render_state,
+      attached: false,
+      parts: c.parts,
+      waiting: c.waiting,
+      received: c.received,
+      filed: c.filed,
+      notKept: c.not_kept,
+      failed: c.failed,
+      earlier: c.earlier,
+      canSendAgain: false,
+      combined: true,
+    };
   return {
     state: c.render_state,
     attached: c.attached,
