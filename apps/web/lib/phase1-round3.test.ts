@@ -214,5 +214,7 @@ describe('the dev sign-in cookie (PLT-01)', () => {
     expect(devCookieSecure('app.localhost', 'production')).toBe(false);
     expect(devCookieSecure(null, 'production')).toBe(true);
     expect(devCookieSecure('app.example.com', 'development')).toBe(false);
+    expect(devCookieSecure('10.0.0.5:3030', 'production', true)).toBe(false);
+    expect(devCookieSecure('10.0.0.5:3030', 'production', false)).toBe(true);
   });
 });

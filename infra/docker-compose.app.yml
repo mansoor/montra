@@ -1,0 +1,138 @@
+# Montra itself in containers on a development machine: the API, the Node job worker, the document worker and the web
+# app, built from this checkout, beside the dependencies in docker-compose.yml. Development settings throughout (dev
+# sign-in, local file storage, the AI key from .env), so this is never a way to host Montra for real: that's
+# infra/selfhost (ADR-0050).
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml build
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml run --rm migrate
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml up -d --no-deps api worker doc-worker web
+#
+# `--no-deps` leaves Postgres and the other dependencies running as they are; start them first with docker-compose.yml.
+# The web app is on http://localhost:3030 and the API on http://localhost:4040 (MONTRA_WEB_PORT, MONTRA_API_PORT), so
+# `pnpm --filter @montra/web dev` and the API on 3000 and 4000 can still run beside it.
+#
+# Settings come from the repo's .env, with the addresses inside the Compose network put over them. Files are kept in
+# the `appstorage` volume, not a folder of this machine.
+
+x-app: &app
+  restart: unless-stopped
+  init: true
+  # One user for every container, so each can read and write the files in the shared volume.
+  user: '1000:1000'
+  env_file:
+    - path: ../.env
+      required: false
+  extra_hosts: ['host.docker.internal:host-gateway']
+  depends_on:
+    postgres: { condition: service_healthy }
+
+# The API and the Node worker: the same image and settings.
+x-api-environment: &api-environment
+  NODE_ENV: development
+  PORT: '4000'
+  DATABASE_URL: postgres://montra_app:montra_app@postgres:5432/montra
+  DATABASE_ADMIN_URL: postgres://montra_owner:montra_owner@postgres:5432/montra
+  STORAGE_MODE: local
+  STORAGE_DIR: /data/storage
+  API_URL: http://localhost:${MONTRA_API_PORT:-4040}
+  WEB_URL: http://localhost:${MONTRA_WEB_PORT:-3030}
+  # A vault preview on this machine is at http://localhost:<port> as Montra knows it (FAMILY_VAULT_ALLOW_LOCAL_HTTP).
+  # Inside a container that is the container itself, so each of these ports is passed on to the same port of the
+  # machine. Empty for none.
+  HOST_RELAY_PORTS: ${MONTRA_HOST_RELAY_PORTS-8091}
+  # Node passes each relayed connection to host.docker.internal, on the port it came in on.
+  HOST_RELAY_JS: >-
+    const net = require('node:net');
+    for (const port of (process.env.HOST_RELAY_PORTS || '').split(',').map(Number).filter(Boolean))
+    net.createServer((c) => { const u = net.connect(port, 'host.docker.internal');
+    c.pipe(u).pipe(c); u.on('error', () => c.destroy()); c.on('error', () => u.destroy()); })
+    .listen(port, '127.0.0.1');
+
+# Health checks run inside the images, which have node or python but no curl.
+x-health: &health
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 30s
+
+services:
+  # Migrations and reference data, as `pnpm db:migrate` does. Run it after each pull, before `up`.
+  migrate:
+    <<: *app
+    image: montra-dev/api:local
+    restart: 'no'
+    profiles: [tools]
+    environment:
+      DATABASE_ADMIN_URL: postgres://montra_owner:montra_owner@postgres:5432/montra
+    working_dir: /app/packages/db
+    command: ['node', 'dist/cli.js', 'migrate']
+
+  api:
+    <<: *app
+    image: montra-dev/api:local
+    build: { context: .., dockerfile: apps/api/Dockerfile }
+    environment: *api-environment
+    command: ['sh', '-c', 'node -e "$$HOST_RELAY_JS" & exec node dist/main.js']
+    ports: ['${MONTRA_API_PORT:-4040}:4000']
+    volumes: [appstorage:/data/storage]
+    healthcheck:
+      <<: *health
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+
+  worker:
+    <<: *app
+    image: montra-dev/api:local
+    environment: *api-environment
+    command: ['sh', '-c', 'node -e "$$HOST_RELAY_JS" & exec node dist/worker-main.js']
+    volumes: [appstorage:/data/storage]
+    depends_on:
+      api: { condition: service_healthy }
+
+  doc-worker:
+    <<: *app
+    image: montra-dev/doc-worker:local
+    build: { context: .., dockerfile: apps/doc-worker/Dockerfile }
+    # Only what the document worker reads (apps/doc-worker/src/montra_doc_worker/settings.py), not the whole .env.
+    env_file: []
+    environment:
+      DATABASE_URL: postgres://montra_app:montra_app@postgres:5432/montra
+      STORAGE_MODE: local
+      STORAGE_DIR: /data/storage
+    volumes: [appstorage:/data/storage]
+
+  web:
+    <<: *app
+    image: montra-dev/web:local
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_AUTH_MODE: dev
+        NEXT_PUBLIC_APP_URL: http://localhost:${MONTRA_WEB_PORT:-3030}
+        NEXT_PUBLIC_API_WS_URL: ws://localhost:${MONTRA_API_PORT:-4040}/v1/ws
+    env_file: []
+    environment:
+      API_URL: http://api:4000
+      # Dev sign-in from another device on the network, over plain http (apps/web/lib/session.ts).
+      DEV_COOKIE_INSECURE: 'on'
+    ports: ['${MONTRA_WEB_PORT:-3030}:3000']
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      <<: *health
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/sign-in').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+
+volumes:
+  appstorage:
