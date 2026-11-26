@@ -44,6 +44,10 @@ pnpm --filter @montra/api fx:load [-- --full]      # load ECB (+ OXR) rates now;
 pnpm --filter @montra/web dev                      # web on :3000 (dev sign-in: any email)
 pnpm --filter @montra/mobile start                 # Expo dev server
 pnpm --filter @montra/mobile test:screens          # phone screen tests (Jest + React Native Testing Library)
+# Montra itself in containers (web :3030, API :4040), development settings; see infra/docker-compose.app.yml
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml build
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml run --rm migrate
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml up -d --no-deps api worker doc-worker web
 ```
 
 - API tests create their own database (`montra_test_api`) in a global setup, so they need Postgres running.
