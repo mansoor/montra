@@ -12,6 +12,7 @@ import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { Disclaimer } from '../ui/disclaimer';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 const TYPES = ['emergency_fund', 'savings', 'sinking_fund', 'debt_payoff'] as const;
 
@@ -32,6 +33,7 @@ export function GoalsBoard({
 }: GoalOptions & { goals: GoalDto[]; empty: ReactNode }) {
   const { t } = useI18n();
   const { run, busy, message, setMessage } = useAction();
+  const { confirm, dialog } = useConfirm();
   const active = goals.filter((g) => !g.archived);
   const archived = goals.filter((g) => g.archived);
   const setArchived = (g: GoalDto, value: boolean) =>
@@ -53,8 +55,13 @@ export function GoalsBoard({
               options={options}
               busy={busy}
               onSaved={() => setMessage({ tone: 'good', text: t('goal.saved') })}
-              onArchive={() => {
-                if (window.confirm(t('goal.archive_confirm', { name: g.name }))) void setArchived(g, true);
+              onArchive={async () => {
+                const ok = await confirm({
+                  title: t('goal.archive_title'),
+                  body: <p>{t('goal.archive_confirm', { name: g.name })}</p>,
+                  confirmLabel: t('goal.archive_goal'),
+                });
+                if (ok) void setArchived(g, true);
               }}
             />
           ))}
@@ -96,6 +103,7 @@ export function GoalsBoard({
           </ul>
         </details>
       )}
+      {dialog}
     </>
   );
 }

@@ -6,6 +6,7 @@ import { canDeleteForever } from '@/lib/trash';
 import { DateText } from './i18n';
 import { Money } from './money';
 import { StatusLine, useAction } from './use-action';
+import { useConfirm } from './ui/confirm-dialog';
 
 /**
  * BAK-06: what's been deleted, and how and when it goes. Everything can come back until then; a business or rental
@@ -29,6 +30,7 @@ export function TrashList({
   showEmpty?: boolean;
 }) {
   const { run, busy, message, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   // Restoring the last item empties the list; the confirmation stays on screen with the empty state.
   if (items.length === 0) {
     return (
@@ -48,8 +50,14 @@ export function TrashList({
             className="btn-secondary text-bad"
             disabled={busy}
             data-testid="trash-empty"
-            onClick={() => {
-              if (!window.confirm(t('trash.empty_confirm', { count: goes.length }))) return;
+            onClick={async () => {
+              const ok = await confirm({
+                title: t('trash.empty_title'),
+                body: <p>{t('trash.empty_confirm', { count: goes.length })}</p>,
+                confirmLabel: t('trash.empty_action'),
+                danger: true,
+              });
+              if (!ok) return;
               void run(
                 () => browserApi.emptyTrash(workspaceId),
                 (r) => t('trash.emptied', { deleted: r.deleted, kept: r.kept }),
@@ -108,8 +116,14 @@ export function TrashList({
                   className="btn-secondary text-bad"
                   disabled={busy}
                   aria-label={t('trash.delete_forever_named', { name: i.title })}
-                  onClick={() => {
-                    if (!window.confirm(t('trash.delete_forever_confirm', { name: i.title }))) return;
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: t('trash.delete_forever_title'),
+                      body: <p>{t('trash.delete_forever_confirm', { name: i.title })}</p>,
+                      confirmLabel: t('trash.delete_forever'),
+                      danger: true,
+                    });
+                    if (!ok) return;
                     void run(
                       () => browserApi.deleteFromTrash(workspaceId, i.kind, i.id),
                       t('trash.deleted_forever', { name: i.title }),
@@ -126,6 +140,7 @@ export function TrashList({
       <div className="px-4 pb-3">
         <StatusLine message={message} />
       </div>
+      {dialog}
     </section>
   );
 }

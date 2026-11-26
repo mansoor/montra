@@ -7,6 +7,7 @@ import { friendlyMessage } from '@/lib/errors';
 import { formatUsd, OUTCOME_TONE } from '@/lib/ai';
 import { percent } from '@/lib/review';
 import { useI18n } from '../i18n';
+import { useConfirm } from '../ui/confirm-dialog';
 
 const PAGE = 50;
 
@@ -16,6 +17,7 @@ const PAGE = 50;
  */
 export function AiActivity({ workspaceId }: { workspaceId: string }) {
   const { t, locale } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const [events, setEvents] = useState<AiEventDto[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,13 @@ export function AiActivity({ workspaceId }: { workspaceId: string }) {
   }
 
   async function removeAll() {
-    if (!window.confirm(t('ai.activity.confirm_delete_all'))) return;
+    const ok = await confirm({
+      title: t('ai.activity.delete_all_title'),
+      body: <p>{t('ai.activity.confirm_delete_all')}</p>,
+      confirmLabel: t('ai.activity.delete_all'),
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await browserApi.deleteAllAiEvents(workspaceId);
@@ -196,6 +204,7 @@ export function AiActivity({ workspaceId }: { workspaceId: string }) {
           {t('common.loading')}
         </p>
       )}
+      {dialog}
     </section>
   );
 }

@@ -17,6 +17,7 @@ import {
 } from '@/lib/rules';
 import { RuleOffer } from '../review/rule-offer';
 import { useI18n } from '../i18n';
+import { useConfirm } from '../ui/confirm-dialog';
 import { RuleForm } from './rule-form';
 
 const POLL_MS = 1000;
@@ -42,6 +43,7 @@ export function RulesManager({
 }) {
   const router = useRouter();
   const { t } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const [rules, setRules] = useState(() => sortRules(initialRules));
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [editing, setEditing] = useState<RuleDto | 'new' | null>(null);
@@ -245,8 +247,14 @@ export function RulesManager({
                       <button
                         type="button"
                         className="btn-secondary text-bad"
-                        onClick={() => {
-                          if (!window.confirm(t('rules.confirm_delete', { name: r.name }))) return;
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: t('rules.delete_title'),
+                            body: <p>{t('rules.confirm_delete', { name: r.name })}</p>,
+                            confirmLabel: t('rules.delete_rule'),
+                            danger: true,
+                          });
+                          if (!ok) return;
                           setRules((rs) => rs.filter((x) => x.id !== r.id));
                           void run(() => browserApi.deleteRule(workspace.id, r.id), t('rules.deleted'));
                         }}
@@ -261,6 +269,7 @@ export function RulesManager({
           </ol>
         )}
       </section>
+      {dialog}
     </div>
   );
 }

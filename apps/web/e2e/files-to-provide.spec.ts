@@ -143,19 +143,18 @@ test('a file provided again that repeats another file’s bytes warns first, and
     });
 
   // Cancel: nothing is uploaded, and the entry stays.
-  const asked: string[] = [];
-  page.once('dialog', (d) => {
-    asked.push(d.message());
-    void d.dismiss();
-  });
+  const asked = page.getByRole('alertdialog', { name: 'Use a duplicate file?' });
   await pick();
+  await expect(asked).toContainText('This looks like a duplicate of “Kept here.png”');
+  await asked.getByRole('button', { name: 'Cancel' }).click();
+  await expect(asked).toBeHidden();
   await expect(page.getByText('Nothing was uploaded.')).toBeVisible();
-  expect(asked[0]).toContain('This looks like a duplicate of “Kept here.png”');
   await expect(entry).toBeVisible();
 
   // Upload anyway: stored, and the entry goes.
-  page.once('dialog', (d) => void d.accept());
   await pick();
+  await asked.getByRole('button', { name: 'Upload anyway' }).click();
+  await expect(asked).toBeHidden();
   await expect(page.getByText(/Lost paper\.png is back in Montra/)).toBeVisible();
   await expect(page.getByTestId('missing-file')).toHaveCount(0);
 });

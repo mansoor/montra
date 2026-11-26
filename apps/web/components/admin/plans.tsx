@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { browserApi } from '@/lib/browser-api';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 const FEATURES = [
   'payroll',
@@ -32,6 +33,7 @@ const countOf = (v: string) => (v.trim() === '' ? null : Number(v));
 /** ADR-0049 §3: owners add, change and remove staff. Each change is emailed to every owner. */
 export function StaffPanel({ staff }: { staff: StaffMemberDto[] }) {
   const { run, busy, message, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<(typeof ROLES)[number]>('support');
   return (
@@ -81,8 +83,14 @@ export function StaffPanel({ staff }: { staff: StaffMemberDto[] }) {
                     type="button"
                     className="underline"
                     disabled={busy}
-                    onClick={() => {
-                      if (window.confirm(t('admin.staff_remove_confirm', { email: s.email }))) {
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: t('admin.staff_remove_title'),
+                        body: <p>{t('admin.staff_remove_confirm', { email: s.email })}</p>,
+                        confirmLabel: t('admin.staff_remove'),
+                        danger: true,
+                      });
+                      if (ok) {
                         void run(() => browserApi.adminRemoveStaff(s.userId), t('admin.saved'));
                       }
                     }}
@@ -129,6 +137,7 @@ export function StaffPanel({ staff }: { staff: StaffMemberDto[] }) {
         </button>
       </form>
       <StatusLine message={message} />
+      {dialog}
     </section>
   );
 }

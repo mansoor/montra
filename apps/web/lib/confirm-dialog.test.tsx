@@ -2,7 +2,7 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConfirmDialog, useConfirm } from '@/components/ui/confirm-dialog';
+import { ConfirmDialog, useConfirm, usePrompt } from '@/components/ui/confirm-dialog';
 
 // jsdom has <dialog> but not its modal methods: these do what the browser does that the component relies on.
 beforeAll(() => {
@@ -191,5 +191,113 @@ describe('useConfirm', () => {
     open();
     await act(async () => button('Cancel').click());
     expect(action).not.toHaveBeenCalled();
+  });
+});
+
+describe('useConfirm inside another dialog', () => {
+  it('keeps its Esc and close to itself, so the dialog around it stays open', async () => {
+    const outerClosed = vi.fn();
+    const outerCancelled = vi.fn();
+    function Nested() {
+      const { confirm, dialog: view } = useConfirm();
+      return (
+        <dialog open onClose={outerClosed} onCancel={outerCancelled}>
+          <button
+            type="button"
+            onClick={() => void confirm({ title: 'Use it anyway?', confirmLabel: 'Use it' })}
+          >
+            Open
+          </button>
+          {view}
+        </dialog>
+      );
+    }
+    act(() => root.render(<Nested />));
+    const inner = () => host.querySelectorAll('dialog')[1]!;
+    open();
+    const cancel = new Event('cancel', { cancelable: true });
+    await act(async () => {
+      inner().dispatchEvent(cancel);
+    });
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(inner().open).toBe(false);
+    open();
+    await act(async () => button('Use it').click());
+    expect(inner().open).toBe(false);
+    expect(outerCancelled).not.toHaveBeenCalled();
+    expect(outerClosed).not.toHaveBeenCalled();
+  });
+});
+
+describe('usePrompt', () => {
+  function Asker({ onAnswer }: { onAnswer: (text: string | null) => void }) {
+    const { prompt, dialog: view } = usePrompt();
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() =>
+            void prompt({
+              title: 'Decline it?',
+              label: 'Why? (optional)',
+              confirmLabel: 'Decline',
+              maxLength: 500,
+            }).then(onAnswer)
+          }
+        >
+          Open
+        </button>
+        {view}
+      </>
+    );
+  }
+  const input = () => host.querySelector('input')!;
+  /** Types as React sees it: the native value setter, then an input event. */
+  const type = (text: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input(), text);
+    input().dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  it('asks with a labelled text field, focused, and gives back what was typed', async () => {
+    const answers: (string | null)[] = [];
+    act(() => root.render(<Asker onAnswer={(text) => answers.push(text)} />));
+    open();
+    expect(dialog().open).toBe(true);
+    expect(dialog().getAttribute('role')).toBe('alertdialog');
+    expect(document.getElementById(dialog().getAttribute('aria-labelledby')!)?.textContent).toBe(
+      'Decline it?',
+    );
+    expect(document.activeElement).toBe(input());
+    expect(host.querySelector(`label[for="${input().id}"]`)?.textContent).toBe('Why? (optional)');
+    expect(input().maxLength).toBe(500);
+    act(() => type('Not a business cost'));
+    await act(async () => button('Decline').click());
+    expect(answers).toEqual(['Not a business cost']);
+    expect(dialog().open).toBe(false);
+  });
+
+  it('confirms with Enter in the field, and starts empty each time', async () => {
+    const answers: (string | null)[] = [];
+    act(() => root.render(<Asker onAnswer={(text) => answers.push(text)} />));
+    open();
+    act(() => type('First'));
+    await act(async () => button('Decline').click());
+    open();
+    expect(input().value).toBe('');
+    await act(async () => {
+      input().form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(answers).toEqual(['First', '']);
+  });
+
+  it('gives null on Cancel and on Esc', async () => {
+    const answers: (string | null)[] = [];
+    act(() => root.render(<Asker onAnswer={(text) => answers.push(text)} />));
+    open();
+    act(() => type('Never mind'));
+    await act(async () => button('Cancel').click());
+    open();
+    await act(async () => pressEscape());
+    expect(answers).toEqual([null, null]);
   });
 });

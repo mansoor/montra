@@ -24,6 +24,7 @@ import { Explanation } from '../ai/shared';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { useFileStorageStates, VaultBadges } from '../vault-badges';
 import { ReceiptViewer } from './receipt-viewer';
 import { RecordPages } from '../record-pages';
@@ -49,6 +50,7 @@ export function ReceiptReview({
 }) {
   const router = useRouter();
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const { locale } = useI18n();
   const initial = useMemo(() => rowsOf(receipt), [receipt]);
   const [header, setHeader] = useState<HeaderFields>(initial.header);
@@ -555,13 +557,16 @@ export function ReceiptReview({
               className="btn-secondary text-bad"
               disabled={busy}
               data-testid="receipt-delete"
-              onClick={() => {
+              onClick={async () => {
                 // A matched receipt: owners and admins only, unlinked first, its transaction kept as it is (owner,
                 // 2026-11-23). Step-up comes back as a link.
-                if (
-                  !window.confirm(t(matched ? 'receipts.delete_matched_confirm' : 'receipts.delete_confirm'))
-                )
-                  return;
+                const ok = await confirm({
+                  title: t('receipts.delete_title'),
+                  body: <p>{t(matched ? 'receipts.delete_matched_confirm' : 'receipts.delete_confirm')}</p>,
+                  confirmLabel: t('receipts.delete'),
+                  danger: true,
+                });
+                if (!ok) return;
                 void run(
                   () =>
                     browserApi
@@ -579,6 +584,7 @@ export function ReceiptReview({
       </section>
 
       {viewer}
+      {dialog}
     </div>
   );
 }

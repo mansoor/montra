@@ -11,6 +11,7 @@ import {
 } from '@/lib/missing-files';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 /**
  * Review's "Files to provide again" (ADR-0054 §5a): files Montra no longer keeps a copy of that the household's Family
@@ -19,6 +20,7 @@ import { StatusLine, useAction } from '../use-action';
  */
 export function FilesToProvide({ workspaceId }: { workspaceId: string }) {
   const { run, busy, message, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const [files, setFiles] = useState<MissingFileDto[]>([]);
   const id = useId();
 
@@ -42,7 +44,12 @@ export function FilesToProvide({ workspaceId }: { workspaceId: string }) {
           // The owner's clarification (2026-11-18): the same bytes as a file Montra holds. The person decides.
           const detail = possibleDuplicate(err);
           if (detail === null) throw err;
-          if (!window.confirm(t('files.duplicate_anyway_confirm', { detail }))) return null;
+          const ok = await confirm({
+            title: t('files.duplicate_title'),
+            body: <p>{t('files.duplicate_anyway_confirm', { detail })}</p>,
+            confirmLabel: t('files.duplicate_upload'),
+          });
+          if (!ok) return null;
           return browserApi.provideMissingFile(workspaceId, f.fileId, picked, picked.name, true);
         }
       },
@@ -102,6 +109,7 @@ export function FilesToProvide({ workspaceId }: { workspaceId: string }) {
         ))}
       </ul>
       <StatusLine message={message} />
+      {dialog}
     </section>
   );
 }

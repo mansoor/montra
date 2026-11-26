@@ -6,6 +6,7 @@ import { browserApi } from '@/lib/browser-api';
 import { friendlyMessage } from '@/lib/errors';
 import { ErrorWithAction } from '../field';
 import { useI18n } from '../i18n';
+import { useConfirm } from '../ui/confirm-dialog';
 
 /**
  * The mobile number (ADR-0049 §6), confirmed by a code the API texts: Kratos's own texted code can't be entered, as
@@ -14,6 +15,7 @@ import { useI18n } from '../i18n';
  */
 export function PhoneNumber() {
   const { t } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const [status, setStatus] = useState<PhoneStatusDto | null>(null);
   const [number, setNumber] = useState('');
   const [code, setCode] = useState('');
@@ -139,7 +141,13 @@ export function PhoneNumber() {
                 disabled={busy}
                 onClick={() =>
                   void act(async () => {
-                    if (!window.confirm(t('phone.remove_confirm'))) return;
+                    const ok = await confirm({
+                      title: t('phone.remove_title'),
+                      body: <p>{t('phone.remove_confirm')}</p>,
+                      confirmLabel: t('phone.remove'),
+                      danger: true,
+                    });
+                    if (!ok) return;
                     setStatus(await browserApi.removePhone());
                     setNote(t('phone.removed'));
                   })
@@ -151,6 +159,7 @@ export function PhoneNumber() {
           </div>
         </form>
       )}
+      {dialog}
     </div>
   );
 }

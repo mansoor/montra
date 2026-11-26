@@ -15,6 +15,7 @@ import {
   type InviteRole,
 } from '@/lib/settings';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { InviteForm } from './invite-form';
 
 /** Household and accountant sharing, and who in the Family list each login is (UP-04, AUTH-10, AUTH-14..16). */
@@ -116,6 +117,7 @@ function MemberItem({
   canManage: boolean;
 }) {
   const { busy, message, run, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   // Nobody but the owner changes the owner, and that is by handing over (AUTH-15).
   const editable = canManage && member.role !== 'owner' && member.status === 'active';
   const granted = new Map(member.grants.map((g) => [g.entityId, g.access]));
@@ -178,8 +180,14 @@ function MemberItem({
                 type="button"
                 className="btn-secondary"
                 disabled={busy}
-                onClick={() => {
-                  if (window.confirm(t('sharing.confirm_hand_over', { email: member.email }))) {
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: t('sharing.hand_over_title'),
+                    body: <p>{t('sharing.confirm_hand_over', { email: member.email })}</p>,
+                    confirmLabel: t('sharing.hand_over'),
+                    danger: true,
+                  });
+                  if (ok) {
                     void run(
                       () => browserApi.updateMember(workspace.id, member.userId, { role: 'owner' }),
                       t('sharing.handed_over', { email: member.email }),
@@ -194,8 +202,14 @@ function MemberItem({
               type="button"
               className="btn-secondary"
               disabled={busy}
-              onClick={() => {
-                if (window.confirm(t('sharing.confirm_remove', { email: member.email }))) {
+              onClick={async () => {
+                const ok = await confirm({
+                  title: t('sharing.remove_title'),
+                  body: <p>{t('sharing.confirm_remove', { email: member.email })}</p>,
+                  confirmLabel: t('sharing.remove'),
+                  danger: true,
+                });
+                if (ok) {
                   void run(
                     () => browserApi.updateMember(workspace.id, member.userId, { status: 'revoked' }),
                     t('sharing.access_removed'),
@@ -245,6 +259,7 @@ function MemberItem({
         </div>
       )}
       <StatusLine message={message} />
+      {dialog}
     </li>
   );
 }

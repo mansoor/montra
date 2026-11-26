@@ -89,14 +89,12 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   await sending
     .getByRole('combobox', { name: 'What Payslips are filed as in the vault' })
     .selectOption('utility_bill');
-  let warning = '';
-  page.once('dialog', (d) => {
-    warning = d.message();
-    void d.accept();
-  });
   await sending.getByRole('button', { name: 'Save' }).click();
+  const warning = page.getByRole('alertdialog', { name: 'Send these to the vault?' });
+  await expect(warning).toContainText('Where they go and who can see them there is set in the vault');
+  await warning.getByRole('button', { name: 'Send to the vault' }).click();
+  await expect(warning).toBeHidden();
   await expect(sending.getByText('Saved.', { exact: false })).toBeVisible();
-  expect(warning).toContain('Where they go and who can see them there is set in the vault');
   await expect(sending.getByRole('combobox', { name: 'What happens to Payslips' })).toHaveValue(
     'sent_keep_copy',
   );
@@ -107,14 +105,12 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
     'sent_keep_copy',
   );
   await sending.getByRole('combobox', { name: 'What happens to Receipts' }).selectOption('sent_no_copy');
-  let noCopyWarning = '';
-  page.once('dialog', (d) => {
-    noCopyWarning = d.message();
-    void d.accept();
-  });
   await sending.getByRole('button', { name: 'Save' }).click();
+  const noCopyWarning = page.getByRole('alertdialog', { name: 'Keep no copy in Montra?' });
+  await expect(noCopyWarning).toContainText('Montra will remove its own copy of these documents');
+  await noCopyWarning.getByRole('button', { name: 'Keep no copy' }).click();
+  await expect(noCopyWarning).toBeHidden();
   await expect(sending.getByText('Saved.', { exact: false })).toBeVisible();
-  expect(noCopyWarning).toContain('Montra will remove its own copy of these documents');
   await expect(sending.getByRole('combobox', { name: 'What happens to Receipts' })).toHaveValue(
     'sent_no_copy',
   );
@@ -161,7 +157,9 @@ test('an owner connects the Family Document Vault, chooses what is sent, replace
   expect(await page.content()).not.toContain(second.secret);
 
   // Disconnect: the key is thrown away.
-  page.once('dialog', (d) => d.accept());
   await card.getByRole('button', { name: 'Disconnect' }).click();
+  const disconnect = page.getByRole('alertdialog', { name: 'Disconnect the vault?' });
+  await expect(disconnect).toContainText('Montra throws its key away');
+  await disconnect.getByRole('button', { name: 'Disconnect' }).click();
   await expect(card.getByRole('button', { name: 'Connect Family Document Vault' })).toBeVisible();
 });

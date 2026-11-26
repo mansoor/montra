@@ -18,6 +18,7 @@ import {
 } from '@/lib/vault';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { VaultSending } from './family-vault-sending';
 
 /**
@@ -291,6 +292,7 @@ function Connected({
   owner: boolean;
 }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const [choosing, setChoosing] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const actsAs = vaultActsAsLine(d);
@@ -365,10 +367,14 @@ function Connected({
             type="button"
             className="btn-secondary"
             disabled={busy}
-            onClick={() => {
-              if (
-                window.confirm(t('vault.confirm_disconnect', { name: d.householdName ?? t('vault.title') }))
-              ) {
+            onClick={async () => {
+              const ok = await confirm({
+                title: t('vault.disconnect_title'),
+                body: <p>{t('vault.confirm_disconnect', { name: d.householdName ?? t('vault.title') })}</p>,
+                confirmLabel: t('vault.disconnect'),
+                danger: true,
+              });
+              if (ok) {
                 void run(() => browserApi.disconnectVault(workspace.id), t('vault.disconnected'));
               }
             }}
@@ -409,8 +415,14 @@ function Connected({
               type="button"
               className="btn-secondary"
               disabled={busy}
-              onClick={() => {
-                if (window.confirm(t('vault.confirm_disconnect_anyway', { count: d.files.onlyInVault }))) {
+              onClick={async () => {
+                const ok = await confirm({
+                  title: t('vault.disconnect_anyway_title'),
+                  body: <p>{t('vault.confirm_disconnect_anyway', { count: d.files.onlyInVault })}</p>,
+                  confirmLabel: t('vault.disconnect_anyway'),
+                  danger: true,
+                });
+                if (ok) {
                   void run(
                     () => browserApi.disconnectVault(workspace.id, { anyway: true }),
                     t('vault.disconnected'),
@@ -447,6 +459,7 @@ function Connected({
         </div>
       )}
       {d.stage === 'connected' && <VaultSending workspace={workspace} d={d} />}
+      {dialog}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
 } from '@/lib/storage';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 const KINDS = ['statement', 'receipt', 'payslip', 'invoice', 'lease', 'tax_form', 'other'] as const;
 
@@ -275,6 +276,7 @@ function Connected({
   failed: StorageItemDto[];
 }) {
   const { run, busy, message, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const [label, setLabel] = useState(d.label);
   const [folder, setFolder] = useState(d.folder);
   const [mirrorFiles, setMirrorFiles] = useState(d.mirrorFiles);
@@ -386,8 +388,14 @@ function Connected({
             type="button"
             className="btn-secondary"
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(t('storage.confirm_disconnect', { label: d.label }))) {
+            onClick={async () => {
+              const ok = await confirm({
+                title: t('storage.disconnect_title'),
+                body: <p>{t('storage.confirm_disconnect', { label: d.label })}</p>,
+                confirmLabel: t('storage.disconnect'),
+                danger: true,
+              });
+              if (ok) {
                 void run(
                   () => browserApi.disconnectStorageDestination(workspace.id),
                   t('storage.disconnected'),
@@ -533,6 +541,7 @@ function Connected({
           </table>
         </section>
       )}
+      {dialog}
     </div>
   );
 }
