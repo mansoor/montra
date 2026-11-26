@@ -3533,6 +3533,13 @@ Phase 11 leftovers:
   - Tests: web `confirm-dialog.test.tsx` (the prompt: label, focus, typed text, Enter, empty, Cancel and Esc; a dialog
     inside another); e2e `phase1a.spec.ts` (delete a transaction), `family-vault.spec.ts` (both warnings, disconnect),
     `files-to-provide.spec.ts` (Cancel, then upload anyway) click the in-app dialog instead of accepting the browser's.
+- **Owners without a second factor are asked to set one up again** (no migration). Kratos keeps an empty `webauthn`
+  entry (only a `user_handle`) on identities that signed up with a password in the browser, and `hasSecondFactor`
+  counted the entry's type, so an owner with no second factor was sent to a sign-in step with nothing to enter instead
+  of `mfa.setup_required`. It now asks Kratos's admin API with `include_credential=webauthn` and counts a security
+  key only when one is registered (`hasSecondFactorCredential` in `kratos.adapter.ts`); TOTP and recovery codes as
+  before. Checked against the local Kratos: a password identity's `webauthn` config holds no keys.
+  - Tests: api `kratos-second-factor.test.ts`.
 
 ---
 

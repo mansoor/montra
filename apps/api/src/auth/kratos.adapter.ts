@@ -51,6 +51,25 @@ interface Credentials {
  */
 export const WEB_IDLE_LIMIT_MS = 30 * 60_000;
 
+/** One credential of an identity, as Kratos's admin API returns it. */
+interface KratosCredential {
+  type?: string;
+  config?: { credentials?: unknown[] } | null;
+}
+
+/**
+ * Whether an identity's credentials include a second factor (ADR-0044): TOTP, recovery codes, or a security key
+ * that was actually registered. Kratos can leave a `webauthn` entry with no keys in it, which is not a factor.
+ */
+export function hasSecondFactorCredential(
+  credentials: Record<string, KratosCredential> | undefined,
+): boolean {
+  const c = credentials ?? {};
+  if (c.totp || c.lookup_secret) return true;
+  const keys = c.webauthn?.config?.credentials;
+  return Array.isArray(keys) && keys.length > 0;
+}
+
 /**
  * Ory Kratos session validation (ADR-0006). Mobile sends `Authorization: Bearer <session token>`; the web
  * backend-for-frontend forwards the `ory_kratos_session` cookie. Valid sessions are cached briefly; any
@@ -378,22 +397,24 @@ export class KratosAuthAdapter implements AuthPort {
     throw new AppError(502, 'auth.admin_failed', 'The address couldn’t be marked as confirmed');
   }
 
-  /** From the identity's credential types: TOTP, a security key or recovery codes count (ADR-0044). */
+  /** From the identity's credentials: TOTP, a registered security key or recovery codes count (ADR-0044). */
   async hasSecondFactor(identityId: string): Promise<boolean | null> {
     const hit = this.factors.get(identityId);
     if (hit && hit.until > Date.now()) return hit.value;
     const base = this.config.KRATOS_ADMIN_URL?.replace(/\/$/, '');
     if (!base) return null;
     try {
-      const res = await fetch(`${base}/admin/identities/${encodeURIComponent(identityId)}`, {
+      // `include_credential=webauthn` returns the security keys themselves: Kratos keeps an empty `webauthn` entry
+      // on identities that never registered one (a password sign-up through the browser), so the type alone says
+      // nothing.
+      const url = `${base}/admin/identities/${encodeURIComponent(identityId)}?include_credential=webauthn`;
+      const res = await fetch(url, {
         headers: { accept: 'application/json' },
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return null;
-      const body = (await res.json()) as { credentials?: Record<string, unknown> };
-      const value = Object.keys(body.credentials ?? {}).some((t) =>
-        ['totp', 'webauthn', 'lookup_secret'].includes(t),
-      );
+      const body = (await res.json()) as { credentials?: Record<string, KratosCredential> };
+      const value = hasSecondFactorCredential(body.credentials);
       if (value) this.factors.set(identityId, { value, until: Date.now() + 60_000 });
       return value;
     } catch (err) {
