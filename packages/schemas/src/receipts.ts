@@ -289,6 +289,21 @@ export const UpdateReceiptRequest = z.object({
 });
 export type UpdateReceiptRequest = z.output<typeof UpdateReceiptRequest>;
 
+/**
+ * A receipt's pages fixed after capture (ADR-0059, VLT-15): the pages it keeps, in their new order. Only pages it holds
+ * already, each once, and at least one: deleting the receipt is how the last page goes. A page left out goes to the
+ * Trash. The totals stay as they were read.
+ */
+export const SetReceiptPagesRequest = z.object({
+  version: z.string(),
+  fileIds: z
+    .array(Id)
+    .min(1)
+    .max(20)
+    .refine((ids) => new Set(ids).size === ids.length, 'A page can be listed once'),
+});
+export type SetReceiptPagesRequest = z.output<typeof SetReceiptPagesRequest>;
+
 /** Link to a transaction (or create one) and replace its splits with the receipt groups (04 §7 step 7). */
 export const ApplyReceiptRequest = z.union([
   z.object({ transactionId: Id, version: z.string() }),

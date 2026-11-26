@@ -832,6 +832,11 @@ export const FileVaultSummaryDto = z.object({
       earlier: z.number().int(),
       /** "Send again" (owners and admins): the vault has the current PDFs, so a new one is made only when asked. */
       canSendAgain: z.boolean(),
+      /**
+       * ADR-0059: a page of a receipt or bill. It goes inside one PDF with the record's other pages (the counts are that
+       * PDF's, `earlier` the ones made before its pages changed), and Montra keeps the page itself. Absent: false.
+       */
+      combined: z.boolean().optional(),
     })
     .nullable(),
 });
