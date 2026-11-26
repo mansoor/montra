@@ -37,7 +37,7 @@ migration 0091; rendering, 0092; sending, 0093); see §7g. PDF/A and bank-feed s
 **Decided 2026-11-25, built in a draft PR:** [ADR-0059](design/adr/0059-vault-receipt-bill-pdfs.md), every receipt and
 every bill sent to the vault as one PDF of its pages, in order (a single photo included; JPEGs as they are, a PDF's
 pages copied), never a photo on its own, with pages moved or removed afterwards on the web's receipt and bill pages and
-the phone's receipt screen; the vault gets the new PDF as a new document. Migration 0097; see §7g. A WebP page is
+the phone's receipt screen and bills list; the vault gets the new PDF as a new document. Migration 0097; see §7g. A WebP page is
 decoded with `sharp` into a lossless PNG page.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
@@ -3484,8 +3484,8 @@ Phase 11 leftovers:
     - Already-sent items stay as they are: no backfill, no re-send. A record the vault had photo by photo gets one PDF
       only when its pages change.
     - Web: a "Pages" card on the receipt page and "Pages (n)" on the budget's bills list (move up, move down, remove
-      with a confirmation). Phone: Move up, Move down and Remove under each photo on the receipt screen. The phone has
-      no bill screen that shows pages, so no controls for bills there.
+      with a confirmation). Phone: Move up, Move down and Remove under each photo on the receipt screen, and on the bills
+      list a "Pages" fold under a bill of two or more pages with the same controls for each page (2026-11-26).
     - Badges: each page's badge counts the record's PDF (`FileVaultSummaryDto.converted.combined`); no "Send again" for
       it.
   - Migration 0097: `app.file.rendition` gains `record_pdf`, `app.file.source_file_ids` (GIN index), checks; the Trash
@@ -3493,14 +3493,28 @@ Phase 11 leftovers:
     `app.vault_pages_changed()`; `vault_due()`/`vault_next()` count marked rows; `vault_file_conversions()` gains
     `combined`.
   - Not done: a version of the same vault document (backlog 18), withdrawing an
-    earlier PDF still in someone's Inbox, page controls for a business's bill and for bills on the phone. Multi-file
+    earlier PDF still in someone's Inbox, page controls for a business's bill. Multi-file
     payslips and tax forms, leases and maintenance logs go as before.
   - Tests: API `family-vault-record-pdfs.test.ts` (mixed JPEG, PNG and PDF pages in order with the JPEG byte for byte,
     no page sent alone, the pages kept; one photo; EXIF orientation; one PDF as it is; waiting for the capture and for
     Review; a WebP page decoded, and a damaged page kept back; moving and removing pages, with the refusals; a receipt sent before this left alone until its pages
     change; a two-page scanned bill, moved); `record-pdf.test.ts` (orientation, page sizes, WebP, same bytes twice, refusals).
     The outbox tests that send lone files (`family-vault-*.test.ts`) pass `orphanWaitMs: 0`. Web
-    `record-pages.test.ts`; phone `receipts.test.ts`.
+    `record-pages.test.ts`; phone `receipts.test.ts` and the screen test `bills.test.tsx` (the fold only on a bill of
+    two or more pages, moving and its ends, removing after the confirmation, none for a viewer).
+- **Montra itself in Docker on a development machine** (`infra/docker-compose.app.yml`, 2026-11-26): the API, the Node
+  job worker, the document worker and the web app as containers built from the checkout, beside the dependencies in
+  `docker-compose.yml`. Web on http://localhost:3030, API on http://localhost:4040 (`MONTRA_WEB_PORT`, `MONTRA_API_PORT`),
+  so `next dev` and the API on 3000 and 4000 can still run beside them. A `migrate` service (profile `tools`) runs the
+  migrations and reference data from the API image.
+  - Development settings, never a way to host Montra (that is `infra/selfhost`): `NODE_ENV=development` in the API
+    (dev sign-in), the web built with `NEXT_PUBLIC_AUTH_MODE=dev`, settings from the repo's `.env` with the Compose
+    addresses put over them. Files live in the `appstorage` volume, not a folder of the machine (bind mounts hang on
+    the owner's machine).
+  - A vault preview at `http://localhost:8091` (FAMILY_VAULT_ALLOW_LOCAL_HTTP) is the container itself from inside one,
+    so the API and worker containers pass `MONTRA_HOST_RELAY_PORTS` (default 8091) on to `host.docker.internal`.
+  - The web's dev sign-in cookie stays off Secure with `DEV_COOKIE_INSECURE=on`, so the containers can be used from
+    another device over plain http (`devCookieSecure`, test in `phase1-round3.test.ts`).
 
 ---
 

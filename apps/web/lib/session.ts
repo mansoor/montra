@@ -13,10 +13,15 @@ export const DEV_COOKIE = 'montra_dev_email';
 /**
  * Whether the dev sign-in cookie is marked Secure: in a production build, except on this machine. Chromium and Firefox
  * keep a Secure cookie on http://localhost, but WebKit doesn't, so e2e in WebKit (PLT-01, against `next start`) would
- * never be signed in.
+ * never be signed in. `DEV_COOKIE_INSECURE=on` leaves it off everywhere, for the containers on a development machine
+ * (infra/docker-compose.app.yml), reached from other devices over plain http.
  */
-export function devCookieSecure(host: string | null, nodeEnv = process.env.NODE_ENV): boolean {
-  if (nodeEnv !== 'production') return false;
+export function devCookieSecure(
+  host: string | null,
+  nodeEnv = process.env.NODE_ENV,
+  insecure = process.env.DEV_COOKIE_INSECURE === 'on',
+): boolean {
+  if (nodeEnv !== 'production' || insecure) return false;
   const name = (host ?? '').replace(/:\d+$/, '').toLowerCase();
   return !(name === 'localhost' || name === '127.0.0.1' || name === '[::1]' || name.endsWith('.localhost'));
 }
