@@ -11,6 +11,9 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 .expo/
+# Expo prebuild output (continuous native generation): made from app.config.ts on each build
+apps/mobile/ios/
+apps/mobile/android/
 .claude/
 .data/
 
