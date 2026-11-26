@@ -644,6 +644,8 @@ describe('the job’s functions (ADR-0054 §12)', () => {
         not_kept: 0,
         failed: 0,
         earlier: 1,
+        // ADR-0059: a statement's own PDFs, not a receipt's or bill's pages in one.
+        combined: false,
       },
     ]);
     expect(await conversions(b.ownerId, b)).toEqual([]);
@@ -652,6 +654,86 @@ describe('the job’s functions (ADR-0054 §12)', () => {
     await as(a, memberId, (trx) => sql`select app.vault_conversion_due(${original}::uuid)`.execute(trx));
     expect(await due()).toEqual([{ destination_id: vault, user_id: a.ownerId }]);
     for (const id of [...pdfs, original]) await admin.query(`delete from app.file where id = $1`, [id]);
+  });
+
+  it('keeps a record’s PDF with its pages: checks, the Trash, the record it is of, and pages changed (migration 0097)', async () => {
+    const pages = [await file(a.workspaceId, 'receipt'), await file(a.workspaceId, 'receipt')];
+    const insertPdf = (sources: string[] | null, derived: string | null = null) =>
+      admin.query<{ id: string }>(
+        `insert into app.file (workspace_id, kind, storage_key, file_name, mime, bytes, sha256, rendition,
+                               source_file_ids, derived_from_file_id)
+         values ($1, 'receipt', $2, 'paper.pdf (PDF).pdf', 'application/pdf', 1, repeat('a', 64), 'record_pdf', $3, $4)
+         returning id`,
+        [a.workspaceId, `k/${newId()}`, sources, derived],
+      );
+    // A record's PDF has its pages, and no single original.
+    await expect(insertPdf(null)).rejects.toThrow(/file_record_sources/);
+    await expect(insertPdf(pages, pages[0]!)).rejects.toThrow(/file_record_not_derived/);
+    const pdf = (await insertPdf(pages)).rows[0]!.id;
+    // A rendering isn't queued for the vault when it is stored.
+    expect(await vaultRows(pdf)).toEqual([]);
+    const deletedAt = async () =>
+      (await admin.query(`select deleted_at from app.file where id = $1`, [pdf])).rows[0].deleted_at;
+
+    // In the Trash only once every page is, back with any of them.
+    await admin.query(`update app.file set deleted_at = now() where id = $1`, [pages[0]]);
+    expect(await deletedAt()).toBeNull();
+    await admin.query(`update app.file set deleted_at = now() where id = $1`, [pages[1]]);
+    expect(await deletedAt()).not.toBeNull();
+    await admin.query(`update app.file set deleted_at = null where id = $1`, [pages[0]]);
+    expect(await deletedAt()).toBeNull();
+
+    // The record its pages are, for owners and admins only.
+    const entity = (
+      await admin.query(`select id from app.entity where workspace_id = $1 and type = 'personal'`, [
+        a.workspaceId,
+      ])
+    ).rows[0].id;
+    const receipt = (
+      await admin.query(
+        `insert into app.receipt (workspace_id, entity_id, attachment_ids, status) values ($1, $2, $3, 'inbox')
+         returning id`,
+        [a.workspaceId, entity, pages],
+      )
+    ).rows[0].id;
+    const recordOf = (userId: string, fileId: string) =>
+      as(a, userId, async (trx) => {
+        const { rows } = await sql<Record<string, unknown>>`
+          select * from app.vault_file_record(${fileId}::uuid)`.execute(trx);
+        return rows;
+      });
+    expect(await recordOf(a.ownerId, pages[1]!)).toEqual([
+      { holder: 'receipt', record_id: receipt, file_ids: pages, trashed: false },
+    ]);
+    expect(await recordOf(memberId, pages[1]!)).toEqual([]);
+    expect(await recordOf(a.ownerId, pdf)).toEqual([]);
+
+    // Pages changed: a row the vault had is marked, and the job is due for it.
+    await admin.query(
+      `update app.vault_item set status = 'filed', vault_ref = 'm1-' || file_id, filed_at = now(), received_at = now(),
+              next_attempt_at = 'infinity' where file_id = any ($1::uuid[])`,
+      [pages],
+    );
+    expect(await due()).toEqual([]);
+    await as(a, memberId, (trx) => sql`select app.vault_pages_changed(${[pages[1]!]}::uuid[])`.execute(trx));
+    const marked = await admin.query(
+      `select file_id from app.vault_item where pages_changed_at is not null and file_id = any ($1::uuid[])`,
+      [pages],
+    );
+    expect(marked.rows).toEqual([{ file_id: pages[1] }]);
+    expect(await due()).toEqual([{ destination_id: vault, user_id: a.ownerId }]);
+    await admin.query(`update app.vault_item set pages_changed_at = null where file_id = any ($1::uuid[])`, [
+      pages,
+    ]);
+
+    // Its last page deleted for good: the PDF is marked deleted, for the retention run to remove.
+    await admin.query(`delete from app.receipt where id = $1`, [receipt]);
+    await admin.query(`delete from app.file where id = $1`, [pages[0]]);
+    expect(await deletedAt()).not.toBeNull();
+    await admin.query(`update app.file set deleted_at = null where id = $1`, [pdf]);
+    await admin.query(`delete from app.file where id = $1`, [pages[1]]);
+    expect(await deletedAt()).not.toBeNull();
+    await admin.query(`delete from app.file where id = $1`, [pdf]);
   });
 
   it('is due when its changes feed is, while active, and never because of it while it needs a person (migration 0065)', async () => {
