@@ -247,6 +247,12 @@ test('deleting an account asks in a dialog that defaults to Cancel', async ({ pa
   expect(box.x + box.width).toBeLessThanOrEqual(360);
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
+    // The theme follows the media change from a listener, and the buttons fade to their new colours. Check contrast
+    // once both are done, not halfway through the fade.
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
+    await page.waitForFunction(
+      () => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running'),
+    );
     const { violations } = await new AxeBuilder({ page })
       .include('dialog')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
