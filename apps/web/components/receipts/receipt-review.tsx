@@ -26,6 +26,7 @@ import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { useFileStorageStates, VaultBadges } from '../vault-badges';
 import { ReceiptViewer } from './receipt-viewer';
+import { RecordPages } from '../record-pages';
 import { listHref } from '@/components/ui/back-link';
 
 /**
@@ -532,6 +533,19 @@ export function ReceiptReview({
                 {t('receipts.reject')}
               </button>
             </div>
+          </div>
+        )}
+        {/* ADR-0059 §4: pages in the wrong order, or one too many, are fixed here once the receipt has been read. */}
+        {receipt.fileIds.length > 1 && (
+          <div className="card">
+            <RecordPages
+              kind="receipt"
+              fileIds={receipt.fileIds}
+              hrefOf={(fileId) => browserApi.receiptFilePath(ws, receipt.id, fileId)}
+              save={(fileIds) =>
+                browserApi.setReceiptPages(ws, receipt.id, { version: receipt.version, fileIds })
+              }
+            />
           </div>
         )}
         {(!matched || isAdminRole(workspace.role)) && (

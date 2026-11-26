@@ -7,11 +7,13 @@ import {
   captureNotice,
   classifyUploadError,
   frameVerdict,
+  movePage,
   pageName,
   previewSplits,
   queuedStatus,
   receiptStatusKey,
   reminderChoices,
+  removePage,
   reviewEdits,
   lineQuantityText,
   receiptTotals,
@@ -157,6 +159,36 @@ describe('receipt API calls', () => {
       transactionId: 't1',
     });
     expect(api.receiptFilePath('w1', 'r1', 'f1')).toBe('/v1/workspaces/w1/receipts/r1/files/f1');
+  });
+
+  it('saves a receipt’s pages in their new order (ADR-0059 §4)', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const f = (async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ id: 'r1', fileIds: ['f2', 'f1'] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const api = createApi({ baseUrl: 'http://api', token: async () => 'dev:a@b.co', fetch: f });
+    await api.setReceiptPages('w1', 'r1', { version: '3', fileIds: ['f2', 'f1'] });
+    expect(calls[0]!.url).toBe('http://api/v1/workspaces/w1/receipts/r1/pages');
+    expect(calls[0]!.init.method).toBe('PUT');
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ version: '3', fileIds: ['f2', 'f1'] });
+  });
+});
+
+describe('fixing a receipt’s pages (ADR-0059 §4)', () => {
+  const pages = ['a', 'b', 'c'];
+
+  it('moves a page up or down, and not past either end', () => {
+    expect(movePage(pages, 1, -1)).toEqual(['b', 'a', 'c']);
+    expect(movePage(pages, 1, 1)).toEqual(['a', 'c', 'b']);
+    expect(movePage(pages, 0, -1)).toBeNull();
+    expect(movePage(pages, 2, 1)).toBeNull();
+    expect(pages).toEqual(['a', 'b', 'c']);
+  });
+
+  it('removes a page, but never the only one', () => {
+    expect(removePage(pages, 1)).toEqual(['a', 'c']);
+    expect(removePage(['a'], 0)).toBeNull();
   });
 });
 

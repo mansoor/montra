@@ -540,10 +540,16 @@ export interface FileTable {
   rendition: FileRendition | null;
   /** ADR-0057 §4 (migration 0093): a rendering "Send again" replaced. It stays in the vault; no longer current. */
   superseded_at: Date | null;
+  /**
+   * ADR-0059 (migration 0097): for a record PDF (`rendition = 'record_pdf'`), the files it was made from, in page order.
+   * Null for every other file.
+   */
+  source_file_ids: string[] | null;
 }
 
 export type FileLocation = 'montra' | 'vault';
-export type FileRendition = 'statement_pdf';
+/** `statement_pdf`: a statement drawn from its rows (ADR-0057). `record_pdf`: a receipt's or bill's pages (ADR-0059). */
+export type FileRendition = 'statement_pdf' | 'record_pdf';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
@@ -1911,6 +1917,8 @@ export interface VaultItemTable {
   render_options: Json<Record<string, unknown>> | null;
   /** ADR-0057 §7 (0093): this row's file is a PDF with its original attached inside it. */
   carries_original: Generated<boolean>;
+  /** ADR-0059 (0097): the record this file is a page of had its pages moved or removed; its PDF is made again. */
+  pages_changed_at: Date | null;
   attempts: Generated<number>;
   next_attempt_at: Generated<Date>;
   last_error: string | null;

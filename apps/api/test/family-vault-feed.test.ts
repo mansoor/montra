@@ -50,7 +50,8 @@ let destinationId: string;
 let url: (p: string) => string;
 let realFetch: VaultTransport['fetch'];
 
-const run = () => jobs.run({ sendGapMs: 0, settleMs: 0 });
+// The outbox’s own workings, with files no receipt or bill holds: each goes alone at once, as before ADR-0059 §2.
+const run = () => jobs.run({ sendGapMs: 0, settleMs: 0, orphanWaitMs: 0 });
 const vaultRow = async () =>
   (await db.query(`select * from app.storage_destination where workspace_id = $1 and kind = 'fdv'`, [wsId]))
     .rows[0];

@@ -317,7 +317,8 @@ describe('what an archive holds (ADR-0019 §7)', () => {
     const add = (table: string, column: string) => {
       if (exported.has(table)) found.set(table, new Set([...(found.get(table) ?? []), column]));
     };
-    for (const r of rows) add(r.table_name, r.column_name);
+    // A record PDF's pages (ADR-0059 §3, `file.source_file_ids`) are a file pointing at files, not a row holding one.
+    for (const r of rows) if (r.table_name !== 'file') add(r.table_name, r.column_name);
     for (const t of catalog.values()) {
       for (const fk of t.fks) {
         // A rendered file's link to its original (ADR-0057 §4) is a file pointing at a file, not a row holding one.

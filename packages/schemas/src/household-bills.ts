@@ -58,6 +58,21 @@ export const UpdateHouseholdBillRequest = z.object({
 });
 export type UpdateHouseholdBillRequest = z.output<typeof UpdateHouseholdBillRequest>;
 
+/**
+ * A bill's pages fixed after it was filed (ADR-0059, VLT-15): the pages it keeps, in their new order. Only pages it
+ * holds already, each once, and at least one: deleting the bill is how the last page goes. A page left out goes to the
+ * Trash. The amount and dates stay as they were read.
+ */
+export const SetHouseholdBillPagesRequest = z.object({
+  fileIds: z
+    .array(Id)
+    .min(1)
+    .max(20)
+    .refine((ids) => new Set(ids).size === ids.length, 'A page can be listed once'),
+  version: z.number().int().positive(),
+});
+export type SetHouseholdBillPagesRequest = z.output<typeof SetHouseholdBillPagesRequest>;
+
 /** What filing a bill made: a household bill, or a business's vendor bill. */
 export const FiledBillDto = z.object({
   kind: z.enum(['household', 'business']),
