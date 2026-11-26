@@ -17,7 +17,7 @@ workarounds already in place (so nobody undoes them) and what to pick up next. R
 | **Release branch**     | `main`: no release yet. R1 `v1.0.0` lands at the end of Phase 11                                                                                                                                                                                                                                                                                                                    |
 | **Tags**               | `v0.1.0-dev.1` Phase 0 · `v0.2.0-dev.1` Phase 1 · `v0.3.0-dev.1` Phase 2 · `v0.4.0-dev.1` Phase 3 · `v0.5.0-dev.1` Phase 4 · `v0.6.0-dev.1` Phase 5 · `v0.7.0-dev.1` Phase 6 · `v0.8.0-dev.1` Phase 7 · `v0.9.0-dev.1` Phase 8 · `v0.10.0-dev.1` Phase 9 · `v0.11.0-dev.1` Phase 10 · `v0.12.0-dev.1` Phase 11, then one `v0.12.0-dev.N` per merge since (latest `v0.12.0-dev.140`) |
 | **Pull requests**      | #1–#17 Phases 1–10, #18 Phase 11, then the work in §7g, up to #193. Each merged into `develop` with green CI                                                                                                                                                                                                                                                                        |
-| **Requirements**       | 350 IDs in total: **283 done, 53 partial**, 14 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
+| **Requirements**       | 356 IDs in total: **290 done, 54 partial**, 12 not started. The source is `docs/design/status.json`, rendered in `docs/design/traceability.md`                                                                                                                                                                                                                                      |
 | **Next**               | The owner's decisions and `docs/runbooks/launch-checklist.md`. `v1.0.0` isn't ready                                                                                                                                                                                                                                                                                                 |
 
 **Built:** [ADR-0052](design/adr/0052-tax-forms-received.md), tax forms received (W-2, 1099-INT, 1099-DIV and 1098
@@ -33,6 +33,12 @@ vault doesn't keep (CSV, XLS, OFX, QIF, a bank's own layout) sent as PDFs drawn 
 page and, by default, the original attached inside. Each sent group chooses: don't send, convert, or convert with the
 original attached. Accounts gain holder names and a sealed full account number. All three PRs are built (accounts,
 migration 0091; rendering, 0092; sending, 0093); see §7g. PDF/A and bank-feed statements are on the backlog.
+
+**Decided 2026-11-25, built in a draft PR:** [ADR-0059](design/adr/0059-vault-receipt-bill-pdfs.md), every receipt and
+every bill sent to the vault as one PDF of its pages, in order (a single photo included; JPEGs as they are, a PDF's
+pages copied), never a photo on its own, with pages moved or removed afterwards on the web's receipt and bill pages and
+the phone's receipt screen; the vault gets the new PDF as a new document. Migration 0097; see §7g. A WebP page keeps its
+record in Montra until a decoder is approved.
 
 **Proposed and deferred, no build scheduled:** [ADR-0053](design/adr/0053-lightweight-rbac.md), lightweight RBAC (the six roles
 become default permission sets, with per-person switches in Settings → Sharing). Plan only; ADR-0052's owner-only
@@ -305,6 +311,12 @@ finished:
     rendering in the document worker with reportlab instead of pdf-lib.
 16. **Monthly statement PDFs for bank feeds.** A feed has no file; ADR-0057's renderer could make one per month. Not
     now (owner's answer, 2026-11-24).
+17. **WebP pages in a receipt's or bill's PDF.** ADR-0059 can't put a WebP photo in a PDF without decoding it, so such a
+    record stays in Montra, "couldn't be converted". A decoder (`sharp`, already in the lockfile through Next.js) would
+    turn it into a lossless PNG page; it is a new native dependency of the API, for the owner to approve.
+18. **A version of the same vault document.** ADR-0059 sends a record's new PDF as a new document because the app
+    client (`@fdv/client` 0.9.0-dev.72) can't add a version. When it can, send it as a version of the earlier PDF's
+    document (`vault_document_id` on its outbox row).
 
 ---
 
@@ -3445,6 +3457,51 @@ Phase 11 leftovers:
     schedule, interest since the start and this year, a balance-only loan, a bank balance, a tie then a pick, no match,
     an account the partner can't see); web `ask-box.test.tsx`; e2e `reports-data.spec.ts` (a balance question, then its
     link). Not yet tried on the real provider.
+- **Receipts and bills sent to the vault as one PDF each, and their pages fixed afterwards** (VLT-14, VLT-15, migration
+  0097; [ADR-0059](design/adr/0059-vault-receipt-bill-pdfs.md); the owner's decisions of 2026-11-25).
+  - Before: the vault got a receipt's or bill's files one at a time, so a two-page scanned bill arrived as two one-page
+    JPEG documents.
+  - Now:
+    - A receipt, a household bill, a business's bill, a reimbursement, or a bill scan or intake not filed goes as one
+      PDF of its pages in their order (`renditions/record-pdf.ts`): a photo a page, Letter-wide and as tall as it needs
+      (up to 200 inches), JPEGs embedded as they are and drawn upright by their EXIF orientation, PNGs lossless, a PDF's
+      pages copied. A single photo is a one-page PDF; a record that is one PDF goes as it is. Only the PDF goes: Montra
+      keeps the pages, also in a group sent with no local copy.
+    - It goes once the record's pages are complete: the record exists, nothing of it is being read or waits in Review,
+      and its newest page has settled. A page no record holds yet (a phone capture still uploading its parts) waits and
+      never goes on its own. Files a lease, a maintenance log or an invoice holds alone go as before.
+    - The flow: the vault's job (`promote` → `recordPage`) finds the record (`app.vault_file_record`), marks its pages'
+      rows `converted` (`render_options.record`), and queues `record.render` as an owner. `RecordRenditions`
+      (`renditions/record-renditions.ts`) draws the PDF, stores it (`rendition = 'record_pdf'`, its pages in
+      `source_file_ids`), queues it in the outbox in the same transaction (`queueRecordPdf`), and records the outcome on
+      the pages' rows (`recordRecordConversion`). The same pages in the same order are never made twice. The PDF is sent
+      like any file: the record's hints, the title "<first page> (PDF)". It follows its pages into the Trash and back.
+    - Fixing pages: `PUT /receipts/:id/pages` and `PUT /household-bills/:id/pages` (`fileIds` in the new order; only
+      the record's own pages, each once, at least one). A removed page goes to the Trash. Nothing is read again, and the
+      screens say so. `PATCH /bills/:id` with `fileIds` tells the vault the same way. `app.vault_pages_changed` nudges
+      waiting rows and marks rows the vault had (`vault_item.pages_changed_at`); the job (`pagesChanged`) makes the PDF
+      again. The vault gets it as a new document (the app client can't add a version); the PDF it had is set aside
+      (`superseded_at`) and stays there.
+    - Already-sent items stay as they are: no backfill, no re-send. A record the vault had photo by photo gets one PDF
+      only when its pages change.
+    - Web: a "Pages" card on the receipt page and "Pages (n)" on the budget's bills list (move up, move down, remove
+      with a confirmation). Phone: Move up, Move down and Remove under each photo on the receipt screen. The phone has
+      no bill screen that shows pages, so no controls for bills there.
+    - Badges: each page's badge counts the record's PDF (`FileVaultSummaryDto.converted.combined`); no "Send again" for
+      it.
+  - Migration 0097: `app.file.rendition` gains `record_pdf`, `app.file.source_file_ids` (GIN index), checks; the Trash
+    trigger follows a record's pages; `vault_item.pages_changed_at`; `app.vault_file_record()`,
+    `app.vault_pages_changed()`; `vault_due()`/`vault_next()` count marked rows; `vault_file_conversions()` gains
+    `combined`.
+  - Not done: WebP pages (no decoder; backlog 17), a version of the same vault document (backlog 18), withdrawing an
+    earlier PDF still in someone's Inbox, page controls for a business's bill and for bills on the phone. Multi-file
+    payslips and tax forms, leases and maintenance logs go as before.
+  - Tests: API `family-vault-record-pdfs.test.ts` (mixed JPEG, PNG and PDF pages in order with the JPEG byte for byte,
+    no page sent alone, the pages kept; one photo; EXIF orientation; one PDF as it is; waiting for the capture and for
+    Review; WebP; moving and removing pages, with the refusals; a receipt sent before this left alone until its pages
+    change; a two-page scanned bill, moved); `record-pdf.test.ts` (orientation, page sizes, same bytes twice, refusals).
+    The outbox tests that send lone files (`family-vault-*.test.ts`) pass `orphanWaitMs: 0`. Web
+    `record-pages.test.ts`; phone `receipts.test.ts`.
 
 ---
 
