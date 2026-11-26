@@ -30,6 +30,9 @@ x-app: &app
 x-api-environment: &api-environment
   NODE_ENV: development
   PORT: '4000'
+  # The machine's time zone, as the API and worker had running on it (empty is UTC), e.g. MONTRA_TZ=America/New_York in
+  # infra/.env.
+  TZ: ${MONTRA_TZ:-}
   DATABASE_URL: postgres://montra_app:montra_app@postgres:5432/montra
   DATABASE_ADMIN_URL: postgres://montra_owner:montra_owner@postgres:5432/montra
   STORAGE_MODE: local
@@ -104,6 +107,7 @@ services:
       DATABASE_URL: postgres://montra_app:montra_app@postgres:5432/montra
       STORAGE_MODE: local
       STORAGE_DIR: /data/storage
+      TZ: ${MONTRA_TZ:-}
     volumes: [appstorage:/data/storage]
 
   web:
@@ -119,6 +123,7 @@ services:
     env_file: []
     environment:
       API_URL: http://api:4000
+      TZ: ${MONTRA_TZ:-}
       # Dev sign-in from another device on the network, over plain http (apps/web/lib/session.ts).
       DEV_COOKIE_INSECURE: 'on'
     ports: ['${MONTRA_WEB_PORT:-3030}:3000']
