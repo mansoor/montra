@@ -82,7 +82,10 @@ Implementation notes for the Anthropic adapter (current API):
 - `answer_question` (RPT-06) uses the small group and returns a plan, not an answer: the metric, categories, payee and periods. The
   API validates the plan against the workspace's categories and computes every figure in SQL, so the number can't come from the
   model (AIA-05). It sees the question, category names and today's date, and no amounts. This replaces the tool-use design: tool
-  results would have carried amounts to the provider (ADR-0019).
+  results would have carried amounts to the provider (ADR-0019). Since `answer_question.v2` (ADR-0058) a plan can instead be
+  about one account: the account in the question's own words (the gateway keeps only words the question has) and a topic
+  (payoff, owed, balance, next payment, interest paid). The API matches the words to account names, which the provider never
+  sees, and reads the figures from the account page's code.
 - `summarize_month` (AIA-01, FLOW-01) words the Month in review. The API computes every figure (money in and out, usual,
   the clearest changes, the biggest purchases, the budget and next month's suggested budget from BUD-02's median) and
   sends them formatted and named, with the category and place names it may mention. The answer is a headline, up to five

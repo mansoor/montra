@@ -498,4 +498,179 @@ describe('ask-your-data (RPT-06)', () => {
     expect(res.body.code ?? res.body.error?.code).toBe('ai.off');
     await c.patch(url('/ai/settings'), { mode: 'builtin' });
   });
+
+  it('marks an amount answer as one', async () => {
+    expect((await ask('How much did I spend on Groceries this month?')).body.kind).toBe('amount');
+  });
+});
+
+describe('ask about one account (RPT-06, ADR-0058)', () => {
+  const ask = (question: string, accountId?: string, as: Client = c) =>
+    as.post(url('/ask'), { question, ...(accountId ? { accountId } : {}) });
+  let skylark: any;
+  let carLoan: string;
+  const first = `${year}-01-01`;
+
+  beforeAll(async () => {
+    // A tracked mortgage at 6% with its first payment recorded, a car loan kept as just its balance, and two Chase cards.
+    const created = await c.post(url('/loans'), {
+      name: 'Skylark Home Loan',
+      newAccount: { kind: 'mortgage' },
+      principal: '20000000',
+      rateBps: 600,
+      termMonths: 360,
+      firstPaymentDate: first,
+      payingAccountId: checking,
+    });
+    expect(created.status).toBe(201);
+    const paid = await c.post(url(`/loans/${created.body.id}/payments`), {
+      number: 1,
+      accountId: checking,
+      date: first,
+    });
+    expect(paid.status).toBe(201);
+    skylark = paid.body;
+    const account = async (name: string, kind: string, opening: string) =>
+      (
+        await c.post(url('/accounts'), {
+          name,
+          kind,
+          openingBalance: usd(opening),
+          openingDate: `${year - 1}-12-01`,
+        })
+      ).body.id;
+    carLoan = await account('Car loan', 'loan', '1500000');
+    await account('Chase Freedom', 'credit_card', '12345');
+    await account('Chase Sapphire', 'credit_card', '67890');
+  });
+
+  it('says when a tracked loan will be paid off, as its page does', async () => {
+    const res = await ask('When will my skylark home loan finish?');
+    expect(res.status).toBe(200);
+    const page = (await c.get(url('/loans'))).body.data.find((l: any) => l.id === skylark.id);
+    const schedule = (await c.get(url(`/loans/${skylark.id}/schedule`))).body.data;
+    expect(res.body).toMatchObject({
+      kind: 'account',
+      understood: true,
+      metric: null,
+      periods: [],
+      currency: 'USD',
+      account: {
+        phrase: 'skylark home loan',
+        topic: 'payoff',
+        outcome: 'answered',
+        account: { id: skylark.loanAccountId, name: 'Skylark Home Loan', kind: 'mortgage' },
+        payoffDate: page.payoffDate,
+        paymentsLeft: schedule.filter((r: any) => r.transactionId === null).length,
+        interestRemaining: page.interestRemaining,
+        balance: page.scheduledBalance,
+      },
+    });
+    expect(res.body.account.paymentsLeft).toBe(359);
+  });
+
+  it('gives what is owed, and the next payment with its split', async () => {
+    const page = (await c.get(url('/loans'))).body.data.find((l: any) => l.id === skylark.id);
+    const owed = await ask('How much do I owe on my Skylark mortgage?');
+    expect(owed.body.account).toMatchObject({ outcome: 'answered', balance: page.scheduledBalance });
+    expect(owed.body.account.balance).toBe('19980090');
+    const next = await ask('When is the next payment on my Skylark loan due?');
+    expect(next.body.account).toMatchObject({
+      topic: 'next_payment',
+      outcome: 'answered',
+      next: {
+        date: page.next.date,
+        total: page.next.total,
+        principal: page.next.principal,
+        interest: page.next.interest,
+        escrow: '0',
+      },
+    });
+  });
+
+  it('gives interest paid since the start, and within a period', async () => {
+    const ever = await ask('How much interest have I paid on my Skylark home loan?');
+    expect(ever.body.account).toMatchObject({
+      topic: 'interest_paid',
+      outcome: 'answered',
+      interestPaid: '100000',
+      paymentsBefore: 0,
+      interestPeriods: [],
+    });
+    const thisYear = await ask('How much interest have I paid on my Skylark home loan this year?');
+    expect(thisYear.body.account.interestPeriods).toEqual([
+      { label: 'this year', from: first, to: today, amount: '100000' },
+    ]);
+    const lastYear = await ask('How much interest have I paid on my Skylark home loan last year?');
+    expect(lastYear.body.account.interestPeriods[0].amount).toBe('0');
+  });
+
+  it('answers a loan kept as just its balance with what is owed, and says payoff needs tracking', async () => {
+    expect((await ask('When will my car loan be paid off?')).body.account).toMatchObject({
+      outcome: 'needs_tracking',
+      account: { id: carLoan, name: 'Car loan', kind: 'loan' },
+      balance: '1500000',
+      payoffDate: null,
+    });
+    expect((await ask('How much do I owe on my car loan?')).body.account).toMatchObject({
+      outcome: 'answered',
+      balance: '1500000',
+    });
+  });
+
+  it('gives a bank account its balance, and says payoff isn’t something it has', async () => {
+    const page = (await c.get(url('/accounts'))).body.data.find((a: any) => a.id === checking);
+    expect((await ask('What is my checking balance?')).body.account).toMatchObject({
+      outcome: 'answered',
+      account: { id: checking },
+      balance: page.balance.amount,
+    });
+    expect((await ask('When will my checking be paid off?')).body.account.outcome).toBe('not_applicable');
+  });
+
+  it('lists the accounts that tie, and answers for the one picked', async () => {
+    const res = await ask('How much do I owe on my Chase card?');
+    expect(res.body.account).toMatchObject({ outcome: 'choose', account: null, balance: null });
+    expect(res.body.account.choices.map((a: any) => a.name)).toEqual(['Chase Freedom', 'Chase Sapphire']);
+    const picked = await ask('How much do I owe on my Chase card?', res.body.account.choices[1].id);
+    expect(picked.body.account).toMatchObject({
+      outcome: 'answered',
+      account: { name: 'Chase Sapphire', kind: 'credit_card' },
+      balance: '67890',
+    });
+  });
+
+  it('names nothing when no account matches, beyond the asker’s words', async () => {
+    const res = await ask('When will my Acme loan finish?');
+    expect(res.status).toBe(200);
+    expect(res.body.account).toEqual({
+      phrase: 'Acme loan',
+      topic: 'payoff',
+      outcome: 'no_match',
+      account: null,
+      choices: [],
+      currency: null,
+      balance: null,
+      payoffDate: null,
+      paymentsLeft: null,
+      interestRemaining: null,
+      next: null,
+      interestPaid: null,
+      interestPeriods: [],
+      paymentsBefore: null,
+    });
+    // An account id the asker can't see is no match either.
+    const other = await ask('How much do I owe on my Chase card?', '00000000-0000-4000-8000-000000000000');
+    expect(other.body.account.outcome).toBe('no_match');
+  });
+
+  it('keeps to the accounts the asker can see', async () => {
+    expect((await ask('What is my Studio bank balance?', undefined, partner)).body.account.outcome).toBe(
+      'no_match',
+    );
+    expect((await ask('What is my Studio bank balance?')).body.account).toMatchObject({
+      outcome: 'answered',
+      balance: '577700',
+    });
+  });
 });

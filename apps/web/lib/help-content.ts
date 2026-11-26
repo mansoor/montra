@@ -121,6 +121,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
           'Reports can be filtered, saved and exported as PDF, CSV or Excel. Select a row or bar to see the transactions behind it.',
           'Search from the top of any page. Try coffee >20 or tag:travel. It looks through payees, descriptions, your notes and the text on receipts.',
           'Ask takes a question in your own words. AI works out what you mean, and the answer is worked out from your books.',
+          'Ask about one account too: when will my home loan be paid off, how many payments are left, what do I owe on my card, what is my checking balance, when is the next payment on my mortgage, or how much interest have I paid on it this year. Montra finds the account by its name, and if more than one fits, you pick. The figures are the ones on the account’s page. The AI never sees your account names or amounts.',
         ],
       },
     ],

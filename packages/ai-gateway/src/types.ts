@@ -419,12 +419,23 @@ export interface QuestionInput {
   today: string;
 }
 
+/** What a question about one account asks (ADR-0058). */
+export type QuestionAccountTopic = 'payoff' | 'owed' | 'balance' | 'next_payment' | 'interest_paid';
+
 /** A checked plan for the app to run. It holds no numbers. */
 export interface QuestionPlan {
   understood: boolean;
+  /** An amount over periods, or one account (ADR-0058). */
+  kind: 'amount' | 'account';
   metric: 'spending' | 'income' | 'net' | null;
   categories: string[];
   payee: string | null;
+  /**
+   * For kind account: the account in the question's own words (only words the question has), for the app to match to
+   * account names, and what's asked about it. Null for amounts.
+   */
+  account: { phrase: string; topic: QuestionAccountTopic } | null;
+  /** For amounts, one or more; for interest paid on an account, none means since the start. */
   periods: { label: string; from: string; to: string }[];
 }
 

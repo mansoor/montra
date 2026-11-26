@@ -114,6 +114,7 @@ export class ReportsController {
   @Post('ask')
   @HttpCode(200)
   ask(@Ctx() ctx: RequestContext, @Body() body: unknown) {
-    return this.searchService.ask(dbCtx(ctx), parse(AskRequest, body).question);
+    const { question, accountId } = parse(AskRequest, body);
+    return this.searchService.ask(dbCtx(ctx), question, accountId);
   }
 }
