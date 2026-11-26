@@ -3558,6 +3558,10 @@ Phase 11 leftovers:
     two-step changed" notices (`note_identity_event`), suspending from the admin console, and a member's two-step
     status on the sharing page.
   - Passkeys and security keys need a secure context, so they don't work over plain http at a LAN address.
+  - Found on the way: over plain http at a LAN address no save in the web app worked, in either mode. Browsers offer
+    `crypto.randomUUID` only in a secure context, and the API client made each POST's idempotency key with it. Its
+    `randomUuid()` (`@montra/api-client`) now falls back to a version 4 UUID from `crypto.getRandomValues`. Tests:
+    `client.test.ts`.
   - Phone builds for the LAN: `MONTRA_AUTH_MODE=kratos`, `MONTRA_KRATOS_URL=http://<LAN address>:4455`.
 
 ---
