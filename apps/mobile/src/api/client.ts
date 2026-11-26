@@ -9,6 +9,7 @@ import type {
   AppRequirementsDto,
   FiledBillDto,
   HouseholdBillDto,
+  SetHouseholdBillPagesRequest,
   BillerDto,
   BudgetDto,
   CreateReimbursementRequest,
@@ -663,6 +664,9 @@ export function createApi(opts: ApiOptions) {
         periodEnd?: string | null;
       },
     ) => request<FiledBillDto>('POST', `${ws(w)}/household-bills`, input),
+    /** ADR-0059 §4: the pages the bill keeps, in their new order; a page left out goes to the Trash. */
+    setHouseholdBillPages: (w: string, id: string, input: SetHouseholdBillPagesRequest) =>
+      request<HouseholdBillDto>('PUT', `${ws(w)}/household-bills/${id}/pages`, input),
     // ----- Statements and bills to file (ADR-0051): online only, like scans ---------------------------------------
     openIntakes: async (w: string) => (await request<{ data: IntakeDto[] }>('GET', `${ws(w)}/intakes`)).data,
     resolveIntake: (

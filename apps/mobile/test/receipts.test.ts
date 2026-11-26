@@ -173,6 +173,19 @@ describe('receipt API calls', () => {
     expect(calls[0]!.init.method).toBe('PUT');
     expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ version: '3', fileIds: ['f2', 'f1'] });
   });
+
+  it('saves a bill’s pages in their new order (ADR-0059 §4)', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const f = (async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ id: 'b1', fileIds: ['f2', 'f1'] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const api = createApi({ baseUrl: 'http://api', token: async () => 'dev:a@b.co', fetch: f });
+    await api.setHouseholdBillPages('w1', 'b1', { version: 4, fileIds: ['f2', 'f1'] });
+    expect(calls[0]!.url).toBe('http://api/v1/workspaces/w1/household-bills/b1/pages');
+    expect(calls[0]!.init.method).toBe('PUT');
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ version: 4, fileIds: ['f2', 'f1'] });
+  });
 });
 
 describe('fixing a receipt’s pages (ADR-0059 §4)', () => {

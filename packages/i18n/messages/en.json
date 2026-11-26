@@ -2726,6 +2726,7 @@
   "mobile.bills.none_due": "No bills due. Scan one from the + button.",
   "mobile.bills.not_read": "This bill couldn't be read. Enter the amount and due date.",
   "mobile.bills.overdue": "Overdue",
+  "mobile.bills.pages": "{count, plural, one {# page} other {# pages}}",
   "mobile.bills.paid": "Paid",
   "mobile.bills.paid_title": "Paid",
   "mobile.bills.period": "{from} to {to}",
