@@ -20,6 +20,7 @@ import { browserApi } from '@/lib/browser-api';
 import { bpsToPercent, MAPPING_EXAMPLE, percentToBps, readMappingJson } from '@/lib/reference-data';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 const gb = (bytes: string) => (Number(bytes) / 1024 ** 3).toFixed(2);
 
@@ -1171,6 +1172,7 @@ function ImportProfilesEditor({
   canChange: boolean;
 }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const blank = {
     id: '',
     name: '',
@@ -1324,8 +1326,14 @@ function ImportProfilesEditor({
                   type="button"
                   className="btn-ghost text-xs text-bad"
                   disabled={busy}
-                  onClick={() => {
-                    if (window.confirm(t('admin.profile_delete_confirm', { name: p.name })))
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: t('admin.profile_delete_title'),
+                      body: <p>{t('admin.profile_delete_confirm', { name: p.name })}</p>,
+                      confirmLabel: t('admin.profile_delete'),
+                      danger: true,
+                    });
+                    if (ok)
                       void run(() => browserApi.adminDeleteImportProfile(p.id), t('admin.profile_deleted'));
                   }}
                 >
@@ -1337,6 +1345,7 @@ function ImportProfilesEditor({
         ))}
       </ul>
       <StatusLine message={message} />
+      {dialog}
     </>
   );
 }

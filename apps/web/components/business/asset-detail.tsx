@@ -9,6 +9,7 @@ import { parseAmountInput } from '@/lib/money';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { listHref } from '@/components/ui/back-link';
 
 interface Choice {
@@ -31,6 +32,7 @@ export function AssetDetail({
   accounts: Choice[];
 }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const { locale } = useI18n();
   const router = useRouter();
   const ccy = a.currency;
@@ -355,8 +357,14 @@ export function AssetDetail({
           type="button"
           className="text-sm text-bad underline"
           disabled={busy}
-          onClick={() => {
-            if (!window.confirm(t('assets.delete_confirm'))) return;
+          onClick={async () => {
+            const ok = await confirm({
+              title: t('assets.delete_title'),
+              body: <p>{t('assets.delete_confirm')}</p>,
+              confirmLabel: t('assets.delete'),
+              danger: true,
+            });
+            if (!ok) return;
             void run(async () => {
               await browserApi.deleteAsset(workspaceId, a.id);
               return true;
@@ -368,6 +376,7 @@ export function AssetDetail({
           {t('assets.delete')}
         </button>
       )}
+      {dialog}
     </div>
   );
 }

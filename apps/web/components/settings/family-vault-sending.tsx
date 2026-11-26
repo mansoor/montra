@@ -30,6 +30,7 @@ import {
   vaultUnmapped,
 } from '@/lib/vault';
 import { DateText, useI18n } from '../i18n';
+import { useConfirm } from '../ui/confirm-dialog';
 import { StatusLine, useAction } from '../use-action';
 
 /**
@@ -64,6 +65,7 @@ type Draft = {
 
 function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const id = useId();
   const owner = canManageVault(workspace.role);
   const rows = vaultGroupRows(d, workspace.role);
@@ -81,7 +83,7 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
     <form
       className="space-y-2"
       aria-labelledby={`${id}-title`}
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         const { groups, warn, noCopy } = vaultGroupChanges(d, draft);
         if (!groups.length) return setMessage({ tone: 'good', text: t('vault.groups_unchanged') });
@@ -89,9 +91,26 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
           return setMessage({ tone: 'bad', text: t('vault.kind_needed') });
         }
         // §6: payslips and tax documents go only after this warning.
-        if (warn.length && !window.confirm(t('vault.restricted_warning'))) return;
+        if (
+          warn.length &&
+          !(await confirm({
+            title: t('vault.restricted_title'),
+            body: <p>{t('vault.restricted_warning')}</p>,
+            confirmLabel: t('vault.restricted_send'),
+          }))
+        )
+          return;
         // §5a: Montra removes its own copies of these once the vault has filed them.
-        if (noCopy.length && !window.confirm(t('vault.no_copy_warning'))) return;
+        if (
+          noCopy.length &&
+          !(await confirm({
+            title: t('vault.no_copy_title'),
+            body: <p>{t('vault.no_copy_warning')}</p>,
+            confirmLabel: t('vault.no_copy_confirm'),
+            danger: true,
+          }))
+        )
+          return;
         void run(
           () => browserApi.updateVaultConnection(workspace.id, { version: d.version, groups }),
           t('vault.groups_saved'),
@@ -102,7 +121,13 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
           const offer = await browserApi.getVaultMove(workspace.id, noCopy).catch(() => null);
           const ask = offer ? vaultMoveQuestion(offer) : null;
           if (!offer || !ask) return;
-          if (!window.confirm(t(ask.key, ask.values))) {
+          const move = await confirm({
+            title: t('vault.move_offer_title'),
+            body: <p>{t(ask.key, ask.values)}</p>,
+            confirmLabel: t('vault.move_offer_confirm'),
+            cancelLabel: t('vault.move_offer_later'),
+          });
+          if (!move) {
             setMessage({ tone: 'good', text: t('vault.move_not_now') });
             return;
           }
@@ -224,6 +249,7 @@ function VaultGroups({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnec
         </button>
       )}
       <StatusLine message={message} />
+      {dialog}
     </form>
   );
 }
@@ -443,6 +469,7 @@ function MoveExisting({ workspace, d }: { workspace: WorkspaceDto; d: VaultConne
 /** §10 "Bring the files back", staying connected: every file kept only in the vault copied back into Montra. */
 function BringBack({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
   const { run, busy, message, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const left = d.files.onlyInVault - d.files.missing;
   if (d.stage !== 'connected' || d.bringingBack || left <= 0) return null;
   return (
@@ -451,8 +478,13 @@ function BringBack({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnecti
         type="button"
         className="btn-secondary"
         disabled={busy}
-        onClick={() => {
-          if (window.confirm(t('vault.bring_back_confirm', { count: left }))) {
+        onClick={async () => {
+          const ok = await confirm({
+            title: t('vault.bring_back_title'),
+            body: <p>{t('vault.bring_back_confirm', { count: left })}</p>,
+            confirmLabel: t('vault.bring_back'),
+          });
+          if (ok) {
             void run(
               () => browserApi.bringBackFromVault(workspace.id),
               (r) => t('vault.bring_back_started', { count: r.queued }),
@@ -463,12 +495,14 @@ function BringBack({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnecti
         {t('vault.bring_back')}
       </button>
       <StatusLine message={message} />
+      {dialog}
     </div>
   );
 }
 
 function VaultOptions({ workspace, d }: { workspace: WorkspaceDto; d: VaultConnectionDto }) {
   const { run, busy, message, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const id = useId();
   return (
     <div className="space-y-2">
@@ -503,10 +537,18 @@ function VaultOptions({ workspace, d }: { workspace: WorkspaceDto; d: VaultConne
           value={d.coverNumber}
           disabled={busy}
           data-testid="vault-cover-number"
-          onChange={(e) => {
+          onChange={async (e) => {
             const coverNumber = e.target.value as VaultCoverNumber;
             // ADR-0057 §3: the full number goes to the vault, where the vault decides who sees it.
-            if (coverNumber === 'full' && !window.confirm(t('vault.cover_full_warning'))) return;
+            if (
+              coverNumber === 'full' &&
+              !(await confirm({
+                title: t('vault.cover_full_title'),
+                body: <p>{t('vault.cover_full_warning')}</p>,
+                confirmLabel: t('vault.cover_full_confirm'),
+              }))
+            )
+              return;
             void run(() =>
               browserApi.updateVaultConnection(workspace.id, { version: d.version, coverNumber }),
             );
@@ -565,6 +607,7 @@ function VaultOptions({ workspace, d }: { workspace: WorkspaceDto; d: VaultConne
         {d.status === 'paused' ? t('vault.resume') : t('vault.pause')}
       </button>
       <StatusLine message={message} />
+      {dialog}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { photoForUpload } from '@/lib/photo-upload';
 import { digitsOnly, formatTinInput, I9_DOCUMENTS } from '@/lib/payroll';
 import { DateText } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { Field, Item } from './person-details';
 import { Reveal, tinText } from './reveal';
 
@@ -30,6 +31,7 @@ export function I9Panel({
   today: string;
 }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const locked = !!i9?.section2.signedOn;
   const [step, setStep] = useState<'section1' | 'document' | 'section2' | null>(
     !i9 ? 'section1' : !i9.section2.signedOn && i9.documents.length === 0 ? 'document' : null,
@@ -810,8 +812,14 @@ export function I9Panel({
         <button
           type="button"
           className="btn-ghost text-bad"
-          onClick={() => {
-            if (window.confirm(t('payroll.i9.destroy_confirm'))) {
+          onClick={async () => {
+            const ok = await confirm({
+              title: t('payroll.i9.destroy_title'),
+              body: <p>{t('payroll.i9.destroy_confirm')}</p>,
+              confirmLabel: t('payroll.i9.destroy_button'),
+              danger: true,
+            });
+            if (ok) {
               void run(() => browserApi.destroyI9(workspaceId, person.id), t('payroll.i9.destroyed'));
             }
           }}
@@ -820,6 +828,7 @@ export function I9Panel({
         </button>
       )}
       <StatusLine message={message} />
+      {dialog}
     </section>
   );
 }

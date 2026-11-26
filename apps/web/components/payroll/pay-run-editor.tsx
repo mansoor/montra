@@ -17,6 +17,7 @@ import {
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { Field } from './person-details';
 
 type Row = { code: string; label: string; amount: string };
@@ -41,6 +42,7 @@ export function PayRunEditor({
   canWrite: boolean;
 }) {
   const { run: act, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const { locale } = useI18n();
   const draft = run.status === 'draft';
   const editable = draft && canWrite;
@@ -321,8 +323,14 @@ export function PayRunEditor({
                   type="button"
                   className="btn-ghost text-bad"
                   disabled={busy}
-                  onClick={() => {
-                    if (window.confirm(t('payroll.run.delete_confirm'))) {
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: t('payroll.run.delete_title'),
+                      body: <p>{t('payroll.run.delete_confirm')}</p>,
+                      confirmLabel: t('payroll.run.delete'),
+                      danger: true,
+                    });
+                    if (ok) {
                       void act(() => browserApi.deletePayRun(workspaceId, run.id)).then(() =>
                         window.location.assign('..'),
                       );
@@ -340,8 +348,13 @@ export function PayRunEditor({
                 type="button"
                 className="btn-secondary"
                 disabled={busy}
-                onClick={() => {
-                  if (window.confirm(t('payroll.run.reopen_confirm'))) {
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: t('payroll.run.reopen_title'),
+                    body: <p>{t('payroll.run.reopen_confirm')}</p>,
+                    confirmLabel: t('payroll.run.reopen'),
+                  });
+                  if (ok) {
                     void act(
                       () => browserApi.reopenPayRun(workspaceId, run.id, run.version),
                       t('payroll.run.reopened'),
@@ -356,6 +369,7 @@ export function PayRunEditor({
         </section>
       )}
       <StatusLine message={message} />
+      {dialog}
     </div>
   );
 }

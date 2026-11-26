@@ -58,8 +58,11 @@ test('owner edits, bulk-reviews, confirms a recurring bill and invites a partner
   await expect(page.getByTestId('journal-entry')).not.toContainText('Dining out');
 
   // Delete to trash, then restore it from the Trash filter (BAK-06).
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Delete' }).click();
+  const ask = page.getByRole('alertdialog', { name: 'Delete this transaction?' });
+  await expect(ask).toContainText('Move this transaction to the trash?');
+  await ask.getByRole('button', { name: 'Delete transaction' }).click();
+  await expect(ask).toBeHidden();
   await expect(page.getByText('Moved to trash.')).toBeVisible();
   await nav(page, 'Transactions');
   await page.getByRole('link', { name: 'Trash', exact: true }).click();

@@ -23,6 +23,7 @@ import { CategorySuggestion } from './category-suggestion';
 import { Explanation } from './ai/shared';
 import { PickerDialog } from './review/picker-dialog';
 import { useI18n } from './i18n';
+import { useConfirm } from './ui/confirm-dialog';
 
 /**
  * Edits a transaction (DE-10). Only changed fields are sent, with If-Match for optimistic concurrency; the
@@ -45,6 +46,7 @@ export function TransactionEditor({
 }) {
   const router = useRouter();
   const { t, locale } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const accountIds = useMemo(() => new Set(accounts.map((a) => a.id)), [accounts]);
   const initial = useMemo(() => toEditState(transaction, accountIds), [transaction, accountIds]);
   const [state, setState] = useState<EditState>(initial);
@@ -133,7 +135,13 @@ export function TransactionEditor({
   }
 
   async function onDelete() {
-    if (!window.confirm(t('editor.confirm_delete'))) return;
+    const ok = await confirm({
+      title: t('editor.delete_title'),
+      body: <p>{t('editor.confirm_delete')}</p>,
+      confirmLabel: t('editor.delete_transaction'),
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const { outcome } = await browserApi.deleteTransaction(
@@ -481,6 +489,7 @@ export function TransactionEditor({
           setSplitOpen(false);
         }}
       />
+      {dialog}
     </>
   );
 }

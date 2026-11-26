@@ -13,6 +13,7 @@ import { browserApi } from '@/lib/browser-api';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { Field } from './person-details';
 
 interface Option {
@@ -283,6 +284,7 @@ function Deposits({
   yearLinks: { year: number; href: string }[];
 }) {
   const { run, busy, message, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const [recording, setRecording] = useState<string | null>(null);
   const [d, setD] = useState({ paidOn: today, payFromAccountId: accounts[0]?.id ?? '', confirmation: '' });
   const TAX: Record<DepositObligationDto['tax'], string> = {
@@ -377,8 +379,14 @@ function Deposits({
                       type="button"
                       className="underline"
                       disabled={busy}
-                      onClick={() => {
-                        if (window.confirm(t('payroll.taxes.remove_confirm'))) {
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t('payroll.taxes.remove_title'),
+                          body: <p>{t('payroll.taxes.remove_confirm')}</p>,
+                          confirmLabel: t('payroll.taxes.remove_deposit'),
+                          danger: true,
+                        });
+                        if (ok) {
                           void run(() => browserApi.deletePayrollDeposit(workspaceId, o.deposit!.id));
                         }
                       }}
@@ -445,6 +453,7 @@ function Deposits({
         </ul>
       )}
       <StatusLine message={message} />
+      {dialog}
     </section>
   );
 }

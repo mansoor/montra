@@ -9,6 +9,7 @@ import { anyDuplicate } from '@/lib/missing-files';
 import { photoForUpload, photoSettings } from '@/lib/photo-upload';
 import { RECEIPT_ACCEPT, receiptFileProblem } from '@/lib/receipts';
 import { useI18n } from '../i18n';
+import { useConfirm } from '../ui/confirm-dialog';
 
 /**
  * Receipt upload (TXN-08 on the web, RCP-01): one receipt from one or more photos (a long receipt in pages,
@@ -25,6 +26,7 @@ export function ReceiptUpload({
 }) {
   const router = useRouter();
   const { t } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const input = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -64,7 +66,15 @@ export function ReceiptUpload({
         uploads.push(await browserApi.uploadReceiptFile(workspaceId, p, p.name));
       }
       // The same picture is already in Montra, or kept in the vault (ADR-0054): the person decides.
-      if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) return;
+      if (
+        anyDuplicate(uploads) &&
+        !(await confirm({
+          title: t('files.duplicate_title'),
+          body: <p>{t('files.duplicate_confirm')}</p>,
+          confirmLabel: t('files.duplicate_use'),
+        }))
+      )
+        return;
       const fileIds = uploads.map((u) => u.fileId);
       const receipt = await browserApi.createReceipt(workspaceId, {
         fileIds,
@@ -147,6 +157,7 @@ export function ReceiptUpload({
       <button type="button" className="btn-primary" disabled={busy || files.length === 0} onClick={submit}>
         {busy ? t('receipts.uploading') : t('receipts.read_receipt')}
       </button>
+      {dialog}
     </div>
   );
 }

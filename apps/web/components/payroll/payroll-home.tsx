@@ -9,6 +9,7 @@ import { parseAmountInput } from '@/lib/money';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { usePrompt } from '../ui/confirm-dialog';
 import { Field } from './person-details';
 
 interface Option {
@@ -43,6 +44,7 @@ export function PayrollHome({
   canWrite: boolean;
 }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const { prompt, dialog } = usePrompt();
   const { locale } = useI18n();
   const base = `/w/${workspaceId}/business/${entityId}/payroll`;
   const [addingSchedule, setAddingSchedule] = useState(schedules.length === 0 && canWrite);
@@ -379,8 +381,13 @@ export function PayrollHome({
                         type="button"
                         className="btn-ghost"
                         disabled={busy}
-                        onClick={() => {
-                          const reason = window.prompt(t('payroll.claim.decline_reason')) ?? null;
+                        onClick={async () => {
+                          const reason = await prompt({
+                            title: t('payroll.claim.decline_title'),
+                            label: t('payroll.claim.decline_reason'),
+                            confirmLabel: t('payroll.claim.decline'),
+                            maxLength: 500,
+                          });
                           if (reason === null) return;
                           void run(
                             () =>
@@ -521,6 +528,7 @@ export function PayrollHome({
         {schedules.length > 0 && <p className="text-xs text-muted">{t('payroll.run.assign_hint')}</p>}
       </section>
       <StatusLine message={message} />
+      {dialog}
     </div>
   );
 }

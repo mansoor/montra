@@ -23,6 +23,7 @@ import { Field, FormError } from '../field';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 type Way = 'upload' | 'type';
 
@@ -60,6 +61,7 @@ export function AddBill({
 }) {
   const { t, locale } = useI18n();
   const { run, busy, message, setMessage } = useAction();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -137,7 +139,14 @@ export function AddBill({
         uploads.push(await browserApi.uploadHouseholdBillFile(workspaceId, f, f.name));
       }
       // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
-      if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) {
+      if (
+        anyDuplicate(uploads) &&
+        !(await confirm({
+          title: t('files.duplicate_title'),
+          body: <p>{t('files.duplicate_confirm')}</p>,
+          confirmLabel: t('files.duplicate_use'),
+        }))
+      ) {
         setReadState('idle');
         return;
       }
@@ -529,6 +538,8 @@ export function AddBill({
           )}
         </div>
       </dialog>
+      {/* Beside the bill's dialog, not in it: it opens on top. */}
+      {confirmDialog}
     </div>
   );
 }
