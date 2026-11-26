@@ -4,7 +4,9 @@ import { makeConfig } from '../app.config';
 type PluginEntry = string | [string, Record<string, unknown>];
 
 function pluginOptions(env: Record<string, string>, name: string): Record<string, unknown> | undefined {
-  const entry = (makeConfig(env).plugins as PluginEntry[]).find((p) => (Array.isArray(p) ? p[0] : p) === name);
+  const entry = (makeConfig(env).plugins as PluginEntry[]).find(
+    (p) => (Array.isArray(p) ? p[0] : p) === name,
+  );
   if (entry === undefined) throw new Error(`no ${name} plugin`);
   return Array.isArray(entry) ? entry[1] : undefined;
 }
@@ -15,16 +17,23 @@ const PROD = { MONTRA_API_URL: 'https://api.montra.app', MONTRA_AUTH_MODE: 'krat
 describe('app config: plain http only for a local-network build', () => {
   it('lets iOS and Android use http when the API is on http', () => {
     const plist = makeConfig(LAN).ios?.infoPlist ?? {};
-    expect(plist.NSAppTransportSecurity).toEqual({ NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true });
+    expect(plist.NSAppTransportSecurity).toEqual({
+      NSAllowsArbitraryLoads: true,
+      NSAllowsLocalNetworking: true,
+    });
     expect(plist.NSLocalNetworkUsageDescription).toBeTypeOf('string');
-    expect(pluginOptions(LAN, 'expo-build-properties')).toMatchObject({ android: { usesCleartextTraffic: true } });
+    expect(pluginOptions(LAN, 'expo-build-properties')).toMatchObject({
+      android: { usesCleartextTraffic: true },
+    });
   });
 
   it('leaves App Transport Security and Android cleartext alone for an https API', () => {
     const plist = makeConfig(PROD).ios?.infoPlist ?? {};
     expect(plist).not.toHaveProperty('NSAppTransportSecurity');
     expect(plist).not.toHaveProperty('NSLocalNetworkUsageDescription');
-    expect(pluginOptions(PROD, 'expo-build-properties')).toMatchObject({ android: { usesCleartextTraffic: false } });
+    expect(pluginOptions(PROD, 'expo-build-properties')).toMatchObject({
+      android: { usesCleartextTraffic: false },
+    });
   });
 
   it('bakes the addresses and sign-in mode into extra', () => {
