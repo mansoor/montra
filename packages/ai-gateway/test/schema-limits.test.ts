@@ -12,7 +12,7 @@ import * as categorize from '../src/tasks/categorize/v1.js';
 import * as extractPayslip from '../src/tasks/extract-payslip/v2.js';
 import * as extractBill from '../src/tasks/extract-bill/v1.js';
 import * as extractTaxForm from '../src/tasks/extract-tax-form/v1.js';
-import * as extractReceipt from '../src/tasks/extract-receipt/v3.js';
+import * as extractReceipt from '../src/tasks/extract-receipt/v4.js';
 import * as extractStatementTable from '../src/tasks/extract-statement-table/v1.js';
 import * as flagCapital from '../src/tasks/flag-capital/v1.js';
 import * as flagSeparation from '../src/tasks/flag-separation/v1.js';

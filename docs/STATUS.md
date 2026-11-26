@@ -3533,6 +3533,21 @@ Phase 11 leftovers:
   - Tests: web `confirm-dialog.test.tsx` (the prompt: label, focus, typed text, Enter, empty, Cancel and Esc; a dialog
     inside another); e2e `phase1a.spec.ts` (delete a transaction), `family-vault.spec.ts` (both warnings, disconnect),
     `files-to-provide.spec.ts` (Cancel, then upload anyway) click the in-app dialog instead of accepting the browser's.
+- **Receipt savings no longer taken off twice** (no migration, 2026-11-26). Owner's report: a Vons receipt went to "Needs
+  review" $1.60 apart, though its lines add up to the printed total. The receipt has "Price" and "You Pay" columns with
+  "Member Savings -0.80" under two items; the model read the "You Pay" amount as the line total and the savings as the
+  line's discount too, so the check took the $1.60 off a second time.
+  - `extract_receipt.v4` (`tasks/extract-receipt/v4.ts`, schema unchanged): `lineTotal` is the price before the line's
+    discount, and lineTotal − discount is what was paid; on "Price / You Pay" or "Regular Price / Card Savings"
+    receipts that means the regular price.
+  - The API also checks what comes back (`lineDiscountsTakenTwice` in `@montra/domain`, used by `fromExtraction`): a
+    receipt that doesn't add up as read, has line discounts, and is off by exactly their sum (±2) stores each
+    discounted line at paid + savings, so it adds up; a unit price that was the paid price is dropped and worked out
+    again. Any other gap stays for review as read. Edits in review are checked as typed.
+  - Receipts read before this keep their lines: in review, set each line that has savings to its amount before them
+    (the "Price" column); the line keeps its discount, so the receipt adds up.
+  - Tests: domain `receipt.test.ts` (the gap rule); API `receipts.test.ts` (a synthetic "You Pay" receipt with two
+    savings lines adds up, including a 2 @ line; a receipt off by anything else stays in review as read).
 
 ---
 

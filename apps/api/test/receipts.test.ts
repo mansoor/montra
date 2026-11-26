@@ -411,6 +411,47 @@ describe('a receipt in another currency (Phase 5 exit criterion 2, CUR-04)', () 
   });
 });
 
+describe('member savings already taken off the printed prices (2026-11-26)', () => {
+  // A "Price / You Pay" grocery receipt: the amount on each line is what was paid, and the savings printed under it
+  // were read as the line's discount too. As read, the lines come to 9.18 − 0.90 = 8.28 against a 9.18 total.
+  it('counts the savings once, storing each line at its price before the savings', async () => {
+    const r = await capture([
+      'HILLTOP GROCER',
+      '11/02/2026 10:15',
+      'PASTA SAUCE              2.99 T',
+      'COUPON MEMBER SAVINGS   -0.50',
+      'SPARKLING WATER 2 @ 1.00   2.00 T',
+      'COUPON MEMBER SAVINGS   -0.40',
+      'BREAD                    3.79 N',
+      'TAX                      0.40',
+      'TOTAL                    9.18',
+    ]);
+    expect(r).toMatchObject({ status: 'inbox', total: '918', validationGap: '0' });
+    expect(r.lines.map((l: any) => [l.rawText, l.qty, l.unitPrice, l.lineTotal, l.discount])).toEqual([
+      ['PASTA SAUCE', '1', '349', '349', '50'],
+      // The unit price read was the price paid; it is worked out again from the price before the savings.
+      ['SPARKLING WATER', '2', '120', '240', '40'],
+      ['BREAD', '1', '379', '379', '0'],
+    ]);
+  });
+
+  it('leaves a receipt that is off by anything else for review, as read', async () => {
+    const r = await capture([
+      'HILLTOP GROCER',
+      '11/03/2026 10:15',
+      'PASTA SAUCE              3.49 T',
+      'COUPON MEMBER SAVINGS   -0.50',
+      'BREAD                    3.79 N',
+      'TOTAL                    7.00',
+    ]);
+    expect(r).toMatchObject({ status: 'needs_review', validationGap: '22' });
+    expect(r.lines.map((l: any) => [l.lineTotal, l.discount])).toEqual([
+      ['349', '50'],
+      ['379', '0'],
+    ]);
+  });
+});
+
 describe('the inbox (IMP-11)', () => {
   it('waits for its transaction, then links when matched again', async () => {
     const receipt = await capture(['SHELL', '10/20/2026', 'UNLEADED   45.00', 'TOTAL   45.00']);
