@@ -191,3 +191,21 @@ export function captureNotice(
   if (receipts === null || receipts.some(beingRead)) return 'uploading';
   return null;
 }
+
+/**
+ * A receipt's pages fixed after capture (ADR-0059 §4): the order a move gives, or null past either end. The web has
+ * the same rule (`apps/web/lib/record-pages.ts`).
+ */
+export function movePage(ids: readonly string[], index: number, by: -1 | 1): string[] | null {
+  const to = index + by;
+  if (index < 0 || index >= ids.length || to < 0 || to >= ids.length) return null;
+  const next = [...ids];
+  [next[index], next[to]] = [next[to]!, next[index]!];
+  return next;
+}
+
+/** The pages without the one at `index`; null for the only page, which goes only with the receipt. */
+export function removePage(ids: readonly string[], index: number): string[] | null {
+  if (ids.length <= 1 || index < 0 || index >= ids.length) return null;
+  return ids.filter((_, i) => i !== index);
+}

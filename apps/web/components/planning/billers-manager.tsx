@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, type ComponentProps } from 'react';
+import { Fragment, useState, type ComponentProps } from 'react';
 import type { BillerDto, FamilyMemberDto, HouseholdBillDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
 import { AddBill } from './add-bill';
+import { RecordPages } from '../record-pages';
 
 const CADENCES = ['monthly', 'bimonthly', 'quarterly', 'semiannual', 'yearly'] as const;
 
@@ -45,6 +46,8 @@ export function BillersManager({
     memberId: '',
   };
   const [form, setForm] = useState(blank);
+  /** The bill whose pages are open for moving or removing (ADR-0059 §4). */
+  const [pagesOf, setPagesOf] = useState<string | null>(null);
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm({ ...form, [k]: e.target.value });
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
@@ -168,46 +171,76 @@ export function BillersManager({
               </thead>
               <tbody>
                 {bills.map((b) => (
-                  <tr key={b.id}>
-                    <td className="px-4 py-2 font-medium">{b.billerName}</td>
-                    <td className="px-2 py-2">
-                      <DateText date={b.dueDate} />
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <Money amount={b.amount} currency={b.currency} />
-                    </td>
-                    <td className="px-2 py-2">
-                      <span
-                        className={`chip ${b.status === 'overdue' ? 'chip-bad' : b.status === 'paid' ? 'chip-good' : 'chip-muted'}`}
-                      >
-                        {t(`billers.status_${b.status}`)}
-                      </span>
-                    </td>
-                    {addBill && (
+                  <Fragment key={b.id}>
+                    <tr>
+                      <td className="px-4 py-2 font-medium">{b.billerName}</td>
                       <td className="px-2 py-2">
-                        {(b.status === 'open' || b.status === 'overdue') && (
-                          <button
-                            type="button"
-                            className="text-sm underline"
-                            disabled={busy}
-                            aria-label={t('billers.bill_void_named', { name: b.billerName })}
-                            onClick={() =>
-                              void run(
-                                () =>
-                                  browserApi.updateHouseholdBill(workspaceId, b.id, {
-                                    void: true,
-                                    version: b.version,
-                                  }),
-                                t('billers.bill_voided', { name: b.billerName }),
-                              )
-                            }
-                          >
-                            {t('billers.bill_void')}
-                          </button>
-                        )}
+                        <DateText date={b.dueDate} />
                       </td>
+                      <td className="px-2 py-2 text-right">
+                        <Money amount={b.amount} currency={b.currency} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <span
+                          className={`chip ${b.status === 'overdue' ? 'chip-bad' : b.status === 'paid' ? 'chip-good' : 'chip-muted'}`}
+                        >
+                          {t(`billers.status_${b.status}`)}
+                        </span>
+                      </td>
+                      {addBill && (
+                        <td className="px-2 py-2">
+                          {(b.status === 'open' || b.status === 'overdue') && (
+                            <button
+                              type="button"
+                              className="text-sm underline"
+                              disabled={busy}
+                              aria-label={t('billers.bill_void_named', { name: b.billerName })}
+                              onClick={() =>
+                                void run(
+                                  () =>
+                                    browserApi.updateHouseholdBill(workspaceId, b.id, {
+                                      void: true,
+                                      version: b.version,
+                                    }),
+                                  t('billers.bill_voided', { name: b.billerName }),
+                                )
+                              }
+                            >
+                              {t('billers.bill_void')}
+                            </button>
+                          )}
+                          {/* ADR-0059 §4: a scanned bill's pages, moved or removed. */}
+                          {b.fileIds.length > 1 && (
+                            <button
+                              type="button"
+                              className="ml-3 text-sm underline"
+                              aria-expanded={pagesOf === b.id}
+                              onClick={() => setPagesOf(pagesOf === b.id ? null : b.id)}
+                            >
+                              {t('record_pages.show', { count: b.fileIds.length })}
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                    {addBill && pagesOf === b.id && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-3">
+                          <RecordPages
+                            kind="bill"
+                            fileIds={b.fileIds}
+                            hrefOf={(fileId) => browserApi.householdBillFilePath(workspaceId, b.id, fileId)}
+                            save={(fileIds) =>
+                              browserApi.setHouseholdBillPages(workspaceId, b.id, {
+                                version: b.version,
+                                fileIds,
+                              })
+                            }
+                          />
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
