@@ -3502,6 +3502,19 @@ Phase 11 leftovers:
     The outbox tests that send lone files (`family-vault-*.test.ts`) pass `orphanWaitMs: 0`. Web
     `record-pages.test.ts`; phone `receipts.test.ts` and the screen test `bills.test.tsx` (the fold only on a bill of
     two or more pages, moving and its ends, removing after the confirmation, none for a viewer).
+- **Montra itself in Docker on a development machine** (`infra/docker-compose.app.yml`, 2026-11-26): the API, the Node
+  job worker, the document worker and the web app as containers built from the checkout, beside the dependencies in
+  `docker-compose.yml`. Web on http://localhost:3030, API on http://localhost:4040 (`MONTRA_WEB_PORT`, `MONTRA_API_PORT`),
+  so `next dev` and the API on 3000 and 4000 can still run beside them. A `migrate` service (profile `tools`) runs the
+  migrations and reference data from the API image.
+  - Development settings, never a way to host Montra (that is `infra/selfhost`): `NODE_ENV=development` in the API
+    (dev sign-in), the web built with `NEXT_PUBLIC_AUTH_MODE=dev`, settings from the repo's `.env` with the Compose
+    addresses put over them. Files live in the `appstorage` volume, not a folder of the machine (bind mounts hang on
+    the owner's machine).
+  - A vault preview at `http://localhost:8091` (FAMILY_VAULT_ALLOW_LOCAL_HTTP) is the container itself from inside one,
+    so the API and worker containers pass `MONTRA_HOST_RELAY_PORTS` (default 8091) on to `host.docker.internal`.
+  - The web's dev sign-in cookie stays off Secure with `DEV_COOKIE_INSECURE=on`, so the containers can be used from
+    another device over plain http (`devCookieSecure`, test in `phase1-round3.test.ts`).
 
 ---
 
