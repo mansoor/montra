@@ -146,8 +146,10 @@ which now go inside their records' PDFs.
   receipt of two or more pages; the bills list on the budget page has "Pages (n)" on a bill of two or more pages, which
   opens the same controls.
 - **Phone:** the receipt screen already shows the pages (the photos disclosure), so each page there has Move up, Move
-  down and Remove. The phone has no bill screen that shows a bill's pages (the bills list shows only the vault badges), so
-  it has no page controls for bills.
+  down and Remove. The bills list (2026-11-26) has a "Pages" fold under a bill of two or more pages, for those who
+  record, with the same controls and words for each page (Page n, Move up, Move down, Remove with a confirmation) and
+  the bill's hint that the amount and dates stay as read. It lists the pages by number, as the web's list does; it
+  doesn't show them.
 
 ### 7. Other records with several files, unchanged
 
