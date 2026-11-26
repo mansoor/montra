@@ -3426,8 +3426,8 @@ Phase 11 leftovers:
     it. `useConfirm()` gives `confirm({...}) => Promise<boolean>` plus the element to render, so a `window.confirm` call
     site switches with a one-line change; with `action`, the dialog stays open and busy while it runs.
   - Used for deleting an account (Settings → Accounts: "Delete this account?", the existing wording as the body, a red
-    "Delete account") and for removing the full account number. The other `window.confirm` calls (about 32, in
-    transactions, trash, rules, receipts, payroll, the vault, sharing and more) are unchanged, for the owner to decide.
+    "Delete account") and for removing the full account number. Done since: every other `window.confirm` call moved to
+    it as well (see "Every web confirmation in the app's own dialog" below).
   - Tests: web `confirm-dialog.test.tsx` (jsdom, now a web dev dependency: focus on Cancel, cancel, confirm, Esc, busy,
     focus returned, the promise helper and its action); e2e `accounts.spec.ts` (Enter on the default Cancel keeps the
     account, Esc, 360 px, axe in light and dark, then the red button deletes it).
@@ -3502,6 +3502,24 @@ Phase 11 leftovers:
     The outbox tests that send lone files (`family-vault-*.test.ts`) pass `orphanWaitMs: 0`. Web
     `record-pages.test.ts`; phone `receipts.test.ts` and the screen test `bills.test.tsx` (the fold only on a bill of
     two or more pages, moving and its ends, removing after the confirmation, none for a viewer).
+- **Every web confirmation in the app's own dialog** (no migration). Owner's request: "delete transaction" still showed
+  the browser's dialog.
+  - The web app no longer calls `window.confirm` or `window.prompt`. The 32 remaining confirmations use `useConfirm()`:
+    deleting a transaction, the Trash (empty, delete for good), rules, receipts, assets, rental contacts, import layouts
+    and staff (admin), the AI activity log, payroll (delete or reopen a pay run, remove a tax deposit, destroy an I-9),
+    archiving a goal, sharing (make owner, remove), storage and vault disconnects, the vault's warnings (restricted
+    groups, no local copy, moving filed documents, full numbers on covers, bring back, send a PDF again), removing the
+    phone number, and "use a duplicate file" when uploading receipts, payslips, bills and files to provide. The old
+    wording is the body; each has a short question as title, a verb on the button, and `danger` for what destroys.
+  - Declining a reimbursement asks for its optional reason with `usePrompt()` (same file): the same dialog with a
+    labelled text field, focused on open; Enter declines, Esc or Cancel does nothing.
+  - `ConfirmDialog` stops its `cancel` and `close` events, which React would otherwise pass to a dialog around it (the
+    bill's dialog asks about duplicates).
+  - Lint: in `apps/web`, `no-restricted-globals` (`confirm`, `alert`, `prompt`) and `no-restricted-properties`
+    (`window.`, `globalThis.`, `self.` of the same) point at `useConfirm` / `usePrompt`. The phone keeps `Alert.alert`.
+  - Tests: web `confirm-dialog.test.tsx` (the prompt: label, focus, typed text, Enter, empty, Cancel and Esc; a dialog
+    inside another); e2e `phase1a.spec.ts` (delete a transaction), `family-vault.spec.ts` (both warnings, disconnect),
+    `files-to-provide.spec.ts` (Cancel, then upload anyway) click the in-app dialog instead of accepting the browser's.
 
 ---
 
