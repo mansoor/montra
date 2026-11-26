@@ -3533,6 +3533,24 @@ Phase 11 leftovers:
   - Tests: web `confirm-dialog.test.tsx` (the prompt: label, focus, typed text, Enter, empty, Cancel and Esc; a dialog
     inside another); e2e `phase1a.spec.ts` (delete a transaction), `family-vault.spec.ts` (both warnings, disconnect),
     `files-to-provide.spec.ts` (Cancel, then upload anyway) click the in-app dialog instead of accepting the browser's.
+- **The iOS app in the Simulator, built on a Mac** (PLT-02, 2026-11-26; [runbook](runbooks/ios.md)). Owner's request:
+  the iOS app on their Mac, first in the Simulator, later on their iPhone with a free Personal Team.
+  - `scripts/ios-sim-build.sh`, run on the Mac from the repo root: `pnpm install`, `expo prebuild` (with `pod install`),
+    a Release `xcodebuild` for the simulator signed ad hoc (`CODE_SIGN_IDENTITY=-`; unsigned breaks the Keychain and
+    so sign-in), then `simctl install` and `launch`. Addresses and sign-in mode from the environment
+    (`MONTRA_API_URL`, `MONTRA_WEB_URL`, `MONTRA_AUTH_MODE`, `MONTRA_KRATOS_URL`). With `MONTRA_IOS_TEAM_ID` it builds
+    for a cable-connected iPhone instead (not tried yet).
+  - `app.config.ts` is now `makeConfig(env)`. An `http://` API also lets iOS use plain http
+    (`NSAllowsArbitraryLoads`, `NSAllowsLocalNetworking`, the local-network question), as Android's
+    `usesCleartextTraffic` already did; an `https://` build leaves App Transport Security alone. For a Personal Team:
+    `MONTRA_IOS_SHARE_EXTENSION=off` (expo-share-intent's `disableIOS`; the extension needs an App Group),
+    `MONTRA_IOS_PUSH=off` (expo-notifications without remote notifications) and `MONTRA_IOS_BUNDLE_ID`. Defaults are
+    unchanged. Expo SDK 58's template already has the UIScene life cycle Xcode 27 wants, so no `enableSceneSupport`.
+  - `apps/mobile/ios/` and `apps/mobile/android/` (prebuild output) are ignored by git.
+  - Tried on Xcode 27.2, iPhone 18 Pro simulator (iOS 27.2): builds in about 8 minutes, installs, starts, and reaches
+    the API over http (`GET /v1/app/requirements` 200). The app lock then asks for the simulator's passcode; past it
+    and sign-in weren't tried, because the simulator can't be typed into from a script.
+  - Tests: `test/app-config.test.ts` (http and https builds, the Personal Team switches, `extra`).
 - **Owners without a second factor are asked to set one up again** (no migration). Kratos keeps an empty `webauthn`
   entry (only a `user_handle`) on identities that signed up with a password in the browser, and `hasSecondFactor`
   counted the entry's type, so an owner with no second factor was sent to a sign-in step with nothing to enter instead
