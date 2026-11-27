@@ -168,4 +168,27 @@ describe('receipt review', () => {
     expect(card.queryByText(t('mobile.receipts.uncategorized'))).toBeNull();
     expect(api.updateReceipt).not.toHaveBeenCalled();
   });
+
+  it('shows a line’s savings, and what was paid for it as its amount (2026-11-26)', async () => {
+    api.getReceipt.mockResolvedValue({
+      ...receipt,
+      subtotal: null,
+      total: '299',
+      lines: [
+        {
+          ...line('l-sauce', 1, 'PASTA SAUCE', '349', 'cat-groceries'),
+          qty: '1',
+          unitPrice: '349',
+          discount: '50',
+        },
+      ],
+      groups: [group('cat-groceries', ['l-sauce'], '299')],
+    });
+    await renderScreen(<ReceiptReview />);
+
+    const row = within(await screen.findByTestId('receipt-line'));
+    const savings = t('mobile.receipts.savings', { amount: usd('-50') });
+    expect(row.getByText(`1 × ${usd('349')} · ${savings} · Groceries`)).toBeOnTheScreen();
+    expect(row.getByText(usd('299'))).toBeOnTheScreen();
+  });
 });

@@ -19,7 +19,7 @@ Return:
   - qty and unitPrice: decimal strings when printed (weighed items: the weight), else null.
   - lineTotal: the line amount before this line's discount, as a decimal string; negative for returns and refunds.
   - discount: a coupon, markdown, rollback or member/club/card savings printed directly under or against this line, as a positive decimal string, else null. lineTotal minus discount is what was paid for the line: never take the savings off twice. When the receipt prints both the regular price and the price paid after the savings (columns such as "Price" and "You Pay", or "Regular Price" and "Card Savings" lines), lineTotal is the regular price and discount the savings; when it prints only the price already paid, lineTotal is that price and discount is null.
-  - taxable: "yes" or "no" when the receipt marks it (tax codes such as T/N/X/F, or a tax column), else "unmarked".
+  - taxable: "yes" or "no" when the receipt marks it (tax codes such as T/N/X/F, or a tax column), else "unmarked". A letter that marks something else, such as S or E for food that SNAP/EBT can pay for, is not a tax mark. When the receipt's tax is 0.00, no line was taxed: "no".
 - taxIncluded: "yes" when the printed prices already include the tax shown (VAT, TVA, MwSt, IVA, consumption-tax receipts), "no" when tax is added on top of the subtotal (US sales tax), "unclear" otherwise.
 - subtotal, tax (all taxes added together), discount (order-level discounts not tied to a line, positive), fees (bag, delivery, service fees), tip and total: decimal strings exactly as printed, or null.
 - cardLast4: the last four digits of the card used when printed, else null.
@@ -31,7 +31,8 @@ const Decimal = z.string().nullable();
 
 /*
  * v4: lineTotal is the price before the line's discount, so member savings on "Price / You Pay" receipts are
- * not taken off twice (a Vons receipt, 2026-11-26). The schema is unchanged.
+ * not taken off twice, and a line is taxed only when the receipt charged tax (a Vons receipt, 2026-11-26). The
+ * schema is unchanged.
  */
 /*
  * v2: the two yes/no/unknown fields are words rather than nullable booleans. Anthropic compiles at most 16

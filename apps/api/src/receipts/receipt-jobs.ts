@@ -291,9 +291,14 @@ export function fromExtraction(
       total: header.totalMinor,
     },
   );
+  // A receipt that printed its tax as 0 taxed none of its lines, whatever letter follows the prices (2026-11-26: a
+  // grocery receipt's "S" read as taxed).
+  const untaxed = x.tax !== null && header.taxMinor === 0n;
   return {
     header,
-    lines: savingsTakenTwice ? lines.map(priceBeforeSavings) : lines,
+    lines: lines
+      .map((l) => (savingsTakenTwice ? priceBeforeSavings(l) : l))
+      .map((l) => (untaxed ? { ...l, taxable: false } : l)),
     warnings,
   };
 }

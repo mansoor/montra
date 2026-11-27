@@ -3592,10 +3592,16 @@ Phase 11 leftovers:
     receipt that doesn't add up as read, has line discounts, and is off by exactly their sum (±2) stores each
     discounted line at paid + savings, so it adds up; a unit price that was the paid price is dropped and worked out
     again. Any other gap stays for review as read. Edits in review are checked as typed.
+  - A receipt that printed its tax as 0 marks none of its lines taxed (`fromExtraction`; v4 also says an S or E for
+    SNAP/EBT is not a tax mark). The same receipt had every line "Taxed" for the "S" after its prices.
+  - A line's savings show in review (owner's request): on the web a Savings column after Amount, with "Paid 3.49" under
+    it when there are savings, empty for lines without; the Category picker is narrower to make room. On the phone
+    the line's subtitle says "-$0.80 savings" and its amount is what was paid, so the amounts add up to the subtotal.
   - Receipts read before this keep their lines: in review, set each line that has savings to its amount before them
-    (the "Price" column); the line keeps its discount, so the receipt adds up.
+    (the "Price" column) and untick Taxed where no tax was charged.
   - Tests: domain `receipt.test.ts` (the gap rule); API `receipts.test.ts` (a synthetic "You Pay" receipt with two
-    savings lines adds up, including a 2 @ line; a receipt off by anything else stays in review as read).
+    savings lines adds up, including a 2 @ line; a receipt off by anything else stays in review as read; a 0.00 tax
+    receipt has no taxed lines); web `lib/receipts.test.ts` (`linePaid`); phone `screens-test/receipt.test.tsx`.
 
 ---
 

@@ -452,6 +452,21 @@ describe('member savings already taken off the printed prices (2026-11-26)', () 
   });
 });
 
+describe('a receipt that charged no tax (2026-11-26)', () => {
+  it('marks none of its lines taxed, whatever letter follows the prices', async () => {
+    const r = await capture([
+      'HILLTOP GROCER',
+      '11/04/2026 10:15',
+      'PASTA SAUCE              3.49 T',
+      'BREAD                    3.79 T',
+      'TAX                      0.00',
+      'TOTAL                    7.28',
+    ]);
+    expect(r).toMatchObject({ status: 'inbox', tax: '0', validationGap: '0' });
+    expect(r.lines.map((l: any) => l.taxable)).toEqual([false, false]);
+  });
+});
+
 describe('the inbox (IMP-11)', () => {
   it('waits for its transaction, then links when matched again', async () => {
     const receipt = await capture(['SHELL', '10/20/2026', 'UNLEADED   45.00', 'TOTAL   45.00']);
