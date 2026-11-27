@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiClient, ApiError } from '../src/index.js';
+import { ApiClient, ApiError, randomUuid } from '../src/index.js';
 
 interface Call {
   url: string;
@@ -199,5 +199,35 @@ describe('ApiClient', () => {
     ]);
     expect(header(f.calls[2]!, 'content-type')).toBe('application/json');
     expect(JSON.parse(f.calls[2]!.init.body as string).saveProfile).toBe(false);
+  });
+});
+
+describe('randomUuid', () => {
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  it('uses crypto.randomUUID where the browser offers it', () => {
+    expect(randomUuid({ getRandomValues: (a) => a, randomUUID: () => 'from-crypto' })).toBe('from-crypto');
+  });
+
+  it('builds a version 4 UUID from getRandomValues over plain http, where randomUUID is missing', () => {
+    const allOnes = { getRandomValues: (a: Uint8Array) => a.fill(0xff) };
+    expect(randomUuid(allOnes)).toBe('ffffffff-ffff-4fff-bfff-ffffffffffff');
+    const real = { getRandomValues: (a: Uint8Array) => globalThis.crypto.getRandomValues(a) };
+    const ids = new Set(Array.from({ length: 50 }, () => randomUuid(real)));
+    expect(ids.size).toBe(50);
+    for (const id of ids) expect(id).toMatch(UUID_V4);
+  });
+
+  it('gives POSTs an idempotency key without crypto.randomUUID', async () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis.crypto, 'randomUUID');
+    const f = fakeFetch(201, { id: 'w1' });
+    Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true });
+    try {
+      await new ApiClient({ baseUrl: 'http://api', fetch: f.impl }).request('POST', '/v1/workspaces', {});
+    } finally {
+      if (original) Object.defineProperty(globalThis.crypto, 'randomUUID', original);
+      else delete (globalThis.crypto as { randomUUID?: unknown }).randomUUID;
+    }
+    expect(header(f.calls[0]!, 'idempotency-key')).toMatch(UUID_V4);
   });
 });
