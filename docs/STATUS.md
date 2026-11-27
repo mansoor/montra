@@ -3551,6 +3551,36 @@ Phase 11 leftovers:
     the API over http (`GET /v1/app/requirements` 200). The app lock then asks for the simulator's passcode; past it
     and sign-in weren't tried, because the simulator can't be typed into from a script.
   - Tests: `test/app-config.test.ts` (http and https builds, the Personal Team switches, `extra`).
+- **Real sign-in in the Docker app** (no migration). Owner's request: test several users from the PC, other devices on
+  the network and the phone apps against the containers, with Kratos instead of dev sign-in.
+  - `infra/docker-compose.app.yml` now runs Kratos (`--dev`, for its cookies over plain http: a development machine on a
+    home network only) and the auth gateway (port 4455, `MONTRA_AUTH_PORT`), set up as `infra/selfhost/compose.yaml`
+    does through Kratos's environment, so `infra/kratos/kratos.yml` keeps its values for the host-run setup. Kratos's
+    own ports are no longer published in this mode. Its webhooks reach the API at `http://api:4000`.
+  - `MONTRA_AUTH_MODE` (`kratos` by default, or `dev`) sets the API's `AUTH_MODE` and the web build's
+    `NEXT_PUBLIC_AUTH_MODE`. `MONTRA_PUBLIC_HOST` (default `localhost`) is the one host in every public URL: the web
+    app's, the API's, the gateway's, Kratos's return and UI URLs, CORS and the passkey RP id. Kratos's session cookie is
+    set on the gateway's host and read on the web's, and a cookie belongs to a host whatever the port.
+  - `auth-init` (profile `auth`, run by `kratos-migrate`) creates the `kratos` database if missing and generates the
+    Kratos cookie, cipher and pagination secrets, the webhook secret and the gateway secret once into the `authsecrets`
+    volume (uid 1000, mode 0400), read through `NAME_FILE`. Nothing to put in `.env`.
+  - The API, worker and gateway send mail to Mailpit, as Kratos's courier already did. No CAPTCHA (no Turnstile key).
+    `MONTRA_REQUIRE_OWNER_MFA=false` lets owners in without two-step verification for testing.
+    `MONTRA_IMAGE_TAG` (default `local`) names the images, so a second copy can run beside the first.
+  - The web container's health check asks for `/` without following redirects (the sign-in page goes on to the gateway
+    in Kratos mode).
+  - Accounts made with dev sign-in (`identity_id` `dev|<email>`): `app.resolve_user` finds none by the Kratos identity,
+    inserts, conflicts on the email and returns the existing user, so signing in with Kratos under the same email opens
+    the same account and its data, with or without a verified email (unverified, it can read but not write, AUTH-03).
+    The row keeps `identity_id` `dev|<email>`, so what looks a user up by Kratos identity misses it: the "password /
+    two-step changed" notices (`note_identity_event`), suspending from the admin console, and a member's two-step
+    status on the sharing page.
+  - Passkeys and security keys need a secure context, so they don't work over plain http at a LAN address.
+  - Found on the way: over plain http at a LAN address no save in the web app worked, in either mode. Browsers offer
+    `crypto.randomUUID` only in a secure context, and the API client made each POST's idempotency key with it. Its
+    `randomUuid()` (`@montra/api-client`) now falls back to a version 4 UUID from `crypto.getRandomValues`. Tests:
+    `client.test.ts`.
+  - Phone builds for the LAN: `MONTRA_AUTH_MODE=kratos`, `MONTRA_KRATOS_URL=http://<LAN address>:4455`.
 
 ---
 

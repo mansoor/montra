@@ -958,7 +958,7 @@ export interface ApiClientOptions {
   fetch?: typeof fetch;
   /** Extra headers per request, e.g. Authorization on the server side. */
   headers?: () => Record<string, string> | Promise<Record<string, string>>;
-  /** Idempotency key generator for POSTs (defaults to crypto.randomUUID). */
+  /** Idempotency key generator for POSTs (defaults to {@link randomUuid}). */
   idempotencyKey?: () => string;
 }
 
@@ -981,6 +981,26 @@ function reportQuery<T extends ReportFiltersInput>(f: T) {
   return { ...f, accountIds: list(f.accountIds), categoryIds: list(f.categoryIds), tags: list(f.tags) };
 }
 
+/** The part of Web Crypto {@link randomUuid} uses. */
+export interface RandomSource {
+  getRandomValues(array: Uint8Array): Uint8Array;
+  randomUUID?: () => string;
+}
+
+/**
+ * A random UUID (version 4). Browsers offer `crypto.randomUUID` only in a secure context (https, or localhost), so a
+ * page opened over plain http at a network address, such as the containers on a development machine reached from
+ * another device, builds one from `crypto.getRandomValues`, which they offer everywhere.
+ */
+export function randomUuid(source: RandomSource = globalThis.crypto): string {
+  if (typeof source.randomUUID === 'function') return source.randomUUID();
+  const bytes = source.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -991,7 +1011,7 @@ export class ApiClient {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.extraHeaders = options.headers;
-    this.newKey = options.idempotencyKey ?? (() => globalThis.crypto.randomUUID());
+    this.newKey = options.idempotencyKey ?? (() => randomUuid());
   }
 
   async request<T>(
