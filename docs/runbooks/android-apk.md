@@ -15,6 +15,9 @@ through EAS (`eas.json`, the Mobile workflow).
    MONTRA_AUTH_MODE=dev
    ```
 
+   For real sign-in against the Docker app (`MONTRA_AUTH_MODE=kratos` there), use `MONTRA_AUTH_MODE=kratos` and add
+   the auth gateway: `MONTRA_KRATOS_URL=http://192.168.1.20:4455`.
+
 3. Push the branch. The "Android APK" workflow builds for about 20 minutes and attaches `montra-android-<commit>` to
    the run. Download it, unzip it, and copy the `.apk` to the phone.
 4. On the phone, allow installing from that source when asked, and install it.

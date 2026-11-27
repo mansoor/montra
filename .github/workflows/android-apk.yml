@@ -43,7 +43,7 @@ jobs:
             echo "::error::Add .github/android-apk.env with MONTRA_API_URL (see docs/runbooks/android-apk.md)"
             exit 1
           fi
-          grep -E '^(MONTRA_API_URL|MONTRA_WEB_URL|MONTRA_AUTH_MODE|MONTRA_PUBLISH_RELEASE)=' .github/android-apk.env | tee -a "$GITHUB_ENV"
+          grep -E '^(MONTRA_API_URL|MONTRA_WEB_URL|MONTRA_AUTH_MODE|MONTRA_KRATOS_URL|MONTRA_PUBLISH_RELEASE)=' .github/android-apk.env | tee -a "$GITHUB_ENV"
           grep -q '^MONTRA_API_URL=' .github/android-apk.env || { echo "::error::MONTRA_API_URL is missing"; exit 1; }
       - name: Generate the Android project
         working-directory: apps/mobile
