@@ -3602,6 +3602,13 @@ Phase 11 leftovers:
   - Tests: domain `receipt.test.ts` (the gap rule); API `receipts.test.ts` (a synthetic "You Pay" receipt with two
     savings lines adds up, including a 2 @ line; a receipt off by anything else stays in review as read; a 0.00 tax
     receipt has no taxed lines); web `lib/receipts.test.ts` (`linePaid`); phone `screens-test/receipt.test.tsx`.
+- **Owners without a second factor are asked to set one up again** (no migration). Kratos keeps an empty `webauthn`
+  entry (only a `user_handle`) on identities that signed up with a password in the browser, and `hasSecondFactor`
+  counted the entry's type, so an owner with no second factor was sent to a sign-in step with nothing to enter instead
+  of `mfa.setup_required`. It now asks Kratos's admin API with `include_credential=webauthn` and counts a security
+  key only when one is registered (`hasSecondFactorCredential` in `kratos.adapter.ts`); TOTP and recovery codes as
+  before. Checked against the local Kratos: a password identity's `webauthn` config holds no keys.
+  - Tests: api `kratos-second-factor.test.ts`.
 
 ---
 

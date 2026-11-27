@@ -37,10 +37,11 @@ FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3
 ENV NODE_ENV=production \
     PORT=4000 \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/rds-global-bundle.pem
-# The base image still has apt 2.6.1 (CVE-2026-109518, fixed in 2.6.2). Nothing here runs apt, but it ships in the image.
-# Delete this once the base image has the fix.
+# The base image still has apt 2.6.1 (CVE-2026-109518, fixed in 2.6.2) and Linux-PAM 1.5.2-6+deb12u2 (CVE-2025-6020, fixed
+# in deb12u3). Nothing here runs apt or PAM, but they ship in the image. Delete this once the base image has the fixes.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends --only-upgrade apt libapt-pkg6.0 \
+ && apt-get install -y --no-install-recommends --only-upgrade apt libapt-pkg6.0 libpam-modules libpam-modules-bin \
+    libpam-runtime libpam0g \
  && rm -rf /var/lib/apt/lists/*
 # npm, npx, corepack and yarn are not used at runtime. Removing them also removes their dependencies from image scans.
 # Aurora requires TLS and its CA is not in Node's trust store. Create the directory first: with --chmod, ADD gives any
