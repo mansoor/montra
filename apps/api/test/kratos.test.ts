@@ -92,7 +92,8 @@ beforeAll(async () => {
       if (target) target.active = false;
       return send(204);
     }
-    const admin = /^\/admin\/identities\/([^/]+)(\/.*)?$/.exec(req.url ?? '');
+    // The query (`include_credential=…`) is not part of the path the fake matches on.
+    const admin = /^\/admin\/identities\/([^/?]+)(\/[^?]*)?(?:\?.*)?$/.exec(req.url ?? '');
     if (admin) {
       const identityId = decodeURIComponent(admin[1]!);
       const rest = admin[2] ?? '';
@@ -138,7 +139,15 @@ beforeAll(async () => {
           const types = factors.get(identityId) ?? ['password'];
           return send(200, {
             ...identity(),
-            credentials: Object.fromEntries(types.map((t) => [t, { type: t }])),
+            // Like Kratos: a security key's entry carries its keys only when asked for with include_credential.
+            credentials: Object.fromEntries(
+              types.map((t) => [
+                t,
+                t === 'webauthn' && req.url?.includes('include_credential=webauthn')
+                  ? { type: t, config: { credentials: [{ id: 'key-1' }] } }
+                  : { type: t },
+              ]),
+            ),
           });
         }
         send(404, {});
