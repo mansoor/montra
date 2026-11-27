@@ -5,6 +5,7 @@ import type { FileStorageStateDto } from '@montra/api-client';
 import { browserApi } from '@/lib/browser-api';
 import { vaultBadge, vaultName, vaultOpenHref, vaultSendAgainIds } from '@/lib/vault';
 import { useI18n } from './i18n';
+import { useConfirm } from './ui/confirm-dialog';
 
 /**
  * ADR-0054 §13: a small badge beside a document's files saying where they are with the household's Family Document
@@ -30,6 +31,7 @@ export function VaultBadges({
   canSendAgain?: boolean;
 }) {
   const { t } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const loaded = useFileStorageStates(workspaceId, given ? [] : fileIds);
   const states = given ?? loaded;
   const [again, setAgain] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle');
@@ -80,8 +82,13 @@ export function VaultBadges({
           className="text-xs underline"
           disabled={again === 'busy'}
           data-testid="vault-send-again"
-          onClick={() => {
-            if (!window.confirm(t('vault.send_again_pdf_confirm'))) return;
+          onClick={async () => {
+            const ok = await confirm({
+              title: t('vault.send_again_title'),
+              body: <p>{t('vault.send_again_pdf_confirm')}</p>,
+              confirmLabel: t('vault.send_again'),
+            });
+            if (!ok) return;
             setAgain('busy');
             browserApi
               .retryVaultItems(workspaceId, { fileIds: resend })
@@ -94,6 +101,7 @@ export function VaultBadges({
       )}
       {again === 'done' && <span className="text-xs text-muted">{t('vault.send_again_pdf_done')}</span>}
       {again === 'failed' && <span className="text-xs text-bad">{t('vault.send_again_failed')}</span>}
+      {dialog}
     </span>
   );
 }

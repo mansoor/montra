@@ -3426,8 +3426,8 @@ Phase 11 leftovers:
     it. `useConfirm()` gives `confirm({...}) => Promise<boolean>` plus the element to render, so a `window.confirm` call
     site switches with a one-line change; with `action`, the dialog stays open and busy while it runs.
   - Used for deleting an account (Settings → Accounts: "Delete this account?", the existing wording as the body, a red
-    "Delete account") and for removing the full account number. The other `window.confirm` calls (about 32, in
-    transactions, trash, rules, receipts, payroll, the vault, sharing and more) are unchanged, for the owner to decide.
+    "Delete account") and for removing the full account number. Done since: every other `window.confirm` call moved to
+    it as well (see "Every web confirmation in the app's own dialog" below).
   - Tests: web `confirm-dialog.test.tsx` (jsdom, now a web dev dependency: focus on Cancel, cancel, confirm, Esc, busy,
     focus returned, the promise helper and its action); e2e `accounts.spec.ts` (Enter on the default Cancel keeps the
     account, Esc, 360 px, axe in light and dark, then the red button deletes it).
@@ -3515,6 +3515,93 @@ Phase 11 leftovers:
     so the API and worker containers pass `MONTRA_HOST_RELAY_PORTS` (default 8091) on to `host.docker.internal`.
   - The web's dev sign-in cookie stays off Secure with `DEV_COOKIE_INSECURE=on`, so the containers can be used from
     another device over plain http (`devCookieSecure`, test in `phase1-round3.test.ts`).
+- **Every web confirmation in the app's own dialog** (no migration). Owner's request: "delete transaction" still showed
+  the browser's dialog.
+  - The web app no longer calls `window.confirm` or `window.prompt`. The 32 remaining confirmations use `useConfirm()`:
+    deleting a transaction, the Trash (empty, delete for good), rules, receipts, assets, rental contacts, import layouts
+    and staff (admin), the AI activity log, payroll (delete or reopen a pay run, remove a tax deposit, destroy an I-9),
+    archiving a goal, sharing (make owner, remove), storage and vault disconnects, the vault's warnings (restricted
+    groups, no local copy, moving filed documents, full numbers on covers, bring back, send a PDF again), removing the
+    phone number, and "use a duplicate file" when uploading receipts, payslips, bills and files to provide. The old
+    wording is the body; each has a short question as title, a verb on the button, and `danger` for what destroys.
+  - Declining a reimbursement asks for its optional reason with `usePrompt()` (same file): the same dialog with a
+    labelled text field, focused on open; Enter declines, Esc or Cancel does nothing.
+  - `ConfirmDialog` stops its `cancel` and `close` events, which React would otherwise pass to a dialog around it (the
+    bill's dialog asks about duplicates).
+  - Lint: in `apps/web`, `no-restricted-globals` (`confirm`, `alert`, `prompt`) and `no-restricted-properties`
+    (`window.`, `globalThis.`, `self.` of the same) point at `useConfirm` / `usePrompt`. The phone keeps `Alert.alert`.
+  - Tests: web `confirm-dialog.test.tsx` (the prompt: label, focus, typed text, Enter, empty, Cancel and Esc; a dialog
+    inside another); e2e `phase1a.spec.ts` (delete a transaction), `family-vault.spec.ts` (both warnings, disconnect),
+    `files-to-provide.spec.ts` (Cancel, then upload anyway) click the in-app dialog instead of accepting the browser's.
+- **The iOS app in the Simulator, built on a Mac** (PLT-02, 2026-11-26; [runbook](runbooks/ios.md)). Owner's request:
+  the iOS app on their Mac, first in the Simulator, later on their iPhone with a free Personal Team.
+  - `scripts/ios-sim-build.sh`, run on the Mac from the repo root: `pnpm install`, `expo prebuild` (with `pod install`),
+    a Release `xcodebuild` for the simulator signed ad hoc (`CODE_SIGN_IDENTITY=-`; unsigned breaks the Keychain and
+    so sign-in), then `simctl install` and `launch`. Addresses and sign-in mode from the environment
+    (`MONTRA_API_URL`, `MONTRA_WEB_URL`, `MONTRA_AUTH_MODE`, `MONTRA_KRATOS_URL`). With `MONTRA_IOS_TEAM_ID` it builds
+    for a cable-connected iPhone instead (not tried yet).
+  - `app.config.ts` is now `makeConfig(env)`. An `http://` API also lets iOS use plain http
+    (`NSAllowsArbitraryLoads`, `NSAllowsLocalNetworking`, the local-network question), as Android's
+    `usesCleartextTraffic` already did; an `https://` build leaves App Transport Security alone. For a Personal Team:
+    `MONTRA_IOS_SHARE_EXTENSION=off` (expo-share-intent's `disableIOS`; the extension needs an App Group),
+    `MONTRA_IOS_PUSH=off` (expo-notifications without remote notifications) and `MONTRA_IOS_BUNDLE_ID`. Defaults are
+    unchanged. Expo SDK 58's template already has the UIScene life cycle Xcode 27 wants, so no `enableSceneSupport`.
+  - `apps/mobile/ios/` and `apps/mobile/android/` (prebuild output) are ignored by git.
+  - Tried on Xcode 27.2, iPhone 18 Pro simulator (iOS 27.2): builds in about 8 minutes, installs, starts, and reaches
+    the API over http (`GET /v1/app/requirements` 200). The app lock then asks for the simulator's passcode; past it
+    and sign-in weren't tried, because the simulator can't be typed into from a script.
+  - Tests: `test/app-config.test.ts` (http and https builds, the Personal Team switches, `extra`).
+- **Real sign-in in the Docker app** (no migration). Owner's request: test several users from the PC, other devices on
+  the network and the phone apps against the containers, with Kratos instead of dev sign-in.
+  - `infra/docker-compose.app.yml` now runs Kratos (`--dev`, for its cookies over plain http: a development machine on a
+    home network only) and the auth gateway (port 4455, `MONTRA_AUTH_PORT`), set up as `infra/selfhost/compose.yaml`
+    does through Kratos's environment, so `infra/kratos/kratos.yml` keeps its values for the host-run setup. Kratos's
+    own ports are no longer published in this mode. Its webhooks reach the API at `http://api:4000`.
+  - `MONTRA_AUTH_MODE` (`kratos` by default, or `dev`) sets the API's `AUTH_MODE` and the web build's
+    `NEXT_PUBLIC_AUTH_MODE`. `MONTRA_PUBLIC_HOST` (default `localhost`) is the one host in every public URL: the web
+    app's, the API's, the gateway's, Kratos's return and UI URLs, CORS and the passkey RP id. Kratos's session cookie is
+    set on the gateway's host and read on the web's, and a cookie belongs to a host whatever the port.
+  - `auth-init` (profile `auth`, run by `kratos-migrate`) creates the `kratos` database if missing and generates the
+    Kratos cookie, cipher and pagination secrets, the webhook secret and the gateway secret once into the `authsecrets`
+    volume (uid 1000, mode 0400), read through `NAME_FILE`. Nothing to put in `.env`.
+  - The API, worker and gateway send mail to Mailpit, as Kratos's courier already did. No CAPTCHA (no Turnstile key).
+    `MONTRA_REQUIRE_OWNER_MFA=false` lets owners in without two-step verification for testing.
+    `MONTRA_IMAGE_TAG` (default `local`) names the images, so a second copy can run beside the first.
+  - The web container's health check asks for `/` without following redirects (the sign-in page goes on to the gateway
+    in Kratos mode).
+  - Accounts made with dev sign-in (`identity_id` `dev|<email>`): `app.resolve_user` finds none by the Kratos identity,
+    inserts, conflicts on the email and returns the existing user, so signing in with Kratos under the same email opens
+    the same account and its data, with or without a verified email (unverified, it can read but not write, AUTH-03).
+    The row keeps `identity_id` `dev|<email>`, so what looks a user up by Kratos identity misses it: the "password /
+    two-step changed" notices (`note_identity_event`), suspending from the admin console, and a member's two-step
+    status on the sharing page.
+  - Passkeys and security keys need a secure context, so they don't work over plain http at a LAN address.
+  - Found on the way: over plain http at a LAN address no save in the web app worked, in either mode. Browsers offer
+    `crypto.randomUUID` only in a secure context, and the API client made each POST's idempotency key with it. Its
+    `randomUuid()` (`@montra/api-client`) now falls back to a version 4 UUID from `crypto.getRandomValues`. Tests:
+    `client.test.ts`.
+  - Phone builds for the LAN: `MONTRA_AUTH_MODE=kratos`, `MONTRA_KRATOS_URL=http://<LAN address>:4455`.
+- **Receipt savings no longer taken off twice** (no migration, 2026-11-26). Owner's report: a Vons receipt went to "Needs
+  review" $1.60 apart, though its lines add up to the printed total. The receipt has "Price" and "You Pay" columns with
+  "Member Savings -0.80" under two items; the model read the "You Pay" amount as the line total and the savings as the
+  line's discount too, so the check took the $1.60 off a second time.
+  - `extract_receipt.v4` (`tasks/extract-receipt/v4.ts`, schema unchanged): `lineTotal` is the price before the line's
+    discount, and lineTotal − discount is what was paid; on "Price / You Pay" or "Regular Price / Card Savings"
+    receipts that means the regular price.
+  - The API also checks what comes back (`lineDiscountsTakenTwice` in `@montra/domain`, used by `fromExtraction`): a
+    receipt that doesn't add up as read, has line discounts, and is off by exactly their sum (±2) stores each
+    discounted line at paid + savings, so it adds up; a unit price that was the paid price is dropped and worked out
+    again. Any other gap stays for review as read. Edits in review are checked as typed.
+  - A receipt that printed its tax as 0 marks none of its lines taxed (`fromExtraction`; v4 also says an S or E for
+    SNAP/EBT is not a tax mark). The same receipt had every line "Taxed" for the "S" after its prices.
+  - A line's savings show in review (owner's request): on the web a Savings column after Amount, with "Paid 3.49" under
+    it when there are savings, empty for lines without; the Category picker is narrower to make room. On the phone
+    the line's subtitle says "-$0.80 savings" and its amount is what was paid, so the amounts add up to the subtotal.
+  - Receipts read before this keep their lines: in review, set each line that has savings to its amount before them
+    (the "Price" column) and untick Taxed where no tax was charged.
+  - Tests: domain `receipt.test.ts` (the gap rule); API `receipts.test.ts` (a synthetic "You Pay" receipt with two
+    savings lines adds up, including a 2 @ line; a receipt off by anything else stays in review as read; a 0.00 tax
+    receipt has no taxed lines); web `lib/receipts.test.ts` (`linePaid`); phone `screens-test/receipt.test.tsx`.
 
 ---
 

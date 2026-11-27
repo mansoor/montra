@@ -14,6 +14,7 @@ import {
   buildUpdate,
   newLine,
   previewSplits,
+  linePaid,
   recalcLine,
   rowsOf,
   STATUS_CHIP,
@@ -24,6 +25,7 @@ import { Explanation } from '../ai/shared';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 import { useFileStorageStates, VaultBadges } from '../vault-badges';
 import { ReceiptViewer } from './receipt-viewer';
 import { RecordPages } from '../record-pages';
@@ -49,6 +51,7 @@ export function ReceiptReview({
 }) {
   const router = useRouter();
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const { locale } = useI18n();
   const initial = useMemo(() => rowsOf(receipt), [receipt]);
   const [header, setHeader] = useState<HeaderFields>(initial.header);
@@ -264,6 +267,7 @@ export function ReceiptReview({
                 <th className="py-1 pr-2">{t('receipts.qty')}</th>
                 <th className="py-1 pr-2">{t('receipts.unit_price')}</th>
                 <th className="py-1 pr-2">{t('receipts.amount')}</th>
+                <th className="py-1 pr-2">{t('receipts.savings')}</th>
                 <th className="py-1 pr-2">{t('receipts.taxable')}</th>
                 <th className="py-1 pr-2">{t('receipts.category')}</th>
                 <th className="py-1 pr-2">{t('receipts.member')}</th>
@@ -277,6 +281,7 @@ export function ReceiptReview({
                 const saved = receipt.lines.find((x) => x.id === l.id);
                 const suggested = saved?.categorization?.suggested?.categoryId;
                 // Why the line is for its member, while the pick is still the saved one (owner, 2026-11-24).
+                const paid = linePaid(l, currency, locale);
                 const memberWhy =
                   saved?.memberReason && (saved.memberId ?? '') === l.memberId
                     ? saved.memberReason.explanation
@@ -332,6 +337,23 @@ export function ReceiptReview({
                       />
                     </td>
                     <td className="py-1 pr-2">
+                      {/* Member, club or coupon savings on this line: the amount is the price before them (2026-11-26). */}
+                      <input
+                        className="input num w-20"
+                        inputMode="decimal"
+                        aria-label={t('receipts.savings_for', { item: l.rawText })}
+                        aria-invalid={errors[`discount.${i}`] ? 'true' : undefined}
+                        value={l.discount}
+                        onChange={(e) => setLine(i, { discount: e.target.value })}
+                        data-testid="receipt-line-savings"
+                      />
+                      {paid !== null && (
+                        <span className="mt-1 block text-xs text-muted" data-testid="receipt-line-paid">
+                          {t('receipts.paid', { amount: paid })}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1 pr-2">
                       <input
                         type="checkbox"
                         aria-label={t('receipts.taxable')}
@@ -341,7 +363,7 @@ export function ReceiptReview({
                     </td>
                     <td className="py-1 pr-2">
                       <select
-                        className="input"
+                        className="input w-40"
                         aria-label={t('receipts.category_for', { item: l.rawText })}
                         value={l.categoryId}
                         onChange={(e) => setLine(i, { categoryId: e.target.value })}
@@ -555,13 +577,16 @@ export function ReceiptReview({
               className="btn-secondary text-bad"
               disabled={busy}
               data-testid="receipt-delete"
-              onClick={() => {
+              onClick={async () => {
                 // A matched receipt: owners and admins only, unlinked first, its transaction kept as it is (owner,
                 // 2026-11-23). Step-up comes back as a link.
-                if (
-                  !window.confirm(t(matched ? 'receipts.delete_matched_confirm' : 'receipts.delete_confirm'))
-                )
-                  return;
+                const ok = await confirm({
+                  title: t('receipts.delete_title'),
+                  body: <p>{t(matched ? 'receipts.delete_matched_confirm' : 'receipts.delete_confirm')}</p>,
+                  confirmLabel: t('receipts.delete'),
+                  danger: true,
+                });
+                if (!ok) return;
                 void run(
                   () =>
                     browserApi
@@ -579,6 +604,7 @@ export function ReceiptReview({
       </section>
 
       {viewer}
+      {dialog}
     </div>
   );
 }

@@ -114,7 +114,8 @@ export function rowsOf(r: ReceiptDto): { header: HeaderFields; lines: LineRow[] 
       qty: l.qty ?? '',
       unitPrice: amountToInput(l.unitPrice, currency),
       lineTotal: amountToInput(l.lineTotal, currency),
-      discount: amountToInput(l.discount, currency),
+      // Empty rather than 0.00, so only the lines with savings show an amount in the Savings column.
+      discount: l.discount === '0' ? '' : amountToInput(l.discount, currency),
       taxable: l.taxable,
       categoryId: l.categoryId ?? '',
       memberId: l.memberId ?? '',
@@ -261,6 +262,22 @@ export function previewSplits(
 
 /** A quantity the API takes: up to three decimals. */
 const QTY_RE = /^\d{1,9}(\.\d{1,3})?$/;
+
+/**
+ * What was paid for a line, as an amount input: its amount less its savings (2026-11-26), shown under the savings so a
+ * line reads 4.29 − 0.80 = 3.49. Null when the line has no savings or either amount can't be read yet.
+ */
+export function linePaid(
+  row: Pick<LineRow, 'lineTotal' | 'discount'>,
+  currency: string,
+  locale = 'en-US',
+): string | null {
+  if (!row.discount.trim() || !isCurrencyCode(currency)) return null;
+  const total = parseAmountInput(row.lineTotal, currency, locale);
+  const savings = parseAmountInput(row.discount, currency, locale);
+  if (!total.ok || !savings.ok || savings.minor === 0n) return null;
+  return amountToInput((total.minor - savings.minor).toString(), currency);
+}
 
 /**
  * Keeps a line's quantity × unit price = total as one of them is edited (owner, 2026-11-18). A new quantity or unit

@@ -17,6 +17,7 @@ import {
 } from '@/lib/rentals';
 import { useI18n } from '../i18n';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 /** The contact form's fields, shared by adding and editing. */
 function ContactFieldset({
@@ -83,6 +84,7 @@ function ContactRow({
   propertyId: string;
 }) {
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const [editing, setEditing] = useState(false);
   const [f, setF] = useState<ContactFormFields>(() => contactFields(c));
   const tel = telHref(c.phone);
@@ -172,8 +174,14 @@ function ContactRow({
             className="underline"
             disabled={busy}
             aria-label={t('rentals.delete_named', { name: c.companyName })}
-            onClick={() => {
-              if (!window.confirm(t('rentals.contact_delete_confirm', { name: c.companyName }))) return;
+            onClick={async () => {
+              const ok = await confirm({
+                title: t('rentals.contact_delete_title'),
+                body: <p>{t('rentals.contact_delete_confirm', { name: c.companyName })}</p>,
+                confirmLabel: t('rentals.delete'),
+                danger: true,
+              });
+              if (!ok) return;
               void run(() => browserApi.deleteRentalContact(workspaceId, c.id), t('rentals.deleted'));
             }}
           >
@@ -204,6 +212,7 @@ function ContactRow({
         </form>
       )}
       <StatusLine message={message} />
+      {dialog}
     </li>
   );
 }

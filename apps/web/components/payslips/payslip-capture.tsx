@@ -9,6 +9,7 @@ import { friendlyMessage } from '@/lib/errors';
 import { anyDuplicate } from '@/lib/missing-files';
 import { RECEIPT_ACCEPT, receiptFileProblem } from '@/lib/receipts';
 import { useI18n } from '../i18n';
+import { useConfirm } from '../ui/confirm-dialog';
 
 /**
  * Add a payslip (PAY-03): a PDF or photos for AI to read, or a start from the employer's last payslip, or by hand.
@@ -25,6 +26,7 @@ export function PayslipCapture({
 }) {
   const router = useRouter();
   const { t } = useI18n();
+  const { confirm, dialog } = useConfirm();
   const input = useRef<HTMLInputElement>(null);
   const [employerId, setEmployerId] = useState(employers[0]?.id ?? '');
   const [files, setFiles] = useState<File[]>([]);
@@ -63,7 +65,15 @@ export function PayslipCapture({
           uploads.push(await browserApi.uploadPayslipFile(workspaceId, f, f.name));
         }
         // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
-        if (anyDuplicate(uploads) && !window.confirm(t('files.duplicate_confirm'))) return;
+        if (
+          anyDuplicate(uploads) &&
+          !(await confirm({
+            title: t('files.duplicate_title'),
+            body: <p>{t('files.duplicate_confirm')}</p>,
+            confirmLabel: t('files.duplicate_use'),
+          }))
+        )
+          return;
         fileIds.push(...uploads.map((u) => u.fileId));
       }
       const payslip = await browserApi.createPayslip(workspaceId, {
@@ -166,6 +176,7 @@ export function PayslipCapture({
           {t('payslips.by_hand')}
         </button>
       </div>
+      {dialog}
     </section>
   );
 }

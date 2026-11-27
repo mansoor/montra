@@ -44,12 +44,33 @@ pnpm --filter @montra/api fx:load [-- --full]      # load ECB (+ OXR) rates now;
 pnpm --filter @montra/web dev                      # web on :3000 (dev sign-in: any email)
 pnpm --filter @montra/mobile start                 # Expo dev server
 pnpm --filter @montra/mobile test:screens          # phone screen tests (Jest + React Native Testing Library)
-# Montra itself in containers (web :3030, API :4040), development settings; see infra/docker-compose.app.yml
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml build
+# Montra itself in containers (web :3030, API :4040, auth gateway :4455), development settings and real sign-in
+# (Kratos); see infra/docker-compose.app.yml
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml --profile auth build
 docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml run --rm migrate
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml up -d --no-deps api worker doc-worker web
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml run --rm kratos-migrate
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml up -d --no-deps kratos auth-gateway api worker doc-worker web
 ```
 
+- **Sign-in in the containers** (settings in the git-ignored `infra/.env`; build again after changing either, as both
+  are compiled into the web app):
+  - `MONTRA_AUTH_MODE`: `kratos` (default) is real sign-in, Ory Kratos behind the auth gateway, with Kratos in `--dev`
+    mode so its cookies work over plain http: a development machine on a home network only. `dev` is the old any-email
+    sign-in; then leave out `--profile auth`, `kratos-migrate`, `kratos` and `auth-gateway`.
+  - `MONTRA_PUBLIC_HOST` (default `localhost`): the one name or address every browser and phone uses for the web app,
+    API and gateway, e.g. your PC's LAN address to sign in from other devices. Kratos's cookie is set on the gateway's
+    host and read on the web's, so open the web app at exactly `http://<MONTRA_PUBLIC_HOST>:3030`.
+  - No secrets to set: `auth-init` generates Kratos's and the gateway's once into the `authsecrets` volume. Removing
+    that volume signs everyone out and makes new ones.
+  - Verification and recovery codes, and every email Montra sends, land in Mailpit (`http://localhost:8025`, or
+    `MONTRA_MAILPIT_PORT`). No CAPTCHA (no Turnstile key). Passkeys and security keys need `localhost` or https; over
+    plain http at a LAN address use a password, emailed codes or an authenticator app.
+  - Owners must set up two-step verification to open a workspace (AUTH-04); `MONTRA_REQUIRE_OWNER_MFA=false` turns
+    that off for testing.
+  - An account made with dev sign-in is matched by email: register in Kratos with the same address (verify it, to
+    write) and you're in the same account, with its data (`app.resolve_user`).
+  - Phone builds for the LAN: `MONTRA_AUTH_MODE=kratos`, `MONTRA_KRATOS_URL=http://<LAN address>:4455`,
+    `MONTRA_API_URL=http://<LAN address>:4040`, `MONTRA_WEB_URL=http://<LAN address>:3030`.
 - API tests create their own database (`montra_test_api`) in a global setup, so they need Postgres running.
 - `AI_PROVIDER=fake` gives deterministic keyword-based AI. Tests and e2e use it. Set `ANTHROPIC_API_KEY`
   for the real provider.

@@ -1,15 +1,33 @@
 # Montra itself in containers on a development machine: the API, the Node job worker, the document worker and the web
-# app, built from this checkout, beside the dependencies in docker-compose.yml. Development settings throughout (dev
-# sign-in, local file storage, the AI key from .env), so this is never a way to host Montra for real: that's
+# app, built from this checkout, beside the dependencies in docker-compose.yml. Development settings throughout (local
+# file storage, the AI key from .env, mail caught by Mailpit), so this is never a way to host Montra for real: that's
 # infra/selfhost (ADR-0050).
 #
-#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml build
+# Sign-in is real by default: Ory Kratos behind Montra's auth gateway (ADR-0006, ADR-0042), as the self-host stack runs
+# it, with Kratos in --dev mode so its cookies work over plain http. MONTRA_AUTH_MODE=dev in infra/.env switches back
+# to dev sign-in (any email, no password); Kratos and the gateway then needn't run. Either way, build again after
+# switching, as the mode is compiled into the web app.
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml --profile auth build
 #   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml run --rm migrate
-#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml up -d --no-deps api worker doc-worker web
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml run --rm kratos-migrate
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml up -d --no-deps \
+#     kratos auth-gateway api worker doc-worker web
+#
+# With MONTRA_AUTH_MODE=dev: leave out `--profile auth`, `kratos-migrate`, `kratos` and `auth-gateway`.
 #
 # `--no-deps` leaves Postgres and the other dependencies running as they are; start them first with docker-compose.yml.
-# The web app is on http://localhost:3030 and the API on http://localhost:4040 (MONTRA_WEB_PORT, MONTRA_API_PORT), so
-# `pnpm --filter @montra/web dev` and the API on 3000 and 4000 can still run beside it.
+# The web app is on port 3030, the API on 4040 and the auth gateway on 4455 (MONTRA_WEB_PORT, MONTRA_API_PORT,
+# MONTRA_AUTH_PORT), so `pnpm --filter @montra/web dev` and the API on 3000 and 4000 can still run beside it.
+#
+# One address for all three: MONTRA_PUBLIC_HOST (default localhost), the name or address every browser and phone uses,
+# e.g. your PC's LAN address in infra/.env to sign in from other devices. Kratos's session cookie is set on the
+# gateway's host and the web server reads it on the web's host; cookies belong to a host, not a port, so the two must
+# be the same, and the web app must be opened at http://<MONTRA_PUBLIC_HOST>:3030, not at another name for this
+# machine. It's compiled into the web app too: build again after changing it.
+#
+# The Kratos and gateway secrets are generated once by `auth-init` into the `authsecrets` volume, never in a file of
+# this checkout. Removing that volume signs everyone out (and makes a new set).
 #
 # Settings come from the repo's .env, with the addresses inside the Compose network put over them. Files are kept in
 # the `appstorage` volume, not a folder of this machine.
@@ -37,8 +55,18 @@ x-api-environment: &api-environment
   DATABASE_ADMIN_URL: postgres://montra_owner:montra_owner@postgres:5432/montra
   STORAGE_MODE: local
   STORAGE_DIR: /data/storage
-  API_URL: http://localhost:${MONTRA_API_PORT:-4040}
-  WEB_URL: http://localhost:${MONTRA_WEB_PORT:-3030}
+  API_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_API_PORT:-4040}
+  WEB_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}
+  # `kratos` (the default) or `dev`; the web app is built with the same.
+  AUTH_MODE: ${MONTRA_AUTH_MODE:-kratos}
+  KRATOS_PUBLIC_URL: http://kratos:4433
+  KRATOS_ADMIN_URL: http://kratos:4434
+  # AUTH-04: owners must use two-step verification to open a workspace. MONTRA_REQUIRE_OWNER_MFA=false turns that off
+  # for testing, as on any development machine.
+  REQUIRE_OWNER_MFA: ${MONTRA_REQUIRE_OWNER_MFA:-true}
+  # Every email Montra sends (invitations, alerts, security notices) lands in Mailpit, which delivers nothing.
+  MAIL_MODE: smtp
+  MAIL_URL: smtp://mailpit:1025
   # A vault preview on this machine is at http://localhost:<port> as Montra knows it (FAMILY_VAULT_ALLOW_LOCAL_HTTP).
   # Inside a container that is the container itself, so each of these ports is passed on to the same port of the
   # machine. Empty for none.
@@ -51,6 +79,79 @@ x-api-environment: &api-environment
     c.pipe(u).pipe(c); u.on('error', () => c.destroy()); c.on('error', () => u.destroy()); })
     .listen(port, '127.0.0.1');
 
+# Kratos's settings that depend on the address, over the local values in infra/kratos/kratos.yml (which the host-run
+# setup on ports 3000 and 4000 still uses), as infra/selfhost/compose.yaml sets them. Setting one item of a list by
+# index replaces the whole list from kratos.yml, so each hook list is repeated whole. A list value is JSON.
+x-kratos-environment: &kratos-environment
+  DSN: postgres://postgres:postgres@postgres:5432/kratos?sslmode=disable
+  SECRETS_COOKIE_FILE: /run/secrets/kratos_cookie_secret
+  SECRETS_CIPHER_FILE: /run/secrets/kratos_cipher_secret
+  SECRETS_PAGINATION_FILE: /run/secrets/kratos_pagination_secret
+  # Verification and recovery codes go to Mailpit (kratos.yml's smtp://mailpit:1025), at http://localhost:8025 or
+  # MONTRA_MAILPIT_PORT.
+  SERVE_PUBLIC_BASE_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_AUTH_PORT:-4455}/
+  SERVE_PUBLIC_CORS_ALLOWED_ORIGINS: '["http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}"]'
+  SERVE_ADMIN_BASE_URL: http://kratos:4434/
+  SELFSERVICE_DEFAULT_BROWSER_RETURN_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/
+  SELFSERVICE_ALLOWED_RETURN_URLS: '["http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}"]'
+  SELFSERVICE_FLOWS_ERROR_UI_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/auth/error
+  SELFSERVICE_FLOWS_SETTINGS_UI_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/settings/security
+  SELFSERVICE_FLOWS_RECOVERY_UI_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/auth/recovery
+  SELFSERVICE_FLOWS_VERIFICATION_UI_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/auth/verification
+  SELFSERVICE_FLOWS_VERIFICATION_AFTER_DEFAULT_BROWSER_RETURN_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/welcome
+  SELFSERVICE_FLOWS_LOGIN_UI_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/sign-in
+  SELFSERVICE_FLOWS_REGISTRATION_UI_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}/sign-up
+  # Passkeys and security keys need a secure context: they work at http://localhost, not over plain http at a LAN
+  # address, where those buttons fail in the browser. Password, emailed codes and authenticator apps work either way.
+  SELFSERVICE_METHODS_PASSKEY_CONFIG_RP_ID: ${MONTRA_PUBLIC_HOST:-localhost}
+  SELFSERVICE_METHODS_PASSKEY_CONFIG_RP_ORIGINS: '["http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}"]'
+  SELFSERVICE_METHODS_WEBAUTHN_CONFIG_RP_ID: ${MONTRA_PUBLIC_HOST:-localhost}
+  SELFSERVICE_METHODS_WEBAUTHN_CONFIG_RP_ORIGINS: '["http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}"]'
+  # No cookie domain: each cookie belongs to MONTRA_PUBLIC_HOST alone, which the web app and the gateway share.
+  # The webhooks reach the API on the Compose network.
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_0_HOOK: revoke_active_sessions
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_HOOK: web_hook
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncmVjb3ZlcnknLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_RECOVERY_AFTER_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_0_HOOK: revoke_active_sessions
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAncGFzc3dvcmRfY2hhbmdlZCcsIGlkZW50aXR5X2lkOiBjdHguaWRlbnRpdHkuaWQgfQ==
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_1_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_TOTP_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_WEBAUTHN_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_HOOK: web_hook
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_URL: http://api:4000/internal/kratos/hooks
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_METHOD: POST
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_BODY: base64://ZnVuY3Rpb24oY3R4KSB7IGV2ZW50OiAnbWZhX2NoYW5nZWQnLCBpZGVudGl0eV9pZDogY3R4LmlkZW50aXR5LmlkIH0=
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_TYPE: api_key
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_NAME: x-montra-hook-secret
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_IN: header
+  SELFSERVICE_FLOWS_SETTINGS_AFTER_LOOKUP_SECRET_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE_FILE: /run/secrets/kratos_webhook_secret
+
 # Health checks run inside the images, which have node or python but no curl.
 x-health: &health
   interval: 10s
@@ -62,7 +163,7 @@ services:
   # Migrations and reference data, as `pnpm db:migrate` does. Run it after each pull, before `up`.
   migrate:
     <<: *app
-    image: montra-dev/api:local
+    image: montra-dev/api:${MONTRA_IMAGE_TAG:-local}
     restart: 'no'
     profiles: [tools]
     environment:
@@ -70,14 +171,108 @@ services:
     working_dir: /app/packages/db
     command: ['node', 'dist/cli.js', 'migrate']
 
+  # Once, before Kratos: its database, if Postgres's volume is older than the line in infra/docker/postgres-init.sh
+  # that makes it, and the secrets, generated once into the `authsecrets` volume and readable only by uid 1000.
+  # (Kratos's cipher secret must be exactly 32 characters.)
+  auth-init:
+    image: postgres:16
+    profiles: [auth]
+    restart: 'no'
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    volumes: [authsecrets:/secrets]
+    command:
+      - sh
+      - -ec
+      - |
+        psql -tAc "select 1 from pg_database where datname = 'kratos'" | grep -q 1 || psql -c 'create database kratos'
+        cd /secrets
+        secret() { [ -s "$$1" ] || head -c "$$2" /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$1"; }
+        secret kratos_cookie_secret 32
+        secret kratos_cipher_secret 16
+        secret kratos_pagination_secret 32
+        secret kratos_webhook_secret 32
+        secret auth_gateway_secret 32
+        chown 1000:1000 ./*
+        chmod 0400 ./*
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Kratos's schema, after each pull (docker-compose.yml defines it).
+  kratos-migrate:
+    image: montra-dev/kratos:${MONTRA_IMAGE_TAG:-local}
+    restart: 'no'
+    depends_on:
+      auth-init: { condition: service_completed_successfully }
+
+  # Identity (ADR-0006), defined in docker-compose.yml. `serve --dev` there is what lets its cookies work over plain
+  # http, fit for a development machine on a home network and nothing else. Only the gateway is published.
+  kratos:
+    image: montra-dev/kratos:${MONTRA_IMAGE_TAG:-local}
+    restart: unless-stopped
+    user: '1000:1000'
+    environment: *kratos-environment
+    volumes: [authsecrets:/run/secrets:ro]
+    ports: !reset []
+    healthcheck:
+      test: ['CMD', 'montra-kratos', 'healthcheck']
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 20s
+
+  # The only way in to Kratos from a browser or the phone (AUTH-08, ADR-0042), as self-hosting runs it. No CAPTCHA:
+  # that needs a Turnstile key (ADR-0056), which this doesn't set.
+  auth-gateway:
+    <<: *app
+    image: montra-dev/api:${MONTRA_IMAGE_TAG:-local}
+    profiles: [auth]
+    # Only what the gateway reads, not the whole .env.
+    env_file: []
+    environment:
+      NODE_ENV: development
+      AUTH_MODE: kratos
+      AUTH_GATEWAY_PORT: '4455'
+      AUTH_GATEWAY_SECRET_FILE: /run/secrets/auth_gateway_secret
+      KRATOS_PUBLIC_URL: http://kratos:4433
+      WEB_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}
+      DATABASE_URL: postgres://montra_app:montra_app@postgres:5432/montra
+      MAIL_MODE: smtp
+      MAIL_URL: smtp://mailpit:1025
+      TZ: ${MONTRA_TZ:-}
+    command: ['node', 'dist/auth-gateway-main.js']
+    ports: ['${MONTRA_AUTH_PORT:-4455}:4455']
+    volumes: [authsecrets:/run/secrets:ro]
+    healthcheck:
+      <<: *health
+      # Passes through to Kratos's readiness.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4455/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kratos: { condition: service_healthy }
+
   api:
     <<: *app
-    image: montra-dev/api:local
+    image: montra-dev/api:${MONTRA_IMAGE_TAG:-local}
     build: { context: .., dockerfile: apps/api/Dockerfile }
     environment: *api-environment
-    command: ['sh', '-c', 'node -e "$$HOST_RELAY_JS" & exec node dist/main.js']
+    # With Kratos, the secret its webhooks send (made by auth-init); with dev sign-in there's none.
+    command:
+      [
+        'sh',
+        '-c',
+        'if [ "$$AUTH_MODE" = kratos ]; then export KRATOS_WEBHOOK_SECRET_FILE=/run/secrets/kratos_webhook_secret; fi; node -e "$$HOST_RELAY_JS" & exec node dist/main.js',
+      ]
     ports: ['${MONTRA_API_PORT:-4040}:4000']
-    volumes: [appstorage:/data/storage]
+    volumes: [appstorage:/data/storage, authsecrets:/run/secrets:ro]
     healthcheck:
       <<: *health
       test:
@@ -90,7 +285,7 @@ services:
 
   worker:
     <<: *app
-    image: montra-dev/api:local
+    image: montra-dev/api:${MONTRA_IMAGE_TAG:-local}
     environment: *api-environment
     command: ['sh', '-c', 'node -e "$$HOST_RELAY_JS" & exec node dist/worker-main.js']
     volumes: [appstorage:/data/storage]
@@ -99,7 +294,7 @@ services:
 
   doc-worker:
     <<: *app
-    image: montra-dev/doc-worker:local
+    image: montra-dev/doc-worker:${MONTRA_IMAGE_TAG:-local}
     build: { context: .., dockerfile: apps/doc-worker/Dockerfile }
     # Only what the document worker reads (apps/doc-worker/src/montra_doc_worker/settings.py), not the whole .env.
     env_file: []
@@ -112,17 +307,21 @@ services:
 
   web:
     <<: *app
-    image: montra-dev/web:local
+    image: montra-dev/web:${MONTRA_IMAGE_TAG:-local}
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+      # Compiled into the browser's code: build again after changing any of these.
       args:
-        NEXT_PUBLIC_AUTH_MODE: dev
-        NEXT_PUBLIC_APP_URL: http://localhost:${MONTRA_WEB_PORT:-3030}
-        NEXT_PUBLIC_API_WS_URL: ws://localhost:${MONTRA_API_PORT:-4040}/v1/ws
+        NEXT_PUBLIC_AUTH_MODE: ${MONTRA_AUTH_MODE:-kratos}
+        NEXT_PUBLIC_KRATOS_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_AUTH_PORT:-4455}
+        NEXT_PUBLIC_APP_URL: http://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_WEB_PORT:-3030}
+        NEXT_PUBLIC_API_WS_URL: ws://${MONTRA_PUBLIC_HOST:-localhost}:${MONTRA_API_PORT:-4040}/v1/ws
     env_file: []
     environment:
       API_URL: http://api:4000
+      # The web server reads sessions and flows from Kratos directly, inside the Compose network.
+      KRATOS_PUBLIC_URL: http://kratos:4433
       TZ: ${MONTRA_TZ:-}
       # Dev sign-in from another device on the network, over plain http (apps/web/lib/session.ts).
       DEV_COOKIE_INSECURE: 'on'
@@ -131,13 +330,16 @@ services:
       api: { condition: service_healthy }
     healthcheck:
       <<: *health
+      # The front page answers with a redirect in either mode (sign-in in Kratos mode goes on to the gateway).
       test:
         [
           'CMD',
           'node',
           '-e',
-          "fetch('http://127.0.0.1:3000/sign-in').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+          "fetch('http://127.0.0.1:3000/', { redirect: 'manual' }).then((r) => process.exit(r.status < 500 ? 0 : 1), () => process.exit(1))",
         ]
 
 volumes:
   appstorage:
+  # The Kratos and gateway secrets, made by auth-init.
+  authsecrets:

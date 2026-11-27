@@ -12,6 +12,7 @@ import { receiptFileProblem, RECEIPT_ACCEPT } from '@/lib/receipts';
 import { DateText, useI18n } from '../i18n';
 import { Money } from '../money';
 import { StatusLine, useAction } from '../use-action';
+import { useConfirm } from '../ui/confirm-dialog';
 
 const NEW = '__new';
 
@@ -39,6 +40,7 @@ export function BillManager({
 }) {
   const { locale } = useI18n();
   const { run, busy, message, setMessage, t } = useAction();
+  const { confirm, dialog } = useConfirm();
   const known = vendors.filter((v) => v.id !== null && !v.archived);
   const found = vendors.filter((v) => v.id === null);
   const [partyId, setPartyId] = useState(known[0]?.id ?? NEW);
@@ -88,7 +90,15 @@ export function BillManager({
         const photo = file ? await photoForUpload(file) : null;
         const uploaded = photo ? await browserApi.uploadBusinessFile(workspaceId, photo, photo.name) : null;
         // The same file is already in Montra, or kept in the vault (ADR-0054): the person decides.
-        if (uploaded && anyDuplicate([uploaded]) && !window.confirm(t('files.duplicate_confirm')))
+        if (
+          uploaded &&
+          anyDuplicate([uploaded]) &&
+          !(await confirm({
+            title: t('files.duplicate_title'),
+            body: <p>{t('files.duplicate_confirm')}</p>,
+            confirmLabel: t('files.duplicate_use'),
+          }))
+        )
           return null;
         const fileIds = uploaded ? [uploaded.fileId] : [];
         return browserApi.createBill(workspaceId, {
@@ -370,6 +380,7 @@ export function BillManager({
         </button>
       </form>
       <StatusLine message={message} />
+      {dialog}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   FX_MATCH_TOLERANCE_BPS,
   groupReceipt,
   impliedRate,
+  lineDiscountsTakenTwice,
   lineQuantity,
   mulRound,
   validateReceipt,
@@ -240,5 +241,40 @@ describe('a receipt line’s quantity and unit price (owner, 2026-11-18)', () =>
     expect(lineQuantity(null, 250n, -500n)).toEqual({ qty: null, unitPrice: 250n });
     // Both printed: as printed, weighed items included.
     expect(lineQuantity('0.452', 299n, 135n)).toEqual({ qty: '0.452', unitPrice: 299n });
+  });
+});
+
+describe('line savings taken off twice (2026-11-26)', () => {
+  // Paid prices 2.99 + 2.00 + 3.79 with 0.50 and 0.40 savings read as discounts too; 0.40 tax; 9.18 printed.
+  const paid = [
+    { lineTotal: 299n, discount: 50n },
+    { lineTotal: 200n, discount: 40n },
+    { lineTotal: 379n, discount: 0n },
+  ];
+  const printed = totals({ tax: 40n, total: 918n });
+
+  it('is true when the receipt is off by exactly its line discounts', () => {
+    expect(
+      validateReceipt(
+        paid.map((l) => ({ ...l, taxable: true, key: '' })),
+        printed,
+      ).gap,
+    ).toBe(90n);
+    expect(lineDiscountsTakenTwice(paid, printed)).toBe(true);
+    // Within the ±2 tolerance, like the check itself.
+    expect(lineDiscountsTakenTwice(paid, { ...printed, total: 920n })).toBe(true);
+  });
+
+  it('is false when the receipt adds up, has no line discounts, or is off by anything else', () => {
+    const regular = paid.map((l) => ({ ...l, lineTotal: l.lineTotal + l.discount }));
+    expect(lineDiscountsTakenTwice(regular, printed)).toBe(false);
+    expect(
+      lineDiscountsTakenTwice(
+        regular.map((l) => ({ ...l, discount: 0n })),
+        printed,
+      ),
+    ).toBe(false);
+    expect(lineDiscountsTakenTwice(paid, { ...printed, total: 950n })).toBe(false);
+    expect(lineDiscountsTakenTwice(paid, { ...printed, total: null })).toBe(false);
   });
 });

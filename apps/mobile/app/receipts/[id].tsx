@@ -275,13 +275,23 @@ export default function ReceiptReview() {
         const categoryId = picked.has(l.id) ? picked.get(l.id) : l.categoryId;
         const category = categoryId ? (names.get(categoryId) ?? '') : t('mobile.receipts.uncategorized');
         const each = lineQuantityText(l, (minor) => fmtMoney(minor, receipt.currency));
+        // Savings on the line (2026-11-26): the subtitle says them and the amount is what was paid, so the amounts
+        // shown add up to the subtotal below.
+        const savings =
+          l.discount !== '0'
+            ? t('mobile.receipts.savings', {
+                amount: fmtMoney(String(-BigInt(l.discount)), receipt.currency),
+              })
+            : null;
         return (
           <Row
             key={l.id}
             testID="receipt-line"
             title={l.expandedName ?? l.rawText}
-            subtitle={each ? `${each} · ${category}` : category}
-            right={<Small>{fmtMoney(l.lineTotal, receipt.currency)}</Small>}
+            subtitle={[each, savings, category].filter(Boolean).join(' · ')}
+            right={
+              <Small>{fmtMoney(String(BigInt(l.lineTotal) - BigInt(l.discount)), receipt.currency)}</Small>
+            }
             onPress={can.record ? () => setPicking(l.id) : undefined}
           />
         );

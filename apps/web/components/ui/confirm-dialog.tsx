@@ -13,6 +13,14 @@ export interface ConfirmOptions {
   danger?: boolean;
 }
 
+/** A one-line text field in the dialog, for `usePrompt`. */
+export interface DialogField {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  maxLength?: number;
+}
+
 /**
  * A confirmation in a modal `<dialog>`, in place of `window.confirm`: the browser traps focus, Esc cancels, and the page
  * behind is inert. Focus starts on Cancel for a destructive action (on the confirm button otherwise) and goes back to
@@ -26,11 +34,14 @@ export function ConfirmDialog({
   cancelLabel,
   danger = false,
   busy = false,
+  field,
   onConfirm,
   onCancel,
 }: ConfirmOptions & {
   open: boolean;
   busy?: boolean;
+  /** A text field under the body, focused when the dialog opens; Enter in it confirms. */
+  field?: DialogField;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -38,9 +49,12 @@ export function ConfirmDialog({
   const ref = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const hasField = field !== undefined;
   const opener = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const bodyId = useId();
+  const fieldId = useId();
 
   useEffect(() => {
     const d = ref.current;
@@ -48,11 +62,11 @@ export function ConfirmDialog({
     if (open && !d.open) {
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       d.showModal();
-      (danger ? cancelRef : confirmRef).current?.focus();
+      (hasField ? inputRef : danger ? cancelRef : confirmRef).current?.focus();
     } else if (!open && d.open) {
       d.close();
     }
-  }, [open, danger]);
+  }, [open, danger, hasField]);
 
   return (
     <dialog
@@ -62,12 +76,15 @@ export function ConfirmDialog({
       aria-describedby={body ? bodyId : undefined}
       aria-busy={busy || undefined}
       data-testid="confirm-dialog"
-      // Esc: nothing while the action runs; otherwise it's Cancel.
+      // Esc: nothing while the action runs; otherwise it's Cancel. React passes a dialog's `cancel` and `close` up to its
+      // parents' handlers, so they stop here: this dialog may be opened from inside another one.
       onCancel={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         if (!busy) onCancel();
       }}
-      onClose={() => {
+      onClose={(e) => {
+        e.stopPropagation();
         const back = opener.current;
         opener.current = null;
         if (back?.isConnected) back.focus();
@@ -83,6 +100,29 @@ export function ConfirmDialog({
           <div id={bodyId} className="space-y-2 text-sm">
             {body}
           </div>
+        )}
+        {field && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!busy) onConfirm();
+            }}
+          >
+            <label htmlFor={fieldId} className="field-label">
+              {field.label}
+            </label>
+            <input
+              ref={inputRef}
+              id={fieldId}
+              type="text"
+              className="input"
+              value={field.value}
+              maxLength={field.maxLength}
+              disabled={busy}
+              onChange={(e) => field.onChange(e.target.value)}
+            />
+          </form>
         )}
         <div className="flex flex-wrap justify-end gap-2">
           <button ref={cancelRef} type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>
@@ -154,4 +194,52 @@ export function useConfirm() {
   );
 
   return { confirm, dialog };
+}
+
+type PendingPrompt = ConfirmOptions & {
+  label: string;
+  maxLength?: number;
+  resolve: (value: string | null) => void;
+};
+
+/**
+ * `window.prompt` as a promise, shown in a `ConfirmDialog` with a text field. Render `dialog` once, then
+ * `const text = await prompt({ title, label, confirmLabel }); if (text === null) return;`: the text as typed, `''` when
+ * left empty, `null` on Cancel or Esc.
+ */
+export function usePrompt() {
+  const [pending, setPending] = useState<PendingPrompt | null>(null);
+  const [value, setValue] = useState('');
+
+  const prompt = useCallback(
+    (options: ConfirmOptions & { label: string; defaultValue?: string; maxLength?: number }) =>
+      new Promise<string | null>((resolve) => {
+        const { defaultValue = '', ...rest } = options;
+        setValue(defaultValue);
+        setPending({ ...rest, resolve });
+      }),
+    [],
+  );
+
+  const settle = (ok: boolean) => {
+    if (!pending) return;
+    setPending(null);
+    pending.resolve(ok ? value : null);
+  };
+
+  const dialog = (
+    <ConfirmDialog
+      open={pending !== null}
+      title={pending?.title ?? ''}
+      body={pending?.body}
+      confirmLabel={pending?.confirmLabel ?? ''}
+      cancelLabel={pending?.cancelLabel}
+      danger={pending?.danger}
+      field={{ label: pending?.label ?? '', value, onChange: setValue, maxLength: pending?.maxLength }}
+      onConfirm={() => settle(true)}
+      onCancel={() => settle(false)}
+    />
+  );
+
+  return { prompt, dialog };
 }
