@@ -3609,6 +3609,13 @@ Phase 11 leftovers:
   key only when one is registered (`hasSecondFactorCredential` in `kratos.adapter.ts`); TOTP and recovery codes as
   before. Checked against the local Kratos: a password identity's `webauthn` config holds no keys.
   - Tests: api `kratos-second-factor.test.ts`.
+- **A development sign-in login moves to its person's real sign-in** (migration 0098). A login made with dev sign-in
+  (`identity_id = 'dev|<email>'`) was matched by email on each Kratos sign-in but kept its `dev|` identity, so what
+  finds a person by Kratos identity missed them: the members list's two-step status, the password and two-step change
+  emails, and turning a login off. `app.resolve_user` gains `p_email_verified`: on the first sign-in with a verified
+  email the row takes the Kratos identity, once; an unverified one still only borrows it (reads, no writes), and a row
+  held by another Kratos identity never moves. The three-argument function stays for old API tasks.
+  - Tests: db `identity.test.ts`.
 
 ---
 
