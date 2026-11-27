@@ -9,6 +9,9 @@ import {
   calendarDate,
   isCalendarDate,
   isCurrencyCode,
+  lineDiscountsTakenTwice,
+  parseDecimal,
+  pow10,
   type CurrencyCode,
 } from '@montra/domain';
 import type { ImagePart, ReceiptExtraction } from '@montra/ai-gateway';
@@ -262,23 +265,65 @@ export function fromExtraction(
       decideMember: true,
     });
   }
-  return {
-    header: {
-      merchant: x.merchant,
-      receiptDate: x.date && isCalendarDate(x.date) ? calendarDate(x.date) : null,
-      localTime: x.localTime,
-      currency,
-      subtotalMinor: toMinor(x.subtotal, currency),
-      taxMinor: toMinor(x.tax, currency) ?? 0n,
-      taxIncluded: x.taxIncluded === true,
-      discountMinor: toMinor(x.discount, currency) ?? 0n,
-      feesMinor: toMinor(x.fees, currency) ?? 0n,
-      tipMinor: toMinor(x.tip, currency) ?? 0n,
-      totalMinor: toMinor(x.total, currency),
-      cardLast4: x.cardLast4,
-      store: { address: x.storeAddress, phone: x.storePhone, website: x.storeWebsite },
+  const header = {
+    merchant: x.merchant,
+    receiptDate: x.date && isCalendarDate(x.date) ? calendarDate(x.date) : null,
+    localTime: x.localTime,
+    currency,
+    subtotalMinor: toMinor(x.subtotal, currency),
+    taxMinor: toMinor(x.tax, currency) ?? 0n,
+    taxIncluded: x.taxIncluded === true,
+    discountMinor: toMinor(x.discount, currency) ?? 0n,
+    feesMinor: toMinor(x.fees, currency) ?? 0n,
+    tipMinor: toMinor(x.tip, currency) ?? 0n,
+    totalMinor: toMinor(x.total, currency),
+    cardLast4: x.cardLast4,
+    store: { address: x.storeAddress, phone: x.storePhone, website: x.storeWebsite },
+  };
+  const savingsTakenTwice = lineDiscountsTakenTwice(
+    lines.map((l) => ({ lineTotal: l.lineTotalMinor, discount: l.discountMinor })),
+    {
+      tax: header.taxMinor,
+      taxIncluded: header.taxIncluded,
+      discount: header.discountMinor,
+      fees: header.feesMinor,
+      tip: header.tipMinor,
+      total: header.totalMinor,
     },
-    lines,
+  );
+  // A receipt that printed its tax as 0 taxed none of its lines, whatever letter follows the prices (2026-11-26: a
+  // grocery receipt's "S" read as taxed).
+  const untaxed = x.tax !== null && header.taxMinor === 0n;
+  return {
+    header,
+    lines: lines
+      .map((l) => (savingsTakenTwice ? priceBeforeSavings(l) : l))
+      .map((l) => (untaxed ? { ...l, taxable: false } : l)),
     warnings,
   };
+}
+
+/**
+ * A line read at the price paid after its savings, with the savings as its discount too (`lineDiscountsTakenTwice`):
+ * store the price before the savings, so price − savings = paid. A unit price that was the paid price goes too
+ * (`lineQuantity` fills it in again from the new amount where that is exact); a printed regular unit price stays.
+ */
+function priceBeforeSavings(l: LineInput): LineInput {
+  if (l.discountMinor <= 0n) return l;
+  const paid = l.lineTotalMinor;
+  const unitWasPaid = l.unitPriceMinor !== null && timesQty(l.unitPriceMinor, l.qty) === paid;
+  return {
+    ...l,
+    lineTotalMinor: paid + l.discountMinor,
+    unitPriceMinor: unitWasPaid ? null : l.unitPriceMinor,
+  };
+}
+
+/** unit × qty in minor units when exact (a missing quantity is 1), else null. */
+function timesQty(unit: bigint, qty: string | null): bigint | null {
+  if (qty === null) return unit;
+  const d = parseDecimal(qty);
+  const scaled = unit * d.coefficient;
+  const div = pow10(d.scale);
+  return scaled % div === 0n ? scaled / div : null;
 }

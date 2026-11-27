@@ -14,6 +14,7 @@ import {
   buildUpdate,
   newLine,
   previewSplits,
+  linePaid,
   recalcLine,
   rowsOf,
   STATUS_CHIP,
@@ -266,6 +267,7 @@ export function ReceiptReview({
                 <th className="py-1 pr-2">{t('receipts.qty')}</th>
                 <th className="py-1 pr-2">{t('receipts.unit_price')}</th>
                 <th className="py-1 pr-2">{t('receipts.amount')}</th>
+                <th className="py-1 pr-2">{t('receipts.savings')}</th>
                 <th className="py-1 pr-2">{t('receipts.taxable')}</th>
                 <th className="py-1 pr-2">{t('receipts.category')}</th>
                 <th className="py-1 pr-2">{t('receipts.member')}</th>
@@ -279,6 +281,7 @@ export function ReceiptReview({
                 const saved = receipt.lines.find((x) => x.id === l.id);
                 const suggested = saved?.categorization?.suggested?.categoryId;
                 // Why the line is for its member, while the pick is still the saved one (owner, 2026-11-24).
+                const paid = linePaid(l, currency, locale);
                 const memberWhy =
                   saved?.memberReason && (saved.memberId ?? '') === l.memberId
                     ? saved.memberReason.explanation
@@ -334,6 +337,23 @@ export function ReceiptReview({
                       />
                     </td>
                     <td className="py-1 pr-2">
+                      {/* Member, club or coupon savings on this line: the amount is the price before them (2026-11-26). */}
+                      <input
+                        className="input num w-20"
+                        inputMode="decimal"
+                        aria-label={t('receipts.savings_for', { item: l.rawText })}
+                        aria-invalid={errors[`discount.${i}`] ? 'true' : undefined}
+                        value={l.discount}
+                        onChange={(e) => setLine(i, { discount: e.target.value })}
+                        data-testid="receipt-line-savings"
+                      />
+                      {paid !== null && (
+                        <span className="mt-1 block text-xs text-muted" data-testid="receipt-line-paid">
+                          {t('receipts.paid', { amount: paid })}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1 pr-2">
                       <input
                         type="checkbox"
                         aria-label={t('receipts.taxable')}
@@ -343,7 +363,7 @@ export function ReceiptReview({
                     </td>
                     <td className="py-1 pr-2">
                       <select
-                        className="input"
+                        className="input w-40"
                         aria-label={t('receipts.category_for', { item: l.rawText })}
                         value={l.categoryId}
                         onChange={(e) => setLine(i, { categoryId: e.target.value })}

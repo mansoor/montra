@@ -55,6 +55,31 @@ export function validateReceipt(
   return { computed, gap, ok: abs(gap) <= RECEIPT_TOLERANCE_MINOR };
 }
 
+/**
+ * A read receipt whose line discounts were taken off twice: the line amounts are already what was paid after the
+ * savings, and the savings were read as discounts as well. Grocery receipts with "Price" and "You Pay" columns
+ * and a "Member Savings -0.80" line under the item do this: the receipt adds up exactly without the discounts, and
+ * is off by exactly their sum with them.
+ *
+ * Returns true only then: the receipt doesn't add up as read, has line discounts, and adds up when each
+ * discounted line's amount is taken as the price before its discount (`lineTotal + discount`). Then the caller
+ * should store each such line that way, so a line still reads price − savings = paid. Anything else stays as read
+ * for the user to check: a gap of any other size is never guessed at.
+ */
+export function lineDiscountsTakenTwice(
+  lines: readonly Pick<ReceiptLineAmounts, 'lineTotal' | 'discount'>[],
+  totals: ReceiptTotals,
+): boolean {
+  const asRead = validateReceipt(
+    lines.map((l) => ({ ...l, taxable: true, key: '' })),
+    totals,
+  );
+  if (asRead.ok || asRead.gap === null) return false;
+  const lineDiscounts = lines.reduce((s, l) => s + l.discount, 0n);
+  if (lineDiscounts <= 0n) return false;
+  return abs(asRead.gap - lineDiscounts) <= RECEIPT_TOLERANCE_MINOR;
+}
+
 export interface ReceiptGroup {
   key: string;
   /** Indexes into the input lines, in receipt order. */

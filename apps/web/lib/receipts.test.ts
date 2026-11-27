@@ -6,6 +6,7 @@ import {
   buildUpdate,
   newLine,
   previewSplits,
+  linePaid,
   recalcLine,
   receiptFileProblem,
   rowsOf,
@@ -142,6 +143,16 @@ describe('receipt helpers (RCP-06)', () => {
         ],
       },
     });
+  });
+
+  it('shows savings only where a line has them, with what was paid (2026-11-26)', () => {
+    expect(rowsOf(receipt).lines[0]!.discount).toBe('');
+    const saved = rowsOf({ ...receipt, lines: [{ ...receipt.lines[0]!, lineTotal: '429', discount: '80' }] });
+    expect(saved.lines[0]).toMatchObject({ lineTotal: '4.29', discount: '0.80' });
+    expect(linePaid(saved.lines[0]!, 'USD')).toBe('3.49');
+    expect(linePaid({ lineTotal: '4.29', discount: '' }, 'USD')).toBeNull();
+    expect(linePaid({ lineTotal: '4.29', discount: '0' }, 'USD')).toBeNull();
+    expect(linePaid({ lineTotal: '', discount: '0.80' }, 'USD')).toBeNull();
   });
 
   it('keeps quantity × unit price = total as one is edited (owner, 2026-11-18)', () => {

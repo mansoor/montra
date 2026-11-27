@@ -9,7 +9,7 @@ import type { CompletionRequest, CompletionResponse, ProviderAdapter } from '../
 import { decodeFakeReceiptImage, parseReceiptText } from '../fake-receipt.js';
 import { parsePayslipText } from '../fake-payslip.js';
 import { parseTaxFormText } from '../fake-tax-form.js';
-import * as receiptV3 from '../tasks/extract-receipt/v3.js';
+import * as receiptV4 from '../tasks/extract-receipt/v4.js';
 
 /** keyword (in payee/description) → category name fragments it points to. */
 export const FAKE_SYNONYMS: ReadonlyArray<readonly [readonly string[], readonly string[]]> = [
@@ -248,8 +248,8 @@ export class FakeAdapter implements ProviderAdapter {
           storeAddress: r.storeAddress ?? '',
           storePhone: r.storePhone ?? '',
           storeWebsite: r.storeWebsite ?? '',
-          lines: r.lines.map((l) => ({ ...l, taxable: receiptV3.mark(l.taxable, 'unmarked') })),
-          taxIncluded: receiptV3.mark(r.taxIncluded, 'unclear'),
+          lines: r.lines.map((l) => ({ ...l, taxable: receiptV4.mark(l.taxable, 'unmarked') })),
+          taxIncluded: receiptV4.mark(r.taxIncluded, 'unclear'),
         };
       }
       case 'extract_bill': {

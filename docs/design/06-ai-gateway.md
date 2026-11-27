@@ -62,10 +62,13 @@ so the API applies it only at the AI threshold as well as the property threshold
 days.
 | `extract_receipt`, `extract_payslip`, `extract_statement_table` | `claude-sonnet-5-5` (vision) | `medium` | 1 document | JSON schema |
 
-`extract_receipt` (`tasks/extract-receipt/v3.ts`; v3 adds the store's address, phone and website) sends the receipt images in builtin and BYOK modes only,
+`extract_receipt` (`tasks/extract-receipt/v4.ts`; v3 added the store's address, phone and website; v4 reads a line's amount before its own savings) sends the receipt images in builtin and BYOK modes only,
 with the masked OCR text when there is some. Local mode sends only the masked OCR text from the doc-worker
 (`receipt.ocr`). Amounts come back as decimal strings, and `taxIncluded` marks VAT-style receipts. An answer
 that loses more than half of its lines to validation is `invalid_output`.
+The API also checks the lines (`lineDiscountsTakenTwice`): when a receipt adds up only without its line discounts, and is
+off by exactly their sum with them, the amounts were the prices already paid, so each discounted line is stored at its
+price before the savings.
 
 | `summarize_month`, `explain_recommendation` | `claude-opus-5-5` (larger) | `medium` | — | JSON (text fields) |
 
