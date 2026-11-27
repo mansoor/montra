@@ -38,6 +38,12 @@ describe('Kratos node renderer (ADR-0006)', () => {
     expect(m.rejected).toContain('onclick:passkey_login_trigger');
   });
 
+  it("uses the page's own label for a field when it gives one", () => {
+    const m = toRenderModel(loginFlow, { kratosOrigin: KRATOS, labels: { identifier: 'Your email' } });
+    expect(m.items[1]).toMatchObject({ kind: 'input', name: 'identifier', label: 'Your email' });
+    expect(m.items[2]).toMatchObject({ name: 'password', label: 'Password' });
+  });
+
   it('splits a settings flow by group, keeping the CSRF token in each form', () => {
     const all = toRenderModel(settingsFlow, { kratosOrigin: KRATOS });
     expect(all.groups).toEqual(['default', 'password', 'totp', 'lookup_secret', 'webauthn']);
