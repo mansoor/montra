@@ -94,7 +94,7 @@ export async function resolveAppUser(
   return db.run({}, async (trx) => {
     const { rows } = await sql<{
       id: string;
-    }>`select app.resolve_user(${identityId}, ${email}, ${name}) as id`.execute(trx);
+    }>`select app.resolve_user(${identityId}, ${email}, ${name}, ${verified}) as id`.execute(trx);
     const id = rows[0]!.id;
     if (verified) {
       await sql`select set_config('app.user_id', ${id}, true)`.execute(trx);
