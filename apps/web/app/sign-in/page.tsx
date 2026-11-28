@@ -57,7 +57,11 @@ async function KratosSignIn({ params }: { params: Params }) {
     >
       <GatewayNotice params={params} />
       <FlowForm
-        model={toRenderModel(flow.ui, { kratosOrigin: KRATOS_ORIGIN })}
+        model={toRenderModel(flow.ui, {
+          kratosOrigin: KRATOS_ORIGIN,
+          // Kratos calls the identifier "ID" once a second trait (the phone) is one; here it is always the email.
+          labels: { identifier: t('auth.email') },
+        })}
         label={t('auth.sign_in_title')}
         beforeSubmit={captchaWidget(params)}
       />

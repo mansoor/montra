@@ -107,7 +107,12 @@ const SAFE_IMAGE = /^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+
 
 export function toRenderModel(
   ui: UiContainer,
-  options: { kratosOrigin: string; groups?: readonly string[] },
+  options: {
+    kratosOrigin: string;
+    groups?: readonly string[];
+    /** Our own labels for fields by name, in place of Kratos's (it labels the sign-in identifier "ID"). */
+    labels?: Readonly<Record<string, string>>;
+  },
 ): RenderModel {
   const rejected: string[] = [];
   const actionOk = typeof ui.action === 'string' && sameOrigin(ui.action, options.kratosOrigin);
@@ -123,7 +128,7 @@ export function toRenderModel(
     groups.add(group);
     if (wanted && !wanted.has(group)) continue;
     const a = node.attributes;
-    const label = str(node.meta?.label?.text);
+    const label = options.labels?.[str(a.name)] ?? str(node.meta?.label?.text);
     const messages = toMessages(node.messages);
     const nodeType = str(a.node_type) || str(node.type);
 
